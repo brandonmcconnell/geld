@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geld</title>
+    <link rel="stylesheet" href="../../src/ui/base.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="geld-brand popup__header">
+        <img class="geld-brand__logo" src="/icon/128.png" alt="" width="28" height="28" />
+        <div>
+          <h1 class="geld-brand__name">Geld</h1>
+          <p class="geld-brand__tagline">Hide tests from GitHub diffs</p>
+        </div>
+      </header>
+
+      <section class="popup__section">
+        <div class="geld-row">
+          <div>
+            <label class="geld-label" id="enabled-label" for="enabled">Enabled on GitHub</label>
+            <p class="geld-help" id="enabled-help">Changes apply instantly to open tabs.</p>
+          </div>
+          <button
+            id="enabled"
+            class="geld-switch"
+            type="button"
+            role="switch"
+            aria-checked="true"
+            aria-labelledby="enabled-label"
+            aria-describedby="enabled-help"
+          ></button>
+        </div>
+      </section>
+
+      <section class="popup__section">
+        <div class="geld-row">
+          <div>
+            <label class="geld-label" id="expanded-label" for="expanded">Show test files expanded</label>
+            <p class="geld-help" id="expanded-help">
+              Keep tests grouped at the bottom, but visible without clicking.
+            </p>
+          </div>
+          <button
+            id="expanded"
+            class="geld-switch"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            aria-labelledby="expanded-label"
+            aria-describedby="expanded-help"
+          ></button>
+        </div>
+      </section>
+
+      <footer class="popup__footer">
+        <span class="geld-status" id="status" aria-live="polite"></span>
+        <button id="open-options" class="geld-button geld-button--link" type="button">Patterns &amp; options</button>
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

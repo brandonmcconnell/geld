@@ -1,0 +1,363 @@
+/*
+ * Geld — styles injected into github.com.
+ *
+ * Everything hangs off `data-geld*` attributes or `.geld-*` classes so GitHub's
+ * own styling is untouched until Geld decides a page needs it. Colours come
+ * from Primer's CSS variables so light/dark/high-contrast themes just work.
+ */
+
+/* ------------------------------------------------------------------------ */
+/* Diff list: flex ordering lets us move test files to the bottom without   */
+/* touching the DOM order (React keeps working, Turbo keeps working).       */
+/* ------------------------------------------------------------------------ */
+
+[data-geld-container] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Progressive-loading wrappers become transparent so all entries are siblings. */
+[data-geld-container] .js-diff-progressive-container {
+  display: contents;
+}
+
+[data-geld-container] [data-geld='hidden'] {
+  order: 20;
+}
+
+[data-geld-container]:not([data-geld-expanded]) [data-geld='hidden'] {
+  display: none !important;
+}
+
+[data-geld] {
+  scroll-margin-top: 72px;
+}
+
+[data-geld-flash] {
+  animation: geld-flash 1.4s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes geld-flash {
+  0% {
+    box-shadow: 0 0 0 3px var(--borderColor-accent-emphasis, #0969da);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* "N test files hidden" section at the bottom of the diff list             */
+/* ------------------------------------------------------------------------ */
+
+.geld-hidden-section {
+  order: 10;
+  display: flex;
+  justify-content: center;
+  padding: 18px 16px;
+  margin: 8px 0 16px;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-hidden-section[data-expanded='true'] {
+  margin-top: 16px;
+  margin-bottom: 4px;
+}
+
+.geld-hidden-section__row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+}
+
+.geld-hidden-section__row > .octicon-beaker {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-hidden-section__summary {
+  font-weight: 600;
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-hidden-section__stats {
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 12px;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.geld-hidden-section__add {
+  color: var(--fgColor-success, #1a7f37);
+}
+
+.geld-hidden-section__del {
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.geld-hidden-section__note {
+  font-style: italic;
+}
+
+.geld-hidden-section__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 10px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-accent, #0969da);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.geld-hidden-section__toggle:hover {
+  text-decoration: underline;
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+}
+
+.geld-hidden-section__toggle:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+.geld-chevron {
+  transition: transform 120ms ease-in-out;
+}
+
+[aria-expanded='true'] > .geld-chevron {
+  transform: rotate(90deg);
+}
+
+/* ------------------------------------------------------------------------ */
+/* File tree: hide test files/directories, add a "Tests" pseudo-section      */
+/* ------------------------------------------------------------------------ */
+
+[data-geld-tree='hidden'] {
+  display: none !important;
+}
+
+.geld-tree-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--borderColor-muted, #d0d7de);
+}
+
+.geld-tree-section__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-tree-section__header:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-tree-section__header:focus-visible,
+.geld-tree-section__item:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+.geld-tree-section__header .octicon-beaker {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-tree-section__count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 2em;
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  color: var(--fgColor-default, #1f2328);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 18px;
+  text-align: center;
+  text-transform: none;
+}
+
+.geld-tree-section__list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-tree-section__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px 5px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.geld-tree-section__item .octicon-file {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.geld-tree-section__item:hover:not(:disabled) {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+  color: var(--fgColor-default, #1f2328);
+  opacity: 1;
+}
+
+.geld-tree-section__item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.geld-tree-section__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.geld-tree-section__name,
+.geld-tree-section__dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-tree-section__dir {
+  font-size: 11px;
+  line-height: 16px;
+  opacity: 0.75;
+}
+
+/* Compare page table of contents. */
+[data-geld-toc-hidden] {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Header line counts + hover breakdown                                      */
+/* ------------------------------------------------------------------------ */
+
+[data-geld-stat-host] {
+  cursor: help;
+  border-radius: 6px;
+}
+
+[data-geld-stat-host]:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: 2px;
+}
+
+[data-geld-stat-host] [data-geld-original] {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+}
+
+.geld-tooltip {
+  position: absolute;
+  z-index: 1000;
+  display: grid;
+  grid-template-columns: max-content max-content max-content max-content;
+  gap: 3px 12px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bgColor-emphasis, #25292e);
+  color: var(--fgColor-onEmphasis, #ffffff);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.2));
+}
+
+.geld-tooltip[hidden] {
+  display: none;
+}
+
+.geld-tooltip::after {
+  content: '';
+  position: absolute;
+  left: var(--geld-arrow-x, 50%);
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+}
+
+.geld-tooltip[data-placement='below']::after {
+  top: -12px;
+  border-bottom-color: var(--bgColor-emphasis, #25292e);
+}
+
+.geld-tooltip[data-placement='above']::after {
+  bottom: -12px;
+  border-top-color: var(--bgColor-emphasis, #25292e);
+}
+
+.geld-tooltip__title {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.geld-tooltip__row {
+  display: contents;
+}
+
+.geld-tooltip__row--strong {
+  font-weight: 600;
+}
+
+.geld-tooltip__files {
+  opacity: 0.75;
+}
+
+.geld-tooltip__add,
+.geld-tooltip__del {
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  text-align: right;
+}
+
+.geld-tooltip__add {
+  color: #3fb950;
+}
+
+.geld-tooltip__del {
+  color: #f85149;
+}

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geld options</title>
+    <link rel="stylesheet" href="../../src/ui/base.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header class="geld-brand options__header">
+        <img class="geld-brand__logo" src="/icon/128.png" alt="" width="28" height="28" />
+        <div>
+          <h1 class="geld-brand__name">Geld</h1>
+          <p class="geld-brand__tagline">Hide test files from GitHub diffs so you can review what matters.</p>
+        </div>
+      </header>
+
+      <section class="options__card">
+        <div class="geld-row">
+          <div>
+            <span class="geld-label" id="enabled-label">Enabled on GitHub</span>
+            <p class="geld-help" id="enabled-help">Turn Geld off to see GitHub exactly as it ships.</p>
+          </div>
+          <button
+            id="enabled"
+            class="geld-switch"
+            type="button"
+            role="switch"
+            aria-checked="true"
+            aria-labelledby="enabled-label"
+            aria-describedby="enabled-help"
+          ></button>
+        </div>
+        <hr class="options__divider" />
+        <div class="geld-row">
+          <div>
+            <span class="geld-label" id="hide-tests-label">Hide test files</span>
+            <p class="geld-help" id="hide-tests-help">Uses the built-in patterns below. Turn off to rely on custom patterns only.</p>
+          </div>
+          <button
+            id="hide-tests"
+            class="geld-switch"
+            type="button"
+            role="switch"
+            aria-checked="true"
+            aria-labelledby="hide-tests-label"
+            aria-describedby="hide-tests-help"
+          ></button>
+        </div>
+        <hr class="options__divider" />
+        <div class="geld-row">
+          <div>
+            <span class="geld-label" id="expanded-label">Show hidden files expanded by default</span>
+            <p class="geld-help" id="expanded-help">
+              Tests still move to the bottom and are excluded from the line counts, but stay visible.
+            </p>
+          </div>
+          <button
+            id="expanded"
+            class="geld-switch"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            aria-labelledby="expanded-label"
+            aria-describedby="expanded-help"
+          ></button>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Custom patterns</h2>
+        <p class="geld-help options__intro">
+          One glob per line. Paths are matched relative to the repository root using gitignore-style rules:
+          <code>*.snap</code> matches a filename anywhere, <code>fixtures/</code> matches a directory anywhere,
+          <code>src/**/*.gen.ts</code> matches a full path, and a leading <code>!</code> rescues files the built-in
+          patterns would hide. Matching files are treated as tests.
+        </p>
+        <textarea
+          id="custom-patterns"
+          class="geld-code options__textarea"
+          rows="8"
+          spellcheck="false"
+          placeholder="# Examples
+*.generated.ts
+**/__stories__/
+!tests/contracts/**"
+          aria-label="Custom patterns"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="status" aria-live="polite"></span>
+          <div class="options__buttons">
+            <button id="reset" class="geld-button" type="button">Reset to defaults</button>
+            <button id="save" class="geld-button geld-button--primary" type="button">Save patterns</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Built-in test patterns</h2>
+        <p class="geld-help options__intro">
+          These are always used while “Hide test files” is on. Grouped by kind so they can become individually
+          switchable later.
+        </p>
+        <div id="groups" class="options__groups"></div>
+      </section>
+
+      <footer class="options__footer geld-muted">
+        Geld · <a href="https://github.com/brandonmcconnell/geld" target="_blank" rel="noreferrer">Source on GitHub</a>
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

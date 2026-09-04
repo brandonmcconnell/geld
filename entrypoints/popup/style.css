@@ -1,0 +1,28 @@
+body {
+  width: 320px;
+}
+
+.popup {
+  display: flex;
+  flex-direction: column;
+}
+
+.popup__header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--geld-border);
+}
+
+.popup__section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--geld-border);
+}
+
+.popup__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--geld-bg-muted);
+  font-size: 12px;
+}
