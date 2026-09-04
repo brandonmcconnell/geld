@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# WXT
+.output/
+.wxt/
+stats.html
+stats-*.json
+web-ext.config.ts
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log

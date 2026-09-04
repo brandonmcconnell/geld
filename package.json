@@ -1,0 +1,41 @@
+{
+  "name": "geld",
+  "version": "0.1.0",
+  "description": "Browser extension that hides test files from GitHub diffs so you can review what matters.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Brandon McConnell",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brandonmcconnell/geld"
+  },
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:chrome": "wxt build -b chrome",
+    "build:firefox": "wxt build -b firefox",
+    "build:edge": "wxt build -b edge",
+    "build:safari": "wxt build -b safari",
+    "build:all": "pnpm run build:chrome && pnpm run build:firefox && pnpm run build:edge && pnpm run build:safari",
+    "zip": "wxt zip",
+    "zip:chrome": "wxt zip -b chrome",
+    "zip:firefox": "wxt zip -b firefox",
+    "zip:edge": "wxt zip -b edge",
+    "zip:safari": "wxt zip -b safari",
+    "pack": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm run typecheck && pnpm run test",
+    "postinstall": "wxt prepare"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0",
+    "wxt": "^0.21.4"
+  }
+}
