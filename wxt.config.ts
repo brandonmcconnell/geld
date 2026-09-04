@@ -10,7 +10,9 @@ export default defineConfig({
       'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
     homepage_url: 'https://github.com/brandonmcconnell/geld',
     permissions: ['storage'],
-    host_permissions: ['https://github.com/*'],
+    // patch-diff.githubusercontent.com serves the raw `.diff` that github.com
+    // redirects to; it is fetched from the background script only.
+    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*'],
     ...(browser === 'firefox'
       ? {
           browser_specific_settings: {

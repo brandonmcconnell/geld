@@ -152,16 +152,35 @@ export function findHeaderStatGroups(): HeaderStatGroup[] {
   return groups;
 }
 
-/** Replace the first number in `text`, fixing "file"/"files" agreement. */
+const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
+
+/**
+ * Replace the first number in `text` and fix singular/plural agreement for the
+ * noun that follows it ("1 file changed", "2 additions", ...).
+ */
 export function replaceCount(text: string, count: number): string {
   const replaced = text.replace(/\d[\d,]*/, formatCount(count));
-  if (count === 1) return replaced.replace(/\bfiles\b/i, (word) => word.slice(0, -1));
-  return replaced.replace(/\bfile\b(?!s)/i, (word) => `${word}s`);
+  return replaced.replace(COUNT_NOUNS, (word) => {
+    const singular = word.endsWith('s') ? word.slice(0, -1) : word;
+    return count === 1 ? singular : `${singular}s`;
+  });
 }
 
 function signPrefix(text: string): string {
   const match = /^\s*([^\d\s]*)/.exec(text);
   return match?.[1] ?? '';
+}
+
+/**
+ * Rewrite a header number while preserving how GitHub formatted it: bare
+ * signed numbers ("+93", "−53", "18") keep their sign, sentences ("93 additions",
+ * "18 files changed") keep their words.
+ */
+function rewriteNumber(original: string, value: number, fallbackSign: string): string {
+  if (/^\s*[+\-\u2212]?\s*\d[\d,]*\s*$/.test(original)) {
+    return `${signPrefix(original) || fallbackSign}${formatCount(value)}`;
+  }
+  return replaceCount(original, value);
 }
 
 /** Rewrite one header group so it shows totals without the hidden files. */
@@ -174,10 +193,10 @@ export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, n
   const visible = subtractTotals(all, hidden);
 
   if (group.additions !== null) {
-    setManagedText(group.additions, `${signPrefix(originalText(group.additions)) || '+'}${formatCount(visible.additions)}`);
+    setManagedText(group.additions, rewriteNumber(originalText(group.additions), visible.additions, '+'));
   }
   if (group.deletions !== null) {
-    setManagedText(group.deletions, `${signPrefix(originalText(group.deletions)) || '\u2212'}${formatCount(visible.deletions)}`);
+    setManagedText(group.deletions, rewriteNumber(originalText(group.deletions), visible.deletions, '\u2212'));
   }
   if (group.srOnly !== null) {
     setManagedText(
@@ -188,7 +207,7 @@ export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, n
     );
   }
   for (const element of group.fileCounts) {
-    setManagedText(element, replaceCount(originalText(element), visible.files));
+    setManagedText(element, rewriteNumber(originalText(element), visible.files, ''));
     if (element.hasAttribute('title')) {
       if (!element.hasAttribute('data-geld-original-title')) {
         element.setAttribute('data-geld-original-title', element.getAttribute('title') ?? '');

@@ -48,8 +48,10 @@ function build(onToggle: () => void, onSelect: (path: string) => void): TreeSect
     const target = event.target instanceof Element ? event.target : null;
     const button = target?.closest<HTMLButtonElement>(`.${TREE_SECTION_CLASS}__item`);
     const path = button?.dataset.path;
-    if (path === undefined) return;
+    if (path === undefined || button === undefined || button === null) return;
     event.preventDefault();
+    for (const item of list.querySelectorAll('[aria-current]')) item.removeAttribute('aria-current');
+    button.setAttribute('aria-current', 'true');
     onSelect(path);
   });
 

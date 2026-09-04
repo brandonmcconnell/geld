@@ -237,6 +237,12 @@
   opacity: 1;
 }
 
+.geld-tree-section__item[aria-current='true'] {
+  background: var(--control-transparent-bgColor-selected, rgba(208, 215, 222, 0.24));
+  color: var(--fgColor-default, #1f2328);
+  opacity: 1;
+}
+
 .geld-tree-section__item:disabled {
   cursor: default;
   opacity: 0.45;
