@@ -52,7 +52,9 @@ export const legacyAdapter: DiffViewAdapter = {
           item.querySelector('[data-filterable-item-text]')?.textContent ??
             item.querySelector('.ActionList-item-label')?.textContent,
         );
-        if (path !== '') treeFiles.push({ path, element: item });
+        if (path === '') continue;
+        const statusIcon = item.querySelector('.ActionList-item-visual--trailing svg');
+        treeFiles.push({ path, element: item, statusIcon: statusIcon instanceof SVGElement ? statusIcon : null });
       }
       treeDirectories.push(...queryAll('li[data-tree-entry-type="directory"]', treeRoot));
     }

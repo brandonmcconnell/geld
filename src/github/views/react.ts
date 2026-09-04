@@ -67,7 +67,9 @@ export const reactAdapter: DiffViewAdapter = {
           continue;
         }
         const path = cleanText(item.id);
-        if (path !== '') treeFiles.push({ path, element: item });
+        if (path === '') continue;
+        // This view shows no per-file status icon in the tree.
+        treeFiles.push({ path, element: item, statusIcon: null });
       }
     }
 

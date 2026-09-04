@@ -9,8 +9,10 @@ import { isOwnElement, queryAll, restoreManagedText } from './dom';
 import { applyHeaderStats, findHeaderStatGroups, restoreHeaderStats } from './header-stats';
 import type { DiffEntry, DiffView } from './model';
 import { describePage } from './page';
+import { applyPrListStats, removePrListStats } from './pr-list';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
+import type { TreeSectionFile } from './ui/tree-section';
 import { removeTreeSection, renderTreeSection } from './ui/tree-section';
 import { legacyAdapter } from './views/legacy';
 import { reactAdapter } from './views/react';
@@ -175,6 +177,12 @@ export class GeldController {
       for (const group of groups) applyHeaderStats(group, headerHidden, this.category.nounPlural);
     }
 
+    if (this.settings.showListStats) {
+      applyPrListStats({ matcher: this.matcher, diffSource: this.diffSource, nounPlural: this.category.nounPlural });
+    } else {
+      removePrListStats();
+    }
+
     this.observer?.takeRecords();
   }
 
@@ -231,11 +239,13 @@ export class GeldController {
     if (view.treeRoot === null) return;
 
     const entryPaths = new Set(view.entries.map((entry) => entry.path));
-    const hiddenFiles: Array<{ path: string; available: boolean }> = [];
+    const hiddenFiles: TreeSectionFile[] = [];
     for (const file of view.treeFiles) {
       const isHidden = this.matcher.categorize(file.path) !== null;
       file.element.setAttribute(ATTR_TREE, isHidden ? 'hidden' : 'visible');
-      if (isHidden) hiddenFiles.push({ path: file.path, available: entryPaths.has(file.path) });
+      if (isHidden) {
+        hiddenFiles.push({ path: file.path, available: entryPaths.has(file.path), statusIcon: file.statusIcon });
+      }
     }
 
     // Directories whose every file is hidden collapse away too. Process deepest
@@ -257,6 +267,8 @@ export class GeldController {
       view.treeRoot,
       {
         category: this.category,
+        view: view.kind,
+        stateKey,
         files: hiddenFiles,
         expanded: this.treeExpanded.get(stateKey) ?? false,
       },
@@ -361,6 +373,7 @@ export class GeldController {
 
   private teardown(): void {
     this.teardownView();
+    removePrListStats();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     for (const element of queryAll('[data-geld-original]')) restoreManagedText(element);
     for (const element of queryAll('[data-geld-stat-host]')) detachBreakdownTooltip(element);

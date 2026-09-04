@@ -92,6 +92,15 @@ async function main(): Promise<void> {
     },
   );
 
+  const listStatsSwitch = bindSwitch(
+    requireElement('list-stats', HTMLButtonElement),
+    settings.showListStats,
+    async (showListStats) => {
+      settings = await settingsItem.patch({ showListStats });
+      report('Saved', 'success');
+    },
+  );
+
   textarea.value = settings.customPatterns.join('\n');
   textarea.addEventListener('input', () => {
     const dirty = textarea.value.trim() !== settings.customPatterns.join('\n');
@@ -120,6 +129,7 @@ async function main(): Promise<void> {
     enabledSwitch.set(next.enabled);
     hideTestsSwitch.set(next.hideTests);
     expandedSwitch.set(next.expandedByDefault);
+    listStatsSwitch.set(next.showListStats);
     if (document.activeElement !== textarea) textarea.value = next.customPatterns.join('\n');
   });
 

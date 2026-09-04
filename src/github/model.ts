@@ -20,6 +20,8 @@ export interface TreeFileNode {
   readonly path: string;
   /** The `li[role=treeitem]` for the file. */
   readonly element: HTMLElement;
+  /** GitHub's trailing status icon (modified/added/deleted), when the view shows one. */
+  readonly statusIcon: SVGElement | null;
 }
 
 /** The parts of a diff page that Geld manipulates. */

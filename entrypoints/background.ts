@@ -9,6 +9,29 @@ const MAX_DIFF_BYTES = 20 * 1024 * 1024;
 
 const ALLOWED_HOSTS = new Set(['github.com', 'patch-diff.githubusercontent.com']);
 
+/** Parsed diffs are reused across tabs/pages for a while (PR lists re-request them often). */
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 200;
+const cache = new Map<string, { readonly response: FetchDiffResponse; readonly at: number }>();
+
+function readCache(url: string): FetchDiffResponse | null {
+  const hit = cache.get(url);
+  if (hit === undefined) return null;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    cache.delete(url);
+    return null;
+  }
+  return hit.response;
+}
+
+function writeCache(url: string, response: FetchDiffResponse): void {
+  if (cache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(url, { response, at: Date.now() });
+}
+
 /**
  * `https://github.com/<owner>/<repo>/pull/<n>.diff` redirects to
  * `patch-diff.githubusercontent.com`, which does not send CORS headers. Content
@@ -27,20 +50,35 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
     return { ok: false, reason: 'disallowed-url' };
   }
 
+  const cached = readCache(parsed.toString());
+  if (cached !== null) return cached;
+
+  let result: FetchDiffResponse;
   try {
     const response = await fetch(parsed.toString(), {
       credentials: 'include',
       headers: { Accept: 'text/plain' },
       redirect: 'follow',
     });
-    if (!response.ok) return { ok: false, reason: `http-${response.status}` };
-    const declared = Number.parseInt(response.headers.get('content-length') ?? '0', 10);
-    if (declared > MAX_DIFF_BYTES) return { ok: false, reason: 'too-large' };
-    const text = await readWithLimit(response, MAX_DIFF_BYTES);
-    return { ok: true, files: parseUnifiedDiff(text) };
+    if (!response.ok) {
+      result = { ok: false, reason: `http-${response.status}` };
+    } else {
+      const declared = Number.parseInt(response.headers.get('content-length') ?? '0', 10);
+      if (declared > MAX_DIFF_BYTES) {
+        result = { ok: false, reason: 'too-large' };
+      } else {
+        const text = await readWithLimit(response, MAX_DIFF_BYTES);
+        result = { ok: true, files: parseUnifiedDiff(text) };
+      }
+    }
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
+    result = { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
   }
+  // Only successful and definitive failures are cached; transient network errors retry.
+  if (result.ok || result.reason === 'too-large' || result.reason.startsWith('http-4')) {
+    writeCache(parsed.toString(), result);
+  }
+  return result;
 }
 
 async function readWithLimit(response: Response, limit: number): Promise<string> {

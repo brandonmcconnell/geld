@@ -17,6 +17,8 @@ export interface GeldSettings {
    * counts are adjusted either way.
    */
   readonly expandedByDefault: boolean;
+  /** Show `+N −M` (excluding tests) next to each pull request in PR lists. */
+  readonly showListStats: boolean;
 }
 
 export const DEFAULT_SETTINGS: GeldSettings = {
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   hideTests: true,
   customPatterns: [],
   expandedByDefault: false,
+  showListStats: true,
 };
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
@@ -46,6 +49,8 @@ export function normalizeSettings(value: unknown): GeldSettings {
       typeof record.expandedByDefault === 'boolean'
         ? record.expandedByDefault
         : DEFAULT_SETTINGS.expandedByDefault,
+    showListStats:
+      typeof record.showListStats === 'boolean' ? record.showListStats : DEFAULT_SETTINGS.showListStats,
   };
 }
 

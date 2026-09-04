@@ -68,6 +68,25 @@
             aria-describedby="expanded-help"
           ></button>
         </div>
+        <hr class="options__divider" />
+        <div class="geld-row">
+          <div>
+            <span class="geld-label" id="list-stats-label">Show line counts in pull request lists</span>
+            <p class="geld-help" id="list-stats-help">
+              Adds <code>+N −M</code> (excluding tests) to each PR on list pages such as <code>/pulls</code>; hover
+              for the full breakdown. Fetches each PR's diff in the background.
+            </p>
+          </div>
+          <button
+            id="list-stats"
+            class="geld-switch"
+            type="button"
+            role="switch"
+            aria-checked="true"
+            aria-labelledby="list-stats-label"
+            aria-describedby="list-stats-help"
+          ></button>
+        </div>
       </section>
 
       <section class="options__card">

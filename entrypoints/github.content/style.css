@@ -51,6 +51,7 @@
 /* "N test files hidden" section at the bottom of the diff list             */
 /* ------------------------------------------------------------------------ */
 
+/* Box model is identical in both states so toggling never shifts the layout. */
 .geld-hidden-section {
   order: 10;
   display: flex;
@@ -60,11 +61,6 @@
   color: var(--fgColor-muted, #59636e);
   font-size: 12px;
   line-height: 20px;
-}
-
-.geld-hidden-section[data-expanded='true'] {
-  margin-top: 16px;
-  margin-bottom: 4px;
 }
 
 .geld-hidden-section__row {
@@ -133,7 +129,7 @@
   transition: transform 120ms ease-in-out;
 }
 
-[aria-expanded='true'] > .geld-chevron {
+[aria-expanded='true'] .geld-chevron {
   transform: rotate(90deg);
 }
 
@@ -145,49 +141,139 @@
   display: none !important;
 }
 
+/*
+ * The section mirrors GitHub's tree rows: 32px tall, 6px radius, 14px text,
+ * 8px of indentation per level, 16px icons. Horizontal margins/width are
+ * copied from GitHub's own list at runtime so the rows line up exactly.
+ */
 .geld-tree-section {
+  --geld-indent-base: 0px;
+  --geld-chevron-size: 12px;
+  --geld-line-offset: -1px;
+  box-sizing: border-box;
   margin-top: 8px;
   padding-top: 8px;
+  padding-bottom: 16px;
   border-top: 1px solid var(--borderColor-muted, #d0d7de);
+  color: var(--fgColor-muted, #59636e);
 }
 
-.geld-tree-section__header {
+.geld-tree-section[data-view='legacy'] {
+  --geld-indent-base: 8px;
+  --geld-chevron-size: 16px;
+  --geld-line-offset: 0px;
+}
+
+.geld-tree,
+.geld-tree__group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Guide line under the parent's chevron, like GitHub's nested groups. */
+.geld-tree__group {
+  position: relative;
+}
+
+.geld-tree__group::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--geld-indent-base) + (var(--geld-level, 1) - 1) * 8px + 8px + var(--geld-line-offset));
+  width: 1px;
+  background: var(--borderColor-muted, rgba(209, 217, 224, 0.7));
+  pointer-events: none;
+}
+
+.geld-tree__item {
+  margin: 0;
+}
+
+.geld-tree__row {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-width: 0;
   min-height: 32px;
-  padding: 4px 8px;
+  padding: 0 8px 0 calc(var(--geld-indent-base) + (var(--geld-level, 1) - 1) * 8px);
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--fgColor-muted, #59636e);
+  color: inherit;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 14px;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
 }
 
-.geld-tree-section__header:hover {
+.geld-tree__row:hover {
   background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
   color: var(--fgColor-default, #1f2328);
 }
 
-.geld-tree-section__header:focus-visible,
-.geld-tree-section__item:focus-visible {
+.geld-tree__row:focus-visible {
   outline: 2px solid var(--focus-outlineColor, #0969da);
   outline-offset: -2px;
 }
 
-.geld-tree-section__header .octicon-beaker {
+.geld-tree__row[aria-current='true'] {
+  background: var(--control-transparent-bgColor-selected, rgba(208, 215, 222, 0.24));
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-tree__row[data-pending] .geld-tree__label {
+  opacity: 0.6;
+}
+
+.geld-tree__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
   color: var(--fgColor-muted, #59636e);
 }
 
-.geld-tree-section__count {
+.geld-tree__toggle .geld-chevron {
+  width: var(--geld-chevron-size);
+  height: var(--geld-chevron-size);
+}
+
+.geld-tree__visual {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-tree__visual--dir {
+  color: var(--treeViewItem-leadingVisual-iconColor-rest, #54aeff);
+  opacity: 0.85;
+}
+
+.geld-tree__visual--trailing {
   margin-left: auto;
+}
+
+.geld-tree__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-tree__label--root {
+  font-weight: 600;
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-tree-section__count {
+  flex-shrink: 0;
   min-width: 20px;
   padding: 0 6px;
   border-radius: 2em;
@@ -195,80 +281,57 @@
   color: var(--fgColor-default, #1f2328);
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: normal;
   line-height: 18px;
   text-align: center;
-  text-transform: none;
-}
-
-.geld-tree-section__list {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.geld-tree-section__item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px 5px 12px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fgColor-muted, #59636e);
-  font: inherit;
-  font-size: 14px;
-  line-height: 20px;
-  text-align: left;
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-.geld-tree-section__item .octicon-file {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.geld-tree-section__item:hover:not(:disabled) {
-  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
-  color: var(--fgColor-default, #1f2328);
-  opacity: 1;
-}
-
-.geld-tree-section__item[aria-current='true'] {
-  background: var(--control-transparent-bgColor-selected, rgba(208, 215, 222, 0.24));
-  color: var(--fgColor-default, #1f2328);
-  opacity: 1;
-}
-
-.geld-tree-section__item[data-pending] {
-  opacity: 0.55;
-}
-
-.geld-tree-section__text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.geld-tree-section__name,
-.geld-tree-section__dir {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.geld-tree-section__dir {
-  font-size: 11px;
-  line-height: 16px;
-  opacity: 0.75;
 }
 
 /* Compare page table of contents. */
 [data-geld-toc-hidden] {
   display: none !important;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Pull request lists: "+N −M" next to each PR (excluding tests)             */
+/* ------------------------------------------------------------------------ */
+
+.geld-pr-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 12px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.geld-pr-stat--inline {
+  margin-left: 8px;
+}
+
+.geld-pr-stat__sep {
+  color: var(--fgColor-muted, #59636e);
+  font-family: inherit;
+  margin-right: 2px;
+}
+
+.geld-pr-stat__add {
+  color: var(--fgColor-success, #1a7f37);
+}
+
+.geld-pr-stat__del {
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.geld-pr-stat[data-geld-stat-host] {
+  cursor: help;
+}
+
+.geld-pr-stat[data-has-tests] .geld-pr-stat__add,
+.geld-pr-stat[data-has-tests] .geld-pr-stat__del {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
 }
 
 /* ------------------------------------------------------------------------ */

@@ -10,8 +10,9 @@ Anywhere GitHub shows a list of changed files (pull request _Files changed_ tab,
 
 - **Hides diffs for test files** and moves them to the bottom of the list, behind a borderless _"17 test files hidden"_ row with a _Show test files_ toggle that matches GitHub's own collapse/expand affordances. Expanding reveals the tests in place, below the real changes.
 - **Adjusts the header counts** (`+400 −120`, _Files changed 17_, _"18 files changed"_, compare-page summary) so they exclude tests. Hovering the counts shows a tooltip with three rows: excluding tests, including tests, and tests only.
-- **Removes tests from the file tree** on the left, including directories that only contained tests, and adds a separate collapsed **Tests** pseudo-section at the bottom. It is deliberately not part of the tree so it cannot be mistaken for a folder. Expanding it lists the hidden files greyed out; clicking one auto-expands the hidden diffs and jumps to that file (even on large PRs where GitHub has not rendered it yet).
+- **Removes tests from the file tree** on the left, including directories that only contained tests, and adds a separate collapsed **Tests** section beneath it. It mirrors GitHub's own tree (same row geometry, collapsible folders, merged single-child directories, status icons) but sits outside the real tree so it cannot be mistaken for part of the change set. Clicking a file auto-expands the hidden diffs and jumps to it (even on large PRs where GitHub has not rendered it yet).
 - **Works on the PR conversation tab too**: with no diffs on the page, Geld fetches the PR's raw `.diff` in the background to compute accurate counts.
+- **Adds line counts to pull request lists** (`/pulls`, the global PR dashboard, search results): each PR row gets `+N −M` excluding tests, with the same hover breakdown. Diffs are fetched in the background, a few at a time, and cached for ten minutes. This can be turned off in the options.
 - **Adapts to both GitHub UIs**: the long-standing server-rendered diff view and the newer React-based view (used on commit pages and the new _Files changed_ experience), in light and dark themes.
 
 Geld can be toggled from the toolbar popup. The options page lets you add custom glob patterns (or `!negations` to rescue files), turn the built-in test detection off, and choose whether hidden files start expanded. Settings sync via `browser.storage.sync` and apply instantly to open tabs.
@@ -68,7 +69,8 @@ src/
     views/legacy.ts        adapter for GitHub's server-rendered diff UI
     views/react.ts         adapter for GitHub's React diff UI
     header-stats.ts        rewrites header counts and attaches the tooltip
-    ui/                    hidden-files section, tree pseudo-section, tooltip
+    pr-list.ts             "+N −M" chips on pull request list rows
+    ui/                    hidden-files section, tree section, tooltip
 ```
 
 ### How the hiding works
