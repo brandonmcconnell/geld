@@ -106,6 +106,9 @@ export class GeldController {
   updateSettings(settings: GeldSettings): void {
     this.settings = settings;
     this.matcher = createMatcher(settings);
+    // Per-page toggles were made against the old defaults; start fresh.
+    this.diffExpanded.clear();
+    this.pendingReveal = null;
     this.teardown();
     this.apply();
   }
@@ -189,10 +192,18 @@ export class GeldController {
     }
 
     const expanded = this.isDiffExpanded(stateKey);
-    view.container.setAttribute(ATTR_CONTAINER, view.kind);
-    view.container.toggleAttribute(ATTR_EXPANDED, expanded);
-
     const hidden = sumEntries(hiddenEntries);
+
+    if (hiddenEntries.length === 0) {
+      // Nothing to hide: leave GitHub's layout completely untouched.
+      view.container.removeAttribute(ATTR_CONTAINER);
+      view.container.removeAttribute(ATTR_EXPANDED);
+      for (const entry of view.entries) entry.root.removeAttribute(ATTR_ENTRY);
+    } else {
+      view.container.setAttribute(ATTR_CONTAINER, view.kind);
+      view.container.toggleAttribute(ATTR_EXPANDED, expanded);
+    }
+
     if (hiddenEntries.length > 0) {
       renderHiddenSection(
         view.container,
