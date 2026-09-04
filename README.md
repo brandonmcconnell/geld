@@ -24,7 +24,7 @@ Patterns use gitignore-style semantics: a pattern without a slash matches a file
 
 ## Install for testing
 
-1. Run `pnpm install` and `pnpm pack` (see below), or download the zip you need from the `.output/` directory of a build.
+1. Run `pnpm install` and `pnpm zip:all` (see below), or download the zip you need from the `.output/` directory of a build.
 2. Install it:
    - **Chrome / Edge / other Chromium**: unzip `geld-<version>-chrome.zip` (or `-edge.zip`), open `chrome://extensions` (`edge://extensions`), enable _Developer mode_ and choose _Load unpacked_ pointing at the unzipped folder.
    - **Firefox**: open `about:debugging#/runtime/this-firefox`, choose _Load Temporary Add-on…_ and pick `geld-<version>-firefox.zip` (or the `manifest.json` inside the unzipped folder). For a permanent install the zip must be signed by AMO; `geld-<version>-sources.zip` is the source archive AMO asks for.
@@ -40,7 +40,7 @@ pnpm check            # typecheck + unit tests
 pnpm test             # unit tests only (Vitest)
 pnpm build            # production build for Chrome into .output/chrome-mv3
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
-pnpm pack             # zips for all four browsers into .output/
+pnpm zip:all          # zips for all four browsers into .output/
 ```
 
 Output archives:

@@ -17,7 +17,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: pnpm pack
+      - run: pnpm zip:all
       - uses: actions/upload-artifact@v4
         with:
           name: geld-extension-zips

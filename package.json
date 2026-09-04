@@ -24,12 +24,12 @@
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
     "zip:safari": "wxt zip -b safari",
-    "pack": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari",
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
