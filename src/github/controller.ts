@@ -23,6 +23,14 @@ const ATTR_TOC = 'data-geld-toc-hidden';
 const ATTR_FLASH = 'data-geld-flash';
 
 const APPLY_DEBOUNCE_MS = 60;
+/** How many progressive-load rounds we nudge before giving up on a reveal. */
+const MAX_REVEAL_ATTEMPTS = 40;
+
+interface PendingReveal {
+  readonly path: string;
+  readonly stateKey: string;
+  attempts: number;
+}
 
 interface HiddenTotals {
   readonly totals: ChangeTotals;
@@ -68,6 +76,7 @@ export class GeldController {
   private readonly treeExpanded = new Map<string, boolean>();
   private readonly diffSource = new DiffSource(() => this.schedule());
   private currentView: DiffView | null = null;
+  private pendingReveal: PendingReveal | null = null;
   private stopped = false;
 
   constructor(settings: GeldSettings) {
@@ -140,6 +149,7 @@ export class GeldController {
     if (view !== null) {
       renderedEntryCount = view.entries.length;
       hidden = this.applyView(view, page.stateKey);
+      this.continuePendingReveal(view, page.stateKey);
     } else {
       this.teardownView();
     }
@@ -251,18 +261,78 @@ export class GeldController {
   private reveal(path: string, stateKey: string): void {
     const view = this.currentView;
     if (view === null) return;
-    const entry = view.entries.find((candidate) => candidate.path === path);
-    if (entry === undefined) return;
-
     if (!this.isDiffExpanded(stateKey)) this.setDiffExpanded(stateKey, true);
+
+    const entry = view.entries.find((candidate) => candidate.path === path);
+    if (entry === undefined) {
+      // Not rendered yet (GitHub loads big diffs progressively). Remember the
+      // request and nudge the lazy loader by scrolling to the end of the list.
+      this.pendingReveal = { path, stateKey, attempts: 0 };
+      this.nudgeProgressiveLoading(view);
+      return;
+    }
+    this.pendingReveal = null;
     view.expandEntry(entry);
 
     requestAnimationFrame(() => {
-      entry.root.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      entry.root.scrollIntoView({ block: 'start', behavior: 'instant' });
       entry.root.setAttribute(ATTR_FLASH, '');
       setTimeout(() => entry.root.removeAttribute(ATTR_FLASH), 1600);
       if (entry.anchor !== null) history.replaceState(history.state, '', `#${entry.anchor}`);
+      this.keepAligned(entry.root);
     });
+  }
+
+  /**
+   * Diff bodies above the target load lazily as we scroll past them, pushing
+   * the target down after we aligned it. Re-align a few times while that
+   * settles, but stop as soon as the user scrolls on their own.
+   */
+  private keepAligned(target: HTMLElement): void {
+    const scrollMargin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+    const deadline = performance.now() + 2500;
+    let userScrolled = false;
+    const stop = (): void => {
+      userScrolled = true;
+    };
+    const options: AddEventListenerOptions = { passive: true, once: true };
+    window.addEventListener('wheel', stop, options);
+    window.addEventListener('touchstart', stop, options);
+    window.addEventListener('keydown', stop, options);
+
+    const check = (): void => {
+      if (userScrolled || performance.now() > deadline || !target.isConnected) {
+        window.removeEventListener('wheel', stop);
+        window.removeEventListener('touchstart', stop);
+        window.removeEventListener('keydown', stop);
+        return;
+      }
+      const drift = target.getBoundingClientRect().top - scrollMargin;
+      if (Math.abs(drift) > 4) target.scrollIntoView({ block: 'start', behavior: 'instant' });
+      setTimeout(check, 150);
+    };
+    setTimeout(check, 150);
+  }
+
+  private nudgeProgressiveLoading(view: DiffView): void {
+    const last = view.container.lastElementChild;
+    (last ?? view.container).scrollIntoView({ block: 'end', behavior: 'instant' });
+  }
+
+  /** Called after every apply: finish a reveal once its diff has been rendered. */
+  private continuePendingReveal(view: DiffView, stateKey: string): void {
+    const pending = this.pendingReveal;
+    if (pending === null) return;
+    if (pending.stateKey !== stateKey || pending.attempts >= MAX_REVEAL_ATTEMPTS) {
+      this.pendingReveal = null;
+      return;
+    }
+    if (view.entries.some((entry) => entry.path === pending.path)) {
+      this.reveal(pending.path, stateKey);
+      return;
+    }
+    pending.attempts += 1;
+    this.nudgeProgressiveLoading(view);
   }
 
   private teardownView(): void {

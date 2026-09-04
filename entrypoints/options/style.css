@@ -90,6 +90,10 @@ body {
   display: none;
 }
 
+.options__group summary > span:first-child {
+  flex: 1;
+}
+
 .options__group summary::after {
   content: '+';
   color: var(--geld-fg-muted);

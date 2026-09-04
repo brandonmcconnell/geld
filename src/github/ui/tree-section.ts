@@ -80,8 +80,10 @@ function renderItem(file: TreeSectionFile): HTMLElement {
     ],
   );
   if (!file.available) {
-    button.disabled = true;
-    button.title = `${file.path} (not loaded on this page yet)`;
+    // GitHub has not rendered this diff yet (large PRs load progressively).
+    // Clicking still works: the controller scrolls until it appears.
+    button.dataset.pending = '';
+    button.title = `${file.path} (diff not loaded yet; click to load and jump to it)`;
   }
   return createElement('li', { role: 'listitem' }, [button]);
 }
@@ -124,8 +126,14 @@ export function renderTreeSection(
 
   const signature = state.files.map((file) => `${file.path}\u0000${file.available ? 1 : 0}`).join('\n');
   if (section.list.dataset.signature !== signature) {
+    const selected = section.list.querySelector<HTMLElement>('[aria-current]')?.dataset.path;
     section.list.dataset.signature = signature;
     section.list.replaceChildren(...state.files.map(renderItem));
+    if (selected !== undefined) {
+      section.list
+        .querySelector(`.${TREE_SECTION_CLASS}__item[data-path="${CSS.escape(selected)}"]`)
+        ?.setAttribute('aria-current', 'true');
+    }
   }
   return section.root;
 }

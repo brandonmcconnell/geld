@@ -243,9 +243,8 @@
   opacity: 1;
 }
 
-.geld-tree-section__item:disabled {
-  cursor: default;
-  opacity: 0.45;
+.geld-tree-section__item[data-pending] {
+  opacity: 0.55;
 }
 
 .geld-tree-section__text {
