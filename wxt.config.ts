@@ -19,6 +19,8 @@ export default defineConfig({
             gecko: {
               id: 'geld@brandonmcconnell.com',
               strict_min_version: '128.0',
+              // Geld never sends data anywhere; everything runs locally.
+              data_collection_permissions: { required: ['none'] },
             },
           },
         }
