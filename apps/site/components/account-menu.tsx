@@ -42,7 +42,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          'group/geld geld-corners geld-cut-[7px] inline-flex h-8 items-center gap-2 border border-input pr-2.5 pl-0.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
+          'group/geld geld-corners geld-cut-[7px] inline-flex h-8 items-center gap-2 border border-input p-0.5 text-sm outline-none hover:bg-muted sm:pr-2.5 focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
           className,
         )}
         aria-label={`Account: ${account.login}`}
