@@ -4,11 +4,11 @@ import Link from 'next/link';
 
 import { Kbd } from '@/components/kbd';
 import { PageIntro, Prose } from '@/components/section';
-import { ISSUES_URL, KEYBOARD_SHORTCUT, REPO_URL } from '@/lib/site';
+import { ISSUES_URL, KEYBOARD_SHORTCUT, REPO_SLUG, REPO_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'FAQ',
-  description: 'Answers about how Geld reads diffs without the GitHub API, what it collects (nothing), why *.spec.* is limited to code, and how to turn it off per repository or add Enterprise hosts.',
+  description: 'Answers about how Geld reads diffs without the GitHub API, what it collects (nothing), optional settings sync, why *.spec.* is limited to code, and how to turn it off per repository or add Enterprise hosts.',
   alternates: { canonical: '/faq' },
 };
 
@@ -25,15 +25,19 @@ const QUESTIONS: readonly Question[] = [
     answer: (
       <>
         <p>
-          No. When a page renders per-file diffs, the counts are read straight from the page. When it does not (the pull request conversation tab,
-          pull request lists, large pull requests that GitHub loads progressively), the background script fetches the same <code>.diff</code> file you
-          get by appending <code>.diff</code> to a pull request URL. That is a normal page request to GitHub, not an API call, so there is no token,
-          no OAuth and no API quota involved.
+          Not for anything it shows you. When a page renders per-file diffs, the counts are read straight from the page. When it does not (the pull
+          request conversation tab, pull request lists, large pull requests that GitHub loads progressively), the background script fetches the same{' '}
+          <code>.diff</code> file you get by appending <code>.diff</code> to a pull request URL. That is a normal page request to GitHub, not an API
+          call, so there is no token and no API quota involved.
         </p>
         <p>
           Parsed diffs are cached in extension storage keyed by the pull request&apos;s head commit, so a pull request you have already looked at costs
           no request until it gets a new commit. List rows are fetched only when scrolled near the viewport, at most four at a time, and fetching
           pauses for a minute if GitHub ever answers <code>429</code>.
+        </p>
+        <p>
+          The one exception is the optional <em>Sign in with GitHub</em> for settings sync (see below), which talks to GitHub&apos;s Gist API on your
+          behalf, and only once you have signed in.
         </p>
       </>
     ),
@@ -43,9 +47,10 @@ const QUESTIONS: readonly Question[] = [
     question: 'What does Geld collect or send?',
     answer: (
       <p>
-        Nothing. There is no analytics, no error reporting, no account and no server of ours. The only network requests Geld makes are to the GitHub
-        hosts you use ({allHosts(DEFAULT_SETTINGS).join(', ')} plus any Enterprise hosts you add), and only to fetch diffs GitHub would serve you
-        anyway. Settings live in your browser&apos;s sync storage. See the <Link href="/privacy">privacy policy</Link>.
+        Nothing. There is no analytics, no error reporting and no server of ours. The only network requests Geld makes are to GitHub (
+        {allHosts(DEFAULT_SETTINGS).join(', ')} plus any Enterprise hosts you add): to fetch diffs GitHub would serve you anyway and, if you opt into
+        sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. See the{' '}
+        <Link href="/privacy">privacy policy</Link>.
       </p>
     ),
   },
@@ -132,10 +137,18 @@ acme            # off in the whole organisation
     id: 'sync',
     question: 'Do my settings follow me between devices?',
     answer: (
-      <p>
-        Settings are stored in <code>browser.storage.sync</code>, so they follow your browser profile wherever it syncs, and apply instantly to open
-        tabs. You can also export and import them as JSON from the options page. Cross-browser sync through a GitHub sign-in is on the roadmap.
-      </p>
+      <>
+        <p>
+          Within one browser, yes: settings are stored in <code>browser.storage.sync</code>, so they follow your browser profile wherever it syncs, and
+          apply instantly to open tabs. You can also export and import them as JSON from the options page.
+        </p>
+        <p>
+          Across browsers, optionally: <em>Sign in with GitHub</em> (top right of the popup or options) uses GitHub&apos;s OAuth device flow, so you
+          confirm a short code on github.com and no secret is involved. The only scope is <code>gist</code>. Your settings are kept in a secret gist on
+          your own account (<code>geld-settings.json</code>); there is no Geld server or database, and the token stays on the device that signed in.
+          Changes push within a couple of seconds and pull when the popup or options open or the browser starts.
+        </p>
+      </>
     ),
   },
   {
@@ -145,7 +158,7 @@ acme            # off in the whole organisation
       <p>
         Yes, MIT licensed at{' '}
         <a href={REPO_URL} rel="noopener">
-          github.com/brandonmcconnell/geld
+          github.com/{REPO_SLUG}
         </a>
         . The extension is built with WXT from one codebase for Chrome, Edge, Firefox and Safari, and this website is in the same repository.
       </p>

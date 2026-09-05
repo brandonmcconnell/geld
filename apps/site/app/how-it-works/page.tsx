@@ -241,6 +241,11 @@ sandbox/
                 settings. Rebind it in your browser&apos;s extension-shortcut settings, or turn it off in the options. The toolbar icon carries the
                 hidden-file count as a badge, and the popup lists the hidden paths for the current tab.
               </p>
+              <p>
+                Settings live in your browser&apos;s sync storage and can be exported as JSON. To share them between browsers, sign in with GitHub
+                (device flow, <code>gist</code> scope only) and Geld keeps them in a secret gist on your own account; see the{' '}
+                <Link href="/faq#sync">FAQ</Link>.
+              </p>
             </Prose>
           </Step>
 

@@ -6,7 +6,7 @@ import { ISSUES_URL, REPO_URL, SITE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'Privacy policy',
-  description: 'Geld collects no data, makes no requests except to the GitHub hosts you use, and stores your settings only in your browser’s sync storage.',
+  description: 'Geld collects no data, makes no requests except to GitHub, and stores your settings in your browser’s sync storage — or, if you opt in, a secret gist on your own account.',
   alternates: { canonical: '/privacy' },
 };
 
@@ -18,18 +18,22 @@ export default function PrivacyPage() {
   const defaultHosts = allHosts(DEFAULT_SETTINGS);
   return (
     <>
-      <PageIntro eyebrow="Privacy policy" title="Geld collects nothing." description="This page is the privacy policy for the Geld browser extension and for this website." />
+      <PageIntro
+        eyebrow="Privacy policy"
+        title="Geld collects nothing."
+        description="This page is the privacy policy for the Geld browser extension and for this website. It is written to be complete enough to serve as the store listing's privacy policy."
+      />
       <div className="container-site pb-24">
         <Prose>
           <h2 id="summary">Summary</h2>
           <ul>
             <li>Geld does not collect, store or transmit any personal data, usage data or telemetry. There is no analytics and no error reporting.</li>
             <li>
-              Geld has no server. The only network requests it makes go to the GitHub hosts you use, and only to fetch diffs that GitHub would serve you
-              anyway.
+              Geld has no server. The only network requests it makes go to GitHub: to the GitHub hosts you use, to fetch diffs that GitHub would serve
+              you anyway, and, only if you choose to sign in, to GitHub&apos;s Gist API to sync your settings to a secret gist on your own account.
             </li>
-            <li>Your settings are stored in your browser&apos;s extension sync storage and never leave your browser profile.</li>
-            <li>Geld never uses the GitHub API and never asks you to sign in to anything.</li>
+            <li>Your settings are stored in your browser&apos;s extension sync storage. Nothing about your browsing is stored anywhere else.</li>
+            <li>Signing in with GitHub is optional, uses GitHub&apos;s device flow with the <code>gist</code> scope only, and the token never leaves your device.</li>
           </ul>
 
           <h2 id="data-collection">Data collection</h2>
@@ -48,6 +52,17 @@ export default function PrivacyPage() {
             ever made to any other host, and nothing about your browsing is sent anywhere.
           </p>
 
+          <h2 id="sign-in">Optional GitHub sign-in and settings sync</h2>
+          <p>
+            You can sign in with GitHub from the popup or the options page to sync your settings between browsers. This is off until you choose it.
+            Sign-in uses GitHub&apos;s OAuth <em>device flow</em>: Geld asks GitHub for a short code, you confirm it on github.com, and GitHub issues a
+            token with the <code>gist</code> scope only. There is no Geld server in this exchange and no client secret. Geld then reads your public
+            profile (login and avatar, shown in the popup) and keeps your settings in a <strong>secret gist on your own GitHub account</strong> named{' '}
+            <code>geld-settings.json</code>. Only you and Geld running in your signed-in browsers can read or change it. The token is stored in{' '}
+            <code>browser.storage.local</code> on the device that signed in and is never synced or sent anywhere except to <code>api.github.com</code>.
+            Signing out deletes the token; deleting the gist from GitHub removes the synced copy.
+          </p>
+
           <h2 id="storage">Storage</h2>
           <p>
             Settings (which categories to hide, custom patterns, repository rules, Enterprise hosts and a few preferences) are stored in{' '}
@@ -60,8 +75,9 @@ export default function PrivacyPage() {
           <h2 id="permissions">Permissions</h2>
           <ul>
             <li>
-              <strong>Access to GitHub hosts</strong> — to read diff pages and fetch <code>.diff</code> files on {defaultHosts.join(', ')} and the
-              Enterprise hosts you add.
+              <strong>Access to GitHub hosts</strong> — to read diff pages and fetch <code>.diff</code> files on {defaultHosts.join(', ')} (and{' '}
+              <code>patch-diff.githubusercontent.com</code>, where GitHub redirects them) and the Enterprise hosts you add; <code>api.github.com</code>{' '}
+              is used only for the optional sign-in and gist sync.
             </li>
             <li>
               <strong>Storage</strong> — to save your settings and the diff cache.
