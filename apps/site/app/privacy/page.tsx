@@ -68,7 +68,7 @@ export default function PrivacyPage() {
           </p>
           <p>
             You can also sign in on <strong>geld.sh/settings</strong> to edit the same gist from any browser. That uses the same OAuth App through
-            GitHub&apos;s web flow: GitHub sends a one-time code to <code>geld.sh/auth</code>, the site exchanges it for a <code>gist</code>-scoped token
+            GitHub&apos;s web flow: GitHub sends a one-time code to <code>www.geld.sh/auth</code>, the site exchanges it for a <code>gist</code>-scoped token
             and stores the token, your login and avatar URL in an <strong>encrypted, HttpOnly cookie in your browser</strong> (30 days, or until you
             sign out, which also asks GitHub to revoke the token). geld.sh has no database and keeps nothing between requests: it reads or writes your
             gist only while serving a request you make, and never logs its contents. A second, readable cookie holds just your login and avatar so the

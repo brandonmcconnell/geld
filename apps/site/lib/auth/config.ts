@@ -40,13 +40,12 @@ export function authOrigin(): string {
 }
 
 /**
- * Origin of the callback URL registered on the OAuth App: `https://geld.sh/auth`
- * in production (the apex 308-redirects to www with path and query intact, so
- * the callback still reaches this app) and the second App's
+ * Origin of the callback URL registered on the OAuth App: the canonical
+ * `https://www.geld.sh/auth` in production and the second App's
  * `http://localhost:3000/auth` in development. Must match GitHub exactly.
  */
 export function callbackOrigin(): string {
-  return process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://geld.sh';
+  return authOrigin();
 }
 
 /** Callback path registered on the OAuth App. */
