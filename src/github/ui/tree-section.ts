@@ -404,6 +404,85 @@ function scrollContainerOf(element: HTMLElement): HTMLElement | null {
 }
 
 /**
+ * Keeps the sidebar exactly as tall as its visible part. GitHub's sticky pane
+ * is 100vh tall, so before the page is scrolled its bottom (and our accordion
+ * headers) sit below the fold. Sizing it to `viewport bottom − pane top` pins
+ * the headers to the bottom of the viewport and hands every pixel gained by
+ * scrolling to the open panel.
+ */
+class SidebarSizer {
+  private scroller: HTMLElement | null = null;
+  private frame = 0;
+  private lastHeight = -1;
+
+  attach(scroller: HTMLElement): void {
+    if (this.scroller === scroller) {
+      this.schedule();
+      return;
+    }
+    this.detach();
+    this.scroller = scroller;
+    window.addEventListener('scroll', this.schedule, { passive: true });
+    window.addEventListener('resize', this.schedule, { passive: true });
+    this.update();
+  }
+
+  detach(): void {
+    window.removeEventListener('scroll', this.schedule);
+    window.removeEventListener('resize', this.schedule);
+    if (this.frame !== 0) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    if (this.scroller !== null) {
+      this.scroller.style.removeProperty('height');
+      this.scroller.style.removeProperty('max-height');
+    }
+    this.scroller = null;
+    this.lastHeight = -1;
+  }
+
+  private readonly schedule = (): void => {
+    if (this.frame !== 0) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      this.update();
+    });
+  };
+
+  private update(): void {
+    const scroller = this.scroller;
+    if (scroller === null || !scroller.isConnected) return;
+    // Only sticky sidebars need this; stacked (narrow) layouts keep GitHub's sizing.
+    if (!isWithinSticky(scroller)) {
+      if (this.lastHeight !== -1) {
+        scroller.style.removeProperty('height');
+        scroller.style.removeProperty('max-height');
+        this.lastHeight = -1;
+      }
+      return;
+    }
+    const top = Math.max(0, scroller.getBoundingClientRect().top);
+    const height = Math.max(MIN_SIDEBAR_HEIGHT, Math.round(window.innerHeight - top));
+    if (height === this.lastHeight) return;
+    this.lastHeight = height;
+    scroller.style.setProperty('height', `${height}px`);
+    scroller.style.setProperty('max-height', `${height}px`);
+  }
+}
+
+const MIN_SIDEBAR_HEIGHT = 160;
+
+function isWithinSticky(element: HTMLElement): boolean {
+  let current: HTMLElement | null = element;
+  for (let depth = 0; current !== null && depth < 4; depth += 1) {
+    if (getComputedStyle(current).position === 'sticky') return true;
+    current = current.parentElement;
+  }
+  return false;
+}
+
+const sidebarSizer = new SidebarSizer();
+
+/**
  * Turn the sidebar's scroll container into a full-height flex column so the
  * active panel fills the space and scrolls on its own while every header stays
  * visible. Only attributes are set; GitHub's DOM order is untouched.
@@ -426,9 +505,11 @@ export function applySidebarLayout(treeRoot: HTMLElement, active: string): void 
   for (const stale of scroller.querySelectorAll(`[${ATTR_SIDEBAR_PATH}]`)) {
     if (!onPath.has(stale)) stale.removeAttribute(ATTR_SIDEBAR_PATH);
   }
+  sidebarSizer.attach(scroller);
 }
 
 export function removeSidebarLayout(root: ParentNode = document): void {
+  sidebarSizer.detach();
   for (const element of root.querySelectorAll(`[${ATTR_SIDEBAR}], [${ATTR_SIDEBAR_PATH}], [${ATTR_TREE_LIST}]`)) {
     element.removeAttribute(ATTR_SIDEBAR);
     element.removeAttribute(ATTR_SIDEBAR_PATH);
