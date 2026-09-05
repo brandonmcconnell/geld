@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeSettings, parsePatternList } from './settings';
+import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, normalizeSettings, parsePatternList } from './settings';
 
 describe('normalizeSettings', () => {
   it('returns defaults for garbage', () => {
@@ -24,5 +24,27 @@ describe('normalizeSettings', () => {
 
   it('parses textarea lists', () => {
     expect(parsePatternList(' a \n\n# c\n b ')).toEqual(['a', 'b']);
+  });
+});
+
+describe('normalizeHost', () => {
+  it('accepts hostnames and URLs, lower-cased and stripped', () => {
+    expect(normalizeHost('GHE.Example.com')).toBe('ghe.example.com');
+    expect(normalizeHost('https://ghe.example.com/acme/repo/pull/1')).toBe('ghe.example.com');
+    expect(normalizeHost(' git.corp.internal ')).toBe('git.corp.internal');
+  });
+
+  it('rejects github.com, bare words and junk', () => {
+    expect(normalizeHost('github.com')).toBeNull();
+    expect(normalizeHost('localhost')).toBeNull();
+    expect(normalizeHost('')).toBeNull();
+    expect(normalizeHost('ftp://x.y')).toBeNull();
+  });
+
+  it('normalises stored enterprise hosts', () => {
+    expect(normalizeSettings({ enterpriseHosts: ['https://GHE.example.com/x', 'nope', 'git.corp.io'] }).enterpriseHosts).toEqual([
+      'ghe.example.com',
+      'git.corp.io',
+    ]);
   });
 });

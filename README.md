@@ -50,6 +50,7 @@ Patterns use gitignore-style semantics: a pattern without a slash matches a file
 - **Mark as viewed** in the bottom section ticks GitHub's "Viewed" checkbox on every hidden file, so review progress can reach 100% without opening them.
 - **Line counts in PR lists**, **badge**, **shortcut** and **expanded by default** can each be switched off.
 - **Export/import** your settings as JSON from the options page.
+- **GitHub Enterprise Server:** add your server's hostname in the options; the browser asks you to allow Geld on that host and the content script is registered there (Chrome/Edge/Safari via `scripting`, Firefox via `contentScripts`). GHES runs GitHub's UI a few versions behind, so if something looks off there please open an issue with a screenshot.
 
 ### Data & caching
 
@@ -61,7 +62,7 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
 2. Install it:
    - **Chrome / Edge / other Chromium**: unzip `geld-<version>-chrome.zip` (or `-edge.zip`), open `chrome://extensions` (`edge://extensions`), enable _Developer mode_ and choose _Load unpacked_ pointing at the unzipped folder.
    - **Firefox**: open `about:debugging#/runtime/this-firefox`, choose _Load Temporary Add-on…_ and pick `geld-<version>-firefox.zip` (or the `manifest.json` inside the unzipped folder). For a permanent install the zip must be signed by AMO; `geld-<version>-sources.zip` is the source archive AMO asks for.
-   - **Safari**: unzip `geld-<version>-safari.zip`, then on macOS run `xcrun safari-web-extension-converter <unzipped-folder>` and build/run the generated Xcode project. Enable _Allow unsigned extensions_ from Safari's _Develop_ menu while testing.
+   - **Safari** (16.4+): unzip `geld-<version>-safari.zip`, then on macOS run `xcrun safari-web-extension-converter <unzipped-folder>` and build/run the generated Xcode project. Enable _Allow unsigned extensions_ from Safari's _Develop_ menu while testing.
 3. Open any pull request, for example <https://github.com/wxt-dev/wxt/pull/2544/files>.
 
 ## Development
@@ -120,7 +121,6 @@ Geld never moves GitHub's DOM nodes around (that would break the React view). In
 
 ## Roadmap ideas
 
-- GitHub Enterprise Server support (optional host permissions).
 - Settings sync through a GitHub sign-in, and a repo-committed config so teams can share patterns.
 
 ## License

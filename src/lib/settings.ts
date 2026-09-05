@@ -36,6 +36,8 @@ export interface GeldSettings {
   readonly shortcutEnabled: boolean;
   /** Show the hidden-file count on the toolbar icon. */
   readonly showBadge: boolean;
+  /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
+  readonly enterpriseHosts: readonly string[];
 }
 
 export const DEFAULT_SETTINGS: GeldSettings = {
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   hideWhitespace: false,
   shortcutEnabled: true,
   showBadge: true,
+  enterpriseHosts: [],
 };
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
@@ -108,7 +111,34 @@ export function normalizeSettings(value: unknown): GeldSettings {
     hideWhitespace: bool(record, 'hideWhitespace', DEFAULT_SETTINGS.hideWhitespace),
     shortcutEnabled: bool(record, 'shortcutEnabled', DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record, 'showBadge', DEFAULT_SETTINGS.showBadge),
+    enterpriseHosts: isStringArray(record.enterpriseHosts)
+      ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
+      : DEFAULT_SETTINGS.enterpriseHosts,
   };
+}
+
+/**
+ * Reduce user input such as `https://ghe.example.com/org/repo` to a bare,
+ * lower-case hostname. Returns `null` for anything that is not a plausible host.
+ */
+export function normalizeHost(input: string): string | null {
+  let text = input.trim().toLowerCase();
+  if (text === '') return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//.test(text)) text = `https://${text}`;
+  try {
+    const url = new URL(text);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    const host = url.hostname;
+    if (host === '' || host === 'github.com' || !host.includes('.')) return null;
+    return host;
+  } catch {
+    return null;
+  }
+}
+
+/** All hosts Geld runs on: github.com plus any configured Enterprise servers. */
+export function allHosts(settings: GeldSettings): readonly string[] {
+  return ['github.com', ...settings.enterpriseHosts];
 }
 
 /** Turn a textarea's contents into a clean list of lines (patterns or rules). */

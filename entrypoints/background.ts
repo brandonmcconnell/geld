@@ -2,13 +2,21 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '../src/lib/diff-parse';
 import { actionIconPaths } from '../src/lib/action-icon';
+import { syncEnterpriseHosts } from '../src/lib/enterprise';
+import { settingsItem } from '../src/lib/storage';
 import type { FetchDiffResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import { isColorSchemeMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
 
-const ALLOWED_HOSTS = new Set(['github.com', 'patch-diff.githubusercontent.com']);
+const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
+
+/** github.com, its diff host, and any Enterprise servers the user configured. */
+async function allowedHosts(): Promise<Set<string>> {
+  const settings = await settingsItem.getValue();
+  return new Set([...BUILT_IN_HOSTS, ...settings.enterpriseHosts]);
+}
 
 /** Parsed diffs are reused across tabs/pages for a while (PR lists re-request them often). */
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -51,7 +59,7 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
   } catch {
     return { ok: false, reason: 'invalid-url' };
   }
-  if (parsed.protocol !== 'https:' || !ALLOWED_HOSTS.has(parsed.hostname) || !parsed.pathname.endsWith('.diff')) {
+  if (parsed.protocol !== 'https:' || !(await allowedHosts()).has(parsed.hostname) || !parsed.pathname.endsWith('.diff')) {
     return { ok: false, reason: 'disallowed-url' };
   }
 
@@ -200,6 +208,18 @@ export default defineBackground(() => {
   browser.commands?.onCommand.addListener((command) => {
     if (command === 'toggle-hidden') void toggleHiddenInActiveTab();
   });
+
+  // GitHub Enterprise Server hosts: register on startup and whenever they change.
+  const syncHosts = (): void => {
+    void settingsItem
+      .getValue()
+      .then((settings) => syncEnterpriseHosts(settings.enterpriseHosts))
+      .catch(() => undefined);
+  };
+  browser.runtime.onInstalled.addListener(syncHosts);
+  browser.runtime.onStartup.addListener(syncHosts);
+  settingsItem.watch((settings) => void syncEnterpriseHosts(settings.enterpriseHosts).catch(() => undefined));
+  syncHosts();
 
   if (USES_OFFSCREEN_THEME_PROBE) {
     browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());

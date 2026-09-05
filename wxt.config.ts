@@ -26,10 +26,16 @@ export default defineConfig({
       // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
       // toolbar icon can switch between the black and white marks.
       ...(manifestVersion === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
+      // MV3: registers the content script on GitHub Enterprise hosts the user adds.
+      ...(manifestVersion === 3 ? ['scripting'] : []),
     ],
     // patch-diff.githubusercontent.com serves the raw `.diff` that github.com
     // redirects to; it is fetched from the background script only.
     host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*'],
+    // GitHub Enterprise Server: the user grants specific hosts from the options page.
+    ...(manifestVersion === 3
+      ? { optional_host_permissions: ['https://*/*'] }
+      : { optional_permissions: ['https://*/*'] }),
     commands: {
       'toggle-hidden': {
         suggested_key: { default: 'Alt+Shift+T' },

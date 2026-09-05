@@ -5,7 +5,8 @@ import { compileGlobs } from '../../src/lib/glob';
 import { createMatcher } from '../../src/lib/matcher';
 import { compileRepoRules, decideRepo } from '../../src/lib/repo-rules';
 import type { GeldSettings } from '../../src/lib/settings';
-import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeSettings, parsePatternList } from '../../src/lib/settings';
+import { grantedHosts, originPattern } from '../../src/lib/enterprise';
+import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, normalizeSettings, parsePatternList } from '../../src/lib/settings';
 import { settingsItem } from '../../src/lib/storage';
 import { isTestPatternGroupId } from '../../src/lib/test-patterns';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
@@ -216,6 +217,53 @@ async function main(): Promise<void> {
     runTester();
   });
 
+  /* GitHub Enterprise Server hosts */
+  const hostsStatus = statusReporter(requireElement('hosts-status', HTMLSpanElement));
+  const hostsArea = requireElement('enterprise-hosts', HTMLTextAreaElement);
+  hostsArea.value = settings.enterpriseHosts.join('\n');
+  hostsArea.addEventListener('input', () => {
+    hostsStatus(hostsArea.value.trim() !== settings.enterpriseHosts.join('\n') ? 'Unsaved changes' : '', 'neutral');
+  });
+  requireElement('save-hosts', HTMLButtonElement).addEventListener('click', async () => {
+    const lines = parsePatternList(hostsArea.value);
+    const hosts: string[] = [];
+    for (const line of lines) {
+      const host = normalizeHost(line);
+      if (host === null) {
+        hostsStatus(`"${line}" is not a hostname Geld can use.`, 'error');
+        return;
+      }
+      if (!hosts.includes(host)) hosts.push(host);
+    }
+
+    // One permission prompt covering every new host (must run inside this click).
+    const alreadyGranted = await grantedHosts(hosts);
+    const missing = hosts.filter((host) => !alreadyGranted.includes(host));
+    if (missing.length > 0) {
+      let granted = false;
+      try {
+        granted = await browser.permissions.request({ origins: missing.map(originPattern) });
+      } catch (error) {
+        hostsStatus(`Could not request access: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        return;
+      }
+      if (!granted) {
+        hostsStatus('Access was not granted, so those hosts were not saved.', 'error');
+        return;
+      }
+    }
+
+    // Release permissions for hosts that were removed.
+    const removed = settings.enterpriseHosts.filter((host) => !hosts.includes(host));
+    if (removed.length > 0) {
+      await browser.permissions.remove({ origins: removed.map(originPattern) }).catch(() => false);
+    }
+
+    settings = await settingsItem.patch({ enterpriseHosts: hosts });
+    hostsArea.value = hosts.join('\n');
+    hostsStatus(hosts.length === 0 ? 'Saved; only github.com is used.' : `Saved ${hosts.length} host${hosts.length === 1 ? '' : 's'}. Reload open tabs on those hosts.`, 'success');
+  });
+
   /* Tester */
   const testerRepo = requireElement('tester-repo', HTMLInputElement);
   const testerPath = requireElement('tester-path', HTMLInputElement);
@@ -294,6 +342,7 @@ async function main(): Promise<void> {
     }
     if (document.activeElement !== patternsArea) patternsArea.value = next.customPatterns.join('\n');
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
+    if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
   });
 }

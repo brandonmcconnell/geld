@@ -87,6 +87,27 @@ big-corp
       </section>
 
       <section class="options__card">
+        <h2 class="options__title">GitHub Enterprise Server</h2>
+        <p class="geld-help options__intro">
+          Geld runs on <code>github.com</code> out of the box. Add the hostname of your company's GitHub Enterprise
+          Server (one per line, e.g. <code>github.example.com</code>) and your browser will ask you to allow Geld on
+          that site. Geld never contacts anything other than the GitHub hosts you list here.
+        </p>
+        <textarea
+          id="enterprise-hosts"
+          class="geld-code options__textarea"
+          rows="3"
+          spellcheck="false"
+          placeholder="github.example.com"
+          aria-label="GitHub Enterprise Server hosts"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="hosts-status" aria-live="polite"></span>
+          <button id="save-hosts" class="geld-button geld-button--primary" type="button">Save hosts</button>
+        </div>
+      </section>
+
+      <section class="options__card">
         <h2 class="options__title">Try a path</h2>
         <p class="geld-help options__intro">Check how a file path would be treated with your current settings.</p>
         <div class="options__tester">

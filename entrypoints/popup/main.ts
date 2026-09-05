@@ -4,7 +4,7 @@ import { formatCount, pluralize } from '../../src/lib/format';
 import type { GetTabStateMessage, TabState } from '../../src/lib/messages';
 import { isTabState } from '../../src/lib/messages';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '../../src/lib/repo-rules';
-import { isCategoryEnabled } from '../../src/lib/settings';
+import { allHosts, isCategoryEnabled } from '../../src/lib/settings';
 import { settingsItem } from '../../src/lib/storage';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 
@@ -13,12 +13,12 @@ interface ActiveTab {
   readonly url: URL;
 }
 
-async function activeGitHubTab(): Promise<ActiveTab | null> {
+async function activeGitHubTab(hosts: readonly string[]): Promise<ActiveTab | null> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined || tab.url === undefined) return null;
   try {
     const url = new URL(tab.url);
-    return url.hostname === 'github.com' ? { id: tab.id, url } : null;
+    return hosts.includes(url.hostname) ? { id: tab.id, url } : null;
   } catch {
     return null;
   }
@@ -102,14 +102,14 @@ async function main(): Promise<void> {
   const toggleRepo = requireElement('toggle-repo', HTMLButtonElement);
   const toggleOrg = requireElement('toggle-org', HTMLButtonElement);
 
-  const tab = await activeGitHubTab();
+  const tab = await activeGitHubTab(allHosts(settings));
   let repo: string | null = tab === null ? null : repoFromPathname(tab.url.pathname);
 
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
     repo = state?.repo ?? repo;
-    contextRepo.textContent = repo ?? 'github.com';
+    contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
 
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
