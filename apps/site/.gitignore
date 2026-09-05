@@ -4,3 +4,7 @@ next-env.d.ts
 *.tsbuildinfo
 .vercel/
 .env*.local
+
+# Written by `next dev`; the repo-level AGENTS.md is the real one.
+/AGENTS.md
+/CLAUDE.md
