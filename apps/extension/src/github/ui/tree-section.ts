@@ -457,6 +457,8 @@ class SidebarSizer {
   private scroller: HTMLElement | null = null;
   private frame = 0;
   private lastHeight = -1;
+  private resizeObserver: ResizeObserver | null = null;
+  private ticker: ReturnType<typeof setInterval> | null = null;
 
   attach(scroller: HTMLElement): void {
     if (this.scroller === scroller) {
@@ -465,19 +467,36 @@ class SidebarSizer {
     }
     this.detach();
     this.scroller = scroller;
-    window.addEventListener('scroll', this.schedule, { passive: true });
+    // Scrolling may happen on the window or on an inner container: listen in
+    // the capture phase on the document to see both.
+    document.addEventListener('scroll', this.schedule, { passive: true, capture: true });
     window.addEventListener('resize', this.schedule, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(this.schedule);
+      this.resizeObserver.observe(scroller);
+      this.resizeObserver.observe(document.documentElement);
+    }
+    // Belt and braces for layout changes that fire no event (sticky engaging,
+    // lazy content above the pane growing): a cheap periodic re-measure.
+    this.ticker = setInterval(this.schedule, 500);
     this.update();
   }
 
   detach(): void {
-    window.removeEventListener('scroll', this.schedule);
+    document.removeEventListener('scroll', this.schedule, { capture: true });
     window.removeEventListener('resize', this.schedule);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (this.ticker !== null) clearInterval(this.ticker);
+    this.ticker = null;
     if (this.frame !== 0) cancelAnimationFrame(this.frame);
     this.frame = 0;
     if (this.scroller !== null) {
       this.scroller.style.removeProperty('height');
       this.scroller.style.removeProperty('max-height');
+      for (const panel of this.scroller.querySelectorAll<HTMLElement>('[data-geld-tree-list], .geld-tree__group')) {
+        panel.style.removeProperty('max-height');
+      }
     }
     this.scroller = null;
     this.lastHeight = -1;
@@ -503,14 +522,45 @@ class SidebarSizer {
       }
       return;
     }
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
     const top = Math.max(0, scroller.getBoundingClientRect().top);
-    const height = Math.max(MIN_SIDEBAR_HEIGHT, Math.round(window.innerHeight - top));
-    if (height === this.lastHeight) return;
-    this.lastHeight = height;
-    scroller.style.setProperty('height', `${height}px`);
-    scroller.style.setProperty('max-height', `${height}px`);
+    const height = Math.max(MIN_SIDEBAR_HEIGHT, Math.round(viewportHeight - top));
+    if (height !== this.lastHeight) {
+      this.lastHeight = height;
+      scroller.style.setProperty('height', `${height}px`);
+      scroller.style.setProperty('max-height', `${height}px`);
+    }
+    this.capOpenPanel(scroller, viewportHeight);
+  }
+
+  /**
+   * Independently of what the wrappers do, cap the open panel's list so it
+   * ends exactly where the headers below it need to start, at the bottom of
+   * the viewport. This is what keeps every header visible even if an
+   * intermediate wrapper refuses to shrink.
+   */
+  private capOpenPanel(scroller: HTMLElement, viewportHeight: number): void {
+    const active = scroller.getAttribute(ATTR_SIDEBAR);
+    const list =
+      active === CHANGES_SECTION_ID
+        ? scroller.querySelector<HTMLElement>(`[${ATTR_TREE_LIST}]`)
+        : scroller.querySelector<HTMLElement>(`.${TREE_SECTION_CLASS}[data-active] > .geld-tree > .geld-tree__item--root > .geld-tree__group`);
+    if (list === null) return;
+    let below = 0;
+    for (const section of scroller.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}`)) {
+      if (section.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_PRECEDING) {
+        below += section.getBoundingClientRect().height;
+      }
+    }
+    const paddingBottom = Number.parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
+    const top = list.getBoundingClientRect().top;
+    const max = Math.max(MIN_PANEL_HEIGHT, Math.floor(viewportHeight - top - below - paddingBottom));
+    const value = `${max}px`;
+    if (list.style.maxHeight !== value) list.style.maxHeight = value;
   }
 }
+
+const MIN_PANEL_HEIGHT = 96;
 
 const MIN_SIDEBAR_HEIGHT = 160;
 

@@ -117,11 +117,11 @@ function safeSessionSet(key: string, value: string): void {
   }
 }
 
-const FILES_TAB = /\/pull\/\d+\/files\/?$/;
+const FILES_TAB = /\/pull\/\d+\/(?:files|changes)\/?$/;
 
 /** Point "Files changed" links at `?w=1` so navigating there needs no redirect. */
 export function rewriteFilesLinksForWhitespace(): void {
-  for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"][href*="/files"]')) {
+  for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"][href*="/files"], a[href*="/pull/"][href*="/changes"]')) {
     if (link.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
     let url: URL;
     try {
