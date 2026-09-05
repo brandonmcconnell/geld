@@ -1,6 +1,7 @@
 'use client';
 
 import type { GeldSettings, HiddenCategory, ListSettingKey, SettingsSection, TestGroupsField, TestPatternGroupId } from '@geld/core';
+import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import { saveSetting } from '@/app/settings/actions';
@@ -12,7 +13,7 @@ import { RichText } from '@/components/settings/rich-text';
 import type { Status } from '@/components/settings/save-status';
 import { NO_STATUS, SaveStatus } from '@/components/settings/save-status';
 import { SettingsTester } from '@/components/settings/settings-tester';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import type { SettingsPatch } from '@/lib/settings/patch';
 import { applyPatch } from '@/lib/settings/patch';
 
@@ -34,10 +35,12 @@ type ListSaveResult = { readonly ok: true; readonly lines: readonly string[] } |
  * converges with whatever the extension saved meanwhile.
  */
 export function SettingsForm({ sections, initialSettings, initialGistId, updatedAt, login }: SettingsFormProps) {
+  const router = useRouter();
   const [settings, setSettings] = useState(initialSettings);
   const [gistId, setGistId] = useState(initialGistId);
   const [status, setStatus] = useState<Status>(NO_STATUS);
   const [signedOut, setSignedOut] = useState(false);
+  const [remoteInvalid, setRemoteInvalid] = useState(false);
   const [pending, setPending] = useState(0);
   const busy = pending > 0;
 
@@ -60,6 +63,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
         }
         setSettings(previous);
         if (result.reason === 'signed-out') setSignedOut(true);
+        if (result.reason === 'invalid-remote') setRemoteInvalid(true);
         setStatus({ message: result.message, tone: 'error' });
         return { ok: false, message: result.message };
       } catch {
@@ -97,6 +101,15 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
         <SaveStatus status={status} />
       </div>
 
+      {remoteInvalid ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border border-destructive/55 bg-muted/40 px-4 py-3 text-sm">
+          <span>Your settings gist has errors, so nothing was saved. Reload to see what needs fixing.</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => router.refresh()}>
+            Reload
+          </Button>
+        </div>
+      ) : null}
+
       {signedOut ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border bg-muted/40 px-4 py-3 text-sm">
           <span>You&apos;ve been signed out. Sign in again to keep editing.</span>
@@ -128,7 +141,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         key={field.key}
                         field={field}
                         checked={settings[field.key]}
-                        disabled={signedOut}
+                        disabled={signedOut || remoteInvalid}
                         onChange={(value) => void submit({ kind: 'toggle', key: field.key, value })}
                       />
                     );
@@ -139,7 +152,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         field={field}
                         testGroups={testGroups}
                         settings={settings}
-                        disabled={signedOut}
+                        disabled={signedOut || remoteInvalid}
                         onCategory={onCategory}
                         onTestGroup={onTestGroup}
                       />
@@ -148,7 +161,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                     // Rendered inside the Tests category above.
                     return null;
                   case 'list':
-                    return <ListEditor key={field.key} field={field} lines={settings[field.key]} disabled={signedOut || busy} onSave={onList(field.key)} />;
+                    return <ListEditor key={field.key} field={field} lines={settings[field.key]} disabled={signedOut || remoteInvalid || busy} onSave={onList(field.key)} />;
                 }
               })}
             </div>

@@ -1,11 +1,12 @@
-import type { GeldSettings } from '@geld/core';
-import { DEFAULT_SETTINGS, findSettingsGist, readRemote, sectionsFor, SignedOutError } from '@geld/core';
+import type { GeldSettings, SettingsIssue } from '@geld/core';
+import { DEFAULT_SETTINGS, findSettingsGist, readRemoteValidated, sectionsFor, SignedOutError } from '@geld/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { GitHubIcon } from '@/components/icons';
 import { PageIntro, Prose } from '@/components/section';
+import { CorruptedSettings } from '@/components/settings/corrupted-settings';
 import { SettingsForm } from '@/components/settings/settings-form';
 import { buttonVariants } from '@/components/ui/button';
 import { authConfig } from '@/lib/auth/config';
@@ -66,19 +67,43 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   let gistId: string | null = null;
   let settings: GeldSettings = DEFAULT_SETTINGS;
   let updatedAt: string | null = null;
+  let invalid: { readonly gistId: string; readonly htmlUrl: string; readonly issues: readonly SettingsIssue[] } | null = null;
   try {
     const found = await findSettingsGist(session.token);
     if (found !== null) {
-      const remote = await readRemote(session.token, found.id);
       gistId = found.id;
-      if (remote !== null) {
-        settings = remote.settings;
-        updatedAt = remote.updatedAt;
+      // Strict read: a hand-edited gist with mistakes is reported, never silently repaired.
+      const read = await readRemoteValidated(session.token, found.id);
+      if (read.kind === 'valid') {
+        settings = read.remote.settings;
+        updatedAt = read.remote.updatedAt;
+      } else if (read.kind === 'invalid') {
+        invalid = { gistId: read.gistId, htmlUrl: read.htmlUrl, issues: read.issues };
       }
     }
   } catch (error) {
     if (error instanceof SignedOutError) redirect('/auth/expired');
     throw error;
+  }
+
+  if (invalid !== null) {
+    return (
+      <>
+        <PageIntro
+          eyebrow="Settings"
+          title="Your Geld settings."
+          description={
+            <>
+              Signed in as <span className="font-medium text-foreground">{session.login}</span>. Your settings gist could not be read, so nothing can be
+              changed here until it is fixed or reset.
+            </>
+          }
+        />
+        <div className="container-site pb-32">
+          <CorruptedSettings gistId={invalid.gistId} htmlUrl={invalid.htmlUrl} issues={invalid.issues} />
+        </div>
+      </>
+    );
   }
 
   return (
