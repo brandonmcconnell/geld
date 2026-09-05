@@ -192,6 +192,17 @@
   color: var(--fgColor-default, #1f2328);
 }
 
+/*
+ * GitHub wraps the "Filter files" field in a div with 16px of bottom padding
+ * (`tmp-pb-3`). Our Changes header now owns the spacing under the field, so
+ * that padding only pushes the field off-centre between the sidebar's top
+ * edge and the header. Matched structurally: the class name is a temporary
+ * utility GitHub may rename.
+ */
+div:has(> #diff-file-tree-filter) {
+  padding-bottom: 0 !important;
+}
+
 .geld-tree-section[data-view='legacy'] {
   --geld-indent-base: 8px;
   --geld-chevron-size: 16px;
