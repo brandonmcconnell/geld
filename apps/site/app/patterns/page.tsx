@@ -56,7 +56,7 @@ export default function PatternsPage() {
             <li key={category.id} className="shrink-0">
               <a
                 href={`#${category.id}`}
-                className="geld-corners geld-cut-[7px] inline-block border bg-background/60 px-3 py-1 text-sm whitespace-nowrap text-foreground/80 transition-colors hover:border-foreground hover:bg-background hover:text-foreground"
+                className="geld-corners geld-cut-[7px] inline-block border bg-background/60 px-3 py-1 text-sm whitespace-nowrap text-foreground/80 hover:border-foreground hover:bg-background hover:text-foreground"
               >
                 {category.title}
               </a>

@@ -169,10 +169,29 @@
  */
 @utility geld-corners {
   --geld-cut: 0.5rem;
+  position: relative;
   border-radius: 0;
+  transition-property: color, background-color, border-color, border-radius, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
   @supports (corner-shape: bevel) {
     border-radius: var(--geld-cut);
     corner-shape: bevel square;
+    /* Hover deepens the cut by 3px. A child inside a `group/geld` (the avatar
+       in the account chip) follows its parent's hover instead of its own. */
+    &:hover,
+    :where(.group\/geld:hover) & {
+      border-radius: calc(var(--geld-cut) + 3px);
+    }
+  }
+  /* Hit area: the full square, including the cut-away corners, plus 1px. */
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
   }
 }
 

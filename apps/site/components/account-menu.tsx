@@ -27,7 +27,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
         <TooltipTrigger
           render={<a href="/auth/start?next=/settings" aria-label="Sign in with GitHub" />}
           className={cn(
-            buttonVariants({ variant: 'ghost', size: 'icon-sm', className: 'overflow-hidden border-input text-muted-foreground hover:text-foreground [[data-account]_&]:hidden' }),
+            buttonVariants({ variant: 'ghost', size: 'icon-sm', className: 'border-input text-muted-foreground hover:text-foreground [[data-account]_&]:hidden' }),
             className,
           )}
         >
@@ -42,7 +42,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          'geld-corners geld-cut-[7px] inline-flex h-8 items-center gap-2 border border-input pr-2.5 pl-0.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
+          'group/geld geld-corners geld-cut-[7px] inline-flex h-8 items-center gap-2 border border-input pr-2.5 pl-0.5 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
           className,
         )}
         aria-label={`Account: ${account.login}`}

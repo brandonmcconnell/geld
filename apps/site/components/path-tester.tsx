@@ -105,7 +105,7 @@ export function PathTester({ className }: { readonly className?: string }) {
               onClick={() => setPath(example)}
               aria-pressed={example === path}
               className={cn(
-                'code-chip geld-corners geld-cut-[5px] cursor-pointer transition-colors hover:border-ring hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 aria-pressed:border-foreground',
+                'code-chip geld-corners geld-cut-[5px] cursor-pointer hover:border-ring hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 aria-pressed:border-foreground',
                 example === path ? 'text-foreground' : 'text-muted-foreground',
               )}
             >
