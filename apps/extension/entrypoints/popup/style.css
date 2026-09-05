@@ -1,5 +1,5 @@
 body {
-  width: 320px;
+  width: 336px;
 }
 
 .popup {
@@ -8,31 +8,14 @@ body {
 }
 
 .popup__header {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--geld-border);
-}
-
-.popup__section {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--geld-border);
-}
-
-.popup__section .geld-help {
-  font-size: 11.5px;
-  line-height: 1.4;
-}
-
-.popup__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 14px;
-  background: var(--geld-bg-muted);
-  font-size: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .popup__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -42,33 +25,43 @@ body {
   white-space: nowrap;
 }
 
+.popup__section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.popup__section .geld-help {
+  font-size: 12px;
+}
+
+/* Current-tab context ------------------------------------------------------- */
+
 .popup__context {
-  background: var(--geld-bg-muted);
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
 }
 
 .popup__context-line {
-  margin: 0;
   font-size: 13px;
 }
 
 .popup__stats {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-top: 6px;
-  font-family: var(--geld-mono);
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .popup__stat--hidden {
-  color: var(--geld-fg-muted);
+  color: var(--muted-foreground);
 }
 
 .popup__stat--add {
-  color: var(--geld-success);
+  color: var(--addition);
 }
 
 .popup__stat--del {
-  color: var(--geld-danger);
+  color: var(--deletion);
 }
 
 .popup__files {
@@ -78,36 +71,24 @@ body {
 .popup__files summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   cursor: pointer;
-  list-style: none;
+  color: var(--muted-foreground);
   font-size: 12px;
-  color: var(--geld-fg-muted);
 }
 
-.popup__files summary::-webkit-details-marker {
-  display: none;
-}
-
-.popup__chevron {
-  display: inline-block;
-  width: 10px;
-  font-size: 16px;
-  line-height: 1;
-  transition: transform 120ms ease-in-out;
-}
-
-.popup__files[open] .popup__chevron {
-  transform: rotate(90deg);
+.popup__files summary .geld-chevron {
+  width: 14px;
+  height: 14px;
 }
 
 .popup__file-list {
-  margin: 6px 0 0;
-  padding: 0 0 0 16px;
   max-height: 120px;
+  margin: 6px 0 0;
+  padding: 0 0 0 18px;
   overflow: auto;
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: 11.5px;
+  line-height: 1.7;
   list-style: none;
 }
 
@@ -121,32 +102,28 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
+/* Categories ----------------------------------------------------------------- */
 
 .popup__categories-title {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--geld-fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  margin-bottom: 8px;
 }
 
 .popup__categories-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px 12px;
+  gap: 4px 12px;
 }
 
 .popup__category {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   font-size: 13px;
-  line-height: 22px;
+  line-height: 24px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -156,7 +133,18 @@ body {
   text-overflow: ellipsis;
 }
 
-.popup__category input {
-  accent-color: var(--geld-accent);
-  margin: 0;
+/* Footer --------------------------------------------------------------------- */
+
+.popup__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  font-size: 12.5px;
+}
+
+.popup__footer .geld-button--link {
+  font-size: 12.5px;
+  font-weight: 500;
 }

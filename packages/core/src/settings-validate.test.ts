@@ -61,7 +61,7 @@ describe('validateSettingsDocument', () => {
       expect.stringMatching(/^settings\.categories\.nope: Unknown category "nope"\. Known: "tests", /),
       'settings.testGroups: Expected an object mapping test group ids to true/false, got a list of 0.',
       'settings.customPatterns[1]: Expected a string, got 42.',
-      expect.stringMatching(/^settings\.customPatterns\[2\]: "a\[z-a\]" is not a valid pattern: /),
+      'settings.customPatterns[2]: "a[z-a]" is not a valid pattern: range out of order in character class.',
       'settings.customPatterns[3]: Empty repository scope "[]"; use "[owner/repo]", "[owner/*]" or "[*]".',
       'settings.repoRules[1]: A rule needs a repository or owner after "!".',
       'settings.enterpriseHosts[1]: "not a host" is not a hostname Geld can run on (e.g. "github.example.com").',

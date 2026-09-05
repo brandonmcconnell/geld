@@ -105,7 +105,10 @@ function globProblem(pattern: string): string | null {
     globToRegExp(pattern);
     return null;
   } catch (error) {
-    return `"${pattern}" is not a valid pattern: ${error instanceof Error ? error.message : String(error)}.`;
+    // "Invalid regular expression: /…/: Range out of order in character class" → keep only the reason.
+    const raw = error instanceof Error ? error.message : String(error);
+    const reason = raw.slice(raw.lastIndexOf(': ') + 2).replace(/\.$/, '');
+    return `"${pattern}" is not a valid pattern: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}.`;
   }
 }
 

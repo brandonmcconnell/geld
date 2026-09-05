@@ -99,13 +99,14 @@ async function main(): Promise<void> {
     section.className = 'popup__section popup__categories';
     section.setAttribute('aria-label', 'Categories');
     const heading = document.createElement('p');
-    heading.className = 'popup__categories-title';
+    heading.className = 'geld-eyebrow popup__categories-title';
     heading.textContent = field.label;
     const grid = document.createElement('div');
     grid.className = 'popup__categories-grid';
     for (const category of CATEGORIES) {
       const input = document.createElement('input');
       input.type = 'checkbox';
+      input.className = 'geld-checkbox';
       input.checked = isCategoryEnabled(settings, category.id);
       input.addEventListener('change', async () => {
         settings = await settingsItem.update((current) => ({ categories: { ...current.categories, [category.id]: input.checked } }));
@@ -131,7 +132,7 @@ async function main(): Promise<void> {
   }
 
   /* Tab context */
-  const contextRepo = requireElement('context-repo', HTMLParagraphElement);
+  const contextRepo = requireElement('context-repo', HTMLSpanElement);
   const summary = requireElement('context-summary', HTMLParagraphElement);
   const stats = requireElement('context-stats', HTMLDivElement);
   const statHidden = requireElement('context-hidden', HTMLSpanElement);

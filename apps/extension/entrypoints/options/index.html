@@ -11,11 +11,10 @@
   <body>
     <main class="options">
       <header class="geld-brand options__header">
-        <img class="geld-brand__logo" src="../../../../assets/brand/geld-logomark.svg" alt="" width="24" height="28" />
-        <div class="options__brand-text">
-          <h1 class="geld-brand__name">Geld</h1>
-          <p class="geld-brand__tagline">Hide the files that don't need review so the ones that do stand out.</p>
-        </div>
+        <h1 class="options__brand-text">
+          <img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="94" height="24" />
+          <span class="geld-brand__tagline">Hide the files that don't need review so the ones that do stand out.</span>
+        </h1>
         <div class="geld-account" id="account"></div>
       </header>
       <div id="account-prompt" class="options__account-prompt"></div>
@@ -45,7 +44,7 @@
         </p>
         <textarea
           id="custom-patterns"
-          class="geld-code options__textarea"
+          class="geld-textarea geld-code options__textarea"
           rows="8"
           spellcheck="false"
           placeholder="# everywhere
@@ -74,7 +73,7 @@ docs/adr/"
         </p>
         <textarea
           id="repo-rules"
-          class="geld-code options__textarea"
+          class="geld-textarea geld-code options__textarea"
           rows="5"
           spellcheck="false"
           placeholder="acme/legacy-app
@@ -97,7 +96,7 @@ big-corp
         </p>
         <textarea
           id="enterprise-hosts"
-          class="geld-code options__textarea"
+          class="geld-textarea geld-code options__textarea"
           rows="3"
           spellcheck="false"
           placeholder="github.example.com"
@@ -113,8 +112,8 @@ big-corp
         <h2 class="options__title">Try a path</h2>
         <p class="geld-help options__intro">Check how a file path would be treated with your current settings.</p>
         <div class="options__tester">
-          <input id="tester-repo" class="geld-code options__input" type="text" placeholder="owner/repo (optional)" spellcheck="false" aria-label="Repository" />
-          <input id="tester-path" class="geld-code options__input options__input--grow" type="text" placeholder="src/components/Button.test.tsx" spellcheck="false" aria-label="File path" />
+          <input id="tester-repo" class="geld-input geld-code options__input" type="text" placeholder="owner/repo (optional)" spellcheck="false" aria-label="Repository" />
+          <input id="tester-path" class="geld-input geld-code options__input options__input--grow" type="text" placeholder="src/components/Button.test.tsx" spellcheck="false" aria-label="File path" />
         </div>
         <p id="tester-result" class="options__tester-result geld-help" aria-live="polite">Type a path to see what happens to it.</p>
       </section>
@@ -127,14 +126,15 @@ big-corp
           <code>gist</code>. Your settings are stored in a <strong>secret gist on your own account</strong> named
           <code>geld-settings.json</code>. There is no Geld server and no database — nobody but you (including Geld's
           author) can read or change that gist, and the sign-in token never leaves this device. Signing in on another
-          browser asks whether to keep that device's settings or use the account's.
+          browser asks whether to keep that device's settings or use the account's. The same settings can be edited at
+          <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
         </p>
         <label class="geld-label" for="oauth-client-id">OAuth App client id</label>
         <p class="geld-help">
           The public client id of a GitHub OAuth App with <em>Device Flow</em> enabled. A default is built in; paste
           your own to use a different app.
         </p>
-        <input id="oauth-client-id" class="geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Ov23li…" aria-label="OAuth App client id" />
+        <input id="oauth-client-id" class="geld-input geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Ov23li…" aria-label="OAuth App client id" />
         <div class="geld-row options__actions">
           <span class="geld-status" id="oauth-status" aria-live="polite"></span>
           <button id="save-oauth" class="geld-button" type="button">Save client id</button>

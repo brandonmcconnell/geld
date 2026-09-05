@@ -15,11 +15,10 @@
   <body>
     <main class="popup">
       <header class="geld-brand popup__header">
-        <img class="geld-brand__logo" src="../../../../assets/brand/geld-logomark.svg" alt="" width="24" height="28" />
-        <div class="popup__brand-text">
-          <h1 class="geld-brand__name">Geld</h1>
-          <p class="geld-brand__tagline" id="context-repo">Hide tests from GitHub diffs</p>
-        </div>
+        <h1 class="popup__brand-text">
+          <img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="70" height="18" />
+          <span class="geld-brand__tagline" id="context-repo">Hide tests from GitHub diffs</span>
+        </h1>
         <div class="geld-account" id="account"></div>
       </header>
       <div id="account-prompt"></div>
@@ -32,7 +31,7 @@
           <span class="popup__stat popup__stat--del" id="context-del"></span>
         </div>
         <details class="popup__files" id="context-files" hidden>
-          <summary><span class="popup__chevron">›</span><span id="context-files-summary">Hidden files</span></summary>
+          <summary><span class="geld-chevron" aria-hidden="true"></span><span id="context-files-summary">Hidden files</span></summary>
           <ul class="popup__file-list geld-code" id="context-file-list"></ul>
         </details>
         <div class="popup__quick" id="context-actions" hidden>

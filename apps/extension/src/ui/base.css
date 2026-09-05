@@ -1,33 +1,52 @@
-/* Shared look for the popup and options page. Mirrors GitHub's Primer palette. */
+/*
+ * Shared look for the popup and options page. Mirrors geld.sh (apps/site):
+ * Geist, a neutral oklch palette declared once with light-dark(), everything
+ * square except calls to action, whose top-left and bottom-right corners are
+ * cut on a diagonal like the logomark. Tokens are named after the site's so
+ * the two can be compared side by side.
+ */
+
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./fonts/Geist-Variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./fonts/GeistMono-Variable.woff2') format('woff2');
+}
 
 :root {
   color-scheme: light dark;
-  --geld-bg: #ffffff;
-  --geld-bg-muted: #f6f8fa;
-  --geld-fg: #1f2328;
-  --geld-fg-muted: #59636e;
-  --geld-border: #d1d9e0;
-  --geld-accent: #0969da;
-  --geld-accent-fg: #ffffff;
-  --geld-success: #1a7f37;
-  --geld-danger: #d1242f;
-  --geld-radius: 6px;
-  --geld-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
-  --geld-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --geld-bg: #0d1117;
-    --geld-bg-muted: #151b23;
-    --geld-fg: #f0f6fc;
-    --geld-fg-muted: #9198a1;
-    --geld-border: #3d444d;
-    --geld-accent: #4493f8;
-    --geld-accent-fg: #ffffff;
-    --geld-success: #3fb950;
-    --geld-danger: #f85149;
-  }
+  --background: light-dark(oklch(1 0 0), oklch(0.16 0.01 260));
+  --foreground: light-dark(oklch(0.21 0.01 260), oklch(0.96 0.005 260));
+  --card: light-dark(oklch(1 0 0), oklch(0.19 0.01 260));
+  --popover: light-dark(oklch(1 0 0), oklch(0.21 0.01 260));
+  --primary: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 260));
+  --primary-foreground: light-dark(oklch(0.985 0 0), oklch(0.18 0.01 260));
+  --muted: light-dark(oklch(0.975 0.003 260), oklch(0.22 0.01 260));
+  --muted-foreground: light-dark(oklch(0.5 0.015 260), oklch(0.68 0.015 260));
+  --accent: light-dark(oklch(0.96 0.004 260), oklch(0.26 0.01 260));
+  --destructive: light-dark(oklch(0.55 0.22 27), oklch(0.7 0.19 22));
+  --border: light-dark(oklch(0.9 0.006 260), oklch(1 0 0 / 12%));
+  --input: light-dark(oklch(0.88 0.006 260), oklch(1 0 0 / 16%));
+  --input-fill: light-dark(oklch(0.88 0.006 260 / 20%), oklch(1 0 0 / 6%));
+  --ring: light-dark(oklch(0.6 0.02 260), oklch(0.55 0.02 260));
+  --addition: light-dark(oklch(0.52 0.15 150), oklch(0.75 0.17 150));
+  --deletion: light-dark(oklch(0.55 0.21 27), oklch(0.7 0.19 22));
+
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  /* Size of the diagonal cut on calls to action. */
+  --cut: 8px;
 }
 
 * {
@@ -38,46 +57,94 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--geld-bg);
-  color: var(--geld-fg);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji',
-    'Segoe UI Emoji';
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--foreground) 90%, transparent);
+  color: var(--background);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 a {
-  color: var(--geld-accent);
-  text-decoration: none;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 40%, transparent);
+  text-underline-offset: 3px;
 }
 
 a:hover {
-  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
 }
 
 code,
 kbd,
-textarea.geld-code {
-  font-family: var(--geld-mono);
-  font-size: 12px;
+.geld-code {
+  font-family: var(--font-mono);
+  font-size: 0.8125em;
 }
 
+/* Inline code chips, as on the site. */
 code {
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  background: var(--geld-bg-muted);
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  white-space: nowrap;
 }
+
+/* Author `display` values must not defeat the `hidden` attribute. */
+[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Calls to action take the logomark's cut corners; everything else is square. */
+.geld-corners {
+  border-radius: 0;
+}
+
+@supports (corner-shape: bevel) {
+  .geld-corners {
+    border-radius: var(--cut);
+    corner-shape: bevel square;
+  }
+}
+
+/* Brand ------------------------------------------------------------------- */
 
 .geld-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .geld-brand__logo {
-  width: 24px;
-  height: 28px;
+  display: block;
   flex-shrink: 0;
 }
 
@@ -88,18 +155,23 @@ code {
   }
 }
 
-.geld-brand__name {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.2;
+.geld-brand__tagline {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
 }
 
-.geld-brand__tagline {
-  margin: 0;
-  color: var(--geld-fg-muted);
-  font-size: 12px;
+/* Small caps label in mono, the site's section eyebrow. */
+.geld-eyebrow {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
+
+/* Rows --------------------------------------------------------------------- */
 
 .geld-row {
   display: flex;
@@ -110,58 +182,61 @@ code {
 
 .geld-label {
   display: block;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .geld-help {
-  margin: 2px 0 0;
-  color: var(--geld-fg-muted);
-  font-size: 12px;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
 }
 
-/* Toggle switch (button[role=switch]) */
+.geld-muted {
+  color: var(--muted-foreground);
+}
+
+/* Switch (button[role=switch]) ------------------------------------------------
+   Track 36×20 with a 1px border, thumb 12×12: an even 3px of track around the
+   thumb in either position. */
 .geld-switch {
   position: relative;
   flex-shrink: 0;
-  width: 40px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
   padding: 0;
-  border: 1px solid var(--geld-border);
-  border-radius: 999px;
-  background: var(--geld-bg-muted);
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: var(--input);
   cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
+  transition: background-color 120ms ease;
 }
 
 .geld-switch::after {
   content: '';
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--geld-fg-muted);
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  background: light-dark(var(--background), var(--foreground));
   transition:
     transform 120ms ease,
     background-color 120ms ease;
 }
 
 .geld-switch[aria-checked='true'] {
-  border-color: var(--geld-accent);
-  background: var(--geld-accent);
+  background: var(--primary);
 }
 
 .geld-switch[aria-checked='true']::after {
-  transform: translateX(18px);
-  background: var(--geld-accent-fg);
+  transform: translateX(16px);
+  background: var(--primary-foreground);
 }
 
 .geld-switch:focus-visible {
-  outline: 2px solid var(--geld-accent);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
 }
 
 .geld-switch:disabled {
@@ -169,206 +244,425 @@ code {
   cursor: not-allowed;
 }
 
+/* Checkbox (input[type=checkbox]) -------------------------------------------- */
+
+.geld-checkbox {
+  appearance: none;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--input);
+  border-radius: 0;
+  background: light-dark(transparent, color-mix(in oklch, var(--input) 30%, transparent));
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.geld-checkbox:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+  /* lucide "check", square caps, in the primary foreground. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.75' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .geld-checkbox:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23222' stroke-width='2.75' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  }
+}
+
+.geld-checkbox:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+}
+
+/* Buttons -------------------------------------------------------------------- */
+
 .geld-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 14px;
-  border: 1px solid var(--geld-border);
-  border-radius: var(--geld-radius);
-  background: var(--geld-bg-muted);
-  color: var(--geld-fg);
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--input);
+  border-radius: 0;
+  background: var(--input-fill);
+  color: var(--foreground);
   font: inherit;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
-  box-shadow: var(--geld-shadow);
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+@supports (corner-shape: bevel) {
+  .geld-button {
+    border-radius: var(--cut);
+    corner-shape: bevel square;
+  }
+}
+
+.geld-button svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
 }
 
 .geld-button:hover {
-  filter: brightness(0.97);
+  background: color-mix(in oklch, var(--input) 40%, transparent);
 }
 
 .geld-button--primary {
   border-color: transparent;
-  background: var(--geld-success);
-  color: #ffffff;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.geld-button--primary:hover {
+  background: color-mix(in oklch, var(--primary) 85%, transparent);
+}
+
+.geld-button--danger {
+  color: var(--destructive);
 }
 
 .geld-button--link {
+  height: auto;
   padding: 0;
   border: 0;
+  border-radius: 0;
   background: none;
-  box-shadow: none;
-  color: var(--geld-accent);
+  color: var(--foreground);
   font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
 }
 
 .geld-button--link:hover {
-  text-decoration: underline;
-  filter: none;
+  background: none;
+  text-decoration-color: currentColor;
+}
+
+.geld-button--small {
+  --cut: 7px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.geld-button--small svg {
+  width: 13px;
+  height: 13px;
 }
 
 .geld-button:focus-visible {
-  outline: 2px solid var(--geld-accent);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 40%, transparent);
 }
 
+.geld-button--link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.geld-button:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Inputs --------------------------------------------------------------------- */
+
+.geld-input,
+.geld-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--input);
+  border-radius: 0;
+  background: light-dark(var(--background), color-mix(in oklch, var(--input) 20%, transparent));
+  color: var(--foreground);
+  font: inherit;
+  line-height: 1.5;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.geld-input {
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.geld-textarea {
+  display: block;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.geld-input.geld-code,
+.geld-textarea.geld-code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.geld-input::placeholder,
+.geld-textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+.geld-input:focus-visible,
+.geld-textarea:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 40%, transparent);
+}
+
+/* Status --------------------------------------------------------------------- */
+
 .geld-status {
-  color: var(--geld-fg-muted);
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 18px;
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 
 .geld-status[data-tone='success'] {
-  color: var(--geld-success);
+  color: var(--addition);
+}
+
+.geld-status[data-tone='success']::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
 }
 
 .geld-status[data-tone='error'] {
-  color: var(--geld-danger);
+  color: var(--destructive);
 }
 
-.geld-muted {
-  color: var(--geld-fg-muted);
+/* Disclosure chevron (lucide chevron-right), rotates when open. */
+.geld-chevron {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  background: var(--muted-foreground);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: transform 150ms ease;
 }
 
-/* Author `display` values must not defeat the `hidden` attribute. */
-[hidden] {
-  display: none !important;
+details[open] > summary .geld-chevron {
+  transform: rotate(90deg);
+}
+
+summary {
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Notices -------------------------------------------------------------------- */
+
+.geld-alert {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 40%, transparent);
+  font-size: 12.5px;
+}
+
+.geld-alert--error {
+  border-color: color-mix(in srgb, var(--destructive) 55%, transparent);
+}
+
+.geld-alert__title {
+  margin-bottom: 4px;
+  color: var(--destructive);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.geld-alert__text {
+  color: var(--foreground);
+}
+
+.geld-alert__list {
+  margin: 10px 0 0;
+  padding: 0 0 0 16px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.geld-alert__list li::marker {
+  color: var(--muted-foreground);
+}
+
+.geld-alert__path {
+  color: var(--foreground);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.geld-alert__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
 }
 
 /* Account widget (popup + options header) ----------------------------------- */
 
-.geld-brand {
-  align-items: center;
-}
-
 .geld-account {
-  margin-left: auto;
-  flex-shrink: 0;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-}
-
-.geld-account__signin {
-  gap: 6px;
-  white-space: nowrap;
+  margin-left: auto;
 }
 
 .geld-account__pending {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   font-size: 12px;
 }
 
 .geld-account__hint {
-  color: var(--geld-fg-muted);
-}
-
-.geld-account__code {
-  padding: 2px 8px;
-  border: 1px dashed var(--geld-border);
-  border-radius: var(--geld-radius);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  user-select: all;
+  color: var(--muted-foreground);
 }
 
 .geld-account__menu {
   position: relative;
 }
 
+/* Same control as the site header: avatar with cut corners inside a bordered pill. */
 .geld-account__summary {
+  --cut: 7px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 4px;
-  border: 1px solid var(--geld-border);
-  border-radius: 999px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 2px;
+  border: 1px solid var(--input);
   cursor: pointer;
-  list-style: none;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
+  transition: background-color 120ms ease;
 }
 
-.geld-account__summary::-webkit-details-marker {
-  display: none;
+@supports (corner-shape: bevel) {
+  .geld-account__summary,
+  .geld-account__avatar {
+    border-radius: var(--cut);
+    corner-shape: bevel square;
+  }
+}
+
+.geld-account__summary:hover,
+.geld-account__menu[open] > .geld-account__summary {
+  background: var(--muted);
 }
 
 .geld-account__avatar {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+  --cut: 6px;
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.geld-account__login {
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .geld-account__menu-body {
   position: absolute;
-  right: 0;
   top: calc(100% + 6px);
+  right: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 180px;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 200px;
   padding: 10px;
-  border: 1px solid var(--geld-border);
-  border-radius: var(--geld-radius);
-  background: var(--geld-bg);
-  box-shadow: 0 8px 24px rgba(31, 35, 40, 0.16);
+  border: 1px solid var(--border);
+  background: var(--popover);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 14%);
 }
 
 .geld-account__status {
-  margin: 0 0 4px;
-  color: var(--geld-fg-muted);
+  color: var(--muted-foreground);
   font-size: 12px;
 }
 
 .geld-account__prompt {
-  margin: 0;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--geld-border);
-  background: var(--geld-bg-muted);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 40%, transparent);
   font-size: 12.5px;
 }
 
 .geld-account__prompt-text {
-  margin: 0 0 8px;
+  margin-bottom: 10px;
 }
 
 .geld-account__prompt-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .geld-account__error {
-  margin: 0;
   padding: 6px 14px;
-  color: var(--geld-danger);
+  color: var(--destructive);
   font-size: 12px;
 }
 
-.geld-button--small {
-  padding: 2px 10px;
-  font-size: 12px;
-}
-
-/* Sign-in dialog ------------------------------------------------------------ */
+/* Sign-in dialog ------------------------------------------------------------- */
 
 .geld-dialog {
   width: min(440px, calc(100vw - 24px));
   max-width: none;
   margin: auto;
   padding: 20px;
-  border: 1px solid var(--geld-border);
-  border-radius: 12px;
-  background: var(--geld-bg);
-  color: var(--geld-fg);
-  box-shadow: 0 16px 48px rgba(31, 35, 40, 0.24);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: 0 24px 64px oklch(0 0 0 / 24%);
 }
 
 .geld-dialog--compact {
@@ -377,7 +671,7 @@ code {
 }
 
 .geld-dialog::backdrop {
-  background: rgba(31, 35, 40, 0.45);
+  background: oklch(0 0 0 / 45%);
 }
 
 .geld-dialog__brand {
@@ -388,20 +682,19 @@ code {
 }
 
 .geld-dialog__title {
-  margin: 0;
   font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .geld-dialog__text {
-  margin: 0 0 12px;
-  color: var(--geld-fg-muted);
+  margin-bottom: 12px;
+  color: var(--muted-foreground);
   font-size: 13px;
-  line-height: 1.5;
 }
 
 .geld-dialog__text--error {
-  color: var(--geld-danger);
+  color: var(--destructive);
 }
 
 .geld-dialog__code-row {
@@ -414,13 +707,13 @@ code {
 .geld-dialog__code {
   flex: 1;
   padding: 10px 12px;
-  border: 1px dashed var(--geld-border);
-  border-radius: var(--geld-radius);
-  background: var(--geld-bg-muted);
+  border: 1px solid var(--input);
+  background: var(--muted);
   font-size: 24px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.14em;
   text-align: center;
+  white-space: nowrap;
   user-select: all;
 }
 
@@ -431,16 +724,15 @@ code {
 .geld-dialog__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .geld-dialog__open {
   flex: 1;
-  justify-content: center;
 }
 
 .geld-dialog__note {
-  margin: 12px 0 0;
-  color: var(--geld-fg-muted);
+  margin-top: 12px;
+  color: var(--muted-foreground);
   font-size: 12px;
 }

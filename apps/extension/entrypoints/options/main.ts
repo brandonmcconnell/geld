@@ -150,7 +150,7 @@ async function main(): Promise<void> {
     let heading: HTMLElement;
     if (category.id === 'tests' && isTestPatternGroupId(group.id)) {
       const groupId = group.id;
-      const checkbox = el('input', 'options__checkbox');
+      const checkbox = el('input', 'geld-checkbox');
       checkbox.type = 'checkbox';
       checkbox.checked = isTestGroupEnabled(settings, groupId);
       checkbox.addEventListener('change', async () => {
@@ -162,10 +162,9 @@ async function main(): Promise<void> {
       heading = el('div', 'options__group-heading', [el('span', '', [title, description])]);
     }
     const count = el('span', 'options__group-count', [`${group.patterns.length}`]);
-    const details = el('details', 'options__group', [
-      el('summary', '', [el('span', 'options__chevron', ['\u203a']), heading, count]),
-      patterns,
-    ]);
+    const chevron = el('span', 'geld-chevron');
+    chevron.setAttribute('aria-hidden', 'true');
+    const details = el('details', 'options__group', [el('summary', '', [heading, count, chevron]), patterns]);
     return details;
   }
 
@@ -181,11 +180,10 @@ async function main(): Promise<void> {
     categorySwitches.set(category.id, bound.set);
 
     const groups = el('div', 'options__groups', category.groups.map((group) => renderGroup(category, group)));
+    const chevron = el('span', 'geld-chevron');
+    chevron.setAttribute('aria-hidden', 'true');
     const card = el('details', 'options__category', [
-      el('summary', 'options__category-summary', [
-        el('span', 'options__chevron', ['\u203a']),
-        el('div', 'options__category-text', [label, help]),
-      ]),
+      el('summary', 'options__category-summary', [chevron, el('div', 'options__category-text', [label, help])]),
       groups,
     ]);
     // The switch sits in the summary but must not toggle the accordion.

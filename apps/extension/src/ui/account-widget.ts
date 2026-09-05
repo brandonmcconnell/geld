@@ -144,7 +144,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
           el(
             'ul',
             'geld-alert__list',
-            invalid.issues.map((issue) => el('li', '', [el('code', 'geld-alert__path', [issue.path]), ' ', issue.message])),
+            // `$` means the whole file; a chip saying so would only puzzle people.
+            invalid.issues.map((issue) => el('li', '', issue.path === '$' ? [issue.message] : [el('code', 'geld-alert__path', [issue.path]), ' ', issue.message])),
           ),
         );
       }
