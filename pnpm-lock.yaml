@@ -6,7 +6,13 @@ settings:
 
 importers:
 
-  .:
+  .: {}
+
+  apps/extension:
+    dependencies:
+      '@geld/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       '@types/node':
         specifier: ^26.4.1
@@ -23,6 +29,15 @@ importers:
       wxt:
         specifier: ^0.21.4
         version: 0.21.4(rolldown@1.2.7)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(jiti@2.7.0))
+
+  packages/core:
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@26.4.1)(vite@8.2.2(@types/node@26.4.1)(jiti@2.7.0))
 
 packages:
 

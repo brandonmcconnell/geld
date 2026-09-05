@@ -7,7 +7,7 @@
 
 Geld is a browser extension that hides test files from GitHub diffs so you can review the code that matters first. Tests are not deleted from the page; they are collected into a tidy, collapsible section at the bottom of the diff, removed from the file tree, and excluded from the line and file counts in the header. Hover the counts to see the full breakdown.
 
-Built with [WXT](https://wxt.dev) and shipped for **Chrome, Edge, Firefox and Safari** from a single codebase.
+Built with [WXT](https://wxt.dev) and shipped for **Chrome, Edge, Firefox and Safari** from a single codebase. This repository is a small pnpm monorepo: the extension lives in `apps/extension`, the shared logic in `packages/core`, and the geld.sh website in `apps/site`.
 
 ## What it does
 
@@ -58,7 +58,7 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
 
 ## Install for testing
 
-1. Run `pnpm install` and `pnpm zip:all` (see below), or download the zip you need from the `.output/` directory of a build.
+1. Run `pnpm install` and `pnpm zip:all` (see below), or download the zip you need from `apps/extension/.output/` (CI also attaches them to every run as the `geld-extension-zips` artifact).
 2. Install it:
    - **Chrome / Edge / other Chromium**: unzip `geld-<version>-chrome.zip` (or `-edge.zip`), open `chrome://extensions` (`edge://extensions`), enable _Developer mode_ and choose _Load unpacked_ pointing at the unzipped folder.
    - **Firefox**: open `about:debugging#/runtime/this-firefox`, choose _Load Temporary Add-on…_ and pick `geld-<version>-firefox.zip` (or the `manifest.json` inside the unzipped folder). For a permanent install the zip must be signed by AMO; `geld-<version>-sources.zip` is the source archive AMO asks for.
@@ -68,48 +68,52 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
 ## Development
 
 ```sh
-pnpm install          # installs dependencies and generates WXT types
-pnpm dev              # Chrome with hot reload (pnpm dev:firefox for Firefox)
-pnpm check            # typecheck + unit tests
+pnpm install          # installs every workspace and generates WXT types
+pnpm dev              # extension in Chrome with hot reload
+pnpm check            # typecheck + unit tests for core and the extension
 pnpm test             # unit tests only (Vitest)
-pnpm build            # production build for Chrome into .output/chrome-mv3
+pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
-pnpm zip:all          # zips for all four browsers into .output/
+pnpm zip:all          # zips for all four browsers into apps/extension/.output/
 ```
 
 Output archives:
 
 ```
-.output/geld-<version>-chrome.zip
-.output/geld-<version>-edge.zip
-.output/geld-<version>-firefox.zip     (+ geld-<version>-sources.zip for AMO)
-.output/geld-<version>-safari.zip      (convert with xcrun safari-web-extension-converter)
+apps/extension/.output/geld-<version>-chrome.zip
+apps/extension/.output/geld-<version>-edge.zip
+apps/extension/.output/geld-<version>-firefox.zip     (+ geld-<version>-sources.zip for AMO)
+apps/extension/.output/geld-<version>-safari.zip      (convert with xcrun safari-web-extension-converter)
 ```
 
 ### Project layout
 
 ```
-assets/brand/              logo + logomark SVGs (black and white variants)
-public/icon/               extension icons (16/32/128/256/512); icon/action/ holds the black/white toolbar marks
-entrypoints/
-  background.ts            fetches raw .diff files (needed for CORS); swaps the toolbar icon for dark mode
-  offscreen/               Chrome/Edge only: watches prefers-color-scheme for the background
-  github.content/          content script + stylesheet injected on github.com
-  popup/                   toolbar popup (enable, expand-by-default)
-  options/                 custom patterns, built-in pattern reference
-src/
-  lib/                     framework-free logic: glob matcher, categories & patterns,
-                           repo rules, settings, unified-diff parser, messages (unit tested)
-  github/
+packages/core/             @geld/core: framework-free logic shared by the extension and the site —
+                           glob matcher, categories & patterns, repo rules, settings, diff parser
+                           (unit tested; consumed as TypeScript source)
+apps/extension/            @geld/extension (WXT)
+  entrypoints/
+    background.ts          fetches raw .diff files, swaps the toolbar icon for dark mode,
+                           registers Enterprise hosts, handles the keyboard shortcut and badge
+    offscreen/             Chrome/Edge only: watches prefers-color-scheme for the background
+    github.content/        content script + stylesheet injected on GitHub
+    popup/                 contextual toolbar popup
+    options/               categories, custom patterns, repo rules, Enterprise hosts, tester, backup
+  src/github/
     controller.ts          observes the page and applies/removes all changes
-    views/legacy.ts        adapter for GitHub's server-rendered diff UI
+    views/legacy.ts        adapter for GitHub's classic diff UI
     views/react.ts         adapter for GitHub's React diff UI
     header-stats.ts        rewrites header counts and attaches the tooltip
     pr-list.ts             "+N −M" chips on pull request list rows
     diff-cache.ts          commit-keyed on-disk cache of parsed diffs
     whitespace-viewed.ts   GitHub's hide-whitespace setting and "Viewed" controls
-    ui/                    hidden-files section, tree section, tooltip
+    ui/                    hidden-files row, sidebar accordion sections, tooltip
+apps/site/                 geld.sh (Next.js on Vercel)
+assets/brand/              logo + logomark SVGs (black and white variants)
 ```
+
+See `AGENTS.md` for conventions and the reasoning behind the architecture.
 
 ### Toolbar icon and dark mode
 

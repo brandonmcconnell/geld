@@ -1,45 +1,18 @@
 {
-  "name": "geld",
-  "version": "0.1.0",
-  "description": "Browser extension that hides test files from GitHub diffs so you can review what matters.",
+  "name": "geld-monorepo",
   "private": true,
   "type": "module",
-  "license": "MIT",
-  "author": "Brandon McConnell",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/brandonmcconnell/geld"
-  },
-  "scripts": {
-    "dev": "wxt",
-    "dev:firefox": "wxt -b firefox",
-    "build": "wxt build",
-    "build:chrome": "wxt build -b chrome",
-    "build:firefox": "wxt build -b firefox",
-    "build:edge": "wxt build -b edge",
-    "build:safari": "wxt build -b safari --mv3",
-    "build:all": "pnpm run build:chrome && pnpm run build:firefox && pnpm run build:edge && pnpm run build:safari",
-    "zip": "wxt zip",
-    "zip:chrome": "wxt zip -b chrome",
-    "zip:firefox": "wxt zip -b firefox",
-    "zip:edge": "wxt zip -b edge",
-    "zip:safari": "wxt zip -b safari --mv3",
-    "typecheck": "wxt prepare && tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "check": "pnpm run typecheck && pnpm run test",
-    "postinstall": "wxt prepare",
-    "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari"
-  },
-  "devDependencies": {
-    "@types/node": "^26.4.1",
-    "typescript": "^5.9.3",
-    "vite": "^8.2.2",
-    "vitest": "^5.0.0",
-    "wxt": "^0.21.4"
-  },
   "packageManager": "pnpm@10.33.3",
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @geld/extension dev",
+    "build": "pnpm --filter @geld/extension build",
+    "build:all": "pnpm --filter @geld/extension build:all",
+    "zip:all": "pnpm --filter @geld/extension zip:all",
+    "check": "pnpm -r run check",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
   }
 }

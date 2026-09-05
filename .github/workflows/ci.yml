@@ -16,12 +16,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Typechecks and unit tests for every workspace package (core + extension).
       - run: pnpm check
       - run: pnpm zip:all
       - uses: actions/upload-artifact@v7
         with:
           name: geld-extension-zips
-          path: .output/*.zip
+          path: apps/extension/.output/*.zip
           # `.output` is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
           if-no-files-found: error
