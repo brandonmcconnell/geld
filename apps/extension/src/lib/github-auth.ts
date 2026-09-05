@@ -1,16 +1,17 @@
+import { OAUTH_SCOPE, fetchGitHubProfile } from '@geld/core';
 import type { GitHubAccount } from './account';
 
 /**
  * GitHub OAuth **device flow**: no client secret and no server. The extension
  * asks GitHub for a short code, the user confirms it on github.com, and the
- * extension polls until a token scoped to `gist` is issued.
+ * extension polls until a token scoped to `gist` is issued. (geld.sh uses the
+ * same OAuth App with the web flow; the App's callback URL is only used there.)
  * https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow
  */
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code';
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
-const USER_URL = 'https://api.github.com/user';
-export const OAUTH_SCOPE = 'gist';
+export { OAUTH_SCOPE };
 
 export interface DeviceCode {
   readonly deviceCode: string;
@@ -104,15 +105,6 @@ export async function pollForToken(clientId: string, device: DeviceCode): Promis
 }
 
 export async function fetchAccount(token: string, scopes: readonly string[]): Promise<GitHubAccount> {
-  const response = await fetch(USER_URL, {
-    headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
-  });
-  if (!response.ok) throw new Error(`Could not read your GitHub profile (${response.status}).`);
-  const body: unknown = await response.json();
-  if (!isRecord(body)) throw new Error('Unexpected profile response.');
-  const login = str(body, 'login');
-  const id = num(body, 'id');
-  const avatarUrl = str(body, 'avatar_url');
-  if (login === null || id === null || avatarUrl === null) throw new Error('Incomplete profile response.');
-  return { login, id, avatarUrl, token, scopes };
+  const profile = await fetchGitHubProfile(token);
+  return { ...profile, token, scopes };
 }

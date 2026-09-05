@@ -4,9 +4,10 @@ import { CATEGORIES } from '@geld/core';
 import { compileGlobs } from '@geld/core';
 import { createMatcher } from '@geld/core';
 import { compileRepoRules, decideRepo } from '@geld/core';
-import type { GeldSettings } from '@geld/core';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
-import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, normalizeSettings, parsePatternList } from '@geld/core';
+import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, parsePatternList } from '@geld/core';
+import type { ListField, SettingsSectionId, ToggleField } from '@geld/core';
+import { listFields, parseSettingsPayload, sectionsFor, serializeSettingsPayload, splitInlineCode, toggleFields } from '@geld/core';
 import { settingsItem } from '../../src/lib/storage';
 import { isTestPatternGroupId } from '@geld/core';
 import { BUILT_IN_CLIENT_ID, oauthClientIdItem } from '../../src/lib/account';
@@ -55,12 +56,35 @@ function switchButton(id: string, checked: boolean, labelId: string, helpId: str
   return button;
 }
 
-interface SettingRow {
-  readonly id: string;
-  readonly label: string;
-  readonly help: string;
-  readonly get: (settings: GeldSettings) => boolean;
-  readonly patch: (value: boolean) => Partial<GeldSettings>;
+/** Render schema copy, turning `backticks` into <code>. */
+function richText(copy: string): Node[] {
+  return splitInlineCode(copy).map((run) => (run.kind === 'code' ? el('code', '', [run.text]) : document.createTextNode(run.text)));
+}
+
+const sections = sectionsFor('extension');
+
+/**
+ * Fill a card's title, intro and (for list settings) textarea from the schema,
+ * so the copy is written once in `@geld/core` and shared with geld.sh.
+ */
+function applySchemaCopy(sectionId: SettingsSectionId): { textarea: HTMLTextAreaElement | null; field: ListField | null } {
+  const section = sections.find((candidate) => candidate.id === sectionId);
+  const card = document.querySelector<HTMLElement>(`[data-section="${sectionId}"]`);
+  if (section === undefined || card === null) throw new Error(`Options page is missing the "${sectionId}" section.`);
+  const title = card.querySelector<HTMLElement>('.options__title');
+  if (title !== null) title.textContent = section.title;
+  const intro = card.querySelector<HTMLParagraphElement>('.options__intro');
+  if (intro !== null && section.intro !== '') intro.replaceChildren(...richText(section.intro));
+  const [field] = listFields(section.fields);
+  const textarea = card.querySelector('textarea');
+  if (textarea !== null && field !== undefined) {
+    textarea.placeholder = field.placeholder;
+    textarea.rows = field.rows;
+    textarea.setAttribute('aria-label', field.label);
+    const save = card.querySelector<HTMLButtonElement>('button.geld-button--primary');
+    if (save !== null) save.textContent = field.saveLabel;
+  }
+  return { textarea, field: field ?? null };
 }
 
 /** Validate each pattern separately so the message can point at the bad line. */
@@ -76,47 +100,39 @@ function validatePatterns(lines: readonly string[]): string | null {
   return null;
 }
 
-/** Exports are wrapped as `{ geld: 1, settings }`; accept a bare settings object too. */
-function unwrapExport(parsed: unknown): unknown {
-  if (typeof parsed !== 'object' || parsed === null) return parsed;
-  const record: Record<string, unknown> = { ...parsed };
-  return 'settings' in record ? record.settings : parsed;
-}
-
 /* ------------------------------------------------------------------- main */
 
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
+
+  /* General: one switch per boolean setting the extension surface exposes. */
+  applySchemaCopy('general');
+  const generalSection = sections.find((section) => section.id === 'general');
   const shortcutHint = import.meta.env.FIREFOX
     ? 'Change it under Add-ons → Manage Extension Shortcuts.'
     : 'Change it at chrome://extensions/shortcuts (edge://extensions/shortcuts on Edge).';
-
-  const generalRows: SettingRow[] = [
-    { id: 'enabled', label: 'Enabled on GitHub', help: 'Turn Geld off to see GitHub exactly as it ships.', get: (s) => s.enabled, patch: (enabled) => ({ enabled }) },
-    { id: 'expanded', label: 'Show hidden files expanded', help: 'Hidden files still move to the bottom and are excluded from the counts, but stay visible. Pages where every file is hidden always start expanded.', get: (s) => s.expandedByDefault, patch: (expandedByDefault) => ({ expandedByDefault }) },
-    { id: 'list-stats', label: 'Line counts in pull request lists', help: 'Adds "N tests +A −D" to each PR on list pages such as /pulls, with the breakdown on hover. Diffs are fetched only for rows you scroll to.', get: (s) => s.showListStats, patch: (showListStats) => ({ showListStats }) },
-    { id: 'whitespace', label: 'Hide whitespace changes', help: "Uses GitHub's own “hide whitespace” option (the ?w=1 view) on every diff you open, so indentation-only changes never clutter a review. GitHub does not remember it, so Geld adds it on your way in.", get: (s) => s.hideWhitespace, patch: (hideWhitespace) => ({ hideWhitespace }) },
-    { id: 'shortcut', label: 'Keyboard shortcut (Alt+Shift+T)', help: `Shows or hides the hidden files on the current page until you leave it; it never changes your saved settings. ${shortcutHint}`, get: (s) => s.shortcutEnabled, patch: (shortcutEnabled) => ({ shortcutEnabled }) },
-    { id: 'badge', label: 'Count on the toolbar icon', help: 'Shows how many files are hidden on the current tab.', get: (s) => s.showBadge, patch: (showBadge) => ({ showBadge }) },
-  ];
+  // Copy that only makes sense inside a browser is appended here, not kept in core.
+  const surfaceNotes: Partial<Record<ToggleField['key'], string>> = { shortcutEnabled: shortcutHint };
 
   const generalStatus = statusReporter(el('span'));
   const generalHost = requireElement('general-rows', HTMLDivElement);
-  const generalSwitches: Array<{ row: SettingRow; set: (checked: boolean) => void }> = [];
-  generalRows.forEach((row, index) => {
+  const generalSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
+  toggleFields(generalSection?.fields ?? []).forEach((field, index) => {
     if (index > 0) generalHost.append(el('hr', 'options__divider'));
-    const label = el('span', 'geld-label', [row.label]);
-    label.id = `${row.id}-label`;
-    const help = el('p', 'geld-help', [row.help]);
-    help.id = `${row.id}-help`;
-    const button = switchButton(row.id, row.get(settings), label.id, help.id);
+    const label = el('span', 'geld-label', [field.label]);
+    label.id = `${field.key}-label`;
+    const note = surfaceNotes[field.key];
+    const help = el('p', 'geld-help', richText(note === undefined ? field.description : `${field.description} ${note}`));
+    help.id = `${field.key}-help`;
+    const button = switchButton(field.key, settings[field.key], label.id, help.id);
     generalHost.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
-    const bound = bindSwitch(button, row.get(settings), async (value) => {
-      settings = await settingsItem.patch(row.patch(value));
+    const bound = bindSwitch(button, settings[field.key], async (value) => {
+      settings = await settingsItem.patch({ [field.key]: value });
       generalStatus('Saved', 'success');
     });
-    generalSwitches.push({ row, set: bound.set });
+    generalSwitches.push({ field, set: bound.set });
   });
+  applySchemaCopy('hide');
 
   /* Categories */
   const categoriesHost = requireElement('categories', HTMLDivElement);
@@ -180,6 +196,7 @@ async function main(): Promise<void> {
   }
 
   /* Custom patterns */
+  applySchemaCopy('custom-patterns');
   const patternsStatus = statusReporter(requireElement('patterns-status', HTMLSpanElement));
   const patternsArea = requireElement('custom-patterns', HTMLTextAreaElement);
   patternsArea.value = settings.customPatterns.join('\n');
@@ -200,6 +217,7 @@ async function main(): Promise<void> {
   });
 
   /* Repository rules */
+  applySchemaCopy('repositories');
   const rulesStatus = statusReporter(requireElement('rules-status', HTMLSpanElement));
   const rulesArea = requireElement('repo-rules', HTMLTextAreaElement);
   rulesArea.value = settings.repoRules.join('\n');
@@ -220,6 +238,7 @@ async function main(): Promise<void> {
   });
 
   /* GitHub Enterprise Server hosts */
+  applySchemaCopy('enterprise');
   const hostsStatus = statusReporter(requireElement('hosts-status', HTMLSpanElement));
   const hostsArea = requireElement('enterprise-hosts', HTMLTextAreaElement);
   hostsArea.value = settings.enterpriseHosts.join('\n');
@@ -321,7 +340,8 @@ async function main(): Promise<void> {
   /* Backup & maintenance */
   const maintenanceStatus = statusReporter(requireElement('maintenance-status', HTMLParagraphElement));
   requireElement('export', HTMLButtonElement).addEventListener('click', () => {
-    const blob = new Blob([`${JSON.stringify({ geld: 1, settings }, null, 2)}\n`], { type: 'application/json' });
+    // Same document the gist holds, so an export can be dropped straight into a gist and vice versa.
+    const blob = new Blob([serializeSettingsPayload(settings)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'geld-settings.json';
@@ -335,14 +355,13 @@ async function main(): Promise<void> {
     const file = importInput.files?.[0];
     importInput.value = '';
     if (file === undefined) return;
-    try {
-      const parsed: unknown = JSON.parse(await file.text());
-      const next = normalizeSettings(unwrapExport(parsed));
-      await settingsItem.setValue(next);
-      maintenanceStatus('Settings imported', 'success');
-    } catch (error) {
-      maintenanceStatus(`Could not import: ${error instanceof Error ? error.message : String(error)}`, 'error');
+    const next = parseSettingsPayload(await file.text());
+    if (next === null) {
+      maintenanceStatus('Could not import: that file is not a Geld settings export.', 'error');
+      return;
     }
+    await settingsItem.setValue(next);
+    maintenanceStatus('Settings imported', 'success');
   });
   requireElement('clear-cache', HTMLButtonElement).addEventListener('click', async () => {
     await browser.storage.local.remove('diffCache');
@@ -356,7 +375,7 @@ async function main(): Promise<void> {
   /* Keep the page in sync with changes made elsewhere (popup, other windows). */
   settingsItem.watch((next) => {
     settings = next;
-    for (const { row, set } of generalSwitches) set(row.get(next));
+    for (const { field, set } of generalSwitches) set(next[field.key]);
     for (const category of CATEGORIES) categorySwitches.get(category.id)?.(isCategoryEnabled(next, category.id));
     for (const [groupId, checkbox] of groupChecks) {
       if (isTestPatternGroupId(groupId)) checkbox.checked = isTestGroupEnabled(next, groupId);

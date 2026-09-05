@@ -20,12 +20,12 @@
       </header>
       <div id="account-prompt" class="options__account-prompt"></div>
 
-      <section class="options__card">
+      <section class="options__card" data-section="general">
         <h2 class="options__title">General</h2>
         <div class="options__rows" id="general-rows"></div>
       </section>
 
-      <section class="options__card">
+      <section class="options__card" data-section="hide">
         <h2 class="options__title">What to hide</h2>
         <p class="geld-help options__intro">
           Each category has its own switch. Expand one to see the built-in patterns it uses. Tests are on by default;
@@ -34,7 +34,7 @@
         <div id="categories" class="options__categories"></div>
       </section>
 
-      <section class="options__card">
+      <section class="options__card" data-section="custom-patterns">
         <h2 class="options__title">Custom patterns</h2>
         <p class="geld-help options__intro">
           One glob per line, matched against the repository-relative path with gitignore rules: <code>*.snap</code>
@@ -63,7 +63,7 @@ docs/adr/"
         </div>
       </section>
 
-      <section class="options__card">
+      <section class="options__card" data-section="repositories">
         <h2 class="options__title">Repositories</h2>
         <p class="geld-help options__intro">
           Where Geld should stay <strong>off</strong>, one rule per line, like a <code>.gitignore</code> for
@@ -88,7 +88,7 @@ big-corp
         </div>
       </section>
 
-      <section class="options__card">
+      <section class="options__card" data-section="enterprise">
         <h2 class="options__title">GitHub Enterprise Server</h2>
         <p class="geld-help options__intro">
           Geld runs on <code>github.com</code> out of the box. Add the hostname of your company's GitHub Enterprise

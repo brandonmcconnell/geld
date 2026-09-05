@@ -41,27 +41,8 @@
         </div>
       </section>
 
-      <section class="popup__section">
-        <div class="geld-row">
-          <div>
-            <span class="geld-label" id="enabled-label">Enabled on GitHub</span>
-            <p class="geld-help" id="enabled-help">Changes apply instantly to open tabs.</p>
-          </div>
-          <button id="enabled" class="geld-switch" type="button" role="switch" aria-checked="true" aria-labelledby="enabled-label" aria-describedby="enabled-help"></button>
-        </div>
-      </section>
-
-      <section class="popup__section">
-        <div class="geld-row">
-          <div>
-            <span class="geld-label" id="expanded-label">Show hidden files expanded</span>
-            <p class="geld-help" id="expanded-help">Grouped at the bottom, but not collapsed.</p>
-          </div>
-          <button id="expanded" class="geld-switch" type="button" role="switch" aria-checked="false" aria-labelledby="expanded-label" aria-describedby="expanded-help"></button>
-        </div>
-      </section>
-
-      <section class="popup__section popup__categories" id="categories" aria-label="Categories"></section>
+      <!-- "At a glance" settings: rendered from @geld/core's SETTINGS_SCHEMA (fields flagged `glance`). -->
+      <div id="glance"></div>
 
       <footer class="popup__footer">
         <span class="geld-status" id="status" aria-live="polite"></span>

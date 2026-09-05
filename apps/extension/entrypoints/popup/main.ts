@@ -4,7 +4,8 @@ import { formatCount, pluralize } from '@geld/core';
 import type { GetTabStateMessage, TabState } from '../../src/lib/messages';
 import { isTabState } from '../../src/lib/messages';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, isCategoryEnabled } from '@geld/core';
+import { allHosts, fieldsFor, isCategoryEnabled } from '@geld/core';
+import type { CategoriesField, ToggleField } from '@geld/core';
 import { settingsItem } from '../../src/lib/storage';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
@@ -55,43 +56,79 @@ async function main(): Promise<void> {
     }, 1200);
   };
 
-  /* Global switches */
-  const enabledSwitch = bindSwitch(requireElement('enabled', HTMLButtonElement), settings.enabled, async (enabled) => {
-    settings = await settingsItem.patch({ enabled });
-    saved();
-  });
-  const expandedSwitch = bindSwitch(requireElement('expanded', HTMLButtonElement), settings.expandedByDefault, async (expandedByDefault) => {
-    settings = await settingsItem.patch({ expandedByDefault });
-    saved();
-  });
-
-  /* Category checkboxes */
-  const categoriesHost = requireElement('categories', HTMLElement);
+  /* At-a-glance settings, in schema order. */
+  const glanceHost = requireElement('glance', HTMLDivElement);
+  const toggles: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
   const categoryInputs = new Map<string, HTMLInputElement>();
-  const heading = document.createElement('p');
-  heading.className = 'popup__categories-title';
-  heading.textContent = 'Hide';
-  categoriesHost.append(heading);
-  const grid = document.createElement('div');
-  grid.className = 'popup__categories-grid';
-  for (const category of CATEGORIES) {
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = isCategoryEnabled(settings, category.id);
-    input.addEventListener('change', async () => {
-      settings = await settingsItem.update((current) => ({ categories: { ...current.categories, [category.id]: input.checked } }));
+
+  function renderToggle(field: ToggleField): HTMLElement {
+    const label = document.createElement('span');
+    label.className = 'geld-label';
+    label.id = `${field.key}-label`;
+    label.textContent = field.label;
+    const help = document.createElement('p');
+    help.className = 'geld-help';
+    help.id = `${field.key}-help`;
+    help.textContent = field.glanceDescription ?? field.description;
+    const text = document.createElement('div');
+    text.append(label, help);
+    const button = document.createElement('button');
+    button.id = field.key;
+    button.className = 'geld-switch';
+    button.type = 'button';
+    button.setAttribute('role', 'switch');
+    button.setAttribute('aria-checked', String(settings[field.key]));
+    button.setAttribute('aria-labelledby', label.id);
+    button.setAttribute('aria-describedby', help.id);
+    const bound = bindSwitch(button, settings[field.key], async (value) => {
+      settings = await settingsItem.patch({ [field.key]: value });
       saved();
     });
-    categoryInputs.set(category.id, input);
-    const label = document.createElement('label');
-    label.className = 'popup__category';
-    label.title = category.description;
-    const text = document.createElement('span');
-    text.textContent = category.title;
-    label.append(input, text);
-    grid.append(label);
+    toggles.push({ field, set: bound.set });
+    const row = document.createElement('div');
+    row.className = 'geld-row';
+    row.append(text, button);
+    const section = document.createElement('section');
+    section.className = 'popup__section';
+    section.append(row);
+    return section;
   }
-  categoriesHost.append(grid);
+
+  function renderCategories(field: CategoriesField): HTMLElement {
+    const section = document.createElement('section');
+    section.className = 'popup__section popup__categories';
+    section.setAttribute('aria-label', 'Categories');
+    const heading = document.createElement('p');
+    heading.className = 'popup__categories-title';
+    heading.textContent = field.label;
+    const grid = document.createElement('div');
+    grid.className = 'popup__categories-grid';
+    for (const category of CATEGORIES) {
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = isCategoryEnabled(settings, category.id);
+      input.addEventListener('change', async () => {
+        settings = await settingsItem.update((current) => ({ categories: { ...current.categories, [category.id]: input.checked } }));
+        saved();
+      });
+      categoryInputs.set(category.id, input);
+      const label = document.createElement('label');
+      label.className = 'popup__category';
+      label.title = category.description;
+      const text = document.createElement('span');
+      text.textContent = category.title;
+      label.append(input, text);
+      grid.append(label);
+    }
+    section.append(heading, grid);
+    return section;
+  }
+
+  for (const field of fieldsFor('extension', true)) {
+    if (field.kind === 'toggle') glanceHost.append(renderToggle(field));
+    else if (field.kind === 'categories') glanceHost.append(renderCategories(field));
+    // Test groups and list fields are never flagged for the glance view; the options page renders them.
+  }
 
   /* Tab context */
   const contextRepo = requireElement('context-repo', HTMLParagraphElement);
@@ -185,8 +222,7 @@ async function main(): Promise<void> {
   // The content script re-applies asynchronously after a settings change.
   settingsItem.watch((next) => {
     settings = next;
-    enabledSwitch.set(next.enabled);
-    expandedSwitch.set(next.expandedByDefault);
+    for (const { field, set } of toggles) set(next[field.key]);
     for (const category of CATEGORIES) {
       const input = categoryInputs.get(category.id);
       if (input !== undefined) input.checked = isCategoryEnabled(next, category.id);
