@@ -1,6 +1,6 @@
 'use client';
 
-import { MoonIcon, SunIcon, SunMoonIcon } from 'lucide-react';
+import { ChevronDownIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react';
 import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -10,12 +10,12 @@ import { isThemePreference, setThemePreference, THEME_STORAGE_KEY } from '@/lib/
 import { useThemePreference } from '@/lib/use-theme-preference';
 
 const OPTIONS: readonly { readonly value: ThemePreference; readonly label: string; readonly Icon: typeof SunIcon }[] = [
-  { value: 'system', label: 'System', Icon: SunMoonIcon },
+  { value: 'system', label: 'System', Icon: MonitorIcon },
   { value: 'light', label: 'Light', Icon: SunIcon },
   { value: 'dark', label: 'Dark', Icon: MoonIcon },
 ];
 
-/** Header control: follow the system by default, or pin light or dark. */
+/** Theme picker (footer): follow the system by default, or pin light or dark. */
 export function ThemeMenu() {
   const preference = useThemePreference();
   const current = OPTIONS.find((option) => option.value === preference) ?? OPTIONS[0];
@@ -38,10 +38,12 @@ export function ThemeMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Theme: ${current.label}`} />}>
-        <CurrentIcon aria-hidden="true" />
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label={`Theme: ${current.label}`} className="w-fit gap-1.5 pr-2" />}>
+        <CurrentIcon aria-hidden="true" className="text-muted-foreground" />
+        {current.label}
+        <ChevronDownIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="start" side="top">
         <DropdownMenuRadioGroup
           value={preference}
           onValueChange={(value: unknown) => {

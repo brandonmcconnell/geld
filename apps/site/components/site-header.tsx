@@ -3,10 +3,7 @@ import Link from 'next/link';
 
 import { AccountMenu } from '@/components/account-menu';
 import { HeaderBrand } from '@/components/header-brand';
-import { GitHubIcon } from '@/components/icons';
-import { ThemeMenu } from '@/components/theme-menu';
-import { buttonVariants } from '@/components/ui/button';
-import { NAV_LINKS, REPO_URL } from '@/lib/site';
+import { NAV_LINKS } from '@/lib/site';
 
 export function SiteHeader() {
   return (
@@ -26,19 +23,7 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
-          <AccountMenu />
-          <div className="ml-1 flex items-center gap-0.5 border-l pl-2 sm:ml-2 sm:pl-3">
-            <ThemeMenu />
-            <a
-              href={REPO_URL}
-              className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
-              aria-label="Geld on GitHub (opens in a new tab)"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <GitHubIcon />
-            </a>
-          </div>
+          <AccountMenu className="ml-1 sm:ml-2" />
         </nav>
       </div>
     </header>

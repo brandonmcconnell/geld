@@ -19,6 +19,10 @@ function nonEmpty(value: string | undefined): string | null {
 }
 
 export function authConfig(): AuthConfig | null {
+  // Only production can receive the OAuth callback (one callback host per App),
+  // so previews never offer sign-in even if the env vars were scoped to them.
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (vercelEnv !== undefined && vercelEnv !== 'production') return null;
   const clientId = nonEmpty(process.env.GITHUB_CLIENT_ID);
   const clientSecret = nonEmpty(process.env.GITHUB_CLIENT_SECRET);
   const secret = nonEmpty(process.env.AUTH_SECRET);

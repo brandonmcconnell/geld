@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ExternalLink } from '@/components/external-link';
 import { FooterAccount } from '@/components/footer-account';
 import { Logomark } from '@/components/logo';
+import { ThemeMenu } from '@/components/theme-menu';
 import { AUTHOR, ISSUES_URL, LICENSE_URL, NAV_LINKS, REPO_URL } from '@/lib/site';
 import { EXTENSION_VERSION } from '@/lib/version';
 
@@ -19,6 +20,9 @@ export function SiteFooter() {
           <p className="text-xs text-muted-foreground">
             Version <span className="font-mono">{EXTENSION_VERSION}</span>
           </p>
+          <div className="mt-1">
+            <ThemeMenu />
+          </div>
         </div>
         <FooterColumn title="Site">
           {NAV_LINKS.map((link) => (

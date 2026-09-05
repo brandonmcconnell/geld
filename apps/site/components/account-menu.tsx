@@ -1,17 +1,20 @@
 'use client';
 
 import { cn } from 'cn';
-import { LogOutIcon, SettingsIcon } from 'lucide-react';
+import { CircleUserRoundIcon, LogOutIcon, SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 
+import { buttonVariants } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAccount } from '@/lib/account';
 
 /**
  * Header account control. Signed in: avatar + login opening Settings / Sign
- * out. Signed out: a "Sign in" link. The link is hidden before hydration when
- * the account cookie exists (`data-account` on <html>, set by the inline
- * script in layout.tsx) so signed-in visitors never see it flash.
+ * out. Signed out: an avatar-placeholder icon that starts sign-in. The icon is
+ * hidden before hydration when the account cookie exists (`data-account` on
+ * <html>, set by the inline script in layout.tsx) so signed-in visitors never
+ * see it flash.
  */
 export function AccountMenu({ className }: { readonly className?: string | undefined }) {
   const account = useAccount();
@@ -19,15 +22,15 @@ export function AccountMenu({ className }: { readonly className?: string | undef
   if (account === null || account === undefined) {
     // Plain anchor: a route handler that sets a cookie and redirects must never be prefetched.
     return (
-      <a
-        href="/auth/start?next=/settings"
-        className={cn(
-          'rounded-md px-2 py-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground sm:px-2.5 sm:text-sm [[data-account]_&]:hidden',
-          className,
-        )}
-      >
-        Sign in
-      </a>
+      <Tooltip>
+        <TooltipTrigger
+          render={<a href="/auth/start?next=/settings" aria-label="Sign in with GitHub" />}
+          className={cn(buttonVariants({ variant: 'outline', size: 'icon-sm', className: 'rounded-full text-muted-foreground [[data-account]_&]:hidden' }), className)}
+        >
+          <CircleUserRoundIcon aria-hidden="true" className="size-[18px]" />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Sign in with GitHub</TooltipContent>
+      </Tooltip>
     );
   }
 
