@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import Link from 'next/link';
 
+import { AccountMenu } from '@/components/account-menu';
 import { HeaderBrand } from '@/components/header-brand';
 import { GitHubIcon } from '@/components/icons';
 import { ThemeMenu } from '@/components/theme-menu';
@@ -25,6 +26,7 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          <AccountMenu />
           <div className="ml-1 flex items-center gap-0.5 border-l pl-2 sm:ml-2 sm:pl-3">
             <ThemeMenu />
             <a

@@ -1,3 +1,5 @@
+import { ACCOUNT_COOKIE_NAME } from './account-cookie';
+
 /**
  * Colour-scheme preference. `system` means "follow the OS", which is also the
  * default and the behaviour without JavaScript; `light`/`dark` force a scheme
@@ -17,6 +19,12 @@ export function isThemePreference(value: unknown): value is ThemePreference {
  * flash. Kept as a string because it is inlined into the document.
  */
 export const THEME_INIT_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+
+/**
+ * Marks the document when the readable account cookie exists so the header's
+ * "Sign in" link can be hidden before hydration (see components/account-menu.tsx).
+ */
+export const ACCOUNT_INIT_SCRIPT = `try{if(/(^|; )${ACCOUNT_COOKIE_NAME}=/.test(document.cookie))document.documentElement.dataset.account="1"}catch(e){}`;
 
 export function readThemePreference(): ThemePreference {
   try {
