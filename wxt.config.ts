@@ -16,6 +16,9 @@ export default defineConfig({
     description:
       'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
     homepage_url: 'https://github.com/brandonmcconnell/geld',
+    // Black mark on a white tile; large sizes keep store listings and Safari's
+    // app icon sharp on high-density displays.
+    icons: Object.fromEntries([16, 32, 48, 96, 128, 256, 512].map((size) => [String(size), `icon/${size}.png`])),
     permissions: [
       'storage',
       // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
