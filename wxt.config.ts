@@ -16,9 +16,11 @@ export default defineConfig({
     description:
       'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
     homepage_url: 'https://github.com/brandonmcconnell/geld',
-    // Black mark on a white tile; large sizes keep store listings and Safari's
-    // app icon sharp on high-density displays.
-    icons: Object.fromEntries([16, 32, 48, 96, 128, 256, 512].map((size) => [String(size), `icon/${size}.png`])),
+    // Black mark on a white tile. Deliberately no 48/96: chrome://extensions
+    // requests the smallest icon >= 48 and shows it in a 48 CSS px box, so an
+    // exact 48 gets upscaled on Retina while 128 is downsampled and stays sharp.
+    // 256/512 keep store listings and Safari's app icon crisp.
+    icons: Object.fromEntries([16, 32, 128, 256, 512].map((size) => [String(size), `icon/${size}.png`])),
     permissions: [
       'storage',
       // Chrome/Edge: an offscreen document watches prefers-color-scheme so the

@@ -62,7 +62,7 @@ Output archives:
 
 ```
 assets/brand/              logo + logomark SVGs (black and white variants)
-public/icon/               extension icons; icon/action/ holds the black/white toolbar marks
+public/icon/               extension icons (16/32/128/256/512); icon/action/ holds the black/white toolbar marks
 entrypoints/
   background.ts            fetches raw .diff files (needed for CORS); swaps the toolbar icon for dark mode
   offscreen/               Chrome/Edge only: watches prefers-color-scheme for the background
