@@ -119,7 +119,7 @@ async function main(): Promise<void> {
     } else if (!decision.allowed) {
       summary.textContent = `Off in ${repo ?? 'this repository'} because of the rule "${decision.rule?.raw ?? ''}".`;
     } else if (state === null || !state.hasDiff) {
-      summary.textContent = repo === null ? 'Open a pull request, commit or PR list to see what Geld is doing.' : 'No diff on this page.';
+      summary.textContent = repo === null ? 'Open a GitHub repo to see what Geld is doing.' : 'No diff on this page.';
     } else if (state.hiddenCount === 0) {
       summary.textContent = 'Nothing hidden on this page.';
     } else {
