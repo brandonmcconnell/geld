@@ -37,7 +37,7 @@ interface FirefoxContentScripts {
     matches: string[];
     js: Array<{ file: string }>;
     css: Array<{ file: string }>;
-    runAt: 'document_idle';
+    runAt: 'document_start';
   }): Promise<FirefoxRegisteredScript>;
 }
 
@@ -89,7 +89,7 @@ export async function syncEnterpriseHosts(hosts: readonly string[]): Promise<voi
         matches,
         js: [CONTENT_JS],
         css: [CONTENT_CSS],
-        runAt: 'document_idle',
+        runAt: 'document_start',
         persistAcrossSessions: true,
       },
     ]);
@@ -108,6 +108,6 @@ export async function syncEnterpriseHosts(hosts: readonly string[]): Promise<voi
     matches,
     js: [{ file: CONTENT_JS }],
     css: [{ file: CONTENT_CSS }],
-    runAt: 'document_idle',
+    runAt: 'document_start',
   });
 }

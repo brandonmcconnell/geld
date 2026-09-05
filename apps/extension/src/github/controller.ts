@@ -14,6 +14,7 @@ import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown
 import { DiffSource } from './diff-source';
 import { isOwnElement, queryAll, restoreManagedText } from './dom';
 import { detectHeadSha, shaFromCommitUrl } from './head-sha';
+import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, restoreHeaderStats } from './header-stats';
 import type { DiffEntry, DiffView } from './model';
 import type { PageInfo } from './page';
@@ -60,6 +61,20 @@ export interface ControllerHooks {
   readonly onTabState: (state: TabState) => void;
 }
 
+const HEADER_NODE_SELECTOR = '#diffstat, .toc-diff-stats, span.sr-only, span[class*="VisuallyHidden"]';
+
+/** Did this batch insert something that could be (or contain) a header stat group? */
+function headerNodesAdded(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    if (record.type !== 'childList') continue;
+    for (const node of record.addedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (node.matches(HEADER_NODE_SELECTOR) || node.querySelector(HEADER_NODE_SELECTOR) !== null) return true;
+    }
+  }
+  return false;
+}
+
 const IDLE_STATE: TabState = {
   repo: null,
   allowed: true,
@@ -87,7 +102,12 @@ export class GeldController {
   private readonly diffExpanded = new Map<string, boolean>();
   /** Which sidebar accordion panel is open per page ("changes" or a category id). */
   private readonly activePanel = new Map<string, string>();
-  private readonly diffSource = new DiffSource(() => this.schedule());
+  private readonly diffSource = new DiffSource(() => {
+    // A diff (or the on-disk cache) just became available: settle the header
+    // right away rather than after the debounce, then do the rest.
+    this.applyHeaderNow();
+    this.schedule();
+  });
   private readonly whitespace = new WhitespaceRedirector(false, () => void whitespacePersistedItem.setValue(true));
   private currentView: DiffView | null = null;
   private currentPage: PageInfo | null = null;
@@ -95,6 +115,14 @@ export class GeldController {
   private lastState: TabState = IDLE_STATE;
   private lastStateJson = '';
   private stopped = false;
+  /** The last header numbers we settled on, re-applied synchronously if GitHub re-renders the header. */
+  private settledHeader: {
+    readonly stateKey: string;
+    readonly sha: string | null;
+    readonly hidden: HiddenBreakdown;
+    readonly categories: readonly HiddenCategory[];
+  } | null = null;
+  private headerGroups: Array<{ readonly group: HeaderStatGroup; readonly additionsText: string | null }> = [];
 
   constructor(
     settings: GeldSettings,
@@ -109,6 +137,14 @@ export class GeldController {
     this.stopped = false;
     this.observer = new MutationObserver((records) => {
       if (records.every((record) => isOwnElement(record.target))) return;
+      // Header first, synchronously: this callback runs before the browser
+      // paints, so a (re-)rendered header never shows GitHub's number when the
+      // filtered one is already known or cached.
+      if (this.settledHeader === null) {
+        if (headerNodesAdded(records)) this.applyHeaderNow();
+      } else {
+        this.reassertHeader();
+      }
       this.schedule();
     });
     this.observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
@@ -128,6 +164,7 @@ export class GeldController {
     this.settings = settings;
     this.repoRules = compileRepoRules(settings.repoRules);
     this.matchers.clear();
+    this.settledHeader = null;
     // Per-page toggles were made against the old defaults; start fresh.
     this.diffExpanded.clear();
     this.pendingReveal = null;
@@ -219,34 +256,9 @@ export class GeldController {
       this.teardownView();
     }
 
-    // Header totals. Prefer the DOM when every file is rendered; otherwise fall
-    // back to the raw diff so large or diff-less pages (conversation tab) are
-    // still accurate. The diff is cached per head commit, so revisits are free.
-    const groups = findHeaderStatGroups();
-    const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
-    // The file tree lists every file up front even while diffs stream in, so it
-    // is the reliable completeness signal (the header counter is not always
-    // present). Until every file is rendered, intermediate DOM totals would
-    // step the header down file by file, so we wait for the definitive diff.
-    const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
-    const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
-
-    let headerHidden: HiddenBreakdown | null = domIsComplete ? hidden ?? EMPTY_BREAKDOWN : null;
-    let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
-    if (headerHidden === null && page.diffUrl !== null && groups.length > 0) {
-      const sha = page.kind.startsWith('pull') ? detectHeadSha() : page.kind === 'commit' ? shaFromCommitUrl(url.pathname) : null;
-      const state = this.diffSource.request(page.diffUrl, sha);
-      if (state.status === 'ready') {
-        const fromDiff = breakdownFromFiles(state.files, matcher);
-        headerHidden = fromDiff.hidden;
-        allTotals ??= fromDiff.all;
-      } else if (state.status === 'failed' && hidden !== null) {
-        headerHidden = hidden;
-      }
-    }
-    if (headerHidden !== null) {
-      for (const group of groups) applyHeaderStats(group, headerHidden, matcher.activeCategories);
-    }
+    const header = this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden);
+    const headerHidden = header.hidden;
+    const allTotals = header.all;
 
     this.applyWhitespace(page, view, url);
 
@@ -266,7 +278,7 @@ export class GeldController {
       repo,
       allowed: true,
       rule: null,
-      hasDiff: view !== null || (page.diffUrl !== null && groups.length > 0),
+      hasDiff: view !== null || (page.diffUrl !== null && header.hasGroups),
       hiddenCount: effectiveHidden?.totals.files ?? 0,
       all: allTotals,
       visible: allTotals !== null && effectiveHidden !== null ? subtractTotals(allTotals, effectiveHidden.totals) : null,
@@ -492,6 +504,91 @@ export class GeldController {
     this.nudgeProgressiveLoading(view);
   }
 
+  /**
+   * Header totals. On pull request and commit pages the head commit is known,
+   * so the raw diff (cached on disk per commit) is the only source: it is
+   * final the moment it is available, whereas DOM totals step down file by
+   * file while GitHub streams the diff in. Until it is available GitHub's own
+   * numbers stay untouched; there is never an intermediate value. Pages
+   * without a commit key (compare) use the DOM once every file is rendered.
+   */
+  private applyHeaderTotals(
+    page: PageInfo,
+    url: URL,
+    matcher: PathMatcher,
+    view: DiffView | null,
+    renderedEntryCount: number,
+    hidden: HiddenBreakdown | null,
+  ): { readonly hidden: HiddenBreakdown | null; readonly all: ChangeTotals | null; readonly hasGroups: boolean } {
+    const groups = findHeaderStatGroups();
+    const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
+    const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
+    const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
+    const sha = page.kind.startsWith('pull') ? detectHeadSha() : page.kind === 'commit' ? shaFromCommitUrl(url.pathname) : null;
+
+    let headerHidden: HiddenBreakdown | null = null;
+    let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
+    if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
+      const state = this.diffSource.request(page.diffUrl, sha);
+      if (state.status === 'ready') {
+        const fromDiff = breakdownFromFiles(state.files, matcher);
+        headerHidden = fromDiff.hidden;
+        allTotals ??= fromDiff.all;
+      } else if (state.status === 'failed' && domIsComplete) {
+        headerHidden = hidden ?? EMPTY_BREAKDOWN;
+      }
+    } else if (domIsComplete) {
+      headerHidden = hidden ?? EMPTY_BREAKDOWN;
+    }
+    if (headerHidden !== null) {
+      this.settledHeader = { stateKey: page.stateKey, sha, hidden: headerHidden, categories: matcher.activeCategories };
+      this.applyHeader(groups, headerHidden, matcher.activeCategories);
+    } else {
+      // A new head commit (or another page) invalidates what we settled on.
+      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.sha !== sha)) {
+        this.settledHeader = null;
+      }
+      this.headerGroups = [];
+    }
+    return { hidden: headerHidden, all: allTotals, hasGroups: groups.length > 0 };
+  }
+
+  /** Header-only pass for the pre-paint paths; the full apply() follows debounced. */
+  private applyHeaderNow(): void {
+    if (this.stopped || !this.settings.enabled) return;
+    const url = new URL(window.location.href);
+    const page = describePage(url);
+    if (page.diffUrl === null) return;
+    const repo = repoFromPathname(url.pathname);
+    if (repo !== null && !decideRepo(this.repoRules, repo).allowed) return;
+    this.currentPage = page;
+    this.applyHeaderTotals(page, url, this.matcherFor(repo), null, 0, null);
+    this.observer?.takeRecords();
+  }
+
+  private applyHeader(groups: readonly HeaderStatGroup[], hidden: HiddenBreakdown, categories: readonly HiddenCategory[]): void {
+    for (const group of groups) applyHeaderStats(group, hidden, categories);
+    this.headerGroups = groups.map((group) => ({ group, additionsText: group.additions?.textContent ?? null }));
+  }
+
+  /**
+   * GitHub's React header is mounted several times while a page streams in,
+   * each time with the unfiltered numbers. Called from the mutation callback
+   * (before paint): if a header we rewrote is gone or reverted, rewrite the
+   * current one immediately with the numbers we already settled on.
+   */
+  private reassertHeader(): void {
+    const settled = this.settledHeader;
+    if (settled === null || this.currentPage?.stateKey !== settled.stateKey) return;
+    const stale = this.headerGroups.some(
+      ({ group, additionsText }) => !group.host.isConnected || (group.additions !== null && group.additions.textContent !== additionsText),
+    );
+    if (!stale) return;
+    const groups = findHeaderStatGroups();
+    if (groups.length === 0) return;
+    this.applyHeader(groups, settled.hidden, settled.categories);
+  }
+
   private publish(state: TabState): void {
     this.lastState = state;
     const json = JSON.stringify(state);
@@ -515,6 +612,8 @@ export class GeldController {
   }
 
   private teardown(): void {
+    this.settledHeader = null;
+    this.headerGroups = [];
     this.teardownView();
     removePrListStats();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);

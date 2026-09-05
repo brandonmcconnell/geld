@@ -8,7 +8,9 @@ import './style.css';
 
 export default defineContentScript({
   matches: ['https://github.com/*'],
-  runAt: 'document_idle',
+  // Start before the document is parsed so the header can be rewritten as soon
+  // as it is inserted, ahead of the first paint, instead of after page load.
+  runAt: 'document_start',
   async main(ctx) {
     let showBadge = (await settingsItem.getValue()).showBadge;
 
