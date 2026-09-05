@@ -25,13 +25,13 @@
 
       <section class="popup__section popup__context" id="context">
         <p class="popup__context-line" id="context-summary">Open a GitHub repo to see what Geld is doing.</p>
-        <div class="popup__stats" id="context-stats" hidden>
-          <span class="popup__stat popup__stat--hidden" id="context-hidden"></span>
-          <span class="popup__stat popup__stat--add" id="context-add"></span>
-          <span class="popup__stat popup__stat--del" id="context-del"></span>
-        </div>
         <details class="popup__files" id="context-files" hidden>
-          <summary><span class="geld-chevron" aria-hidden="true"></span><span id="context-files-summary">Hidden files</span></summary>
+          <summary class="popup__stats" id="context-stats">
+            <span class="geld-chevron" aria-hidden="true"></span>
+            <span class="popup__stat popup__stat--hidden" id="context-hidden"></span>
+            <span class="popup__stat popup__stat--add" id="context-add"></span>
+            <span class="popup__stat popup__stat--del" id="context-del"></span>
+          </summary>
           <ul class="popup__file-list geld-code" id="context-file-list"></ul>
         </details>
         <div class="popup__quick" id="context-actions" hidden>
@@ -44,8 +44,15 @@
       <div id="popup-settings"></div>
 
       <footer class="popup__footer">
+        <div class="popup__footer-links">
+          <a class="geld-button geld-button--link" href="https://geld.sh/how-it-works" target="_blank" rel="noreferrer">
+            <span class="geld-button__icon geld-button__icon--help" aria-hidden="true"></span>How it works
+          </a>
+        </div>
         <span class="geld-status" id="status" aria-live="polite"></span>
-        <button id="open-options" class="geld-button geld-button--link" type="button">Rules &amp; patterns</button>
+        <button id="open-options" class="geld-button geld-button--link" type="button">
+          <span class="geld-button__icon geld-button__icon--settings" aria-hidden="true"></span>All settings
+        </button>
       </footer>
     </main>
     <script type="module" src="./main.ts"></script>

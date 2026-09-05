@@ -15,12 +15,16 @@ body {
 .popup__brand-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
+/* Tight line box so the block's ink, not just its box, centres on the account control. */
 .popup__brand-text .geld-brand__tagline {
   overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -46,10 +50,26 @@ body {
 
 .popup__stats {
   display: flex;
+  align-items: center;
   gap: 10px;
-  margin-top: 6px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.popup__stats .geld-chevron {
+  width: 14px;
+  height: 14px;
+  margin-right: -4px;
+}
+
+/* Nothing hidden: the row is plain text, not a disclosure. */
+.popup__stats[data-empty] {
+  cursor: default;
+}
+
+.popup__stats[data-empty] .geld-chevron {
+  display: none;
 }
 
 .popup__stat--hidden {
@@ -65,27 +85,13 @@ body {
 }
 
 .popup__files {
-  margin-top: 8px;
-}
-
-.popup__files summary {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
-
-.popup__files summary .geld-chevron {
-  width: 14px;
-  height: 14px;
+  margin-top: 4px;
 }
 
 .popup__file-list {
   max-height: 120px;
   margin: 6px 0 0;
-  padding: 0 0 0 18px;
+  padding: 0 0 0 20px;
   overflow: auto;
   font-size: 11.5px;
   line-height: 1.7;
@@ -144,7 +150,23 @@ body {
   font-size: 12.5px;
 }
 
+.popup__footer-links {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .popup__footer .geld-button--link {
+  gap: 6px;
+  color: var(--muted-foreground);
   font-size: 12.5px;
   font-weight: 500;
+}
+
+.popup__footer .geld-button--link:hover {
+  color: var(--foreground);
+}
+
+.popup__footer .geld-status {
+  flex: 1;
 }

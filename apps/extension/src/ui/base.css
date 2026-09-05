@@ -317,7 +317,6 @@ code {
   padding: 0 12px;
   /* Outline treatment: faint fill plus a slightly stronger border, in both schemes (site: border-input bg-input/20). */
   border: 1px solid var(--input);
-  border-radius: 0;
   background: color-mix(in oklch, var(--input) 20%, transparent);
   color: var(--foreground);
   font: inherit;
@@ -359,7 +358,7 @@ code {
   height: auto;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 0 !important;
   background: none;
   color: var(--foreground);
   font-weight: 400;
@@ -373,12 +372,6 @@ code {
   text-decoration-color: currentColor;
 }
 
-@supports (corner-shape: bevel) {
-  .geld-button--link,
-  .geld-button--link:hover {
-    border-radius: 0;
-  }
-}
 
 .geld-button--small {
   --cut: 7px;
@@ -407,6 +400,41 @@ code {
 .geld-button:disabled {
   opacity: 0.5;
   pointer-events: none;
+}
+
+/* A toggle shown as a button: pressed = on (filled), unpressed = off (outline). */
+.geld-button[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.geld-button[aria-pressed='true']:hover {
+  background: color-mix(in oklch, var(--primary) 85%, transparent);
+}
+
+.geld-button__icon {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  background: currentColor;
+  mask: var(--icon) center / contain no-repeat;
+}
+
+.geld-button__icon--check {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.75' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+.geld-button__icon--x {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+}
+
+.geld-button__icon--help {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
+}
+
+.geld-button__icon--settings {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 7h-9M14 17H5'/%3E%3Ccircle cx='17' cy='17' r='3'/%3E%3Ccircle cx='7' cy='7' r='3'/%3E%3C/svg%3E");
 }
 
 /* Inputs --------------------------------------------------------------------- */

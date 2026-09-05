@@ -134,13 +134,16 @@ async function main(): Promise<void> {
   /* Tab context */
   const contextRepo = requireElement('context-repo', HTMLSpanElement);
   const summary = requireElement('context-summary', HTMLParagraphElement);
-  const stats = requireElement('context-stats', HTMLDivElement);
+  const stats = requireElement('context-stats', HTMLElement);
   const statHidden = requireElement('context-hidden', HTMLSpanElement);
   const statAdd = requireElement('context-add', HTMLSpanElement);
   const statDel = requireElement('context-del', HTMLSpanElement);
   const files = requireElement('context-files', HTMLDetailsElement);
-  const filesSummary = requireElement('context-files-summary', HTMLSpanElement);
   const fileList = requireElement('context-file-list', HTMLUListElement);
+  // With nothing hidden the row is informational only; do not let it toggle.
+  stats.addEventListener('click', (event) => {
+    if (stats.hasAttribute('data-empty')) event.preventDefault();
+  });
   const actions = requireElement('context-actions', HTMLDivElement);
   const toggleRepo = requireElement('toggle-repo', HTMLButtonElement);
   const toggleOrg = requireElement('toggle-org', HTMLButtonElement);
@@ -157,34 +160,32 @@ async function main(): Promise<void> {
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
 
+    const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
+
+    // One line says it all when there are numbers; prose only when there are none.
     if (!settings.enabled) {
       summary.textContent = 'Geld is turned off.';
     } else if (!decision.allowed) {
       summary.textContent = `Off in ${repo ?? 'this repository'} because of the rule "${decision.rule?.raw ?? ''}".`;
     } else if (state === null || !state.hasDiff) {
       summary.textContent = repo === null ? 'Open a GitHub repo to see what Geld is doing.' : 'No diff on this page.';
-    } else if (state.hiddenCount === 0) {
-      summary.textContent = 'Nothing hidden on this page.';
-    } else {
-      const parts = state.categories.map((entry) => `${formatCount(entry.count)} ${entry.title.toLowerCase()}`);
-      summary.textContent = `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page${
-        state.categories.length > 1 ? ` (${parts.join(', ')})` : ''
-      }${state.expanded ? ', currently shown' : ''}.`;
+    } else if (!showStats) {
+      summary.textContent = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
     }
+    summary.hidden = showStats;
 
-    const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
-    stats.hidden = !showStats;
+    files.hidden = !showStats;
+    const paths = state?.categories.flatMap((entry) => entry.paths.map((path) => ({ path, title: entry.title }))) ?? [];
     if (showStats && state !== null && state.visible !== null && state.all !== null) {
       statHidden.textContent = `${formatCount(state.hiddenCount)} hidden`;
       statAdd.textContent = `+${formatCount(state.visible.additions)}`;
       statDel.textContent = `\u2212${formatCount(state.visible.deletions)}`;
-      stats.title = `Including hidden files: +${formatCount(state.all.additions)} \u2212${formatCount(state.all.deletions)} in ${pluralize(state.all.files, 'file', 'files')}`;
-    }
-
-    const paths = state?.categories.flatMap((entry) => entry.paths.map((path) => ({ path, title: entry.title }))) ?? [];
-    files.hidden = !(showStats && paths.length > 0);
-    if (!files.hidden) {
-      filesSummary.textContent = pluralize(paths.length, 'hidden file', 'hidden files');
+      const parts = state.categories.map((entry) => `${formatCount(entry.count)} ${entry.title.toLowerCase()}`);
+      stats.title = `${state.categories.length > 1 ? `${parts.join(', ')}. ` : ''}Including hidden files: +${formatCount(state.all.additions)} \u2212${formatCount(
+        state.all.deletions,
+      )} in ${pluralize(state.all.files, 'file', 'files')}${state.expanded ? '. Currently shown on the page' : ''}`;
+      stats.toggleAttribute('data-empty', paths.length === 0);
+      if (paths.length === 0) files.open = false;
       fileList.replaceChildren(
         ...paths.map(({ path, title }) => {
           const item = document.createElement('li');
@@ -199,13 +200,21 @@ async function main(): Promise<void> {
     if (repo !== null) {
       const org = orgOf(repo);
       const orgDecision = decideRepo(rules, ownerProbe(org));
-      toggleRepo.textContent = decision.allowed ? `Turn off for ${repo}` : `Turn on for ${repo}`;
-      toggleOrg.textContent = orgDecision.allowed ? `Turn off for ${org}/*` : `Turn on for ${org}/*`;
-      toggleRepo.dataset.target = repo;
-      toggleRepo.dataset.allow = String(!decision.allowed);
-      toggleOrg.dataset.target = org;
-      toggleOrg.dataset.allow = String(!orgDecision.allowed);
+      renderRuleButton(toggleRepo, repo, decision.allowed, repo);
+      renderRuleButton(toggleOrg, `${org}/*`, orgDecision.allowed, org);
     }
+  }
+
+  /** "✓ owner/repo" when Geld runs there, "✕ owner/repo" when a rule turns it off; click flips it. */
+  function renderRuleButton(button: HTMLButtonElement, label: string, on: boolean, target: string): void {
+    const icon = document.createElement('span');
+    icon.className = `geld-button__icon geld-button__icon--${on ? 'check' : 'x'}`;
+    icon.setAttribute('aria-hidden', 'true');
+    button.replaceChildren(icon, document.createTextNode(label));
+    button.setAttribute('aria-pressed', String(on));
+    button.title = on ? `Geld is on for ${label}. Click to turn it off.` : `Geld is off for ${label}. Click to turn it on.`;
+    button.dataset.target = target;
+    button.dataset.allow = String(!on);
   }
 
   async function toggleRules(button: HTMLButtonElement): Promise<void> {
