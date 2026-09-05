@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geld</title>
+    <!-- Toolbar icon for light toolbars; the background swaps in the white mark on dark ones. -->
+    <meta
+      name="manifest.default_icon"
+      content='{"16":"icon/action/black-16.png","32":"icon/action/black-32.png","48":"icon/action/black-48.png"}'
+    />
+    <link rel="stylesheet" href="../../src/ui/base.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="geld-brand popup__header">
+        <img class="geld-brand__logo" src="../../../../assets/brand/geld-logomark.svg" alt="" width="24" height="28" />
+        <div class="popup__brand-text">
+          <h1 class="geld-brand__name">Geld</h1>
+          <p class="geld-brand__tagline" id="context-repo">Hide tests from GitHub diffs</p>
+        </div>
+      </header>
+
+      <section class="popup__section popup__context" id="context">
+        <p class="popup__context-line" id="context-summary">Open a GitHub repo to see what Geld is doing.</p>
+        <div class="popup__stats" id="context-stats" hidden>
+          <span class="popup__stat popup__stat--hidden" id="context-hidden"></span>
+          <span class="popup__stat popup__stat--add" id="context-add"></span>
+          <span class="popup__stat popup__stat--del" id="context-del"></span>
+        </div>
+        <details class="popup__files" id="context-files" hidden>
+          <summary><span class="popup__chevron">›</span><span id="context-files-summary">Hidden files</span></summary>
+          <ul class="popup__file-list geld-code" id="context-file-list"></ul>
+        </details>
+        <div class="popup__quick" id="context-actions" hidden>
+          <button id="toggle-repo" class="geld-button geld-button--small" type="button"></button>
+          <button id="toggle-org" class="geld-button geld-button--small" type="button"></button>
+        </div>
+      </section>
+
+      <section class="popup__section">
+        <div class="geld-row">
+          <div>
+            <span class="geld-label" id="enabled-label">Enabled on GitHub</span>
+            <p class="geld-help" id="enabled-help">Changes apply instantly to open tabs.</p>
+          </div>
+          <button id="enabled" class="geld-switch" type="button" role="switch" aria-checked="true" aria-labelledby="enabled-label" aria-describedby="enabled-help"></button>
+        </div>
+      </section>
+
+      <section class="popup__section">
+        <div class="geld-row">
+          <div>
+            <span class="geld-label" id="expanded-label">Show hidden files expanded</span>
+            <p class="geld-help" id="expanded-help">Grouped at the bottom, but not collapsed.</p>
+          </div>
+          <button id="expanded" class="geld-switch" type="button" role="switch" aria-checked="false" aria-labelledby="expanded-label" aria-describedby="expanded-help"></button>
+        </div>
+      </section>
+
+      <section class="popup__section popup__categories" id="categories" aria-label="Categories"></section>
+
+      <footer class="popup__footer">
+        <span class="geld-status" id="status" aria-live="polite"></span>
+        <button id="open-options" class="geld-button geld-button--link" type="button">Rules &amp; patterns</button>
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geld options</title>
+    <meta name="manifest.open_in_tab" content="true" />
+    <link rel="stylesheet" href="../../src/ui/base.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header class="geld-brand options__header">
+        <img class="geld-brand__logo" src="../../../../assets/brand/geld-logomark.svg" alt="" width="24" height="28" />
+        <div>
+          <h1 class="geld-brand__name">Geld</h1>
+          <p class="geld-brand__tagline">Hide the files that don't need review so the ones that do stand out.</p>
+        </div>
+      </header>
+
+      <section class="options__card">
+        <h2 class="options__title">General</h2>
+        <div class="options__rows" id="general-rows"></div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">What to hide</h2>
+        <p class="geld-help options__intro">
+          Each category has its own switch. Expand one to see the built-in patterns it uses. Tests are on by default;
+          everything else is opt-in.
+        </p>
+        <div id="categories" class="options__categories"></div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Custom patterns</h2>
+        <p class="geld-help options__intro">
+          One glob per line, matched against the repository-relative path with gitignore rules: <code>*.snap</code>
+          matches a file name anywhere, <code>fixtures/</code> a directory anywhere, <code>src/**/*.gen.ts</code> a
+          full path, <code>{a,b}</code> alternatives, and a leading <code>!</code> rescues files that a built-in pattern
+          would hide. Matching files are treated as tests. A line like <code>[acme/*]</code> scopes the lines below it
+          to those repositories; <code>[*]</code> returns to all repositories.
+        </p>
+        <textarea
+          id="custom-patterns"
+          class="geld-code options__textarea"
+          rows="8"
+          spellcheck="false"
+          placeholder="# everywhere
+*.generated.ts
+!tests/contracts/**
+
+[acme/*]
+# only in Acme repositories
+docs/adr/"
+          aria-label="Custom patterns"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="patterns-status" aria-live="polite"></span>
+          <button id="save-patterns" class="geld-button geld-button--primary" type="button">Save patterns</button>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Repositories</h2>
+        <p class="geld-help options__intro">
+          Where Geld should stay <strong>off</strong>, one rule per line, like a <code>.gitignore</code> for
+          repositories: <code>acme/widgets</code> turns Geld off in that repository, <code>acme</code> (or
+          <code>acme/*</code>) in the whole organisation, a leading <code>!</code> turns it back on, and the last matching
+          line wins. Leave empty to run everywhere. For an allowlist, start with <code>*</code> and add
+          <code>!acme/*</code> below it.
+        </p>
+        <textarea
+          id="repo-rules"
+          class="geld-code options__textarea"
+          rows="5"
+          spellcheck="false"
+          placeholder="acme/legacy-app
+big-corp
+!big-corp/the-one-repo-i-review"
+          aria-label="Repository rules"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="rules-status" aria-live="polite"></span>
+          <button id="save-rules" class="geld-button geld-button--primary" type="button">Save rules</button>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">GitHub Enterprise Server</h2>
+        <p class="geld-help options__intro">
+          Geld runs on <code>github.com</code> out of the box. Add the hostname of your company's GitHub Enterprise
+          Server (one per line, e.g. <code>github.example.com</code>) and your browser will ask you to allow Geld on
+          that site. Geld never contacts anything other than the GitHub hosts you list here.
+        </p>
+        <textarea
+          id="enterprise-hosts"
+          class="geld-code options__textarea"
+          rows="3"
+          spellcheck="false"
+          placeholder="github.example.com"
+          aria-label="GitHub Enterprise Server hosts"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="hosts-status" aria-live="polite"></span>
+          <button id="save-hosts" class="geld-button geld-button--primary" type="button">Save hosts</button>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Try a path</h2>
+        <p class="geld-help options__intro">Check how a file path would be treated with your current settings.</p>
+        <div class="options__tester">
+          <input id="tester-repo" class="geld-code options__input" type="text" placeholder="owner/repo (optional)" spellcheck="false" aria-label="Repository" />
+          <input id="tester-path" class="geld-code options__input options__input--grow" type="text" placeholder="src/components/Button.test.tsx" spellcheck="false" aria-label="File path" />
+        </div>
+        <p id="tester-result" class="options__tester-result geld-help" aria-live="polite">Type a path to see what happens to it.</p>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Backup &amp; maintenance</h2>
+        <div class="options__buttons options__buttons--wrap">
+          <button id="export" class="geld-button" type="button">Export settings (JSON)</button>
+          <button id="import" class="geld-button" type="button">Import settings…</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden />
+          <button id="clear-cache" class="geld-button" type="button">Clear cached diffs</button>
+          <button id="reset" class="geld-button geld-button--danger" type="button">Reset to defaults</button>
+        </div>
+        <p class="geld-status" id="maintenance-status" aria-live="polite"></p>
+      </section>
+
+      <footer class="options__footer geld-muted">
+        Geld · <a href="https://github.com/brandonmcconnell/geld" target="_blank" rel="noreferrer">Source on GitHub</a>
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

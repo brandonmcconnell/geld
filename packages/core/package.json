@@ -1,0 +1,21 @@
+{
+  "name": "@geld/core",
+  "version": "0.1.0",
+  "description": "Framework-free logic shared by the Geld extension and website: glob matching, hidden-file categories and patterns, repository rules, settings, unified-diff parsing.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
