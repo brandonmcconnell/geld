@@ -13,6 +13,9 @@ export interface HiddenCategory {
   readonly noun: string;
   /** Plural noun used in UI copy, e.g. "test files". */
   readonly nounPlural: string;
+  /** Compact nouns for the "N tests" count label next to line counts. */
+  readonly shortNoun: string;
+  readonly shortNounPlural: string;
   /** Short title used for the pseudo-section in the file tree. */
   readonly title: string;
 }
@@ -21,6 +24,8 @@ export const TESTS_CATEGORY: HiddenCategory = {
   id: 'tests',
   noun: 'test file',
   nounPlural: 'test files',
+  shortNoun: 'test',
+  shortNounPlural: 'tests',
   title: 'Tests',
 };
 

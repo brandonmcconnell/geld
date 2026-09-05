@@ -1,9 +1,10 @@
 import type { FileStats } from '../lib/diff-parse';
 import type { ChangeTotals } from '../lib/format';
-import { addTotals, EMPTY_TOTALS, formatCount } from '../lib/format';
+import { addTotals, EMPTY_TOTALS, formatCount, pluralize } from '../lib/format';
 import type { PathMatcher } from '../lib/matcher';
 import type { DiffSource } from './diff-source';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
+import { TESTS_COUNT_CLASS } from './header-stats';
 import type { StatsBreakdown } from './ui/tooltip';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
@@ -121,6 +122,8 @@ export interface PrListOptions {
   readonly matcher: PathMatcher;
   readonly diffSource: DiffSource;
   readonly nounPlural: string;
+  readonly shortNoun: string;
+  readonly shortNounPlural: string;
   /** Called when a row scrolls near the viewport and its diff should be requested. */
   readonly onRowVisible: () => void;
 }
@@ -168,11 +171,15 @@ export function applyPrListStats(options: PrListOptions): void {
 
     const chip = ensureChip(row);
     const breakdown = breakdownFor(state.files, options.matcher);
-    const text = `+${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
+    const testsLabel = pluralize(breakdown.hidden.files, options.shortNoun, options.shortNounPlural);
+    const text = `${testsLabel} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
     if (chip.dataset.rendered !== text) {
       chip.dataset.rendered = text;
+      const tests = createElement('span', { class: `${PR_STAT_CLASS}__tests ${TESTS_COUNT_CLASS}` }, [testsLabel]);
+      tests.toggleAttribute('data-has-tests', breakdown.hidden.files > 0);
       chip.replaceChildren(
         createElement('span', { class: `${PR_STAT_CLASS}__sep`, 'aria-hidden': 'true' }, ['\u2022']),
+        tests,
         createElement('span', { class: `${PR_STAT_CLASS}__add` }, [`+${formatCount(breakdown.visible.additions)}`]),
         createElement('span', { class: `${PR_STAT_CLASS}__del` }, [`\u2212${formatCount(breakdown.visible.deletions)}`]),
       );

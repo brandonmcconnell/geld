@@ -323,6 +323,10 @@
   margin-right: 2px;
 }
 
+.geld-pr-stat__tests {
+  margin-right: 0;
+}
+
 .geld-pr-stat__add {
   color: var(--fgColor-success, #1a7f37);
 }
@@ -356,10 +360,22 @@
   outline-offset: 2px;
 }
 
-[data-geld-stat-host] [data-geld-original] {
+[data-geld-stat-host] [data-geld-original],
+.geld-tests-count[data-has-tests] {
   text-decoration: underline dotted;
   text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
   text-underline-offset: 3px;
+}
+
+/*
+ * "N tests" label to the left of +/−. Primer's "done" purple is the one GitHub
+ * uses for merged PRs, so it is already balanced against their green/red and
+ * adapts to dark and high-contrast themes.
+ */
+.geld-tests-count {
+  color: var(--fgColor-done, #8250df);
+  margin-right: 0.5em;
+  white-space: nowrap;
 }
 
 .geld-tooltip {

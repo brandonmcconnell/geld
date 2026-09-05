@@ -174,7 +174,7 @@ export class GeldController {
     }
 
     if (headerHidden !== null) {
-      for (const group of groups) applyHeaderStats(group, headerHidden, this.category.nounPlural);
+      for (const group of groups) applyHeaderStats(group, headerHidden, this.category);
     }
 
     if (this.settings.showListStats) {
@@ -182,6 +182,8 @@ export class GeldController {
         matcher: this.matcher,
         diffSource: this.diffSource,
         nounPlural: this.category.nounPlural,
+        shortNoun: this.category.shortNoun,
+        shortNounPlural: this.category.shortNounPlural,
         onRowVisible: () => this.schedule(),
       });
     } else {

@@ -1,5 +1,6 @@
 import type { ChangeTotals } from '../lib/format';
-import { formatCount, parseCount, subtractTotals } from '../lib/format';
+import { formatCount, parseCount, pluralize, subtractTotals } from '../lib/format';
+import type { HiddenCategory } from '../lib/matcher';
 import { originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
 import type { StatsBreakdown } from './ui/tooltip';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
@@ -13,6 +14,8 @@ export interface HeaderStatGroup {
   /** Elements whose text contains the total file count ("18", "18 files changed", ...). */
   readonly fileCounts: readonly HTMLElement[];
   readonly original: ChangeTotals | null;
+  /** The numbers are words in a sentence (compare page) rather than a `+N −M` pair. */
+  readonly sentence: boolean;
 }
 
 const FILE_COUNT_TEXT = /^\s*\(?\d[\d,]*\)?\s*$|\bfiles?\b/i;
@@ -62,6 +65,7 @@ function findLegacyTabnavGroup(): HeaderStatGroup | null {
     srOnly: null,
     fileCounts,
     original: readOriginalTotals(additions, deletions, null, fileCounts),
+    sentence: false,
   };
 }
 
@@ -82,6 +86,7 @@ function findCompareGroup(): HeaderStatGroup | null {
     srOnly: null,
     fileCounts,
     original: readOriginalTotals(additions, deletions, null, fileCounts),
+    sentence: true,
   };
 }
 
@@ -117,6 +122,7 @@ function findReactGroups(): HeaderStatGroup[] {
       srOnly,
       fileCounts,
       original: readOriginalTotals(additions, deletions, srOnly, fileCounts),
+      sentence: false,
     });
   }
   return groups;
@@ -183,10 +189,39 @@ function rewriteNumber(original: string, value: number, fallbackSign: string): s
   return replaceCount(original, value);
 }
 
+export const TESTS_COUNT_CLASS = 'geld-tests-count';
+
+/**
+ * "N tests" label placed to the left of the +/− counts. Always present (even
+ * "0 tests") so it is obvious the numbers have been checked; underlined only
+ * when there is a breakdown to show on hover.
+ */
+function renderTestsLabel(group: HeaderStatGroup, count: number, noun: string, nounPlural: string): void {
+  let label = group.host.querySelector<HTMLElement>(`.${TESTS_COUNT_CLASS}`);
+  if (label === null) {
+    label = document.createElement('span');
+    label.className = TESTS_COUNT_CLASS;
+    label.setAttribute('data-geld-ui', '');
+    if (group.additions !== null) group.additions.insertAdjacentElement('beforebegin', label);
+    else group.host.prepend(label);
+  }
+  const text = pluralize(count, noun, nounPlural);
+  // Inside a sentence ("… with 2 tests, 42 additions and 26 deletions.") we need a comma.
+  const rendered = group.sentence ? `${text}, ` : text;
+  if (label.textContent !== rendered) label.textContent = rendered;
+  label.toggleAttribute('data-has-tests', count > 0);
+}
+
 /** Rewrite one header group so it shows totals without the hidden files. */
-export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, nounPlural: string): void {
-  if (group.original === null || hidden.files === 0) {
+export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, category: HiddenCategory): void {
+  if (group.original === null) {
     restoreHeaderStats(group);
+    return;
+  }
+  const { nounPlural } = category;
+  renderTestsLabel(group, hidden.files, category.shortNoun, category.shortNounPlural);
+  if (hidden.files === 0) {
+    restoreNumbers(group);
     return;
   }
   const all = group.original;
@@ -221,6 +256,12 @@ export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, n
 }
 
 export function restoreHeaderStats(group: HeaderStatGroup): void {
+  restoreNumbers(group);
+  for (const label of group.host.querySelectorAll(`.${TESTS_COUNT_CLASS}`)) label.remove();
+}
+
+/** Put GitHub's original numbers back and drop the tooltip, keeping the label. */
+function restoreNumbers(group: HeaderStatGroup): void {
   for (const element of [group.additions, group.deletions, group.srOnly, ...group.fileCounts]) {
     if (element === null) continue;
     restoreManagedText(element);
