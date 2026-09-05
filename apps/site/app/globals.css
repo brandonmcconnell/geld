@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+/*
+ * Theme follows the OS (`prefers-color-scheme`); there is no toggle. Tailwind's
+ * default `dark:` variant already keys off the same media query.
+ */
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* GitHub-style diff colours. */
+  --color-addition: var(--addition);
+  --color-deletion: var(--deletion);
+  --color-addition-muted: var(--addition-muted);
+  --color-deletion-muted: var(--deletion-muted);
+  --color-neutral-block: var(--neutral-block);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--accordion-panel-height, auto);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--accordion-panel-height, auto);
+    }
+    to {
+      height: 0;
+    }
+  }
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+/* Base UI exposes open/closed state as bare data attributes. */
+@custom-variant data-open (&:where([data-open]:not([data-open="false"])));
+@custom-variant data-closed (&:where([data-closed]:not([data-closed="false"])));
+
+:root {
+  color-scheme: light dark;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.21 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 260);
+  --primary: oklch(0.21 0.01 260);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0.003 260);
+  --secondary-foreground: oklch(0.21 0.01 260);
+  --muted: oklch(0.975 0.003 260);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.96 0.004 260);
+  --accent-foreground: oklch(0.21 0.01 260);
+  --destructive: oklch(0.55 0.22 27);
+  --border: oklch(0.9 0.006 260);
+  --input: oklch(0.88 0.006 260);
+  --ring: oklch(0.6 0.02 260);
+
+  --addition: oklch(0.52 0.15 150);
+  --deletion: oklch(0.55 0.21 27);
+  --addition-muted: oklch(0.93 0.06 150);
+  --deletion-muted: oklch(0.94 0.04 27);
+  --neutral-block: oklch(0.9 0.006 260);
+
+  --radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.16 0.01 260);
+    --foreground: oklch(0.96 0.005 260);
+    --card: oklch(0.19 0.01 260);
+    --card-foreground: oklch(0.96 0.005 260);
+    --popover: oklch(0.21 0.01 260);
+    --popover-foreground: oklch(0.96 0.005 260);
+    --primary: oklch(0.93 0.005 260);
+    --primary-foreground: oklch(0.18 0.01 260);
+    --secondary: oklch(0.25 0.01 260);
+    --secondary-foreground: oklch(0.96 0.005 260);
+    --muted: oklch(0.22 0.01 260);
+    --muted-foreground: oklch(0.68 0.015 260);
+    --accent: oklch(0.26 0.01 260);
+    --accent-foreground: oklch(0.96 0.005 260);
+    --destructive: oklch(0.7 0.19 22);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 16%);
+    --ring: oklch(0.55 0.02 260);
+
+    --addition: oklch(0.75 0.17 150);
+    --deletion: oklch(0.7 0.19 22);
+    --addition-muted: oklch(0.32 0.07 150);
+    --deletion-muted: oklch(0.33 0.08 22);
+    --neutral-block: oklch(1 0 0 / 14%);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  ::selection {
+    @apply bg-foreground/90 text-background;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  code,
+  kbd {
+    @apply font-mono;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility container-site {
+  @apply mx-auto w-full max-w-5xl px-5 sm:px-8;
+}
+
+/* Inline code chips used for patterns and paths. */
+@utility code-chip {
+  @apply rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
+}
