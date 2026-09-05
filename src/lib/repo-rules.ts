@@ -60,6 +60,33 @@ export function decideRepo(rules: readonly RepoRule[], repo: string): RepoDecisi
   return decision;
 }
 
+/** Probe repo used to evaluate rules for a whole owner (`acme` → `acme/<probe>`). */
+export function ownerProbe(owner: string): string {
+  return `${owner}/\u0000probe`;
+}
+
+/**
+ * Return the rule list that makes Geld `allowed` (or not) for `target`, which
+ * is either `owner/repo` or a bare `owner`.
+ *
+ * Rules that name the target exactly are removed first, so toggling back
+ * undoes an earlier toggle instead of stacking `acme` / `!acme` pairs. A new
+ * rule is appended only when the remaining list does not already produce the
+ * desired outcome (for example `acme/*` still covering `acme/widgets`).
+ */
+export function withRepoRule(lines: readonly string[], target: string, allowed: boolean): readonly string[] {
+  const normalizedTarget = normalizeRulePattern(target).toLowerCase();
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) return true;
+    const pattern = normalizeRulePattern(trimmed.startsWith('!') ? trimmed.slice(1) : trimmed).toLowerCase();
+    return pattern !== normalizedTarget;
+  });
+  const probe = target.includes('/') ? target : ownerProbe(target);
+  if (decideRepo(compileRepoRules(kept), probe).allowed === allowed) return kept;
+  return [...kept, allowed ? `!${target}` : target];
+}
+
 /** Owner + repository from a GitHub pathname such as `/acme/widgets/pull/1`. */
 export function repoFromPathname(pathname: string): string | null {
   const match = /^\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);

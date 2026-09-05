@@ -3,7 +3,7 @@ import { CATEGORIES } from '../../src/lib/categories';
 import { formatCount, pluralize } from '../../src/lib/format';
 import type { GetTabStateMessage, TabState } from '../../src/lib/messages';
 import { isTabState } from '../../src/lib/messages';
-import { compileRepoRules, decideRepo, repoFromPathname } from '../../src/lib/repo-rules';
+import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '../../src/lib/repo-rules';
 import { isCategoryEnabled } from '../../src/lib/settings';
 import { settingsItem } from '../../src/lib/storage';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
@@ -81,7 +81,9 @@ async function main(): Promise<void> {
     const label = document.createElement('label');
     label.className = 'popup__category';
     label.title = category.description;
-    label.append(input, document.createTextNode(category.title));
+    const text = document.createElement('span');
+    text.textContent = category.title;
+    label.append(input, text);
     grid.append(label);
   }
   categoriesHost.append(grid);
@@ -153,22 +155,26 @@ async function main(): Promise<void> {
     actions.hidden = repo === null || !settings.enabled;
     if (repo !== null) {
       const org = orgOf(repo);
-      const orgDecision = decideRepo(rules, `${org}/__any__`);
+      const orgDecision = decideRepo(rules, ownerProbe(org));
       toggleRepo.textContent = decision.allowed ? `Turn off for ${repo}` : `Turn on for ${repo}`;
       toggleOrg.textContent = orgDecision.allowed ? `Turn off for ${org}/*` : `Turn on for ${org}/*`;
-      toggleRepo.dataset.rule = decision.allowed ? repo : `!${repo}`;
-      toggleOrg.dataset.rule = orgDecision.allowed ? org : `!${org}`;
+      toggleRepo.dataset.target = repo;
+      toggleRepo.dataset.allow = String(!decision.allowed);
+      toggleOrg.dataset.target = org;
+      toggleOrg.dataset.allow = String(!orgDecision.allowed);
     }
   }
 
-  async function appendRule(rule: string | undefined): Promise<void> {
-    if (rule === undefined) return;
-    settings = await settingsItem.update((current) => ({ repoRules: [...current.repoRules, rule] }));
+  async function toggleRules(button: HTMLButtonElement): Promise<void> {
+    const target = button.dataset.target;
+    if (target === undefined) return;
+    const allow = button.dataset.allow === 'true';
+    settings = await settingsItem.update((current) => ({ repoRules: withRepoRule(current.repoRules, target, allow) }));
     saved();
     await refreshContext();
   }
-  toggleRepo.addEventListener('click', () => void appendRule(toggleRepo.dataset.rule));
-  toggleOrg.addEventListener('click', () => void appendRule(toggleOrg.dataset.rule));
+  toggleRepo.addEventListener('click', () => void toggleRules(toggleRepo));
+  toggleOrg.addEventListener('click', () => void toggleRules(toggleOrg));
 
   await refreshContext();
   // The content script re-applies asynchronously after a settings change.

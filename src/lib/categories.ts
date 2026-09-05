@@ -229,8 +229,8 @@ export const CATEGORIES: readonly HiddenCategory[] = [
   },
   {
     id: 'stories',
-    title: 'Stories, fixtures & i18n',
-    description: 'Storybook stories, test fixtures and translation catalogues.',
+    title: 'Fixtures',
+    description: 'Storybook stories, test fixtures, mock data and translation catalogues.',
     noun: 'story or fixture file',
     nounPlural: 'stories, fixtures & i18n files',
     shortNoun: 'fixture',

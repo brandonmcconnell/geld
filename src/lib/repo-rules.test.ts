@@ -1,4 +1,4 @@
-import { compileRepoRules, decideRepo, repoFromPathname } from './repo-rules';
+import { compileRepoRules, decideRepo, repoFromPathname, withRepoRule } from './repo-rules';
 
 const allowed = (rules: readonly string[], repo: string): boolean => decideRepo(compileRepoRules(rules), repo).allowed;
 
@@ -42,5 +42,32 @@ describe('repo rules', () => {
     expect(repoFromPathname('/pulls')).toBeNull();
     expect(repoFromPathname('/settings/profile')).toBeNull();
     expect(repoFromPathname('/orgs/acme/repositories')).toBeNull();
+  });
+});
+
+describe('withRepoRule', () => {
+  it('appends a rule to turn a repo or owner off, and removes it to turn it back on', () => {
+    const off = withRepoRule([], 'mintlify/server', false);
+    expect(off).toEqual(['mintlify/server']);
+    expect(withRepoRule(off, 'mintlify/server', true)).toEqual([]);
+
+    const orgOff = withRepoRule([], 'mintlify', false);
+    expect(orgOff).toEqual(['mintlify']);
+    expect(withRepoRule(orgOff, 'mintlify', true)).toEqual([]);
+    // `mintlify/*` written by hand is the same target as `mintlify`.
+    expect(withRepoRule(['mintlify/*'], 'mintlify', true)).toEqual([]);
+  });
+
+  it('only adds a negation when a broader rule still applies', () => {
+    const rules = ['mintlify'];
+    const rescued = withRepoRule(rules, 'mintlify/server', true);
+    expect(rescued).toEqual(['mintlify', '!mintlify/server']);
+    // Turning the repo off again just drops the rescue.
+    expect(withRepoRule(rescued, 'mintlify/server', false)).toEqual(['mintlify']);
+  });
+
+  it('cleans up stale exact rules and keeps comments', () => {
+    const messy = ['# mine', 'mintlify/server', '!mintlify/server', 'other/repo'];
+    expect(withRepoRule(messy, 'mintlify/server', false)).toEqual(['# mine', 'other/repo', 'mintlify/server']);
   });
 });

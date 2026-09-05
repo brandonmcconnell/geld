@@ -1,7 +1,7 @@
 import type { HiddenCategory } from '../../lib/categories';
 import { formatCount } from '../../lib/format';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_BEAKER, ICON_CHEVRON_RIGHT, ICON_EYE_CLOSED, ICON_FILE, ICON_FILE_DIRECTORY } from './icons';
+import { CATEGORY_ICONS, ICON_CHEVRON_RIGHT, ICON_FILE, ICON_FILE_DIRECTORY, ICON_FILE_DIFF } from './icons';
 
 export const TREE_SECTION_CLASS = 'geld-tree-section';
 
@@ -19,7 +19,8 @@ export interface TreeSectionState {
   /** Identifies the page so folder collapse state survives re-renders. */
   readonly stateKey: string;
   readonly files: readonly TreeSectionFile[];
-  readonly expanded: boolean;
+  /** Whether this is the open panel of the sidebar accordion. */
+  readonly active: boolean;
 }
 
 export interface DirNode {
@@ -173,7 +174,7 @@ function build(
     [
       createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
       createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [
-        svgFromString(category.id === 'tests' ? ICON_BEAKER : ICON_EYE_CLOSED),
+        svgFromString(CATEGORY_ICONS[category.id]),
       ]),
       title,
       count,
@@ -294,9 +295,9 @@ export function renderTreeSection(
     'aria-label',
     `${state.category.title}: ${formatCount(state.files.length)} hidden ${state.category.nounPlural}`,
   );
-  section.header.setAttribute('aria-expanded', String(state.expanded));
-  section.group.hidden = !state.expanded;
-  section.root.dataset.expanded = String(state.expanded);
+  section.header.setAttribute('aria-expanded', String(state.active));
+  section.group.hidden = !state.active;
+  section.root.toggleAttribute('data-active', state.active);
 
   const signature = `${state.stateKey}#${state.category.id}\n${state.files
     .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('title') ?? ''}`)
@@ -321,8 +322,117 @@ export function renderTreeSection(
 /** Remove all sections, or only those whose category is not in `keep`. */
 export function removeTreeSection(root: ParentNode, keep: ReadonlySet<string> | null = null): void {
   for (const element of root.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}`)) {
-    if (keep !== null && element.dataset.category !== undefined && keep.has(element.dataset.category)) continue;
+    const category = element.dataset.category;
+    if (keep !== null && category !== undefined && (category === CHANGES_SECTION_ID || keep.has(category))) continue;
     parts.get(element)?.resizeObserver?.disconnect();
     element.remove();
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Sidebar accordion                                                          */
+/* ------------------------------------------------------------------------- */
+
+export const CHANGES_SECTION_ID = 'changes';
+const ATTR_SIDEBAR = 'data-geld-sidebar';
+const ATTR_SIDEBAR_PATH = 'data-geld-sidebar-path';
+const ATTR_TREE_LIST = 'data-geld-tree-list';
+
+interface ChangesHeaderParts {
+  readonly root: HTMLElement;
+  readonly header: HTMLButtonElement;
+  readonly count: HTMLElement;
+}
+
+const changesParts = new WeakMap<HTMLElement, ChangesHeaderParts>();
+
+/**
+ * A header for GitHub's own tree ("Changes"), so it behaves like the other
+ * accordion panels. It is inserted right before the tree and never wraps it.
+ */
+export function renderChangesHeader(
+  treeRoot: HTMLElement,
+  state: { readonly count: number; readonly active: boolean; readonly view: 'legacy' | 'react' },
+  onActivate: () => void,
+): HTMLElement {
+  const previous = treeRoot.previousElementSibling;
+  let root = previous instanceof HTMLElement && previous.dataset.category === CHANGES_SECTION_ID ? previous : null;
+  let parts = root === null ? undefined : changesParts.get(root);
+  if (root !== null && parts === undefined) {
+    root.remove();
+    root = null;
+  }
+  if (parts === undefined) {
+    const count = createElement('span', { class: `${TREE_SECTION_CLASS}__count` });
+    const header = row(
+      1,
+      [
+        createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
+        createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [svgFromString(ICON_FILE_DIFF)]),
+        createElement('span', { class: 'geld-tree__label geld-tree__label--root' }, ['Changes']),
+        count,
+      ],
+      { class: `geld-tree__row ${TREE_SECTION_CLASS}__header`, 'aria-expanded': 'false' },
+    );
+    header.addEventListener('click', onActivate);
+    root = createElement(
+      'div',
+      { class: `${TREE_SECTION_CLASS} ${TREE_SECTION_CLASS}--changes`, [OWN_UI_ATTRIBUTE]: '', 'data-category': CHANGES_SECTION_ID },
+      [header],
+    );
+    parts = { root, header, count };
+    changesParts.set(root, parts);
+    treeRoot.insertAdjacentElement('beforebegin', root);
+  }
+  parts.root.dataset.view = state.view;
+  parts.count.textContent = formatCount(state.count);
+  parts.header.setAttribute('aria-expanded', String(state.active));
+  parts.header.setAttribute('aria-label', `Changes: ${formatCount(state.count)} files`);
+  parts.root.toggleAttribute('data-active', state.active);
+  syncGeometry(parts.root, treeRoot);
+  return parts.root;
+}
+
+function scrollContainerOf(element: HTMLElement): HTMLElement | null {
+  let current = element.parentElement;
+  while (current !== null && current !== document.body) {
+    const overflow = getComputedStyle(current).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Turn the sidebar's scroll container into a full-height flex column so the
+ * active panel fills the space and scrolls on its own while every header stays
+ * visible. Only attributes are set; GitHub's DOM order is untouched.
+ */
+export function applySidebarLayout(treeRoot: HTMLElement, active: string): void {
+  // Once marked, the scroller has `overflow: hidden`, so reuse the mark rather
+  // than searching for an overflowing ancestor again.
+  const scroller = treeRoot.closest<HTMLElement>(`[${ATTR_SIDEBAR}]`) ?? scrollContainerOf(treeRoot) ?? treeRoot.parentElement;
+  if (scroller === null) return;
+  scroller.setAttribute(ATTR_SIDEBAR, active);
+  treeRoot.setAttribute(ATTR_TREE_LIST, '');
+  // Mark the chain between the scroller and the tree so heights propagate.
+  const onPath = new Set<Element>();
+  let current = treeRoot.parentElement;
+  while (current !== null && current !== scroller) {
+    onPath.add(current);
+    current.setAttribute(ATTR_SIDEBAR_PATH, '');
+    current = current.parentElement;
+  }
+  for (const stale of scroller.querySelectorAll(`[${ATTR_SIDEBAR_PATH}]`)) {
+    if (!onPath.has(stale)) stale.removeAttribute(ATTR_SIDEBAR_PATH);
+  }
+}
+
+export function removeSidebarLayout(root: ParentNode = document): void {
+  for (const element of root.querySelectorAll(`[${ATTR_SIDEBAR}], [${ATTR_SIDEBAR_PATH}], [${ATTR_TREE_LIST}]`)) {
+    element.removeAttribute(ATTR_SIDEBAR);
+    element.removeAttribute(ATTR_SIDEBAR_PATH);
+    element.removeAttribute(ATTR_TREE_LIST);
+  }
+  for (const element of root.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}--changes`)) element.remove();
 }

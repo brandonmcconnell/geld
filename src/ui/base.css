@@ -231,3 +231,8 @@ code {
 .geld-muted {
   color: var(--geld-fg-muted);
 }
+
+/* Author `display` values must not defeat the `hidden` attribute. */
+[hidden] {
+  display: none !important;
+}

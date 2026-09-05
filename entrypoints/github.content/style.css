@@ -179,27 +179,72 @@
   --geld-chevron-size: 12px;
   --geld-line-offset: -1px;
   box-sizing: border-box;
-  margin-top: 8px;
-  padding-top: 8px;
-  padding-bottom: 16px;
+  flex: 0 0 auto;
+  min-height: 0;
+  /* Header rows sit equidistant from the separators above and below. */
+  padding: 4px 0;
   border-top: 1px solid var(--borderColor-muted, #d0d7de);
   color: var(--fgColor-muted, #59636e);
 }
 
-/* Consecutive category sections share one rhythm instead of stacking margins. */
-.geld-tree-section + .geld-tree-section {
-  margin-top: 0;
-  padding-top: 4px;
-}
-
-.geld-tree-section:has(+ .geld-tree-section) {
-  padding-bottom: 4px;
+.geld-tree-section--changes {
+  margin-top: 8px;
+  color: var(--fgColor-default, #1f2328);
 }
 
 .geld-tree-section[data-view='legacy'] {
   --geld-indent-base: 8px;
   --geld-chevron-size: 16px;
   --geld-line-offset: 0px;
+}
+
+/* ---- Full-height accordion ------------------------------------------------ */
+
+/* The sidebar's scroll container becomes a flex column; the open panel fills it. */
+[data-geld-sidebar] {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+[data-geld-sidebar-path] {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
+/* GitHub's own tree is the "Changes" panel: it scrolls on its own when open... */
+[data-geld-tree-list] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ...and is put away when another panel is open. */
+[data-geld-sidebar]:not([data-geld-sidebar='changes']) [data-geld-tree-list] {
+  display: none !important;
+}
+
+/* The open category panel grows and scrolls internally. */
+.geld-tree-section[data-active]:not(.geld-tree-section--changes) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.geld-tree-section[data-active] > .geld-tree,
+.geld-tree-section[data-active] > .geld-tree > .geld-tree__item--root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.geld-tree-section[data-active] > .geld-tree > .geld-tree__item--root > .geld-tree__group {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .geld-tree,
@@ -212,6 +257,11 @@
 /* Guide line under the parent's chevron, like GitHub's nested groups. */
 .geld-tree__group {
   position: relative;
+}
+
+/* The root group scrolls, so its own guide line would be clipped; nested ones are fine. */
+.geld-tree__item--root > .geld-tree__group::before {
+  display: none;
 }
 
 .geld-tree__group::before {

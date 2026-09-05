@@ -22,7 +22,14 @@ import { applyPrListStats, removePrListStats } from './pr-list';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import type { TreeSectionFile } from './ui/tree-section';
-import { removeTreeSection, renderTreeSection } from './ui/tree-section';
+import {
+  applySidebarLayout,
+  CHANGES_SECTION_ID,
+  removeSidebarLayout,
+  removeTreeSection,
+  renderChangesHeader,
+  renderTreeSection,
+} from './ui/tree-section';
 import { legacyAdapter } from './views/legacy';
 import { reactAdapter } from './views/react';
 import { findUnviewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
@@ -78,7 +85,8 @@ export class GeldController {
   private observer: MutationObserver | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly diffExpanded = new Map<string, boolean>();
-  private readonly treeExpanded = new Map<string, boolean>();
+  /** Which sidebar accordion panel is open per page ("changes" or a category id). */
+  private readonly activePanel = new Map<string, string>();
   private readonly diffSource = new DiffSource(() => this.schedule());
   private readonly whitespace = new WhitespaceRedirector(false, () => void whitespacePersistedItem.setValue(true));
   private currentView: DiffView | null = null;
@@ -325,10 +333,14 @@ export class GeldController {
 
     const entryPaths = new Set(view.entries.map((entry) => entry.path));
     const byCategory = new Map<HiddenCategory, TreeSectionFile[]>();
+    let visibleFiles = 0;
     for (const file of view.treeFiles) {
       const category = matcher.categorize(file.path);
       file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
-      if (category === null) continue;
+      if (category === null) {
+        visibleFiles += 1;
+        continue;
+      }
       const list = byCategory.get(category) ?? [];
       list.push({ path: file.path, available: entryPaths.has(file.path), statusIcon: file.statusIcon });
       byCategory.set(category, list);
@@ -346,19 +358,38 @@ export class GeldController {
     }
 
     const host = view.treeRoot.parentElement ?? document;
-    removeTreeSection(host, new Set(Array.from(byCategory.keys(), (category) => category.id)));
+    const present = new Set<string>(Array.from(byCategory.keys(), (category) => category.id));
+    if (present.size === 0) {
+      // Nothing hidden: GitHub's sidebar stays exactly as it was.
+      removeTreeSection(host);
+      removeSidebarLayout(host);
+      return;
+    }
+
+    // One panel open at a time; fall back to GitHub's tree if the remembered
+    // panel's category has nothing on this page.
+    let active = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+    if (active !== CHANGES_SECTION_ID && !present.has(active)) active = CHANGES_SECTION_ID;
+    const activate = (panel: string): void => {
+      const current = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+      this.activePanel.set(stateKey, current === panel ? CHANGES_SECTION_ID : panel);
+      this.apply();
+    };
+
+    applySidebarLayout(view.treeRoot, active);
+    renderChangesHeader(view.treeRoot, { count: visibleFiles, active: active === CHANGES_SECTION_ID, view: view.kind }, () =>
+      activate(CHANGES_SECTION_ID),
+    );
+
+    removeTreeSection(host, present);
     let previous: HTMLElement | null = null;
     for (const category of CATEGORIES) {
       const files = byCategory.get(category);
       if (files === undefined) continue;
-      const key = `${stateKey}#${category.id}`;
       previous = renderTreeSection(
         view.treeRoot,
-        { category, view: view.kind, stateKey, files, expanded: this.treeExpanded.get(key) ?? false },
-        () => {
-          this.treeExpanded.set(key, !(this.treeExpanded.get(key) ?? false));
-          this.apply();
-        },
+        { category, view: view.kind, stateKey, files, active: active === category.id },
+        () => activate(category.id),
         (path) => this.reveal(path, stateKey),
         previous,
       );
@@ -474,6 +505,7 @@ export class GeldController {
     }
     removeHiddenSection(document);
     removeTreeSection(document);
+    removeSidebarLayout(document);
     this.currentView = null;
   }
 
