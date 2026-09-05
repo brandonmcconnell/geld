@@ -50,6 +50,7 @@ Patterns use gitignore-style semantics: a pattern without a slash matches a file
 - **Mark as viewed** in the bottom section ticks GitHub's "Viewed" checkbox on every hidden file, so review progress can reach 100% without opening them.
 - **Line counts in PR lists**, **badge**, **shortcut** and **expanded by default** can each be switched off.
 - **Export/import** your settings as JSON from the options page.
+- **GitHub account sync (optional):** "Sign in with GitHub" (top right of the popup or options) uses GitHub's OAuth *device flow* — you confirm a short code on github.com; the only scope is `gist`. Settings are kept in a **secret gist on your own account** (`geld-settings.json`), so there is no Geld server or database and nobody else can read or change them; the token stays on the device that signed in. Changes push within a couple of seconds and pull when the popup/options open or the browser starts. Signing in on a second browser that already has different settings asks whether to keep that device's or use the account's. Requires a GitHub OAuth App client id with Device Flow enabled (set `WXT_GITHUB_CLIENT_ID` in `apps/extension/.env` at build time, or paste one in the options page).
 - **GitHub Enterprise Server:** add your server's hostname in the options; the browser asks you to allow Geld on that host and the content script is registered there (Chrome/Edge/Safari via `scripting`, Firefox via `contentScripts`). GHES runs GitHub's UI a few versions behind, so if something looks off there please open an issue with a screenshot.
 
 ### Data & caching
@@ -125,7 +126,7 @@ Geld never moves GitHub's DOM nodes around (that would break the React view). In
 
 ## Roadmap ideas
 
-- Settings sync through a GitHub sign-in, and a repo-committed config so teams can share patterns.
+- A repo-committed config (e.g. `.github/geld.yml`) so teams can share patterns.
 
 ## License
 

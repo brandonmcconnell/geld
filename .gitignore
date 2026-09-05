@@ -14,3 +14,7 @@ web-ext.config.ts
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Local env (WXT reads .env files)
+.env
+.env.local

@@ -9,6 +9,8 @@ import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, normalizeSettings, parsePatternList } from '@geld/core';
 import { settingsItem } from '../../src/lib/storage';
 import { isTestPatternGroupId } from '@geld/core';
+import { BUILT_IN_CLIENT_ID, oauthClientIdItem } from '../../src/lib/account';
+import { mountAccountWidget } from '../../src/ui/account-widget';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 
 /* ------------------------------------------------------------------ helpers */
@@ -296,6 +298,25 @@ async function main(): Promise<void> {
   }
   testerRepo.addEventListener('input', runTester);
   testerPath.addEventListener('input', runTester);
+
+  /* GitHub account */
+  mountAccountWidget(requireElement('account', HTMLDivElement), {
+    variant: 'full',
+    promptHost: requireElement('account-prompt', HTMLDivElement),
+  });
+  const oauthStatus = statusReporter(requireElement('oauth-status', HTMLSpanElement));
+  const oauthInput = requireElement('oauth-client-id', HTMLInputElement);
+  oauthInput.value = await oauthClientIdItem.getValue();
+  oauthInput.placeholder = BUILT_IN_CLIENT_ID !== '' ? `${BUILT_IN_CLIENT_ID} (built in)` : 'Ov23li…';
+  requireElement('save-oauth', HTMLButtonElement).addEventListener('click', async () => {
+    const value = oauthInput.value.trim();
+    if (value !== '' && !/^[A-Za-z0-9._-]{8,}$/.test(value)) {
+      oauthStatus('That does not look like a GitHub OAuth client id.', 'error');
+      return;
+    }
+    await oauthClientIdItem.setValue(value);
+    oauthStatus(value === '' ? 'Using the built-in client id.' : 'Saved. Sign out and back in to use it.', 'success');
+  });
 
   /* Backup & maintenance */
   const maintenanceStatus = statusReporter(requireElement('maintenance-status', HTMLParagraphElement));

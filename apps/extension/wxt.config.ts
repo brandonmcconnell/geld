@@ -31,7 +31,8 @@ export default defineConfig({
     ],
     // patch-diff.githubusercontent.com serves the raw `.diff` that github.com
     // redirects to; it is fetched from the background script only.
-    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*'],
+    // api.github.com is used only for the optional GitHub sign-in (gist sync).
+    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
     ...(manifestVersion === 3
       ? { optional_host_permissions: ['https://*/*'] }

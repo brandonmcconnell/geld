@@ -15,6 +15,19 @@ body {
   padding: 0 4px 8px;
 }
 
+.options__brand-text {
+  min-width: 0;
+}
+
+.options__account-prompt:empty {
+  display: none;
+}
+
+.options__account-prompt .geld-account__prompt {
+  border: 1px solid var(--geld-border);
+  border-radius: 10px;
+}
+
 .options__card {
   min-width: 0;
   padding: 16px 20px;

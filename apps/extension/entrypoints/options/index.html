@@ -12,11 +12,13 @@
     <main class="options">
       <header class="geld-brand options__header">
         <img class="geld-brand__logo" src="../../../../assets/brand/geld-logomark.svg" alt="" width="24" height="28" />
-        <div>
+        <div class="options__brand-text">
           <h1 class="geld-brand__name">Geld</h1>
           <p class="geld-brand__tagline">Hide the files that don't need review so the ones that do stand out.</p>
         </div>
+        <div class="geld-account" id="account"></div>
       </header>
+      <div id="account-prompt" class="options__account-prompt"></div>
 
       <section class="options__card">
         <h2 class="options__title">General</h2>
@@ -115,6 +117,28 @@ big-corp
           <input id="tester-path" class="geld-code options__input options__input--grow" type="text" placeholder="src/components/Button.test.tsx" spellcheck="false" aria-label="File path" />
         </div>
         <p id="tester-result" class="options__tester-result geld-help" aria-live="polite">Type a path to see what happens to it.</p>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">GitHub account</h2>
+        <p class="geld-help options__intro">
+          Sign in (top right) to keep these settings in sync across browsers and devices. Geld uses GitHub's
+          <em>device flow</em>: you confirm a short code on github.com, and the only permission requested is
+          <code>gist</code>. Your settings are stored in a <strong>secret gist on your own account</strong> named
+          <code>geld-settings.json</code>. There is no Geld server and no database — nobody but you (including Geld's
+          author) can read or change that gist, and the sign-in token never leaves this device. Signing in on another
+          browser asks whether to keep that device's settings or use the account's.
+        </p>
+        <label class="geld-label" for="oauth-client-id">OAuth App client id</label>
+        <p class="geld-help">
+          The public client id of a GitHub OAuth App with <em>Device Flow</em> enabled. A default is built in; paste
+          your own to use a different app.
+        </p>
+        <input id="oauth-client-id" class="geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Ov23li…" aria-label="OAuth App client id" />
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="oauth-status" aria-live="polite"></span>
+          <button id="save-oauth" class="geld-button" type="button">Save client id</button>
+        </div>
       </section>
 
       <section class="options__card">

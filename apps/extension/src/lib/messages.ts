@@ -56,7 +56,21 @@ export interface TabStateMessage {
   readonly state: TabState;
 }
 
-export type GeldRequest = FetchDiffRequest | ColorSchemeMessage | ToggleHiddenMessage | GetTabStateMessage | TabStateMessage;
+/** Popup/options → background: account and sync actions. */
+export interface AccountActionMessage {
+  readonly type: 'geld:account';
+  readonly action: 'sign-in' | 'cancel-sign-in' | 'sign-out' | 'sync-now' | 'resolve-remote' | 'resolve-local';
+}
+
+export type AccountActionResponse = { readonly ok: true } | { readonly ok: false; readonly message: string };
+
+export type GeldRequest =
+  | FetchDiffRequest
+  | ColorSchemeMessage
+  | ToggleHiddenMessage
+  | GetTabStateMessage
+  | TabStateMessage
+  | AccountActionMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -97,4 +111,15 @@ export function isTabState(value: unknown): value is TabState {
     Array.isArray(value.categories) &&
     typeof value.expanded === 'boolean'
   );
+}
+
+const ACCOUNT_ACTIONS: ReadonlySet<string> = new Set(['sign-in', 'cancel-sign-in', 'sign-out', 'sync-now', 'resolve-remote', 'resolve-local']);
+
+export function isAccountActionMessage(value: unknown): value is AccountActionMessage {
+  return isRecord(value) && value.type === 'geld:account' && typeof value.action === 'string' && ACCOUNT_ACTIONS.has(value.action);
+}
+
+export function isAccountActionResponse(value: unknown): value is AccountActionResponse {
+  if (!isRecord(value)) return false;
+  return value.ok === true || (value.ok === false && typeof value.message === 'string');
 }

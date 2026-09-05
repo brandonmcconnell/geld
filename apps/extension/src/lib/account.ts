@@ -1,0 +1,61 @@
+import type { GeldSettings } from '@geld/core';
+import { storage } from 'wxt/utils/storage';
+
+/**
+ * Device-local state for the GitHub account link. Tokens never go into
+ * `storage.sync`; they stay on the device that signed in.
+ */
+
+export interface GitHubAccount {
+  readonly login: string;
+  readonly id: number;
+  readonly avatarUrl: string;
+  readonly token: string;
+  /** Scopes granted to the token, for diagnostics. */
+  readonly scopes: readonly string[];
+}
+
+export type AuthFlowState =
+  | { readonly status: 'idle' }
+  | {
+      readonly status: 'pending';
+      readonly userCode: string;
+      readonly verificationUri: string;
+      readonly expiresAt: number;
+    }
+  | { readonly status: 'error'; readonly message: string };
+
+export interface SyncState {
+  readonly gistId: string | null;
+  /** ISO timestamp of the gist revision we last read or wrote. */
+  readonly remoteUpdatedAt: string | null;
+  readonly lastSyncedAt: number | null;
+  readonly lastError: string | null;
+  /**
+   * Set when a sign-in found account settings that differ from this device's.
+   * Sync pauses until the user chooses which side wins.
+   */
+  readonly pendingChoice: { readonly remote: GeldSettings; readonly remoteUpdatedAt: string } | null;
+}
+
+export const EMPTY_SYNC_STATE: SyncState = {
+  gistId: null,
+  remoteUpdatedAt: null,
+  lastSyncedAt: null,
+  lastError: null,
+  pendingChoice: null,
+};
+
+export const accountItem = storage.defineItem<GitHubAccount | null>('local:githubAccount', { fallback: null });
+export const authFlowItem = storage.defineItem<AuthFlowState>('local:authFlow', { fallback: { status: 'idle' } });
+export const syncStateItem = storage.defineItem<SyncState>('local:syncState', { fallback: EMPTY_SYNC_STATE });
+/** OAuth App client id (public). Can be overridden from the options page for testing. */
+export const oauthClientIdItem = storage.defineItem<string>('local:oauthClientId', { fallback: '' });
+
+/** Client id baked in at build time (`WXT_GITHUB_CLIENT_ID` in .env), if any. */
+export const BUILT_IN_CLIENT_ID: string = import.meta.env.WXT_GITHUB_CLIENT_ID ?? '';
+
+export async function effectiveClientId(): Promise<string> {
+  const override = (await oauthClientIdItem.getValue()).trim();
+  return override !== '' ? override : BUILT_IN_CLIENT_ID;
+}

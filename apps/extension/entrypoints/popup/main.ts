@@ -6,6 +6,7 @@ import { isTabState } from '../../src/lib/messages';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, isCategoryEnabled } from '@geld/core';
 import { settingsItem } from '../../src/lib/storage';
+import { mountAccountWidget } from '../../src/ui/account-widget';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 
 interface ActiveTab {
@@ -41,6 +42,10 @@ function orgOf(repo: string): string {
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
   const status = requireElement('status', HTMLSpanElement);
+  mountAccountWidget(requireElement('account', HTMLDivElement), {
+    variant: 'compact',
+    promptHost: requireElement('account-prompt', HTMLDivElement),
+  });
   const saved = (): void => {
     status.textContent = 'Saved';
     status.dataset.tone = 'success';
