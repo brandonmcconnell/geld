@@ -335,6 +335,7 @@ export function removeTreeSection(root: ParentNode, keep: ReadonlySet<string> | 
 
 export const CHANGES_SECTION_ID = 'changes';
 const ATTR_SIDEBAR = 'data-geld-sidebar';
+const ATTR_SIDEBAR_LAYOUT = 'data-geld-sidebar-layout';
 const ATTR_SIDEBAR_PATH = 'data-geld-sidebar-path';
 const ATTR_TREE_LIST = 'data-geld-tree-list';
 
@@ -409,7 +410,7 @@ function centreFilterAboveHeader(header: HTMLElement, treeRoot: HTMLElement): vo
   const boundaryTop = scroller.getBoundingClientRect().top;
   const filterRect = filter.getBoundingClientRect();
   const gapAbove = filterRect.top - boundaryTop;
-  if (gapAbove < 0 || gapAbove > 64) return; // Something unexpected sits above; leave GitHub's spacing alone.
+  if (gapAbove < 0 || gapAbove > 120) return; // Something unexpected sits above; leave GitHub's spacing alone.
 
   const currentMargin = Number.parseFloat(getComputedStyle(header).marginTop) || 0;
   const gapBelow = header.getBoundingClientRect().top - filterRect.bottom;
@@ -494,7 +495,7 @@ class SidebarSizer {
     const scroller = this.scroller;
     if (scroller === null || !scroller.isConnected) return;
     // Only sticky sidebars need this; stacked (narrow) layouts keep GitHub's sizing.
-    if (!isWithinSticky(scroller)) {
+    if (!isWithinSticky(scroller) && stickyRootOf(scroller) === null) {
       if (this.lastHeight !== -1) {
         scroller.style.removeProperty('height');
         scroller.style.removeProperty('max-height');
@@ -530,30 +531,53 @@ const sidebarSizer = new SidebarSizer();
  * visible. Only attributes are set; GitHub's DOM order is untouched.
  */
 export function applySidebarLayout(treeRoot: HTMLElement, active: string): void {
-  // Once marked, the scroller has `overflow: hidden`, so reuse the mark rather
-  // than searching for an overflowing ancestor again.
-  const scroller = treeRoot.closest<HTMLElement>(`[${ATTR_SIDEBAR}]`) ?? scrollContainerOf(treeRoot) ?? treeRoot.parentElement;
-  if (scroller === null) return;
-  scroller.setAttribute(ATTR_SIDEBAR, active);
+  // The sticky ancestor is what defines the sidebar's visible box in every
+  // GitHub layout; fall back to a scroll container, then the tree's parent.
+  // Once marked, reuse the mark (our overrides change the computed styles).
+  const root =
+    treeRoot.closest<HTMLElement>(`[${ATTR_SIDEBAR}]`) ??
+    stickyRootOf(treeRoot) ??
+    scrollContainerOf(treeRoot) ??
+    treeRoot.parentElement;
+  if (root === null) return;
+  root.setAttribute(ATTR_SIDEBAR, active);
+  // A flex-row root (Primer's pane wrapper holds dividers beside the pane)
+  // must keep its direction; anything else becomes a column.
+  if (!root.hasAttribute(ATTR_SIDEBAR_LAYOUT)) {
+    const style = getComputedStyle(root);
+    const isRow = style.display.includes('flex') && style.flexDirection.startsWith('row');
+    root.setAttribute(ATTR_SIDEBAR_LAYOUT, isRow ? 'row' : 'column');
+  }
   treeRoot.setAttribute(ATTR_TREE_LIST, '');
-  // Mark the chain between the scroller and the tree so heights propagate.
+  // Mark the chain between the root and the tree so heights propagate.
   const onPath = new Set<Element>();
   let current = treeRoot.parentElement;
-  while (current !== null && current !== scroller) {
+  while (current !== null && current !== root) {
     onPath.add(current);
     current.setAttribute(ATTR_SIDEBAR_PATH, '');
     current = current.parentElement;
   }
-  for (const stale of scroller.querySelectorAll(`[${ATTR_SIDEBAR_PATH}]`)) {
+  for (const stale of root.querySelectorAll(`[${ATTR_SIDEBAR_PATH}]`)) {
     if (!onPath.has(stale)) stale.removeAttribute(ATTR_SIDEBAR_PATH);
   }
-  sidebarSizer.attach(scroller);
+  sidebarSizer.attach(root);
+}
+
+function stickyRootOf(element: HTMLElement): HTMLElement | null {
+  let current = element.parentElement;
+  while (current !== null && current !== document.body) {
+    const position = getComputedStyle(current).position;
+    if (position === 'sticky' || position === 'fixed') return current;
+    current = current.parentElement;
+  }
+  return null;
 }
 
 export function removeSidebarLayout(root: ParentNode = document): void {
   sidebarSizer.detach();
   for (const element of root.querySelectorAll(`[${ATTR_SIDEBAR}], [${ATTR_SIDEBAR_PATH}], [${ATTR_TREE_LIST}]`)) {
     element.removeAttribute(ATTR_SIDEBAR);
+    element.removeAttribute(ATTR_SIDEBAR_LAYOUT);
     element.removeAttribute(ATTR_SIDEBAR_PATH);
     element.removeAttribute(ATTR_TREE_LIST);
   }
