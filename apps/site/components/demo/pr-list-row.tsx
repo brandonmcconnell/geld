@@ -2,7 +2,7 @@ import type { ChangeTotals } from '@geld/core';
 import { formatCount, formatDiffstat, pluralize } from '@geld/core';
 import { GitPullRequestIcon, MessageSquareIcon } from 'lucide-react';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 interface PrListRowProps {
   readonly number: number;
@@ -28,13 +28,13 @@ export function PrListRow({ number, title, author, when, comments, shown, hidden
           #{number} opened {when} by {author}
         </p>
       </div>
-      <Tooltip>
-        <TooltipTrigger className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40">
+      <Popover>
+        <PopoverTrigger className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40">
           <span className="text-muted-foreground">{pluralize(hidden.files, noun, nounPlural)}</span>
           <span className="text-addition">+{formatCount(shown.additions)}</span>
           <span className="text-deletion">&minus;{formatCount(shown.deletions)}</span>
-        </TooltipTrigger>
-        <TooltipContent className="font-mono text-xs tabular-nums">
+        </PopoverTrigger>
+        <PopoverContent className="px-3 py-2 font-mono text-xs tabular-nums">
           <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1">
             <dt className="text-muted-foreground">Excluding {nounPlural}</dt>
             <dd>{formatDiffstat(shown)}</dd>
@@ -43,8 +43,8 @@ export function PrListRow({ number, title, author, when, comments, shown, hidden
             <dt className="text-muted-foreground">{nounPlural} only</dt>
             <dd>{formatDiffstat(hidden)}</dd>
           </dl>
-        </TooltipContent>
-      </Tooltip>
+        </PopoverContent>
+      </Popover>
       <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
         <MessageSquareIcon aria-hidden="true" className="size-3.5" />
         {comments}

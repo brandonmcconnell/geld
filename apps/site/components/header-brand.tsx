@@ -46,7 +46,7 @@ export function HeaderBrand() {
       tabIndex={visible ? undefined : -1}
       data-visible={visible}
       className={cn(
-        'flex items-center rounded-md transition-[opacity,filter] duration-500 ease-out will-change-[opacity,filter] motion-reduce:transition-none',
+        'flex items-center transition-[opacity,filter] duration-500 ease-out will-change-[opacity,filter] motion-reduce:transition-none',
         visible ? 'opacity-100 blur-none' : 'pointer-events-none opacity-0 blur-[5px]',
       )}
     >

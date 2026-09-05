@@ -3,7 +3,7 @@ import { formatCount, formatDiffstat, pluralize } from '@geld/core';
 import { cn } from 'cn';
 
 import { Diffstat } from '@/components/demo/diffstat';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 interface PrHeaderProps {
   /** Header numbers as GitHub prints them. */
@@ -36,20 +36,20 @@ export function PrHeader({ shown, geld, className }: PrHeaderProps) {
       </ul>
       <div className="flex items-center gap-2 pb-2">
         {geld ? (
-          <Tooltip>
-            <TooltipTrigger
+          <Popover>
+            <PopoverTrigger
               // A dotted bottom border rather than text-decoration: it follows the theme tokens in every browser.
               className="rounded-none border-b border-dotted border-muted-foreground/50 px-0.5 font-mono text-[0.8125rem] text-muted-foreground outline-none transition-colors hover:border-foreground/60 hover:text-foreground focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/40"
-              aria-label={`${pluralize(geld.hidden.files, geld.noun, geld.nounPlural)} hidden. Hover for the full breakdown.`}
+              aria-label={`${pluralize(geld.hidden.files, geld.noun, geld.nounPlural)} hidden. Show the full breakdown.`}
             >
               {formatCount(geld.hidden.files)} {geld.hidden.files === 1 ? geld.noun : geld.nounPlural}
-            </TooltipTrigger>
-            <TooltipContent className="p-0">
+            </PopoverTrigger>
+            <PopoverContent className="p-0">
               <Breakdown label={`Excluding ${geld.nounPlural}`} totals={shown} />
               <Breakdown label={`Including ${geld.nounPlural}`} totals={geld.all} />
               <Breakdown label={`${geld.nounPlural[0]?.toUpperCase() ?? ''}${geld.nounPlural.slice(1)} only`} totals={geld.hidden} />
-            </TooltipContent>
-          </Tooltip>
+            </PopoverContent>
+          </Popover>
         ) : null}
         <Diffstat totals={shown} />
       </div>

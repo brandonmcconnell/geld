@@ -27,7 +27,7 @@ export function CategoriesRows({ field, testGroups, settings, disabled, onCatego
       <p className="mt-1 mb-4 text-sm text-muted-foreground">
         <RichText copy={field.description} />
       </p>
-      <ul className="divide-y rounded-lg border">
+      <ul className="divide-y border">
         {CATEGORIES.map((category) => (
           <CategoryRow
             key={category.id}
@@ -125,8 +125,8 @@ function GroupRow({
   const labelId = useId();
   return (
     <li>
-      <details className="group/patterns rounded-md">
-        <summary className="flex cursor-pointer list-none items-start gap-3 rounded-md px-2 py-1.5 outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+      <details className="group/patterns">
+        <summary className="flex cursor-pointer list-none items-start gap-3 px-2 py-1.5 outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
           {checkbox !== null ? (
             <span onClick={(event) => event.preventDefault()} className="mt-0.5 flex items-center">
               <Checkbox checked={checkbox.checked} disabled={checkbox.disabled} onCheckedChange={(value) => checkbox.onChange(checkbox.id, value)} aria-labelledby={labelId} />

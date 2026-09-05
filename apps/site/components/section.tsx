@@ -54,8 +54,8 @@ export function Prose({ children, className }: { readonly children: React.ReactN
         '[&_h3]:mt-8 [&_h3]:mb-2 [&_h3]:scroll-mt-20 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-foreground',
         '[&_p]:my-4 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1.5',
         '[&_a]:underline [&_a]:decoration-border [&_a]:underline-offset-3 [&_a:hover]:decoration-foreground',
-        '[&_code]:code-chip [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-[0.8125rem] [&_pre]:leading-6 [&_pre_code]:border-0 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[length:inherit]',
-        '[&_kbd]:rounded-md [&_kbd]:border [&_kbd]:border-b-2 [&_kbd]:bg-muted [&_kbd]:px-1.5 [&_kbd]:py-0.5 [&_kbd]:font-mono [&_kbd]:text-xs',
+        '[&_code]:code-chip [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-[0.8125rem] [&_pre]:leading-6 [&_pre_code]:border-0 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[length:inherit]',
+        '[&_kbd]:border [&_kbd]:border-b-2 [&_kbd]:bg-muted [&_kbd]:px-1.5 [&_kbd]:py-0.5 [&_kbd]:font-mono [&_kbd]:text-xs',
         '[&_strong]:font-semibold [&_strong]:text-foreground',
         className,
       )}

@@ -183,5 +183,5 @@
 
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
-  @apply rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
+  @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
 }

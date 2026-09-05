@@ -16,9 +16,9 @@ export function GitHubIcon(props: IconProps) {
  */
 export function UserGlyphIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="miter" strokeLinecap="square" aria-hidden="true" width="24" height="24" {...props}>
-      <path d="M10 4h6v6l-2 2H8V6z" />
-      <path d="M4 21v-3l3-3h10l3 3v3" />
+    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="miter" strokeLinecap="butt" aria-hidden="true" width="32" height="32" {...props}>
+      <path d="M13.5 6.5H21.5V12.5L18.5 15.5H10.5V9.5Z" />
+      <path d="M5 32V27L9.5 22.5H22.5L27 27V32" />
     </svg>
   );
 }

@@ -98,7 +98,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
       </div>
 
       {signedOut ? (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border bg-muted/40 px-4 py-3 text-sm">
           <span>You&apos;ve been signed out. Sign in again to keep editing.</span>
           <a href="/auth/start?next=/settings" className={buttonVariants({ size: 'sm' })}>
             <GitHubIcon />
@@ -110,7 +110,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
       {sections.map((section) => {
         const testGroups = section.fields.find((field): field is TestGroupsField => field.kind === 'test-groups') ?? null;
         return (
-          <section key={section.id} id={section.id} aria-labelledby={`${section.id}-heading`} className="scroll-mt-24 rounded-xl border p-5 sm:p-6">
+          <section key={section.id} id={section.id} aria-labelledby={`${section.id}-heading`} className="scroll-mt-24 border p-5 sm:p-6">
             <h2 id={`${section.id}-heading`} className="text-lg font-semibold tracking-tight">
               {section.title}
             </h2>
@@ -156,7 +156,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
         );
       })}
 
-      <section id="tester" aria-labelledby="tester-heading" className="scroll-mt-24 rounded-xl border p-5 sm:p-6">
+      <section id="tester" aria-labelledby="tester-heading" className="scroll-mt-24 border p-5 sm:p-6">
         <h2 id="tester-heading" className="text-lg font-semibold tracking-tight">
           Try a path
         </h2>

@@ -99,7 +99,7 @@ export default function HowItWorksPage() {
             <Frame className="mt-8">
               <PrHeader shown={VISIBLE_TOTALS} geld={geld} className="border-b-0" />
             </Frame>
-            <p className="mt-3 text-sm text-muted-foreground">Hover or focus the label to see the breakdown.</p>
+            <p className="mt-3 text-sm text-muted-foreground">Hover, tap or focus the label to see the breakdown.</p>
           </Step>
 
           <Step id="sidebar" index={3} title={STEPS[2]?.title ?? ''}>
@@ -172,12 +172,12 @@ export default function HowItWorksPage() {
             </Prose>
             <ol className="mt-8 grid gap-4 sm:grid-cols-2">
               {CATEGORIES.map((category, index) => (
-                <li key={category.id} className="flex gap-3 rounded-lg border p-4">
+                <li key={category.id} className="flex gap-3 border p-4">
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                       {category.title}
-                      <span className="rounded-full border px-1.5 py-px text-[0.6875rem] font-normal text-muted-foreground">
+                      <span className="border px-1.5 py-px text-[0.6875rem] font-normal text-muted-foreground">
                         {category.defaultEnabled ? 'on by default' : 'opt-in'}
                       </span>
                     </p>

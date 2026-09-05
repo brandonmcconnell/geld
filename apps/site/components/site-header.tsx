@@ -16,7 +16,7 @@ export function SiteHeader() {
               key={link.href}
               href={link.href}
               className={cn(
-                'rounded-md px-2 py-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground sm:px-2.5 sm:text-sm',
+                'px-2 py-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground sm:px-2.5 sm:text-sm',
                 !link.compact && 'hidden sm:inline-block',
               )}
             >

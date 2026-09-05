@@ -27,11 +27,11 @@ export function AccountMenu({ className }: { readonly className?: string | undef
         <TooltipTrigger
           render={<a href="/auth/start?next=/settings" aria-label="Sign in with GitHub" />}
           className={cn(
-            buttonVariants({ variant: 'ghost', size: 'icon-sm', className: 'border-input text-muted-foreground hover:text-foreground [[data-account]_&]:hidden' }),
+            buttonVariants({ variant: 'ghost', size: 'icon-sm', className: 'overflow-hidden border-input text-muted-foreground hover:text-foreground [[data-account]_&]:hidden' }),
             className,
           )}
         >
-          <UserGlyphIcon className="size-[18px]" />
+          <UserGlyphIcon className="size-full" />
         </TooltipTrigger>
         <TooltipContent side="bottom">Sign in with GitHub</TooltipContent>
       </Tooltip>
@@ -48,7 +48,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
         aria-label={`Account: ${account.login}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- avatar from GitHub, already sized */}
-        <img src={account.avatarUrl} alt="" width={26} height={26} className="geld-corners geld-cut-[6px] size-[26px]" referrerPolicy="no-referrer" />
+        <img src={account.avatarUrl} alt="" width={26} height={26} className="size-[26px] rounded-none" referrerPolicy="no-referrer" />
         <span className="hidden max-w-32 truncate font-medium sm:inline">{account.login}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">

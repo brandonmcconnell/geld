@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
       <body className="flex min-h-svh flex-col">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-foreground focus:px-3 focus:py-2 focus:text-sm focus:text-background"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:bg-foreground focus:px-3 focus:py-2 focus:text-sm focus:text-background"
         >
           Skip to content
         </a>

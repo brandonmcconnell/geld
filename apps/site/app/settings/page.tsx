@@ -41,7 +41,7 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   if (config === null) {
     return (
       <SignedOutView notice={notice}>
-        <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
+        <p className="border border-dashed px-4 py-3 text-sm text-muted-foreground">
           Sign-in isn&apos;t configured in this environment, so settings can only be edited in the extension for now.
         </p>
       </SignedOutView>
@@ -106,7 +106,7 @@ function SignedOutView({ notice, children }: { readonly notice: string | null; r
       <PageIntro eyebrow="Settings" title="Your settings, on every device." description="Edit the same settings the extension uses, from any browser." />
       <div className="container-site pb-32">
         {notice !== null ? (
-          <p role="status" className="mb-8 max-w-2xl rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+          <p role="status" className="mb-8 max-w-2xl border bg-muted/40 px-4 py-3 text-sm">
             {notice}
           </p>
         ) : null}

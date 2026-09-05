@@ -36,7 +36,7 @@ export function SettingsTester({ settings }: { readonly settings: GeldSettings }
           <Input id={pathId} value={path} onChange={(event) => setPath(event.target.value)} placeholder="src/Button.test.tsx" spellCheck={false} autoCapitalize="off" className="font-mono" aria-describedby={resultId} />
         </div>
       </div>
-      <p id={resultId} role="status" aria-live="polite" className="flex items-start gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+      <p id={resultId} role="status" aria-live="polite" className="flex items-start gap-2 border bg-muted/40 px-4 py-3 text-sm">
         {trimmedPath === '' ? (
           <span className="text-muted-foreground">Type a path to see what happens to it.</span>
         ) : !settings.enabled ? (

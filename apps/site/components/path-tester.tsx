@@ -53,7 +53,7 @@ export function PathTester({ className }: { readonly className?: string }) {
           <input type="checkbox" checked={everything} onChange={(event) => setEverything(event.target.checked)} className="peer sr-only" />
           <span
             aria-hidden="true"
-            className="flex size-4 items-center justify-center rounded-[4px] border bg-background text-background peer-checked:border-foreground peer-checked:bg-foreground peer-focus-visible:ring-3 peer-focus-visible:ring-ring/40"
+            className="flex size-4 items-center justify-center border bg-background text-background peer-checked:border-foreground peer-checked:bg-foreground peer-focus-visible:ring-3 peer-focus-visible:ring-ring/40"
           >
             <CheckIcon className={cn('size-3', !everything && 'opacity-0')} />
           </span>
@@ -61,7 +61,7 @@ export function PathTester({ className }: { readonly className?: string }) {
         </label>
       </div>
 
-      <div id={resultId} role="status" aria-live="polite" className="rounded-lg border bg-muted/40 p-4 text-sm">
+      <div id={resultId} role="status" aria-live="polite" className="border bg-muted/40 p-4 text-sm">
         {verdict === null ? (
           <p className="text-muted-foreground">Type a path to see how Geld treats it.</p>
         ) : verdict.category !== null ? (
@@ -105,7 +105,7 @@ export function PathTester({ className }: { readonly className?: string }) {
               onClick={() => setPath(example)}
               aria-pressed={example === path}
               className={cn(
-                'code-chip cursor-pointer transition-colors hover:border-ring hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 aria-pressed:border-foreground',
+                'code-chip geld-corners geld-cut-[5px] cursor-pointer transition-colors hover:border-ring hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 aria-pressed:border-foreground',
                 example === path ? 'text-foreground' : 'text-muted-foreground',
               )}
             >

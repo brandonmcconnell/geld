@@ -56,7 +56,7 @@ export default function PatternsPage() {
             <li key={category.id} className="shrink-0">
               <a
                 href={`#${category.id}`}
-                className="inline-block rounded-full border bg-background/60 px-3 py-1 text-sm whitespace-nowrap text-foreground/80 transition-colors hover:border-foreground hover:bg-background hover:text-foreground"
+                className="geld-corners geld-cut-[7px] inline-block border bg-background/60 px-3 py-1 text-sm whitespace-nowrap text-foreground/80 transition-colors hover:border-foreground hover:bg-background hover:text-foreground"
               >
                 {category.title}
               </a>
@@ -74,7 +74,7 @@ export default function PatternsPage() {
                 <h2 id={`${category.id}-heading`} className="text-2xl font-semibold tracking-tight sm:text-3xl">
                   {category.title}
                 </h2>
-                <span className="rounded-full border px-2.5 py-0.5 text-xs leading-5 text-muted-foreground">{category.defaultEnabled ? 'on by default' : 'opt-in'}</span>
+                <span className="border px-2.5 py-0.5 text-xs leading-5 text-muted-foreground">{category.defaultEnabled ? 'on by default' : 'opt-in'}</span>
               </div>
               <p className="mt-2 max-w-2xl text-muted-foreground">{category.description}</p>
               <p className="mt-1.5 text-sm text-muted-foreground">
@@ -83,7 +83,7 @@ export default function PatternsPage() {
 
               <div className="mt-6 flex flex-col gap-6">
                 {category.groups.map((group) => (
-                  <div key={group.id} className="grid gap-3 rounded-xl border p-5 md:grid-cols-[240px_1fr] md:gap-8">
+                  <div key={group.id} className="grid gap-3 border p-5 md:grid-cols-[240px_1fr] md:gap-8">
                     <div>
                       <h3 className="text-base font-semibold">{group.label}</h3>
                       <p className="mt-1 text-[0.9375rem] leading-6 text-muted-foreground">{group.description}</p>
