@@ -1,5 +1,7 @@
 import type { GeldSettings } from './settings';
 import { normalizeSettings } from './settings';
+import type { SettingsIssue } from './settings-validate';
+import { validateSettingsDocument } from './settings-validate';
 
 /**
  * Settings live in a **secret Gist on the user's own GitHub account**. Nobody
@@ -22,7 +24,21 @@ export interface RemoteSettings {
   readonly settings: GeldSettings;
   /** Gist `updated_at` (ISO). */
   readonly updatedAt: string;
+  /** Page on github.com where the user can edit the file or roll back a revision. */
+  readonly htmlUrl: string;
 }
+
+/** Outcome of reading the gist strictly (see {@link readRemoteValidated}). */
+export type RemoteRead =
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'valid'; readonly remote: RemoteSettings }
+  | {
+      readonly kind: 'invalid';
+      readonly gistId: string;
+      readonly updatedAt: string;
+      readonly htmlUrl: string;
+      readonly issues: readonly SettingsIssue[];
+    };
 
 /** The JSON document stored in the gist (and produced by "Export settings"). */
 export interface SettingsPayload {
@@ -98,6 +114,7 @@ export async function fetchGitHubProfile(token: string): Promise<GitHubProfile> 
 interface GistSummary {
   readonly id: string;
   readonly updatedAt: string;
+  readonly htmlUrl: string;
   readonly hasFile: boolean;
 }
 
@@ -107,7 +124,8 @@ function readGist(value: unknown): GistSummary | null {
   const updatedAt = value.updated_at;
   const files = value.files;
   if (typeof id !== 'string' || typeof updatedAt !== 'string' || !isRecord(files)) return null;
-  return { id, updatedAt, hasFile: GIST_FILE in files };
+  const htmlUrl = typeof value.html_url === 'string' ? value.html_url : `https://gist.github.com/${id}`;
+  return { id, updatedAt, htmlUrl, hasFile: GIST_FILE in files };
 }
 
 /** Find the Geld gist on the account (by file name), newest first. */
@@ -122,21 +140,49 @@ export async function findSettingsGist(token: string): Promise<GistSummary | nul
   return null;
 }
 
-export async function readRemote(token: string, gistId: string): Promise<RemoteSettings | null> {
+/** Fetch the gist's settings file as text, or `null` when the gist has no such file. */
+async function readRemoteContent(token: string, gistId: string): Promise<{ summary: GistSummary; content: string } | null> {
   const gist: unknown = await api(token, `/gists/${gistId}`);
-  if (!isRecord(gist) || typeof gist.updated_at !== 'string') return null;
-  const files = gist.files;
-  if (!isRecord(files)) return null;
-  const file = files[GIST_FILE];
+  const summary = readGist(gist);
+  if (summary === null || !isRecord(gist) || !isRecord(gist.files)) return null;
+  const file = gist.files[GIST_FILE];
   if (!isRecord(file)) return null;
   let content = typeof file.content === 'string' ? file.content : null;
   if ((content === null || file.truncated === true) && typeof file.raw_url === 'string') {
     const raw = await fetch(file.raw_url, { headers: { Authorization: `Bearer ${token}` } });
     content = raw.ok ? await raw.text() : null;
   }
-  if (content === null) return null;
-  const settings = parseSettingsPayload(content);
-  return settings === null ? null : { gistId, settings, updatedAt: gist.updated_at };
+  return content === null ? null : { summary, content };
+}
+
+/**
+ * Read the gist **strictly**: a hand-edited file with problems comes back as
+ * `invalid` with every issue listed, instead of being silently repaired. Use
+ * this wherever the user can be told about the problem.
+ */
+export async function readRemoteValidated(token: string, gistId: string): Promise<RemoteRead> {
+  const read = await readRemoteContent(token, gistId);
+  if (read === null) return { kind: 'missing' };
+  const { summary, content } = read;
+  const validation = validateSettingsDocument(content);
+  if (!validation.ok) {
+    return { kind: 'invalid', gistId: summary.id, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl, issues: validation.issues };
+  }
+  return { kind: 'valid', remote: { gistId: summary.id, settings: validation.settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl } };
+}
+
+/**
+ * Lenient read: unreadable JSON → `null`; readable JSON with bad values is
+ * repaired by `normalizeSettings`. Prefer {@link readRemoteValidated} in UIs so
+ * users hear about mistakes rather than having them silently overwritten.
+ */
+export async function readRemote(token: string, gistId: string): Promise<RemoteSettings | null> {
+  const read = await readRemoteContent(token, gistId);
+  if (read === null) return null;
+  const settings = parseSettingsPayload(read.content);
+  if (settings === null) return null;
+  const { summary } = read;
+  return { gistId: summary.id, settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl };
 }
 
 export async function writeRemote(token: string, gistId: string | null, settings: GeldSettings): Promise<RemoteSettings> {
@@ -149,7 +195,7 @@ export async function writeRemote(token: string, gistId: string | null, settings
     gistId === null ? await api(token, '/gists', { method: 'POST', body }) : await api(token, `/gists/${gistId}`, { method: 'PATCH', body });
   const summary = readGist(gist);
   if (summary === null) throw new Error('GitHub did not return the saved gist.');
-  return { gistId: summary.id, settings, updatedAt: summary.updatedAt };
+  return { gistId: summary.id, settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl };
 }
 
 /** Structural comparison; key order in stored JSON is irrelevant. */

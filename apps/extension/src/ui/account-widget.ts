@@ -1,6 +1,7 @@
+import { CORRUPTED_SETTINGS_COPY } from '@geld/core';
 import { browser } from 'wxt/browser';
 import type { AuthFlowState, GitHubAccount, SyncState } from '../lib/account';
-import { accountItem, authFlowItem, syncStateItem } from '../lib/account';
+import { accountItem, authFlowItem, EMPTY_SYNC_STATE, syncStateItem } from '../lib/account';
 import type { AccountActionMessage } from '../lib/messages';
 import { isAccountActionResponse } from '../lib/messages';
 
@@ -65,7 +66,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   const promptHost = options.promptHost ?? host;
   let account: GitHubAccount | null = null;
   let flow: AuthFlowState = { status: 'idle' };
-  let sync: SyncState | null = null;
+  let sync: SyncState = EMPTY_SYNC_STATE;
   let localError: string | null = null;
 
   const act = async (action: AccountActionMessage['action']): Promise<void> => {
@@ -75,7 +76,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
 
   function render(): void {
     host.replaceChildren();
-    for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error')) stale.remove();
+    for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
 
     renderDialog();
 
@@ -106,13 +107,15 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     avatar.width = 20;
     avatar.height = 20;
     const status =
-      sync?.lastError !== null && sync?.lastError !== undefined
-        ? `Sync error: ${sync.lastError}`
-        : sync?.pendingChoice !== null && sync?.pendingChoice !== undefined
-          ? 'Waiting for your choice'
-          : sync?.lastSyncedAt !== null && sync?.lastSyncedAt !== undefined
-            ? `Synced ${relative(sync.lastSyncedAt)}`
-            : 'Syncing…';
+      sync.remoteInvalid !== null
+        ? 'Sync paused: settings on GitHub are corrupted'
+        : sync.lastError !== null
+          ? `Sync error: ${sync.lastError}`
+          : sync.pendingChoice !== null
+            ? 'Waiting for your choice'
+            : sync.lastSyncedAt !== null
+              ? `Synced ${relative(sync.lastSyncedAt)}`
+              : 'Syncing…';
     const details = el('details', 'geld-account__menu');
     const summary = el('summary', 'geld-account__summary', [avatar, el('span', 'geld-account__login', [account.login])]);
     summary.title = status;
@@ -125,7 +128,37 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     host.append(details);
     if (localError !== null) promptHost.append(el('p', 'geld-status geld-account__error', [localError]));
 
-    const choice = sync?.pendingChoice ?? null;
+    const invalid = sync.remoteInvalid;
+    if (invalid !== null) {
+      const openGist = el('a', 'geld-button geld-button--small geld-button--primary', [CORRUPTED_SETTINGS_COPY.openGist]);
+      openGist.href = invalid.gistUrl;
+      openGist.target = '_blank';
+      openGist.rel = 'noreferrer';
+      const alert = el('div', 'geld-alert geld-alert--error', [
+        el('p', 'geld-alert__title', [CORRUPTED_SETTINGS_COPY.title]),
+        el('p', 'geld-alert__text', [CORRUPTED_SETTINGS_COPY.body]),
+      ]);
+      alert.setAttribute('role', 'alert');
+      if (invalid.issues.length > 0) {
+        alert.append(
+          el(
+            'ul',
+            'geld-alert__list',
+            invalid.issues.map((issue) => el('li', '', [el('code', 'geld-alert__path', [issue.path]), ' ', issue.message])),
+          ),
+        );
+      }
+      alert.append(
+        el('div', 'geld-alert__actions', [
+          openGist,
+          button([CORRUPTED_SETTINGS_COPY.reset], 'geld-button--small', () => void act('reset-remote')),
+          button([CORRUPTED_SETTINGS_COPY.recheck], 'geld-button--small geld-button--link', () => void act('sync-now')),
+        ]),
+      );
+      promptHost.append(alert);
+    }
+
+    const choice = sync.pendingChoice;
     if (choice !== null) {
       const when = new Date(choice.remoteUpdatedAt).toLocaleString();
       promptHost.append(
@@ -225,17 +258,19 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       render();
     }),
     syncStateItem.watch((value) => {
-      sync = value;
+      sync = { ...EMPTY_SYNC_STATE, ...value };
       render();
     }),
   ];
   void Promise.all([accountItem.getValue(), authFlowItem.getValue(), syncStateItem.getValue()]).then(([a, f, s]) => {
     account = a;
     flow = f;
-    sync = s;
+    // State saved by an older version may lack newer fields.
+    sync = { ...EMPTY_SYNC_STATE, ...s };
     render();
-    // Pick up changes made on other devices whenever the UI opens.
-    if (a !== null && s.pendingChoice === null) void send('sync-now');
+    // Pick up changes made on other devices whenever the UI opens (this also
+    // re-validates a corrupted gist the user may have fixed meanwhile).
+    if (a !== null && sync.pendingChoice === null) void send('sync-now');
   });
 
   return () => unwatchers.forEach((unwatch) => unwatch());

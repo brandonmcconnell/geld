@@ -1,8 +1,8 @@
-import type { GeldSettings } from '@geld/core';
+import type { GeldSettings, RemoteRead } from '@geld/core';
+import { DEFAULT_SETTINGS, findSettingsGist, readRemoteValidated, settingsEqual, SignedOutError, writeRemote } from '@geld/core';
 import { browser } from 'wxt/browser';
-import type { AuthFlowState, SyncState } from './account';
+import type { AuthFlowState, RemoteInvalid, SyncState } from './account';
 import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem } from './account';
-import { findSettingsGist, readRemote, settingsEqual, SignedOutError, writeRemote } from './gist-sync';
 import { fetchAccount, pollForToken, requestDeviceCode } from './github-auth';
 import type { AccountActionMessage, AccountActionResponse } from './messages';
 import { settingsItem } from './storage';
@@ -25,9 +25,20 @@ function fail(message: string): AccountActionResponse {
 }
 
 async function setSync(patch: Partial<SyncState>): Promise<SyncState> {
-  const next = { ...(await syncStateItem.getValue()), ...patch };
+  // Spread the defaults first so state saved by an older version gains new fields.
+  const next: SyncState = { ...EMPTY_SYNC_STATE, ...(await syncStateItem.getValue()), ...patch };
   await syncStateItem.setValue(next);
   return next;
+}
+
+function invalidFrom(read: Extract<RemoteRead, { kind: 'invalid' }>): RemoteInvalid {
+  return { gistId: read.gistId, gistUrl: read.htmlUrl, updatedAt: read.updatedAt, issues: read.issues };
+}
+
+/** A corrupted gist blocks sync until the user acts; record it and say so. */
+async function markInvalid(read: Extract<RemoteRead, { kind: 'invalid' }>): Promise<AccountActionResponse> {
+  await setSync({ gistId: read.gistId, remoteUpdatedAt: read.updatedAt, lastError: null, pendingChoice: null, remoteInvalid: invalidFrom(read) });
+  return fail('Your settings on GitHub could not be read. See the notice for details.');
 }
 
 /* ------------------------------------------------------------------ sign-in */
@@ -129,14 +140,20 @@ async function initialSync(): Promise<void> {
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
       return;
     }
-    const remote = await readRemote(account.token, existing.id);
-    if (remote === null) {
+    const read = await readRemoteValidated(account.token, existing.id);
+    if (read.kind === 'missing') {
+      // The gist exists but has no settings file (e.g. the user deleted it): recreate it.
       const written = await writeRemote(account.token, existing.id, local);
-      await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
+      await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null, remoteInvalid: null });
       return;
     }
+    if (read.kind === 'invalid') {
+      await markInvalid(read);
+      return;
+    }
+    const { remote } = read;
     if (settingsEqual(remote.settings, local)) {
-      await setSync({ gistId: remote.gistId, remoteUpdatedAt: remote.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
+      await setSync({ gistId: remote.gistId, remoteUpdatedAt: remote.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null, remoteInvalid: null });
       return;
     }
     await setSync({
@@ -144,6 +161,7 @@ async function initialSync(): Promise<void> {
       remoteUpdatedAt: remote.updatedAt,
       lastError: null,
       pendingChoice: { remote: remote.settings, remoteUpdatedAt: remote.updatedAt },
+      remoteInvalid: null,
     });
   } catch (error) {
     await handleSyncError(error);
@@ -169,6 +187,23 @@ async function resolveChoice(useRemote: boolean): Promise<AccountActionResponse>
   }
 }
 
+/** The user gave up on a corrupted gist: both sides go back to the defaults. */
+async function resetRemote(): Promise<AccountActionResponse> {
+  const account = await accountItem.getValue();
+  const state = await syncStateItem.getValue();
+  if (account === null) return fail('Not signed in.');
+  const gistId = state.remoteInvalid?.gistId ?? state.gistId;
+  try {
+    const written = await writeRemote(account.token, gistId, DEFAULT_SETTINGS);
+    await applyRemoteLocally(DEFAULT_SETTINGS);
+    await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null, remoteInvalid: null });
+    return { ok: true };
+  } catch (error) {
+    await handleSyncError(error);
+    return fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
 async function applyRemoteLocally(remote: GeldSettings): Promise<void> {
   suppressPushFor = JSON.stringify(remote);
   await settingsItem.setValue(remote);
@@ -187,13 +222,18 @@ async function pull(): Promise<AccountActionResponse> {
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null });
       return { ok: true };
     }
-    const remote = await readRemote(account.token, gistId);
-    if (remote === null) return fail('The settings gist could not be read.');
+    const read = await readRemoteValidated(account.token, gistId);
+    if (read.kind === 'missing') return fail('The settings gist could not be read.');
+    if (read.kind === 'invalid') return markInvalid(read);
+    const { remote } = read;
     const local = await settingsItem.getValue();
-    if (remote.updatedAt !== state.remoteUpdatedAt && !settingsEqual(remote.settings, local)) {
+    // Adopt the account copy when it changed since we last saw it, or when we
+    // are recovering from a corrupted file the user has just fixed.
+    const recovering = state.remoteInvalid !== null;
+    if ((recovering || remote.updatedAt !== state.remoteUpdatedAt) && !settingsEqual(remote.settings, local)) {
       await applyRemoteLocally(remote.settings);
     }
-    await setSync({ gistId, remoteUpdatedAt: remote.updatedAt, lastSyncedAt: Date.now(), lastError: null });
+    await setSync({ gistId, remoteUpdatedAt: remote.updatedAt, lastSyncedAt: Date.now(), lastError: null, remoteInvalid: null });
     return { ok: true };
   } catch (error) {
     await handleSyncError(error);
@@ -219,7 +259,8 @@ async function push(settings: GeldSettings): Promise<void> {
   const account = await accountItem.getValue();
   if (account === null) return;
   const state = await syncStateItem.getValue();
-  if (state.pendingChoice !== null) return;
+  // Never write over a file the user is still fixing by hand.
+  if (state.pendingChoice !== null || state.remoteInvalid !== null) return;
   try {
     const written = await writeRemote(account.token, state.gistId, settings);
     await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null });
@@ -253,6 +294,8 @@ export function handleAccountMessage(message: AccountActionMessage): Promise<Acc
       return resolveChoice(true);
     case 'resolve-local':
       return resolveChoice(false);
+    case 'reset-remote':
+      return resetRemote();
   }
 }
 

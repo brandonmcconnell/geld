@@ -59,8 +59,18 @@ export interface TabStateMessage {
 /** Popup/options → background: account and sync actions. */
 export interface AccountActionMessage {
   readonly type: 'geld:account';
-  readonly action: 'sign-in' | 'cancel-sign-in' | 'sign-out' | 'sync-now' | 'resolve-remote' | 'resolve-local';
+  readonly action: AccountAction;
 }
+
+export type AccountAction =
+  | 'sign-in'
+  | 'cancel-sign-in'
+  | 'sign-out'
+  | 'sync-now'
+  | 'resolve-remote'
+  | 'resolve-local'
+  /** The account's gist is corrupted: replace it (and this device) with the defaults. */
+  | 'reset-remote';
 
 export type AccountActionResponse = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
@@ -113,7 +123,15 @@ export function isTabState(value: unknown): value is TabState {
   );
 }
 
-const ACCOUNT_ACTIONS: ReadonlySet<string> = new Set(['sign-in', 'cancel-sign-in', 'sign-out', 'sync-now', 'resolve-remote', 'resolve-local']);
+const ACCOUNT_ACTIONS: ReadonlySet<string> = new Set<AccountAction>([
+  'sign-in',
+  'cancel-sign-in',
+  'sign-out',
+  'sync-now',
+  'resolve-remote',
+  'resolve-local',
+  'reset-remote',
+]);
 
 export function isAccountActionMessage(value: unknown): value is AccountActionMessage {
   return isRecord(value) && value.type === 'geld:account' && typeof value.action === 'string' && ACCOUNT_ACTIONS.has(value.action);

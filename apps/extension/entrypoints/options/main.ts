@@ -7,7 +7,7 @@ import { compileRepoRules, decideRepo } from '@geld/core';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, parsePatternList } from '@geld/core';
 import type { ListField, SettingsSectionId, ToggleField } from '@geld/core';
-import { listFields, parseSettingsPayload, sectionsFor, serializeSettingsPayload, splitInlineCode, toggleFields } from '@geld/core';
+import { listFields, sectionsFor, serializeSettingsPayload, splitInlineCode, toggleFields, validateSettingsDocument } from '@geld/core';
 import { settingsItem } from '../../src/lib/storage';
 import { isTestPatternGroupId } from '@geld/core';
 import { BUILT_IN_CLIENT_ID, oauthClientIdItem } from '../../src/lib/account';
@@ -355,12 +355,14 @@ async function main(): Promise<void> {
     const file = importInput.files?.[0];
     importInput.value = '';
     if (file === undefined) return;
-    const next = parseSettingsPayload(await file.text());
-    if (next === null) {
-      maintenanceStatus('Could not import: that file is not a Geld settings export.', 'error');
+    const result = validateSettingsDocument(await file.text());
+    if (!result.ok) {
+      const shown = result.issues.slice(0, 3).map((issue) => `${issue.path}: ${issue.message}`);
+      const more = result.issues.length - shown.length;
+      maintenanceStatus(`Could not import. ${shown.join(' ')}${more > 0 ? ` (+${more} more)` : ''}`, 'error');
       return;
     }
-    await settingsItem.setValue(next);
+    await settingsItem.setValue(result.settings);
     maintenanceStatus('Settings imported', 'success');
   });
   requireElement('clear-cache', HTMLButtonElement).addEventListener('click', async () => {

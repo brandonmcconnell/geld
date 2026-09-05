@@ -1,4 +1,4 @@
-import type { GeldSettings } from '@geld/core';
+import type { GeldSettings, SettingsIssue } from '@geld/core';
 import { storage } from 'wxt/utils/storage';
 
 /**
@@ -36,6 +36,19 @@ export interface SyncState {
    * Sync pauses until the user chooses which side wins.
    */
   readonly pendingChoice: { readonly remote: GeldSettings; readonly remoteUpdatedAt: string } | null;
+  /**
+   * Set when the gist exists but fails validation (usually hand-edited). Sync
+   * pauses in both directions — nothing is adopted from it and local changes are
+   * not pushed over it — until the user fixes the file or resets to defaults.
+   */
+  readonly remoteInvalid: RemoteInvalid | null;
+}
+
+export interface RemoteInvalid {
+  readonly gistId: string;
+  readonly gistUrl: string;
+  readonly updatedAt: string;
+  readonly issues: readonly SettingsIssue[];
 }
 
 export const EMPTY_SYNC_STATE: SyncState = {
@@ -44,6 +57,7 @@ export const EMPTY_SYNC_STATE: SyncState = {
   lastSyncedAt: null,
   lastError: null,
   pendingChoice: null,
+  remoteInvalid: null,
 };
 
 export const accountItem = storage.defineItem<GitHubAccount | null>('local:githubAccount', { fallback: null });
