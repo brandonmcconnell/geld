@@ -22,19 +22,13 @@ export interface ProfileLink {
   readonly url: string | null;
 }
 
-/**
- * Author links shown in the footer.
- *
- * TODO(owner): fill in the remaining profile URLs. Entries with `url: null`
- * are not rendered, so nothing breaks while they are missing.
- */
+/** Author links shown in the footer. Entries with `url: null` are not rendered. */
 export const AUTHOR = {
   name: 'Brandon McConnell',
   profiles: [
     { label: 'GitHub', url: `https://github.com/${GITHUB_OWNER}` },
-    { label: 'X', url: null }, // TODO(owner): e.g. https://x.com/<handle>
-    { label: 'Bluesky', url: null }, // TODO(owner): e.g. https://bsky.app/profile/<handle>
-    { label: 'Website', url: null }, // TODO(owner): personal site
+    { label: 'X / Twitter', url: 'https://x.com/branmcconnell' },
+    { label: 'LinkedIn', url: 'https://www.linkedin.com/in/brandonmcconnell/' },
   ],
 } satisfies { readonly name: string; readonly profiles: readonly ProfileLink[] };
 
