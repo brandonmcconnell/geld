@@ -31,13 +31,27 @@ export function authConfig(): AuthConfig | null {
 }
 
 /**
- * The origin the OAuth App redirects back to. Fixed per environment, never
- * derived from request headers: production is geld.sh, local development is
- * the second OAuth App's http://localhost:3000.
+ * Where users land after sign-in and where cookies are judged Secure. Fixed
+ * per environment, never derived from request headers: the canonical site
+ * origin in production, the dev server locally.
  */
 export function authOrigin(): string {
   return process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : SITE_URL;
 }
 
+/**
+ * Origin of the callback URL registered on the OAuth App: `https://geld.sh/auth`
+ * in production (the apex 308-redirects to www with path and query intact, so
+ * the callback still reaches this app) and the second App's
+ * `http://localhost:3000/auth` in development. Must match GitHub exactly.
+ */
+export function callbackOrigin(): string {
+  return process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://geld.sh';
+}
+
 /** Callback path registered on the OAuth App. */
 export const AUTH_CALLBACK_PATH = '/auth';
+
+export function callbackUrl(): string {
+  return new URL(AUTH_CALLBACK_PATH, callbackOrigin()).toString();
+}

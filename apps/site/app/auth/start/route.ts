@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { connection, NextResponse } from 'next/server';
 
-import { AUTH_CALLBACK_PATH, authConfig, authOrigin } from '@/lib/auth/config';
+import { authConfig, authOrigin, callbackUrl } from '@/lib/auth/config';
 import { randomToken } from '@/lib/auth/crypto';
 import { authorizeUrl } from '@/lib/auth/github';
 import { safeNextPath } from '@/lib/auth/redirect';
@@ -24,6 +24,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
   const state = randomToken();
   writeOAuthState(await cookies(), { state, next });
-  const redirectUri = new URL(AUTH_CALLBACK_PATH, authOrigin()).toString();
-  return NextResponse.redirect(authorizeUrl(config, redirectUri, state, OAUTH_SCOPE), 303);
+  return NextResponse.redirect(authorizeUrl(config, callbackUrl(), state, OAUTH_SCOPE), 303);
 }

@@ -1,6 +1,7 @@
 /** Site-wide constants. Everything that is a URL lives here so it is easy to audit. */
 
-export const SITE_URL = 'https://geld.sh';
+/** Canonical origin. The apex `geld.sh` 308-redirects here (Vercel domain setting). */
+export const SITE_URL = 'https://www.geld.sh';
 export const SITE_NAME = 'Geld';
 export const TAGLINE = 'Review the code, not the tests';
 export const DESCRIPTION =

@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { connection, NextResponse } from 'next/server';
 
-import { AUTH_CALLBACK_PATH, authConfig, authOrigin } from '@/lib/auth/config';
+import { authConfig, authOrigin, callbackUrl } from '@/lib/auth/config';
 import { exchangeCode } from '@/lib/auth/github';
 import { DEFAULT_NEXT_PATH, safeNextPath } from '@/lib/auth/redirect';
 import { clearOAuthState, readOAuthState, writeSession } from '@/lib/auth/session';
@@ -37,8 +37,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const code = params.get('code');
   if (expected === null || state === null || code === null || state !== expected.state) return failed('state');
 
-  const redirectUri = new URL(AUTH_CALLBACK_PATH, origin).toString();
-  const exchange = await exchangeCode(config, code, redirectUri);
+  // Must be byte-for-byte the redirect_uri used in the authorize request.
+  const exchange = await exchangeCode(config, code, callbackUrl());
   if (!exchange.ok) return failed('exchange');
   if (!exchange.scope.split(',').map((scope) => scope.trim()).includes(OAUTH_SCOPE)) return failed('exchange');
 
