@@ -234,9 +234,17 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  align-self: stretch;
   width: 16px;
-  height: 16px;
+  min-height: 32px;
+  border-radius: 6px 0 0 6px;
   color: var(--fgColor-muted, #59636e);
+}
+
+/* Purely cosmetic: GitHub's folder chevrons get their own (stacked, hence darker) hover tint; drop this if GitHub changes it. */
+.geld-tree__row[data-dir]:hover .geld-tree__toggle:hover,
+.geld-tree-section__header:hover .geld-tree__toggle:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
 }
 
 .geld-tree__toggle .geld-chevron {

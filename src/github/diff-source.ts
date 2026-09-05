@@ -11,6 +11,8 @@ export type DiffFetchState =
 
 /** PR lists request one diff per row; keep GitHub happy by pacing them. */
 const MAX_CONCURRENT_FETCHES = 4;
+/** Slightly longer than the background cooldown so retries are not wasted. */
+const RATE_LIMIT_RETRY_MS = 70 * 1000;
 
 /**
  * Lazily asks the background script for `<page>.diff` and caches the per-file
@@ -59,6 +61,14 @@ export class DiffSource {
         this.cache.set(diffUrl, { status: 'ready', files: response.files });
       } else {
         this.cache.set(diffUrl, { status: 'failed' });
+        if (isFetchDiffResponse(response) && !response.ok && response.reason === 'rate-limited') {
+          // Forget the failure once the background cooldown has passed so the
+          // page picks the numbers up later without a reload.
+          setTimeout(() => {
+            this.cache.delete(diffUrl);
+            this.onChange();
+          }, RATE_LIMIT_RETRY_MS);
+        }
       }
     } catch {
       this.cache.set(diffUrl, { status: 'failed' });

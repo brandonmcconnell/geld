@@ -178,7 +178,12 @@ export class GeldController {
     }
 
     if (this.settings.showListStats) {
-      applyPrListStats({ matcher: this.matcher, diffSource: this.diffSource, nounPlural: this.category.nounPlural });
+      applyPrListStats({
+        matcher: this.matcher,
+        diffSource: this.diffSource,
+        nounPlural: this.category.nounPlural,
+        onRowVisible: () => this.schedule(),
+      });
     } else {
       removePrListStats();
     }

@@ -121,11 +121,48 @@ export interface PrListOptions {
   readonly matcher: PathMatcher;
   readonly diffSource: DiffSource;
   readonly nounPlural: string;
+  /** Called when a row scrolls near the viewport and its diff should be requested. */
+  readonly onRowVisible: () => void;
+}
+
+const SEEN_ATTRIBUTE = 'data-geld-seen';
+let visibilityObserver: IntersectionObserver | null = null;
+
+/**
+ * Only fetch diffs for rows the user can (almost) see. Long lists and quick
+ * pagination would otherwise fire dozens of requests per page.
+ */
+function watchVisibility(rows: readonly ListRow[], onRowVisible: () => void): void {
+  if (typeof IntersectionObserver === 'undefined') {
+    for (const row of rows) row.row.setAttribute(SEEN_ATTRIBUTE, '');
+    return;
+  }
+  if (visibilityObserver === null) {
+    visibilityObserver = new IntersectionObserver(
+      (entries, observer) => {
+        let anyVisible = false;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.setAttribute(SEEN_ATTRIBUTE, '');
+          observer.unobserve(entry.target);
+          anyVisible = true;
+        }
+        if (anyVisible) onRowVisible();
+      },
+      { rootMargin: '300px 0px' },
+    );
+  }
+  for (const row of rows) {
+    if (!row.row.hasAttribute(SEEN_ATTRIBUTE)) visibilityObserver.observe(row.row);
+  }
 }
 
 /** Add `+N −M` (excluding hidden files) to every PR row currently on the page. */
 export function applyPrListStats(options: PrListOptions): void {
-  for (const row of findRows()) {
+  const rows = findRows();
+  watchVisibility(rows, options.onRowVisible);
+  for (const row of rows) {
+    if (!row.row.hasAttribute(SEEN_ATTRIBUTE)) continue;
     const state = options.diffSource.request(row.diffUrl);
     if (state.status !== 'ready') continue;
 
@@ -157,4 +194,7 @@ export function removePrListStats(): void {
     detachBreakdownTooltip(chip);
     chip.remove();
   }
+  visibilityObserver?.disconnect();
+  visibilityObserver = null;
+  for (const row of document.querySelectorAll(`[${SEEN_ATTRIBUTE}]`)) row.removeAttribute(SEEN_ATTRIBUTE);
 }

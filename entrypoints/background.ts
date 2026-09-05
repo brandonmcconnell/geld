@@ -14,6 +14,10 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 200;
 const cache = new Map<string, { readonly response: FetchDiffResponse; readonly at: number }>();
 
+/** After a 429/403 we pause all diff fetching for this long. */
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+let cooldownUntil = 0;
+
 function readCache(url: string): FetchDiffResponse | null {
   const hit = cache.get(url);
   if (hit === undefined) return null;
@@ -52,6 +56,7 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
 
   const cached = readCache(parsed.toString());
   if (cached !== null) return cached;
+  if (Date.now() < cooldownUntil) return { ok: false, reason: 'rate-limited' };
 
   let result: FetchDiffResponse;
   try {
@@ -60,7 +65,11 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
       headers: { Accept: 'text/plain' },
       redirect: 'follow',
     });
-    if (!response.ok) {
+    if (response.status === 429 || response.status === 403) {
+      // GitHub's abuse detection kicked in; stop asking for a while.
+      cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+      result = { ok: false, reason: 'rate-limited' };
+    } else if (!response.ok) {
       result = { ok: false, reason: `http-${response.status}` };
     } else {
       const declared = Number.parseInt(response.headers.get('content-length') ?? '0', 10);
