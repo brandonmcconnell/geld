@@ -34,7 +34,10 @@ export default function PrivacyPage() {
               you anyway, and, only if you choose to sign in, to GitHub&apos;s Gist API to sync your settings to a secret gist on your own account.
             </li>
             <li>Your settings are stored in your browser&apos;s extension sync storage. Nothing about your browsing is stored anywhere else.</li>
-            <li>Signing in with GitHub is optional, uses GitHub&apos;s device flow with the <code>gist</code> scope only, and the token never leaves your device.</li>
+            <li>
+              Signing in with GitHub is optional and asks for the <code>gist</code> scope only. In the extension the token stays on your device; on
+              geld.sh it is kept only in an encrypted cookie in your own browser. There is no database.
+            </li>
           </ul>
 
           <h2 id="data-collection">Data collection</h2>
@@ -62,6 +65,14 @@ export default function PrivacyPage() {
             <code>geld-settings.json</code>. Only you and Geld running in your signed-in browsers can read or change it. The token is stored in{' '}
             <code>browser.storage.local</code> on the device that signed in and is never synced or sent anywhere except to <code>api.github.com</code>.
             Signing out deletes the token; deleting the gist from GitHub removes the synced copy.
+          </p>
+          <p>
+            You can also sign in on <strong>geld.sh/settings</strong> to edit the same gist from any browser. That uses the same OAuth App through
+            GitHub&apos;s web flow: GitHub sends a one-time code to <code>geld.sh/auth</code>, the site exchanges it for a <code>gist</code>-scoped token
+            and stores the token, your login and avatar URL in an <strong>encrypted, HttpOnly cookie in your browser</strong> (30 days, or until you
+            sign out, which also asks GitHub to revoke the token). geld.sh has no database and keeps nothing between requests: it reads or writes your
+            gist only while serving a request you make, and never logs its contents. A second, readable cookie holds just your login and avatar so the
+            page header can show them.
           </p>
 
           <h2 id="storage">Storage</h2>
@@ -93,8 +104,9 @@ export default function PrivacyPage() {
 
           <h2 id="website">This website</h2>
           <p>
-            {SITE_URL} is a static site. It sets no cookies and includes no analytics, advertising or third-party scripts. The install buttons link to
-            GitHub Releases or to browser extension stores, which have their own privacy policies.
+            {SITE_URL} is a static site with no analytics, advertising or third-party scripts. It sets no cookies unless you sign in (see above); a
+            theme choice made in the header is kept in your browser&apos;s local storage. The install buttons link to GitHub Releases or to browser
+            extension stores, which have their own privacy policies.
           </p>
 
           <h2 id="changes">Changes and contact</h2>

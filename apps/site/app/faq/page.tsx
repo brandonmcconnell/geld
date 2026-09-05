@@ -147,6 +147,11 @@ acme            # off in the whole organisation
           your own account (<code>geld-settings.json</code>); there is no Geld server or database, and the token stays on the device that signed in.
           Changes push within a couple of seconds and pull when the popup or options open or the browser starts.
         </p>
+        <p>
+          You can also edit the same gist from any browser on <Link href="/settings">geld.sh/settings</Link>. That sign-in uses the same OAuth App
+          and scope; the token lives only in an encrypted cookie in your browser, and the site has no database. A change made there reaches the
+          extension the next time it pulls.
+        </p>
       </>
     ),
   },
