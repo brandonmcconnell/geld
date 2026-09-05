@@ -20,7 +20,7 @@ export function detectHeadSha(): string | null {
   // React views embed their initial payload as JSON.
   for (const script of document.querySelectorAll('script[type="application/json"]')) {
     const text = script.textContent ?? '';
-    const match = /"(?:headSha|headRefOid)"\s*:\s*"([0-9a-f]{40})"/i.exec(text);
+    const match = /"(?:headSha|headRefOid|headOid)"\s*:\s*"([0-9a-f]{40})"/i.exec(text);
     if (match?.[1] !== undefined) return match[1].toLowerCase();
   }
   return null;

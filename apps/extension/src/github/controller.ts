@@ -224,7 +224,12 @@ export class GeldController {
     // still accurate. The diff is cached per head commit, so revisits are free.
     const groups = findHeaderStatGroups();
     const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
-    const domIsComplete = view !== null && (headerFileCount === 0 || renderedEntryCount >= headerFileCount);
+    // The file tree lists every file up front even while diffs stream in, so it
+    // is the reliable completeness signal (the header counter is not always
+    // present). Until every file is rendered, intermediate DOM totals would
+    // step the header down file by file, so we wait for the definitive diff.
+    const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
+    const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
 
     let headerHidden: HiddenBreakdown | null = domIsComplete ? hidden ?? EMPTY_BREAKDOWN : null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
