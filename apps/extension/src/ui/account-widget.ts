@@ -77,29 +77,26 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     host.replaceChildren();
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error')) stale.remove();
 
+    renderDialog();
+
     if (account === null) {
       if (flow.status === 'pending') {
-        const code = el('code', 'geld-account__code', [flow.userCode]);
-        const open = el('a', 'geld-button geld-button--small', ['Open GitHub']);
-        open.href = flow.verificationUri;
-        open.target = '_blank';
-        open.rel = 'noreferrer';
         host.append(
           el('div', 'geld-account__pending', [
-            el('span', 'geld-account__hint', ['Enter this code on GitHub:']),
-            code,
-            open,
-            button(['Cancel'], 'geld-button--small geld-button--link', () => void act('cancel-sign-in')),
+            el('span', 'geld-account__hint', ['Signing in…']),
+            button(['Show code'], 'geld-button--small', () => openDialog()),
           ]),
         );
         return;
       }
       const label = options.variant === 'compact' ? 'Sign in' : 'Sign in with GitHub';
-      const signIn = button([svg(GITHUB_MARK), label], 'geld-button--small geld-account__signin', () => void act('sign-in'));
+      const signIn = button([svg(GITHUB_MARK), label], 'geld-button--small geld-account__signin', () => {
+        dialogWanted = true;
+        void act('sign-in');
+      });
       signIn.title = 'Sign in with GitHub to sync your settings';
       host.append(signIn);
-      const message = flow.status === 'error' ? flow.message : localError;
-      if (message !== null) promptHost.append(el('p', 'geld-status geld-account__error', [message]));
+      if (localError !== null && flow.status !== 'error') promptHost.append(el('p', 'geld-status geld-account__error', [localError]));
       return;
     }
 
@@ -143,6 +140,79 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
         ]),
       );
     }
+  }
+
+  /* ---- Sign-in dialog -------------------------------------------------- */
+  let dialog: HTMLDialogElement | null = null;
+  let dialogWanted = false;
+  let lastFlowStatus: AuthFlowState['status'] = 'idle';
+
+  function ensureDialog(): HTMLDialogElement {
+    if (dialog !== null && dialog.isConnected) return dialog;
+    dialog = el('dialog', `geld-dialog geld-dialog--${options.variant}`);
+    dialog.setAttribute('aria-labelledby', 'geld-signin-title');
+    dialog.addEventListener('close', () => {
+      dialogWanted = false;
+    });
+    document.body.append(dialog);
+    return dialog;
+  }
+
+  function openDialog(): void {
+    dialogWanted = true;
+    renderDialog();
+  }
+
+  function renderDialog(): void {
+    // Auto-open when a sign-in starts or fails; auto-close once signed in.
+    if (flow.status !== lastFlowStatus) {
+      if (flow.status === 'pending' || flow.status === 'error') dialogWanted = true;
+      lastFlowStatus = flow.status;
+    }
+    if (account !== null) dialogWanted = false;
+    const node = ensureDialog();
+    if (!dialogWanted || (flow.status !== 'pending' && flow.status !== 'error')) {
+      if (node.open) node.close();
+      return;
+    }
+
+    const title = el('h2', 'geld-dialog__title', ['Sign in with GitHub']);
+    title.id = 'geld-signin-title';
+    const children: Node[] = [el('div', 'geld-dialog__brand', [svg(GITHUB_MARK), title])];
+
+    if (flow.status === 'pending') {
+      const code = el('code', 'geld-dialog__code', [flow.userCode]);
+      const copy = button(['Copy'], 'geld-button--small', () => {
+        void navigator.clipboard?.writeText(flow.status === 'pending' ? flow.userCode : '').then(() => {
+          copy.textContent = 'Copied';
+          setTimeout(() => (copy.textContent = 'Copy'), 1200);
+        });
+      });
+      const open = el('a', 'geld-button geld-button--primary geld-dialog__open', ['Open GitHub']);
+      open.href = flow.verificationUri;
+      open.target = '_blank';
+      open.rel = 'noreferrer';
+      const minutesLeft = Math.max(1, Math.round((flow.expiresAt - Date.now()) / 60000));
+      children.push(
+        el('p', 'geld-dialog__text', ['Enter this one-time code on GitHub to connect your account. Geld only asks for access to gists.']),
+        el('div', 'geld-dialog__code-row', [code, copy]),
+        el('div', 'geld-dialog__actions', [open, button(['Cancel'], 'geld-button--link', () => void act('cancel-sign-in'))]),
+        el('p', 'geld-dialog__note', [`Waiting for GitHub… this closes by itself once you approve. The code is valid for about ${minutesLeft} min.`]),
+      );
+    } else if (flow.status === 'error') {
+      children.push(
+        el('p', 'geld-dialog__text geld-dialog__text--error', [flow.message]),
+        el('div', 'geld-dialog__actions', [
+          button(['Try again'], 'geld-button--primary', () => void act('sign-in')),
+          button(['Close'], 'geld-button--link', () => {
+            dialogWanted = false;
+            void authFlowItem.setValue({ status: 'idle' });
+          }),
+        ]),
+      );
+    }
+    node.replaceChildren(...children);
+    if (!node.open) node.showModal();
   }
 
   const unwatchers = [

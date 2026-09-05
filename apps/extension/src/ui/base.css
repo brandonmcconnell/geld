@@ -356,3 +356,91 @@ code {
   padding: 2px 10px;
   font-size: 12px;
 }
+
+/* Sign-in dialog ------------------------------------------------------------ */
+
+.geld-dialog {
+  width: min(440px, calc(100vw - 24px));
+  max-width: none;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--geld-border);
+  border-radius: 12px;
+  background: var(--geld-bg);
+  color: var(--geld-fg);
+  box-shadow: 0 16px 48px rgba(31, 35, 40, 0.24);
+}
+
+.geld-dialog--compact {
+  width: calc(100vw - 24px);
+  padding: 16px;
+}
+
+.geld-dialog::backdrop {
+  background: rgba(31, 35, 40, 0.45);
+}
+
+.geld-dialog__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.geld-dialog__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.geld-dialog__text {
+  margin: 0 0 12px;
+  color: var(--geld-fg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.geld-dialog__text--error {
+  color: var(--geld-danger);
+}
+
+.geld-dialog__code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.geld-dialog__code {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px dashed var(--geld-border);
+  border-radius: var(--geld-radius);
+  background: var(--geld-bg-muted);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-align: center;
+  user-select: all;
+}
+
+.geld-dialog--compact .geld-dialog__code {
+  font-size: 20px;
+}
+
+.geld-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.geld-dialog__open {
+  flex: 1;
+  justify-content: center;
+}
+
+.geld-dialog__note {
+  margin: 12px 0 0;
+  color: var(--geld-fg-muted);
+  font-size: 12px;
+}
