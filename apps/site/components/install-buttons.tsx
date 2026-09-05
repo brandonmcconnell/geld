@@ -1,5 +1,6 @@
 import { cn } from 'cn';
 
+import { ExternalLink } from '@/components/external-link';
 import { InstallButtonGroup } from '@/components/install-button-group';
 import { installLinks } from '@/lib/downloads';
 import { getLatestRelease } from '@/lib/release';
@@ -30,9 +31,9 @@ export async function InstallButtons({ className, size = 'default' }: { readonly
             'GitHub releases'
           )}
           {' — '}
-          <a href={INSTALL_GUIDE_URL} className="underline underline-offset-3 hover:text-foreground" rel="noopener">
+          <ExternalLink href={INSTALL_GUIDE_URL} className="underline underline-offset-3 hover:text-foreground">
             unpacked-install instructions
-          </a>
+          </ExternalLink>
           . Current version: <span className="font-mono">{EXTENSION_VERSION}</span>.
         </p>
       ) : null}

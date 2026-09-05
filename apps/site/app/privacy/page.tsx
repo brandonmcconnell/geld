@@ -1,6 +1,7 @@
 import { allHosts, DEFAULT_SETTINGS } from '@geld/core';
 import type { Metadata } from 'next';
 
+import { ExternalLink } from '@/components/external-link';
 import { PageIntro, Prose } from '@/components/section';
 import { ISSUES_URL, REPO_URL, SITE_URL } from '@/lib/site';
 
@@ -99,13 +100,9 @@ export default function PrivacyPage() {
           <h2 id="changes">Changes and contact</h2>
           <p>
             If this policy ever changes, the change will be visible in the{' '}
-            <a href={`${REPO_URL}/commits/main/apps/site/app/privacy/page.tsx`} rel="noopener">
-              public history of this page
-            </a>
+            <ExternalLink href={`${REPO_URL}/commits/main/apps/site/app/privacy/page.tsx`}>public history of this page</ExternalLink>
             . Questions or concerns: please{' '}
-            <a href={ISSUES_URL} rel="noopener">
-              open an issue on GitHub
-            </a>
+            <ExternalLink href={ISSUES_URL}>open an issue on GitHub</ExternalLink>
             .
           </p>
         </Prose>

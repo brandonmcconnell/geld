@@ -2,6 +2,7 @@ import { CATEGORIES } from '@geld/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { ExternalLink } from '@/components/external-link';
 import { PageIntro, Prose } from '@/components/section';
 import { REPO_URL } from '@/lib/site';
 
@@ -23,9 +24,9 @@ export default function PatternsPage() {
         description={
           <>
             {CATEGORIES.length} categories, {total} built-in patterns. This page is generated from{' '}
-            <a href={CORE_SOURCE_URL} className="underline underline-offset-3 hover:text-foreground" target="_blank" rel="noopener noreferrer">
+            <ExternalLink href={CORE_SOURCE_URL} className="underline underline-offset-3 hover:text-foreground">
               <code className="font-mono text-[0.9em]">@geld/core</code>
-            </a>
+            </ExternalLink>
             , the same package the extension ships, so it cannot drift from what actually runs.
           </>
         }
@@ -116,9 +117,7 @@ export default function PatternsPage() {
           </p>
           <p>
             Missing a convention? Add it as a custom pattern in the options, or{' '}
-            <a href={`${REPO_URL}/issues`} rel="noopener">
-              open an issue
-            </a>
+            <ExternalLink href={`${REPO_URL}/issues`}>open an issue</ExternalLink>
             .
           </p>
         </Prose>

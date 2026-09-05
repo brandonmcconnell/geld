@@ -2,6 +2,7 @@ import { allHosts, DEFAULT_SETTINGS } from '@geld/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { ExternalLink } from '@/components/external-link';
 import { Kbd } from '@/components/kbd';
 import { PageIntro, Prose } from '@/components/section';
 import { ISSUES_URL, KEYBOARD_SHORTCUT, REPO_SLUG, REPO_URL } from '@/lib/site';
@@ -105,9 +106,7 @@ acme            # off in the whole organisation
         Open the options page and add your server&apos;s hostname (for example <code>github.example.com</code>) under <em>Enterprise hosts</em>. Your
         browser will ask you to allow Geld on that host; once granted, the content script is registered there. Geld never contacts any host you have
         not listed. GHES runs GitHub&apos;s interface a few versions behind github.com, so if something looks off please{' '}
-        <a href={ISSUES_URL} rel="noopener">
-          open an issue
-        </a>{' '}
+        <ExternalLink href={ISSUES_URL}>open an issue</ExternalLink>{' '}
         with a screenshot.
       </p>
     ),
@@ -157,9 +156,7 @@ acme            # off in the whole organisation
     answer: (
       <p>
         Yes, MIT licensed at{' '}
-        <a href={REPO_URL} rel="noopener">
-          github.com/{REPO_SLUG}
-        </a>
+        <ExternalLink href={REPO_URL}>github.com/{REPO_SLUG}</ExternalLink>
         . The extension is built with WXT from one codebase for Chrome, Edge, Firefox and Safari, and this website is in the same repository.
       </p>
     ),
@@ -172,7 +169,7 @@ export default function FaqPage() {
       <PageIntro eyebrow="FAQ" title="Questions, answered." description="Short answers about how Geld works and what it does not do." />
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[260px_1fr] lg:gap-20">
         <nav aria-label="Questions" className="hidden lg:block">
-          <ul className="sticky top-24 flex flex-col gap-2 border-l text-sm">
+          <ul className="sticky top-28 flex flex-col gap-2 border-l text-sm">
             {QUESTIONS.map((entry) => (
               <li key={entry.id}>
                 <a href={`#${entry.id}`} className="-ml-px block border-l border-transparent py-1 pl-4 text-muted-foreground transition-colors hover:border-foreground hover:text-foreground">

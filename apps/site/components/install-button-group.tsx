@@ -23,7 +23,7 @@ export function InstallButtonGroup({ links, size = 'default', className }: { rea
 
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)} data-current-browser={current}>
-      <a href={primary.href} className={buttonVariants({ size })} rel="noopener" data-source={primary.source}>
+      <a href={primary.href} className={buttonVariants({ size })} target="_blank" rel="noopener noreferrer" data-source={primary.source}>
         <BrowserIcon browser={primary.browser.id} />
         {primary.label}
       </a>
@@ -32,7 +32,7 @@ export function InstallButtonGroup({ links, size = 'default', className }: { rea
           <li key={link.browser.id}>
             <Tooltip>
               <TooltipTrigger
-                render={<a href={link.href} rel="noopener" aria-label={link.label} data-source={link.source} />}
+                render={<a href={link.href} target="_blank" rel="noopener noreferrer" aria-label={link.label} data-source={link.source} />}
                 className={buttonVariants({ variant: 'outline', size: iconSize, className: 'text-muted-foreground hover:text-foreground' })}
               >
                 <BrowserIcon browser={link.browser.id} />

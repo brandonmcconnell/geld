@@ -3,6 +3,7 @@ import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { BeforeAfter } from '@/components/demo/before-after';
+import { ExternalLink } from '@/components/external-link';
 import { HERO_WORDMARK_ID } from '@/components/header-brand';
 import { InstallButtons } from '@/components/install-buttons';
 import { Wordmark } from '@/components/logo';
@@ -83,9 +84,9 @@ export default function HomePage() {
         <InstallButtons />
         <p className="mt-6 text-sm text-muted-foreground">
           MIT licensed.{' '}
-          <a href={REPO_URL} className="underline underline-offset-3 hover:text-foreground" target="_blank" rel="noopener noreferrer">
+          <ExternalLink href={REPO_URL} className="underline underline-offset-3 hover:text-foreground">
             Read the source
-          </a>{' '}
+          </ExternalLink>{' '}
           or build it yourself.
         </p>
       </Section>

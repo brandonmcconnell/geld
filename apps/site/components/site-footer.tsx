@@ -1,20 +1,11 @@
 import Link from 'next/link';
 
+import { ExternalLink } from '@/components/external-link';
 import { Logomark } from '@/components/logo';
 import { AUTHOR, ISSUES_URL, LICENSE_URL, NAV_LINKS, REPO_URL } from '@/lib/site';
 import { EXTENSION_VERSION } from '@/lib/version';
 
 const linkClass = 'text-sm text-muted-foreground transition-colors hover:text-foreground';
-
-/** Off-site links open in a new tab; the label gets a hint for screen readers. */
-function ExternalLink({ href, children }: { readonly href: string; readonly children: string }) {
-  return (
-    <a href={href} className={linkClass} target="_blank" rel="noopener noreferrer">
-      {children}
-      <span className="sr-only"> (opens in a new tab)</span>
-    </a>
-  );
-}
 
 export function SiteFooter() {
   const profiles = AUTHOR.profiles.filter((profile): profile is { label: string; url: string } => profile.url !== null);
@@ -39,19 +30,19 @@ export function SiteFooter() {
         </FooterColumn>
         <FooterColumn title="Project">
           <li>
-            <ExternalLink href={REPO_URL}>Source on GitHub</ExternalLink>
+            <ExternalLink href={REPO_URL} className={linkClass}>Source on GitHub</ExternalLink>
           </li>
           <li>
-            <ExternalLink href={ISSUES_URL}>Report an issue</ExternalLink>
+            <ExternalLink href={ISSUES_URL} className={linkClass}>Report an issue</ExternalLink>
           </li>
           <li>
-            <ExternalLink href={LICENSE_URL}>MIT license</ExternalLink>
+            <ExternalLink href={LICENSE_URL} className={linkClass}>MIT license</ExternalLink>
           </li>
         </FooterColumn>
         <FooterColumn title={AUTHOR.name}>
           {profiles.map((profile) => (
             <li key={profile.label}>
-              <ExternalLink href={profile.url}>{profile.label}</ExternalLink>
+              <ExternalLink href={profile.url} className={linkClass}>{profile.label}</ExternalLink>
             </li>
           ))}
         </FooterColumn>
