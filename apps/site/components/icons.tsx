@@ -9,3 +9,13 @@ export function GitHubIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Empty-avatar silhouette sized to fill a round button edge to edge (the shoulders run off the bottom). */
+export function AvatarPlaceholderIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" width="32" height="32" {...props}>
+      <circle cx="16" cy="11.5" r="6.5" />
+      <path d="M2.5 34a13.5 13.5 0 0 1 27 0z" />
+    </svg>
+  );
+}

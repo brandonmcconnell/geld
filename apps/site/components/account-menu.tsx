@@ -1,9 +1,10 @@
 'use client';
 
 import { cn } from 'cn';
-import { CircleUserRoundIcon, LogOutIcon, SettingsIcon } from 'lucide-react';
+import { LogOutIcon, SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 
+import { AvatarPlaceholderIcon } from '@/components/icons';
 import { buttonVariants } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,9 +26,12 @@ export function AccountMenu({ className }: { readonly className?: string | undef
       <Tooltip>
         <TooltipTrigger
           render={<a href="/auth/start?next=/settings" aria-label="Sign in with GitHub" />}
-          className={cn(buttonVariants({ variant: 'outline', size: 'icon-sm', className: 'rounded-full text-muted-foreground [[data-account]_&]:hidden' }), className)}
+          className={cn(
+            buttonVariants({ variant: 'outline', size: 'icon-sm', className: 'overflow-hidden rounded-full text-muted-foreground/60 hover:text-muted-foreground/80 [[data-account]_&]:hidden' }),
+            className,
+          )}
         >
-          <CircleUserRoundIcon aria-hidden="true" className="size-[18px]" />
+          <AvatarPlaceholderIcon className="size-full" />
         </TooltipTrigger>
         <TooltipContent side="bottom">Sign in with GitHub</TooltipContent>
       </Tooltip>
