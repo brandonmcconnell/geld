@@ -408,18 +408,50 @@ function centreFilterAboveHeader(header: HTMLElement, treeRoot: HTMLElement): vo
 
   // The visible edge is the sidebar's border box (its padding is part of the gap).
   const boundaryTop = scroller.getBoundingClientRect().top;
-  const filterRect = filter.getBoundingClientRect();
+  // Measure what the eye sees (the bordered field), not the block around it:
+  // GitHub wraps the field in a `tmp-pb-3` div whose 16px of bottom padding
+  // would otherwise be mistaken for part of the field.
+  const filterRect = paintedBounds(filter);
   const gapAbove = filterRect.top - boundaryTop;
   if (gapAbove < 0 || gapAbove > 120) return; // Something unexpected sits above; leave GitHub's spacing alone.
 
   const currentMargin = Number.parseFloat(getComputedStyle(header).marginTop) || 0;
   const gapBelow = header.getBoundingClientRect().top - filterRect.bottom;
-  const margin = Math.max(MIN_HEADER_GAP, Math.round(currentMargin + (gapAbove - gapBelow)));
+  // Balanced gap, but never let the header come within MIN_HEADER_GAP of the field.
+  const balanced = Math.round(currentMargin + (gapAbove - gapBelow));
+  const floor = Math.round(currentMargin + (MIN_HEADER_GAP - gapBelow));
+  const margin = Math.max(balanced, floor);
   const value = `${margin}px`;
   if (header.style.marginTop !== value) header.style.marginTop = value;
 }
 
 const MIN_HEADER_GAP = 8;
+
+/**
+ * Bounding box of the parts of `block` that actually paint something (a
+ * border or background), so invisible wrapper padding does not count. Falls
+ * back to the block's own box when nothing inside paints.
+ */
+function paintedBounds(block: HTMLElement): DOMRect {
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  const consider = (element: Element): void => {
+    const style = getComputedStyle(element);
+    const paints =
+      Number.parseFloat(style.borderTopWidth) > 0 ||
+      Number.parseFloat(style.borderBottomWidth) > 0 ||
+      (style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent');
+    if (!paints) return;
+    const rect = element.getBoundingClientRect();
+    if (rect.height < 8) return;
+    top = Math.min(top, rect.top);
+    bottom = Math.max(bottom, rect.bottom);
+  };
+  for (const element of block.querySelectorAll('*')) consider(element);
+  const own = block.getBoundingClientRect();
+  if (!Number.isFinite(top) || !Number.isFinite(bottom)) return own;
+  return new DOMRect(own.left, top, own.width, bottom - top);
+}
 
 /** The closest rendered element before `element` in document order, staying inside `boundary`. */
 function previousVisibleBlock(element: HTMLElement, boundary: HTMLElement): HTMLElement | null {
