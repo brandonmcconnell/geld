@@ -1,8 +1,8 @@
 import { browser } from 'wxt/browser';
 import { CATEGORIES } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
-import type { GetTabStateMessage, TabState } from '../../src/lib/messages';
-import { isTabState } from '../../src/lib/messages';
+import type { EnsureContentMessage, GetTabStateMessage, TabState } from '../../src/lib/messages';
+import { isEnsureContentResponse, isTabState } from '../../src/lib/messages';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, fieldsFor, isCategoryEnabled } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
@@ -26,7 +26,7 @@ async function activeGitHubTab(hosts: readonly string[]): Promise<ActiveTab | nu
   }
 }
 
-async function requestTabState(tabId: number): Promise<TabState | null> {
+async function pingTab(tabId: number): Promise<TabState | null> {
   const message: GetTabStateMessage = { type: 'geld:get-tab-state' };
   try {
     const response: unknown = await browser.tabs.sendMessage(tabId, message);
@@ -34,6 +34,25 @@ async function requestTabState(tabId: number): Promise<TabState | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Ask the tab what Geld is doing. No answer usually means the tab was open
+ * before Geld was installed or updated, so the background injects the content
+ * script and we ask once more after it has had a moment to run.
+ */
+async function requestTabState(tabId: number): Promise<TabState | null> {
+  const state = await pingTab(tabId);
+  if (state !== null) return state;
+  const ensure: EnsureContentMessage = { type: 'geld:ensure-content', tabId };
+  try {
+    const response: unknown = await browser.runtime.sendMessage(ensure);
+    if (!isEnsureContentResponse(response) || !response.injected) return null;
+  } catch {
+    return null;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  return pingTab(tabId);
 }
 
 function orgOf(repo: string): string {

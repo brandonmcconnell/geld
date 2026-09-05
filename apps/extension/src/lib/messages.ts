@@ -29,6 +29,17 @@ export interface GetTabStateMessage {
   readonly type: 'geld:get-tab-state';
 }
 
+/** Popup → background: the tab did not answer; inject the content script if it belongs there. */
+export interface EnsureContentMessage {
+  readonly type: 'geld:ensure-content';
+  readonly tabId: number;
+}
+
+export interface EnsureContentResponse {
+  /** `true` when the script was injected just now (the caller should ask again shortly). */
+  readonly injected: boolean;
+}
+
 export interface TabCategoryState {
   readonly id: CategoryId;
   readonly title: string;
@@ -79,6 +90,7 @@ export type GeldRequest =
   | ColorSchemeMessage
   | ToggleHiddenMessage
   | GetTabStateMessage
+  | EnsureContentMessage
   | TabStateMessage
   | AccountActionMessage;
 
@@ -106,6 +118,14 @@ export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMess
 
 export function isGetTabStateMessage(value: unknown): value is GetTabStateMessage {
   return isRecord(value) && value.type === 'geld:get-tab-state';
+}
+
+export function isEnsureContentMessage(value: unknown): value is EnsureContentMessage {
+  return isRecord(value) && value.type === 'geld:ensure-content' && typeof value.tabId === 'number';
+}
+
+export function isEnsureContentResponse(value: unknown): value is EnsureContentResponse {
+  return isRecord(value) && typeof value.injected === 'boolean';
 }
 
 export function isTabStateMessage(value: unknown): value is TabStateMessage {

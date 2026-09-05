@@ -6,7 +6,10 @@ import { actionIconPaths } from '../src/lib/action-icon';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { settingsItem } from '../src/lib/storage';
 import type { FetchDiffResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
-import { isAccountActionMessage, isColorSchemeMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
+import type { EnsureContentResponse } from '../src/lib/messages';
+import { isAccountActionMessage, isColorSchemeMessage, isEnsureContentMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
+import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
+import { grantedHosts } from '../src/lib/enterprise';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -182,6 +185,18 @@ function updateBadge(tabId: number, state: TabState): void {
   }
 }
 
+/** Hosts the content script may run on: github.com plus granted Enterprise hosts. */
+async function contentHosts(): Promise<Set<string>> {
+  const settings = await settingsItem.getValue();
+  return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
+}
+
+/** Put Geld into a tab that should have it but does not (installed/updated while open, etc.). */
+async function ensureTab(tabId: number, url: string | undefined): Promise<EnsureContentResponse> {
+  if (hostOf(url, await contentHosts()) === null) return { injected: false };
+  return { injected: await ensureContentScript(tabId) };
+}
+
 /** Keyboard shortcut: ask the active GitHub tab to toggle its hidden files. */
 async function toggleHiddenInActiveTab(): Promise<void> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -202,6 +217,14 @@ export default defineBackground(() => {
     }
     if (isAccountActionMessage(message)) {
       void handleAccountMessage(message).then(sendResponse);
+      return true;
+    }
+    if (isEnsureContentMessage(message)) {
+      void browser.tabs
+        .get(message.tabId)
+        .then((tab) => ensureTab(message.tabId, tab.url))
+        .catch((): EnsureContentResponse => ({ injected: false }))
+        .then(sendResponse);
       return true;
     }
     if (!isFetchDiffRequest(message)) return undefined;
@@ -225,6 +248,20 @@ export default defineBackground(() => {
   browser.runtime.onStartup.addListener(syncHosts);
   settingsItem.watch((settings) => void syncEnterpriseHosts(settings.enterpriseHosts).catch(() => undefined));
   syncHosts();
+
+  // Tabs that were open before an install/update have no content script yet.
+  browser.runtime.onInstalled.addListener(() => {
+    void contentHosts().then(async (hosts) => {
+      for (const tabId of await tabsOnHosts([...hosts])) void ensureContentScript(tabId);
+    });
+  });
+  // Switching to a GitHub tab that somehow lacks Geld (e.g. reinstalled while it was open).
+  browser.tabs.onActivated.addListener(({ tabId }) => {
+    void browser.tabs
+      .get(tabId)
+      .then((tab) => ensureTab(tabId, tab.url))
+      .catch(() => undefined);
+  });
 
   // GitHub account: keep settings in the user's secret gist when signed in.
   startAccountSync();

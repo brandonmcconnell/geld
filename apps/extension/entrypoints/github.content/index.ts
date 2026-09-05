@@ -12,6 +12,11 @@ export default defineContentScript({
   // as it is inserted, ahead of the first paint, instead of after page load.
   runAt: 'document_start',
   async main(ctx) {
+    // A newer copy of this script (injected after an update) announces itself;
+    // any older copy still running in the page must step aside first.
+    const TAKEOVER = 'geld:takeover';
+    document.dispatchEvent(new CustomEvent(TAKEOVER));
+
     let showBadge = (await settingsItem.getValue()).showBadge;
 
     const controller = new GeldController(await settingsItem.getValue(), {
@@ -52,10 +57,17 @@ export default defineContentScript({
     ctx.addEventListener(document, 'turbo:render', () => controller.requestRefresh());
     ctx.addEventListener(document, 'soft-nav:end', () => controller.requestRefresh());
 
-    ctx.onInvalidated(() => {
+    let retired = false;
+    const retire = (): void => {
+      if (retired) return;
+      retired = true;
       unwatch();
       browser.runtime.onMessage.removeListener(onMessage);
       controller.stop();
-    });
+    };
+    // A newer copy took over (see TAKEOVER above), or the extension was
+    // reloaded, updated or removed and this copy is orphaned.
+    document.addEventListener(TAKEOVER, retire, { once: true });
+    ctx.onInvalidated(retire);
   },
 });

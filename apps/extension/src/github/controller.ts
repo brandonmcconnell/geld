@@ -152,6 +152,7 @@ export class GeldController {
   }
 
   stop(): void {
+    if (this.stopped) return;
     this.stopped = true;
     this.observer?.disconnect();
     this.observer = null;
