@@ -130,7 +130,8 @@
   html {
     @apply font-sans antialiased;
     text-rendering: optimizeLegibility;
-    scroll-behavior: smooth;
+    /* No global smooth scrolling: page navigations must snap to the top. In-page
+       hash links animate via components/smooth-hash-links.tsx instead. */
   }
   body {
     @apply bg-background text-foreground;
@@ -146,9 +147,6 @@
     @apply font-mono;
   }
   @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
     *,
     *::before,
     *::after {

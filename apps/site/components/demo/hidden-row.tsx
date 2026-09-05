@@ -1,6 +1,7 @@
 'use client';
 
 import { pluralize } from '@geld/core';
+import { cn } from 'cn';
 import { ChevronDownIcon, EyeOffIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 
@@ -41,7 +42,15 @@ export function HiddenRow({
           onClick={() => setOpen((value) => !value)}
           className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
         >
-          {open ? 'Hide' : 'Show'} {nounPlural}
+          {/* Both labels occupy the same grid cell so the button keeps the wider width and nothing shifts. */}
+          <span className="grid text-left">
+            <span aria-hidden={open} className={cn('col-start-1 row-start-1', open && 'invisible')}>
+              Show {nounPlural}
+            </span>
+            <span aria-hidden={!open} className={cn('col-start-1 row-start-1', !open && 'invisible')}>
+              Hide {nounPlural}
+            </span>
+          </span>
           <ChevronDownIcon aria-hidden="true" className={open ? 'size-3.5 rotate-180 transition-transform motion-reduce:transition-none' : 'size-3.5 transition-transform motion-reduce:transition-none'} />
         </button>
       </div>

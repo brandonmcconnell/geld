@@ -8,7 +8,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/85',
-        outline: 'border-border bg-background hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/20 dark:hover:bg-input/40',
+        // Faint fill plus a slightly stronger border in both schemes (the dark treatment, applied everywhere).
+        outline: 'border-input bg-input/20 hover:bg-input/40 hover:text-foreground',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-accent',
         ghost: 'hover:bg-muted hover:text-foreground dark:hover:bg-muted/60',
         link: 'text-foreground underline-offset-4 hover:underline',

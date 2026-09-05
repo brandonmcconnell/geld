@@ -38,7 +38,8 @@ export function PrHeader({ shown, geld, className }: PrHeaderProps) {
         {geld ? (
           <Tooltip>
             <TooltipTrigger
-              className="rounded-md px-1 font-mono text-[0.8125rem] text-muted-foreground underline decoration-dotted decoration-border underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40"
+              // A dotted bottom border rather than text-decoration: it follows the theme tokens in every browser.
+              className="rounded-none border-b border-dotted border-muted-foreground/50 px-0.5 font-mono text-[0.8125rem] text-muted-foreground outline-none transition-colors hover:border-foreground/60 hover:text-foreground focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/40"
               aria-label={`${pluralize(geld.hidden.files, geld.noun, geld.nounPlural)} hidden. Hover for the full breakdown.`}
             >
               {formatCount(geld.hidden.files)} {geld.hidden.files === 1 ? geld.noun : geld.nounPlural}

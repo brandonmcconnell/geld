@@ -279,7 +279,7 @@ sandbox/
 function Step({ id, index, title, children }: { readonly id: string; readonly index: number; readonly title: string; readonly children: React.ReactNode }) {
   return (
     <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-28">
-      <p className="mb-3 font-mono text-sm tabular-nums text-muted-foreground">{String(index).padStart(2, '0')}</p>
+      <p className="mb-3 font-mono text-base tabular-nums text-muted-foreground">{String(index).padStart(2, '0')}</p>
       <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
         {title}
       </h2>

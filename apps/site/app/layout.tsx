@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
+import { SmoothHashLinks } from '@/components/smooth-hash-links';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { geistMono, geistSans } from '@/lib/fonts';
 import { DESCRIPTION, SITE_NAME, SITE_URL, TAGLINE } from '@/lib/site';
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
         >
           Skip to content
         </a>
+        <SmoothHashLinks />
         <TooltipProvider>
           <SiteHeader />
           <main id="main" className="flex-1">

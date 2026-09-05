@@ -20,7 +20,7 @@ export function Section({
   return (
     <section id={id} aria-labelledby={headingId} className={cn('container-site py-16 sm:py-20', className)}>
       <div className="max-w-2xl">
-        {eyebrow !== undefined ? <p className="mb-4 font-mono text-sm font-medium tracking-[0.12em] text-muted-foreground uppercase">{eyebrow}</p> : null}
+        {eyebrow !== undefined ? <p className="mb-4 font-mono text-[0.9375rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">{eyebrow}</p> : null}
         <h2 id={headingId} className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
           {title}
         </h2>
@@ -36,7 +36,7 @@ export function PageIntro({ title, description, eyebrow }: { readonly title: str
   return (
     <header className="container-site pt-16 pb-8 sm:pt-24 sm:pb-12">
       <div className="max-w-2xl">
-        {eyebrow !== undefined ? <p className="mb-4 font-mono text-sm font-medium tracking-[0.12em] text-muted-foreground uppercase">{eyebrow}</p> : null}
+        {eyebrow !== undefined ? <p className="mb-4 font-mono text-[0.9375rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">{eyebrow}</p> : null}
         <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{title}</h1>
         {description !== undefined ? <div className="mt-5 text-lg leading-8 text-muted-foreground text-pretty">{description}</div> : null}
       </div>

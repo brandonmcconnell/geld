@@ -32,7 +32,7 @@ export default function PatternsPage() {
         }
       />
 
-      <div className="container-site pb-24">
+      <div className="container-site">
         <Prose className="mb-12">
           <h2 id="semantics">Semantics</h2>
           <p>
@@ -47,48 +47,47 @@ export default function PatternsPage() {
             any path on the <Link href="/#try">home page</Link>.
           </p>
         </Prose>
+      </div>
 
-        {/* Sticks under the top bar (h-14) so the category jumps stay reachable while reading. */}
-        <nav
-          aria-label="Categories"
-          className="sticky top-14 z-30 -mx-5 mb-12 border-b bg-background/85 px-5 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:-mx-8 sm:px-8"
-        >
-          <ul className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {CATEGORIES.map((category) => (
-              <li key={category.id} className="shrink-0">
-                <a
-                  href={`#${category.id}`}
-                  className="inline-block rounded-full border px-3 py-1 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-                >
-                  {category.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+      {/* Full-bleed bar that sticks under the top bar (h-14) so the category jumps stay reachable while reading. */}
+      <nav aria-label="Categories" className="sticky top-14 z-30 border-b bg-background/85 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        <ul className="container-site flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {CATEGORIES.map((category) => (
+            <li key={category.id} className="shrink-0">
+              <a
+                href={`#${category.id}`}
+                className="inline-block rounded-full border bg-background/60 px-3 py-1 text-sm whitespace-nowrap text-foreground/80 transition-colors hover:border-foreground hover:bg-background hover:text-foreground"
+              >
+                {category.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
+      <div className="container-site pt-12 pb-24">
         <div className="flex flex-col gap-20">
           {CATEGORIES.map((category, index) => (
             <section key={category.id} id={category.id} aria-labelledby={`${category.id}-heading`} className="scroll-mt-36">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-xs tabular-nums text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
-                <h2 id={`${category.id}-heading`} className="text-2xl font-semibold tracking-tight">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-mono text-base tabular-nums text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
+                <h2 id={`${category.id}-heading`} className="text-2xl font-semibold tracking-tight sm:text-3xl">
                   {category.title}
                 </h2>
-                <span className="rounded-full border px-2 py-px text-xs text-muted-foreground">{category.defaultEnabled ? 'on by default' : 'opt-in'}</span>
+                <span className="rounded-full border px-2.5 py-0.5 text-xs leading-5 text-muted-foreground">{category.defaultEnabled ? 'on by default' : 'opt-in'}</span>
               </div>
               <p className="mt-2 max-w-2xl text-muted-foreground">{category.description}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1.5 text-sm text-muted-foreground">
                 Label: <span className="font-mono">{category.shortNounPlural}</span> · Section: <span className="font-mono">{category.nounPlural}</span>
               </p>
 
               <div className="mt-6 flex flex-col gap-6">
                 {category.groups.map((group) => (
-                  <div key={group.id} className="grid gap-3 rounded-xl border p-5 md:grid-cols-[220px_1fr] md:gap-8">
+                  <div key={group.id} className="grid gap-3 rounded-xl border p-5 md:grid-cols-[240px_1fr] md:gap-8">
                     <div>
-                      <h3 className="text-sm font-semibold">{group.label}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">{group.description}</p>
-                      <p className="mt-2 font-mono text-xs text-muted-foreground">
+                      <h3 className="text-base font-semibold">{group.label}</h3>
+                      <p className="mt-1 text-[0.9375rem] leading-6 text-muted-foreground">{group.description}</p>
+                      <p className="mt-2 font-mono text-sm text-muted-foreground">
                         {group.patterns.length} {group.patterns.length === 1 ? 'pattern' : 'patterns'}
                         {category.id === 'tests' ? ' · toggle individually' : ''}
                       </p>
