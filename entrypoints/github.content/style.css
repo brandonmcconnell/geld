@@ -369,12 +369,12 @@
 }
 
 /*
- * "N tests" label to the left of +/−. Primer's "done" purple is the one GitHub
- * uses for merged PRs, so it is already balanced against their green/red and
- * adapts to dark and high-contrast themes.
+ * "N tests" label to the left of +/−. Primer's muted foreground is the gray
+ * GitHub uses for secondary text; its lightness sits between their success
+ * green and danger red and it adapts to dark and high-contrast themes.
  */
 .geld-tests-count {
-  color: var(--fgColor-done, #8250df);
+  color: var(--fgColor-muted, #59636e);
   white-space: nowrap;
 }
 
