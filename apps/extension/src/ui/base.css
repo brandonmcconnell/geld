@@ -123,15 +123,41 @@ code {
   }
 }
 
-/* Calls to action take the logomark's cut corners; everything else is square. */
-.geld-corners {
+/*
+ * Calls to action take the logomark's cut corners; everything else is square.
+ * Applied to buttons and the account control below. Hover deepens the cut by
+ * 3px, and the cut-away corners still count as the element (::after covers
+ * the full square plus 1px), as on the site.
+ */
+.geld-button,
+.geld-account__summary,
+.geld-account__avatar {
+  position: relative;
   border-radius: 0;
+  transition-property: color, background-color, border-color, border-radius;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.geld-button::after,
+.geld-account__summary::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
 }
 
 @supports (corner-shape: bevel) {
-  .geld-corners {
+  .geld-button,
+  .geld-account__summary,
+  .geld-account__avatar {
     border-radius: var(--cut);
     corner-shape: bevel square;
+  }
+
+  .geld-button:hover,
+  .geld-account__summary:hover,
+  .geld-account__summary:hover .geld-account__avatar {
+    border-radius: calc(var(--cut) + 3px);
   }
 }
 
@@ -302,16 +328,6 @@ code {
   text-decoration: none;
   cursor: pointer;
   user-select: none;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
-}
-
-@supports (corner-shape: bevel) {
-  .geld-button {
-    border-radius: var(--cut);
-    corner-shape: bevel square;
-  }
 }
 
 .geld-button svg {
@@ -355,6 +371,13 @@ code {
 .geld-button--link:hover {
   background: none;
   text-decoration-color: currentColor;
+}
+
+@supports (corner-shape: bevel) {
+  .geld-button--link,
+  .geld-button--link:hover {
+    border-radius: 0;
+  }
 }
 
 .geld-button--small {
@@ -577,15 +600,6 @@ summary::-webkit-details-marker {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: background-color 120ms ease;
-}
-
-@supports (corner-shape: bevel) {
-  .geld-account__summary,
-  .geld-account__avatar {
-    border-radius: var(--cut);
-    corner-shape: bevel square;
-  }
 }
 
 .geld-account__summary:hover,
