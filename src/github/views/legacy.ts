@@ -79,7 +79,10 @@ export const legacyAdapter: DiffViewAdapter = {
         if (file === null) return;
         const content = file.querySelector<HTMLElement>('.js-file-content');
         if (content !== null && getComputedStyle(content).display === 'none') {
-          file.querySelector<HTMLElement>('.file-header .js-details-target')?.click();
+          const toggle =
+            file.querySelector<HTMLElement>('.file-header button.js-details-target[aria-label*="Toggle diff"]') ??
+            file.querySelector<HTMLElement>('.file-header .file-info > button.js-details-target');
+          toggle?.click();
         }
       },
     };
