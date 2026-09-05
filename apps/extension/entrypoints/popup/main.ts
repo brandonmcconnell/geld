@@ -56,8 +56,8 @@ async function main(): Promise<void> {
     }, 1200);
   };
 
-  /* At-a-glance settings, in schema order. */
-  const glanceHost = requireElement('glance', HTMLDivElement);
+  /* Settings flagged for the popup, in schema order. */
+  const settingsHost = requireElement('popup-settings', HTMLDivElement);
   const toggles: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
   const categoryInputs = new Map<string, HTMLInputElement>();
 
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     const help = document.createElement('p');
     help.className = 'geld-help';
     help.id = `${field.key}-help`;
-    help.textContent = field.glanceDescription ?? field.description;
+    help.textContent = field.popupDescription ?? field.description;
     const text = document.createElement('div');
     text.append(label, help);
     const button = document.createElement('button');
@@ -125,9 +125,9 @@ async function main(): Promise<void> {
   }
 
   for (const field of fieldsFor('extension', true)) {
-    if (field.kind === 'toggle') glanceHost.append(renderToggle(field));
-    else if (field.kind === 'categories') glanceHost.append(renderCategories(field));
-    // Test groups and list fields are never flagged for the glance view; the options page renders them.
+    if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
+    else if (field.kind === 'categories') settingsHost.append(renderCategories(field));
+    // Test groups and list fields are never flagged for the popup; the options page renders them.
   }
 
   /* Tab context */

@@ -33,9 +33,9 @@ describe('SETTINGS_SCHEMA', () => {
     expect(sectionsFor('extension').map((section) => section.id)).toContain('enterprise');
   });
 
-  it('exposes the glance view as a small subset', () => {
-    const glance = fieldsFor('extension', true);
-    expect(glance.map((field) => (field.kind === 'toggle' ? field.key : field.kind))).toEqual([
+  it('exposes the toolbar popup as a small subset', () => {
+    const popup = fieldsFor('extension', true);
+    expect(popup.map((field) => (field.kind === 'toggle' ? field.key : field.kind))).toEqual([
       'enabled',
       'expandedByDefault',
       'categories',

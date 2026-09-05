@@ -24,10 +24,10 @@ export type SettingsSurface = 'extension' | 'site';
 interface FieldBase {
   readonly label: string;
   readonly description: string;
-  /** Also show in the compact "at a glance" view (the toolbar popup). */
-  readonly glance: boolean;
-  /** Shorter copy for the glance view; falls back to `description`. */
-  readonly glanceDescription?: string;
+  /** Also show in the toolbar popup (the compact view; the options page shows everything). */
+  readonly popup: boolean;
+  /** Shorter copy for the popup; falls back to `description`. */
+  readonly popupDescription?: string;
   /** Surfaces that can meaningfully edit this field. Omitted means both. */
   readonly surfaces?: readonly SettingsSurface[];
 }
@@ -80,8 +80,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'enabled',
         label: 'Enabled on GitHub',
         description: 'Turn Geld off to see GitHub exactly as it ships.',
-        glance: true,
-        glanceDescription: 'Changes apply instantly to open tabs.',
+        popup: true,
+        popupDescription: 'Changes apply instantly to open tabs.',
       },
       {
         kind: 'toggle',
@@ -89,8 +89,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'Show hidden files expanded',
         description:
           'Hidden files still move to the bottom and are excluded from the counts, but stay visible. Pages where every file is hidden always start expanded.',
-        glance: true,
-        glanceDescription: 'Grouped at the bottom, but not collapsed.',
+        popup: true,
+        popupDescription: 'Grouped at the bottom, but not collapsed.',
       },
       {
         kind: 'toggle',
@@ -98,7 +98,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'Line counts in pull request lists',
         description:
           'Adds "N tests +A −D" to each PR on list pages such as /pulls, with the breakdown on hover. Diffs are fetched only for rows you scroll to.',
-        glance: false,
+        popup: false,
       },
       {
         kind: 'toggle',
@@ -106,14 +106,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'Hide whitespace changes',
         description:
           "Uses GitHub's own “hide whitespace” option (the ?w=1 view) on every diff you open, so indentation-only changes never clutter a review. GitHub does not remember it, so Geld adds it on your way in.",
-        glance: false,
+        popup: false,
       },
       {
         kind: 'toggle',
         key: 'shortcutEnabled',
         label: 'Keyboard shortcut (Alt+Shift+T)',
         description: 'Shows or hides the hidden files on the current page until you leave it; it never changes your saved settings.',
-        glance: false,
+        popup: false,
         surfaces: ['extension'],
       },
       {
@@ -121,7 +121,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'showBadge',
         label: 'Count on the toolbar icon',
         description: 'Shows how many files are hidden on the current tab.',
-        glance: false,
+        popup: false,
         surfaces: ['extension'],
       },
     ],
@@ -136,13 +136,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'categories',
         label: 'Hide',
         description: 'Kinds of files to move out of the way.',
-        glance: true,
+        popup: true,
       },
       {
         kind: 'test-groups',
         label: 'Kinds of tests',
         description: 'Fine-grained control over which built-in test patterns apply.',
-        glance: false,
+        popup: false,
       },
     ],
   },
@@ -157,7 +157,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'customPatterns',
         label: 'Custom patterns',
         description: 'Extra globs treated as tests.',
-        glance: false,
+        popup: false,
         rows: 8,
         placeholder: '# everywhere\n*.generated.ts\n!tests/contracts/**\n\n[acme/*]\n# only in Acme repositories\ndocs/adr/',
         syntax: [
@@ -180,7 +180,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'repoRules',
         label: 'Repository rules',
         description: 'Repositories and organisations where Geld stays off.',
-        glance: false,
+        popup: false,
         rows: 5,
         placeholder: 'acme/legacy-app\nbig-corp\n!big-corp/the-one-repo-i-review',
         syntax: [
@@ -203,7 +203,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'enterpriseHosts',
         label: 'GitHub Enterprise Server hosts',
         description: 'Extra GitHub hosts Geld runs on.',
-        glance: false,
+        popup: false,
         rows: 3,
         placeholder: 'github.example.com',
         syntax: ['Hostnames only. Permission to run on a host is granted in the browser, so this is edited in the extension.'],
@@ -218,13 +218,13 @@ function visibleOn(field: SettingsField, surface: SettingsSurface): boolean {
   return field.surfaces === undefined || field.surfaces.includes(surface);
 }
 
-/** Fields to show on a surface, optionally only the "at a glance" ones, in schema order. */
-export function fieldsFor(surface: SettingsSurface, glanceOnly = false): readonly SettingsField[] {
+/** Fields to show on a surface, optionally only those flagged for the toolbar popup, in schema order. */
+export function fieldsFor(surface: SettingsSurface, popupOnly = false): readonly SettingsField[] {
   const fields: SettingsField[] = [];
   for (const section of SETTINGS_SCHEMA) {
     for (const field of section.fields) {
       if (!visibleOn(field, surface)) continue;
-      if (glanceOnly && !field.glance) continue;
+      if (popupOnly && !field.popup) continue;
       fields.push(field);
     }
   }
