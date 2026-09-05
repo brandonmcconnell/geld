@@ -390,7 +390,49 @@ export function renderChangesHeader(
   parts.header.setAttribute('aria-label', `Changes: ${formatCount(state.count)} files`);
   parts.root.toggleAttribute('data-active', state.active);
   syncGeometry(parts.root, treeRoot);
+  centreFilterAboveHeader(parts.root, treeRoot);
   return parts.root;
+}
+
+/**
+ * GitHub's "Filter files" field sits between the sidebar's top edge and our
+ * Changes header. Give the header exactly the top margin that makes the space
+ * below the field equal the space above it, whatever spacing the view uses.
+ */
+function centreFilterAboveHeader(header: HTMLElement, treeRoot: HTMLElement): void {
+  const scroller = treeRoot.closest<HTMLElement>(`[${ATTR_SIDEBAR}]`);
+  if (scroller === null) return;
+  const filter = previousVisibleBlock(header, scroller);
+  if (filter === null) return;
+
+  // The visible edge is the sidebar's border box (its padding is part of the gap).
+  const boundaryTop = scroller.getBoundingClientRect().top;
+  const filterRect = filter.getBoundingClientRect();
+  const gapAbove = filterRect.top - boundaryTop;
+  if (gapAbove < 0 || gapAbove > 64) return; // Something unexpected sits above; leave GitHub's spacing alone.
+
+  const currentMargin = Number.parseFloat(getComputedStyle(header).marginTop) || 0;
+  const gapBelow = header.getBoundingClientRect().top - filterRect.bottom;
+  const margin = Math.max(MIN_HEADER_GAP, Math.round(currentMargin + (gapAbove - gapBelow)));
+  const value = `${margin}px`;
+  if (header.style.marginTop !== value) header.style.marginTop = value;
+}
+
+const MIN_HEADER_GAP = 8;
+
+/** The closest rendered element before `element` in document order, staying inside `boundary`. */
+function previousVisibleBlock(element: HTMLElement, boundary: HTMLElement): HTMLElement | null {
+  let current: HTMLElement | null = element;
+  while (current !== null && current !== boundary) {
+    let sibling = current.previousElementSibling;
+    while (sibling !== null) {
+      // Ignore 1px screen-reader-only spans and collapsed wrappers.
+      if (sibling instanceof HTMLElement && sibling.getBoundingClientRect().height >= 8) return sibling;
+      sibling = sibling.previousElementSibling;
+    }
+    current = current.parentElement;
+  }
+  return null;
 }
 
 function scrollContainerOf(element: HTMLElement): HTMLElement | null {
