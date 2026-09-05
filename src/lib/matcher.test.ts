@@ -92,11 +92,60 @@ describe('settings interplay', () => {
   it('matches only custom patterns when built-in tests are off', () => {
     const custom = createMatcher({
       ...DEFAULT_SETTINGS,
-      hideTests: false,
+      categories: { tests: false },
       customPatterns: ['*.generated.ts'],
     });
     expect(custom.categorize('src/a.test.ts')).toBeNull();
     expect(custom.categorize('src/schema.generated.ts')).toBe(TESTS_CATEGORY);
+  });
+
+  it('honours test sub-group toggles', () => {
+    const noE2e = createMatcher({ ...DEFAULT_SETTINGS, testGroups: { e2e: false } });
+    expect(noE2e.categorize('cypress/e2e/login.cy.ts')).toBeNull();
+    expect(noE2e.categorize('src/a.test.ts')).toBe(TESTS_CATEGORY);
+  });
+
+  it('attributes paths to the first matching enabled category', () => {
+    const all = createMatcher({
+      ...DEFAULT_SETTINGS,
+      categories: { tests: true, generated: true, vendored: true, agents: true, docs: true, tooling: true, stories: true },
+    });
+    expect(all.categorize('pnpm-lock.yaml')?.id).toBe('generated');
+    expect(all.categorize('vendor/lib/thing.js')?.id).toBe('vendored');
+    expect(all.categorize('.cursor/rules/style.mdc')?.id).toBe('agents');
+    expect(all.categorize('CLAUDE.md')?.id).toBe('agents');
+    expect(all.categorize('README.md')?.id).toBe('docs');
+    expect(all.categorize('.github/workflows/ci.yml')?.id).toBe('tooling');
+    expect(all.categorize('src/Button.stories.tsx')?.id).toBe('stories');
+    expect(all.categorize('src/index.ts')).toBeNull();
+    expect(all.activeCategories.map((category) => category.id)).toEqual([
+      'tests',
+      'generated',
+      'vendored',
+      'agents',
+      'docs',
+      'tooling',
+      'stories',
+    ]);
+  });
+
+  it('applies repo-scoped custom patterns only to matching repositories', () => {
+    const settings = { ...DEFAULT_SETTINGS, customPatterns: ['*.generated.ts', '[acme/*]', 'docs/adr/', '[*]', '!src/keep.test.ts'] };
+    const acme = createMatcher(settings, 'acme/widgets');
+    const other = createMatcher(settings, 'someone/else');
+    expect(acme.categorize('docs/adr/0001.md')).toBe(TESTS_CATEGORY);
+    expect(other.categorize('docs/adr/0001.md')).toBeNull();
+    expect(other.categorize('x.generated.ts')).toBe(TESTS_CATEGORY);
+    expect(acme.categorize('src/keep.test.ts')).toBeNull();
+    expect(other.categorize('src/keep.test.ts')).toBeNull();
+  });
+
+  it('explains its decisions', () => {
+    const matcher = createMatcher({ ...DEFAULT_SETTINGS, customPatterns: ['*.gen.ts', '!src/keep.test.ts'] });
+    expect(matcher.explain('src/a.test.ts')).toMatchObject({ source: 'built-in', pattern: '*.test.*' });
+    expect(matcher.explain('src/x.gen.ts')).toMatchObject({ source: 'custom', pattern: '*.gen.ts' });
+    expect(matcher.explain('src/keep.test.ts')).toEqual({ category: null, rescuedBy: '!src/keep.test.ts' });
+    expect(matcher.explain('src/index.ts')).toEqual({ category: null, rescuedBy: null });
   });
 
   it('lets custom negations rescue files from the built-in patterns', () => {

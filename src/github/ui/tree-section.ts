@@ -1,7 +1,7 @@
+import type { HiddenCategory } from '../../lib/categories';
 import { formatCount } from '../../lib/format';
-import type { HiddenCategory } from '../../lib/matcher';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_BEAKER, ICON_CHEVRON_RIGHT, ICON_FILE, ICON_FILE_DIRECTORY } from './icons';
+import { ICON_BEAKER, ICON_CHEVRON_RIGHT, ICON_EYE_CLOSED, ICON_FILE, ICON_FILE_DIRECTORY } from './icons';
 
 export const TREE_SECTION_CLASS = 'geld-tree-section';
 
@@ -160,14 +160,21 @@ function renderChildren(dir: DirNode, level: number, collapsed: ReadonlySet<stri
   );
 }
 
-function build(onToggle: () => void, onSelect: (path: string) => void, stateKey: string): TreeSectionParts {
+function build(
+  category: HiddenCategory,
+  onToggle: () => void,
+  onSelect: (path: string) => void,
+  stateKey: string,
+): TreeSectionParts {
   const title = createElement('span', { class: 'geld-tree__label geld-tree__label--root' });
   const count = createElement('span', { class: `${TREE_SECTION_CLASS}__count` });
   const header = row(
     1,
     [
       createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
-      createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [svgFromString(ICON_BEAKER)]),
+      createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [
+        svgFromString(category.id === 'tests' ? ICON_BEAKER : ICON_EYE_CLOSED),
+      ]),
       title,
       count,
     ],
@@ -185,7 +192,7 @@ function build(onToggle: () => void, onSelect: (path: string) => void, stateKey:
 
     const dir = button.dataset.dir;
     if (dir !== undefined) {
-      const collapsed = collapsedSet(stateKey);
+      const collapsed = collapsedSet(`${stateKey}#${category.id}`);
       const nowCollapsed = !collapsed.has(dir);
       if (nowCollapsed) collapsed.add(dir);
       else collapsed.delete(dir);
@@ -207,13 +214,13 @@ function build(onToggle: () => void, onSelect: (path: string) => void, stateKey:
     group,
   ]);
   const tree = createElement('ul', { class: 'geld-tree', role: 'list', 'aria-label': 'Hidden files' }, [rootItem]);
-  const root = createElement('div', { class: TREE_SECTION_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [tree]);
+  const root = createElement('div', { class: TREE_SECTION_CLASS, [OWN_UI_ATTRIBUTE]: '', 'data-category': category.id }, [tree]);
 
   const resizeObserver =
     typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(() => {
-          const treeRoot = root.previousElementSibling;
+          const treeRoot = root.parentElement?.querySelector<HTMLElement>('ul[role="tree"]');
           if (treeRoot instanceof HTMLElement) syncGeometry(root, treeRoot);
         });
 
@@ -256,10 +263,15 @@ export function renderTreeSection(
   state: TreeSectionState,
   onToggle: () => void,
   onSelect: (path: string) => void,
+  /** The section rendered just before this one, to keep category order stable. */
+  after: HTMLElement | null = null,
 ): HTMLElement {
   const host = treeRoot.parentElement ?? treeRoot;
   let existing = Array.from(host.children).find(
-    (child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains(TREE_SECTION_CLASS),
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      child.classList.contains(TREE_SECTION_CLASS) &&
+      child.dataset.category === state.category.id,
   );
   let section = existing === undefined ? undefined : parts.get(existing);
   if (existing !== undefined && section === undefined) {
@@ -267,10 +279,12 @@ export function renderTreeSection(
     existing = undefined;
   }
   if (section === undefined) {
-    section = build(onToggle, onSelect, state.stateKey);
+    section = build(state.category, onToggle, onSelect, state.stateKey);
     parts.set(section.root, section);
-    treeRoot.insertAdjacentElement('afterend', section.root);
+    (after ?? treeRoot).insertAdjacentElement('afterend', section.root);
     section.resizeObserver?.observe(treeRoot);
+  } else if (after !== null && section.root.previousElementSibling !== after) {
+    after.insertAdjacentElement('afterend', section.root);
   }
 
   section.root.dataset.view = state.view;
@@ -284,13 +298,15 @@ export function renderTreeSection(
   section.group.hidden = !state.expanded;
   section.root.dataset.expanded = String(state.expanded);
 
-  const signature = `${state.stateKey}\n${state.files
+  const signature = `${state.stateKey}#${state.category.id}\n${state.files
     .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('title') ?? ''}`)
     .join('\n')}`;
   if (section.group.dataset.signature !== signature) {
     const selected = section.group.querySelector<HTMLElement>('[aria-current]')?.dataset.path;
     section.group.dataset.signature = signature;
-    section.group.replaceChildren(...renderChildren(buildTree(state.files), 2, collapsedSet(state.stateKey)));
+    section.group.replaceChildren(
+      ...renderChildren(buildTree(state.files), 2, collapsedSet(`${state.stateKey}#${state.category.id}`)),
+    );
     if (selected !== undefined) {
       section.group
         .querySelector(`.geld-tree__row[data-path="${CSS.escape(selected)}"]`)
@@ -302,8 +318,10 @@ export function renderTreeSection(
   return section.root;
 }
 
-export function removeTreeSection(root: ParentNode): void {
+/** Remove all sections, or only those whose category is not in `keep`. */
+export function removeTreeSection(root: ParentNode, keep: ReadonlySet<string> | null = null): void {
   for (const element of root.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}`)) {
+    if (keep !== null && element.dataset.category !== undefined && keep.has(element.dataset.category)) continue;
     parts.get(element)?.resizeObserver?.disconnect();
     element.remove();
   }

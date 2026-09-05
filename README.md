@@ -20,13 +20,40 @@ Anywhere GitHub shows a list of changed files (pull request _Files changed_ tab,
 - **Adds line counts to pull request lists** (`/pulls`, the global PR dashboard, search results): each PR row gets `+N −M` excluding tests, with the same hover breakdown. Diffs are fetched in the background, a few at a time, and cached for ten minutes. This can be turned off in the options.
 - **Adapts to both GitHub UIs**: the long-standing server-rendered diff view and the newer React-based view (used on commit pages and the new _Files changed_ experience), in light and dark themes.
 
-Geld can be toggled from the toolbar popup. The options page lets you add custom glob patterns (or `!negations` to rescue files), turn the built-in test detection off, and choose whether hidden files start expanded. Settings sync via `browser.storage.sync` and apply instantly to open tabs.
+Geld can be toggled from the toolbar popup, which is contextual: it shows the current repository, how many files are hidden on the tab (with the list of paths), and one-click "turn off for this repo / org" actions. The toolbar icon carries the hidden-file count as a badge, and **Alt+Shift+T** shows or hides the hidden files on the current page for the rest of the visit without touching your settings (rebind it in your browser's extension-shortcut settings). All settings sync via `browser.storage.sync` and apply instantly to open tabs.
 
-### What counts as a test?
+### What gets hidden
 
-Built-in patterns are grouped by kind so they can become individually switchable later: unit/integration tests (`*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`, `*Test.java`, `*_spec.rb`, ...), end-to-end tests (`*.e2e.*`, `*.cy.*`, `e2e/`, `cypress/`, `playwright/`, ...), test directories (`test/`, `tests/`, `__tests__/`, `spec/`, `__mocks__/`, `testdata/`, `*.Tests/`, ...), snapshots and recordings (`*.snap`, `__snapshots__/`, `*-snapshots/`, `cassettes/`, ...), and tooling (`jest.config.*`, `vitest.config.*`, `playwright.config.*`, `conftest.py`, `pytest.ini`, `phpunit.xml`, ...). See [`src/lib/test-patterns.ts`](src/lib/test-patterns.ts) for the full list.
+Files are grouped into **categories**, each with its own switch. **Tests** is on by default; the others are opt-in in the popup or options:
 
-Patterns use gitignore-style semantics: a pattern without a slash matches a filename at any depth, a trailing slash matches a directory at any depth, `**` spans directories and `{a,b}` expands alternatives. Only the paths are inspected, never file contents.
+| Category | Examples |
+| --- | --- |
+| Tests | `*.test.*`, `*.spec.ts`, `*_test.go`, `test_*.py`, `*Test.java`, `e2e/`, `cypress/`, `__tests__/`, `*.snap`, `jest.config.*`, `conftest.py` — split into unit/integration, end-to-end, directories, snapshots and tooling sub-groups you can toggle individually |
+| Generated | lockfiles (`pnpm-lock.yaml`, `Cargo.lock`, `go.sum`, ...), `*.generated.*`, `*.pb.go`, `*.min.js`, `*.map`, `__generated__/`, `dist/` |
+| Vendored | `vendor/`, `node_modules/`, `third_party/`, `Pods/` |
+| Agent config | `.cursor/`, `.cursorrules`, `CLAUDE.md`, `AGENTS.md`, `.claude/`, `.codex/`, `.windsurfrules`, `.github/copilot-instructions.md` |
+| Docs | `*.md`, `docs/`, `CHANGELOG*`, `.changeset/`, `LICENSE*` |
+| Tooling & CI | `.github/workflows/`, `Dockerfile*`, `.eslintrc*`, `prettier.config.*`, `tsconfig*.json`, `renovate.json`, `.editorconfig` |
+| Stories, fixtures & i18n | `*.stories.*`, `__fixtures__/`, `locales/`, `*.po` |
+
+With one category on, labels read `6 tests`; with several, `9 hidden` with the per-category split in the tooltip, chips in the bottom section (`6 tests · 2 generated · 1 doc`), and one collapsible section per category in the file tree. When every file on a page is hidden there is nothing left to review, so the hidden files start expanded.
+
+Patterns use gitignore-style semantics: a pattern without a slash matches a filename at any depth, a trailing slash matches a directory at any depth, `**` spans directories, `{a,b}` expands alternatives, and `!pattern` rescues a path. Only paths are inspected, never contents. `*.spec.*` is restricted to code extensions because OpenAPI documents are commonly named `api.spec.yaml`.
+
+**Custom patterns** (options page) are treated as tests and support the same syntax, plus `[owner/repo]` section headers that scope the lines below them to matching repositories (`[*]` returns to global). A **path tester** shows how any path would be treated and which pattern decided.
+
+**Repository rules** decide where Geld runs, again like a `.gitignore`: `acme/widgets` turns Geld off in that repository, `acme` (or `acme/*`) in the whole org, `!acme/widgets` turns it back on, the last matching line wins, and `*` followed by `!acme/*` gives you an allowlist. The popup's quick actions append these rules for you.
+
+### Other options
+
+- **Hide whitespace changes** uses GitHub's own diff setting. On the classic view Geld submits GitHub's "Apply and reload" form once, which GitHub then remembers for signed-in users; elsewhere it falls back to the `?w=1` URL and rewrites the "Files changed" links so you land there directly.
+- **Mark as viewed** in the bottom section ticks GitHub's "Viewed" checkbox on every hidden file, so review progress can reach 100% without opening them.
+- **Line counts in PR lists**, **badge**, **shortcut** and **expanded by default** can each be switched off.
+- **Export/import** your settings as JSON from the options page.
+
+### Data & caching
+
+Geld never calls the GitHub API. Counts come from the page when it renders per-file diffs; otherwise (PR conversation tab, PR lists, partially loaded large PRs) the background script fetches the same `.diff` you get by appending `.diff` to a PR URL. Parsed diffs are cached in extension storage keyed by the PR's head commit, so a PR you have already seen costs no request until it gets a new commit. List rows are only fetched when scrolled near the viewport, at most four at a time, and fetching pauses for a minute if GitHub ever answers 429.
 
 ## Install for testing
 
@@ -70,14 +97,16 @@ entrypoints/
   popup/                   toolbar popup (enable, expand-by-default)
   options/                 custom patterns, built-in pattern reference
 src/
-  lib/                     framework-free logic: glob matcher, test patterns,
-                           settings, unified-diff parser, formatting (unit tested)
+  lib/                     framework-free logic: glob matcher, categories & patterns,
+                           repo rules, settings, unified-diff parser, messages (unit tested)
   github/
     controller.ts          observes the page and applies/removes all changes
     views/legacy.ts        adapter for GitHub's server-rendered diff UI
     views/react.ts         adapter for GitHub's React diff UI
     header-stats.ts        rewrites header counts and attaches the tooltip
     pr-list.ts             "+N −M" chips on pull request list rows
+    diff-cache.ts          commit-keyed on-disk cache of parsed diffs
+    whitespace-viewed.ts   GitHub's hide-whitespace setting and "Viewed" controls
     ui/                    hidden-files section, tree section, tooltip
 ```
 
@@ -91,9 +120,8 @@ Geld never moves GitHub's DOM nodes around (that would break the React view). In
 
 ## Roadmap ideas
 
-- Per-group toggles (hide only unit tests, only end-to-end tests, only snapshots).
-- Additional categories beyond tests: generated files, lockfiles, vendored code, agent/tooling config.
-- Per-repository overrides.
+- GitHub Enterprise Server support (optional host permissions).
+- Settings sync through a GitHub sign-in, and a repo-committed config so teams can share patterns.
 
 ## License
 

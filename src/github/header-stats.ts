@@ -1,8 +1,9 @@
+import type { HiddenCategory } from '../lib/categories';
 import type { ChangeTotals } from '../lib/format';
-import { formatCount, parseCount, pluralize, subtractTotals } from '../lib/format';
-import type { HiddenCategory } from '../lib/matcher';
+import { formatCount, parseCount } from '../lib/format';
+import type { HiddenBreakdown } from './breakdown';
+import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import { originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
-import type { StatsBreakdown } from './ui/tooltip';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -196,7 +197,7 @@ export const TESTS_COUNT_CLASS = 'geld-tests-count';
  * "0 tests") so it is obvious the numbers have been checked; underlined only
  * when there is a breakdown to show on hover.
  */
-function renderTestsLabel(group: HeaderStatGroup, count: number, noun: string, nounPlural: string): void {
+function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): void {
   let label = group.host.querySelector<HTMLElement>(`.${TESTS_COUNT_CLASS}`);
   if (label === null) {
     label = document.createElement('span');
@@ -217,7 +218,6 @@ function renderTestsLabel(group: HeaderStatGroup, count: number, noun: string, n
     label.style.font = reference.font;
     label.style.letterSpacing = reference.letterSpacing;
   }
-  const text = pluralize(count, noun, nounPlural);
   // Inside a sentence ("… with 2 tests, 42 additions and 26 deletions.") we need a comma.
   const rendered = group.sentence ? `${text}, ` : text;
   if (label.textContent !== rendered) label.textContent = rendered;
@@ -225,19 +225,24 @@ function renderTestsLabel(group: HeaderStatGroup, count: number, noun: string, n
 }
 
 /** Rewrite one header group so it shows totals without the hidden files. */
-export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, category: HiddenCategory): void {
+export function applyHeaderStats(
+  group: HeaderStatGroup,
+  hidden: HiddenBreakdown,
+  activeCategories: readonly HiddenCategory[],
+): void {
   if (group.original === null) {
     restoreHeaderStats(group);
     return;
   }
-  const { nounPlural } = category;
-  renderTestsLabel(group, hidden.files, category.shortNoun, category.shortNounPlural);
-  if (hidden.files === 0) {
+  const nounPlural = hiddenNounPlural(activeCategories);
+  renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
+  if (hidden.totals.files === 0) {
     restoreNumbers(group);
     return;
   }
   const all = group.original;
-  const visible = subtractTotals(all, hidden);
+  const breakdown = statsBreakdown(all, hidden, nounPlural);
+  const { visible } = breakdown;
 
   if (group.additions !== null) {
     setManagedText(group.additions, rewriteNumber(originalText(group.additions), visible.additions, '+'));
@@ -263,7 +268,6 @@ export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, c
     }
   }
 
-  const breakdown: StatsBreakdown = { visible, hidden, all, nounPlural };
   attachBreakdownTooltip(group.host, () => breakdown);
 }
 

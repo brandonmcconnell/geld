@@ -2,8 +2,8 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '../src/lib/diff-parse';
 import { actionIconPaths } from '../src/lib/action-icon';
-import type { FetchDiffResponse } from '../src/lib/messages';
-import { isColorSchemeMessage, isFetchDiffRequest } from '../src/lib/messages';
+import type { FetchDiffResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import { isColorSchemeMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -146,16 +146,59 @@ function applyToolbarIcon(dark: boolean): void {
   void browser.action.setIcon({ path: actionIconPaths(dark ? 'white' : 'black') }).catch(() => undefined);
 }
 
+/** The subset of the action API we use, shared by MV3 `action` and MV2 `browserAction`. */
+interface BadgeApi {
+  setBadgeText(details: { tabId: number; text: string }): Promise<void> | void;
+  setBadgeBackgroundColor(details: { tabId: number; color: string }): Promise<void> | void;
+  setBadgeTextColor?(details: { tabId: number; color: string }): Promise<void> | void;
+}
+
+function badgeApi(): BadgeApi | undefined {
+  return import.meta.env.MANIFEST_VERSION === 3 ? browser.action : browser.browserAction;
+}
+
+function swallow(result: Promise<void> | void): void {
+  if (result instanceof Promise) result.catch(() => undefined);
+}
+
+/** Show the hidden-file count for a tab on the toolbar icon. */
+function updateBadge(tabId: number, state: TabState): void {
+  const api = badgeApi();
+  if (api === undefined) return;
+  const text = state.hiddenCount > 0 ? String(state.hiddenCount) : '';
+  swallow(api.setBadgeText({ tabId, text }));
+  if (text !== '') {
+    swallow(api.setBadgeBackgroundColor({ tabId, color: '#59636e' }));
+    swallow(api.setBadgeTextColor?.({ tabId, color: '#ffffff' }));
+  }
+}
+
+/** Keyboard shortcut: ask the active GitHub tab to toggle its hidden files. */
+async function toggleHiddenInActiveTab(): Promise<void> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id === undefined) return;
+  const message: ToggleHiddenMessage = { type: 'geld:toggle-hidden' };
+  await browser.tabs.sendMessage(tab.id, message).catch(() => undefined);
+}
+
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
+      return undefined;
+    }
+    if (isTabStateMessage(message)) {
+      if (sender.tab?.id !== undefined) updateBadge(sender.tab.id, message.state);
       return undefined;
     }
     if (!isFetchDiffRequest(message)) return undefined;
     void fetchDiff(message.url).then(sendResponse);
     // Returning true keeps the message channel open for the async response.
     return true;
+  });
+
+  browser.commands?.onCommand.addListener((command) => {
+    if (command === 'toggle-hidden') void toggleHiddenInActiveTab();
   });
 
   if (USES_OFFSCREEN_THEME_PROBE) {

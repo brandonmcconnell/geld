@@ -1,14 +1,9 @@
 import type { ChangeTotals } from '../../lib/format';
 import { formatCount, pluralize } from '../../lib/format';
+import type { StatsBreakdown } from '../breakdown';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 
-export interface StatsBreakdown {
-  readonly visible: ChangeTotals;
-  readonly hidden: ChangeTotals;
-  readonly all: ChangeTotals;
-  /** Plural noun for the hidden category, e.g. "test files". */
-  readonly nounPlural: string;
-}
+export type { StatsBreakdown } from '../breakdown';
 
 type BreakdownProvider = () => StatsBreakdown | null;
 
@@ -39,11 +34,13 @@ function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElem
 
 function render(breakdown: StatsBreakdown): void {
   const element = ensureTooltip();
+  const capitalised = `${breakdown.nounPlural[0]?.toUpperCase() ?? ''}${breakdown.nounPlural.slice(1)}`;
   element.replaceChildren(
     createElement('div', { class: 'geld-tooltip__title' }, ['Line counts']),
     row(`Excluding ${breakdown.nounPlural}`, breakdown.visible, true),
     row(`Including ${breakdown.nounPlural}`, breakdown.all, false),
-    row(`${breakdown.nounPlural[0]?.toUpperCase() ?? ''}${breakdown.nounPlural.slice(1)} only`, breakdown.hidden, false),
+    row(`${capitalised} only`, breakdown.hidden, false),
+    ...breakdown.categories.map((entry) => row(` ${entry.category.title}`, entry.totals, false)),
   );
 }
 

@@ -1,11 +1,11 @@
-import type { FileStats } from '../lib/diff-parse';
-import type { ChangeTotals } from '../lib/format';
-import { addTotals, EMPTY_TOTALS, formatCount, pluralize } from '../lib/format';
+import { formatCount } from '../lib/format';
 import type { PathMatcher } from '../lib/matcher';
+import type { RepoRule } from '../lib/repo-rules';
+import { decideRepo } from '../lib/repo-rules';
+import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import type { DiffSource } from './diff-source';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import { TESTS_COUNT_CLASS } from './header-stats';
-import type { StatsBreakdown } from './ui/tooltip';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 export const PR_STAT_CLASS = 'geld-pr-stat';
@@ -14,6 +14,7 @@ const PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/;
 
 interface ListRow {
   readonly key: string;
+  readonly repo: string;
   readonly number: string;
   readonly diffUrl: string;
   readonly row: HTMLElement;
@@ -44,6 +45,7 @@ function findRows(): ListRow[] {
     if (owner === undefined || repo === undefined || number === undefined) continue;
     rows.set(row, {
       key: `${owner}/${repo}#${number}`,
+      repo: `${owner}/${repo}`,
       number,
       diffUrl: `${url.origin}/${owner}/${repo}/pull/${number}.diff`,
       row,
@@ -71,31 +73,6 @@ function findMetaAnchor(row: HTMLElement, number: string): HTMLElement | null {
   return best;
 }
 
-interface Breakdown {
-  readonly all: ChangeTotals;
-  readonly hidden: ChangeTotals;
-  readonly visible: ChangeTotals;
-}
-
-function breakdownFor(files: readonly FileStats[], matcher: PathMatcher): Breakdown {
-  let all: ChangeTotals = EMPTY_TOTALS;
-  let hidden: ChangeTotals = EMPTY_TOTALS;
-  for (const file of files) {
-    const totals = { files: 1, additions: file.additions, deletions: file.deletions };
-    all = addTotals(all, totals);
-    if (matcher.categorize(file.path) !== null) hidden = addTotals(hidden, totals);
-  }
-  return {
-    all,
-    hidden,
-    visible: {
-      files: all.files - hidden.files,
-      additions: all.additions - hidden.additions,
-      deletions: all.deletions - hidden.deletions,
-    },
-  };
-}
-
 function ensureChip(row: ListRow): HTMLElement {
   const existing = row.row.querySelector<HTMLElement>(`.${PR_STAT_CLASS}`);
   if (existing !== null) {
@@ -119,11 +96,10 @@ function ensureChip(row: ListRow): HTMLElement {
 }
 
 export interface PrListOptions {
-  readonly matcher: PathMatcher;
+  /** Matcher for a given repository (custom patterns can be repo-scoped). */
+  readonly matcherFor: (repo: string) => PathMatcher;
+  readonly repoRules: readonly RepoRule[];
   readonly diffSource: DiffSource;
-  readonly nounPlural: string;
-  readonly shortNoun: string;
-  readonly shortNounPlural: string;
   /** Called when a row scrolls near the viewport and its diff should be requested. */
   readonly onRowVisible: () => void;
 }
@@ -166,17 +142,25 @@ export function applyPrListStats(options: PrListOptions): void {
   watchVisibility(rows, options.onRowVisible);
   for (const row of rows) {
     if (!row.row.hasAttribute(SEEN_ATTRIBUTE)) continue;
+    // Repositories excluded by the rules get no chip at all (the global PR
+    // dashboard mixes repositories, so this is decided per row).
+    if (!decideRepo(options.repoRules, row.repo).allowed) {
+      row.row.querySelector(`.${PR_STAT_CLASS}`)?.remove();
+      continue;
+    }
     const state = options.diffSource.request(row.diffUrl);
     if (state.status !== 'ready') continue;
 
+    const matcher = options.matcherFor(row.repo);
     const chip = ensureChip(row);
-    const breakdown = breakdownFor(state.files, options.matcher);
-    const testsLabel = pluralize(breakdown.hidden.files, options.shortNoun, options.shortNounPlural);
-    const text = `${testsLabel} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
+    const { all, hidden } = breakdownFromFiles(state.files, matcher);
+    const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories));
+    const label = hiddenLabel(hidden, matcher.activeCategories);
+    const text = `${label} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
     if (chip.dataset.rendered !== text) {
       chip.dataset.rendered = text;
-      const tests = createElement('span', { class: `${PR_STAT_CLASS}__tests ${TESTS_COUNT_CLASS}` }, [testsLabel]);
-      tests.toggleAttribute('data-has-tests', breakdown.hidden.files > 0);
+      const tests = createElement('span', { class: `${PR_STAT_CLASS}__tests ${TESTS_COUNT_CLASS}` }, [label]);
+      tests.toggleAttribute('data-has-tests', hidden.totals.files > 0);
       chip.replaceChildren(
         createElement('span', { class: `${PR_STAT_CLASS}__sep`, 'aria-hidden': 'true' }, ['\u2022']),
         tests,
@@ -185,9 +169,8 @@ export function applyPrListStats(options: PrListOptions): void {
       );
     }
 
-    if (breakdown.hidden.files > 0) {
-      const tooltip: StatsBreakdown = { ...breakdown, nounPlural: options.nounPlural };
-      attachBreakdownTooltip(chip, () => tooltip);
+    if (hidden.totals.files > 0) {
+      attachBreakdownTooltip(chip, () => breakdown);
       chip.dataset.hasTests = '';
     } else {
       detachBreakdownTooltip(chip);
