@@ -1,4 +1,5 @@
 import { cn } from 'cn';
+import type { ComponentProps } from 'react';
 
 /**
  * Brand assets live in `assets/brand/` at the repository root and are shared
@@ -32,23 +33,28 @@ interface BrandImageProps {
 
 /**
  * The brand SVGs are pure black with white variants, so the white file is
- * served in dark mode via `<picture>` instead of recolouring anything.
+ * shown in dark mode instead of recolouring anything. Both are rendered and
+ * toggled with the `dark:` variant so the swap follows the theme menu as well
+ * as the OS (a `<picture>` media query would only follow the OS).
  */
 function BrandPicture({ asset, height, alt, className, priority }: BrandImageProps & { readonly asset: typeof WORDMARK }) {
   const width = Math.round((asset.width / asset.height) * height * 100) / 100;
+  const shared: Pick<ComponentProps<'img'>, 'width' | 'height' | 'decoding' | 'fetchPriority'> = {
+    width,
+    height,
+    decoding: 'async',
+    fetchPriority: priority === true ? 'high' : 'auto',
+  };
+  const text = alt ?? 'Geld';
+  // Static SVGs: nothing for next/image to optimise, and both files are ~1 KB.
+  /* eslint-disable @next/next/no-img-element */
   return (
-    <picture className={cn('inline-block leading-none', className)}>
-      <source media="(prefers-color-scheme: dark)" srcSet={asset.dark.pathname} />
-      <img
-        src={asset.light.pathname}
-        width={width}
-        height={height}
-        alt={alt ?? 'Geld'}
-        decoding="async"
-        fetchPriority={priority === true ? 'high' : 'auto'}
-      />
-    </picture>
+    <span className={cn('inline-block leading-none', className)}>
+      <img src={asset.light.pathname} alt={text} className="dark:hidden" {...shared} />
+      <img src={asset.dark.pathname} alt={text} className="hidden dark:block" {...shared} />
+    </span>
   );
+  /* eslint-enable @next/next/no-img-element */
 }
 
 export function Wordmark(props: BrandImageProps) {

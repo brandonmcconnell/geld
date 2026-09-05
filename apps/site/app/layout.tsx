@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { geistMono, geistSans } from '@/lib/fonts';
 import { DESCRIPTION, SITE_NAME, SITE_URL, TAGLINE } from '@/lib/site';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
 
 import './globals.css';
 
@@ -43,7 +43,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { readonly children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    // suppressHydrationWarning: the theme script below may add `data-theme` before React hydrates.
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Applies a stored light/dark preference before first paint; a plain inline script so it runs during parsing. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="flex min-h-svh flex-col">
         <a
           href="#main"

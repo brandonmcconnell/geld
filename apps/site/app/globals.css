@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /*
- * Theme follows the OS (`prefers-color-scheme`); there is no toggle. Tailwind's
- * default `dark:` variant already keys off the same media query.
+ * Theme follows the OS by default and can be pinned to light or dark from the
+ * header menu, which sets `data-theme` on <html> (see lib/theme.ts).
  */
 
 @theme inline {
@@ -65,64 +65,62 @@
 @custom-variant data-open (&:where([data-open]:not([data-open="false"])));
 @custom-variant data-closed (&:where([data-closed]:not([data-closed="false"])));
 
+/*
+ * `dark:` utilities apply when the scheme is dark, whether that comes from the
+ * OS (no override set) or from the header's theme menu (`data-theme` on html).
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+/*
+ * Colour tokens are declared once with light-dark(); which side applies is
+ * decided by `color-scheme`, so a theme override is a one-property change.
+ */
 :root {
   color-scheme: light dark;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.21 0.01 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.01 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --primary: oklch(0.21 0.01 260);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0.003 260);
-  --secondary-foreground: oklch(0.21 0.01 260);
-  --muted: oklch(0.975 0.003 260);
-  --muted-foreground: oklch(0.5 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.21 0.01 260);
-  --destructive: oklch(0.55 0.22 27);
-  --border: oklch(0.9 0.006 260);
-  --input: oklch(0.88 0.006 260);
-  --ring: oklch(0.6 0.02 260);
+  --background: light-dark(oklch(1 0 0), oklch(0.16 0.01 260));
+  --foreground: light-dark(oklch(0.21 0.01 260), oklch(0.96 0.005 260));
+  --card: light-dark(oklch(1 0 0), oklch(0.19 0.01 260));
+  --card-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.96 0.005 260));
+  --popover: light-dark(oklch(1 0 0), oklch(0.21 0.01 260));
+  --popover-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.96 0.005 260));
+  --primary: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 260));
+  --primary-foreground: light-dark(oklch(0.985 0 0), oklch(0.18 0.01 260));
+  --secondary: light-dark(oklch(0.97 0.003 260), oklch(0.25 0.01 260));
+  --secondary-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.96 0.005 260));
+  --muted: light-dark(oklch(0.975 0.003 260), oklch(0.22 0.01 260));
+  --muted-foreground: light-dark(oklch(0.5 0.015 260), oklch(0.68 0.015 260));
+  --accent: light-dark(oklch(0.96 0.004 260), oklch(0.26 0.01 260));
+  --accent-foreground: light-dark(oklch(0.21 0.01 260), oklch(0.96 0.005 260));
+  --destructive: light-dark(oklch(0.55 0.22 27), oklch(0.7 0.19 22));
+  --border: light-dark(oklch(0.9 0.006 260), oklch(1 0 0 / 12%));
+  --input: light-dark(oklch(0.88 0.006 260), oklch(1 0 0 / 16%));
+  --ring: light-dark(oklch(0.6 0.02 260), oklch(0.55 0.02 260));
 
-  --addition: oklch(0.52 0.15 150);
-  --deletion: oklch(0.55 0.21 27);
-  --addition-muted: oklch(0.93 0.06 150);
-  --deletion-muted: oklch(0.94 0.04 27);
-  --neutral-block: oklch(0.9 0.006 260);
+  --addition: light-dark(oklch(0.52 0.15 150), oklch(0.75 0.17 150));
+  --deletion: light-dark(oklch(0.55 0.21 27), oklch(0.7 0.19 22));
+  --addition-muted: light-dark(oklch(0.93 0.06 150), oklch(0.32 0.07 150));
+  --deletion-muted: light-dark(oklch(0.94 0.04 27), oklch(0.33 0.08 22));
+  --neutral-block: light-dark(oklch(0.9 0.006 260), oklch(1 0 0 / 14%));
 
   --radius: 0.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.16 0.01 260);
-    --foreground: oklch(0.96 0.005 260);
-    --card: oklch(0.19 0.01 260);
-    --card-foreground: oklch(0.96 0.005 260);
-    --popover: oklch(0.21 0.01 260);
-    --popover-foreground: oklch(0.96 0.005 260);
-    --primary: oklch(0.93 0.005 260);
-    --primary-foreground: oklch(0.18 0.01 260);
-    --secondary: oklch(0.25 0.01 260);
-    --secondary-foreground: oklch(0.96 0.005 260);
-    --muted: oklch(0.22 0.01 260);
-    --muted-foreground: oklch(0.68 0.015 260);
-    --accent: oklch(0.26 0.01 260);
-    --accent-foreground: oklch(0.96 0.005 260);
-    --destructive: oklch(0.7 0.19 22);
-    --border: oklch(1 0 0 / 12%);
-    --input: oklch(1 0 0 / 16%);
-    --ring: oklch(0.55 0.02 260);
+:root[data-theme="light"] {
+  color-scheme: light;
+}
 
-    --addition: oklch(0.75 0.17 150);
-    --deletion: oklch(0.7 0.19 22);
-    --addition-muted: oklch(0.32 0.07 150);
-    --deletion-muted: oklch(0.33 0.08 22);
-    --neutral-block: oklch(1 0 0 / 14%);
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 @layer base {
