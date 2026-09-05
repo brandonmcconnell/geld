@@ -1,8 +1,9 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '../src/lib/diff-parse';
+import { actionIconPaths } from '../src/lib/action-icon';
 import type { FetchDiffResponse } from '../src/lib/messages';
-import { isFetchDiffRequest } from '../src/lib/messages';
+import { isColorSchemeMessage, isFetchDiffRequest } from '../src/lib/messages';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -109,11 +110,57 @@ async function readWithLimit(response: Response, limit: number): Promise<string>
   return text + decoder.decode();
 }
 
+/**
+ * Toolbar icon theming. Chrome/Edge MV3 service workers have no `matchMedia`,
+ * so an offscreen document (reason MATCH_MEDIA) watches the colour scheme and
+ * reports back; we then swap between the black and white marks. Firefox uses
+ * `theme_icons` from the manifest and Safari tints template icons itself, so
+ * neither needs this.
+ */
+const USES_OFFSCREEN_THEME_PROBE = import.meta.env.MANIFEST_VERSION === 3 && (import.meta.env.CHROME || import.meta.env.EDGE);
+
+let offscreenCreation: Promise<void> | null = null;
+
+async function ensureThemeProbe(): Promise<void> {
+  if (!USES_OFFSCREEN_THEME_PROBE) return;
+  if (offscreenCreation !== null) return offscreenCreation;
+  offscreenCreation = (async () => {
+    try {
+      const contexts = await browser.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+      if (contexts.length > 0) return;
+      await browser.offscreen.createDocument({
+        url: browser.runtime.getURL('/offscreen.html'),
+        reasons: ['MATCH_MEDIA'],
+        justification: 'Detect the light/dark colour scheme to pick a legible toolbar icon.',
+      });
+    } catch {
+      // Already exists or unsupported; the manifest's default icon stays in place.
+    } finally {
+      offscreenCreation = null;
+    }
+  })();
+  return offscreenCreation;
+}
+
+function applyToolbarIcon(dark: boolean): void {
+  void browser.action.setIcon({ path: actionIconPaths(dark ? 'white' : 'black') }).catch(() => undefined);
+}
+
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+    if (isColorSchemeMessage(message)) {
+      applyToolbarIcon(message.dark);
+      return undefined;
+    }
     if (!isFetchDiffRequest(message)) return undefined;
     void fetchDiff(message.url).then(sendResponse);
     // Returning true keeps the message channel open for the async response.
     return true;
   });
+
+  if (USES_OFFSCREEN_THEME_PROBE) {
+    browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());
+    browser.runtime.onStartup.addListener(() => void ensureThemeProbe());
+    void ensureThemeProbe();
+  }
 });

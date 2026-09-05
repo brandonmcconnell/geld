@@ -4,13 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Geld</title>
+    <!-- Toolbar icon for light toolbars; the background swaps in the white mark on dark ones. -->
+    <meta
+      name="manifest.default_icon"
+      content='{"16":"icon/action/black-16.png","32":"icon/action/black-32.png","48":"icon/action/black-48.png"}'
+    />
     <link rel="stylesheet" href="../../src/ui/base.css" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main class="popup">
       <header class="geld-brand popup__header">
-        <img class="geld-brand__logo" src="/icon/128.png" alt="" width="28" height="28" />
+        <img class="geld-brand__logo" src="../../assets/brand/geld-logomark.svg" alt="" width="24" height="28" />
         <div>
           <h1 class="geld-brand__name">Geld</h1>
           <p class="geld-brand__tagline">Hide tests from GitHub diffs</p>

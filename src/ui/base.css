@@ -76,10 +76,16 @@ code {
 }
 
 .geld-brand__logo {
-  width: 28px;
+  width: 24px;
   height: 28px;
-  border-radius: 8px;
   flex-shrink: 0;
+}
+
+/* The mark is pure black; flip it to white on dark backgrounds. */
+@media (prefers-color-scheme: dark) {
+  .geld-brand__logo {
+    filter: invert(1);
+  }
 }
 
 .geld-brand__name {

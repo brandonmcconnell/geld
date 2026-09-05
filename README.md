@@ -1,4 +1,9 @@
-# Geld
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/geld-logo-white.svg" />
+    <img src="assets/brand/geld-logo.svg" alt="Geld" width="292" height="75" />
+  </picture>
+</p>
 
 Geld is a browser extension that hides test files from GitHub diffs so you can review the code that matters first. Tests are not deleted from the page; they are collected into a tidy, collapsible section at the bottom of the diff, removed from the file tree, and excluded from the line and file counts in the header. Hover the counts to see the full breakdown.
 
@@ -56,8 +61,11 @@ Output archives:
 ### Project layout
 
 ```
+assets/brand/              logo + logomark SVGs (black and white variants)
+public/icon/               extension icons; icon/action/ holds the black/white toolbar marks
 entrypoints/
-  background.ts            fetches raw .diff files (needed for CORS) on request
+  background.ts            fetches raw .diff files (needed for CORS); swaps the toolbar icon for dark mode
+  offscreen/               Chrome/Edge only: watches prefers-color-scheme for the background
   github.content/          content script + stylesheet injected on github.com
   popup/                   toolbar popup (enable, expand-by-default)
   options/                 custom patterns, built-in pattern reference
@@ -72,6 +80,10 @@ src/
     pr-list.ts             "+N −M" chips on pull request list rows
     ui/                    hidden-files section, tree section, tooltip
 ```
+
+### Toolbar icon and dark mode
+
+The toolbar mark is pure black on light toolbars and pure white on dark ones. Chrome and Edge (MV3) cannot call `matchMedia` from the service worker, so a tiny offscreen document (`reasons: ["MATCH_MEDIA"]`) reports the colour scheme and the background calls `action.setIcon`. Firefox switches natively via `theme_icons`, and Safari tints toolbar icons as template images on its own.
 
 ### How the hiding works
 

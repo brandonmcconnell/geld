@@ -7,7 +7,19 @@ export interface FetchDiffRequest {
   readonly url: string;
 }
 
-export type GeldRequest = FetchDiffRequest;
+/** Sent by the offscreen document whenever the OS/browser colour scheme changes. */
+export interface ColorSchemeMessage {
+  readonly type: 'geld:color-scheme';
+  readonly dark: boolean;
+}
+
+export type GeldRequest = FetchDiffRequest | ColorSchemeMessage;
+
+export function isColorSchemeMessage(value: unknown): value is ColorSchemeMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const record: Record<string, unknown> = { ...value };
+  return record.type === 'geld:color-scheme' && typeof record.dark === 'boolean';
+}
 
 export type FetchDiffResponse =
   | { readonly ok: true; readonly files: readonly FileStats[] }
