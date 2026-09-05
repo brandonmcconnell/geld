@@ -37,7 +37,6 @@
   --destructive: light-dark(oklch(0.55 0.22 27), oklch(0.7 0.19 22));
   --border: light-dark(oklch(0.9 0.006 260), oklch(1 0 0 / 12%));
   --input: light-dark(oklch(0.88 0.006 260), oklch(1 0 0 / 16%));
-  --input-fill: light-dark(oklch(0.88 0.006 260 / 20%), oklch(1 0 0 / 6%));
   --ring: light-dark(oklch(0.6 0.02 260), oklch(0.55 0.02 260));
   --addition: light-dark(oklch(0.52 0.15 150), oklch(0.75 0.17 150));
   --deletion: light-dark(oklch(0.55 0.21 27), oklch(0.7 0.19 22));
@@ -316,9 +315,10 @@ code {
   gap: 8px;
   height: 32px;
   padding: 0 12px;
+  /* Outline treatment: faint fill plus a slightly stronger border, in both schemes (site: border-input bg-input/20). */
   border: 1px solid var(--input);
   border-radius: 0;
-  background: var(--input-fill);
+  background: color-mix(in oklch, var(--input) 20%, transparent);
   color: var(--foreground);
   font: inherit;
   font-size: 13px;
