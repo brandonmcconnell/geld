@@ -23,7 +23,7 @@ export default function PatternsPage() {
         description={
           <>
             {CATEGORIES.length} categories, {total} built-in patterns. This page is generated from{' '}
-            <a href={CORE_SOURCE_URL} className="underline underline-offset-3 hover:text-foreground" rel="noopener">
+            <a href={CORE_SOURCE_URL} className="underline underline-offset-3 hover:text-foreground" target="_blank" rel="noopener noreferrer">
               <code className="font-mono text-[0.9em]">@geld/core</code>
             </a>
             , the same package the extension ships, so it cannot drift from what actually runs.
@@ -47,17 +47,28 @@ export default function PatternsPage() {
           </p>
         </Prose>
 
-        <nav aria-label="Categories" className="mb-12 flex flex-wrap gap-2">
-          {CATEGORIES.map((category) => (
-            <a key={category.id} href={`#${category.id}`} className="rounded-full border px-3 py-1 text-sm text-muted-foreground transition-colors hover:border-foreground hover:text-foreground">
-              {category.title}
-            </a>
-          ))}
+        {/* Sticks under the top bar (h-14) so the category jumps stay reachable while reading. */}
+        <nav
+          aria-label="Categories"
+          className="sticky top-14 z-30 -mx-5 mb-12 border-b bg-background/85 px-5 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:-mx-8 sm:px-8"
+        >
+          <ul className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {CATEGORIES.map((category) => (
+              <li key={category.id} className="shrink-0">
+                <a
+                  href={`#${category.id}`}
+                  className="inline-block rounded-full border px-3 py-1 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+                >
+                  {category.title}
+                </a>
+              </li>
+            ))}
+          </ul>
         </nav>
 
-        <div className="flex flex-col gap-16">
+        <div className="flex flex-col gap-20">
           {CATEGORIES.map((category, index) => (
-            <section key={category.id} id={category.id} aria-labelledby={`${category.id}-heading`} className="scroll-mt-24">
+            <section key={category.id} id={category.id} aria-labelledby={`${category.id}-heading`} className="scroll-mt-36">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
                 <h2 id={`${category.id}-heading`} className="text-2xl font-semibold tracking-tight">

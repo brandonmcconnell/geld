@@ -19,17 +19,25 @@ export const metadata: Metadata = {
   alternates: { canonical: '/how-it-works' },
 };
 
-const STEPS: readonly { readonly id: string; readonly title: string }[] = [
-  { id: 'hidden-row', title: 'Hidden files move to the bottom' },
-  { id: 'counts', title: 'Header counts exclude them' },
-  { id: 'sidebar', title: 'The file tree becomes an accordion' },
-  { id: 'lists', title: 'Pull request lists get real numbers' },
-  { id: 'categories', title: 'Categories' },
-  { id: 'repo-rules', title: 'Repository rules' },
-  { id: 'custom-patterns', title: 'Custom patterns' },
-  { id: 'whitespace', title: 'Hide whitespace' },
-  { id: 'shortcut', title: 'Keyboard shortcut' },
-  { id: 'enterprise', title: 'GitHub Enterprise Server' },
+interface Step {
+  readonly id: string;
+  /** Section heading. */
+  readonly title: string;
+  /** Short label for the table of contents. */
+  readonly short: string;
+}
+
+const STEPS: readonly Step[] = [
+  { id: 'hidden-row', title: 'Hidden files move to the bottom', short: 'Hidden files' },
+  { id: 'counts', title: 'Header counts exclude them', short: 'Header counts' },
+  { id: 'sidebar', title: 'The file tree becomes an accordion', short: 'File tree' },
+  { id: 'lists', title: 'Pull request lists get real numbers', short: 'PR lists' },
+  { id: 'categories', title: 'Categories', short: 'Categories' },
+  { id: 'repo-rules', title: 'Repository rules', short: 'Repository rules' },
+  { id: 'custom-patterns', title: 'Custom patterns', short: 'Custom patterns' },
+  { id: 'whitespace', title: 'Hide whitespace', short: 'Hide whitespace' },
+  { id: 'shortcut', title: 'Keyboard shortcut', short: 'Keyboard shortcut' },
+  { id: 'enterprise', title: 'GitHub Enterprise Server', short: 'Enterprise Server' },
 ];
 
 export default function HowItWorksPage() {
@@ -42,21 +50,24 @@ export default function HowItWorksPage() {
         description="Geld only ever inspects file paths. It never reads file contents, never moves GitHub's DOM around, and can be switched off per repository or organisation."
       />
 
-      <div className="container-site grid gap-12 pb-24 lg:grid-cols-[220px_1fr] lg:gap-16">
+      <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
         <nav aria-label="On this page" className="hidden lg:block">
-          <ol className="sticky top-20 flex flex-col gap-1.5 border-l text-sm">
+          <ol className="sticky top-24 flex flex-col gap-2 border-l text-sm">
             {STEPS.map((step, index) => (
               <li key={step.id}>
-                <a href={`#${step.id}`} className="-ml-px block border-l border-transparent py-0.5 pl-4 text-muted-foreground transition-colors hover:border-foreground hover:text-foreground">
-                  <span className="mr-2 font-mono text-xs tabular-nums">{String(index + 1).padStart(2, '0')}</span>
-                  {step.title}
+                <a
+                  href={`#${step.id}`}
+                  className="-ml-px flex items-baseline gap-2.5 border-l border-transparent py-1 pl-4 whitespace-nowrap text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+                >
+                  <span className="font-mono text-xs tabular-nums">{String(index + 1).padStart(2, '0')}</span>
+                  {step.short}
                 </a>
               </li>
             ))}
           </ol>
         </nav>
 
-        <div className="flex min-w-0 flex-col gap-20">
+        <div className="flex min-w-0 flex-col gap-28 sm:gap-32">
           <Step id="hidden-row" index={1} title={STEPS[0]?.title ?? ''}>
             <Prose>
               <p>
@@ -66,7 +77,7 @@ export default function HowItWorksPage() {
                 on a page is hidden there is nothing left to review, so the hidden files start expanded.
               </p>
             </Prose>
-            <Frame className="mt-6">
+            <Frame className="mt-8">
               <ul aria-label="Changed files with tests hidden">
                 {VISIBLE_FILES.map((file) => (
                   <FileRow key={file.path} file={file} />
@@ -85,14 +96,14 @@ export default function HowItWorksPage() {
                 restored the moment Geld is switched off.
               </p>
             </Prose>
-            <Frame className="mt-6">
+            <Frame className="mt-8">
               <PrHeader shown={VISIBLE_TOTALS} geld={geld} className="border-b-0" />
             </Frame>
-            <p className="mt-2 text-xs text-muted-foreground">Hover or focus the label to see the breakdown.</p>
+            <p className="mt-3 text-sm text-muted-foreground">Hover or focus the label to see the breakdown.</p>
           </Step>
 
           <Step id="sidebar" index={3} title={STEPS[2]?.title ?? ''}>
-            <div className="grid gap-8 md:grid-cols-[1fr_260px] md:items-start">
+            <div className="grid gap-10 md:grid-cols-[1fr_260px] md:items-start">
               <Prose>
                 <p>
                   GitHub&apos;s file tree becomes a full-height accordion. The original tree is the <strong>Changes</strong> panel, and every hidden
@@ -124,7 +135,7 @@ export default function HowItWorksPage() {
                 and cached by the pull request&apos;s head commit. It can be switched off in the options.
               </p>
             </Prose>
-            <Frame className="mt-6">
+            <Frame className="mt-8">
               <PrListRow
                 number={128}
                 title="Add a controlled mode to Button"
@@ -159,7 +170,7 @@ export default function HowItWorksPage() {
                 popup or the options page. A path is attributed to the first matching category, in this order:
               </p>
             </Prose>
-            <ol className="mt-6 grid gap-3 sm:grid-cols-2">
+            <ol className="mt-8 grid gap-4 sm:grid-cols-2">
               {CATEGORIES.map((category, index) => (
                 <li key={category.id} className="flex gap-3 rounded-lg border p-4">
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
@@ -267,12 +278,12 @@ sandbox/
 
 function Step({ id, index, title, children }: { readonly id: string; readonly index: number; readonly title: string; readonly children: React.ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-24">
-      <p className="mb-2 font-mono text-xs tabular-nums text-muted-foreground">{String(index).padStart(2, '0')}</p>
-      <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight text-balance">
+    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-28">
+      <p className="mb-3 font-mono text-sm tabular-nums text-muted-foreground">{String(index).padStart(2, '0')}</p>
+      <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
         {title}
       </h2>
-      <div className="mt-4">{children}</div>
+      <div className="mt-6">{children}</div>
     </section>
   );
 }

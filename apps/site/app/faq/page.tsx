@@ -170,12 +170,12 @@ export default function FaqPage() {
   return (
     <>
       <PageIntro eyebrow="FAQ" title="Questions, answered." description="Short answers about how Geld works and what it does not do." />
-      <div className="container-site grid gap-12 pb-24 lg:grid-cols-[260px_1fr] lg:gap-16">
+      <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[260px_1fr] lg:gap-20">
         <nav aria-label="Questions" className="hidden lg:block">
-          <ul className="sticky top-20 flex flex-col gap-1.5 border-l text-sm">
+          <ul className="sticky top-24 flex flex-col gap-2 border-l text-sm">
             {QUESTIONS.map((entry) => (
               <li key={entry.id}>
-                <a href={`#${entry.id}`} className="-ml-px block border-l border-transparent py-0.5 pl-4 text-muted-foreground transition-colors hover:border-foreground hover:text-foreground">
+                <a href={`#${entry.id}`} className="-ml-px block border-l border-transparent py-1 pl-4 text-muted-foreground transition-colors hover:border-foreground hover:text-foreground">
                   {entry.question}
                 </a>
               </li>
@@ -184,11 +184,11 @@ export default function FaqPage() {
         </nav>
         <div className="flex min-w-0 flex-col divide-y">
           {QUESTIONS.map((entry) => (
-            <section key={entry.id} id={entry.id} aria-labelledby={`${entry.id}-heading`} className="scroll-mt-24 py-8 first:pt-0">
-              <h2 id={`${entry.id}-heading`} className="text-xl font-semibold tracking-tight text-balance">
+            <section key={entry.id} id={entry.id} aria-labelledby={`${entry.id}-heading`} className="scroll-mt-28 py-12 first:pt-0">
+              <h2 id={`${entry.id}-heading`} className="text-2xl font-semibold tracking-tight text-balance">
                 {entry.question}
               </h2>
-              <Prose className="mt-2">{entry.answer}</Prose>
+              <Prose className="mt-3">{entry.answer}</Prose>
             </section>
           ))}
         </div>
