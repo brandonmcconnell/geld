@@ -161,6 +161,26 @@
   @apply mx-auto w-full max-w-5xl px-5 sm:px-8;
 }
 
+/*
+ * Control corners echo the logomark: square, with the top-left and
+ * bottom-right corners cut on a diagonal. `corner-shape: bevel square` puts a
+ * bevel on TL/BR and leaves TR/BL square; the radius sets the cut size.
+ * Browsers without corner-shape get plain square corners (no radius at all).
+ */
+@utility geld-corners {
+  --geld-cut: 0.5rem;
+  border-radius: 0;
+  @supports (corner-shape: bevel) {
+    border-radius: var(--geld-cut);
+    corner-shape: bevel square;
+  }
+}
+
+@utility geld-cut-* {
+  --geld-cut: --value([length]);
+  --geld-cut: --spacing(--value(integer));
+}
+
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply rounded-md border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;

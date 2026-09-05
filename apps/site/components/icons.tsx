@@ -10,12 +10,15 @@ export function GitHubIcon(props: IconProps) {
   );
 }
 
-/** Empty-avatar silhouette sized to fill a round button edge to edge (the shoulders run off the bottom). */
-export function AvatarPlaceholderIcon(props: IconProps) {
+/**
+ * Outline user glyph with the logomark's cut corners (top-left and
+ * bottom-right) on the head and beveled shoulders; sits inside a square control.
+ */
+export function UserGlyphIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" width="32" height="32" {...props}>
-      <circle cx="16" cy="11.5" r="6.5" />
-      <path d="M2.5 34a13.5 13.5 0 0 1 27 0z" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="miter" strokeLinecap="square" aria-hidden="true" width="24" height="24" {...props}>
+      <path d="M10 4h6v6l-2 2H8V6z" />
+      <path d="M4 21v-3l3-3h10l3 3v3" />
     </svg>
   );
 }

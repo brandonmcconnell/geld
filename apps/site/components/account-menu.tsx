@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { LogOutIcon, SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 
-import { AvatarPlaceholderIcon } from '@/components/icons';
+import { UserGlyphIcon } from '@/components/icons';
 import { buttonVariants } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -27,11 +27,11 @@ export function AccountMenu({ className }: { readonly className?: string | undef
         <TooltipTrigger
           render={<a href="/auth/start?next=/settings" aria-label="Sign in with GitHub" />}
           className={cn(
-            buttonVariants({ variant: 'outline', size: 'icon-sm', className: 'overflow-hidden rounded-full text-muted-foreground/60 hover:text-muted-foreground/80 [[data-account]_&]:hidden' }),
+            buttonVariants({ variant: 'ghost', size: 'icon-sm', className: 'border-input text-muted-foreground hover:text-foreground [[data-account]_&]:hidden' }),
             className,
           )}
         >
-          <AvatarPlaceholderIcon className="size-full" />
+          <UserGlyphIcon className="size-[18px]" />
         </TooltipTrigger>
         <TooltipContent side="bottom">Sign in with GitHub</TooltipContent>
       </Tooltip>
@@ -42,13 +42,13 @@ export function AccountMenu({ className }: { readonly className?: string | undef
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          'inline-flex h-8 items-center gap-2 rounded-full border bg-background pr-2.5 pl-0.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
+          'geld-corners geld-cut-[7px] inline-flex h-8 items-center gap-2 border border-input pr-2.5 pl-0.5 text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
           className,
         )}
         aria-label={`Account: ${account.login}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- avatar from GitHub, already sized */}
-        <img src={account.avatarUrl} alt="" width={26} height={26} className="size-[26px] rounded-full" referrerPolicy="no-referrer" />
+        <img src={account.avatarUrl} alt="" width={26} height={26} className="geld-corners geld-cut-[6px] size-[26px]" referrerPolicy="no-referrer" />
         <span className="hidden max-w-32 truncate font-medium sm:inline">{account.login}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
