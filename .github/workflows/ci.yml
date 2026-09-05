@@ -16,8 +16,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Typechecks and unit tests for every workspace package (core + extension).
+      # Typechecks and unit tests for every workspace package (core + extension),
+      # plus lint and a production build of the site.
       - run: pnpm check
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
       # Public client id of the GitHub OAuth App (device flow) used for sign-in.
       # Kept out of the source tree; set it as a repository Actions variable.
       - run: pnpm zip:all

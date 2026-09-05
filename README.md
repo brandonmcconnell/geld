@@ -71,8 +71,9 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
 ```sh
 pnpm install          # installs every workspace and generates WXT types
 pnpm dev              # extension in Chrome with hot reload
-pnpm check            # typecheck + unit tests for core and the extension
+pnpm check            # typecheck + unit tests for core and the extension, lint + build for the site
 pnpm test             # unit tests only (Vitest)
+pnpm dev:site         # geld.sh website (Next.js) on http://localhost:3000
 pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
 pnpm zip:all          # zips for all four browsers into apps/extension/.output/
@@ -110,7 +111,8 @@ apps/extension/            @geld/extension (WXT)
     diff-cache.ts          commit-keyed on-disk cache of parsed diffs
     whitespace-viewed.ts   GitHub's hide-whitespace setting and "Viewed" controls
     ui/                    hidden-files row, sidebar accordion sections, tooltip
-apps/site/                 geld.sh (Next.js on Vercel)
+apps/site/                 geld.sh (Next.js on Vercel): home with a live path tester, how it works,
+                           patterns rendered from @geld/core, FAQ, privacy policy
 assets/brand/              logo + logomark SVGs (black and white variants)
 ```
 

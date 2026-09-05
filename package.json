@@ -11,8 +11,11 @@
     "build": "pnpm --filter @geld/extension build",
     "build:all": "pnpm --filter @geld/extension build:all",
     "zip:all": "pnpm --filter @geld/extension zip:all",
+    "dev:site": "pnpm --filter @geld/site dev",
+    "build:site": "pnpm --filter @geld/site build",
     "check": "pnpm -r run check",
     "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint"
   }
 }

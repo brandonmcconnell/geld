@@ -8,6 +8,10 @@ stats.html
 stats-*.json
 web-ext.config.ts
 
+# Next.js / Vercel (apps/site)
+.next/
+.vercel/
+
 # Editor / OS
 .DS_Store
 .idea/
