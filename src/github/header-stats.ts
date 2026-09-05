@@ -202,8 +202,20 @@ function renderTestsLabel(group: HeaderStatGroup, count: number, noun: string, n
     label = document.createElement('span');
     label.className = TESTS_COUNT_CLASS;
     label.setAttribute('data-geld-ui', '');
-    if (group.additions !== null) group.additions.insertAdjacentElement('beforebegin', label);
-    else group.host.prepend(label);
+    if (group.additions !== null) {
+      group.additions.insertAdjacentElement('beforebegin', label);
+      // GitHub separates "+N" and "−M" with either a flex gap or a literal
+      // space; a space after the label reproduces whichever is in use.
+      if (!group.sentence) label.after(document.createTextNode(' '));
+    } else {
+      group.host.prepend(label);
+    }
+  }
+  if (group.additions !== null) {
+    // Match the neighbouring count exactly (GitHub styles those spans directly).
+    const reference = getComputedStyle(group.additions);
+    label.style.font = reference.font;
+    label.style.letterSpacing = reference.letterSpacing;
   }
   const text = pluralize(count, noun, nounPlural);
   // Inside a sentence ("… with 2 tests, 42 additions and 26 deletions.") we need a comma.
@@ -257,7 +269,13 @@ export function applyHeaderStats(group: HeaderStatGroup, hidden: ChangeTotals, c
 
 export function restoreHeaderStats(group: HeaderStatGroup): void {
   restoreNumbers(group);
-  for (const label of group.host.querySelectorAll(`.${TESTS_COUNT_CLASS}`)) label.remove();
+  for (const label of group.host.querySelectorAll(`.${TESTS_COUNT_CLASS}`)) {
+    const spacer = label.nextSibling;
+    if (spacer !== null && spacer.nodeType === Node.TEXT_NODE && (spacer.nodeValue ?? '').trim() === '') {
+      spacer.remove();
+    }
+    label.remove();
+  }
 }
 
 /** Put GitHub's original numbers back and drop the tooltip, keeping the label. */

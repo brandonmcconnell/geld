@@ -302,15 +302,21 @@
 /* Pull request lists: "+N −M" next to each PR (excluding tests)             */
 /* ------------------------------------------------------------------------ */
 
+/*
+ * Kept as plain inline text on the baseline (no inline-flex, no vertical-align
+ * tricks) so inserting it never changes the height of GitHub's metadata line.
+ */
 .geld-pr-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: inline;
   margin-left: 4px;
   font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 12px;
+  line-height: inherit;
   white-space: nowrap;
-  vertical-align: middle;
+}
+
+.geld-pr-stat > * + * {
+  margin-left: 4px;
 }
 
 .geld-pr-stat--inline {
@@ -320,11 +326,6 @@
 .geld-pr-stat__sep {
   color: var(--fgColor-muted, #59636e);
   font-family: inherit;
-  margin-right: 2px;
-}
-
-.geld-pr-stat__tests {
-  margin-right: 0;
 }
 
 .geld-pr-stat__add {
@@ -374,7 +375,6 @@
  */
 .geld-tests-count {
   color: var(--fgColor-done, #8250df);
-  margin-right: 0.5em;
   white-space: nowrap;
 }
 
