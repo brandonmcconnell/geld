@@ -40,7 +40,9 @@ body {
 
 /* Current-tab context ------------------------------------------------------- */
 
+/* The stats row carries its own leading; shave the top so the block reads centred. */
 .popup__context {
+  padding: 9px 16px 14px;
   background: color-mix(in oklch, var(--muted) 60%, transparent);
 }
 
@@ -89,26 +91,55 @@ body {
 }
 
 .popup__file-list {
-  max-height: 120px;
+  max-height: 168px;
   margin: 6px 0 0;
   padding: 0 0 0 20px;
   overflow: auto;
   font-size: 11.5px;
-  line-height: 1.7;
   list-style: none;
 }
 
-.popup__file-list li {
+/* One file per row; the path is middle-truncated in JS, actions appear on hover. */
+.popup__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-left: -4px;
+  padding-left: 4px;
+}
+
+.popup__file:hover,
+.popup__file:focus-within {
+  background: var(--accent);
+}
+
+.popup__file-path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--foreground);
+}
+
+.popup__file-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.popup__file:hover .popup__file-actions,
+.popup__file:focus-within .popup__file-actions {
+  opacity: 1;
 }
 
 .popup__quick {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 /* Categories ----------------------------------------------------------------- */

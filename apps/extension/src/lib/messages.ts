@@ -29,6 +29,15 @@ export interface GetTabStateMessage {
   readonly type: 'geld:get-tab-state';
 }
 
+/** Hash the popup's "go to file" navigates with when the diffs are on another tab of the PR. */
+export const REVEAL_HASH_PREFIX = '#geld-reveal=';
+
+/** Popup → content script: expand the hidden files and scroll to this one. */
+export interface RevealFileMessage {
+  readonly type: 'geld:reveal';
+  readonly path: string;
+}
+
 /** Popup → background: the tab did not answer; inject the content script if it belongs there. */
 export interface EnsureContentMessage {
   readonly type: 'geld:ensure-content';
@@ -59,6 +68,10 @@ export interface TabState {
   readonly visible: ChangeTotals | null;
   readonly categories: readonly TabCategoryState[];
   readonly expanded: boolean;
+  /** Where the diffs for this page live (the PR's files tab, the commit itself), for "go to file". */
+  readonly diffPageUrl: string | null;
+  /** Whether the diffs are rendered on this page (so a reveal can happen in place). */
+  readonly onDiffPage: boolean;
 }
 
 /** Content script → background: update the toolbar badge for this tab. */
@@ -90,6 +103,7 @@ export type GeldRequest =
   | ColorSchemeMessage
   | ToggleHiddenMessage
   | GetTabStateMessage
+  | RevealFileMessage
   | EnsureContentMessage
   | TabStateMessage
   | AccountActionMessage;
@@ -120,6 +134,10 @@ export function isGetTabStateMessage(value: unknown): value is GetTabStateMessag
   return isRecord(value) && value.type === 'geld:get-tab-state';
 }
 
+export function isRevealFileMessage(value: unknown): value is RevealFileMessage {
+  return isRecord(value) && value.type === 'geld:reveal' && typeof value.path === 'string';
+}
+
 export function isEnsureContentMessage(value: unknown): value is EnsureContentMessage {
   return isRecord(value) && value.type === 'geld:ensure-content' && typeof value.tabId === 'number';
 }
@@ -139,7 +157,9 @@ export function isTabState(value: unknown): value is TabState {
     typeof value.hasDiff === 'boolean' &&
     typeof value.hiddenCount === 'number' &&
     Array.isArray(value.categories) &&
-    typeof value.expanded === 'boolean'
+    typeof value.expanded === 'boolean' &&
+    (value.diffPageUrl === null || typeof value.diffPageUrl === 'string') &&
+    typeof value.onDiffPage === 'boolean'
   );
 }
 

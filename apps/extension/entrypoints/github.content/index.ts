@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController } from '../../src/github/controller';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
-import { isGetTabStateMessage, isToggleHiddenMessage } from '../../src/lib/messages';
+import { isGetTabStateMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
 import './style.css';
 
@@ -40,6 +40,11 @@ export default defineContentScript({
     const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState) => void): boolean | undefined => {
       if (isToggleHiddenMessage(message)) {
         controller.toggleHidden();
+        sendResponse(controller.getTabState());
+        return undefined;
+      }
+      if (isRevealFileMessage(message)) {
+        controller.revealPath(message.path);
         sendResponse(controller.getTabState());
         return undefined;
       }

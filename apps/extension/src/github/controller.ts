@@ -5,6 +5,7 @@ import { subtractTotals } from '@geld/core';
 import type { PathMatcher } from '@geld/core';
 import { createMatcher } from '@geld/core';
 import type { TabState } from '../lib/messages';
+import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
 import { compileRepoRules, decideRepo, repoFromPathname } from '@geld/core';
 import { whitespacePersistedItem } from '../lib/local-state';
@@ -85,7 +86,16 @@ const IDLE_STATE: TabState = {
   visible: null,
   categories: [],
   expanded: false,
+  diffPageUrl: null,
+  onDiffPage: false,
 };
+
+/** The page that renders this page's diffs: PR → its files tab; commit/compare → itself. */
+function diffPageUrlFor(page: PageInfo, url: URL): string | null {
+  if (page.kind.startsWith('pull')) return `${url.origin}${page.stateKey}/files`;
+  if (page.kind === 'commit' || page.kind === 'compare') return `${url.origin}${page.stateKey}`;
+  return null;
+}
 
 /**
  * Owns the lifecycle of Geld on a GitHub tab: watches the DOM, classifies
@@ -189,6 +199,12 @@ export class GeldController {
     return this.lastState;
   }
 
+  /** Popup's "go to file": expand the hidden files and scroll to `path` (works while diffs still load). */
+  revealPath(path: string): void {
+    if (this.currentPage === null) return;
+    this.reveal(path, this.currentPage.stateKey);
+  }
+
   /** Matchers are cached per repository because custom patterns can be repo-scoped. */
   private matcherFor(repo: string | null): PathMatcher {
     const key = repo ?? '';
@@ -252,6 +268,7 @@ export class GeldController {
       const result = this.applyView(view, page.stateKey, matcher);
       hidden = result.breakdown;
       expanded = result.expanded;
+      this.consumeRevealHash(page.stateKey);
       this.continuePendingReveal(view, page.stateKey);
     } else {
       this.teardownView();
@@ -290,9 +307,25 @@ export class GeldController {
         paths: entry.paths,
       })),
       expanded,
+      diffPageUrl: diffPageUrlFor(page, url),
+      onDiffPage: view !== null,
     });
 
     this.observer?.takeRecords();
+  }
+
+  /** Arriving via `#geld-reveal=<path>` (from the popup on another tab of the PR): reveal, then drop the hash. */
+  private consumeRevealHash(stateKey: string): void {
+    const { hash } = window.location;
+    if (!hash.startsWith(REVEAL_HASH_PREFIX)) return;
+    let path: string;
+    try {
+      path = decodeURIComponent(hash.slice(REVEAL_HASH_PREFIX.length));
+    } catch {
+      return;
+    }
+    history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}`);
+    this.reveal(path, stateKey);
   }
 
   private applyView(

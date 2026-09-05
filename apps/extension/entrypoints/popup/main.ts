@@ -1,8 +1,9 @@
 import { browser } from 'wxt/browser';
 import { CATEGORIES } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
-import type { EnsureContentMessage, GetTabStateMessage, TabState } from '../../src/lib/messages';
-import { isEnsureContentResponse, isTabState } from '../../src/lib/messages';
+import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabState } from '../../src/lib/messages';
+import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
+import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, fieldsFor, isCategoryEnabled } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
@@ -163,6 +164,69 @@ async function main(): Promise<void> {
   stats.addEventListener('click', (event) => {
     if (stats.hasAttribute('data-empty')) event.preventDefault();
   });
+  // Rows only have a width once the list is open.
+  files.addEventListener('toggle', () => {
+    if (files.open) requestAnimationFrame(fitFileRows);
+  });
+  function fitFileRows(): void {
+    for (const element of fileList.querySelectorAll<HTMLElement>('.popup__file-path')) fitMiddleTruncated(element);
+  }
+
+  function iconButton(icon: 'copy' | 'goto', label: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'geld-button geld-button--icon';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    const glyph = document.createElement('span');
+    glyph.className = `geld-button__icon geld-button__icon--${icon}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    button.append(glyph);
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      onClick();
+    });
+    return button;
+  }
+
+  /** Open the file in the tab: in place when the diffs are on this page, else via the PR's files tab. */
+  async function goToFile(path: string, state: TabState): Promise<void> {
+    if (tab === null) return;
+    if (state.onDiffPage) {
+      const message: RevealFileMessage = { type: 'geld:reveal', path };
+      await browser.tabs.sendMessage(tab.id, message).catch(() => undefined);
+    } else if (state.diffPageUrl !== null) {
+      await browser.tabs.update(tab.id, { url: `${state.diffPageUrl}${REVEAL_HASH_PREFIX}${encodeURIComponent(path)}` });
+    } else {
+      return;
+    }
+    window.close();
+  }
+
+  function fileRow(path: string, category: string, state: TabState): HTMLLIElement {
+    const item = document.createElement('li');
+    item.className = 'popup__file';
+    const text = document.createElement('span');
+    text.className = 'popup__file-path';
+    text.dataset.full = path;
+    text.textContent = path;
+    text.setAttribute('aria-label', `${path} (${category})`);
+    const actions = document.createElement('span');
+    actions.className = 'popup__file-actions';
+    const copy = iconButton('copy', 'Copy path', () => {
+      void navigator.clipboard?.writeText(path).then(() => {
+        copy.dataset.done = '';
+        copy.title = 'Copied';
+        setTimeout(() => {
+          delete copy.dataset.done;
+          copy.title = 'Copy path';
+        }, 1200);
+      });
+    });
+    actions.append(copy, iconButton('goto', 'Go to file', () => void goToFile(path, state)));
+    item.append(text, actions);
+    return item;
+  }
   const actions = requireElement('context-actions', HTMLDivElement);
   const toggleRepo = requireElement('toggle-repo', HTMLButtonElement);
   const toggleOrg = requireElement('toggle-org', HTMLButtonElement);
@@ -205,14 +269,9 @@ async function main(): Promise<void> {
       )} in ${pluralize(state.all.files, 'file', 'files')}${state.expanded ? '. Currently shown on the page' : ''}`;
       stats.toggleAttribute('data-empty', paths.length === 0);
       if (paths.length === 0) files.open = false;
-      fileList.replaceChildren(
-        ...paths.map(({ path, title }) => {
-          const item = document.createElement('li');
-          item.title = title;
-          item.textContent = path;
-          return item;
-        }),
-      );
+      const current = state;
+      fileList.replaceChildren(...paths.map(({ path, title }) => fileRow(path, title, current)));
+      if (files.open) requestAnimationFrame(fitFileRows);
     }
 
     actions.hidden = repo === null || !settings.enabled;
