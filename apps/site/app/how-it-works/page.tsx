@@ -52,7 +52,7 @@ export default function HowItWorksPage() {
 
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
         <nav aria-label="On this page" className="hidden lg:block">
-          <ol className="sticky top-24 flex flex-col gap-2 border-l text-sm">
+          <ol className="sticky top-28 flex flex-col gap-2 border-l text-sm">
             {STEPS.map((step, index) => (
               <li key={step.id}>
                 <a
