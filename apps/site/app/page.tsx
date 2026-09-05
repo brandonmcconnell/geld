@@ -3,6 +3,7 @@ import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { BeforeAfter } from '@/components/demo/before-after';
+import { HERO_WORDMARK_ID } from '@/components/header-brand';
 import { InstallButtons } from '@/components/install-buttons';
 import { Wordmark } from '@/components/logo';
 import { PathTester } from '@/components/path-tester';
@@ -16,7 +17,9 @@ export default function HomePage() {
     <>
       <section aria-labelledby="hero-heading" className="container-site pt-20 pb-12 sm:pt-28 sm:pb-16">
         <div className="max-w-3xl">
-          <Wordmark height={44} alt="Geld" priority className="mb-8 sm:mb-10" />
+          <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
+            <Wordmark height={44} alt="Geld" priority />
+          </div>
           <h1 id="hero-heading" className="text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
             {TAGLINE}.
           </h1>
@@ -24,7 +27,7 @@ export default function HomePage() {
             Geld is a browser extension that hides test files from GitHub diffs. Tests move to a collapsible row at the bottom, the header counts
             exclude them, and nothing is ever deleted from the page.
           </p>
-          <InstallButtons className="mt-8" compact />
+          <InstallButtons className="mt-8" size="lg" />
           <p className="mt-6 text-sm text-muted-foreground">Free and open source. No account, no data collection, no GitHub API calls.</p>
         </div>
       </section>
@@ -77,10 +80,10 @@ export default function HomePage() {
       </Section>
 
       <Section id="install" eyebrow="Install" title="Works where you review." description="Chrome, Edge, Firefox and Safari, on github.com and GitHub Enterprise Server." className="border-t">
-        <InstallButtons compact />
+        <InstallButtons />
         <p className="mt-6 text-sm text-muted-foreground">
           MIT licensed.{' '}
-          <a href={REPO_URL} className="underline underline-offset-3 hover:text-foreground" rel="noopener">
+          <a href={REPO_URL} className="underline underline-offset-3 hover:text-foreground" target="_blank" rel="noopener noreferrer">
             Read the source
           </a>{' '}
           or build it yourself.

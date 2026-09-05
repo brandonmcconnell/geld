@@ -1,17 +1,16 @@
 import { cn } from 'cn';
-import { DownloadIcon, ExternalLinkIcon } from 'lucide-react';
 
-import { buttonVariants } from '@/components/ui/button';
+import { InstallButtonGroup } from '@/components/install-button-group';
 import { installLinks } from '@/lib/downloads';
 import { getLatestRelease } from '@/lib/release';
 import { INSTALL_GUIDE_URL } from '@/lib/site';
 import { EXTENSION_VERSION } from '@/lib/version';
 
 /**
- * One button per browser. Points at store listings where they exist and at
- * the latest GitHub Release otherwise (see `lib/downloads.ts`).
+ * Install buttons for all four browsers. Points at store listings where they
+ * exist and at the latest GitHub Release otherwise (see `lib/downloads.ts`).
  */
-export async function InstallButtons({ className, compact = false }: { readonly className?: string; readonly compact?: boolean }) {
+export async function InstallButtons({ className, size = 'default' }: { readonly className?: string | undefined; readonly size?: 'default' | 'lg' }) {
   const release = await getLatestRelease();
   const links = installLinks(release);
   const anyStore = links.some((link) => link.source === 'store');
@@ -19,21 +18,7 @@ export async function InstallButtons({ className, compact = false }: { readonly 
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
-      <ul className="flex flex-wrap gap-2" aria-label="Install Geld">
-        {links.map((link, index) => (
-          <li key={link.browser.id}>
-            <a
-              href={link.href}
-              className={buttonVariants({ variant: index === 0 ? 'default' : 'outline', size: compact ? 'default' : 'lg' })}
-              rel="noopener"
-              data-source={link.source}
-            >
-              {link.source === 'store' ? <ExternalLinkIcon aria-hidden="true" /> : <DownloadIcon aria-hidden="true" />}
-              {link.label}
-            </a>
-          </li>
-        ))}
-      </ul>
+      <InstallButtonGroup links={links} size={size} />
       {!allStores ? (
         <p className="text-xs text-muted-foreground">
           {anyStore ? 'Browsers without a store listing yet install from the ' : 'Store listings are coming. Until then, install from the '}
