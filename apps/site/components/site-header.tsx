@@ -1,4 +1,3 @@
-import { cn } from 'cn';
 import Link from 'next/link';
 
 import { AccountMenu } from '@/components/account-menu';
@@ -11,15 +10,8 @@ export function SiteHeader() {
       <div className="container-site flex h-14 items-center justify-between gap-6">
         <HeaderBrand />
         <nav aria-label="Primary" className="flex items-center gap-1 sm:gap-2">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                'px-2 py-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground sm:px-2.5 sm:text-sm',
-                !link.compact && 'hidden sm:inline-block',
-              )}
-            >
+          {NAV_LINKS.filter((link) => link.inHeader).map((link) => (
+            <Link key={link.href} href={link.href} className="px-2 py-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground sm:px-2.5 sm:text-sm">
               {link.label}
             </Link>
           ))}

@@ -1,4 +1,5 @@
 import { cn } from 'cn';
+import { CheckIcon } from 'lucide-react';
 
 export type Tone = 'neutral' | 'success' | 'error' | 'pending';
 
@@ -16,12 +17,13 @@ export function SaveStatus({ status, className }: { readonly status: Status; rea
       role="status"
       aria-live="polite"
       className={cn(
-        'text-xs transition-opacity',
+        'inline-flex items-center gap-1.5 text-xs transition-opacity',
         status.message === '' && 'opacity-0',
         status.tone === 'error' ? 'text-destructive' : status.tone === 'success' ? 'text-addition' : 'text-muted-foreground',
         className,
       )}
     >
+      {status.tone === 'success' && status.message !== '' ? <CheckIcon aria-hidden="true" className="size-3.5" strokeWidth={2.5} strokeLinecap="square" strokeLinejoin="miter" /> : null}
       {status.message === '' ? '\u00a0' : status.message}
     </span>
   );

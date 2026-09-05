@@ -36,15 +36,15 @@ export const AUTHOR = {
 export interface NavLink {
   readonly href: string;
   readonly label: string;
-  /** Whether the header shows the link on narrow screens (the footer always does). */
-  readonly compact: boolean;
+  /** Whether the header shows the link (the footer and sitemap always do). */
+  readonly inHeader: boolean;
 }
 
 export const NAV_LINKS: readonly NavLink[] = [
-  { href: '/how-it-works', label: 'How it works', compact: true },
-  { href: '/patterns', label: 'Patterns', compact: true },
-  { href: '/faq', label: 'FAQ', compact: true },
-  { href: '/privacy', label: 'Privacy', compact: false },
+  { href: '/how-it-works', label: 'How it works', inHeader: true },
+  { href: '/patterns', label: 'Patterns', inHeader: true },
+  { href: '/faq', label: 'FAQ', inHeader: true },
+  { href: '/privacy', label: 'Privacy', inHeader: false },
 ];
 
 export const KEYBOARD_SHORTCUT = ['Alt', 'Shift', 'T'] as const;

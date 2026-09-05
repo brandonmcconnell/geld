@@ -48,7 +48,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
         aria-label={`Account: ${account.login}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- avatar from GitHub, already sized */}
-        <img src={account.avatarUrl} alt="" width={26} height={26} className="size-[26px] rounded-none" referrerPolicy="no-referrer" />
+        <img src={account.avatarUrl} alt="" width={26} height={26} className="geld-corners geld-cut-[6px] size-[26px]" referrerPolicy="no-referrer" />
         <span className="hidden max-w-32 truncate font-medium sm:inline">{account.login}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">

@@ -1,7 +1,6 @@
 import Link from 'next/link';
 
 import { ExternalLink } from '@/components/external-link';
-import { FooterAccount } from '@/components/footer-account';
 import { Logomark } from '@/components/logo';
 import { ThemeMenu } from '@/components/theme-menu';
 import { AUTHOR, ISSUES_URL, LICENSE_URL, NAV_LINKS, REPO_URL } from '@/lib/site';
@@ -32,7 +31,6 @@ export function SiteFooter() {
               </Link>
             </li>
           ))}
-          <FooterAccount />
         </FooterColumn>
         <FooterColumn title="Project">
           <li>
