@@ -46,7 +46,7 @@ Patterns use gitignore-style semantics: a pattern without a slash matches a file
 
 ### Other options
 
-- **Hide whitespace changes** uses GitHub's own diff setting. On the classic view Geld submits GitHub's "Apply and reload" form once, which GitHub then remembers for signed-in users; elsewhere it falls back to the `?w=1` URL and rewrites the "Files changed" links so you land there directly.
+- **Hide whitespace changes** uses GitHub's own diff setting, never a Geld re-implementation. Geld first reads GitHub's persisted preference (`ignoreWhitespace` in the page payload, or the classic diff-settings form) and does nothing if it is already on. If it is off, it flips GitHub's setting the way you would — through the diff-settings menu on the React view or the "Apply and reload" form on the classic view — which GitHub remembers for signed-in users, so this happens once. Signed-out users get the `?w=1` URL instead.
 - **Mark as viewed** in the bottom section ticks GitHub's "Viewed" checkbox on every hidden file, so review progress can reach 100% without opening them.
 - **Line counts in PR lists**, **badge**, **shortcut** and **expanded by default** can each be switched off.
 - **Export/import** your settings as JSON from the options page.

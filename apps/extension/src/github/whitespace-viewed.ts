@@ -21,9 +21,40 @@ export class WhitespaceRedirector {
     this.persisted = value;
   }
 
-  ensure(url: URL): void {
+  private menuAttempted = false;
+  /** The embedded preference belongs to the document's first page; SPA navigations leave it stale. */
+  private initialPage: string | null = null;
+  private embeddedAtLoad: boolean | null = null;
+
+  ensure(url: URL, pageKey: string): void {
     if (this.redirected || url.searchParams.get('w') === '1') return;
     const signedIn = document.body.classList.contains('logged-in') || document.querySelector('meta[name="user-login"][content]:not([content=""])') !== null;
+
+    if (this.initialPage === null) {
+      this.initialPage = pageKey;
+      this.embeddedAtLoad = readEmbeddedIgnoreWhitespace();
+    }
+    const embedded = this.initialPage === pageKey ? this.embeddedAtLoad : null;
+
+    // React views embed the user's persisted diff preference. Already on: done.
+    if (embedded === true) {
+      if (signedIn && !this.persisted) this.markPersisted();
+      return;
+    }
+    // GitHub remembers the preference for signed-in users; never re-apply it.
+    if (signedIn && this.persisted) return;
+
+    if (embedded === false && signedIn && !this.menuAttempted) {
+      // Flip GitHub's own "Hide whitespace" setting through its diff-settings
+      // menu, which GitHub persists and applies without a reload. Falls back to
+      // the URL parameter if the menu cannot be driven.
+      this.menuAttempted = true;
+      void toggleWhitespaceViaMenu().then((done) => {
+        if (done) this.markPersisted();
+        else this.ensure(new URL(window.location.href), pageKey);
+      });
+      return;
+    }
 
     // GitHub's own "Diff settings" form (legacy view). Its checkbox reflects
     // the effective state, and submitting it is exactly "Apply and reload",
@@ -44,9 +75,7 @@ export class WhitespaceRedirector {
       }
     }
 
-    // No form (React view): once GitHub remembers the preference there is
-    // nothing to do; otherwise fall back to the URL parameter.
-    if (signedIn && this.persisted) return;
+    // No form (React view) and no menu: fall back to the URL parameter.
     const key = `${WhitespaceRedirector.KEY_PREFIX}${url.pathname}`;
     const previous = safeSessionGet(key);
     if (previous === 'unsupported') return;
@@ -140,4 +169,82 @@ function accessibleName(element: HTMLElement): string {
     if (forLabel !== null) return (forLabel.textContent ?? '').trim();
   }
   return (element.textContent ?? '').trim();
+}
+
+/** `"ignoreWhitespace": true|false` from the React app's embedded payload, if present. */
+function readEmbeddedIgnoreWhitespace(): boolean | null {
+  for (const script of document.querySelectorAll('script[type="application/json"]')) {
+    const match = /"ignoreWhitespace"\s*:\s*(true|false)/.exec(script.textContent ?? '');
+    if (match !== null) return match[1] === 'true';
+  }
+  return null;
+}
+
+const MENU_TIMEOUT_MS = 1500;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor<T>(probe: () => T | null, timeoutMs: number): Promise<T | null> {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    const value = probe();
+    if (value !== null) return value;
+    await wait(50);
+  }
+  return null;
+}
+
+function findDiffSettingsButton(): HTMLButtonElement | null {
+  for (const button of document.querySelectorAll<HTMLButtonElement>('button')) {
+    if (button.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
+    if (/diff (view )?settings/i.test(accessibleName(button))) return button;
+  }
+  return null;
+}
+
+function findWhitespaceMenuItem(): HTMLElement | null {
+  const candidates = document.querySelectorAll<HTMLElement>(
+    '[role="menuitemcheckbox"], [role="checkbox"], [role="switch"], input[type="checkbox"], [role="menuitem"]',
+  );
+  for (const candidate of candidates) {
+    if (candidate.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
+    if (candidate instanceof HTMLInputElement && candidate.name === 'w') continue; // legacy form, handled separately
+    if (/whitespace/i.test(accessibleName(candidate))) return candidate;
+  }
+  return null;
+}
+
+function isChecked(element: HTMLElement): boolean {
+  if (element instanceof HTMLInputElement) return element.checked;
+  return element.getAttribute('aria-checked') === 'true';
+}
+
+function closeMenus(): void {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+}
+
+/**
+ * Turn on GitHub's "Hide whitespace" through its own diff-settings menu.
+ * Resolves `true` when the setting is on afterwards (or already was).
+ */
+async function toggleWhitespaceViaMenu(): Promise<boolean> {
+  const gear = findDiffSettingsButton();
+  if (gear === null) return false;
+  gear.click();
+  const item = await waitFor(findWhitespaceMenuItem, MENU_TIMEOUT_MS);
+  if (item === null) {
+    closeMenus();
+    return false;
+  }
+  if (!isChecked(item)) {
+    item.click();
+    await wait(150);
+  }
+  closeMenus();
+  await wait(50);
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  return true;
 }

@@ -406,7 +406,7 @@ export class GeldController {
     rewriteFilesLinksForWhitespace();
     if (view === null) return;
     if (page.kind !== 'pull-files' && page.kind !== 'commit' && page.kind !== 'compare') return;
-    this.whitespace.ensure(url);
+    this.whitespace.ensure(url, page.stateKey);
   }
 
   /** Expand the hidden section and scroll a specific hidden file into view. */
