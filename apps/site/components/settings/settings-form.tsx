@@ -38,7 +38,8 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
   const router = useRouter();
   const [settings, setSettings] = useState(initialSettings);
   const [gistId, setGistId] = useState(initialGistId);
-  const [status, setStatus] = useState<Status>(NO_STATUS);
+  // The page has just read the gist, so say so; saves replace this with "Saved" etc.
+  const [status, setStatus] = useState<Status>(initialGistId === null ? NO_STATUS : { message: 'Up to date', tone: 'success' });
   const [signedOut, setSignedOut] = useState(false);
   const [remoteInvalid, setRemoteInvalid] = useState(false);
   const [pending, setPending] = useState(0);
