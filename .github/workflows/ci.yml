@@ -18,7 +18,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Typechecks and unit tests for every workspace package (core + extension).
       - run: pnpm check
+      # Public client id of the GitHub OAuth App (device flow) used for sign-in.
+      # Kept out of the source tree; set it as a repository Actions variable.
       - run: pnpm zip:all
+        env:
+          WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
       - uses: actions/upload-artifact@v7
         with:
           name: geld-extension-zips
