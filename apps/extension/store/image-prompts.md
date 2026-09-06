@@ -166,7 +166,7 @@ Right third: the same miniature diff illustration as the small promo tile (five 
 The captures are the product; take them from the real pages the project already uses for verification (no sign-in needed), at 2× device pixel ratio so they are sharp at 2880 wide.
 
 - Viewport 1440×900 at `deviceScaleFactor: 2` gives 2880×1800 raw pixels, the exact Apple size; the frame in the prompts then crops the bottom.
-- Pages used for the current asset pack: `https://github.com/vitest-dev/vitest/pull/10554/files` (39 hidden tests: screenshots 1, 2, 3), `https://github.com/wxt-dev/wxt/pulls` (screenshot 6). Popup and options (4, 5) are captured from `chrome-extension://<id>/popup.html` and `options.html` — open them at 2× or use the real popup on a Retina display.
+- Pages used for the current asset pack: `https://github.com/wxt-dev/wxt/pull/2544/files` (6 hidden tests: screenshots 1, 2, 3), `https://github.com/wxt-dev/wxt/pulls` (screenshot 6). Popup and options (4, 5) are direct captures from `chrome-extension://<id>/popup.html` and `options.html` at 2×.
 - Build with `pnpm zip:chrome`, install the unzipped folder in Chrome with Puppeteer's `browser.installExtension()` and `--enable-unsafe-extension-debugging` (branded Chrome ignores `--load-extension`), bring the tab to the front before interacting, wait for the hidden row to appear, then `page.screenshot({ type: 'png' })`.
 - Prefer GitHub's light theme for the set (the stores' pages are white); a dark-theme variant of screenshot 1 makes a good marquee reference.
 - Check every capture for anything you do not want public: other people's avatars are fine (public PR), but close your own account menu.

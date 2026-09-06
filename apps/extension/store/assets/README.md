@@ -24,14 +24,14 @@ Chrome/Edge/Firefox screenshots are 1280×800 JPEG. Their Mac App Store equivale
 ## Provenance
 
 - `raw/ai-*-source.png`: revised generated abstract diff studies. They contain no product text or generated logos. The final promo diagrams use the same direction but deterministic, pixel-aligned vectors.
-- `raw/02-counts-tooltip.png`, `03-file-tree.png`, `06-pr-list.png`: Chrome captures from the built Geld 0.1.1 extension on public GitHub pages.
-- `raw/04-popup.png`: the real browser-action popup reading the active GitHub tab.
-- `raw/05-options.png`: the built extension's options page.
-- `raw/01-hidden-row-scene.png` and `04-popup-scene.png`: compositions made only from the real captures above. The first combines the live pull-request viewport with the real hidden-files row captured from the same page; the second places the real popup over its real active tab.
+- `raw/01-hidden-row-direct.png`, `02-counts-tooltip.png`, `03-file-tree.png`, `06-pr-list.png`: direct 2× Chrome captures from the built Geld 0.1.1 extension on public GitHub pages.
+- `raw/02-counts-focus.png`: a direct clip around the real count label and its tooltip; `02-counts-scene.png` centres that complete component on the screenshot canvas without redrawing it.
+- `raw/04-popup.png`: the real browser-action popup reading the active GitHub tab; `04-popup-scene.png` centres its exact painted bounds on a neutral canvas.
+- `raw/05-options-card.png`: a direct element capture of the built extension's Custom patterns card; `05-options-scene.png` fits the complete card on the screenshot canvas.
 
 The public pages captured on 6 September 2026 were:
 
-- `https://github.com/vitest-dev/vitest/pull/10554/files` (39 hidden test files)
+- `https://github.com/wxt-dev/wxt/pull/2544/files` (6 hidden test files)
 - `https://github.com/wxt-dev/wxt/pulls` (line counts on pull-request rows)
 
 Re-capture the product screens before a listing refresh if GitHub's UI or Geld's UI changes. The prompts and capture recipe remain in `../image-prompts.md`.
