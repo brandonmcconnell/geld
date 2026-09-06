@@ -11,6 +11,7 @@
     "build": "pnpm --filter @geld/extension build",
     "build:all": "pnpm --filter @geld/extension build:all",
     "zip:all": "pnpm --filter @geld/extension zip:all",
+    "bump": "pnpm --filter @geld/extension exec npm version --no-git-tag-version",
     "dev:site": "pnpm --filter @geld/site dev",
     "build:site": "pnpm --filter @geld/site build",
     "check": "pnpm -r run check",
