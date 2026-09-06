@@ -2,7 +2,7 @@ import { formatCount, pluralize } from '@geld/core';
 import type { HiddenBreakdown } from '../breakdown';
 import { categoryChips, hiddenNoun, hiddenNounPlural } from '../breakdown';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_BEAKER, ICON_CHEVRON_RIGHT, ICON_EYE_CLOSED } from './icons';
+import { ICON_BEAKER, ICON_CHECK, ICON_CHEVRON_RIGHT, ICON_EYE_CLOSED } from './icons';
 import type { HiddenCategory } from '@geld/core';
 
 export const HIDDEN_SECTION_CLASS = 'geld-hidden-section';
@@ -11,8 +11,10 @@ export interface HiddenSectionState {
   readonly breakdown: HiddenBreakdown;
   readonly activeCategories: readonly HiddenCategory[];
   readonly expanded: boolean;
-  /** Number of hidden files that still have an unchecked "Viewed" control. */
+  /** Hidden files whose "Viewed" control is still off. */
   readonly unviewedCount: number;
+  /** Hidden files whose "Viewed" control is on. Both zero → the page has no such controls. */
+  readonly viewedCount: number;
 }
 
 export interface HiddenSectionHandlers {
@@ -31,6 +33,9 @@ interface HiddenSectionParts {
   readonly note: HTMLElement;
   readonly toggleLabel: HTMLElement;
   readonly markViewed: HTMLButtonElement;
+  readonly markViewedLabel: HTMLElement;
+  /** Latest handlers; listeners are bound once and read these, so nothing stale is ever called. */
+  handlers: HiddenSectionHandlers;
 }
 
 const parts = new WeakMap<HTMLElement, HiddenSectionParts>();
@@ -49,21 +54,33 @@ function build(handlers: HiddenSectionHandlers): HiddenSectionParts {
     { type: 'button', class: `${HIDDEN_SECTION_CLASS}__toggle`, 'aria-expanded': 'false' },
     [toggleLabel, svgFromString(ICON_CHEVRON_RIGHT)],
   );
-  toggle.addEventListener('click', handlers.onToggle);
-
+  const markViewedLabel = createElement('span', {}, ['Mark as viewed']);
   const markViewed = createElement(
     'button',
     { type: 'button', class: `${HIDDEN_SECTION_CLASS}__viewed`, hidden: '' },
-    ['Mark as viewed'],
+    [svgFromString(ICON_CHECK), markViewedLabel],
   );
-  markViewed.addEventListener('click', handlers.onMarkViewed);
-
-  const root = createElement(
-    'div',
-    { class: HIDDEN_SECTION_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'region', 'aria-live': 'polite' },
-    [createElement('div', { class: `${HIDDEN_SECTION_CLASS}__row` }, [icon, summary, chips, stats, note, toggle, markViewed])],
-  );
-  return { root, icon, toggle, summary, chips, additions, deletions, note, toggleLabel, markViewed };
+  const built: HiddenSectionParts = {
+    root: createElement('div', { class: HIDDEN_SECTION_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'region', 'aria-live': 'polite' }, [
+      createElement('div', { class: `${HIDDEN_SECTION_CLASS}__row` }, [icon, summary, chips, stats, note, toggle, markViewed]),
+    ]),
+    icon,
+    toggle,
+    summary,
+    chips,
+    additions,
+    deletions,
+    note,
+    toggleLabel,
+    markViewed,
+    markViewedLabel,
+    handlers,
+  };
+  toggle.addEventListener('click', () => built.handlers.onToggle());
+  markViewed.addEventListener('click', () => {
+    if (markViewed.getAttribute('aria-disabled') !== 'true') built.handlers.onMarkViewed();
+  });
+  return built;
 }
 
 /**
@@ -89,6 +106,7 @@ export function renderHiddenSection(
     parts.set(section.root, section);
     container.append(section.root);
   }
+  section.handlers = handlers;
 
   const { breakdown, expanded, activeCategories } = state;
   const single = breakdown.categories.length === 1 ? breakdown.categories[0]?.category : undefined;
@@ -114,13 +132,17 @@ export function renderHiddenSection(
   section.note.hidden = !breakdown.incomplete;
   section.toggleLabel.textContent = expanded ? `Hide ${toggleNoun}` : `Show ${toggleNoun}`;
   section.toggle.setAttribute('aria-expanded', String(expanded));
-  section.markViewed.hidden = state.unviewedCount === 0;
-  section.markViewed.textContent =
-    state.unviewedCount === 0
-      ? ''
-      : state.unviewedCount === breakdown.totals.files
-        ? 'Mark as viewed'
-        : `Mark ${formatCount(state.unviewedCount)} as viewed`;
+  // No "Viewed" controls at all (signed out, commit pages): nothing to offer.
+  const hasControls = state.unviewedCount + state.viewedCount > 0;
+  const allViewed = hasControls && state.unviewedCount === 0;
+  section.markViewed.hidden = !hasControls;
+  section.markViewed.toggleAttribute('data-done', allViewed);
+  section.markViewed.setAttribute('aria-disabled', String(allViewed));
+  section.markViewedLabel.textContent = allViewed
+    ? 'Marked as viewed'
+    : state.viewedCount === 0
+      ? 'Mark as viewed'
+      : `Mark ${formatCount(state.unviewedCount)} as viewed`;
   section.root.setAttribute('aria-label', `${count} ${expanded ? 'shown' : 'hidden'} by Geld`);
   section.root.dataset.expanded = String(expanded);
   return section.root;

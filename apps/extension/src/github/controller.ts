@@ -34,7 +34,7 @@ import {
 } from './ui/tree-section';
 import { legacyAdapter } from './views/legacy';
 import { reactAdapter } from './views/react';
-import { findUnviewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
+import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
 
 const ATTR_CONTAINER = 'data-geld-container';
 const ATTR_EXPANDED = 'data-geld-expanded';
@@ -157,13 +157,23 @@ export class GeldController {
       }
       this.schedule();
     });
-    this.observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    this.observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      // "Viewed" toggles flip these without adding or removing nodes.
+      attributes: true,
+      attributeFilter: ['aria-pressed', 'aria-checked', 'aria-label', 'data-file-user-viewed'],
+    });
+    // Legacy checkboxes change without any attribute mutation.
+    document.addEventListener('change', this.onChangeEvent, true);
     this.apply();
   }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    document.removeEventListener('change', this.onChangeEvent, true);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -181,6 +191,26 @@ export class GeldController {
     this.pendingReveal = null;
     this.teardown();
     this.apply();
+  }
+
+  private readonly onChangeEvent = (event: Event): void => {
+    if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox' && !isOwnElement(event.target)) this.schedule();
+  };
+
+  /**
+   * Turn on every "Viewed" control of the hidden files, looking them up right
+   * now: GitHub's React view re-renders and virtualises file headers, so any
+   * element found earlier may no longer be in the page.
+   */
+  private markHiddenViewed(): void {
+    const view = legacyAdapter.read() ?? reactAdapter.read();
+    if (view === null) return;
+    const matcher = this.matcherFor(repoFromPathname(window.location.pathname));
+    for (const entry of view.entries) {
+      if (matcher.categorize(entry.path) === null) continue;
+      for (const control of findViewedControls(entry.root).unviewed) activateControl(control);
+    }
+    this.schedule();
   }
 
   /** Re-evaluate the page soon (debounced). Safe to call from anywhere. */
@@ -359,16 +389,19 @@ export class GeldController {
     } else {
       view.container.setAttribute(ATTR_CONTAINER, view.kind);
       view.container.toggleAttribute(ATTR_EXPANDED, expanded);
-      const unviewed = hiddenEntries.flatMap((item) => findUnviewedControls(item.entry.root));
+      let unviewedCount = 0;
+      let viewedCount = 0;
+      for (const item of hiddenEntries) {
+        const controls = findViewedControls(item.entry.root);
+        unviewedCount += controls.unviewed.length;
+        viewedCount += controls.viewed.length;
+      }
       renderHiddenSection(
         view.container,
-        { breakdown, activeCategories: matcher.activeCategories, expanded, unviewedCount: unviewed.length },
+        { breakdown, activeCategories: matcher.activeCategories, expanded, unviewedCount, viewedCount },
         {
           onToggle: () => this.setDiffExpanded(stateKey, !this.isDiffExpanded(stateKey, everythingHidden)),
-          onMarkViewed: () => {
-            for (const control of unviewed) control.click();
-            this.schedule();
-          },
+          onMarkViewed: () => this.markHiddenViewed(),
         },
       );
     }

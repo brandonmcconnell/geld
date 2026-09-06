@@ -137,17 +137,54 @@ export function rewriteFilesLinksForWhitespace(): void {
 }
 
 /** Find unchecked "Viewed" controls inside a diff entry (only present when signed in). */
-export function findUnviewedControls(root: HTMLElement): HTMLElement[] {
-  const controls: HTMLElement[] = [];
-  for (const input of root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:not(:checked)')) {
+export interface ViewedControls {
+  /** Controls that are still off ("Not Viewed"). */
+  readonly unviewed: HTMLElement[];
+  /** Controls that are already on. */
+  readonly viewed: HTMLElement[];
+}
+
+/**
+ * Every "Viewed" control inside `root`, split by state. Legacy: a checkbox
+ * (`input.js-reviewed-checkbox`). React files view: a toggle button whose
+ * label is "Viewed" / "Not Viewed" with `aria-pressed`. Both are matched by
+ * their accessible name so a class rename does not silently break this.
+ */
+export function findViewedControls(root: HTMLElement): ViewedControls {
+  const unviewed: HTMLElement[] = [];
+  const viewed: HTMLElement[] = [];
+  for (const input of root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
     if (input.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    if (input.classList.contains('js-reviewed-checkbox') || /viewed/i.test(accessibleName(input))) controls.push(input);
+    if (!input.classList.contains('js-reviewed-checkbox') && !/viewed/i.test(accessibleName(input))) continue;
+    (input.checked ? viewed : unviewed).push(input);
   }
-  for (const button of root.querySelectorAll<HTMLButtonElement>('button[aria-pressed="false"], button[aria-checked="false"]')) {
+  for (const button of root.querySelectorAll<HTMLButtonElement>('button[aria-pressed], button[aria-checked], button[role="switch"]')) {
     if (button.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    if (/viewed/i.test(accessibleName(button))) controls.push(button);
+    if (!/viewed/i.test(accessibleName(button))) continue;
+    const on = button.getAttribute('aria-pressed') === 'true' || button.getAttribute('aria-checked') === 'true';
+    (on ? viewed : unviewed).push(button);
   }
-  return controls;
+  return { unviewed, viewed };
+}
+
+/**
+ * Turn a control on the way a user would. Checkboxes toggle and fire `change`
+ * through `click()`; React buttons get the pointer/mouse sequence a real
+ * click produces, since a top-level delegated handler may look at more than
+ * the `click` itself.
+ */
+export function activateControl(control: HTMLElement): void {
+  if (!control.isConnected) return;
+  if (control instanceof HTMLInputElement) {
+    control.click();
+    return;
+  }
+  const init: PointerEventInit = { bubbles: true, cancelable: true, composed: true, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  control.dispatchEvent(new PointerEvent('pointerdown', init));
+  control.dispatchEvent(new MouseEvent('mousedown', init));
+  control.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+  control.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+  control.click();
 }
 
 function accessibleName(element: HTMLElement): string {

@@ -86,6 +86,9 @@
 }
 
 .geld-hidden-section__viewed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 0 8px;
   height: 24px;
   border: 0;
@@ -97,10 +100,32 @@
   cursor: pointer;
 }
 
+/* The check only shows once everything is marked. */
+.geld-hidden-section__viewed > svg {
+  display: none !important;
+  width: 14px;
+  height: 14px;
+}
+
 .geld-hidden-section__viewed:hover {
   color: var(--fgColor-accent, #0969da);
   background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
   text-decoration: underline;
+}
+
+.geld-hidden-section__viewed[data-done] {
+  color: var(--fgColor-success, #1a7f37);
+  cursor: default;
+}
+
+.geld-hidden-section__viewed[data-done] > svg {
+  display: inline-block !important;
+}
+
+.geld-hidden-section__viewed[data-done]:hover {
+  color: var(--fgColor-success, #1a7f37);
+  background: transparent;
+  text-decoration: none;
 }
 
 .geld-hidden-section__summary {
