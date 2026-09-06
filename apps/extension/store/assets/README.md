@@ -1,6 +1,6 @@
 # Store asset pack
 
-Finished, exact-size exports for the marketplace forms. The real Geld SVGs are composited over generated editorial source art; all product screens are captures of the built extension running on public GitHub pages, not generated UI.
+Finished, exact-size exports for the marketplace forms. The real Geld SVGs are used throughout; all product screens are captures of the built extension running on public GitHub pages, not generated UI. Image generation was used for the visual exploration stored under `raw/ai-*`; the upload-ready promo diagrams were then rebuilt as exact flat vector geometry so generated overlaps, gradients, clipped fragments and text-placement errors cannot survive into the submitted files.
 
 ## Upload map
 
@@ -23,7 +23,7 @@ Chrome/Edge/Firefox screenshots are 1280×800 JPEG. Their Mac App Store equivale
 
 ## Provenance
 
-- `raw/ai-*-source.png`: generated abstract diff fields. They contain no product text or generated logos; the exact words and logo SVGs were added in the final render.
+- `raw/ai-*-source.png`: revised generated abstract diff studies. They contain no product text or generated logos. The final promo diagrams use the same direction but deterministic, pixel-aligned vectors.
 - `raw/02-counts-tooltip.png`, `03-file-tree.png`, `06-pr-list.png`: Chrome captures from the built Geld 0.1.1 extension on public GitHub pages.
 - `raw/04-popup.png`: the real browser-action popup reading the active GitHub tab.
 - `raw/05-options.png`: the built extension's options page.
