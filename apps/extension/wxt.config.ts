@@ -1,6 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
+
+/** The pnpm workspace root, two levels up from this package. */
+const MONOREPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /** `theme_icons` is Firefox-only and missing from the generic manifest typings. */
 interface ThemeAwareAction {
@@ -74,5 +78,14 @@ export default defineConfig({
     name: 'geld',
     artifactTemplate: '{{name}}-{{version}}-{{browser}}.zip',
     sourcesTemplate: '{{name}}-{{version}}-sources.zip',
+    // AMO reviewers rebuild the extension from the sources zip. The extension
+    // depends on the @geld/core workspace package and the root lockfile, so the
+    // archive has to span the whole monorepo, not just this directory. Hidden
+    // files (.output, .wxt, .next, .env*) are left out by default.
+    // WXT 0.21 prints one "Could not get stats" warning per file when
+    // sourcesRoot differs from the working directory (it stats paths relative
+    // to the wrong base while listing the archive); the zip itself is correct.
+    sourcesRoot: MONOREPO_ROOT,
+    excludeSources: ['**/coverage/**', '**/stats.html', '**/stats-*.json'],
   },
 });
