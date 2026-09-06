@@ -1,0 +1,331 @@
+name: Release
+
+# Ships the extension whenever main names a version that has not been released
+# yet: tags it, creates a GitHub Release with the zips (which is what the
+# install buttons on geld.sh point at until a store listing exists), then
+# submits the same zips to every store whose credentials are configured.
+#
+# The version is the only trigger. Bump apps/extension/package.json in the pull
+# request (`pnpm bump patch|minor|major`); the CI `extension-version` check
+# refuses extension changes that forget to. Nothing here touches the version.
+#
+# Stores skip themselves when their secrets are missing, so the workflow is
+# safe to enable before every listing exists. See apps/extension/store/releasing.md
+# for the secrets and the one-time manual first submission each store requires.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/extension/package.json
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and check store credentials without tagging, releasing or uploading anything
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      # 'true' when the version has no tag yet (or this is a dry run).
+      proceed: ${{ steps.version.outputs.proceed }}
+      # JSON array of the stores whose secrets are all present, e.g. ["chrome","firefox"].
+      stores: ${{ steps.stores.outputs.stores }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        env:
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          version="$(jq -r .version apps/extension/package.json)"
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::notice title=Nothing to release::$tag already exists; bump apps/extension/package.json to ship a new version."
+            proceed="$DRY_RUN"
+          else
+            proceed=true
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "proceed=$proceed"
+          } >> "$GITHUB_OUTPUT"
+      - id: stores
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+        run: |
+          stores=()
+          if [[ -n "$CHROME_EXTENSION_ID" && -n "$CHROME_PUBLISHER_ID" && -n "$CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL" && -n "$CHROME_SERVICE_ACCOUNT_PRIVATE_KEY" ]]; then
+            stores+=(chrome)
+          else
+            echo "::notice title=Chrome Web Store skipped::Set CHROME_EXTENSION_ID, CHROME_PUBLISHER_ID, CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL and CHROME_SERVICE_ACCOUNT_PRIVATE_KEY to publish there."
+          fi
+          if [[ -n "$EDGE_PRODUCT_ID" && -n "$EDGE_CLIENT_ID" && -n "$EDGE_API_KEY" ]]; then
+            stores+=(edge)
+          else
+            echo "::notice title=Edge Add-ons skipped::Set EDGE_PRODUCT_ID, EDGE_CLIENT_ID and EDGE_API_KEY to publish there."
+          fi
+          if [[ -n "$FIREFOX_EXTENSION_ID" && -n "$FIREFOX_JWT_ISSUER" && -n "$FIREFOX_JWT_SECRET" ]]; then
+            stores+=(firefox)
+          else
+            echo "::notice title=Firefox Add-ons skipped::Set FIREFOX_EXTENSION_ID, FIREFOX_JWT_ISSUER and FIREFOX_JWT_SECRET to publish there."
+          fi
+          if [[ ${#stores[@]} -eq 0 ]]; then
+            echo 'stores=[]' >> "$GITHUB_OUTPUT"
+          else
+            echo "stores=$(printf '%s\n' "${stores[@]}" | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Only the packages that end up in the extension; the site ships separately on Vercel.
+      - run: pnpm --filter @geld/core --filter @geld/extension run check
+      - run: pnpm zip:all
+        env:
+          WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
+      - name: Check the packaged manifest carries the version being released
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        working-directory: apps/extension/.output
+        run: |
+          for browser in chrome edge firefox safari; do
+            zip="geld-$VERSION-$browser.zip"
+            test -f "$zip" || { echo "::error::$zip was not produced"; exit 1; }
+            packaged="$(unzip -p "$zip" manifest.json | jq -r .version)"
+            if [[ "$packaged" != "$VERSION" ]]; then
+              echo "::error::$zip has manifest version $packaged, expected $VERSION"
+              exit 1
+            fi
+          done
+          test -f "geld-$VERSION-sources.zip" || { echo "::error::sources zip for AMO was not produced"; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geld-${{ needs.plan.outputs.tag }}
+          path: apps/extension/.output/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
+
+  github-release:
+    needs: [plan, build]
+    if: needs.plan.outputs.proceed == 'true' && inputs.dry_run != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-${{ needs.plan.outputs.tag }}
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          name: Geld ${{ needs.plan.outputs.version }}
+          generate_release_notes: true
+          files: dist/*.zip
+          fail_on_unmatched_files: true
+
+  stores:
+    needs: [plan, build, github-release]
+    # github-release is skipped on dry runs; still submit (in DRY_RUN mode) so credentials get checked.
+    if: |
+      always()
+      && needs.plan.outputs.proceed == 'true'
+      && needs.build.result == 'success'
+      && (needs.github-release.result == 'success' || (inputs.dry_run == true && needs.github-release.result == 'skipped'))
+      && needs.plan.outputs.stores != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        store: ${{ fromJSON(needs.plan.outputs.stores) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-${{ needs.plan.outputs.tag }}
+          path: apps/extension/.output
+      - name: Release notes for the store's "what's new" field
+        id: notes
+        if: matrix.store == 'firefox' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          gh release view "$TAG" --json body --jq '{version: {release_notes: {"en-US": .body}}}' > apps/extension/.output/amo-metadata.json
+      - name: Submit to ${{ matrix.store }}
+        working-directory: apps/extension
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          STORE: ${{ matrix.store }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          # Chrome Web Store API v2 (v1.1 is retired on 15 Oct 2026); auth is a
+          # service account added under Publisher > Settings in the dashboard.
+          CHROME_API_VERSION: v2
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          # Partner Center > Publish API. The API key expires every 72 days and
+          # has to be re-created by hand; a 401 here means it lapsed.
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          # addons.mozilla.org/developers/addon/api/key/ — the add-on id is the
+          # gecko id from wxt.config.ts (geld@brandonmcconnell.com).
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+          FIREFOX_CHANNEL: listed
+        run: |
+          case "$STORE" in
+            chrome)
+              pnpm exec wxt submit --chrome-zip ".output/geld-$VERSION-chrome.zip"
+              ;;
+            edge)
+              pnpm exec wxt submit --edge-zip ".output/geld-$VERSION-edge.zip"
+              ;;
+            firefox)
+              args=(--firefox-zip ".output/geld-$VERSION-firefox.zip" --firefox-sources-zip ".output/geld-$VERSION-sources.zip")
+              if [[ -f .output/amo-metadata.json ]]; then
+                args+=(--firefox-amo-metadata-file .output/amo-metadata.json)
+              fi
+              pnpm exec wxt submit "${args[@]}"
+              ;;
+            *)
+              echo "::error::Unknown store '$STORE'"
+              exit 1
+              ;;
+          esac
+
+  # Safari ships as a Mac App Store app that wraps the extension, so it needs a
+  # macOS runner, Xcode, an Apple Developer Program membership, signing
+  # certificates, provisioning profiles and an App Store Connect API key. Turn it
+  # on with the repository variable SAFARI_PUBLISH=true once the app exists in
+  # App Store Connect (see apps/extension/store/releasing.md). This job has not
+  # been exercised end-to-end: there is no macOS runner available to automation
+  # in this repository, so expect to iterate on it with a real Apple account.
+  safari:
+    needs: [plan, build, github-release]
+    if: |
+      always()
+      && needs.plan.outputs.proceed == 'true'
+      && needs.build.result == 'success'
+      && (needs.github-release.result == 'success' || (inputs.dry_run == true && needs.github-release.result == 'skipped'))
+      && vars.SAFARI_PUBLISH == 'true'
+      && inputs.dry_run != true
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @geld/extension run build:safari
+        env:
+          WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
+      - name: Wrap the extension in an Xcode project
+        env:
+          BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        working-directory: apps/extension/.output
+        run: |
+          xcrun safari-web-extension-converter safari-mv3 \
+            --project-location safari-xcode \
+            --app-name Geld \
+            --bundle-identifier "$BUNDLE_ID" \
+            --macos-only --copy-resources --no-open --no-prompt --force
+          # The converter always writes MARKETING_VERSION = 1.0 / CURRENT_PROJECT_VERSION = 1;
+          # App Store Connect needs the marketing version to match the manifest
+          # and the build number to grow on every upload.
+          pbxproj="$(find safari-xcode -name project.pbxproj -print -quit)"
+          test -n "$pbxproj" || { echo "::error::converter produced no Xcode project"; exit 1; }
+          sed -i '' -E \
+            -e "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $VERSION;/g" \
+            -e "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = $GITHUB_RUN_NUMBER;/g" \
+            "$pbxproj"
+          echo "project_dir=$(dirname "$(dirname "$pbxproj")")" >> "$GITHUB_ENV"
+      - uses: rxliuli/safari-webext-publish-action@v2
+        with:
+          mode: build
+          project-path: apps/extension/.output/${{ env.project_dir }}
+          bundle-identifier: ${{ vars.APPLE_BUNDLE_ID }}
+          team-id: ${{ vars.APPLE_TEAM_ID }}
+          app-signing-identity: ${{ vars.APPLE_APP_SIGNING_IDENTITY }}
+          installer-signing-identity: ${{ vars.APPLE_INSTALLER_SIGNING_IDENTITY }}
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_MACOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_MACOS_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_MACOS_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_MACOS_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+  safari-submit:
+    needs: [plan, safari]
+    if: needs.safari.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release notes for "What's New"
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          {
+            echo 'body<<GELD_EOF'
+            gh release view "$TAG" --json body --jq .body
+            echo 'GELD_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - uses: rxliuli/safari-webext-publish-action@v2
+        with:
+          mode: submit
+          bundle-identifier: ${{ vars.APPLE_BUNDLE_ID }}
+          version: ${{ needs.plan.outputs.version }}
+          release-notes: ${{ steps.notes.outputs.body }}
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
