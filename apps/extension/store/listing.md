@@ -20,7 +20,7 @@ Values verified against the store documentation in September 2026. Field names f
 | Source code | `https://github.com/brandonmcconnell/geld` (MIT) |
 | Price | Free, no in-app purchases |
 | Version | Whatever `apps/extension/package.json` says; the stores read it from the manifest. First public release: consider bumping to `1.0.0` before the first submission, because every later version must be higher and the stores show the number. |
-| Icon | `apps/extension/public/icon/128.png` (also 256 and 512). Edge wants 300×300: export it from `assets/brand/geld-logomark.svg` (black mark on white). Apple wants a 1024×1024 macOS-style icon (see `image-prompts.md`). |
+| Icon | Chrome/Firefox: `store/assets/chrome-edge/store-icon-128x128.png` · Edge: `store/assets/chrome-edge/store-logo-300x300.png` · Apple: `store/assets/safari/app-icon-1024x1024.png` |
 | Trader status (EU DSA question on Chrome, Edge and Apple) | **Non-trader** — an individual distributing a free, open-source extension with no commercial purpose. Only you can declare this. |
 
 ### Long description
@@ -119,10 +119,10 @@ Dashboard: <https://chrome.google.com/webstore/devconsole>. One-time US$5 regist
 | Store listing | Detailed description | Long description above |
 | Store listing | Category | Developer Tools |
 | Store listing | Language | English (United States) |
-| Store listing | Store icon | 128×128 PNG (`public/icon/128.png`) |
-| Store listing | Screenshots | 1–5, **1280×800** (or 640×400), JPEG or 24-bit PNG without alpha, square corners, no padding |
-| Store listing | Small promo tile | **440×280**, required, JPEG/PNG, no transparency |
-| Store listing | Marquee promo tile | **1400×560**, optional; needed to be eligible for featuring |
+| Store listing | Store icon | `store/assets/chrome-edge/store-icon-128x128.png` |
+| Store listing | Screenshots | First five JPEGs in `store/assets/chrome-edge/screenshots/` (1–5, **1280×800**) |
+| Store listing | Small promo tile | `store/assets/chrome-edge/promo-small-440x280.png` |
+| Store listing | Marquee promo tile | `store/assets/chrome-edge/promo-marquee-1400x560.png` (optional; needed to be eligible for featuring) |
 | Store listing | Promo video | Optional YouTube URL |
 | Store listing | Official URL | `https://www.geld.sh` (must be a site you have verified in Google Search Console, otherwise use the Homepage field) |
 | Store listing | Homepage URL | `https://www.geld.sh` |
@@ -157,10 +157,10 @@ Dashboard: <https://partner.microsoft.com/dashboard/microsoftedge>. Registration
 | Privacy (new page, rolling out through May 2026) | Single purpose, permission justifications, remote code (No), data usage, privacy policy URL | Same answers as Chrome |
 | Store listings (per language) | Display name | Geld (from the manifest) |
 | Store listings | Description | Long description (250–10,000 chars) |
-| Store listings | Extension logo | **300×300** PNG, 1:1 (minimum 128×128) |
-| Store listings | Small promotional tile | 440×280, optional |
-| Store listings | Large promotional tile | 1400×560, optional |
-| Store listings | Screenshots | Up to 6, **1280×800** or 640×480 |
+| Store listings | Extension logo | `store/assets/chrome-edge/store-logo-300x300.png` |
+| Store listings | Small promotional tile | `store/assets/chrome-edge/promo-small-440x280.png` (optional) |
+| Store listings | Large promotional tile | `store/assets/chrome-edge/promo-marquee-1400x560.png` (optional) |
+| Store listings | Screenshots | All six JPEGs in `store/assets/chrome-edge/screenshots/` |
 | Store listings | YouTube video URL | Optional |
 | Store listings | Short description | Manifest description (edit the manifest to change it) |
 | Store listings | Search terms | ≤7 terms, ≤21 words, ≤30 chars each: `github`, `pull request`, `code review`, `diff`, `hide test files`, `developer tools`, `git` |
@@ -191,8 +191,8 @@ Dashboard: <https://addons.mozilla.org/developers/>. Free; a Mozilla account wit
 | Describe | License | MIT/X11 License |
 | Describe | Privacy policy | Tick; paste the "PRIVACY" paragraph from the long description plus the URL |
 | Describe | Notes to reviewer | Reviewer notes above, plus the exact build: `Node 22, pnpm 10.33.3 (corepack). From the archive root: pnpm install --frozen-lockfile && pnpm zip:firefox → apps/extension/.output/geld-<version>-firefox.zip` |
-| Media | Icon | 128×128 PNG (AMO also derives 64 and 32) |
-| Media | Screenshots | up to 10, any size up to 4 MB; use the 1280×800 set |
+| Media | Icon | `store/assets/chrome-edge/store-icon-128x128.png` (AMO also derives 64 and 32) |
+| Media | Screenshots | all six JPEGs in `store/assets/chrome-edge/screenshots/` |
 | Manifest | `gecko.id` | `geld@brandonmcconnell.com` — this is the **extension ID** for the API (already in `wxt.config.ts`) |
 | Manifest | `data_collection_permissions` | `{ required: ['none'] }` (present) |
 
@@ -219,7 +219,7 @@ One-time setup:
 | App Information | Privacy policy URL | `https://www.geld.sh/privacy` |
 | Pricing | Price | Free, all territories |
 | App Privacy | Data collection | **Data Not Collected** is the natural answer for a no-server extension. If you declared "Authentication information" on Chrome, mirror it here under "Contact info / Other data → not linked to you, used for app functionality". Be consistent across stores. |
-| Version | Screenshots (Mac) | 1–10, 16:10: **2880×1800** recommended (1280×800, 1440×900, 2560×1600 also accepted) |
+| Version | Screenshots (Mac) | all six 2880×1800 JPEGs in `store/assets/safari/screenshots/` |
 | Version | Promotional text (≤170) | `Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.` |
 | Version | Description (≤4000) | Long description |
 | Version | Keywords (≤100 chars) | `github,pull request,code review,diff,tests,developer,safari extension,git` |
@@ -232,7 +232,7 @@ One-time setup:
 | App Review Information | Contact | Your first name, last name, phone, email |
 | App Review Information | Notes | Reviewer notes above, plus: "This is a Safari web extension. After installing, enable it in Safari > Settings > Extensions, then open the GitHub URLs above." |
 | Version release | | Automatically release after approval |
-| Xcode project | App icon | 1024×1024 macOS-style icon in `Assets.xcassets/AppIcon` (App Store Connect rejects builds without it); the converter copies the extension's 16–512 px icons but has nothing for the 1024 slot |
+| Xcode project | App icon | `store/assets/safari/app-icon-1024x1024.png`; copy it into the generated project's 512pt@2x `AppIcon` slot |
 | Xcode project | App Sandbox | On (required for the Mac App Store; the converter enables it) |
 | Xcode project | Category | `public.app-category.developer-tools` |
 

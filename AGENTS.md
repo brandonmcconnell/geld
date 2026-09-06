@@ -53,7 +53,7 @@ A small, fast marketing site for geld.sh, not a docs site. Run it with `pnpm --f
 
 - **The version in `apps/extension/package.json` is the release trigger.** Bump it in the pull request (`pnpm bump patch|minor|major`); CI's `extension-version` job fails a PR that changes `apps/extension`, `packages/core`, `assets/brand` or the lockfile without a higher, untagged version (label the PR `no-release` to opt out; site-only PRs are exempt). On merge, `.github/workflows/release.yml` tags `v<version>`, publishes a GitHub Release with the zips, and runs `wxt submit` for every store whose secrets exist (Chrome via Web Store API v2 + service account, Edge via Publish API, Firefox via AMO API with the sources zip). Safari is a gated `macos-26` job (`vars.SAFARI_PUBLISH`), untested here. No bot ever commits a version; the merge queue cannot amend commits, so the check exists instead.
 - The Firefox sources zip spans the whole monorepo (`zip.sourcesRoot` in `wxt.config.ts`) because AMO reviewers rebuild it and the extension depends on `@geld/core` and the root lockfile.
-- Store copy, form answers and permission justifications live in `apps/extension/store/listing.md`; keep them in step with the manifest. Artwork specs and prompts: `apps/extension/store/image-prompts.md`. Setup and secrets: `apps/extension/store/releasing.md`.
+- Store copy, form answers and permission justifications live in `apps/extension/store/listing.md`; keep them in step with the manifest. Upload-ready artwork: `apps/extension/store/assets/` (mapping and provenance in its README); art direction and regeneration prompts: `apps/extension/store/image-prompts.md`. Setup and secrets: `apps/extension/store/releasing.md`.
 
 ## Verifying changes
 

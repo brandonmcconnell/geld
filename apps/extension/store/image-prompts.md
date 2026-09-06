@@ -1,6 +1,6 @@
 # Store artwork — specs and image-generation prompts
 
-Everything the four listings need, with a prompt per image written for an image model. The prompts are deliberately long; trim only if the model's limit forces it. Read the style block first: every prompt assumes it.
+Everything the four listings need, with a prompt per image written for an image model. The finished exports now live in [`assets/`](./assets/); this file is the art direction and regeneration brief. The prompts are deliberately long; trim only if the model's limit forces it. Read the style block first: every prompt assumes it.
 
 ## Style block (paste before every prompt)
 
@@ -166,7 +166,7 @@ Right third: the same miniature diff illustration as the small promo tile (five 
 The captures are the product; take them from the real pages the project already uses for verification (no sign-in needed), at 2× device pixel ratio so they are sharp at 2880 wide.
 
 - Viewport 1440×900 at `deviceScaleFactor: 2` gives 2880×1800 raw pixels, the exact Apple size; the frame in the prompts then crops the bottom.
-- Pages: `https://github.com/wxt-dev/wxt/pull/2544/files` (classic view, 6 test files: screenshots 1, 2, 3), `https://github.com/wxt-dev/wxt/commit/d05ac55ba78b7d01c5ab9feb0e862775e45509ef` (React view alternative), `https://github.com/wxt-dev/wxt/pulls` (screenshot 6). Popup and options (4, 5) are captured from `chrome-extension://<id>/popup.html` and `options.html` — open them in a tab at 2× or use the real popup on a Retina display.
+- Pages used for the current asset pack: `https://github.com/vitest-dev/vitest/pull/10554/files` (39 hidden tests: screenshots 1, 2, 3), `https://github.com/wxt-dev/wxt/pulls` (screenshot 6). Popup and options (4, 5) are captured from `chrome-extension://<id>/popup.html` and `options.html` — open them at 2× or use the real popup on a Retina display.
 - Build with `pnpm zip:chrome`, install the unzipped folder in Chrome with Puppeteer's `browser.installExtension()` and `--enable-unsafe-extension-debugging` (branded Chrome ignores `--load-extension`), bring the tab to the front before interacting, wait for the hidden row to appear, then `page.screenshot({ type: 'png' })`.
 - Prefer GitHub's light theme for the set (the stores' pages are white); a dark-theme variant of screenshot 1 makes a good marquee reference.
 - Check every capture for anything you do not want public: other people's avatars are fine (public PR), but close your own account menu.
@@ -177,4 +177,4 @@ The captures are the product; take them from the real pages the project already 
 - 300×300 Edge logo: PNG from the SVG, white background.
 - 1024×1024 macOS icon: PNG **with** alpha; drop it into `AppIcon.appiconset` as the 512pt@2x slot.
 - Screenshots: 2880×1800 PNG for Apple; the same files downscaled to 1280×800 (Lanczos) as PNG-24 without alpha for Chrome, Edge and Firefox. Chrome shows them at 640×400 — check legibility at that size.
-- Keep the source files (Figma/Sketch/PSD) in a private place, not in this repository; commit only the exported PNGs if you want them versioned (`apps/extension/store/assets/` is a reasonable home).
+- Keep reusable sources beside the exports when they do not contain secrets. This repository keeps the generated abstract fields and public-page captures under `apps/extension/store/assets/raw/`; the upload-ready files are mapped in `assets/README.md`.
