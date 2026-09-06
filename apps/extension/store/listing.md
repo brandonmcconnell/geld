@@ -15,7 +15,7 @@ Values verified against the store documentation in September 2026. Field names f
 | Category | Chrome **Developer Tools** · Edge **Developer tools** · Firefox **Web Development** · App Store **Developer Tools** |
 | Language | English (United States) |
 | Website / homepage | `https://www.geld.sh` |
-| Support URL | `https://github.com/brandonmcconnell/geld/issues` |
+| Support URL | `https://www.geld.sh/faq` (public; do not use the repository Issues URL while the repository is private) |
 | Privacy policy URL | `https://www.geld.sh/privacy` |
 | Source code | `https://github.com/brandonmcconnell/geld` (MIT) |
 | Price | Free, no in-app purchases |
@@ -126,7 +126,7 @@ Dashboard: <https://chrome.google.com/webstore/devconsole>. One-time US$5 regist
 | Store listing | Promo video | Optional YouTube URL |
 | Store listing | Official URL | `https://www.geld.sh` (must be a site you have verified in Google Search Console, otherwise use the Homepage field) |
 | Store listing | Homepage URL | `https://www.geld.sh` |
-| Store listing | Support URL | `https://github.com/brandonmcconnell/geld/issues` |
+| Store listing | Support URL | `https://www.geld.sh/faq` |
 | Store listing | Mature content | No |
 | Privacy | Single purpose | Above |
 | Privacy | Permission justifications | Above, one box per permission (`storage`, `offscreen`, `scripting`, host permissions, remote code) |
@@ -152,7 +152,7 @@ Dashboard: <https://partner.microsoft.com/dashboard/microsoftedge>. Registration
 | Availability | Markets | All |
 | Properties | Category | Developer tools |
 | Properties | Website URL | `https://www.geld.sh` |
-| Properties | Support contact | `https://github.com/brandonmcconnell/geld/issues` |
+| Properties | Support contact | `https://www.geld.sh/faq` |
 | Properties | Privacy policy requirements | **Yes** it accesses personal information (it reads GitHub pages and, optionally, an OAuth token) → Privacy policy URL `https://www.geld.sh/privacy` |
 | Privacy (new page, rolling out through May 2026) | Single purpose, permission justifications, remote code (No), data usage, privacy policy URL | Same answers as Chrome |
 | Store listings (per language) | Display name | Geld (from the manifest) |
@@ -186,7 +186,7 @@ Dashboard: <https://addons.mozilla.org/developers/>. Free; a Mozilla account wit
 | Describe | Experimental | No |
 | Describe | Categories (≤2) | Web Development; Other |
 | Describe | Support email | your address |
-| Describe | Support website | `https://github.com/brandonmcconnell/geld/issues` |
+| Describe | Support website | `https://www.geld.sh/faq` |
 | Describe | Homepage | `https://www.geld.sh` |
 | Describe | License | MIT/X11 License |
 | Describe | Privacy policy | Tick; paste the "PRIVACY" paragraph from the long description plus the URL |
@@ -223,7 +223,7 @@ One-time setup:
 | Version | Promotional text (≤170) | `Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.` |
 | Version | Description (≤4000) | Long description |
 | Version | Keywords (≤100 chars) | `github,pull request,code review,diff,tests,developer,safari extension,git` |
-| Version | Support URL | `https://github.com/brandonmcconnell/geld/issues` |
+| Version | Support URL | `https://www.geld.sh/faq` |
 | Version | Marketing URL | `https://www.geld.sh` |
 | Version | Version | Must equal the manifest version (the workflow writes it into the Xcode project) |
 | Version | Copyright | `© 2026 Brandon McConnell` |
