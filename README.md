@@ -77,7 +77,12 @@ pnpm dev:site         # geld.sh website (Next.js) on http://localhost:3000
 pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
 pnpm zip:all          # zips for all four browsers into apps/extension/.output/
+pnpm bump patch       # bump the extension version (also: minor, major); required in PRs that change the extension
 ```
+
+### Releasing
+
+The extension version in `apps/extension/package.json` is the release trigger. Bump it in your pull request (CI insists when extension files change); when it lands on `main`, the `Release` workflow tags it, attaches the zips to a GitHub Release and submits them to the stores that have credentials configured. Details, store setup and the listing copy live in [`apps/extension/store/`](apps/extension/store/).
 
 Output archives:
 

@@ -19,6 +19,7 @@ web-ext.config.ts
 !.vscode/extensions.json
 *.log
 
-# Local env (WXT reads .env files)
+# Local env (WXT reads .env files; .env.submit holds store credentials for `wxt submit`)
 .env
 .env.local
+.env.submit

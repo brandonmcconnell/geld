@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Run inside the merge queue too, so every job here can be a required check.
+  merge_group:
 
 jobs:
   check-and-pack:
@@ -33,3 +35,29 @@ jobs:
           # `.output` is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
           if-no-files-found: error
+
+  # A change to the extension must come with a new version, because the
+  # Release workflow only ships when apps/extension/package.json names a
+  # version that has no tag yet. Site-only changes are exempt, as are pull
+  # requests labelled `no-release`.
+  extension-version:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check that the extension version was bumped
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          # In the merge queue the PR number is only present in the queue branch
+          # name: refs/heads/gh-readonly-queue/<base>/pr-<number>-<base sha>.
+          if [[ -z "$PR_NUMBER" && "$MERGE_GROUP_HEAD_REF" =~ /pr-([0-9]+)-[0-9a-f]+$ ]]; then
+            PR_NUMBER="${BASH_REMATCH[1]}"
+          fi
+          .github/scripts/check-extension-version.sh "$BASE_SHA" "$HEAD_SHA" "$PR_NUMBER"
