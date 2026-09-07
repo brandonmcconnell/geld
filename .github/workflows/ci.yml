@@ -4,10 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual run: also publishes a release even if no extension file changed.
+  workflow_dispatch:
 
 jobs:
   check-and-pack:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -26,6 +30,8 @@ jobs:
       - run: pnpm zip:all
         env:
           WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
+      - id: version
+        run: echo "version=$(node -p "require('./apps/extension/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
           name: geld-extension-zips
@@ -33,3 +39,60 @@ jobs:
           # `.output` is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
           if-no-files-found: error
+
+  # Every push to main that touches the extension publishes a GitHub Release
+  # with one zip per browser (plus the Firefox review sources). The site's
+  # install buttons read /releases/latest, so this is what people download
+  # until the store listings exist. Notes are auto-generated from the commits
+  # since the previous release and can be edited afterwards on GitHub.
+  release:
+    needs: check-and-pack
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Decide whether the extension changed
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|packages/core/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only the site changed; no release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v7
+        if: steps.changed.outputs.release == 'true'
+        with:
+          name: geld-extension-zips
+          path: dist
+      - name: Publish release
+        if: steps.changed.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check-and-pack.outputs.version }}
+          RUN: ${{ github.run_number }}
+        run: |
+          # The manifest version stays a plain x.y.z (stores require it); each
+          # build on main gets its own tag so the release is never overwritten.
+          tag="v${VERSION}-build.${RUN}"
+          title="Geld v${VERSION} (build ${RUN})"
+          ls -1 dist
+          gh release create "$tag" dist/*.zip \
+            --target "$GITHUB_SHA" \
+            --title "$title" \
+            --generate-notes \
+            --latest
+          echo "Published $title as $tag"
