@@ -200,6 +200,27 @@
   --geld-cut: --spacing(--value(integer));
 }
 
+/*
+ * Top-bar wordmark: hidden (transparent, blurred) while the page's hero
+ * wordmark is still visible beneath the bar; JS sets data-covered once the
+ * hero mark has scrolled under it. Pure CSS for the initial state so it is
+ * right before hydration and independent of how the page was rendered.
+ */
+@utility header-brand {
+  transition:
+    opacity 500ms ease-out,
+    filter 500ms ease-out;
+  will-change: opacity, filter;
+  :root:has(#hero-wordmark) &:not([data-covered='true']) {
+    opacity: 0;
+    filter: blur(5px);
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
