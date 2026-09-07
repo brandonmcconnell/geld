@@ -22,7 +22,7 @@ export const BROWSERS: readonly BrowserTarget[] = [
  */
 export const STORE_URLS: Readonly<Partial<Record<BrowserId, string>>> = {
   // chrome: 'https://chromewebstore.google.com/detail/<id>',
-  // edge: 'https://microsoftedge.microsoft.com/addons/detail/<id>',
+  edge: 'https://microsoftedge.microsoft.com/addons/detail/geld/bdakebdlgaomkblemgabkoofoiellhmi',
   // firefox: 'https://addons.mozilla.org/firefox/addon/geld/',
   // safari: 'https://apps.apple.com/app/<id>',
 };
