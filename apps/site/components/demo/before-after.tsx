@@ -29,7 +29,7 @@ export function BeforeAfter() {
           <span className="inline-block size-1.5 rounded-full bg-addition" aria-hidden="true" />
           With Geld
         </figcaption>
-        <Frame>
+        <Frame className="lg:has-data-[hidden-open=true]:rounded-b-none lg:has-data-[hidden-open=true]:overflow-visible">
           <PrHeader
             shown={VISIBLE_TOTALS}
             geld={{ hidden: HIDDEN_TOTALS, all: ALL_TOTALS, noun: TESTS_CATEGORY.shortNoun, nounPlural: TESTS_CATEGORY.shortNounPlural }}
@@ -39,7 +39,7 @@ export function BeforeAfter() {
               <FileRow key={file.path} file={file} />
             ))}
           </ul>
-          <HiddenRow files={HIDDEN_FILES} noun={TESTS_CATEGORY.noun} nounPlural={TESTS_CATEGORY.nounPlural} />
+          <HiddenRow files={HIDDEN_FILES} noun={TESTS_CATEGORY.noun} nounPlural={TESTS_CATEGORY.nounPlural} overlayOnDesktop />
         </Frame>
       </figure>
     </div>

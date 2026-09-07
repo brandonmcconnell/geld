@@ -17,17 +17,23 @@ export function HiddenRow({
   noun,
   nounPlural,
   defaultOpen = false,
+  overlayOnDesktop = false,
 }: {
   readonly files: readonly ClassifiedFile[];
   readonly noun: string;
   readonly nounPlural: string;
   readonly defaultOpen?: boolean;
+  /**
+   * On wide screens, drop the expanded list over whatever follows instead of
+   * pushing it down (the home page has room; phones do not, so they still push).
+   */
+  readonly overlayOnDesktop?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
   const label = pluralize(files.length, noun, nounPlural);
   return (
-    <div className="border-t border-dashed">
+    <div className={cn('border-t border-dashed', overlayOnDesktop && 'lg:relative')} data-hidden-open={open}>
       <div className="flex items-center justify-between gap-3 px-4 py-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-2">
           <EyeOffIcon aria-hidden="true" className="size-3.5" />
@@ -54,7 +60,15 @@ export function HiddenRow({
           <ChevronDownIcon aria-hidden="true" className={open ? 'size-3.5 rotate-180 transition-transform motion-reduce:transition-none' : 'size-3.5 transition-transform motion-reduce:transition-none'} />
         </button>
       </div>
-      <ul id={panelId} hidden={!open} className="border-t bg-muted/40">
+      <ul
+        id={panelId}
+        hidden={!open}
+        className={cn(
+          'border-t bg-muted/40',
+          // Sits just below the frame, matching its border and radius, above the next section.
+          overlayOnDesktop && 'lg:absolute lg:inset-x-[-1px] lg:top-full lg:z-10 lg:rounded-b-xl lg:border lg:border-t-0 lg:bg-card lg:shadow-lg',
+        )}
+      >
         {files.map((file) => (
           <FileRow key={file.path} file={file} dim />
         ))}
