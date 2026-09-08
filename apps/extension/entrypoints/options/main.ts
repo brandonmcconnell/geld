@@ -623,7 +623,7 @@ async function main(): Promise<void> {
   });
 
   /* Backup & maintenance */
-  const maintenanceStatus = statusReporter(requireElement('maintenance-status', HTMLParagraphElement));
+  const maintenanceStatus = statusReporter(requireElement('maintenance-status', HTMLSpanElement));
   requireElement('export', HTMLButtonElement).addEventListener('click', () => {
     // Same document the gist holds, so an export can be dropped straight into a gist and vice versa.
     const blob = new Blob([serializeSettingsPayload(settings)], { type: 'application/json' });

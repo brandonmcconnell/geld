@@ -100,8 +100,21 @@ body {
   flex-wrap: wrap;
 }
 
-.options__buttons + .geld-status {
-  margin-top: 10px;
+.options__buttons {
+  align-items: center;
+}
+
+/* The transient status sits inside the card's bottom padding, so showing it
+   never reserves a line or reflows the buttons. */
+.options__card {
+  position: relative;
+}
+
+.options__buttons-status {
+  position: absolute;
+  right: 24px;
+  bottom: 3px;
+  min-height: 0;
 }
 
 /* Accordions ----------------------------------------------------------------- */
