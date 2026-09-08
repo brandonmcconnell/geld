@@ -211,8 +211,20 @@ export function findCategory(settings: GeldSettings, id: AnyCategoryId): HiddenC
  * when this is true.
  */
 export function hasAdvancedSettings(settings: GeldSettings, categoryId: CategoryId): boolean {
-  if (categoryPatternLines(settings, categoryId).length > 0) return true;
-  return categoryById(categoryId).groups.some((group) => !isGroupEnabled(settings, categoryId, group.id));
+  return describeAdvancedSettings(settings, categoryId) !== null;
+}
+
+/**
+ * Short summary of what is customised in a built-in category, for its
+ * collapsed row ("1 group off · 3 extra patterns"); `null` when nothing is.
+ */
+export function describeAdvancedSettings(settings: GeldSettings, categoryId: CategoryId): string | null {
+  const groupsOff = categoryById(categoryId).groups.filter((group) => !isGroupEnabled(settings, categoryId, group.id)).length;
+  const extra = categoryPatternLines(settings, categoryId).filter((line) => !/^\[.*\]$/.test(line)).length;
+  const parts: string[] = [];
+  if (groupsOff > 0) parts.push(`${groupsOff} group${groupsOff === 1 ? '' : 's'} off`);
+  if (extra > 0) parts.push(`${extra} extra pattern${extra === 1 ? '' : 's'}`);
+  return parts.length === 0 ? null : parts.join(' · ');
 }
 
 /** Merge a possibly partial/unknown stored value with the defaults. */

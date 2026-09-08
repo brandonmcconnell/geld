@@ -227,17 +227,11 @@ body {
   color: var(--muted-foreground);
 }
 
-.options__advanced-badge {
+/* "1 group off · 2 extra patterns": why a row is open on load. */
+.options__customised {
   flex-shrink: 0;
   color: var(--muted-foreground);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.options__category[open] > summary .options__advanced-badge {
-  color: var(--foreground);
+  font-size: 12px;
 }
 
 .options__advanced {

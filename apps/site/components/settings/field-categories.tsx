@@ -1,7 +1,7 @@
 'use client';
 
 import type { AnyCategoryId, BuiltInCategory, CategoriesField, CategoryId, GeldSettings, PatternGroup } from '@geld/core';
-import { CATEGORIES, categoryPatternLines, hasAdvancedSettings, isCategoryEnabled, isGroupEnabled } from '@geld/core';
+import { CATEGORIES, categoryPatternLines, describeAdvancedSettings, hasAdvancedSettings, isCategoryEnabled, isGroupEnabled } from '@geld/core';
 import { ChevronRightIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 
@@ -55,11 +55,11 @@ function CategoryRow({
 }: {
   readonly category: BuiltInCategory;
 } & Omit<CategoriesProps, 'field'> & { readonly field: CategoriesField }) {
-  const labelId = useId();
   const helpId = useId();
   // Decided once per page load: open when a group is off or extra patterns exist.
   const [open, setOpen] = useState(() => hasAdvancedSettings(settings, category.id));
   const enabled = isCategoryEnabled(settings, category.id);
+  const customised = describeAdvancedSettings(settings, category.id);
   return (
     <li>
       <details className="group/category" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
@@ -67,17 +67,15 @@ function CategoryRow({
           <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground transition-transform group-open/category:rotate-90 motion-reduce:transition-none" />
           <CategoryIcon name={category.icon} className="text-muted-foreground" />
           <span className="min-w-0 flex-1">
-            <span id={labelId} className="block text-sm font-medium">
-              {category.title}
-            </span>
+            <span className="block text-sm font-medium">{category.title}</span>
             <span id={helpId} className="block text-sm text-muted-foreground">
               {category.description}
             </span>
           </span>
-          <span className="hidden font-mono text-[0.65rem] tracking-[0.08em] text-muted-foreground uppercase group-open/category:text-foreground sm:inline">{field.advanced.label}</span>
+          {customised !== null ? <span className="hidden text-xs text-muted-foreground sm:inline">{customised}</span> : null}
           {/* Sits in the summary but must not toggle the disclosure. */}
           <span onClick={(event) => event.preventDefault()} className="flex items-center">
-            <Switch checked={enabled} disabled={disabled} onCheckedChange={(value) => onCategory(category.id, value)} aria-labelledby={labelId} aria-describedby={helpId} />
+            <Switch checked={enabled} disabled={disabled} onCheckedChange={(value) => onCategory(category.id, value)} aria-label={`Hide ${category.title.toLowerCase()}`} aria-describedby={helpId} />
           </span>
         </summary>
         <div className="flex flex-col gap-5 border-t bg-muted/30 px-4 py-4">

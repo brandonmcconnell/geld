@@ -58,7 +58,6 @@ export interface PatternEditorCopy {
 export interface CategoriesField extends FieldBase {
   readonly kind: 'categories';
   readonly advanced: {
-    readonly label: string;
     readonly description: string;
     readonly groupsLabel: string;
     readonly groupsDescription: string;
@@ -181,7 +180,6 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         description: 'Kinds of files to move out of the way.',
         popup: true,
         advanced: {
-          label: 'Advanced',
           description: 'Built-in pattern groups and your own patterns for this category.',
           groupsLabel: 'Built-in patterns',
           groupsDescription: 'Untick a group to stop hiding the files it matches.',

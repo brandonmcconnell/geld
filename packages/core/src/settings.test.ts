@@ -1,6 +1,7 @@
 import {
   DEFAULT_SETTINGS,
   allCategories,
+  describeAdvancedSettings,
   hasAdvancedSettings,
   isCategoryEnabled,
   isGroupEnabled,
@@ -42,6 +43,9 @@ describe('normalizeSettings', () => {
     expect(migrated.categoryPatterns).toEqual({ tests: ['*.golden', '!keep/**'] });
     expect(hasAdvancedSettings(migrated, 'tests')).toBe(true);
     expect(hasAdvancedSettings(migrated, 'docs')).toBe(false);
+    expect(describeAdvancedSettings(migrated, 'tests')).toBe('1 group off · 2 extra patterns');
+    expect(describeAdvancedSettings({ ...migrated, categoryPatterns: { tests: ['[acme/*]', '*.golden'] } }, 'tests')).toBe('1 group off · 1 extra pattern');
+    expect(describeAdvancedSettings(migrated, 'docs')).toBeNull();
   });
 
   it('reads custom categories, dropping broken or duplicate ones', () => {

@@ -12,6 +12,7 @@ import {
   DEFAULT_SETTINGS,
   decideRepo,
   groupKey,
+  describeAdvancedSettings,
   hasAdvancedSettings,
   hiddenCategoryFromCustom,
   isCategoryEnabled,
@@ -266,6 +267,7 @@ async function main(): Promise<void> {
   function renderBuiltIn(category: BuiltInCategory): HTMLElement {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
+    const customised = describeAdvancedSettings(settings, category.id);
     const help = el('p', 'geld-help', [category.description]);
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
@@ -295,7 +297,7 @@ async function main(): Promise<void> {
         el('span', 'options__chevron', ['\u203a']),
         iconNode(category.icon),
         el('div', 'options__category-text', [label, help]),
-        el('span', 'options__advanced-badge', [categoriesField.advanced.label]),
+        ...(customised === null ? [] : [el('span', 'options__customised', [customised])]),
         button,
       ]),
       body,
