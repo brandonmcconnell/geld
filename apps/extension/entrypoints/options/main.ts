@@ -31,7 +31,8 @@ import {
 import type { ListField, SettingsSectionId, ToggleField } from '@geld/core';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import { settingsItem } from '../../src/lib/storage';
-import { BUILT_IN_CLIENT_ID, oauthClientIdItem } from '../../src/lib/account';
+import { accountItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, oauthClientIdItem, syncStateItem } from '../../src/lib/account';
+import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
 import { categoryIcon } from '../../src/github/ui/icons';
 import { mountAccountWidget } from '../../src/ui/account-widget';
@@ -575,6 +576,38 @@ async function main(): Promise<void> {
     variant: 'full',
     promptHost: requireElement('account-prompt', HTMLDivElement),
   });
+  // The card's copy describes the current state, not a hypothetical sign-in.
+  const signedOutCopy = requireElement('account-signed-out', HTMLParagraphElement);
+  const signedInCopy = requireElement('account-signed-in', HTMLParagraphElement);
+  const accountLogin = requireElement('account-login', HTMLElement);
+  const accountSynced = requireElement('account-synced', HTMLSpanElement);
+  const accountGist = requireElement('account-gist', HTMLAnchorElement);
+  let account: GitHubAccount | null = null;
+  let sync: SyncState = EMPTY_SYNC_STATE;
+  const renderAccountCard = (): void => {
+    signedOutCopy.hidden = account !== null;
+    signedInCopy.hidden = account === null;
+    if (account === null) return;
+    accountLogin.textContent = account.login;
+    accountSynced.textContent =
+      sync.remoteInvalid !== null
+        ? ' (sync is paused until the gist is fixed)'
+        : sync.lastSyncedAt !== null
+          ? ` (last synced ${new Date(sync.lastSyncedAt).toLocaleString()})`
+          : '';
+    accountGist.href = sync.gistId !== null ? `https://gist.github.com/${sync.gistId}` : 'https://gist.github.com';
+  };
+  accountItem.watch((value) => {
+    account = value;
+    renderAccountCard();
+  });
+  syncStateItem.watch((value) => {
+    sync = { ...EMPTY_SYNC_STATE, ...value };
+    renderAccountCard();
+  });
+  [account, sync] = await Promise.all([accountItem.getValue(), syncStateItem.getValue().then((value) => ({ ...EMPTY_SYNC_STATE, ...value }))]);
+  renderAccountCard();
+
   const oauthStatus = statusReporter(requireElement('oauth-status', HTMLSpanElement));
   const oauthInput = requireElement('oauth-client-id', HTMLInputElement);
   oauthInput.value = await oauthClientIdItem.getValue();

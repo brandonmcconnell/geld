@@ -103,7 +103,7 @@ big-corp
 
       <section class="options__card">
         <h2 class="options__title">GitHub account</h2>
-        <p class="geld-help options__intro">
+        <p class="geld-help options__intro" id="account-signed-out">
           Sign in (top right) to keep these settings in sync across browsers and devices. Geld uses GitHub's
           <em>device flow</em>: you confirm a short code on github.com, and the only permission requested is
           <code>gist</code>. Your settings are stored in a <strong>secret gist on your own account</strong> named
@@ -111,6 +111,14 @@ big-corp
           author) can read or change that gist, and the sign-in token never leaves this device. Signing in on another
           browser asks whether to keep that device's settings or use the account's. The same settings can be edited at
           <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
+        </p>
+        <p class="geld-help options__intro" id="account-signed-in" hidden>
+          Signed in as <strong id="account-login"></strong>. These settings sync to a <strong>secret gist on your own
+          account</strong> named <code>geld-settings.json</code><span id="account-synced"></span>. Only you can read or
+          change it, and the sign-in token never leaves this device. Edit the same settings at
+          <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>, or
+          <a id="account-gist" href="https://gist.github.com" target="_blank" rel="noreferrer">open the gist</a>. Sync
+          now and sign out are in the account menu (top right).
         </p>
         <label class="geld-label" for="oauth-client-id">OAuth App client id</label>
         <p class="geld-help">
