@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geld</title>
+    <!-- Toolbar icon for light toolbars; the background swaps in the white mark on dark ones. -->
+    <meta name="manifest.default_icon" content="{&quot;16&quot;:&quot;icon/action/black-16.png&quot;,&quot;32&quot;:&quot;icon/action/black-32.png&quot;,&quot;48&quot;:&quot;icon/action/black-48.png&quot;}">
+    <script type="module" crossorigin src="/chunks/popup-Bhvnz7GR.js"></script>
+    <link rel="modulepreload" crossorigin href="/chunks/browser-DzJe97Dp.js">
+    <link rel="modulepreload" crossorigin href="/chunks/switch-Bt8KDwqy.js">
+    <link rel="stylesheet" crossorigin href="/assets/switch-DEYcKB9H.css">
+    <link rel="stylesheet" crossorigin href="/assets/popup-DXn8JZaJ.css">
+  </head>
+  <body>
+    <main class="popup">
+      <header class="geld-brand popup__header">
+        <h1 class="popup__brand-text">
+          <img class="geld-brand__logo" src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20141.91%2036.31'%20width='141.91'%20height='36.31'%20fill='%23000000'%20role='img'%20aria-label='Geld'%3e%3cpath%20d='m6.6%200.1-6.6%206.9v29.3h24.3l6.4-6.4v-18.2h-17.5l-2.7%202.8v11.2h7.7l2.4-2.5v-1.8h-2.1l-1.5%201.6h-3.8v-7.3l1.3-1.3h13.7v14l-5.2%205h-20.3v-25.3l5-5.3h20.5v2.7h2.7v-5.5h-24.3v0.1z'/%3e%3cpath%20d='m5.2%209.8v21.1h15.9l4.4-4.2v-9.6h-9.6v2.6h6.9v5.8l-2.8%202.7h-12.2v-17.2l2.9-2.9h12.1v0.8h2.7v-3.4h-16.1l-4.2%204.3z'/%3e%3cpath%20d='m49.8%207.4-3%202.9v15.8l2.9%202.9h10.8l2.9-2.8v-8.2h-8.8v2.7h5.9v4.5l-1.2%201.1h-8.2l-1.3-1.2v-13.8l1.3-1.3h8.2l1.2%201.2v3.3h2.8v-4.3l-2.8-2.8h-10.7z'/%3e%3cpath%20d='m74.5%207.3v21.8h15.5v-2.8h-12.4v-6.8h11.1v-2.7h-11.5v-6.8h12.8v-2.7h-15.5z'/%3e%3cpath%20d='m101.3%207.3v21.7h14.1v-2.8h-11v-18.9h-3.1z'/%3e%3cpath%20d='m139.2%207.3h-13.6v21.7h13.3l3-2.9v-15.8l-3-3zm-0.1%2017.9-1.3%201.1h-9.2v-16.3h9.1l1.3%201.2v14h0.1z'/%3e%3c/svg%3e" alt="Geld" width="70" height="18">
+          <span class="geld-brand__tagline" id="context-repo">Hide tests from GitHub diffs</span>
+        </h1>
+        <div class="geld-account" id="account"></div>
+      </header>
+      <div id="account-prompt"></div>
+
+      <section class="popup__section popup__context" id="context">
+        <p class="popup__context-line" id="context-summary">Open a GitHub repo to see what Geld is doing.</p>
+        <details class="popup__files" id="context-files" hidden>
+          <summary class="popup__stats" id="context-stats">
+            <span class="geld-chevron" aria-hidden="true"></span>
+            <span class="popup__stat popup__stat--hidden" id="context-hidden"></span>
+            <span class="popup__stat popup__stat--add" id="context-add"></span>
+            <span class="popup__stat popup__stat--del" id="context-del"></span>
+          </summary>
+          <ul class="popup__file-list geld-code" id="context-file-list"></ul>
+        </details>
+        <div class="popup__quick" id="context-actions" hidden>
+          <button id="toggle-repo" class="geld-button geld-button--small" type="button"></button>
+          <button id="toggle-org" class="geld-button geld-button--small" type="button"></button>
+        </div>
+      </section>
+
+      <!-- Rendered from @geld/core's SETTINGS_SCHEMA (fields flagged `popup`). -->
+      <div id="popup-settings"></div>
+
+      <footer class="popup__footer">
+        <div class="popup__footer-links">
+          <a class="geld-button geld-button--link" href="https://geld.sh/how-it-works" target="_blank" rel="noreferrer">
+            <span class="geld-button__icon geld-button__icon--help" aria-hidden="true"></span>How it works
+          </a>
+        </div>
+        <span class="geld-status" id="status" aria-live="polite"></span>
+        <button id="open-options" class="geld-button geld-button--link" type="button">
+          <span class="geld-button__icon geld-button__icon--settings" aria-hidden="true"></span>All settings
+        </button>
+      </footer>
+    </main>
+  </body>
+</html>

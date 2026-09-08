@@ -1,0 +1,1 @@
+import{t as e}from"./browser-DzJe97Dp.js";var t=window.matchMedia(`(prefers-color-scheme: dark)`);function n(){let n={type:`geld:color-scheme`,dark:t.matches};e.runtime.sendMessage(n).catch(()=>void 0)}n(),t.addEventListener(`change`,n);

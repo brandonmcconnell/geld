@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geld options</title>
+    <meta name="manifest.open_in_tab" content="true">
+    <script type="module" crossorigin src="/chunks/options-DUpFrgC-.js"></script>
+    <link rel="modulepreload" crossorigin href="/chunks/browser-DzJe97Dp.js">
+    <link rel="modulepreload" crossorigin href="/chunks/switch-Bt8KDwqy.js">
+    <link rel="stylesheet" crossorigin href="/assets/switch-DEYcKB9H.css">
+    <link rel="stylesheet" crossorigin href="/assets/options-_DrKmjDD.css">
+  </head>
+  <body>
+    <main class="options">
+      <header class="geld-brand options__header">
+        <h1 class="options__brand-text">
+          <img class="geld-brand__logo" src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20141.91%2036.31'%20width='141.91'%20height='36.31'%20fill='%23000000'%20role='img'%20aria-label='Geld'%3e%3cpath%20d='m6.6%200.1-6.6%206.9v29.3h24.3l6.4-6.4v-18.2h-17.5l-2.7%202.8v11.2h7.7l2.4-2.5v-1.8h-2.1l-1.5%201.6h-3.8v-7.3l1.3-1.3h13.7v14l-5.2%205h-20.3v-25.3l5-5.3h20.5v2.7h2.7v-5.5h-24.3v0.1z'/%3e%3cpath%20d='m5.2%209.8v21.1h15.9l4.4-4.2v-9.6h-9.6v2.6h6.9v5.8l-2.8%202.7h-12.2v-17.2l2.9-2.9h12.1v0.8h2.7v-3.4h-16.1l-4.2%204.3z'/%3e%3cpath%20d='m49.8%207.4-3%202.9v15.8l2.9%202.9h10.8l2.9-2.8v-8.2h-8.8v2.7h5.9v4.5l-1.2%201.1h-8.2l-1.3-1.2v-13.8l1.3-1.3h8.2l1.2%201.2v3.3h2.8v-4.3l-2.8-2.8h-10.7z'/%3e%3cpath%20d='m74.5%207.3v21.8h15.5v-2.8h-12.4v-6.8h11.1v-2.7h-11.5v-6.8h12.8v-2.7h-15.5z'/%3e%3cpath%20d='m101.3%207.3v21.7h14.1v-2.8h-11v-18.9h-3.1z'/%3e%3cpath%20d='m139.2%207.3h-13.6v21.7h13.3l3-2.9v-15.8l-3-3zm-0.1%2017.9-1.3%201.1h-9.2v-16.3h9.1l1.3%201.2v14h0.1z'/%3e%3c/svg%3e" alt="Geld" width="94" height="24">
+          <span class="geld-brand__tagline">Hide the files that don't need review so the ones that do stand out.</span>
+        </h1>
+        <div class="geld-account" id="account"></div>
+      </header>
+      <div id="account-prompt" class="options__account-prompt"></div>
+
+      <section class="options__card" data-section="general">
+        <h2 class="options__title">General</h2>
+        <div class="options__rows" id="general-rows"></div>
+      </section>
+
+      <section class="options__card" data-section="hide">
+        <h2 class="options__title">What to hide</h2>
+        <p class="geld-help options__intro">
+          Each category has its own switch. Expand one to see the built-in patterns it uses. Tests are on by default;
+          everything else is opt-in.
+        </p>
+        <div id="categories" class="options__categories"></div>
+      </section>
+
+      <section class="options__card" data-section="custom-patterns">
+        <h2 class="options__title">Custom patterns</h2>
+        <p class="geld-help options__intro">
+          One glob per line, matched against the repository-relative path with gitignore rules: <code>*.snap</code>
+          matches a file name anywhere, <code>fixtures/</code> a directory anywhere, <code>src/**/*.gen.ts</code> a
+          full path, <code>{a,b}</code> alternatives, and a leading <code>!</code> rescues files that a built-in pattern
+          would hide. Matching files are treated as tests. A line like <code>[acme/*]</code> scopes the lines below it
+          to those repositories; <code>[*]</code> returns to all repositories.
+        </p>
+        <textarea id="custom-patterns" class="geld-textarea geld-code options__textarea" rows="8" spellcheck="false" placeholder="# everywhere
+*.generated.ts
+!tests/contracts/**
+
+[acme/*]
+# only in Acme repositories
+docs/adr/" aria-label="Custom patterns"></textarea>
+        <div class="geld-row options__actions">
+          <a class="geld-button geld-button--link options__more" href="https://geld.sh/patterns" target="_blank" rel="noreferrer">
+            <span class="geld-button__icon geld-button__icon--help" aria-hidden="true"></span>How patterns work
+          </a>
+          <span class="geld-status" id="patterns-status" aria-live="polite"></span>
+          <button id="save-patterns" class="geld-button geld-button--primary" type="button">Save patterns</button>
+        </div>
+      </section>
+
+      <section class="options__card" data-section="repositories">
+        <h2 class="options__title">Repositories</h2>
+        <p class="geld-help options__intro">
+          Where Geld should stay <strong>off</strong>, one rule per line, like a <code>.gitignore</code> for
+          repositories: <code>acme/widgets</code> turns Geld off in that repository, <code>acme</code> (or
+          <code>acme/*</code>) in the whole organisation, a leading <code>!</code> turns it back on, and the last matching
+          line wins. Leave empty to run everywhere. For an allowlist, start with <code>*</code> and add
+          <code>!acme/*</code> below it.
+        </p>
+        <textarea id="repo-rules" class="geld-textarea geld-code options__textarea" rows="5" spellcheck="false" placeholder="acme/legacy-app
+big-corp
+!big-corp/the-one-repo-i-review" aria-label="Repository rules"></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="rules-status" aria-live="polite"></span>
+          <button id="save-rules" class="geld-button geld-button--primary" type="button">Save rules</button>
+        </div>
+      </section>
+
+      <section class="options__card" data-section="enterprise">
+        <h2 class="options__title">GitHub Enterprise Server</h2>
+        <p class="geld-help options__intro">
+          Geld runs on <code>github.com</code> out of the box. Add the hostname of your company's GitHub Enterprise
+          Server (one per line, e.g. <code>github.example.com</code>) and your browser will ask you to allow Geld on
+          that site. Geld never contacts anything other than the GitHub hosts you list here.
+        </p>
+        <textarea id="enterprise-hosts" class="geld-textarea geld-code options__textarea" rows="3" spellcheck="false" placeholder="github.example.com" aria-label="GitHub Enterprise Server hosts"></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="hosts-status" aria-live="polite"></span>
+          <button id="save-hosts" class="geld-button geld-button--primary" type="button">Save hosts</button>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Try a path</h2>
+        <p class="geld-help options__intro">Check how a file path would be treated with your current settings.</p>
+        <div class="options__tester">
+          <input id="tester-repo" class="geld-input geld-code options__input" type="text" placeholder="owner/repo (optional)" spellcheck="false" aria-label="Repository">
+          <input id="tester-path" class="geld-input geld-code options__input options__input--grow" type="text" placeholder="src/components/Button.test.tsx" spellcheck="false" aria-label="File path">
+        </div>
+        <p id="tester-result" class="options__tester-result geld-help" aria-live="polite">Type a path to see what happens to it.</p>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">GitHub account</h2>
+        <p class="geld-help options__intro">
+          Sign in (top right) to keep these settings in sync across browsers and devices. Geld uses GitHub's
+          <em>device flow</em>: you confirm a short code on github.com, and the only permission requested is
+          <code>gist</code>. Your settings are stored in a <strong>secret gist on your own account</strong> named
+          <code>geld-settings.json</code>. There is no Geld server and no database — nobody but you (including Geld's
+          author) can read or change that gist, and the sign-in token never leaves this device. Signing in on another
+          browser asks whether to keep that device's settings or use the account's. The same settings can be edited at
+          <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
+        </p>
+        <label class="geld-label" for="oauth-client-id">OAuth App client id</label>
+        <p class="geld-help">
+          The public client id of a GitHub OAuth App with <em>Device Flow</em> enabled. A default is built in; paste
+          your own to use a different app.
+        </p>
+        <input id="oauth-client-id" class="geld-input geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Ov23li…" aria-label="OAuth App client id">
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="oauth-status" aria-live="polite"></span>
+          <button id="save-oauth" class="geld-button" type="button">Save client id</button>
+        </div>
+      </section>
+
+      <section class="options__card">
+        <h2 class="options__title">Backup &amp; maintenance</h2>
+        <div class="options__buttons options__buttons--wrap">
+          <button id="export" class="geld-button" type="button">Export settings (JSON)</button>
+          <button id="import" class="geld-button" type="button">Import settings…</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden>
+          <button id="clear-cache" class="geld-button" type="button">Clear cached diffs</button>
+          <button id="reset" class="geld-button geld-button--danger" type="button">Reset to defaults</button>
+        </div>
+        <p class="geld-status" id="maintenance-status" aria-live="polite"></p>
+      </section>
+
+      <footer class="options__footer geld-muted">
+        Geld · <a href="https://github.com/brandonmcconnell/geld" target="_blank" rel="noreferrer">Source on GitHub</a>
+      </footer>
+    </main>
+  </body>
+</html>
