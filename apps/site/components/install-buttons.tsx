@@ -14,29 +14,31 @@ import { EXTENSION_VERSION } from '@/lib/version';
 export async function InstallButtons({ className, size = 'default' }: { readonly className?: string | undefined; readonly size?: 'default' | 'lg' }) {
   const release = await getLatestRelease();
   const links = installLinks(release);
-  const anyStore = links.some((link) => link.source === 'store');
-  const allStores = links.every((link) => link.source === 'store');
+  // Browsers still waiting for a store listing install from GitHub Releases.
+  const pending = links.filter((link) => link.source !== 'store').map((link) => link.browser.name);
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <InstallButtonGroup links={links} size={size} />
-      {!allStores ? (
+      {pending.length > 0 ? (
         <p className="text-xs text-muted-foreground">
-          {anyStore ? 'Browsers without a store listing yet install from the ' : 'Store listings are coming. Until then, install from the '}
-          {release.tag !== null ? (
-            <>
-              latest release (<span className="font-mono">{release.tag}</span>)
-            </>
-          ) : (
-            'GitHub releases'
-          )}
-          {' — '}
+          {pending.length === links.length ? 'Store listings coming soon; for now ' : `${listNames(pending)}: for now `}
           <ExternalLink href={INSTALL_GUIDE_URL} className="underline underline-offset-3 hover:text-foreground">
-            unpacked-install instructions
+            install from GitHub
           </ExternalLink>
-          . Current version: <span className="font-mono">{EXTENSION_VERSION}</span>.
+          {' · '}
+          <span className="font-mono">v{EXTENSION_VERSION}</span>
         </p>
-      ) : null}
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Free and open source · <span className="font-mono">v{EXTENSION_VERSION}</span>
+        </p>
+      )}
     </div>
   );
+}
+
+function listNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1] ?? ''}`;
 }

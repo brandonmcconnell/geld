@@ -21,9 +21,9 @@ export const BROWSERS: readonly BrowserTarget[] = [
  * GitHub Release instead. Swapping a browser over is a one-line change here.
  */
 export const STORE_URLS: Readonly<Partial<Record<BrowserId, string>>> = {
-  // chrome: 'https://chromewebstore.google.com/detail/<id>',
+  chrome: 'https://chromewebstore.google.com/detail/geld/nfbkhldmnfgeeldfafojajnfanikbhia',
   edge: 'https://microsoftedge.microsoft.com/addons/detail/geld/bdakebdlgaomkblemgabkoofoiellhmi',
-  // firefox: 'https://addons.mozilla.org/firefox/addon/geld/',
+  firefox: 'https://addons.mozilla.org/en-US/firefox/addon/geld/',
   // safari: 'https://apps.apple.com/app/<id>',
 };
 
