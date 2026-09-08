@@ -273,6 +273,10 @@ div:has(> #diff-file-tree-filter) {
  */
 [data-geld-sidebar] {
   overflow: hidden !important;
+  /* GitHub's pane carries min-height: calc(100vh - header), which would beat
+     the height we set (min-height wins over height) and let the open panel
+     fill the whole viewport, pushing the headers below it past the fold. */
+  min-height: 0 !important;
 }
 
 [data-geld-sidebar][data-geld-sidebar-layout='column'] {

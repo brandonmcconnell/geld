@@ -56,6 +56,8 @@ interface PendingReveal {
   readonly path: string;
   readonly stateKey: string;
   attempts: number;
+  /** Binary-search bounds over the page's scroll position while hunting a virtualised entry, and the last position we set. */
+  seek: { lo: number; hi: number; last: number | null } | null;
 }
 
 interface ClassifiedEntry extends Classified {
@@ -176,6 +178,8 @@ export class GeldController {
   private currentView: DiffView | null = null;
   private currentPage: PageInfo | null = null;
   private pendingReveal: PendingReveal | null = null;
+  /** Stops the previous reveal's re-align loop so two of them never fight over the scroll position. */
+  private cancelAlign: (() => void) | null = null;
   private lastState: TabState = IDLE_STATE;
   private lastStateJson = '';
   private stopped = false;
@@ -619,25 +623,80 @@ export class GeldController {
   private reveal(path: string, stateKey: string): void {
     const view = this.currentView;
     if (view === null) return;
-    if (!this.isDiffExpanded(stateKey, false)) this.setDiffExpanded(stateKey, true);
+    this.cancelAlign?.();
+    this.cancelAlign = null;
+    if (this.settings.groupHidden && !this.isDiffExpanded(stateKey, false)) this.setDiffExpanded(stateKey, true);
 
     const entry = view.entries.find((candidate) => candidate.path === path);
     if (entry === undefined) {
-      // Not rendered yet (GitHub loads big diffs progressively). Remember the
-      // request and nudge the lazy loader by scrolling to the end of the list.
-      this.pendingReveal = { path, stateKey, attempts: 0 };
+      // Not in the DOM: GitHub's React view virtualises the list and the legacy
+      // view loads big diffs progressively. Remember the request and go looking.
+      this.pendingReveal = { path, stateKey, attempts: 0, seek: null };
+      this.seekEntry(view, this.pendingReveal);
+      return;
+    }
+    this.finishReveal(view, entry, stateKey, true);
+  }
+
+  /**
+   * Move the page so the target's diff gets rendered. Legacy pages load
+   * everything once the end is reached, so scroll there. The React view only
+   * renders what is on screen, so binary-search the scroll position using the
+   * file tree's order (the diff list follows it) until the entry appears.
+   */
+  private seekEntry(view: DiffView, pending: PendingReveal): void {
+    const order = new Map(view.treeFiles.map((file, index) => [file.path, index] as const));
+    const target = order.get(pending.path);
+    if (view.kind === 'legacy' || target === undefined) {
       this.nudgeProgressiveLoading(view);
       return;
     }
+    const scroller = document.scrollingElement ?? document.documentElement;
+    const maxScroll = Math.max(0, scroller.scrollHeight - window.innerHeight);
+    const total = Math.max(1, view.treeFiles.length - 1);
+    let seek = pending.seek;
+    let next: number;
+    if (seek === null) {
+      // First guess: the file's share of the tree, as a share of the page.
+      seek = { lo: 0, hi: maxScroll, last: null };
+      pending.seek = seek;
+      next = Math.round((maxScroll * target) / total);
+    } else {
+      // Narrow the bounds using what got rendered at the position we last set
+      // (not scrollY, which GitHub may still be animating).
+      const rendered = view.entries.map((entry) => order.get(entry.path)).filter((index): index is number => index !== undefined);
+      if (seek.last !== null && rendered.length > 0) {
+        if (Math.max(...rendered) < target) seek.lo = seek.last;
+        else if (Math.min(...rendered) > target) seek.hi = seek.last;
+      }
+      // The page grows as the virtualiser measures more rows; keep the upper bound honest.
+      if (seek.hi >= maxScroll - 8) seek.hi = maxScroll;
+      if (seek.hi - seek.lo < 8) {
+        // Converged without finding it: the orders differ; fall back to the end.
+        this.nudgeProgressiveLoading(view);
+        return;
+      }
+      next = Math.round((seek.lo + seek.hi) / 2);
+    }
+    seek.last = next;
+    window.scrollTo({ top: next, behavior: 'instant' });
+  }
+
+  private finishReveal(view: DiffView, entry: DiffEntry, stateKey: string, scroll: boolean): void {
     this.pendingReveal = null;
     view.expandEntry(entry);
-
+    if (!this.settings.groupHidden) {
+      // Inline layout: opening it on request counts as the user's choice.
+      const touched = this.inlineTouched.get(stateKey) ?? new Set<string>();
+      touched.add(entry.path);
+      this.inlineTouched.set(stateKey, touched);
+    }
     requestAnimationFrame(() => {
-      entry.root.scrollIntoView({ block: 'start', behavior: 'instant' });
+      if (scroll) entry.root.scrollIntoView({ block: 'start', behavior: 'instant' });
       entry.root.setAttribute(ATTR_FLASH, '');
       setTimeout(() => entry.root.removeAttribute(ATTR_FLASH), 1600);
       if (entry.anchor !== null) history.replaceState(history.state, '', `#${entry.anchor}`);
-      this.keepAligned(entry.root);
+      if (scroll) this.keepAligned(entry.root);
     });
   }
 
@@ -648,11 +707,13 @@ export class GeldController {
    */
   private keepAligned(target: HTMLElement): void {
     const scrollMargin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
-    const deadline = performance.now() + 2500;
+    const deadline = performance.now() + 1500;
+    let stableChecks = 0;
     let userScrolled = false;
     const stop = (): void => {
       userScrolled = true;
     };
+    this.cancelAlign = stop;
     const options: AddEventListenerOptions = { passive: true, once: true };
     window.addEventListener('wheel', stop, options);
     window.addEventListener('touchstart', stop, options);
@@ -666,7 +727,14 @@ export class GeldController {
         return;
       }
       const drift = target.getBoundingClientRect().top - scrollMargin;
-      if (Math.abs(drift) > 4) target.scrollIntoView({ block: 'start', behavior: 'instant' });
+      if (Math.abs(drift) > 4) {
+        stableChecks = 0;
+        // Correct by the drift itself rather than re-running scrollIntoView, so
+        // a virtualised list settling above us does not cause visible jumps.
+        window.scrollBy({ top: drift, behavior: 'instant' });
+      } else if ((stableChecks += 1) >= 3) {
+        return;
+      }
       setTimeout(check, 150);
     };
     setTimeout(check, 150);
@@ -685,12 +753,13 @@ export class GeldController {
       this.pendingReveal = null;
       return;
     }
-    if (view.entries.some((entry) => entry.path === pending.path)) {
-      this.reveal(pending.path, stateKey);
+    const entry = view.entries.find((candidate) => candidate.path === pending.path);
+    if (entry !== undefined) {
+      this.finishReveal(view, entry, stateKey, true);
       return;
     }
     pending.attempts += 1;
-    this.nudgeProgressiveLoading(view);
+    this.seekEntry(view, pending);
   }
 
   /**
