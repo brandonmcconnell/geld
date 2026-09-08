@@ -226,8 +226,11 @@ export class GeldController {
     });
     // Legacy checkboxes change without any attribute mutation.
     document.addEventListener('change', this.onChangeEvent, true);
-    // Inline layout: a real click on a hidden file hands control of it to the user.
-    document.addEventListener('click', this.onUserClick, true);
+    // Inline layout: a real click on a hidden file hands control of it to the
+    // user. Listen on mousedown, not click: GitHub's React tree acts on
+    // mousedown and re-renders the row before mouseup, so no click ever fires.
+    document.addEventListener('mousedown', this.onUserClick, true);
+    document.addEventListener('keydown', this.onUserKey, true);
     this.apply();
   }
 
@@ -235,7 +238,8 @@ export class GeldController {
     if (this.stopped) return;
     this.stopped = true;
     document.removeEventListener('change', this.onChangeEvent, true);
-    document.removeEventListener('click', this.onUserClick, true);
+    document.removeEventListener('mousedown', this.onUserClick, true);
+    document.removeEventListener('keydown', this.onUserKey, true);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -257,17 +261,48 @@ export class GeldController {
   }
 
   private readonly onUserClick = (event: MouseEvent): void => {
-    if (!event.isTrusted || this.settings.groupHidden || this.currentPage === null || this.currentView === null) return;
-    const target = event.target instanceof Element ? event.target : null;
-    const root = target?.closest<HTMLElement>(`[${ATTR_ENTRY}="hidden"]`) ?? null;
-    if (root === null) return;
-    const entry = this.currentView.entries.find((candidate) => candidate.root === root);
-    if (entry === undefined) return;
-    const key = this.currentPage.stateKey;
-    const touched = this.inlineTouched.get(key) ?? new Set<string>();
-    touched.add(entry.path);
-    this.inlineTouched.set(key, touched);
+    if (event.button !== 0) return;
+    this.onUserActivate(event);
   };
+
+  /** Keyboard users activate tree rows with Enter/Space. */
+  private readonly onUserKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    this.onUserActivate(event);
+  };
+
+  private onUserActivate(event: Event): void {
+    if (!event.isTrusted || this.settings.groupHidden || this.currentPage === null) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target === null) return;
+    // Read the page afresh: React re-renders tree rows, so a view captured on
+    // the last pass may hold stale elements that no longer match the click.
+    const view = legacyAdapter.read() ?? reactAdapter.read();
+    if (view === null) return;
+    const key = this.currentPage.stateKey;
+
+    // A click inside a hidden diff: the file is the user's from now on.
+    const root = target.closest<HTMLElement>(`[${ATTR_ENTRY}="hidden"]`);
+    if (root !== null) {
+      const entry = view.entries.find((candidate) => candidate.root === root);
+      if (entry !== undefined) this.markTouched(key, entry.path);
+      return;
+    }
+    // A click on a greyed-out row in GitHub's tree.
+    const row = target.closest('li');
+    const file = row === null ? undefined : view.treeFiles.find((candidate) => candidate.element === row);
+    if (file === undefined || this.matcherFor(repoFromPathname(window.location.pathname)).categorize(file.path) === null) return;
+    // GitHub does not scroll to a collapsed file from its tree, so treat this
+    // like a click in one of Geld's own panels: expand, scroll to it, flash.
+    this.markTouched(key, file.path);
+    this.reveal(file.path, key);
+  }
+
+  private markTouched(stateKey: string, path: string): void {
+    const touched = this.inlineTouched.get(stateKey) ?? new Set<string>();
+    touched.add(path);
+    this.inlineTouched.set(stateKey, touched);
+  }
 
   private readonly onChangeEvent = (event: Event): void => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox' && !isOwnElement(event.target)) this.schedule();
@@ -687,12 +722,8 @@ export class GeldController {
   private finishReveal(view: DiffView, entry: DiffEntry, stateKey: string, scroll: boolean): void {
     this.pendingReveal = null;
     view.expandEntry(entry);
-    if (!this.settings.groupHidden) {
-      // Inline layout: opening it on request counts as the user's choice.
-      const touched = this.inlineTouched.get(stateKey) ?? new Set<string>();
-      touched.add(entry.path);
-      this.inlineTouched.set(stateKey, touched);
-    }
+    // Inline layout: opening it on request counts as the user's choice.
+    if (!this.settings.groupHidden) this.markTouched(stateKey, entry.path);
     requestAnimationFrame(() => {
       if (scroll) entry.root.scrollIntoView({ block: 'start', behavior: 'instant' });
       entry.root.setAttribute(ATTR_FLASH, '');
