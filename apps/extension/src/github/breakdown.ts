@@ -43,7 +43,9 @@ export function buildBreakdown(items: readonly Classified[]): HiddenBreakdown {
     perCategory.set(item.category, bucket);
   }
   const categories = Array.from(perCategory, ([category, bucket]) => ({ category, totals: bucket.totals, paths: bucket.paths }));
-  categories.sort((a, b) => CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category));
+  // Built-ins keep their fixed order; custom categories (not in CATEGORIES) sort first, as they match first.
+  const order = (category: HiddenCategory): number => CATEGORIES.findIndex((builtIn) => builtIn.id === category.id);
+  categories.sort((a, b) => order(a.category) - order(b.category));
   return { totals, incomplete, categories };
 }
 

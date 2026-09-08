@@ -1,4 +1,4 @@
-import type { CategoryId } from '@geld/core';
+import type { AnyCategoryId } from '@geld/core';
 import type { FileStats } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 
@@ -50,7 +50,7 @@ export interface EnsureContentResponse {
 }
 
 export interface TabCategoryState {
-  readonly id: CategoryId;
+  readonly id: AnyCategoryId;
   readonly title: string;
   readonly count: number;
   readonly paths: readonly string[];

@@ -23,7 +23,7 @@ import { describePage } from './page';
 import { applyPrListStats, removePrListStats } from './pr-list';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
-import { CATEGORY_ICONS } from './ui/icons';
+import { categoryIconFor } from './ui/icons';
 import type { TreeSectionFile } from './ui/tree-section';
 import {
   applySidebarLayout,
@@ -125,7 +125,7 @@ function setInlineIcon(row: HTMLElement, category: HiddenCategory | null): void 
   if (original === null) return;
   original.setAttribute(ATTR_SWAPPED_ICON, '');
   const icon = createElement('span', { class: INLINE_ICON_CLASS, [OWN_UI_ATTRIBUTE]: '', 'data-category': category.id, title: category.title }, [
-    svgFromString(CATEGORY_ICONS[category.id]),
+    svgFromString(categoryIconFor(category)),
   ]);
   original.insertAdjacentElement('beforebegin', icon);
 }

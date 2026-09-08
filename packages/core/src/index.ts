@@ -5,6 +5,7 @@
  * the website so documentation is rendered from the same source of truth.
  */
 export * from './categories';
+export * from './category-icons';
 export * from './diff-parse';
 export * from './format';
 export * from './gist-sync';

@@ -1,7 +1,7 @@
 import type { HiddenCategory } from '@geld/core';
 import { formatCount } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { CATEGORY_ICONS, ICON_CHEVRON_RIGHT, ICON_FILE, ICON_FILE_DIRECTORY, ICON_FILE_DIFF } from './icons';
+import { categoryIconFor, ICON_CHEVRON_RIGHT, ICON_FILE, ICON_FILE_DIRECTORY, ICON_FILE_DIFF } from './icons';
 
 export const TREE_SECTION_CLASS = 'geld-tree-section';
 
@@ -174,7 +174,7 @@ function build(
     [
       createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
       createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [
-        svgFromString(CATEGORY_ICONS[category.id]),
+        svgFromString(categoryIconFor(category)),
       ]),
       title,
       count,

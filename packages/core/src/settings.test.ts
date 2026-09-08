@@ -1,4 +1,16 @@
-import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, normalizeSettings, parsePatternList } from './settings';
+import {
+  DEFAULT_SETTINGS,
+  allCategories,
+  hasAdvancedSettings,
+  isCategoryEnabled,
+  isGroupEnabled,
+  isTestGroupEnabled,
+  normalizeHost,
+  normalizeSettings,
+  parsePatternList,
+  withCustomCategory,
+  withoutCustomCategory,
+} from './settings';
 
 describe('normalizeSettings', () => {
   it('returns defaults for garbage', () => {
@@ -14,12 +26,48 @@ describe('normalizeSettings', () => {
   });
 
   it('keeps unknown category keys out and falls back to category defaults', () => {
-    const settings = normalizeSettings({ categories: { generated: true, bogus: true }, testGroups: { e2e: false, nope: 1 } });
+    const settings = normalizeSettings({ categories: { generated: true, bogus: true, 'custom:gone': false }, groups: { 'tests/e2e': false, 'tests/nope': false, 'nope/x': 1 } });
     expect(settings.categories).toEqual({ generated: true });
+    expect(settings.groups).toEqual({ 'tests/e2e': false });
     expect(isCategoryEnabled(settings, 'tests')).toBe(true);
     expect(isCategoryEnabled(settings, 'generated')).toBe(true);
-    expect(isTestGroupEnabled(settings, 'e2e')).toBe(false);
-    expect(isTestGroupEnabled(settings, 'unit')).toBe(true);
+    expect(isGroupEnabled(settings, 'tests', 'e2e')).toBe(false);
+    expect(isGroupEnabled(settings, 'tests', 'unit')).toBe(true);
+  });
+
+  it('migrates testGroups and customPatterns from earlier versions', () => {
+    const migrated = normalizeSettings({ testGroups: { e2e: false, nope: 1 }, customPatterns: ['*.golden', '!keep/**'] });
+    expect(isTestGroupEnabled(migrated, 'e2e')).toBe(false);
+    expect(migrated.groups).toEqual({ 'tests/e2e': false });
+    expect(migrated.categoryPatterns).toEqual({ tests: ['*.golden', '!keep/**'] });
+    expect(hasAdvancedSettings(migrated, 'tests')).toBe(true);
+    expect(hasAdvancedSettings(migrated, 'docs')).toBe(false);
+  });
+
+  it('reads custom categories, dropping broken or duplicate ones', () => {
+    const settings = normalizeSettings({
+      customCategories: [
+        { id: 'custom:tokens', title: '  Design tokens ', icon: 'paintbrush', patterns: ['tokens/**'], noun: 'token', nounPlural: 'tokens' },
+        { id: 'custom:tokens', title: 'Duplicate', icon: 'tag', patterns: [] },
+        { id: 'not-namespaced', title: 'Bad id', icon: 'tag', patterns: [] },
+        { id: 'custom:no-title', title: '', icon: 'tag', patterns: [] },
+        { id: 'custom:odd-icon', title: 'Odd', icon: 'unicorn', patterns: 'nope' },
+      ],
+      categories: { 'custom:tokens': false, 'custom:odd-icon': true, 'custom:missing': true },
+    });
+    expect(settings.customCategories).toEqual([
+      { id: 'custom:tokens', title: 'Design tokens', icon: 'paintbrush', patterns: ['tokens/**'], noun: 'token', nounPlural: 'tokens' },
+      { id: 'custom:odd-icon', title: 'Odd', icon: 'tag', patterns: [] },
+    ]);
+    expect(settings.categories).toEqual({ 'custom:tokens': false, 'custom:odd-icon': true });
+    expect(isCategoryEnabled(settings, 'custom:tokens')).toBe(false);
+    expect(isCategoryEnabled(settings, 'custom:odd-icon')).toBe(true);
+    expect(allCategories(settings).map((category) => category.id).slice(0, 3)).toEqual(['custom:tokens', 'custom:odd-icon', 'tests']);
+    const without = withoutCustomCategory(settings, 'custom:tokens');
+    expect(without.customCategories.map((custom) => custom.id)).toEqual(['custom:odd-icon']);
+    expect(without.categories).toEqual({ 'custom:odd-icon': true });
+    const replaced = withCustomCategory(without, { id: 'custom:odd-icon', title: 'Renamed', icon: 'tag', patterns: ['x/**'] });
+    expect(replaced.customCategories).toEqual([{ id: 'custom:odd-icon', title: 'Renamed', icon: 'tag', patterns: ['x/**'] }]);
   });
 
   it('parses textarea lists', () => {

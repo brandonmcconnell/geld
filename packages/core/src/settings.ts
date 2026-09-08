@@ -1,5 +1,6 @@
-import type { CategoryId } from './categories';
-import { CATEGORY_IDS, categoryById, isCategoryId } from './categories';
+import type { AnyCategoryId, CategoryId, CustomCategory, GroupKey, HiddenCategory } from './categories';
+import { CATEGORIES, CATEGORY_IDS, categoryById, groupKey, hiddenCategoryFromCustom, isCategoryId, isCustomCategoryId, isGroupKey } from './categories';
+import { isCategoryIconName } from './category-icons';
 import type { TestPatternGroupId } from './test-patterns';
 import { isTestPatternGroupId } from './test-patterns';
 
@@ -10,16 +11,26 @@ import { isTestPatternGroupId } from './test-patterns';
 export interface GeldSettings {
   /** Master switch. When off, GitHub pages are left untouched. */
   readonly enabled: boolean;
-  /** Which categories of files to hide; missing keys fall back to the category default. */
-  readonly categories: Readonly<Partial<Record<CategoryId, boolean>>>;
-  /** Fine-grained toggles for the kinds of tests to hide; missing keys mean enabled. */
-  readonly testGroups: Readonly<Partial<Record<TestPatternGroupId, boolean>>>;
   /**
-   * Extra glob patterns (one per line in the UI), treated like tests. Lines
-   * starting with `!` rescue paths; `[owner/repo]` lines scope the patterns
-   * that follow to matching repositories (`[*]` returns to global).
+   * Which categories of files to hide (built-in or custom ids); missing keys
+   * fall back to the category default (tests and custom categories on, the
+   * other built-ins off).
    */
-  readonly customPatterns: readonly string[];
+  readonly categories: Readonly<Partial<Record<AnyCategoryId, boolean>>>;
+  /**
+   * Built-in pattern groups switched off, keyed `category/group`
+   * (`tests/snapshots`, `generated/lockfiles`); missing keys mean enabled.
+   */
+  readonly groups: Readonly<Partial<Record<GroupKey, boolean>>>;
+  /**
+   * Extra patterns per built-in category (one per line in the UI). Lines
+   * starting with `!` rescue paths from that category; `[owner/repo]` lines
+   * scope the patterns that follow to matching repositories (`[*]` returns to
+   * global). Custom categories keep their patterns on the category itself.
+   */
+  readonly categoryPatterns: Readonly<Partial<Record<CategoryId, readonly string[]>>>;
+  /** Categories the user defined, in the order they are matched (before built-ins). */
+  readonly customCategories: readonly CustomCategory[];
   /**
    * Repositories where Geld stays off, with gitignore semantics: `owner/repo`
    * or `owner` (= `owner/*`) excludes, `!owner/repo` re-includes, last match
@@ -50,8 +61,9 @@ export interface GeldSettings {
 export const DEFAULT_SETTINGS: GeldSettings = {
   enabled: true,
   categories: {},
-  testGroups: {},
-  customPatterns: [],
+  groups: {},
+  categoryPatterns: {},
+  customCategories: [],
   repoRules: [],
   groupHidden: true,
   expandedByDefault: false,
@@ -73,11 +85,17 @@ function bool(record: Record<string, unknown>, key: keyof GeldSettings, fallback
   return typeof value === 'boolean' ? value : fallback;
 }
 
-function readCategories(value: unknown, legacyHideTests: unknown): Partial<Record<CategoryId, boolean>> {
-  const result: Partial<Record<CategoryId, boolean>> = {};
-  if (typeof value === 'object' && value !== null) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readCategories(value: unknown, legacyHideTests: unknown, customIds: ReadonlySet<string>): Partial<Record<AnyCategoryId, boolean>> {
+  const result: Partial<Record<AnyCategoryId, boolean>> = {};
+  if (isRecord(value)) {
     for (const [key, enabled] of Object.entries(value)) {
-      if (isCategoryId(key) && typeof enabled === 'boolean') result[key] = enabled;
+      if (typeof enabled !== 'boolean') continue;
+      // Flags for custom categories that no longer exist are dropped.
+      if (isCategoryId(key) || (isCustomCategoryId(key) && customIds.has(key))) result[key] = enabled;
     }
   } else if (typeof legacyHideTests === 'boolean') {
     // Settings saved before categories existed.
@@ -86,33 +104,128 @@ function readCategories(value: unknown, legacyHideTests: unknown): Partial<Recor
   return result;
 }
 
-function readTestGroups(value: unknown): Partial<Record<TestPatternGroupId, boolean>> {
-  const result: Partial<Record<TestPatternGroupId, boolean>> = {};
-  if (typeof value === 'object' && value !== null) {
+function readGroups(value: unknown, legacyTestGroups: unknown): Partial<Record<GroupKey, boolean>> {
+  const result: Partial<Record<GroupKey, boolean>> = {};
+  if (isRecord(value)) {
     for (const [key, enabled] of Object.entries(value)) {
-      if (isTestPatternGroupId(key) && typeof enabled === 'boolean') result[key] = enabled;
+      if (isGroupKey(key) && typeof enabled === 'boolean') result[key] = enabled;
+    }
+  }
+  // Settings saved when only test groups could be toggled.
+  if (isRecord(legacyTestGroups)) {
+    for (const [key, enabled] of Object.entries(legacyTestGroups)) {
+      if (isTestPatternGroupId(key) && typeof enabled === 'boolean' && result[groupKey('tests', key)] === undefined) {
+        result[groupKey('tests', key)] = enabled;
+      }
     }
   }
   return result;
 }
 
-export function isCategoryEnabled(settings: GeldSettings, id: CategoryId): boolean {
-  return settings.categories[id] ?? categoryById(id).defaultEnabled;
+function readCategoryPatterns(value: unknown, legacyCustomPatterns: unknown): Partial<Record<CategoryId, readonly string[]>> {
+  const result: Partial<Record<CategoryId, readonly string[]>> = {};
+  if (isRecord(value)) {
+    for (const [key, lines] of Object.entries(value)) {
+      if (isCategoryId(key) && isStringArray(lines) && lines.length > 0) result[key] = lines;
+    }
+  }
+  // Settings saved when custom patterns were a single list "treated as tests".
+  if (isStringArray(legacyCustomPatterns) && legacyCustomPatterns.length > 0) {
+    result.tests = [...legacyCustomPatterns, ...(result.tests ?? [])];
+  }
+  return result;
 }
 
+function readCustomCategory(value: unknown, taken: Set<string>): CustomCategory | null {
+  if (!isRecord(value)) return null;
+  const { id, title, icon, patterns, noun, nounPlural } = value;
+  if (!isCustomCategoryId(id) || taken.has(id)) return null;
+  if (typeof title !== 'string' || title.trim() === '') return null;
+  taken.add(id);
+  const custom: CustomCategory = {
+    id,
+    title: title.trim().slice(0, 40),
+    icon: isCategoryIconName(icon) ? icon : 'tag',
+    patterns: isStringArray(patterns) ? patterns : [],
+    ...(typeof noun === 'string' && noun.trim() !== '' ? { noun: noun.trim() } : {}),
+    ...(typeof nounPlural === 'string' && nounPlural.trim() !== '' ? { nounPlural: nounPlural.trim() } : {}),
+  };
+  return custom;
+}
+
+function readCustomCategories(value: unknown): readonly CustomCategory[] {
+  if (!Array.isArray(value)) return [];
+  const taken = new Set<string>();
+  const result: CustomCategory[] = [];
+  for (const entry of value) {
+    const custom = readCustomCategory(entry, taken);
+    if (custom !== null) result.push(custom);
+  }
+  return result;
+}
+
+export function isCategoryEnabled(settings: GeldSettings, id: AnyCategoryId): boolean {
+  const stored = settings.categories[id];
+  if (stored !== undefined) return stored;
+  return isCategoryId(id) ? categoryById(id).defaultEnabled : true;
+}
+
+/** Whether a built-in pattern group applies (missing keys mean enabled). */
+export function isGroupEnabled(settings: GeldSettings, categoryId: CategoryId, groupId: string): boolean {
+  return settings.groups[groupKey(categoryId, groupId)] ?? true;
+}
+
+/** Shorthand for {@link isGroupEnabled} on the Tests category. */
 export function isTestGroupEnabled(settings: GeldSettings, id: TestPatternGroupId): boolean {
-  return settings.testGroups[id] ?? true;
+  return isGroupEnabled(settings, 'tests', id);
+}
+
+/** Extra user patterns for a built-in category (possibly empty). */
+export function categoryPatternLines(settings: GeldSettings, categoryId: CategoryId): readonly string[] {
+  return settings.categoryPatterns[categoryId] ?? [];
+}
+
+export function customCategoryById(settings: GeldSettings, id: AnyCategoryId): CustomCategory | null {
+  return settings.customCategories.find((custom) => custom.id === id) ?? null;
+}
+
+/**
+ * Every category the settings know about, in matching order: custom
+ * categories first (a user's own definition beats a built-in), then the
+ * built-ins in their fixed order.
+ */
+export function allCategories(settings: GeldSettings): readonly HiddenCategory[] {
+  return [...settings.customCategories.map(hiddenCategoryFromCustom), ...CATEGORIES];
+}
+
+/** Look up any category id; `null` when a custom id is not (or no longer) defined. */
+export function findCategory(settings: GeldSettings, id: AnyCategoryId): HiddenCategory | null {
+  if (isCategoryId(id)) return categoryById(id);
+  const custom = customCategoryById(settings, id);
+  return custom === null ? null : hiddenCategoryFromCustom(custom);
+}
+
+/**
+ * Whether a built-in category has anything beyond its on/off switch in use:
+ * a disabled group or extra patterns. UIs open the "advanced" disclosure
+ * when this is true.
+ */
+export function hasAdvancedSettings(settings: GeldSettings, categoryId: CategoryId): boolean {
+  if (categoryPatternLines(settings, categoryId).length > 0) return true;
+  return categoryById(categoryId).groups.some((group) => !isGroupEnabled(settings, categoryId, group.id));
 }
 
 /** Merge a possibly partial/unknown stored value with the defaults. */
 export function normalizeSettings(value: unknown): GeldSettings {
   if (typeof value !== 'object' || value === null) return DEFAULT_SETTINGS;
   const record: Record<string, unknown> = { ...value };
+  const customCategories = readCustomCategories(record.customCategories);
   return {
     enabled: bool(record, 'enabled', DEFAULT_SETTINGS.enabled),
-    categories: readCategories(record.categories, record.hideTests),
-    testGroups: readTestGroups(record.testGroups),
-    customPatterns: isStringArray(record.customPatterns) ? record.customPatterns : DEFAULT_SETTINGS.customPatterns,
+    categories: readCategories(record.categories, record.hideTests, new Set(customCategories.map((custom) => custom.id))),
+    groups: readGroups(record.groups, record.testGroups),
+    categoryPatterns: readCategoryPatterns(record.categoryPatterns, record.customPatterns),
+    customCategories,
     repoRules: isStringArray(record.repoRules) ? record.repoRules : DEFAULT_SETTINGS.repoRules,
     groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
@@ -160,3 +273,18 @@ export function parsePatternList(text: string): readonly string[] {
 
 /** Keys of {@link CategoryId} in display order, for UIs. */
 export const CATEGORY_ORDER: readonly CategoryId[] = CATEGORY_IDS;
+
+/** Remove a custom category and every setting that referred to it. */
+export function withoutCustomCategory(settings: GeldSettings, id: AnyCategoryId): GeldSettings {
+  const categories: Partial<Record<AnyCategoryId, boolean>> = { ...settings.categories };
+  delete categories[id];
+  return { ...settings, categories, customCategories: settings.customCategories.filter((custom) => custom.id !== id) };
+}
+
+/** Add or replace a custom category (matched by id), keeping the list order for replacements. */
+export function withCustomCategory(settings: GeldSettings, custom: CustomCategory): GeldSettings {
+  const index = settings.customCategories.findIndex((existing) => existing.id === custom.id);
+  const customCategories =
+    index === -1 ? [...settings.customCategories, custom] : settings.customCategories.map((existing, position) => (position === index ? custom : existing));
+  return { ...settings, customCategories };
+}

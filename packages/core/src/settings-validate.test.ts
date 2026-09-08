@@ -68,6 +68,42 @@ describe('validateSettingsDocument', () => {
     ]);
   });
 
+  it('checks groups, per-category patterns and custom categories', () => {
+    const issues = issuesOf(
+      JSON.stringify({
+        geld: 1,
+        settings: {
+          categories: { 'custom:mine': true, 'custom:gone-but-fine': false },
+          groups: { 'tests/e2e': false, 'tests/nope': false, 'generated/lockfiles': 'no' },
+          categoryPatterns: { docs: ['*.md', 'a[z-a]'], bogus: ['x'], tests: 'nope' },
+          customCategories: [
+            { id: 'custom:mine', title: 'Mine', icon: 'paintbrush', patterns: ['mine/**'] },
+            { id: 'custom:mine', title: 'Dup', patterns: [] },
+            { id: 'nope', title: '', icon: 'unicorn', patterns: ['[]'], noun: 3 },
+            'not an object',
+          ],
+        },
+      }),
+    );
+    expect(issues).toEqual([
+      expect.stringMatching(/^settings\.groups\.tests\/nope: Unknown pattern group "tests\/nope"\./),
+      'settings.groups.generated/lockfiles: Expected true or false, got "no".',
+      'settings.categoryPatterns.docs[1]: "a[z-a]" is not a valid pattern: range out of order in character class.',
+      expect.stringMatching(/^settings\.categoryPatterns\.bogus: Unknown built-in category "bogus"\./),
+      'settings.categoryPatterns.tests: Expected a list of strings, got "nope".',
+      'settings.customCategories[1].id: Duplicate category id "custom:mine".',
+      'settings.customCategories[2].id: Expected an id like "custom:design-tokens", got "nope".',
+      'settings.customCategories[2].title: Expected a name, got "".',
+      expect.stringMatching(/^settings\.customCategories\[2\]\.icon: Unknown icon "unicorn"\./),
+      'settings.customCategories[2].patterns[0]: Empty repository scope "[]"; use "[owner/repo]", "[owner/*]" or "[*]".',
+      'settings.customCategories[2].noun: Expected a string, got 3.',
+      'settings.customCategories[3]: Expected a category object, got "not an object".',
+    ]);
+    expect(
+      issuesOf(JSON.stringify({ geld: 1, settings: { customCategories: [{ id: 'custom:ok', title: 'Ok', icon: 'tag', patterns: ['ok/**'] }], groups: { 'docs/docs': false } } })),
+    ).toEqual([]);
+  });
+
   it('ignores unknown keys so newer settings never look like corruption', () => {
     expect(issuesOf('{"geld":1,"settings":{"enabled":true,"futureSetting":{"x":1}}}')).toEqual([]);
   });

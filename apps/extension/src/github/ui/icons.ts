@@ -1,4 +1,5 @@
-import type { CategoryId } from '@geld/core';
+import type { CategoryIconName, HiddenCategory } from '@geld/core';
+import { CATEGORY_ICON_PATHS } from '@geld/core';
 
 /** Octicons (MIT, GitHub) used by Geld's UI, kept as plain markup. */
 
@@ -75,13 +76,17 @@ export const ICON_CHECK = octicon(
   'octicon-check',
 );
 
-/** Descriptive icon per hidden category (used in the tree sections and popup). */
-export const CATEGORY_ICONS: Readonly<Record<CategoryId, string>> = {
-  tests: ICON_BEAKER,
-  generated: ICON_PACKAGE_DEPENDENCIES,
-  vendored: ICON_PACKAGE,
-  agents: ICON_COPILOT,
-  docs: ICON_BOOK,
-  tooling: ICON_TOOLS,
-  stories: ICON_STACK,
-};
+/**
+ * Descriptive icon for a category (built-in or user-defined), drawn from the
+ * shared Octicon path data in @geld/core so every surface shows the same glyph.
+ */
+export function categoryIcon(icon: CategoryIconName): string {
+  return octicon(
+    CATEGORY_ICON_PATHS[icon].map((d) => `<path d="${d}"/>`).join(''),
+    `octicon-${icon}`,
+  );
+}
+
+export function categoryIconFor(category: HiddenCategory): string {
+  return categoryIcon(category.icon);
+}

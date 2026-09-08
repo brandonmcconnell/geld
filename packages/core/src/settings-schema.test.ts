@@ -10,17 +10,18 @@ describe('SETTINGS_SCHEMA', () => {
       .filter(([, value]) => typeof value === 'boolean')
       .map(([key]) => key)
       .sort();
+    // Line lists only: customCategories is a list of objects with its own field kind.
     const listKeys = Object.entries(DEFAULT_SETTINGS)
-      .filter(([, value]) => Array.isArray(value))
+      .filter(([key, value]) => Array.isArray(value) && key !== 'customCategories')
       .map(([key]) => key)
       .sort();
     expect(toggleFields(allFields).map((field) => field.key).sort()).toEqual(booleanKeys);
     expect(listFields(allFields).map((field) => field.key).sort()).toEqual(listKeys);
   });
 
-  it('covers categories and test groups with one field each', () => {
+  it('covers categories and custom categories with one field each', () => {
     expect(allFields.filter((field) => field.kind === 'categories')).toHaveLength(1);
-    expect(allFields.filter((field) => field.kind === 'test-groups')).toHaveLength(1);
+    expect(allFields.filter((field) => field.kind === 'custom-categories')).toHaveLength(1);
   });
 
   it('keeps browser-only settings off the site', () => {

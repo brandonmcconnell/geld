@@ -37,14 +37,48 @@ export interface ToggleField extends FieldBase {
   readonly key: BooleanSettingKey;
 }
 
-/** One switch per {@link import('./categories').HiddenCategory}. */
-export interface CategoriesField extends FieldBase {
-  readonly kind: 'categories';
+/** Copy for a pattern editor (a textarea with syntax help and a save button). */
+export interface PatternEditorCopy {
+  readonly label: string;
+  readonly description: string;
+  readonly placeholder: string;
+  readonly rows: number;
+  /** Short syntax help shown next to the editor. */
+  readonly syntax: readonly string[];
+  /** Verb for the save button ("Save patterns"). */
+  readonly saveLabel: string;
 }
 
-/** One checkbox per test pattern group, nested under the Tests category. */
-export interface TestGroupsField extends FieldBase {
-  readonly kind: 'test-groups';
+/**
+ * One row per category (built-in and custom) with its switch. Each built-in
+ * row has an "advanced" disclosure holding the group checkboxes and the extra
+ * patterns editor; surfaces open it by default when
+ * `hasAdvancedSettings` is true for that category.
+ */
+export interface CategoriesField extends FieldBase {
+  readonly kind: 'categories';
+  readonly advanced: {
+    readonly label: string;
+    readonly description: string;
+    readonly groupsLabel: string;
+    readonly groupsDescription: string;
+  };
+  readonly extraPatterns: PatternEditorCopy;
+}
+
+/** Editor for user-defined categories: title, icon and patterns. */
+export interface CustomCategoriesField extends FieldBase {
+  readonly kind: 'custom-categories';
+  readonly addLabel: string;
+  readonly emptyLabel: string;
+  readonly titleLabel: string;
+  readonly titlePlaceholder: string;
+  readonly iconLabel: string;
+  readonly nounLabel: string;
+  readonly nounDescription: string;
+  readonly patterns: PatternEditorCopy;
+  readonly deleteLabel: string;
+  readonly deleteConfirm: string;
 }
 
 export interface ListField extends FieldBase {
@@ -58,9 +92,9 @@ export interface ListField extends FieldBase {
   readonly saveLabel: string;
 }
 
-export type SettingsField = ToggleField | CategoriesField | TestGroupsField | ListField;
+export type SettingsField = ToggleField | CategoriesField | CustomCategoriesField | ListField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'custom-patterns' | 'repositories' | 'enterprise';
+export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'enterprise';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -139,42 +173,66 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     id: 'hide',
     title: 'What to hide',
     intro:
-      'Each category has its own switch. Expand one to see the built-in patterns it uses. Tests are on by default; everything else is opt-in.',
+      'Each category has its own switch. Tests are on by default; everything else is opt-in. Open a category to turn off some of its built-in pattern groups or add patterns of your own.',
     fields: [
       {
         kind: 'categories',
         label: 'Hide',
         description: 'Kinds of files to move out of the way.',
         popup: true,
-      },
-      {
-        kind: 'test-groups',
-        label: 'Kinds of tests',
-        description: 'Fine-grained control over which built-in test patterns apply.',
-        popup: false,
+        advanced: {
+          label: 'Advanced',
+          description: 'Built-in pattern groups and your own patterns for this category.',
+          groupsLabel: 'Built-in patterns',
+          groupsDescription: 'Untick a group to stop hiding the files it matches.',
+        },
+        extraPatterns: {
+          label: 'Extra patterns',
+          description: 'Your own globs for this category.',
+          rows: 5,
+          placeholder: '*.golden\n!src/keep/**\n\n[acme/*]\nfixtures/**/*.json',
+          syntax: [
+            '`*.snap` matches a file name anywhere; `fixtures/` a directory anywhere; `src/**/*.gen.ts` a full path.',
+            '`{a,b}` expands alternatives; a leading `!` keeps a file visible even if a built-in pattern of this category would hide it.',
+            '`[acme/*]` scopes the lines below it to those repositories; `[*]` returns to all.',
+          ],
+          saveLabel: 'Save patterns',
+        },
       },
     ],
   },
   {
-    id: 'custom-patterns',
-    title: 'Custom patterns',
+    id: 'custom-categories',
+    title: 'Your categories',
     intro:
-      'One glob per line, matched against the repository-relative path with gitignore rules: `*.snap` matches a file name anywhere, `fixtures/` a directory anywhere, `src/**/*.gen.ts` a full path, `{a,b}` alternatives, and a leading `!` rescues files that a built-in pattern would hide. Matching files are treated as tests. A line like `[acme/*]` scopes the lines below it to those repositories; `[*]` returns to all repositories.',
+      'Add categories of your own — say, `Migrations` or `Design tokens`. Each gets a switch, its own panel in the file tree and its own count, and is matched before the built-in categories.',
     fields: [
       {
-        kind: 'list',
-        key: 'customPatterns',
-        label: 'Custom patterns',
-        description: 'Extra globs treated as tests.',
+        kind: 'custom-categories',
+        label: 'Custom categories',
+        description: 'Categories you defined.',
         popup: false,
-        rows: 8,
-        placeholder: '# everywhere\n*.generated.ts\n!tests/contracts/**\n\n[acme/*]\n# only in Acme repositories\ndocs/adr/',
-        syntax: [
-          '`*.snap` matches a file name anywhere; `fixtures/` a directory anywhere; `src/**/*.gen.ts` a full path.',
-          '`{a,b}` expands alternatives; a leading `!` rescues files a built-in pattern would hide.',
-          '`[acme/*]` scopes the lines below it to those repositories; `[*]` returns to all.',
-        ],
-        saveLabel: 'Save patterns',
+        addLabel: 'Add category',
+        emptyLabel: 'No custom categories yet.',
+        titleLabel: 'Name',
+        titlePlaceholder: 'Design tokens',
+        iconLabel: 'Icon',
+        nounLabel: 'Count label (singular, plural)',
+        nounDescription: 'Used in counts such as “3 tokens”. Defaults to the name.',
+        patterns: {
+          label: 'Patterns',
+          description: 'Files that belong to this category.',
+          rows: 5,
+          placeholder: 'tokens/**\n*.tokens.json\n!tokens/README.md',
+          syntax: [
+            '`*.snap` matches a file name anywhere; `fixtures/` a directory anywhere; `src/**/*.gen.ts` a full path.',
+            '`{a,b}` expands alternatives; a leading `!` keeps a file visible.',
+            '`[acme/*]` scopes the lines below it to those repositories; `[*]` returns to all.',
+          ],
+          saveLabel: 'Save category',
+        },
+        deleteLabel: 'Delete category',
+        deleteConfirm: 'Delete this category? Files it matched will show again.',
       },
     ],
   },

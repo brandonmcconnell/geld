@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { CATEGORIES } from '@geld/core';
+import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabState } from '../../src/lib/messages';
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
@@ -123,7 +123,8 @@ async function main(): Promise<void> {
     heading.textContent = field.label;
     const grid = document.createElement('div');
     grid.className = 'popup__categories-grid';
-    for (const category of CATEGORIES) {
+    // Built-in and user-defined categories alike; a new custom category appears here after a reload of the popup.
+    for (const category of allCategories(settings)) {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.className = 'geld-checkbox';
@@ -311,7 +312,7 @@ async function main(): Promise<void> {
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggles) set(next[field.key]);
-    for (const category of CATEGORIES) {
+    for (const category of allCategories(next)) {
       const input = categoryInputs.get(category.id);
       if (input !== undefined) input.checked = isCategoryEnabled(next, category.id);
     }

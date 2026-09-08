@@ -218,6 +218,145 @@ body {
   white-space: normal;
 }
 
+/* Category advanced settings and custom categories ----------------------------- */
+
+.options__category-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+
+.options__advanced-badge {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.options__category[open] > summary .options__advanced-badge {
+  color: var(--foreground);
+}
+
+.options__advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 30%, transparent);
+}
+
+.options__advanced-intro {
+  margin: 0;
+}
+
+.options__advanced .options__groups {
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+}
+
+.options__advanced-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 4px;
+}
+
+.options__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.options__editor .options__textarea {
+  min-height: 0;
+}
+
+.options__syntax {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 16px;
+}
+
+.options__editor .options__actions {
+  margin-top: 4px;
+}
+
+.options__actions--start {
+  justify-content: flex-start;
+}
+
+.options__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.options__noun-row {
+  display: flex;
+  gap: 8px;
+}
+
+.options__input--short {
+  flex: 0 1 180px;
+}
+
+.options__icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.options__icon-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.options__icon-option:hover {
+  background: color-mix(in oklch, var(--muted) 80%, transparent);
+  color: var(--foreground);
+}
+
+.options__icon-option[aria-checked='true'] {
+  border-color: var(--foreground);
+  color: var(--foreground);
+}
+
+.options__icon-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.options__icon-option .options__category-icon {
+  color: inherit;
+}
+
+.options__categories--custom:empty {
+  display: none;
+}
+
+.options__empty {
+  margin: 0;
+  padding: 12px 16px;
+}
+
+.options__more-row {
+  margin: 10px 0 0;
+}
+
 /* Tester --------------------------------------------------------------------- */
 
 .options__tester {

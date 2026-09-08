@@ -1,4 +1,5 @@
-import { CATEGORY_IDS, isCategoryId } from './categories';
+import { CATEGORY_IDS, categoryById, isCategoryId, isCustomCategoryId, isGroupKey } from './categories';
+import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
 import { normalizeHost, normalizeSettings } from './settings';
@@ -134,6 +135,63 @@ function hostProblem(line: string): string | null {
   return normalizeHost(line) === null ? `"${line}" is not a hostname Geld can run on (e.g. "github.example.com").` : null;
 }
 
+const GROUP_KEYS: readonly string[] = CATEGORY_IDS.flatMap((id) => categoryById(id).groups.map((group) => `${id}/${group.id}`));
+
+/** `settings.categoryPatterns`: an object of built-in category id → pattern lines. */
+function checkCategoryPatterns(issues: SettingsIssue[], path: string, value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    issues.push({ path, message: `Expected an object mapping category ids to pattern lists, got ${describeValue(value)}.` });
+    return;
+  }
+  for (const [key, lines] of Object.entries(value)) {
+    const keyPath = `${path}.${key}`;
+    if (!isCategoryId(key)) {
+      issues.push({ path: keyPath, message: `Unknown built-in category "${key}". Known: ${list(CATEGORY_IDS)}.` });
+      continue;
+    }
+    checkStringList(issues, keyPath, lines, customPatternProblem);
+  }
+}
+
+/** `settings.customCategories`: a list of `{ id, title, icon, patterns }`. */
+function checkCustomCategories(issues: SettingsIssue[], path: string, value: unknown): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: `Expected a list of categories, got ${describeValue(value)}.` });
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((entry: unknown, index) => {
+    const entryPath = `${path}[${index}]`;
+    if (!isRecord(entry)) {
+      issues.push({ path: entryPath, message: `Expected a category object, got ${describeValue(entry)}.` });
+      return;
+    }
+    if (!isCustomCategoryId(entry.id)) {
+      issues.push({ path: `${entryPath}.id`, message: `Expected an id like "custom:design-tokens", got ${describeValue(entry.id)}.` });
+    } else if (seen.has(entry.id)) {
+      issues.push({ path: `${entryPath}.id`, message: `Duplicate category id "${entry.id}".` });
+    } else {
+      seen.add(entry.id);
+    }
+    if (typeof entry.title !== 'string' || entry.title.trim() === '') {
+      issues.push({ path: `${entryPath}.title`, message: `Expected a name, got ${describeValue(entry.title)}.` });
+    } else if (entry.title.trim().length > 40) {
+      issues.push({ path: `${entryPath}.title`, message: `Names are at most 40 characters; got ${entry.title.trim().length}.` });
+    }
+    if (entry.icon !== undefined && !isCategoryIconName(entry.icon)) {
+      issues.push({ path: `${entryPath}.icon`, message: `Unknown icon ${describeValue(entry.icon)}. Known: ${list(CATEGORY_ICON_NAMES)}.` });
+    }
+    checkStringList(issues, `${entryPath}.patterns`, entry.patterns, customPatternProblem);
+    for (const key of ['noun', 'nounPlural'] as const) {
+      if (entry[key] !== undefined && typeof entry[key] !== 'string') {
+        issues.push({ path: `${entryPath}.${key}`, message: `Expected a string, got ${describeValue(entry[key])}.` });
+      }
+    }
+  });
+}
+
 /**
  * Validate a parsed settings object (the value of `settings` in the gist, or a
  * bare settings object). Returns every problem found; an empty list means the
@@ -154,7 +212,12 @@ export function collectSettingsIssues(value: unknown, path = 'settings'): readon
   if (value.hideTests !== undefined && typeof value.hideTests !== 'boolean') {
     issues.push({ path: `${path}.hideTests`, message: `Expected true or false, got ${describeValue(value.hideTests)}.` });
   }
-  checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, isCategoryId, 'category');
+  // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
+  checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key), 'category');
+  checkBooleanMap(issues, `${path}.groups`, value.groups, GROUP_KEYS, isGroupKey, 'pattern group');
+  checkCategoryPatterns(issues, `${path}.categoryPatterns`, value.categoryPatterns);
+  checkCustomCategories(issues, `${path}.customCategories`, value.customCategories);
+  // Keys from earlier versions, still accepted and migrated by normalizeSettings.
   checkBooleanMap(issues, `${path}.testGroups`, value.testGroups, TEST_PATTERN_GROUP_IDS, isTestPatternGroupId, 'test group');
   checkStringList(issues, `${path}.customPatterns`, value.customPatterns, customPatternProblem);
   checkStringList(issues, `${path}.repoRules`, value.repoRules, repoRuleProblem);

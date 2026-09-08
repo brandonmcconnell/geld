@@ -1,16 +1,38 @@
 import { browser } from 'wxt/browser';
-import type { HiddenCategory, PatternGroup } from '@geld/core';
-import { CATEGORIES } from '@geld/core';
-import { compileGlobs } from '@geld/core';
-import { createMatcher } from '@geld/core';
-import { compileRepoRules, decideRepo } from '@geld/core';
-import { grantedHosts, originPattern } from '../../src/lib/enterprise';
-import { DEFAULT_SETTINGS, isCategoryEnabled, isTestGroupEnabled, normalizeHost, parsePatternList } from '@geld/core';
+import type { BuiltInCategory, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
+import {
+  CATEGORIES,
+  CATEGORY_ICON_NAMES,
+  categoryIconLabel,
+  categoryPatternLines,
+  compileGlobs,
+  compileRepoRules,
+  createMatcher,
+  customCategoryId,
+  DEFAULT_SETTINGS,
+  decideRepo,
+  groupKey,
+  hasAdvancedSettings,
+  hiddenCategoryFromCustom,
+  isCategoryEnabled,
+  isGroupEnabled,
+  listFields,
+  normalizeHost,
+  parsePatternList,
+  sectionsFor,
+  serializeSettingsPayload,
+  splitInlineCode,
+  toggleFields,
+  validateSettingsDocument,
+  withCustomCategory,
+  withoutCustomCategory,
+} from '@geld/core';
 import type { ListField, SettingsSectionId, ToggleField } from '@geld/core';
-import { listFields, sectionsFor, serializeSettingsPayload, splitInlineCode, toggleFields, validateSettingsDocument } from '@geld/core';
+import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import { settingsItem } from '../../src/lib/storage';
-import { isTestPatternGroupId } from '@geld/core';
 import { BUILT_IN_CLIENT_ID, oauthClientIdItem } from '../../src/lib/account';
+import { svgFromString } from '../../src/github/dom';
+import { categoryIcon } from '../../src/github/ui/icons';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 
@@ -18,9 +40,16 @@ import { bindSwitch, requireElement } from '../../src/ui/switch';
 
 type Tone = 'success' | 'error' | 'neutral';
 
-function statusReporter(element: HTMLElement): (message: string, tone: Tone) => void {
+interface StatusReporter {
+  (message: string, tone: Tone): void;
+  /** Redirect output to another element (for reporters created before their node). */
+  attach(target: HTMLElement): void;
+}
+
+function statusReporter(initial: HTMLElement): StatusReporter {
+  let element = initial;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return (message, tone) => {
+  const report = (message: string, tone: Tone): void => {
     element.textContent = message;
     if (tone === 'neutral') delete element.dataset.tone;
     else element.dataset.tone = tone;
@@ -32,6 +61,12 @@ function statusReporter(element: HTMLElement): (message: string, tone: Tone) => 
       }, 2200);
     }
   };
+  const reporter: StatusReporter = Object.assign(report, {
+    attach(target: HTMLElement): void {
+      element = target;
+    },
+  });
+  return reporter;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -100,6 +135,15 @@ function validatePatterns(lines: readonly string[]): string | null {
   return null;
 }
 
+function requireCategoryFields(): { readonly categoriesField: CategoriesField; readonly customField: CustomCategoriesField } {
+  const hideSection = sections.find((section) => section.id === 'hide');
+  const categoriesField = hideSection?.fields.find((field): field is CategoriesField => field.kind === 'categories');
+  const customSection = sections.find((section) => section.id === 'custom-categories');
+  const customField = customSection?.fields.find((field): field is CustomCategoriesField => field.kind === 'custom-categories');
+  if (categoriesField === undefined || customField === undefined) throw new Error('Settings schema is missing the category fields.');
+  return { categoriesField, customField };
+}
+
 /* ------------------------------------------------------------------- main */
 
 async function main(): Promise<void> {
@@ -134,85 +178,293 @@ async function main(): Promise<void> {
   });
   applySchemaCopy('hide');
 
-  /* Categories */
-  const categoriesHost = requireElement('categories', HTMLDivElement);
-  const categorySwitches = new Map<string, (checked: boolean) => void>();
-  const groupChecks = new Map<string, HTMLInputElement>();
+  /* Categories: built-ins with an "advanced" disclosure, then the user's own. */
+  const { categoriesField, customField } = requireCategoryFields();
+  applySchemaCopy('custom-categories');
 
-  function renderGroup(category: HiddenCategory, group: PatternGroup): HTMLElement {
-    const patterns = el(
-      'ul',
-      'options__patterns',
-      group.patterns.map((pattern) => el('li', '', [el('code', '', [pattern])])),
-    );
-    const title = el('span', 'options__group-title', [group.label]);
-    const description = el('span', 'options__group-description', [group.description]);
-    let heading: HTMLElement;
-    if (category.id === 'tests' && isTestPatternGroupId(group.id)) {
-      const groupId = group.id;
-      const checkbox = el('input', 'geld-checkbox');
-      checkbox.type = 'checkbox';
-      checkbox.checked = isTestGroupEnabled(settings, groupId);
-      checkbox.addEventListener('change', async () => {
-        settings = await settingsItem.update((current) => ({ testGroups: { ...current.testGroups, [groupId]: checkbox.checked } }));
-      });
-      groupChecks.set(groupId, checkbox);
-      heading = el('label', 'options__group-heading options__group-heading--checkbox', [checkbox, el('span', '', [title, description])]);
-    } else {
-      heading = el('div', 'options__group-heading', [el('span', '', [title, description])]);
-    }
-    const count = el('span', 'options__group-count', [`${group.patterns.length}`]);
-    const chevron = el('span', 'geld-chevron');
-    chevron.setAttribute('aria-hidden', 'true');
-    const details = el('details', 'options__group', [el('summary', '', [heading, count, chevron]), patterns]);
-    return details;
+  const categoriesHost = requireElement('categories', HTMLDivElement);
+  const customHost = requireElement('custom-categories', HTMLDivElement);
+  const customStatus = statusReporter(requireElement('custom-categories-status', HTMLSpanElement));
+
+  function iconNode(icon: CategoryIconName): SVGElement {
+    const node = svgFromString(categoryIcon(icon));
+    node.classList.add('options__category-icon');
+    return node;
   }
 
-  for (const category of CATEGORIES) {
+  function patternChips(patterns: readonly string[]): HTMLUListElement {
+    return el(
+      'ul',
+      'options__patterns',
+      patterns.map((pattern) => el('li', '', [el('code', '', [pattern])])),
+    );
+  }
+
+  /** One built-in pattern group: checkbox, label, count, expandable pattern list. */
+  function renderGroup(category: BuiltInCategory, group: PatternGroup): HTMLElement {
+    const title = el('span', 'options__group-title', [group.label]);
+    const description = el('span', 'options__group-description', [group.description]);
+    const checkbox = el('input', 'geld-checkbox options__checkbox');
+    checkbox.type = 'checkbox';
+    checkbox.checked = isGroupEnabled(settings, category.id, group.id);
+    checkbox.addEventListener('change', async () => {
+      settings = await settingsItem.update((current) => ({ groups: { ...current.groups, [groupKey(category.id, group.id)]: checkbox.checked } }));
+      runTester();
+    });
+    const heading = el('label', 'options__group-heading options__group-heading--checkbox', [checkbox, el('span', '', [title, description])]);
+    const count = el('span', 'options__group-count', [`${group.patterns.length}`]);
+    return el('details', 'options__group', [el('summary', '', [el('span', 'options__chevron', ['\u203a']), heading, count]), patternChips(group.patterns)]);
+  }
+
+  /** Textarea + save button for a pattern list; `onSave` receives the cleaned lines. */
+  function patternEditor(
+    copy: { readonly label: string; readonly description: string; readonly placeholder: string; readonly rows: number; readonly syntax: readonly string[]; readonly saveLabel: string },
+    lines: readonly string[],
+    onSave: (lines: readonly string[]) => Promise<string | null>,
+  ): { readonly root: HTMLElement; readonly textarea: HTMLTextAreaElement } {
+    const label = el('span', 'geld-label', [copy.label]);
+    const help = el('p', 'geld-help', [copy.description]);
+    const textarea = el('textarea', 'geld-textarea geld-code options__textarea');
+    textarea.rows = copy.rows;
+    textarea.placeholder = copy.placeholder;
+    textarea.spellcheck = false;
+    textarea.value = lines.join('\n');
+    textarea.setAttribute('aria-label', copy.label);
+    const syntax = el(
+      'ul',
+      'geld-help options__syntax',
+      copy.syntax.map((line) => el('li', '', richText(line))),
+    );
+    const status = statusReporter(el('span', 'geld-status'));
+    const save = el('button', 'geld-button geld-button--primary geld-button--small', [copy.saveLabel]);
+    save.type = 'button';
+    textarea.addEventListener('input', () => status(parsePatternList(textarea.value).join('\n') !== lines.join('\n') ? 'Unsaved changes' : '', 'neutral'));
+    save.addEventListener('click', async () => {
+      const cleaned = parsePatternList(textarea.value);
+      const problem = validatePatterns(cleaned);
+      if (problem !== null) {
+        status(problem, 'error');
+        return;
+      }
+      const failure = await onSave(cleaned);
+      if (failure !== null) {
+        status(failure, 'error');
+        return;
+      }
+      textarea.value = cleaned.join('\n');
+      status(`Saved ${cleaned.length} line${cleaned.length === 1 ? '' : 's'}`, 'success');
+    });
+    const statusNode = el('span', 'geld-status');
+    status.attach(statusNode);
+    return {
+      root: el('div', 'options__editor', [label, help, textarea, syntax, el('div', 'geld-row options__actions', [statusNode, save])]),
+      textarea,
+    };
+  }
+
+  /** A built-in category: switch in the summary, groups and extra patterns behind "Advanced". */
+  function renderBuiltIn(category: BuiltInCategory): HTMLElement {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
     const help = el('p', 'geld-help', [category.description]);
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
-    const bound = bindSwitch(button, isCategoryEnabled(settings, category.id), async (value) => {
+    bindSwitch(button, isCategoryEnabled(settings, category.id), async (value) => {
       settings = await settingsItem.update((current) => ({ categories: { ...current.categories, [category.id]: value } }));
+      runTester();
     });
-    categorySwitches.set(category.id, bound.set);
-
-    const groups = el('div', 'options__groups', category.groups.map((group) => renderGroup(category, group)));
-    const chevron = el('span', 'geld-chevron');
-    chevron.setAttribute('aria-hidden', 'true');
-    const card = el('details', 'options__category', [
-      el('summary', 'options__category-summary', [chevron, el('div', 'options__category-text', [label, help])]),
-      groups,
-    ]);
-    // The switch sits in the summary but must not toggle the accordion.
-    const summary = card.querySelector('summary');
     button.addEventListener('click', (event) => event.stopPropagation());
-    summary?.append(button);
-    categoriesHost.append(card);
+
+    const groups = el('div', 'options__groups', [
+      el('p', 'options__advanced-title', [el('span', 'geld-label', [categoriesField.advanced.groupsLabel]), el('span', 'geld-help', [categoriesField.advanced.groupsDescription])]),
+      ...category.groups.map((group) => renderGroup(category, group)),
+    ]);
+    const editor = patternEditor(categoriesField.extraPatterns, categoryPatternLines(settings, category.id), async (lines) => {
+      settings = await settingsItem.update((current) => {
+        const categoryPatterns = { ...current.categoryPatterns };
+        if (lines.length === 0) delete categoryPatterns[category.id];
+        else categoryPatterns[category.id] = lines;
+        return { categoryPatterns };
+      });
+      runTester();
+      return null;
+    });
+    const body = el('div', 'options__advanced', [el('p', 'geld-help options__advanced-intro', [categoriesField.advanced.description]), groups, editor.root]);
+    const card = el('details', 'options__category', [
+      el('summary', 'options__category-summary', [
+        el('span', 'options__chevron', ['\u203a']),
+        iconNode(category.icon),
+        el('div', 'options__category-text', [label, help]),
+        el('span', 'options__advanced-badge', [categoriesField.advanced.label]),
+        button,
+      ]),
+      body,
+    ]);
+    card.dataset.categoryId = category.id;
+    // Open when anything beyond the switch is in use, so those settings are seen.
+    card.open = hasAdvancedSettings(settings, category.id);
+    return card;
   }
 
-  /* Custom patterns */
-  applySchemaCopy('custom-patterns');
-  const patternsStatus = statusReporter(requireElement('patterns-status', HTMLSpanElement));
-  const patternsArea = requireElement('custom-patterns', HTMLTextAreaElement);
-  patternsArea.value = settings.customPatterns.join('\n');
-  patternsArea.addEventListener('input', () => {
-    patternsStatus(patternsArea.value.trim() !== settings.customPatterns.join('\n') ? 'Unsaved changes' : '', 'neutral');
-  });
-  requireElement('save-patterns', HTMLButtonElement).addEventListener('click', async () => {
-    const customPatterns = parsePatternList(patternsArea.value);
-    const problem = validatePatterns(customPatterns);
-    if (problem !== null) {
-      patternsStatus(problem, 'error');
-      return;
+  /** Icon picker: a grid of radio-like buttons. */
+  function iconPicker(current: CategoryIconName, onPick: (icon: CategoryIconName) => void): HTMLElement {
+    const grid = el('div', 'options__icon-grid');
+    grid.setAttribute('role', 'radiogroup');
+    grid.setAttribute('aria-label', customField.iconLabel);
+    let selected = current;
+    const buttons = new Map<CategoryIconName, HTMLButtonElement>();
+    for (const name of CATEGORY_ICON_NAMES) {
+      const option = el('button', 'options__icon-option', [iconNode(name)]);
+      option.type = 'button';
+      option.title = categoryIconLabel(name);
+      option.setAttribute('role', 'radio');
+      option.setAttribute('aria-label', categoryIconLabel(name));
+      option.setAttribute('aria-checked', String(name === selected));
+      option.addEventListener('click', () => {
+        buttons.get(selected)?.setAttribute('aria-checked', 'false');
+        selected = name;
+        option.setAttribute('aria-checked', 'true');
+        onPick(name);
+      });
+      buttons.set(name, option);
+      grid.append(option);
     }
-    settings = await settingsItem.patch({ customPatterns });
-    patternsArea.value = customPatterns.join('\n');
-    patternsStatus(`Saved ${customPatterns.length} line${customPatterns.length === 1 ? '' : 's'}`, 'success');
-    runTester();
+    return grid;
+  }
+
+  /** A custom category: switch + editor (name, icon, count label, patterns, delete). */
+  function renderCustom(existing: CustomCategory | null): HTMLElement {
+    let title = existing?.title ?? '';
+    let icon: CategoryIconName = existing?.icon ?? 'tag';
+    let noun = existing?.noun ?? '';
+    let nounPlural = existing?.nounPlural ?? '';
+    const hidden: HiddenCategory | null = existing === null ? null : hiddenCategoryFromCustom(existing);
+
+    const label = el('span', 'geld-label', [existing?.title ?? 'New category']);
+    const help = el('p', 'geld-help', [existing === null ? 'Not saved yet.' : `${existing.patterns.length} pattern${existing.patterns.length === 1 ? '' : 's'}`]);
+    const summaryIcon = iconNode(icon);
+    const summaryChildren: Array<Node | string> = [el('span', 'options__chevron', ['\u203a']), summaryIcon, el('div', 'options__category-text', [label, help])];
+    if (existing !== null) {
+      label.id = `category-${existing.id}-label`;
+      help.id = `category-${existing.id}-help`;
+      const button = switchButton(`category-${existing.id}`, isCategoryEnabled(settings, existing.id), label.id, help.id);
+      bindSwitch(button, isCategoryEnabled(settings, existing.id), async (value) => {
+        settings = await settingsItem.update((current) => ({ categories: { ...current.categories, [existing.id]: value } }));
+        runTester();
+      });
+      button.addEventListener('click', (event) => event.stopPropagation());
+      summaryChildren.push(button);
+    }
+
+    const nameInput = el('input', 'geld-input options__input');
+    nameInput.type = 'text';
+    nameInput.value = title;
+    nameInput.placeholder = customField.titlePlaceholder;
+    nameInput.maxLength = 40;
+    nameInput.setAttribute('aria-label', customField.titleLabel);
+    nameInput.addEventListener('input', () => {
+      title = nameInput.value;
+      label.textContent = title.trim() === '' ? 'New category' : title.trim();
+    });
+    const nounInput = el('input', 'geld-input options__input options__input--short');
+    nounInput.type = 'text';
+    nounInput.value = noun;
+    nounInput.placeholder = 'token';
+    nounInput.setAttribute('aria-label', 'Count label, singular');
+    nounInput.addEventListener('input', () => {
+      noun = nounInput.value;
+    });
+    const nounPluralInput = el('input', 'geld-input options__input options__input--short');
+    nounPluralInput.type = 'text';
+    nounPluralInput.value = nounPlural;
+    nounPluralInput.placeholder = 'tokens';
+    nounPluralInput.setAttribute('aria-label', 'Count label, plural');
+    nounPluralInput.addEventListener('input', () => {
+      nounPlural = nounPluralInput.value;
+    });
+    const picker = iconPicker(icon, (next) => {
+      icon = next;
+      summaryIcon.replaceWith(iconNode(next));
+    });
+
+    const editor = patternEditor(customField.patterns, existing?.patterns ?? [], async (lines) => {
+      const cleanTitle = title.trim();
+      if (cleanTitle === '') return `Give the category a ${customField.titleLabel.toLowerCase()} first.`;
+      const taken = new Set(settings.customCategories.map((custom) => custom.id));
+      const id = existing?.id ?? customCategoryId(cleanTitle, taken);
+      const custom: CustomCategory = {
+        id,
+        title: cleanTitle,
+        icon,
+        patterns: lines,
+        ...(noun.trim() !== '' ? { noun: noun.trim() } : {}),
+        ...(nounPlural.trim() !== '' ? { nounPlural: nounPlural.trim() } : {}),
+      };
+      settings = await settingsItem.update((current) => ({ customCategories: withCustomCategory(current, custom).customCategories }));
+      customStatus(existing === null ? `Added “${cleanTitle}”` : 'Saved', 'success');
+      renderAll();
+      return null;
+    });
+
+    const remove = el('button', 'geld-button geld-button--small geld-button--danger', [existing === null ? 'Discard' : customField.deleteLabel]);
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      if (existing === null) {
+        // Discard the unsaved draft.
+        renderAll();
+        return;
+      }
+      if (!confirm(customField.deleteConfirm)) return;
+      settings = await settingsItem.update((current) => withoutCustomCategory(current, existing.id));
+      customStatus(`Deleted “${existing.title}”`, 'success');
+      renderAll();
+    });
+
+    const body = el('div', 'options__advanced options__custom-editor', [
+      el('div', 'options__field', [el('span', 'geld-label', [customField.titleLabel]), nameInput]),
+      el('div', 'options__field', [el('span', 'geld-label', [customField.iconLabel]), picker]),
+      el('div', 'options__field', [
+        el('span', 'geld-label', [customField.nounLabel]),
+        el('p', 'geld-help', [customField.nounDescription]),
+        el('div', 'options__noun-row', [nounInput, nounPluralInput]),
+      ]),
+      editor.root,
+      el('div', 'geld-row options__actions options__actions--start', [remove]),
+    ]);
+    const card = el('details', 'options__category options__category--custom', [el('summary', 'options__category-summary', summaryChildren), body]);
+    if (hidden !== null) card.dataset.categoryId = hidden.id;
+    // A new draft opens ready to edit; saved categories reopen through renderAll's bookkeeping.
+    card.open = existing === null;
+    return card;
+  }
+
+  /** Rebuild both category lists from the current settings, keeping open disclosures open. */
+  function renderAll(): void {
+    const wasOpen = new Set(
+      Array.from(document.querySelectorAll<HTMLDetailsElement>('details.options__category[open]')).map((card) => card.dataset.categoryId ?? ''),
+    );
+    categoriesHost.replaceChildren(...CATEGORIES.map(renderBuiltIn));
+    // Re-rendering drops an unsaved draft; the Add button starts a fresh one.
+    const customCards = settings.customCategories.map((custom) => renderCustom(custom));
+    if (customCards.length === 0) customHost.replaceChildren(el('p', 'geld-help options__empty', [customField.emptyLabel]));
+    else customHost.replaceChildren(...customCards);
+    for (const card of document.querySelectorAll<HTMLDetailsElement>('details.options__category')) {
+      const id = card.dataset.categoryId ?? '';
+      if (wasOpen.has(id)) card.open = true;
+    }
+  }
+  renderAll();
+  requireElement('add-category', HTMLButtonElement).addEventListener('click', () => {
+    if (customHost.querySelector('details.options__category--custom:not([data-category-id])') !== null) return;
+    if (settings.customCategories.length === 0) customHost.replaceChildren();
+    const card = renderCustom(null);
+    customHost.append(card);
+    card.querySelector('input')?.focus();
   });
+
+  /** Signature of everything the two category lists render, to skip needless rebuilds. */
+  const categorySignature = (value: GeldSettings): string =>
+    JSON.stringify([value.categories, value.groups, value.categoryPatterns, value.customCategories]);
 
   /* Repository rules */
   applySchemaCopy('repositories');
@@ -372,15 +624,17 @@ async function main(): Promise<void> {
     maintenanceStatus('Restored default settings', 'success');
   });
 
-  /* Keep the page in sync with changes made elsewhere (popup, other windows). */
+  /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
+  let lastSignature = categorySignature(settings);
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of generalSwitches) set(next[field.key]);
-    for (const category of CATEGORIES) categorySwitches.get(category.id)?.(isCategoryEnabled(next, category.id));
-    for (const [groupId, checkbox] of groupChecks) {
-      if (isTestPatternGroupId(groupId)) checkbox.checked = isTestGroupEnabled(next, groupId);
+    const signature = categorySignature(next);
+    // Rebuilding while someone types in a pattern box would eat their input.
+    if (signature !== lastSignature && !(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) {
+      lastSignature = signature;
+      renderAll();
     }
-    if (document.activeElement !== patternsArea) patternsArea.value = next.customPatterns.join('\n');
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();

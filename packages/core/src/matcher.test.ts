@@ -89,20 +89,47 @@ describe('settings interplay', () => {
     expect(disabled.categorize('src/a.test.ts')).toBeNull();
   });
 
-  it('matches only custom patterns when built-in tests are off', () => {
+  it('turning a category off also drops its extra patterns', () => {
     const custom = createMatcher({
       ...DEFAULT_SETTINGS,
       categories: { tests: false },
-      customPatterns: ['*.generated.ts'],
+      categoryPatterns: { tests: ['*.generated.ts'] },
     });
     expect(custom.categorize('src/a.test.ts')).toBeNull();
-    expect(custom.categorize('src/schema.generated.ts')).toBe(TESTS_CATEGORY);
+    expect(custom.categorize('src/schema.generated.ts')).toBeNull();
   });
 
-  it('honours test sub-group toggles', () => {
-    const noE2e = createMatcher({ ...DEFAULT_SETTINGS, testGroups: { e2e: false } });
+  it('extra patterns extend a built-in category and are attributed to it', () => {
+    const matcher = createMatcher({
+      ...DEFAULT_SETTINGS,
+      categories: { generated: true },
+      categoryPatterns: { generated: ['*.golden'], tests: ['*.spec.yaml'] },
+    });
+    expect(matcher.explain('lib/a.golden')).toMatchObject({ category: { id: 'generated' }, source: 'custom', pattern: '*.golden' });
+    expect(matcher.explain('api.spec.yaml')).toMatchObject({ category: TESTS_CATEGORY, source: 'custom' });
+  });
+
+  it('honours group toggles on every built-in category', () => {
+    const noE2e = createMatcher({ ...DEFAULT_SETTINGS, groups: { 'tests/e2e': false } });
     expect(noE2e.categorize('cypress/e2e/login.cy.ts')).toBeNull();
     expect(noE2e.categorize('src/a.test.ts')).toBe(TESTS_CATEGORY);
+    const noLockfiles = createMatcher({ ...DEFAULT_SETTINGS, categories: { generated: true }, groups: { 'generated/lockfiles': false } });
+    expect(noLockfiles.categorize('pnpm-lock.yaml')).toBeNull();
+    expect(noLockfiles.categorize('dist/bundle.min.js')?.id).toBe('generated');
+  });
+
+  it('matches custom categories before built-ins, with their own icon and nouns', () => {
+    const matcher = createMatcher({
+      ...DEFAULT_SETTINGS,
+      customCategories: [{ id: 'custom:tokens', title: 'Design tokens', icon: 'paintbrush', patterns: ['tokens/**', '*.test.tsx'], noun: 'token', nounPlural: 'tokens' }],
+    });
+    expect(matcher.activeCategories.map((category) => category.id)).toEqual(['custom:tokens', 'tests']);
+    const hit = matcher.explain('tokens/colors.json');
+    expect(hit).toMatchObject({ source: 'custom', pattern: 'tokens/**', category: { id: 'custom:tokens', title: 'Design tokens', icon: 'paintbrush', shortNounPlural: 'tokens' } });
+    // A file both a custom and a built-in category match goes to the custom one.
+    expect(matcher.categorize('src/Button.test.tsx')?.id).toBe('custom:tokens');
+    const off = createMatcher({ ...DEFAULT_SETTINGS, categories: { 'custom:tokens': false }, customCategories: [{ id: 'custom:tokens', title: 'T', icon: 'tag', patterns: ['tokens/**'] }] });
+    expect(off.categorize('tokens/colors.json')).toBeNull();
   });
 
   it('attributes paths to the first matching enabled category', () => {
@@ -130,7 +157,7 @@ describe('settings interplay', () => {
   });
 
   it('applies repo-scoped custom patterns only to matching repositories', () => {
-    const settings = { ...DEFAULT_SETTINGS, customPatterns: ['*.generated.ts', '[acme/*]', 'docs/adr/', '[*]', '!src/keep.test.ts'] };
+    const settings = { ...DEFAULT_SETTINGS, categoryPatterns: { tests: ['*.generated.ts', '[acme/*]', 'docs/adr/', '[*]', '!src/keep.test.ts'] } };
     const acme = createMatcher(settings, 'acme/widgets');
     const other = createMatcher(settings, 'someone/else');
     expect(acme.categorize('docs/adr/0001.md')).toBe(TESTS_CATEGORY);
@@ -141,19 +168,22 @@ describe('settings interplay', () => {
   });
 
   it('explains its decisions', () => {
-    const matcher = createMatcher({ ...DEFAULT_SETTINGS, customPatterns: ['*.gen.ts', '!src/keep.test.ts'] });
+    const matcher = createMatcher({ ...DEFAULT_SETTINGS, categoryPatterns: { tests: ['*.gen.ts', '!src/keep.test.ts'] } });
     expect(matcher.explain('src/a.test.ts')).toMatchObject({ source: 'built-in', pattern: '*.test.*' });
     expect(matcher.explain('src/x.gen.ts')).toMatchObject({ source: 'custom', pattern: '*.gen.ts' });
     expect(matcher.explain('src/keep.test.ts')).toEqual({ category: null, rescuedBy: '!src/keep.test.ts' });
     expect(matcher.explain('src/index.ts')).toEqual({ category: null, rescuedBy: null });
   });
 
-  it('lets custom negations rescue files from the built-in patterns', () => {
+  it('lets a rescue keep files out of one category without affecting others', () => {
     const rescued = createMatcher({
       ...DEFAULT_SETTINGS,
-      customPatterns: ['!tests/important/**'],
+      categories: { docs: true },
+      categoryPatterns: { tests: ['!tests/important/**'] },
     });
     expect(rescued.categorize('tests/important/keep.ts')).toBeNull();
     expect(rescued.categorize('tests/other/hide.ts')).toBe(TESTS_CATEGORY);
+    // The rescue is scoped to Tests: a docs file inside that folder is still docs.
+    expect(rescued.categorize('tests/important/README.md')?.id).toBe('docs');
   });
 });
