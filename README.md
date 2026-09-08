@@ -40,7 +40,7 @@ With one category on, labels read `6 tests`; with several, `9 hidden` with the p
 
 Patterns use gitignore-style semantics: a pattern without a slash matches a filename at any depth, a trailing slash matches a directory at any depth, `**` spans directories, `{a,b}` expands alternatives, and `!pattern` rescues a path. Only paths are inspected, never contents. `*.spec.*` is restricted to code extensions because OpenAPI documents are commonly named `api.spec.yaml`.
 
-**Custom patterns** (options page) are treated as tests and support the same syntax, plus `[owner/repo]` section headers that scope the lines below them to matching repositories (`[*]` returns to global). A **path tester** shows how any path would be treated and which pattern decided.
+Every category can be tuned beyond its switch: untick any of its **built-in pattern groups**, and add **extra patterns** of your own with the same syntax — `!pattern` there rescues a path from that category only, and `[owner/repo]` section headers scope the lines below them to matching repositories (`[*]` returns to global). You can also define **your own categories** (a name, an Octicon, patterns, optional count labels); they get a switch, their own panel and count, and are matched before the built-in ones. A **path tester** shows how any path would be treated and which pattern decided.
 
 **Repository rules** decide where Geld runs, again like a `.gitignore`: `acme/widgets` turns Geld off in that repository, `acme` (or `acme/*`) in the whole org, `!acme/widgets` turns it back on, the last matching line wins, and `*` followed by `!acme/*` gives you an allowlist. The popup's quick actions append these rules for you.
 
@@ -101,7 +101,7 @@ apps/extension/            @geld/extension (WXT)
     offscreen/             Chrome/Edge only: watches prefers-color-scheme for the background
     github.content/        content script + stylesheet injected on GitHub
     popup/                 contextual toolbar popup
-    options/               categories, custom patterns, repo rules, Enterprise hosts, tester, backup
+    options/               categories (groups, extra patterns), custom categories, repo rules, Enterprise hosts, tester, backup
   src/github/
     controller.ts          observes the page and applies/removes all changes
     views/legacy.ts        adapter for GitHub's classic diff UI
