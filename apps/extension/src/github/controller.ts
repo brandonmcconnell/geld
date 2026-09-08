@@ -28,6 +28,7 @@ import type { TreeSectionFile } from './ui/tree-section';
 import {
   applySidebarLayout,
   CHANGES_SECTION_ID,
+  pinSidebarHeaders,
   removeSidebarLayout,
   removeTreeSection,
   renderChangesHeader,
@@ -604,6 +605,7 @@ export class GeldController {
         previous,
       );
     }
+    pinSidebarHeaders(view.treeRoot);
   }
 
   /**
