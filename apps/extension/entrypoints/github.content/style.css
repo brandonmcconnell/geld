@@ -552,6 +552,12 @@ div:has(> #diff-file-tree-filter) {
   margin-left: 8px;
 }
 
+/* Stack popover: the chip follows "#N · branch" inside the item's description. */
+[class*='StackState'] .geld-pr-stat {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
 .geld-pr-stat__sep {
   color: var(--fgColor-muted, #59636e);
   font-family: inherit;

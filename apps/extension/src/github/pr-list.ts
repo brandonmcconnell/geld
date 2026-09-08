@@ -21,6 +21,21 @@ interface ListRow {
   readonly titleLink: HTMLAnchorElement;
 }
 
+/**
+ * The list row a PR title link belongs to. Issue/PR lists (classic and React)
+ * and the "Stack #N" popover of stacked pull requests, whose items are
+ * ActionList entries linking to each PR with a "#N · branch" description. The
+ * popover mounts lazily and may virtualise; both are covered because chips
+ * are re-applied on every DOM mutation.
+ */
+function rowOf(link: HTMLAnchorElement): HTMLElement | null {
+  const listRow = link.closest<HTMLElement>('.js-issue-row, li[role="listitem"]');
+  if (listRow !== null) return listRow;
+  const item = link.closest<HTMLElement>('li[data-component="ActionList.Item"]');
+  if (item !== null && item.closest('[class*="StackState"]') !== null) return item;
+  return null;
+}
+
 /** Find every pull request row in an issues/PR list on the current page. */
 function findRows(): ListRow[] {
   const rows = new Map<HTMLElement, ListRow>();
@@ -37,7 +52,7 @@ function findRows(): ListRow[] {
     if (match === null) continue;
     // Only title links: they carry visible text and live in a list row.
     if ((link.textContent ?? '').trim() === '') continue;
-    const row = link.closest<HTMLElement>('.js-issue-row, li[role="listitem"]');
+    const row = rowOf(link);
     if (row === null || rows.has(row)) continue;
     // Skip links that are clearly not the row's title (comments count, etc.).
     if (link.querySelector('svg') !== null && (link.textContent ?? '').trim().length < 4) continue;
@@ -87,7 +102,9 @@ function ensureChip(row: ListRow): HTMLElement {
     'aria-label': 'Lines changed excluding test files',
   });
   if (anchor !== null) {
-    anchor.insertAdjacentElement('afterend', chip);
+    // ActionList descriptions (stack popover) are block-level: append inside to stay on the "#N · branch" line.
+    if (anchor.getAttribute('data-component') === 'ActionList.Description') anchor.append(chip);
+    else anchor.insertAdjacentElement('afterend', chip);
   } else {
     row.titleLink.insertAdjacentElement('afterend', chip);
     chip.classList.add(`${PR_STAT_CLASS}--inline`);
