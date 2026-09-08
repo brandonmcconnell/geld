@@ -52,8 +52,8 @@ export default function HomePage() {
             Hidden files collapse into one row at the bottom of the diff and their own panel in the file tree. One click brings them back, in place.
           </Feature>
           <Feature title="Your rules">
-            Tests are hidden by default. {optIn.map((category) => category.title).join(', ')} are one switch away, plus custom patterns and
-            per-repository rules.
+            Tests are hidden by default. {optIn.map((category) => category.title).join(', ')} are one switch away, plus your own patterns, your own
+            categories and per-repository rules.
           </Feature>
         </ul>
         <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-10' })}>

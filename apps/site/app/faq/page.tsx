@@ -117,8 +117,8 @@ acme            # off in the whole organisation
     answer: (
       <p>
         Yes. Generated files (lockfiles, build output), vendored code, AI agent configuration, docs, tooling &amp; CI and fixtures are each a switch in
-        the popup or options, off by default. Custom patterns let you add your own conventions, optionally scoped to a repository with{' '}
-        <code>[owner/repo]</code> headers.
+        the popup or options, off by default. Every category can be tuned — untick built-in pattern groups or add your own patterns, optionally scoped
+        to a repository with <code>[owner/repo]</code> headers — and you can create categories of your own with a name, an icon and patterns.
       </p>
     ),
   },

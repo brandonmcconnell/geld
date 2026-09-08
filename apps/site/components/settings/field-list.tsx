@@ -1,6 +1,6 @@
 'use client';
 
-import type { ListField } from '@geld/core';
+import type { ListField, PatternEditorCopy } from '@geld/core';
 import { parsePatternList } from '@geld/core';
 import { useId, useState } from 'react';
 
@@ -9,18 +9,28 @@ import type { Status } from '@/components/settings/save-status';
 import { NO_STATUS, SaveStatus } from '@/components/settings/save-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import type { ListValidation } from '@/lib/settings/patch';
 import { validateList } from '@/lib/settings/patch';
 
-interface ListEditorProps {
-  readonly field: ListField;
+export type LinesSaveResult = { readonly ok: true; readonly lines: readonly string[] } | { readonly ok: false; readonly message: string };
+
+interface LinesEditorProps {
+  /** Label, placeholder, syntax help and button copy (from the schema). */
+  readonly copy: PatternEditorCopy;
   /** Saved lines (from the gist). */
   readonly lines: readonly string[];
   readonly disabled: boolean;
+  /** Cleans and checks the draft before it is sent. */
+  readonly validate: (rawLines: readonly string[]) => ListValidation;
   /** Resolves with the saved lines, or a message to show. */
-  readonly onSave: (lines: readonly string[]) => Promise<{ readonly ok: true; readonly lines: readonly string[] } | { readonly ok: false; readonly message: string }>;
+  readonly onSave: (lines: readonly string[]) => Promise<LinesSaveResult>;
+  /** Show the description under the label (list fields put it in the section intro instead). */
+  readonly showDescription?: boolean;
+  readonly size?: 'default' | 'sm';
 }
 
-export function ListEditor({ field, lines, disabled, onSave }: ListEditorProps) {
+/** A textarea of lines with syntax help and an explicit save button. */
+export function LinesEditor({ copy, lines, disabled, validate, onSave, showDescription = false, size = 'default' }: LinesEditorProps) {
   const textareaId = useId();
   const helpId = useId();
   const saved = lines.join('\n');
@@ -32,7 +42,7 @@ export function ListEditor({ field, lines, disabled, onSave }: ListEditorProps) 
   const [saving, setSaving] = useState(false);
 
   const save = async (): Promise<void> => {
-    const validated = validateList(field.key, text.split(/\r?\n/));
+    const validated = validate(text.split(/\r?\n/));
     if (!validated.ok) {
       setStatus({ message: validated.message, tone: 'error' });
       return;
@@ -52,9 +62,12 @@ export function ListEditor({ field, lines, disabled, onSave }: ListEditorProps) 
 
   return (
     <div className="flex flex-col gap-3">
-      <label htmlFor={textareaId} className="text-sm font-medium">
-        {field.label}
-      </label>
+      <div>
+        <label htmlFor={textareaId} className="text-sm font-medium">
+          {copy.label}
+        </label>
+        {showDescription ? <p className="mt-0.5 text-sm text-muted-foreground">{copy.description}</p> : null}
+      </div>
       <Textarea
         id={textareaId}
         value={text}
@@ -62,8 +75,8 @@ export function ListEditor({ field, lines, disabled, onSave }: ListEditorProps) 
           setDraft({ base: saved, text: event.target.value });
           setStatus(NO_STATUS);
         }}
-        placeholder={field.placeholder}
-        rows={field.rows}
+        placeholder={copy.placeholder}
+        rows={copy.rows}
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
@@ -72,18 +85,30 @@ export function ListEditor({ field, lines, disabled, onSave }: ListEditorProps) 
         className="min-h-0 font-mono text-[0.8125rem] leading-6"
       />
       <ul id={helpId} className="flex flex-col gap-1 text-xs text-muted-foreground">
-        {field.syntax.map((line) => (
+        {copy.syntax.map((line) => (
           <li key={line}>
             <RichText copy={line} />
           </li>
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" onClick={() => void save()} disabled={disabled || saving || !dirty}>
-          {field.saveLabel}
+        <Button type="button" size={size} onClick={() => void save()} disabled={disabled || saving || !dirty}>
+          {copy.saveLabel}
         </Button>
         <SaveStatus status={dirty && status.message === '' ? { message: 'Unsaved changes', tone: 'neutral' } : status} />
       </div>
     </div>
   );
+}
+
+interface ListEditorProps {
+  readonly field: ListField;
+  readonly lines: readonly string[];
+  readonly disabled: boolean;
+  readonly onSave: (lines: readonly string[]) => Promise<LinesSaveResult>;
+}
+
+/** A schema `list` field (repository rules, Enterprise hosts). */
+export function ListEditor({ field, lines, disabled, onSave }: ListEditorProps) {
+  return <LinesEditor copy={field} lines={lines} disabled={disabled} validate={(raw) => validateList(field.key, raw)} onSave={onSave} />;
 }

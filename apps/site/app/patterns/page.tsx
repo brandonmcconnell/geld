@@ -43,7 +43,7 @@ export default function PatternsPage() {
             <code>!pattern</code> rescues a path. Only paths are inspected, never contents.
           </p>
           <p>
-            A path belongs to the first category that matches, in the order below. Custom patterns are checked last and count as tests. You can try
+            A path belongs to the first category that matches, in the order below; categories you define yourself are checked first, and your extra patterns for a built-in category are attributed to it. You can try
             any path on the <Link href="/#try">home page</Link>.
           </p>
         </Prose>

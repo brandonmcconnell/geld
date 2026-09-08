@@ -1,12 +1,15 @@
 'use client';
 
-import type { GeldSettings, HiddenCategory, ListSettingKey, SettingsSection, TestGroupsField, TestPatternGroupId } from '@geld/core';
+import type { AnyCategoryId, CategoryId, CustomCategory, GeldSettings, ListSettingKey, SettingsSection } from '@geld/core';
+import { categoryPatternLines } from '@geld/core';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import { saveSetting } from '@/app/settings/actions';
 import { GitHubIcon } from '@/components/icons';
 import { CategoriesRows } from '@/components/settings/field-categories';
+import { CustomCategoriesRows } from '@/components/settings/field-custom-categories';
+import type { LinesSaveResult } from '@/components/settings/field-list';
 import { ListEditor } from '@/components/settings/field-list';
 import { ToggleRow } from '@/components/settings/field-toggle';
 import { RichText } from '@/components/settings/rich-text';
@@ -26,7 +29,7 @@ interface SettingsFormProps {
   readonly login: string;
 }
 
-type ListSaveResult = { readonly ok: true; readonly lines: readonly string[] } | { readonly ok: false; readonly message: string };
+type SubmitResult = { readonly ok: true; readonly settings: GeldSettings } | { readonly ok: false; readonly message: string };
 
 /**
  * Renders `sectionsFor('site')` and saves each change through a server
@@ -46,7 +49,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
   const busy = pending > 0;
 
   const submit = useCallback(
-    async (patch: SettingsPatch): Promise<ListSaveResult> => {
+    async (patch: SettingsPatch): Promise<SubmitResult> => {
       const previous = settings;
       const optimistic = applyPatch(previous, patch);
       if (!optimistic.ok) return { ok: false, message: optimistic.message };
@@ -59,8 +62,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
           setSettings(result.settings);
           setGistId(result.gistId);
           setStatus({ message: result.changed ? 'Saved' : 'Already up to date', tone: 'success' });
-          if (patch.kind === 'list') return { ok: true, lines: result.settings[patch.key] };
-          return { ok: true, lines: [] };
+          return { ok: true, settings: result.settings };
         }
         setSettings(previous);
         if (result.reason === 'signed-out') setSignedOut(true);
@@ -79,13 +81,22 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
     [gistId, settings],
   );
 
-  const onCategory = (category: HiddenCategory, value: boolean): void => {
-    void submit({ kind: 'category', id: category.id, value });
+  const onCategory = (id: AnyCategoryId, value: boolean): void => {
+    void submit({ kind: 'category', id, value });
   };
-  const onTestGroup = (id: TestPatternGroupId, value: boolean): void => {
-    void submit({ kind: 'test-group', id, value });
+  const onGroup = (categoryId: CategoryId, groupId: string, value: boolean): void => {
+    void submit({ kind: 'group', categoryId, groupId, value });
   };
-  const onList = (key: ListSettingKey) => (lines: readonly string[]) => submit({ kind: 'list', key, lines });
+  const onPatterns = async (categoryId: CategoryId, lines: readonly string[]): Promise<LinesSaveResult> => {
+    const result = await submit({ kind: 'category-patterns', categoryId, lines });
+    return result.ok ? { ok: true, lines: categoryPatternLines(result.settings, categoryId) } : result;
+  };
+  const onList = (key: ListSettingKey) => async (lines: readonly string[]): Promise<LinesSaveResult> => {
+    const result = await submit({ kind: 'list', key, lines });
+    return result.ok ? { ok: true, lines: result.settings[key] } : result;
+  };
+  const onCustomSave = (category: CustomCategory) => submit({ kind: 'custom-category', category });
+  const onCustomRemove = (id: AnyCategoryId) => submit({ kind: 'remove-custom-category', id });
 
   return (
     <div className="flex flex-col gap-10">
@@ -122,7 +133,6 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
       ) : null}
 
       {sections.map((section) => {
-        const testGroups = section.fields.find((field): field is TestGroupsField => field.kind === 'test-groups') ?? null;
         return (
           <section key={section.id} id={section.id} aria-labelledby={`${section.id}-heading`} className="scroll-mt-24 border p-5 sm:p-6">
             <h2 id={`${section.id}-heading`} className="text-lg font-semibold tracking-tight">
@@ -151,16 +161,25 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                       <CategoriesRows
                         key="categories"
                         field={field}
-                        testGroups={testGroups}
                         settings={settings}
                         disabled={signedOut || remoteInvalid}
                         onCategory={onCategory}
-                        onTestGroup={onTestGroup}
+                        onGroup={onGroup}
+                        onPatterns={onPatterns}
                       />
                     );
-                  case 'test-groups':
-                    // Rendered inside the Tests category above.
-                    return null;
+                  case 'custom-categories':
+                    return (
+                      <CustomCategoriesRows
+                        key="custom-categories"
+                        field={field}
+                        settings={settings}
+                        disabled={signedOut || remoteInvalid}
+                        onCategory={onCategory}
+                        onSave={onCustomSave}
+                        onRemove={onCustomRemove}
+                      />
+                    );
                   case 'list':
                     return <ListEditor key={field.key} field={field} lines={settings[field.key]} disabled={signedOut || remoteInvalid || busy} onSave={onList(field.key)} />;
                 }

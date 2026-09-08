@@ -77,7 +77,7 @@ export default function PrivacyPage() {
 
           <h2 id="storage">Storage</h2>
           <p>
-            Settings (which categories to hide, custom patterns, repository rules, Enterprise hosts and a few preferences) are stored in{' '}
+            Settings (which categories to hide, your patterns and categories, repository rules, Enterprise hosts and a few preferences) are stored in{' '}
             <code>browser.storage.sync</code>, so they follow your browser profile if your browser syncs extension data. Parsed diffs are cached in{' '}
             <code>browser.storage.local</code> on your device, keyed by commit, to avoid refetching; this cache contains only line counts per file
             path and expires on its own. Uninstalling the extension removes all of it. The options page lets you export and import your settings as a

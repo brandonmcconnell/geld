@@ -34,7 +34,7 @@ const STEPS: readonly Step[] = [
   { id: 'lists', title: 'Pull request lists get real numbers', short: 'PR lists' },
   { id: 'categories', title: 'Categories', short: 'Categories' },
   { id: 'repo-rules', title: 'Repository rules', short: 'Repository rules' },
-  { id: 'custom-patterns', title: 'Custom patterns', short: 'Custom patterns' },
+  { id: 'custom-patterns', title: 'Your patterns & categories', short: 'Your patterns' },
   { id: 'whitespace', title: 'Hide whitespace', short: 'Hide whitespace' },
   { id: 'shortcut', title: 'Keyboard shortcut', short: 'Keyboard shortcut' },
   { id: 'enterprise', title: 'GitHub Enterprise Server', short: 'Enterprise Server' },
@@ -215,10 +215,15 @@ acme              # off in the whole org (same as acme/*)
           <Step id="custom-patterns" index={7} title={STEPS[6]?.title ?? ''}>
             <Prose>
               <p>
-                Custom patterns are treated as tests and use the same gitignore-style syntax as the built-in ones: a pattern without a slash matches a
-                filename at any depth, a trailing slash matches a directory at any depth, <code>**</code> spans directories, <code>{'{a,b}'}</code>{' '}
-                expands alternatives, and <code>!pattern</code> rescues a path. <code>[owner/repo]</code> headers scope the lines below them to matching
+                Every category can be opened to its advanced settings: untick any of its built-in pattern groups, or add extra patterns of your own.
+                They use the same gitignore-style syntax as the built-in ones: a pattern without a slash matches a filename at any depth, a trailing
+                slash matches a directory at any depth, <code>**</code> spans directories, <code>{'{a,b}'}</code> expands alternatives, and{' '}
+                <code>!pattern</code> rescues a path from that category. <code>[owner/repo]</code> headers scope the lines below them to matching
                 repositories; <code>[*]</code> returns to global. The options page includes a path tester that shows which pattern decided.
+              </p>
+              <p>
+                You can also create categories of your own — a name, an icon and a list of patterns. Each gets a switch, its own panel in the file
+                tree and its own count in the header, and is matched before the built-in categories.
               </p>
               <pre>
                 <code>{`*.golden           # everywhere
