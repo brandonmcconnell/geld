@@ -12,6 +12,12 @@ web-ext.config.ts
 .next/
 .vercel/
 
+# Xcode (apps/extension/safari is committed; its build products are not)
+apps/extension/safari/**/xcuserdata/
+apps/extension/safari/**/build/
+apps/extension/safari/**/DerivedData/
+*.xcarchive
+
 # Editor / OS
 .DS_Store
 .idea/

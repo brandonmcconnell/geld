@@ -25,7 +25,10 @@
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
     "postinstall": "wxt prepare",
-    "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari"
+    "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari",
+    "safari:project": "pnpm run build:safari && xcrun safari-web-extension-converter .output/safari-mv3 --project-location safari --app-name Geld --bundle-identifier sh.geld.safari --no-open --copy-resources",
+    "safari:sync": "bash scripts/safari-sync.sh",
+    "safari:open": "open safari/Geld/Geld.xcodeproj"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
