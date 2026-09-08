@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Geld options</title>
     <meta name="manifest.open_in_tab" content="true">
-    <script type="module" crossorigin src="/chunks/options-DUpFrgC-.js"></script>
+    <script type="module" crossorigin src="/chunks/options-DnQJIgJ1.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/browser-DzJe97Dp.js">
-    <link rel="modulepreload" crossorigin href="/chunks/switch-Bt8KDwqy.js">
+    <link rel="modulepreload" crossorigin href="/chunks/switch-nSkmZzz-.js">
     <link rel="stylesheet" crossorigin href="/assets/switch-DEYcKB9H.css">
-    <link rel="stylesheet" crossorigin href="/assets/options-_DrKmjDD.css">
+    <link rel="stylesheet" crossorigin href="/assets/options-CBnj8u_N.css">
   </head>
   <body>
     <main class="options">
@@ -29,35 +29,22 @@
 
       <section class="options__card" data-section="hide">
         <h2 class="options__title">What to hide</h2>
-        <p class="geld-help options__intro">
-          Each category has its own switch. Expand one to see the built-in patterns it uses. Tests are on by default;
-          everything else is opt-in.
-        </p>
+        <p class="geld-help options__intro"></p>
         <div id="categories" class="options__categories"></div>
-      </section>
-
-      <section class="options__card" data-section="custom-patterns">
-        <h2 class="options__title">Custom patterns</h2>
-        <p class="geld-help options__intro">
-          One glob per line, matched against the repository-relative path with gitignore rules: <code>*.snap</code>
-          matches a file name anywhere, <code>fixtures/</code> a directory anywhere, <code>src/**/*.gen.ts</code> a
-          full path, <code>{a,b}</code> alternatives, and a leading <code>!</code> rescues files that a built-in pattern
-          would hide. Matching files are treated as tests. A line like <code>[acme/*]</code> scopes the lines below it
-          to those repositories; <code>[*]</code> returns to all repositories.
-        </p>
-        <textarea id="custom-patterns" class="geld-textarea geld-code options__textarea" rows="8" spellcheck="false" placeholder="# everywhere
-*.generated.ts
-!tests/contracts/**
-
-[acme/*]
-# only in Acme repositories
-docs/adr/" aria-label="Custom patterns"></textarea>
-        <div class="geld-row options__actions">
-          <a class="geld-button geld-button--link options__more" href="https://geld.sh/patterns" target="_blank" rel="noreferrer">
+        <p class="geld-help options__more-row">
+          <a class="geld-button geld-button--link options__more" href="https://www.geld.sh/patterns" target="_blank" rel="noreferrer">
             <span class="geld-button__icon geld-button__icon--help" aria-hidden="true"></span>How patterns work
           </a>
-          <span class="geld-status" id="patterns-status" aria-live="polite"></span>
-          <button id="save-patterns" class="geld-button geld-button--primary" type="button">Save patterns</button>
+        </p>
+      </section>
+
+      <section class="options__card" data-section="custom-categories">
+        <h2 class="options__title">Your categories</h2>
+        <p class="geld-help options__intro"></p>
+        <div id="custom-categories" class="options__categories options__categories--custom"></div>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="custom-categories-status" aria-live="polite"></span>
+          <button id="add-category" class="geld-button" type="button">Add category</button>
         </div>
       </section>
 
