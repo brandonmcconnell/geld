@@ -85,6 +85,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'groupHidden',
+        label: 'Group hidden files',
+        description:
+          'On: hidden files move to a collapsible section at the bottom of the diff and get their own panels in the file tree. Off: they stay where they are, collapsed and faded, with their category’s icon in the tree.',
+        popup: true,
+        popupDescription: 'Off: keep them in place, collapsed and faded.',
+      },
+      {
+        kind: 'toggle',
         key: 'expandedByDefault',
         label: 'Show hidden files expanded',
         description:

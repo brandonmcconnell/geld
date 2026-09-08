@@ -37,6 +37,7 @@ describe('SETTINGS_SCHEMA', () => {
     const popup = fieldsFor('extension', true);
     expect(popup.map((field) => (field.kind === 'toggle' ? field.key : field.kind))).toEqual([
       'enabled',
+      'groupHidden',
       'expandedByDefault',
       'categories',
     ]);
