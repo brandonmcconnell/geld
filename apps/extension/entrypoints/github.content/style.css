@@ -267,16 +267,42 @@ div:has(> #diff-file-tree-filter) {
 /* ---- Full-height accordion ------------------------------------------------ */
 
 /*
- * The sidebar's sticky box (height set at runtime to its visible part) becomes
- * a flex column — unless GitHub already lays it out as a row of pane +
- * dividers, in which case its children simply stretch to its height.
+ * The sidebar's sticky pane becomes a flex column — unless GitHub already lays
+ * it out as a row of pane + dividers, in which case its children simply
+ * stretch to its height.
+ *
+ * Overflow stays visible on the pane and on every wrapper down to the tree:
+ * the pinned headers are `position: sticky; bottom`, and sticky measures
+ * against the nearest scroll container, which must be the viewport itself —
+ * an `overflow: hidden/auto` box in between would pin them to that box's
+ * bottom edge (below the fold) instead. The lists are the only scroll
+ * containers in the pane. Two attribute selectors (both are always set
+ * together) outrank Primer's `.overflow-y-auto { … !important }` on the
+ * legacy pane.
  */
-[data-geld-sidebar] {
-  overflow: hidden !important;
+[data-geld-sidebar][data-geld-sidebar-layout] {
+  overflow: visible !important;
   /* GitHub's pane carries min-height: calc(100vh - header), which would beat
-     the height we set (min-height wins over height) and let the open panel
+     the height below (min-height wins over height) and let the open panel
      fill the whole viewport, pushing the headers below it past the fold. */
   min-height: 0 !important;
+  /* The last pinned header must end exactly at the pane's (= the viewport's)
+     bottom edge; any bottom padding would hold it above it. */
+  padding-bottom: 0 !important;
+}
+
+/*
+ * Scroll-independent height: `100vh − sticky top` (the offset is read from
+ * the pane's computed `top` and stored in the custom property, which only
+ * changes when GitHub's header height does). Stuck, the pane ends at
+ * the viewport bottom; before that it overhangs the fold by `pane top − sticky
+ * top` and the pinned headers below take over. Declared here with !important
+ * rather than inline because GitHub's legacy `diff-layout` element rewrites
+ * the pane's inline height on every scroll frame — inert against this rule.
+ */
+[data-geld-sidebar][data-geld-sidebar-sticky] {
+  height: max(160px, calc(100vh - var(--geld-sticky-top, 0px))) !important;
+  max-height: max(160px, calc(100vh - var(--geld-sticky-top, 0px))) !important;
 }
 
 [data-geld-sidebar][data-geld-sidebar-layout='column'] {
@@ -285,14 +311,30 @@ div:has(> #diff-file-tree-filter) {
 }
 
 /* Every wrapper between that box and the tree passes the height straight down. */
-[data-geld-sidebar-path] {
+[data-geld-sidebar-path][data-geld-sidebar-path] {
   display: flex !important;
   flex-direction: column !important;
   flex: 1 1 auto !important;
   min-height: 0 !important;
   height: auto !important;
   max-height: none !important;
-  overflow: hidden !important;
+  overflow: visible !important;
+  padding-bottom: 0 !important;
+  /* The React pane spaces its children with a flex gap; between pinned
+     headers that gap would be a see-through slit onto the list behind them. */
+  row-gap: 0 !important;
+}
+
+/*
+ * Headers below the open panel ride the bottom of the viewport while the pane
+ * has not reached its sticky top yet (`bottom` is set per header at runtime
+ * to the height of the headers beneath it), and rest at the pane's bottom
+ * once it has. Opaque, above the list they cover.
+ */
+[data-geld-sidebar-sticky] .geld-tree-section[data-geld-pinned] {
+  position: sticky;
+  z-index: 1;
+  background: var(--bgColor-default, #fff);
 }
 
 /* GitHub's own tree is the "Changes" panel: it scrolls on its own when open... */
@@ -300,6 +342,24 @@ div:has(> #diff-file-tree-filter) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+}
+
+/*
+ * Until the pane reaches its sticky top, the end of the open list lies under
+ * the pinned headers (or past the fold). A spacer of that height, set at
+ * runtime in --geld-overhang, keeps the last rows scrollable into view above
+ * the headers; the matching scroll-padding makes scrollIntoView aim there too.
+ */
+[data-geld-tree-list],
+.geld-tree-section[data-active] > .geld-tree > .geld-tree__item--root > .geld-tree__group {
+  scroll-padding-bottom: var(--geld-overhang, 0px);
+}
+
+[data-geld-tree-list]::after,
+.geld-tree-section[data-active] > .geld-tree > .geld-tree__item--root > .geld-tree__group::after {
+  content: '';
+  display: block;
+  height: var(--geld-overhang, 0px);
 }
 
 /* ...and is put away when another panel is open. */

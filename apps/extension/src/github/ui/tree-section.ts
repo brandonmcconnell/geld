@@ -337,7 +337,11 @@ export const CHANGES_SECTION_ID = 'changes';
 const ATTR_SIDEBAR = 'data-geld-sidebar';
 const ATTR_SIDEBAR_LAYOUT = 'data-geld-sidebar-layout';
 const ATTR_SIDEBAR_PATH = 'data-geld-sidebar-path';
+/** Present while the sidebar is GitHub's sticky pane (not the stacked narrow layout). */
+const ATTR_SIDEBAR_STICKY = 'data-geld-sidebar-sticky';
 const ATTR_TREE_LIST = 'data-geld-tree-list';
+/** Section headers below the open panel, stuck to the viewport bottom. */
+const ATTR_PINNED = 'data-geld-pinned';
 
 interface ChangesHeaderParts {
   readonly root: HTMLElement;
@@ -479,38 +483,43 @@ function scrollContainerOf(element: HTMLElement): HTMLElement | null {
 }
 
 /**
- * Keeps the sidebar exactly as tall as its visible part. GitHub's sticky pane
- * is 100vh tall, so before the page is scrolled its bottom (and our accordion
- * headers) sit below the fold. Sizing it to `viewport bottom − pane top` pins
- * the headers to the bottom of the viewport and hands every pixel gained by
- * scrolling to the open panel.
+ * Sizes the sidebar so the browser, not a script, keeps the accordion headers
+ * on the bottom edge of the viewport.
+ *
+ * GitHub's pane is `position: sticky; top: T`. Its height here is the
+ * scroll-independent `100vh − T`: once the pane has reached its sticky top
+ * its bottom is the viewport bottom, and before that (the page still scrolled
+ * near the top) it overhangs the fold by `pane top − T`. The headers below
+ * the open panel are `position: sticky; bottom: …` (see `pinSidebarHeaders`),
+ * so during that overhang they ride the viewport bottom on the compositor.
+ * The old approach — rewriting the pane's height to `viewport bottom − pane
+ * top` on every scroll frame — ran one frame behind threaded scrolling and
+ * the headers visibly chased the edge.
+ *
+ * The only value left that depends on the scroll position is the overhang
+ * itself: the open list's last rows sit under the pinned headers (or below
+ * the fold) until the pane is stuck, so the list gets a spacer of that height
+ * at its end. A frame of lag there is invisible because the area is covered.
  */
 class SidebarSizer {
   private scroller: HTMLElement | null = null;
   private frame = 0;
-  private lastHeight = -1;
   private resizeObserver: ResizeObserver | null = null;
-  private ticker: ReturnType<typeof setInterval> | null = null;
 
   attach(scroller: HTMLElement): void {
-    if (this.scroller === scroller) {
-      this.schedule();
-      return;
+    if (this.scroller !== scroller) {
+      this.detach();
+      this.scroller = scroller;
+      // Scrolling may happen on the window or on an inner container: listen in
+      // the capture phase on the document to see both.
+      document.addEventListener('scroll', this.schedule, { passive: true, capture: true });
+      window.addEventListener('resize', this.schedule, { passive: true });
+      if (typeof ResizeObserver !== 'undefined') {
+        this.resizeObserver = new ResizeObserver(this.schedule);
+        this.resizeObserver.observe(scroller);
+        this.resizeObserver.observe(document.documentElement);
+      }
     }
-    this.detach();
-    this.scroller = scroller;
-    // Scrolling may happen on the window or on an inner container: listen in
-    // the capture phase on the document to see both.
-    document.addEventListener('scroll', this.schedule, { passive: true, capture: true });
-    window.addEventListener('resize', this.schedule, { passive: true });
-    if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(this.schedule);
-      this.resizeObserver.observe(scroller);
-      this.resizeObserver.observe(document.documentElement);
-    }
-    // Belt and braces for layout changes that fire no event (sticky engaging,
-    // lazy content above the pane growing): a cheap periodic re-measure.
-    this.ticker = setInterval(this.schedule, 500);
     this.update();
   }
 
@@ -519,19 +528,20 @@ class SidebarSizer {
     window.removeEventListener('resize', this.schedule);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    if (this.ticker !== null) clearInterval(this.ticker);
-    this.ticker = null;
     if (this.frame !== 0) cancelAnimationFrame(this.frame);
     this.frame = 0;
     if (this.scroller !== null) {
-      this.scroller.style.removeProperty('height');
-      this.scroller.style.removeProperty('max-height');
-      for (const panel of this.scroller.querySelectorAll<HTMLElement>('[data-geld-tree-list], .geld-tree__group')) {
-        panel.style.removeProperty('max-height');
+      this.unsize(this.scroller);
+      for (const panel of this.scroller.querySelectorAll<HTMLElement>(`[${ATTR_TREE_LIST}], .geld-tree__group`)) {
+        panel.style.removeProperty(OVERHANG_PROPERTY);
       }
     }
     this.scroller = null;
-    this.lastHeight = -1;
+  }
+
+  /** Re-measure the open list's covered area now (after the pinned stack changed). */
+  refresh(scroller: HTMLElement): void {
+    if (this.scroller === scroller) this.update();
   }
 
   private readonly schedule = (): void => {
@@ -542,75 +552,134 @@ class SidebarSizer {
     });
   };
 
+  /**
+   * The sticky offset is re-read on every pass, not only on resize: GitHub's
+   * header height arrives late via a CSS variable on <html>, which is a change
+   * no observer of the sidebar sees. Reading a computed style is cheap; the
+   * write below only happens when the value differs.
+   */
+  private size(scroller: HTMLElement): void {
+    // Only sticky sidebars need this; stacked (narrow) layouts keep GitHub's sizing.
+    const stickyTop = stickyTopOf(scroller);
+    if (stickyTop === null) {
+      this.unsize(scroller);
+      return;
+    }
+    // The height itself lives in the stylesheet (`100vh − this offset`, with
+    // !important): GitHub's legacy `diff-layout` element rewrites the pane's
+    // inline height on every scroll frame, and an inline write cannot beat an
+    // important stylesheet rule, so its writes become inert instead of a fight.
+    scroller.setAttribute(ATTR_SIDEBAR_STICKY, '');
+    const value = `${stickyTop}px`;
+    if (scroller.style.getPropertyValue(STICKY_TOP_PROPERTY) !== value) {
+      scroller.style.setProperty(STICKY_TOP_PROPERTY, value);
+    }
+  }
+
+  private unsize(scroller: HTMLElement): void {
+    scroller.removeAttribute(ATTR_SIDEBAR_STICKY);
+    scroller.style.removeProperty(STICKY_TOP_PROPERTY);
+  }
+
   private update(): void {
     const scroller = this.scroller;
     if (scroller === null || !scroller.isConnected) return;
-    // Only sticky sidebars need this; stacked (narrow) layouts keep GitHub's sizing.
-    if (!isWithinSticky(scroller) && stickyRootOf(scroller) === null) {
-      if (this.lastHeight !== -1) {
-        scroller.style.removeProperty('height');
-        scroller.style.removeProperty('max-height');
-        this.lastHeight = -1;
-      }
-      return;
-    }
-    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-    const top = Math.max(0, scroller.getBoundingClientRect().top);
-    const height = Math.max(MIN_SIDEBAR_HEIGHT, Math.round(viewportHeight - top));
-    if (height !== this.lastHeight) {
-      this.lastHeight = height;
-      scroller.style.setProperty('height', `${height}px`);
-      scroller.style.setProperty('max-height', `${height}px`);
-    }
-    this.capOpenPanel(scroller, viewportHeight);
-  }
-
-  /**
-   * Independently of what the wrappers do, cap the open panel's list so it
-   * ends exactly where the headers below it need to start, at the bottom of
-   * the viewport. This is what keeps every header visible even if an
-   * intermediate wrapper refuses to shrink.
-   */
-  private capOpenPanel(scroller: HTMLElement, viewportHeight: number): void {
-    const active = scroller.getAttribute(ATTR_SIDEBAR);
-    const list =
-      active === CHANGES_SECTION_ID
-        ? scroller.querySelector<HTMLElement>(`[${ATTR_TREE_LIST}]`)
-        : scroller.querySelector<HTMLElement>(`.${TREE_SECTION_CLASS}[data-active] > .geld-tree > .geld-tree__item--root > .geld-tree__group`);
+    this.size(scroller);
+    const list = openPanelList(scroller);
     if (list === null) return;
-    let below = 0;
-    for (const section of scroller.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}`)) {
-      if (section.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_PRECEDING) {
-        below += section.getBoundingClientRect().height;
-      }
+    let overhang = 0;
+    if (scroller.hasAttribute(ATTR_SIDEBAR_STICKY)) {
+      // The list ends where the pinned stack starts in normal flow; while the
+      // stack is shifted up onto the viewport edge (or, with nothing pinned,
+      // while the list runs past the fold) that much of the list is covered.
+      const cover = scroller.querySelector<HTMLElement>(`.${TREE_SECTION_CLASS}[${ATTR_PINNED}]`);
+      const coverTop = cover === null ? document.documentElement.clientHeight || window.innerHeight : cover.getBoundingClientRect().top;
+      overhang = Math.max(0, Math.round(list.getBoundingClientRect().bottom - coverTop));
     }
-    const paddingBottom = Number.parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
-    const top = list.getBoundingClientRect().top;
-    const max = Math.max(MIN_PANEL_HEIGHT, Math.floor(viewportHeight - top - below - paddingBottom));
-    const value = `${max}px`;
-    if (list.style.maxHeight !== value) list.style.maxHeight = value;
+    // The stylesheet turns this into an ::after spacer inside the list (and its
+    // scroll-padding). Content, not padding: padding is part of the flex item's
+    // box, which min-height: 0 cannot shrink, so it would push the list's
+    // bottom down and feed back into this very measurement.
+    const value = overhang === 0 ? '' : `${overhang}px`;
+    if (list.style.getPropertyValue(OVERHANG_PROPERTY) !== value) {
+      if (value === '') list.style.removeProperty(OVERHANG_PROPERTY);
+      else list.style.setProperty(OVERHANG_PROPERTY, value);
+    }
   }
 }
 
-const MIN_PANEL_HEIGHT = 96;
+/** Read by the stylesheet: how much of the open list's end is covered by pinned headers or past the fold. */
+const OVERHANG_PROPERTY = '--geld-overhang';
 
-const MIN_SIDEBAR_HEIGHT = 160;
+/** Read by the stylesheet: the pane's height is `100vh` minus this. */
+const STICKY_TOP_PROPERTY = '--geld-sticky-top';
 
-function isWithinSticky(element: HTMLElement): boolean {
-  let current: HTMLElement | null = element;
+/** The scrolling list of the open panel: GitHub's tree for "Changes", else the active section's group. */
+function openPanelList(root: HTMLElement): HTMLElement | null {
+  return root.getAttribute(ATTR_SIDEBAR) === CHANGES_SECTION_ID
+    ? root.querySelector<HTMLElement>(`[${ATTR_TREE_LIST}]`)
+    : root.querySelector<HTMLElement>(`.${TREE_SECTION_CLASS}[data-active] > .geld-tree > .geld-tree__item--root > .geld-tree__group`);
+}
+
+/**
+ * The distance from the viewport top at which the sidebar rests once stuck:
+ * the sticky ancestor's `top`, plus the sidebar's own offset inside it when
+ * they differ. `null` when the layout is not sticky at all (narrow screens
+ * stack the sidebar above the diff).
+ */
+function stickyTopOf(root: HTMLElement): number | null {
+  let current: HTMLElement | null = root;
   for (let depth = 0; current !== null && depth < 4; depth += 1) {
-    if (getComputedStyle(current).position === 'sticky') return true;
+    const style = getComputedStyle(current);
+    if (style.position === 'sticky' || style.position === 'fixed') {
+      const top = Number.parseFloat(style.top);
+      const stickyTop = Number.isFinite(top) ? top : Math.max(0, current.getBoundingClientRect().top);
+      const offset = current === root ? 0 : root.getBoundingClientRect().top - current.getBoundingClientRect().top;
+      return Math.max(0, Math.round(stickyTop + offset));
+    }
     current = current.parentElement;
   }
-  return false;
+  return null;
 }
 
 const sidebarSizer = new SidebarSizer();
 
 /**
- * Turn the sidebar's scroll container into a full-height flex column so the
- * active panel fills the space and scrolls on its own while every header stays
- * visible. Only attributes are set; GitHub's DOM order is untouched.
+ * Pin the section headers that follow the open panel to the bottom of the
+ * viewport, stacked: each one's `bottom` is the height of the headers beneath
+ * it, the last one sits at 0. Sections before the open panel stay in normal
+ * flow. Pure CSS from here on — the offsets only change when a panel opens
+ * or a category appears, so this runs once per apply(), never per frame.
+ */
+export function pinSidebarHeaders(treeRoot: HTMLElement): void {
+  const root = treeRoot.closest<HTMLElement>(`[${ATTR_SIDEBAR}]`);
+  if (root === null) return;
+  const list = openPanelList(root);
+  const pinned: HTMLElement[] = [];
+  for (const section of root.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}`)) {
+    if (list !== null && list.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      pinned.push(section);
+    } else if (section.hasAttribute(ATTR_PINNED)) {
+      section.removeAttribute(ATTR_PINNED);
+      section.style.removeProperty('bottom');
+    }
+  }
+  let offset = 0;
+  for (const section of pinned.reverse()) {
+    const value = `${offset}px`;
+    if (section.style.bottom !== value) section.style.bottom = value;
+    section.setAttribute(ATTR_PINNED, '');
+    offset += section.getBoundingClientRect().height;
+  }
+  // The stack just changed, so the open list's covered area did too.
+  sidebarSizer.refresh(root);
+}
+
+/**
+ * Turn the sidebar's sticky pane into a full-height flex column so the active
+ * panel fills the space and scrolls on its own; `pinSidebarHeaders` then keeps
+ * the headers below it on screen. Only attributes are set; GitHub's DOM order
+ * is untouched.
  */
 export function applySidebarLayout(treeRoot: HTMLElement, active: string): void {
   // The sticky ancestor is what defines the sidebar's visible box in every
@@ -657,11 +726,21 @@ function stickyRootOf(element: HTMLElement): HTMLElement | null {
 
 export function removeSidebarLayout(root: ParentNode = document): void {
   sidebarSizer.detach();
-  for (const element of root.querySelectorAll(`[${ATTR_SIDEBAR}], [${ATTR_SIDEBAR_PATH}], [${ATTR_TREE_LIST}]`)) {
+  // Callers pass the tree's parent, but the pane and path marks sit on its
+  // ancestors: widen the scope to the marked pane so they come off as well.
+  const scope: ParentNode = root instanceof Element ? (root.closest(`[${ATTR_SIDEBAR}]`) ?? root) : root;
+  const marked: Element[] = Array.from(scope.querySelectorAll(`[${ATTR_SIDEBAR}], [${ATTR_SIDEBAR_PATH}], [${ATTR_TREE_LIST}]`));
+  if (scope instanceof Element && scope.hasAttribute(ATTR_SIDEBAR)) marked.push(scope);
+  for (const element of marked) {
     element.removeAttribute(ATTR_SIDEBAR);
     element.removeAttribute(ATTR_SIDEBAR_LAYOUT);
+    element.removeAttribute(ATTR_SIDEBAR_STICKY);
     element.removeAttribute(ATTR_SIDEBAR_PATH);
     element.removeAttribute(ATTR_TREE_LIST);
   }
-  for (const element of root.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}--changes`)) element.remove();
+  for (const element of scope.querySelectorAll<HTMLElement>(`[${ATTR_PINNED}]`)) {
+    element.removeAttribute(ATTR_PINNED);
+    element.style.removeProperty('bottom');
+  }
+  for (const element of scope.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}--changes`)) element.remove();
 }
