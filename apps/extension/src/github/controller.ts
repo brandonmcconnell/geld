@@ -13,7 +13,7 @@ import type { GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
 import { DiffSource } from './diff-source';
-import { isOwnElement, queryAll, restoreManagedText } from './dom';
+import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString } from './dom';
 import { detectHeadSha, shaFromCommitUrl } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, restoreHeaderStats } from './header-stats';
@@ -23,6 +23,7 @@ import { describePage } from './page';
 import { applyPrListStats, removePrListStats } from './pr-list';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
+import { CATEGORY_ICONS } from './ui/icons';
 import type { TreeSectionFile } from './ui/tree-section';
 import {
   applySidebarLayout,
@@ -40,6 +41,10 @@ const ATTR_CONTAINER = 'data-geld-container';
 const ATTR_EXPANDED = 'data-geld-expanded';
 const ATTR_ENTRY = 'data-geld';
 const ATTR_TREE = 'data-geld-tree';
+/** On the tree root: `grouped` (accordion) or `inline` (files stay, faded, with category icons). */
+const ATTR_TREE_MODE = 'data-geld-tree-mode';
+const INLINE_ICON_CLASS = 'geld-tree-inline-icon';
+const ATTR_SWAPPED_ICON = 'data-geld-swapped-icon';
 const ATTR_TOC = 'data-geld-toc-hidden';
 const ATTR_FLASH = 'data-geld-flash';
 
@@ -74,6 +79,53 @@ function headerNodesAdded(records: readonly MutationRecord[]): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Directories whose every file is hidden count as hidden too (collapsed away
+ * in grouped mode, faded in inline mode). Deepest first, so nested directories
+ * are evaluated before their parents.
+ */
+function markHiddenDirectories(treeDirectories: readonly HTMLElement[]): void {
+  const directories = [...treeDirectories].sort(
+    (a, b) => Number(b.getAttribute('aria-level') ?? 0) - Number(a.getAttribute('aria-level') ?? 0),
+  );
+  for (const directory of directories) {
+    const hasVisible = directory.querySelector(`[${ATTR_TREE}="visible"]`) !== null;
+    const hasHidden = directory.querySelector(`[${ATTR_TREE}="hidden"]`) !== null;
+    directory.setAttribute(ATTR_TREE, !hasVisible && hasHidden ? 'hidden' : 'visible');
+  }
+}
+
+/** GitHub's file icon in a tree row (both views draw an `octicon-file` leading visual). */
+function treeRowIcon(row: HTMLElement): Element | null {
+  for (const svg of row.querySelectorAll('svg')) {
+    if (svg.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
+    if (/\bocticon-file\b/.test(svg.getAttribute('class') ?? '')) return svg;
+  }
+  return null;
+}
+
+/** Inline mode: show the category's icon in place of GitHub's file icon (or restore it). */
+function setInlineIcon(row: HTMLElement, category: HiddenCategory | null): void {
+  const existing = Array.from(row.querySelectorAll<HTMLElement>(`.${INLINE_ICON_CLASS}`)).find(
+    (element) => element.closest('li') === row,
+  );
+  if (category === null) {
+    existing?.remove();
+    const swapped = row.querySelector(`[${ATTR_SWAPPED_ICON}]`);
+    if (swapped !== null && swapped.closest('li') === row) swapped.removeAttribute(ATTR_SWAPPED_ICON);
+    return;
+  }
+  if (existing !== undefined && existing.dataset.category === category.id) return;
+  existing?.remove();
+  const original = treeRowIcon(row);
+  if (original === null) return;
+  original.setAttribute(ATTR_SWAPPED_ICON, '');
+  const icon = createElement('span', { class: INLINE_ICON_CLASS, [OWN_UI_ATTRIBUTE]: '', 'data-category': category.id, title: category.title }, [
+    svgFromString(CATEGORY_ICONS[category.id]),
+  ]);
+  original.insertAdjacentElement('beforebegin', icon);
 }
 
 const IDLE_STATE: TabState = {
@@ -112,6 +164,8 @@ export class GeldController {
   private readonly diffExpanded = new Map<string, boolean>();
   /** Which sidebar accordion panel is open per page ("changes" or a category id). */
   private readonly activePanel = new Map<string, string>();
+  /** Inline mode: hidden files the user has opened/closed by hand per page; we stop touching those. */
+  private readonly inlineTouched = new Map<string, Set<string>>();
   private readonly diffSource = new DiffSource(() => {
     // A diff (or the on-disk cache) just became available: settle the header
     // right away rather than after the debounce, then do the rest.
@@ -167,6 +221,8 @@ export class GeldController {
     });
     // Legacy checkboxes change without any attribute mutation.
     document.addEventListener('change', this.onChangeEvent, true);
+    // Inline layout: a real click on a hidden file hands control of it to the user.
+    document.addEventListener('click', this.onUserClick, true);
     this.apply();
   }
 
@@ -174,6 +230,7 @@ export class GeldController {
     if (this.stopped) return;
     this.stopped = true;
     document.removeEventListener('change', this.onChangeEvent, true);
+    document.removeEventListener('click', this.onUserClick, true);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -188,10 +245,24 @@ export class GeldController {
     this.settledHeader = null;
     // Per-page toggles were made against the old defaults; start fresh.
     this.diffExpanded.clear();
+    this.inlineTouched.clear();
     this.pendingReveal = null;
     this.teardown();
     this.apply();
   }
+
+  private readonly onUserClick = (event: MouseEvent): void => {
+    if (!event.isTrusted || this.settings.groupHidden || this.currentPage === null || this.currentView === null) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const root = target?.closest<HTMLElement>(`[${ATTR_ENTRY}="hidden"]`) ?? null;
+    if (root === null) return;
+    const entry = this.currentView.entries.find((candidate) => candidate.root === root);
+    if (entry === undefined) return;
+    const key = this.currentPage.stateKey;
+    const touched = this.inlineTouched.get(key) ?? new Set<string>();
+    touched.add(entry.path);
+    this.inlineTouched.set(key, touched);
+  };
 
   private readonly onChangeEvent = (event: Event): void => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox' && !isOwnElement(event.target)) this.schedule();
@@ -262,6 +333,8 @@ export class GeldController {
 
   private setDiffExpanded(key: string, expanded: boolean): void {
     this.diffExpanded.set(key, expanded);
+    // A deliberate show/hide-all overrides files the user toggled one by one.
+    this.inlineTouched.delete(key);
     this.apply();
   }
 
@@ -363,6 +436,7 @@ export class GeldController {
     stateKey: string,
     matcher: PathMatcher,
   ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
+    if (!this.settings.groupHidden) return this.applyInlineView(view, stateKey, matcher);
     const classified: ClassifiedEntry[] = view.entries.map((entry) => ({
       entry,
       path: entry.path,
@@ -412,8 +486,65 @@ export class GeldController {
     return { breakdown, expanded };
   }
 
+  /**
+   * Inline layout: nothing moves. Hidden diffs stay in place but start
+   * collapsed (using GitHub's own control, so the user can open them); the
+   * file tree keeps GitHub's list and only fades the hidden files, swapping
+   * their file icon for the category's. Header counts are adjusted as usual.
+   */
+  private applyInlineView(
+    view: DiffView,
+    stateKey: string,
+    matcher: PathMatcher,
+  ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
+    const classified: ClassifiedEntry[] = view.entries.map((entry) => ({
+      entry,
+      path: entry.path,
+      category: matcher.categorize(entry.path),
+      stats: entry.stats,
+    }));
+    for (const item of classified) item.entry.root.setAttribute(ATTR_ENTRY, item.category === null ? 'visible' : 'hidden');
+    // None of the grouped chrome applies here.
+    view.container.removeAttribute(ATTR_CONTAINER);
+    view.container.removeAttribute(ATTR_EXPANDED);
+    removeHiddenSection(view.container);
+    for (const item of view.tocItems.values()) item.removeAttribute(ATTR_TOC);
+
+    // "Expanded" here means "not collapsed by us". The state is enforced on
+    // every pass (GitHub re-renders some headers expanded, e.g. rich diffs
+    // that load in two steps) except for files the user has clicked, which
+    // are theirs from then on. The adapters are no-ops when already in state.
+    const expanded = this.isDiffExpanded(stateKey, false);
+    const touched = this.inlineTouched.get(stateKey);
+    for (const item of classified) {
+      if (item.category === null || touched?.has(item.path) === true) continue;
+      if (expanded) view.expandEntry(item.entry);
+      else view.collapseEntry(item.entry);
+    }
+
+    this.applyInlineTree(view, matcher);
+    return { breakdown: buildBreakdown(classified), expanded };
+  }
+
+  private applyInlineTree(view: DiffView, matcher: PathMatcher): void {
+    if (view.treeRoot === null) return;
+    const host = view.treeRoot.parentElement ?? document;
+    removeTreeSection(host);
+    removeSidebarLayout(host);
+    view.treeRoot.setAttribute(ATTR_TREE_MODE, 'inline');
+    for (const file of view.treeFiles) {
+      const category = matcher.categorize(file.path);
+      file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
+      setInlineIcon(file.element, category);
+    }
+    markHiddenDirectories(view.treeDirectories);
+  }
+
   private applyTree(view: DiffView, stateKey: string, matcher: PathMatcher): void {
     if (view.treeRoot === null) return;
+    view.treeRoot.setAttribute(ATTR_TREE_MODE, 'grouped');
+    for (const element of view.treeRoot.querySelectorAll<HTMLElement>(`.${INLINE_ICON_CLASS}`)) element.remove();
+    for (const element of view.treeRoot.querySelectorAll<HTMLElement>(`[${ATTR_SWAPPED_ICON}]`)) element.removeAttribute(ATTR_SWAPPED_ICON);
 
     const entryPaths = new Set(view.entries.map((entry) => entry.path));
     const byCategory = new Map<HiddenCategory, TreeSectionFile[]>();
@@ -430,16 +561,7 @@ export class GeldController {
       byCategory.set(category, list);
     }
 
-    // Directories whose every file is hidden collapse away too. Process deepest
-    // first so nested directories are evaluated before their parents.
-    const directories = [...view.treeDirectories].sort(
-      (a, b) => Number(b.getAttribute('aria-level') ?? 0) - Number(a.getAttribute('aria-level') ?? 0),
-    );
-    for (const directory of directories) {
-      const hasVisible = directory.querySelector(`[${ATTR_TREE}="visible"]`) !== null;
-      const hasHidden = directory.querySelector(`[${ATTR_TREE}="hidden"]`) !== null;
-      directory.setAttribute(ATTR_TREE, !hasVisible && hasHidden ? 'hidden' : 'visible');
-    }
+    markHiddenDirectories(view.treeDirectories);
 
     const host = view.treeRoot.parentElement ?? document;
     const present = new Set<string>(Array.from(byCategory.keys(), (category) => category.id));
@@ -669,9 +791,10 @@ export class GeldController {
       element.removeAttribute(ATTR_CONTAINER);
       element.removeAttribute(ATTR_EXPANDED);
     }
-    for (const attribute of [ATTR_ENTRY, ATTR_TREE, ATTR_TOC, ATTR_FLASH]) {
+    for (const attribute of [ATTR_ENTRY, ATTR_TREE, ATTR_TREE_MODE, ATTR_TOC, ATTR_FLASH, ATTR_SWAPPED_ICON]) {
       for (const element of queryAll(`[${attribute}]`)) element.removeAttribute(attribute);
     }
+    for (const element of queryAll(`.${INLINE_ICON_CLASS}`)) element.remove();
     removeHiddenSection(document);
     removeTreeSection(document);
     removeSidebarLayout(document);

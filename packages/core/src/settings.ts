@@ -26,6 +26,13 @@ export interface GeldSettings {
    * wins, `*` excludes everything (use with `!acme/*` for an allowlist).
    */
   readonly repoRules: readonly string[];
+  /**
+   * Layout for hidden files. `true`: moved to a collapsible section at the
+   * bottom of the diff and to their own sidebar panels (the accordion).
+   * `false`: left in place, collapsed and faded, with their category's icon
+   * in the file tree. Counts are adjusted either way.
+   */
+  readonly groupHidden: boolean;
   /** Show hidden files expanded instead of collapsed. Counts are adjusted either way. */
   readonly expandedByDefault: boolean;
   /** Show `+N −M` (excluding hidden files) next to each pull request in PR lists. */
@@ -46,6 +53,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   testGroups: {},
   customPatterns: [],
   repoRules: [],
+  groupHidden: true,
   expandedByDefault: false,
   showListStats: true,
   hideWhitespace: false,
@@ -106,6 +114,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     testGroups: readTestGroups(record.testGroups),
     customPatterns: isStringArray(record.customPatterns) ? record.customPatterns : DEFAULT_SETTINGS.customPatterns,
     repoRules: isStringArray(record.repoRules) ? record.repoRules : DEFAULT_SETTINGS.repoRules,
+    groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),
     hideWhitespace: bool(record, 'hideWhitespace', DEFAULT_SETTINGS.hideWhitespace),

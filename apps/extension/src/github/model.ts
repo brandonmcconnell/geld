@@ -37,8 +37,10 @@ export interface DiffView {
   readonly treeDirectories: readonly HTMLElement[];
   /** Compare-page table of contents items keyed by anchor. */
   readonly tocItems: ReadonlyMap<string, HTMLElement>;
-  /** Make sure a collapsed diff is expanded so it can be scrolled to. */
-  expandEntry(entry: DiffEntry): void;
+  /** Make sure a collapsed diff is expanded so it can be scrolled to. Returns `false` when no control was found yet. */
+  expandEntry(entry: DiffEntry): boolean;
+  /** Collapse an expanded diff with GitHub's own control. Returns `false` when no control was found yet. */
+  collapseEntry(entry: DiffEntry): boolean;
 }
 
 export interface DiffViewAdapter {

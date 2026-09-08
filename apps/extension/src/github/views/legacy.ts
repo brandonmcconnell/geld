@@ -13,6 +13,21 @@ import type { DiffEntry, DiffView, DiffViewAdapter, TreeFileNode } from '../mode
  *           .file-header .file-info .sr-only  "15 changes: 8 additions & 7 deletions"
  *   file-tree ul[role=tree] li[data-tree-entry-type=file|directory]
  */
+function setLegacyEntryExpanded(entry: DiffEntry, expanded: boolean): boolean {
+  const file = entry.root.matches('.file') ? entry.root : entry.root.querySelector<HTMLElement>('.file');
+  if (file === null) return false;
+  const content = file.querySelector<HTMLElement>('.js-file-content');
+  if (content === null) return false;
+  const isExpanded = getComputedStyle(content).display !== 'none';
+  if (isExpanded === expanded) return true;
+  const toggle =
+    file.querySelector<HTMLElement>('.file-header button.js-details-target[aria-label*="Toggle diff"]') ??
+    file.querySelector<HTMLElement>('.file-header .file-info > button.js-details-target');
+  if (toggle === null) return false;
+  toggle.click();
+  return true;
+}
+
 export const legacyAdapter: DiffViewAdapter = {
   kind: 'legacy',
   read(): DiffView | null {
@@ -74,16 +89,11 @@ export const legacyAdapter: DiffViewAdapter = {
       treeFiles,
       treeDirectories,
       tocItems,
-      expandEntry(entry: DiffEntry): void {
-        const file = entry.root.matches('.file') ? entry.root : entry.root.querySelector<HTMLElement>('.file');
-        if (file === null) return;
-        const content = file.querySelector<HTMLElement>('.js-file-content');
-        if (content !== null && getComputedStyle(content).display === 'none') {
-          const toggle =
-            file.querySelector<HTMLElement>('.file-header button.js-details-target[aria-label*="Toggle diff"]') ??
-            file.querySelector<HTMLElement>('.file-header .file-info > button.js-details-target');
-          toggle?.click();
-        }
+      expandEntry(entry: DiffEntry): boolean {
+        return setLegacyEntryExpanded(entry, true);
+      },
+      collapseEntry(entry: DiffEntry): boolean {
+        return setLegacyEntryExpanded(entry, false);
       },
     };
   },

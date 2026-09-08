@@ -31,6 +31,31 @@ function accessibleName(element: HTMLElement): string {
   return (element.textContent ?? '').trim();
 }
 
+/**
+ * The header has several icon buttons (file comment, options menu, "expand all
+ * lines", ...). The collapse control is the one whose accessible name is
+ * "Expand file" while collapsed / "Collapse file" while open, so it is pressed
+ * only when it currently says the opposite of what we want.
+ */
+function pressCollapseControl(entry: DiffEntry, want: 'expand' | 'collapse'): boolean {
+  for (const button of entry.root.querySelectorAll<HTMLButtonElement>('button')) {
+    if (button.closest('[data-geld-ui]') !== null || button.hasAttribute('aria-haspopup')) continue;
+    if (button.hasAttribute('data-file-path')) continue;
+    const name = accessibleName(button);
+    if (/\b(lines?|comment|review|all)\b/i.test(name)) continue;
+    if (/^collapse\b/i.test(name)) {
+      if (want === 'collapse') button.click();
+      return true;
+    }
+    if (/^expand\b/i.test(name)) {
+      if (want === 'expand') button.click();
+      return true;
+    }
+  }
+  // Header not fully rendered yet (rich-diff files arrive in two steps).
+  return false;
+}
+
 export const reactAdapter: DiffViewAdapter = {
   kind: 'react',
   read(): DiffView | null {
@@ -95,21 +120,11 @@ export const reactAdapter: DiffViewAdapter = {
       treeFiles,
       treeDirectories,
       tocItems: new Map(),
-      expandEntry(entry: DiffEntry): void {
-        // The header has several icon buttons (file comment, options menu,
-        // "expand all lines", ...). The collapse control is the one whose
-        // accessible name is "Expand file" while collapsed / "Collapse file"
-        // while open, so we press it only when it currently says "Expand".
-        for (const button of entry.root.querySelectorAll<HTMLButtonElement>('button')) {
-          if (button.closest('[data-geld-ui]') !== null || button.hasAttribute('aria-haspopup')) continue;
-          if (button.hasAttribute('data-file-path')) continue;
-          const name = accessibleName(button);
-          if (/^collapse\b/i.test(name)) return;
-          if (/^expand\b/i.test(name) && !/\b(lines?|comment|review|all)\b/i.test(name)) {
-            button.click();
-            return;
-          }
-        }
+      expandEntry(entry: DiffEntry): boolean {
+        return pressCollapseControl(entry, 'expand');
+      },
+      collapseEntry(entry: DiffEntry): boolean {
+        return pressCollapseControl(entry, 'collapse');
       },
     };
   },

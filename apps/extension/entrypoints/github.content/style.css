@@ -190,8 +190,38 @@
 /* File tree: hide test files/directories, add a "Tests" pseudo-section      */
 /* ------------------------------------------------------------------------ */
 
-[data-geld-tree='hidden'] {
+/* Grouped layout: hidden files leave GitHub's tree for their own panels. */
+[data-geld-tree-mode='grouped'] [data-geld-tree='hidden'] {
   display: none !important;
+}
+
+/*
+ * Inline layout: hidden files stay in GitHub's tree, faded, with their
+ * category's icon instead of the file icon. Only the row fades (not a
+ * directory's nested list), so nesting does not compound the opacity.
+ */
+[data-geld-tree-mode='inline'] [data-geld-tree='hidden'] > :not(ul) {
+  opacity: 0.5;
+}
+
+[data-geld-tree-mode='inline'] [data-geld-tree='hidden']:hover > :not(ul),
+[data-geld-tree-mode='inline'] [data-geld-tree='hidden']:focus-within > :not(ul) {
+  opacity: 0.85;
+}
+
+[data-geld-swapped-icon] {
+  display: none !important;
+}
+
+.geld-tree-inline-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-tree-inline-icon > svg {
+  width: 16px;
+  height: 16px;
 }
 
 /*
