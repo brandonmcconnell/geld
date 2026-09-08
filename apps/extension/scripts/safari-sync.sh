@@ -39,4 +39,13 @@ NEXT_BUILD=$(( ${CURRENT_BUILD:-0} + 1 ))
 # Every target shares one version and one build number.
 sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $VERSION;/g; s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = $NEXT_BUILD;/g" "$PBXPROJ"
 echo "Xcode version $VERSION, build $NEXT_BUILD"
-echo "Next: open the project ('pnpm --filter @geld/extension safari:open'), Product > Archive, Distribute App > App Store Connect."
+
+# The wrapper is tracked: the copied build and the bumped build number must land in git,
+# otherwise the next sync bumps from the wrong base and the archive drifts from main.
+echo
+echo "Changed files to commit:"
+git -C "$(git rev-parse --show-toplevel)" status --short -- apps/extension/safari | sed 's/^/  /'
+echo
+echo "Next:"
+echo "  git add apps/extension/safari && git commit -m 'Safari: sync wrapper with $VERSION (build $NEXT_BUILD)' && git push"
+echo "  pnpm safari:open  ->  Product > Archive  ->  Distribute App > App Store Connect"
