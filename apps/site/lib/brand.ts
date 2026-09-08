@@ -51,6 +51,30 @@ export function loadLogomark(): Promise<BrandShape> {
   return loadShape('geld-logomark.svg');
 }
 
+export interface Screenshot {
+  /** `data:image/png;base64,…`, which is how Satori (`next/og`) accepts raster images. */
+  readonly src: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+function pngDimensions(png: Buffer, file: string): { readonly width: number; readonly height: number } {
+  // PNG signature (8 bytes), then the IHDR chunk: length (4), "IHDR" (4), width (4), height (4).
+  if (png.length < 24 || png.toString('ascii', 12, 16) !== 'IHDR') throw new Error(`${file} is not a PNG`);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
+
+/**
+ * Product screenshots in `assets/screenshots/` (2× captures of the extension
+ * on github.com), embedded in the Open Graph image at build time.
+ */
+export async function loadScreenshot(file: 'pr-header-breakdown.png'): Promise<Screenshot> {
+  'use cache';
+  cacheLife('max');
+  const png = await readFile(/* turbopackIgnore: true */ path.join(REPO_ROOT, 'assets', 'screenshots', file));
+  return { src: `data:image/png;base64,${png.toString('base64')}`, ...pngDimensions(png, file) };
+}
+
 type GeistFile = 'Geist-Regular.ttf' | 'Geist-Medium.ttf' | 'Geist-SemiBold.ttf' | 'GeistMono-Regular.ttf' | 'GeistMono-Medium.ttf';
 
 /** Geist TTFs shipped by the `geist` package, for Satori (which cannot read woff2). */

@@ -5,7 +5,7 @@
 # site renders from changed since the LAST SUCCESSFUL DEPLOYMENT of this
 # branch: its own sources, @geld/core (the patterns page and the demo matcher
 # come from it), the extension's package.json (the version shown on the site),
-# the brand assets, or the workspace/lockfile. Commits that only change the
+# the brand assets and screenshots, or the workspace/lockfile. Commits that only change the
 # extension itself are skipped.
 #
 # Vercel provides the previous deployment's commit as VERCEL_GIT_PREVIOUS_SHA.
@@ -20,6 +20,7 @@ SITE_PATHS=(
   packages/core
   apps/extension/package.json
   assets/brand
+  assets/screenshots
   package.json
   pnpm-lock.yaml
   pnpm-workspace.yaml
