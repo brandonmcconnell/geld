@@ -1,5 +1,5 @@
-import type { HiddenCategory } from './categories';
-import { CATEGORIES, categoryById, hiddenCategoryFromCustom } from './categories';
+import type { Catalog, HiddenCategory } from './categories';
+import { BUNDLED_CATALOG, categoryById, hiddenCategoryFromCustom } from './categories';
 import type { CompiledGlobs } from './glob';
 import { compileGlobs, globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
@@ -97,9 +97,11 @@ function compileCategory(category: HiddenCategory, builtInPatterns: readonly str
  * Build the matcher that decides which files are hidden for the given
  * settings and repository. Custom categories are checked first (a user's own
  * definition wins), then the built-ins in their fixed order; within a
- * category, built-in patterns are attributed before the user's extras.
+ * category, built-in patterns are attributed before the user's extras. The
+ * built-in patterns come from `catalog` — the extension passes the active
+ * (possibly fetched) one; the site and tests use the bundled default.
  */
-export function createMatcher(settings: GeldSettings, repo: string | null = null): PathMatcher {
+export function createMatcher(settings: GeldSettings, repo: string | null = null, catalog: Catalog = BUNDLED_CATALOG): PathMatcher {
   if (!settings.enabled) return NEVER_MATCH;
 
   const compiled: CompiledCategory[] = [];
@@ -110,7 +112,7 @@ export function createMatcher(settings: GeldSettings, repo: string | null = null
     if (entry !== null) compiled.push(entry);
   }
 
-  for (const category of CATEGORIES) {
+  for (const category of catalog.categories) {
     if (!isCategoryEnabled(settings, category.id)) continue;
     const builtIn: string[] = [];
     for (const group of category.groups) {

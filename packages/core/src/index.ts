@@ -4,6 +4,8 @@
  * settings work, and how to read a unified diff. Consumed by the extension and
  * the website so documentation is rendered from the same source of truth.
  */
+export * from './catalog';
+export * from './catalog-key';
 export * from './categories';
 export * from './category-icons';
 export * from './diff-parse';

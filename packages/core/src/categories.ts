@@ -21,6 +21,14 @@ export function isAnyCategoryId(value: unknown): value is AnyCategoryId {
   return isCategoryId(value) || isCustomCategoryId(value);
 }
 
+/** Ids of built-in categories and pattern groups: short, lower-case, stable forever. */
+const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
+
+/** Whether a string could be a built-in category or group id (see {@link ID_PATTERN}). */
+export function isWellFormedId(value: unknown): value is string {
+  return typeof value === 'string' && ID_PATTERN.test(value);
+}
+
 export interface PatternGroup {
   readonly id: string;
   readonly label: string;
@@ -28,8 +36,8 @@ export interface PatternGroup {
   readonly patterns: readonly string[];
 }
 
-export interface HiddenCategory {
-  readonly id: AnyCategoryId;
+/** Everything a category carries besides its id. */
+export interface CategoryShape {
   /** Human title, used for the tree section ("Tests"). */
   readonly title: string;
   readonly description: string;
@@ -45,10 +53,43 @@ export interface HiddenCategory {
   readonly groups: readonly PatternGroup[];
 }
 
+export interface HiddenCategory extends CategoryShape {
+  readonly id: AnyCategoryId;
+}
+
 /** A built-in category: same shape, but its id is one of the fixed {@link CategoryId}s. */
 export interface BuiltInCategory extends HiddenCategory {
   readonly id: CategoryId;
 }
+
+/**
+ * The pattern catalog: the built-in categories with their groups and globs.
+ * One copy is compiled into every build ({@link BUNDLED_CATALOG}); the
+ * extension may swap in a newer, signed copy fetched from the repository
+ * (see `catalog.ts`), which is why everything that lists or matches built-in
+ * categories takes a catalog instead of reading the constant.
+ */
+export interface Catalog {
+  /**
+   * Monotonic integer; a fetched catalog is used only when its version is
+   * higher than the bundled one. Convention: the publication date as
+   * `YYYYMMDD` (shown as `2026.09.08`), or that number plus one for a second
+   * release on the same day.
+   */
+  readonly version: number;
+  /** Lowest extension version (first three numeric parts) that may use this catalog. */
+  readonly minExtensionVersion: string;
+  readonly categories: readonly BuiltInCategory[];
+}
+
+/**
+ * Bump whenever {@link CATEGORIES} or {@link TEST_PATTERN_GROUPS} change and
+ * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
+ */
+export const CATALOG_VERSION = 20260909;
+
+/** The extension version that introduced the updatable catalog; older builds never fetch it. */
+export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
 
 export const CATEGORIES: readonly BuiltInCategory[] = [
   {
@@ -288,12 +329,23 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
   },
 ];
 
+/** The catalog compiled into this build: the fallback, and where category defaults come from. */
+export const BUNDLED_CATALOG: Catalog = {
+  version: CATALOG_VERSION,
+  minExtensionVersion: CATALOG_MIN_EXTENSION_VERSION,
+  categories: CATEGORIES,
+};
+
 export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories'];
 
-const BY_ID = new Map<CategoryId, BuiltInCategory>(CATEGORIES.map((category) => [category.id, category]));
-
-export function categoryById(id: CategoryId): BuiltInCategory {
-  const category = BY_ID.get(id);
+/**
+ * Look a built-in category up in a catalog. The set of category ids is fixed
+ * by the bundled catalog (a new category needs an extension release, because
+ * it needs a default and copy), so this never fails; the fetched catalog can
+ * only change what a category contains.
+ */
+export function categoryById(id: CategoryId, catalog: Catalog = BUNDLED_CATALOG): BuiltInCategory {
+  const category = catalog.categories.find((candidate) => candidate.id === id);
   if (category === undefined) throw new Error(`Unknown category: ${id}`);
   return category;
 }
@@ -312,21 +364,40 @@ export function groupKey(categoryId: CategoryId, groupId: string): GroupKey {
   return `${categoryId}/${groupId}`;
 }
 
-/** Split a group key; `null` unless both the category and the group exist. */
-export function parseGroupKey(value: unknown): { readonly category: BuiltInCategory; readonly group: PatternGroup } | null {
+/** Split a group key; `null` unless both the category and the group exist in `catalog`. */
+export function parseGroupKey(value: unknown, catalog: Catalog = BUNDLED_CATALOG): { readonly category: BuiltInCategory; readonly group: PatternGroup } | null {
   if (typeof value !== 'string') return null;
   const slash = value.indexOf('/');
   if (slash === -1) return null;
   const categoryId = value.slice(0, slash);
   const groupId = value.slice(slash + 1);
   if (!isCategoryId(categoryId)) return null;
-  const category = categoryById(categoryId);
+  const category = categoryById(categoryId, catalog);
   const group = category.groups.find((candidate) => candidate.id === groupId);
   return group === undefined ? null : { category, group };
 }
 
-export function isGroupKey(value: unknown): value is GroupKey {
-  return parseGroupKey(value) !== null;
+export function isGroupKey(value: unknown, catalog: Catalog = BUNDLED_CATALOG): value is GroupKey {
+  return parseGroupKey(value, catalog) !== null;
+}
+
+/**
+ * `category/group` where the category is a built-in and the group id is
+ * well formed, whether or not this build knows the group. Settings keep such
+ * keys because a newer catalog (or a newer extension writing the same gist)
+ * may have introduced the group; dropping the key would silently re-enable it
+ * there.
+ */
+export function isWellFormedGroupKey(value: unknown): value is GroupKey {
+  if (typeof value !== 'string') return false;
+  const slash = value.indexOf('/');
+  if (slash === -1) return false;
+  return isCategoryId(value.slice(0, slash)) && isWellFormedId(value.slice(slash + 1));
+}
+
+/** Every `category/group` key a catalog defines, in catalog order. */
+export function catalogGroupKeys(catalog: Catalog = BUNDLED_CATALOG): readonly GroupKey[] {
+  return catalog.categories.flatMap((category) => category.groups.map((group) => groupKey(category.id, group.id)));
 }
 
 /** A category the user defined: a title, an icon and the patterns that belong to it. */
