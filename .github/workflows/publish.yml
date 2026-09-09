@@ -1,11 +1,25 @@
 name: Publish to stores
 
-# Publishes a GitHub Release's zips to the browser stores. Runs automatically
-# after every CI run on main that produced a release, every six hours, and on
-# demand. Every store reviews each submission and Chrome/Edge/Apple refuse a new
-# one while the previous is under review (neither API can cancel a review), so
-# a store that is busy is *skipped* and the scheduled run publishes the newest
-# release once it clears. A version a store already has is skipped silently.
+# Publishes a GitHub Release's zips to the browser stores.
+#
+# When it runs:
+#   - Twice a day (05:17 and 17:17 UTC) with the latest release. This is the
+#     normal path: a change on main reaches every store within about twelve
+#     hours. Two a day leaves room under the stores' quotas for urgent pushes.
+#   - After a CI run on main whose commit message contains "[publish]": an
+#     urgent release that should not wait for the schedule.
+#   - On demand from the Actions tab (workflow_dispatch), optionally for one
+#     release tag and a subset of stores.
+#
+# Every store reviews each submission, and Chrome/Edge/Apple refuse a new one
+# while the previous is under review (Apple lets us withdraw it; the others do
+# not), so a store that is busy is *skipped* with a warning and the next
+# scheduled run publishes the newest release once it clears. Firefox has no
+# blocking review but an API quota (24 submissions and 48 file uploads a day per
+# account), so a version AMO already has is detected with a read-only request
+# *before* anything is uploaded, and a throttled answer is a skip that the next
+# run retries. Nothing here fails silently: every skip is a warning annotation
+# on the run, and a skipped version is retried by the schedule.
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   Chrome  : CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
@@ -21,7 +35,7 @@ on:
     types: [completed]
     branches: [main]
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '17 5,17 * * *'
   workflow_dispatch:
     inputs:
       release:
@@ -47,8 +61,12 @@ env:
 jobs:
   assets:
     name: Fetch release zips
-    # After CI: only when it succeeded (it publishes the release in the same run).
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # After CI: only when it succeeded (it publishes the release in the same run)
+    # and the commit asked for an urgent publish with "[publish]"; everything
+    # else waits for the twice-daily schedule.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && contains(github.event.workflow_run.head_commit.message, '[publish]'))
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
@@ -139,6 +157,10 @@ jobs:
     if: contains(needs.assets.outputs.channels, 'firefox')
     runs-on: ubuntu-latest
     steps:
+      # Checkout first: it cleans the workspace, which would delete the downloaded zips.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: apps/extension/scripts/publish
       - uses: actions/download-artifact@v7
         with:
           name: store-zips
@@ -149,12 +171,19 @@ jobs:
       # web-ext needs a directory, and AMO wants the source archive for review
       # because the shipped code is bundled. Listed uploads are usually
       # auto-approved within minutes; a pending version never blocks a new one.
+      # A version AMO already has is detected with a read-only request first:
+      # web-ext would otherwise upload both files before finding out, and AMO
+      # allows 48 uploads a day per account.
       - env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
           NOTES: ${{ needs.assets.outputs.notes }}
         run: |
           mkdir -p unpacked && unzip -q dist/*-firefox.zip -d unpacked
+          known=$(node apps/extension/scripts/publish/amo-version-exists.mjs unpacked || echo "unknown")
+          if [ "$known" = "exists" ]; then
+            echo "::notice title=Firefox::Skipped: AMO already has this version (checked without uploading)."; exit 0
+          fi
           set +e
           npx --yes web-ext@8 sign --source-dir unpacked --channel listed \
             --upload-source-code dist/*-sources.zip \
@@ -200,19 +229,37 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
+      # A build App Store Connect already has is detected with a read-only API
+      # call before spending minutes archiving and uploading a package Apple
+      # would refuse as redundant. The release tag is vX.Y.Z-build.N.
+      - name: Check App Store Connect for this build
+        id: known
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+          TAG: ${{ needs.assets.outputs.tag }}
+        run: |
+          marketing="${TAG#v}"; marketing="${marketing%%-build.*}"; build="${TAG##*build.}"
+          known=$(node apps/extension/scripts/publish/asc-build-exists.mjs sh.geld.safari "$marketing" "$build" || echo "unknown")
+          echo "state=$known" >> "$GITHUB_OUTPUT"
+          if [ "$known" = "exists" ]; then
+            echo "::notice title=Safari::Skipped: App Store Connect already has build $marketing ($build) (checked without archiving)."
+          fi
       - uses: pnpm/action-setup@v6
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
       - uses: actions/setup-node@v7
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         with:
           node-version: 22
           cache: pnpm
-      - if: steps.creds.outputs.ready == 'true'
+      - if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         run: pnpm install --frozen-lockfile
       # Rebuild the Safari flavour at the release's version and refresh the Xcode
       # wrapper (safari:sync copies the build in and stamps MARKETING_VERSION and
       # the build number). The release tag is vX.Y.Z-build.N → build number N.
-      - if: steps.creds.outputs.ready == 'true'
+      - if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
           TAG: ${{ needs.assets.outputs.tag }}
@@ -220,7 +267,7 @@ jobs:
           export GELD_BUILD_NUMBER="${TAG##*build.}"
           pnpm --filter @geld/extension safari:sync
       - name: Import signing certificate
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -232,7 +279,7 @@ jobs:
           security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/xcodebuild
           security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
       - name: Archive and export the App Store package
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -276,7 +323,7 @@ jobs:
       # submission already *in* review cannot be replaced; that case is reported
       # as skipped).
       - name: Upload and submit for review
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
