@@ -364,6 +364,35 @@ body {
   margin: 10px 0 0;
 }
 
+/* "How patterns work" on the left, the catalog line ("Built-in patterns · Check now") on the right. */
+.options__catalog-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 16px;
+}
+
+.options__catalog {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.options__catalog-sep {
+  color: var(--muted-foreground);
+}
+
+.options__catalog-note {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+}
+
+.options__catalog-note[data-tone='error'] {
+  color: var(--destructive);
+}
+
 /* Tester --------------------------------------------------------------------- */
 
 .options__tester {

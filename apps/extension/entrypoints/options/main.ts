@@ -1,7 +1,6 @@
 import { browser } from 'wxt/browser';
-import type { BuiltInCategory, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
+import type { BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
 import {
-  CATEGORIES,
   CATEGORY_ICON_NAMES,
   categoryIconLabel,
   categoryPatternLines,
@@ -30,7 +29,10 @@ import {
   withoutCustomCategory,
 } from '@geld/core';
 import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, ToggleField } from '@geld/core';
+import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
+import type { CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
+import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
 import { accountItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, oauthClientIdItem, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -151,6 +153,9 @@ function requireCategoryFields(): { readonly categoriesField: CategoriesField; r
 
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
+  // The active pattern catalog: bundled, or the newer signed copy the background fetched.
+  let cachedCatalog = await catalogItem.getValue();
+  let catalog: Catalog = catalogFromCache(cachedCatalog);
 
   /* General: one switch per boolean setting the extension surface exposes. */
   applySchemaCopy('general');
@@ -269,7 +274,7 @@ async function main(): Promise<void> {
   function renderBuiltIn(category: BuiltInCategory): HTMLElement {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
-    const customised = describeAdvancedSettings(settings, category.id);
+    const customised = describeAdvancedSettings(settings, category.id, catalog);
     const help = el('p', 'geld-help', [category.description]);
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
@@ -306,7 +311,7 @@ async function main(): Promise<void> {
     ]);
     card.dataset.categoryId = category.id;
     // Open when anything beyond the switch is in use, so those settings are seen.
-    card.open = hasAdvancedSettings(settings, category.id);
+    card.open = hasAdvancedSettings(settings, category.id, catalog);
     return card;
   }
 
@@ -447,7 +452,7 @@ async function main(): Promise<void> {
     const wasOpen = new Set(
       Array.from(document.querySelectorAll<HTMLDetailsElement>('details.options__category[open]')).map((card) => card.dataset.categoryId ?? ''),
     );
-    categoriesHost.replaceChildren(...CATEGORIES.map(renderBuiltIn));
+    categoriesHost.replaceChildren(...catalog.categories.map(renderBuiltIn));
     // Re-rendering drops an unsaved draft; the Add button starts a fresh one.
     const customCards = settings.customCategories.map((custom) => renderCustom(custom));
     if (customCards.length === 0) customHost.replaceChildren(el('p', 'geld-help options__empty', [customField.emptyLabel]));
@@ -464,6 +469,33 @@ async function main(): Promise<void> {
     const card = renderCustom(null);
     customHost.append(card);
     card.querySelector('input')?.focus();
+  });
+
+  /* Pattern catalog: where the built-in patterns come from, and a way to look for newer ones. */
+  const catalogSummary = requireElement('catalog-summary', HTMLSpanElement);
+  const catalogNote = requireElement('catalog-note', HTMLParagraphElement);
+  const catalogCheck = requireElement('catalog-check', HTMLButtonElement);
+  let catalogStatus: CatalogStatus = await catalogStatusItem.getValue();
+
+  function renderCatalogStatus(): void {
+    catalogSummary.textContent = describeCatalog(cachedCatalog);
+    catalogCheck.textContent = catalogStatus.checking ? 'Checking…' : 'Check now';
+    catalogCheck.disabled = catalogStatus.checking;
+    const note = describeCatalogOutcome(catalogStatus);
+    catalogNote.hidden = note === null;
+    catalogNote.textContent = note?.text ?? '';
+    if (note?.tone === 'error') catalogNote.dataset.tone = 'error';
+    else delete catalogNote.dataset.tone;
+  }
+  renderCatalogStatus();
+  catalogCheck.addEventListener('click', () => {
+    // The background does the fetching so the result outlives this page; the outcome arrives via the status watch.
+    const message: CatalogCheckMessage = { type: 'geld:catalog-check' };
+    void browser.runtime.sendMessage(message).catch(() => undefined);
+  });
+  catalogStatusItem.watch((next) => {
+    catalogStatus = next;
+    renderCatalogStatus();
   });
 
   /** Signature of everything the two category lists render, to skip needless rebuilds. */
@@ -558,7 +590,7 @@ async function main(): Promise<void> {
         return;
       }
     }
-    const verdict = createMatcher(settings, repo).explain(path);
+    const verdict = createMatcher(settings, repo, catalog).explain(path);
     if (verdict.category === null) {
       testerResult.textContent =
         verdict.rescuedBy !== null
@@ -665,7 +697,7 @@ async function main(): Promise<void> {
     const file = importInput.files?.[0];
     importInput.value = '';
     if (file === undefined) return;
-    const result = validateSettingsDocument(await file.text());
+    const result = validateSettingsDocument(await file.text(), catalog);
     if (!result.ok) {
       const shown = result.issues.slice(0, 3).map((issue) => `${issue.path}: ${issue.message}`);
       const more = result.issues.length - shown.length;
@@ -674,6 +706,15 @@ async function main(): Promise<void> {
     }
     await settingsItem.setValue(result.settings);
     maintenanceStatus('Settings imported', 'success');
+  });
+
+  /* A newer catalog was fetched (or the cache dropped): the category cards show its groups and copy. */
+  catalogItem.watch((next) => {
+    cachedCatalog = next;
+    catalog = catalogFromCache(next);
+    renderCatalogStatus();
+    if (!(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) renderAll();
+    runTester();
   });
 
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */

@@ -1,5 +1,5 @@
 import type { HiddenCategory } from '@geld/core';
-import { CATEGORIES } from '@geld/core';
+import { CATEGORY_IDS } from '@geld/core';
 import type { FileStats } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 import { addTotals, EMPTY_TOTALS, formatCount, pluralize, subtractTotals } from '@geld/core';
@@ -43,8 +43,9 @@ export function buildBreakdown(items: readonly Classified[]): HiddenBreakdown {
     perCategory.set(item.category, bucket);
   }
   const categories = Array.from(perCategory, ([category, bucket]) => ({ category, totals: bucket.totals, paths: bucket.paths }));
-  // Built-ins keep their fixed order; custom categories (not in CATEGORIES) sort first, as they match first.
-  const order = (category: HiddenCategory): number => CATEGORIES.findIndex((builtIn) => builtIn.id === category.id);
+  // Built-ins keep their fixed order (the same in every catalog, since a fetched
+  // one cannot add or reorder categories); custom categories sort first, as they match first.
+  const order = (category: HiddenCategory): number => CATEGORY_IDS.findIndex((id) => id === category.id);
   categories.sort((a, b) => order(a.category) - order(b.category));
   return { totals, incomplete, categories };
 }

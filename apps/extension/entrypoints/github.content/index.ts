@@ -3,6 +3,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController } from '../../src/github/controller';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
+import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
 import { settingsItem } from '../../src/lib/storage';
 import './style.css';
 
@@ -19,23 +20,33 @@ export default defineContentScript({
 
     let showBadge = (await settingsItem.getValue()).showBadge;
 
-    const controller = new GeldController(await settingsItem.getValue(), {
-      onTabState(state: TabState) {
-        // Only the top frame drives the badge; the count is what the user sees on this tab.
-        if (window.top !== window) return;
-        const message: TabStateMessage = {
-          type: 'geld:tab-state',
-          state: showBadge ? state : { ...state, hiddenCount: 0 },
-        };
-        void browser.runtime.sendMessage(message).catch(() => undefined);
+    const controller = new GeldController(
+      await settingsItem.getValue(),
+      {
+        onTabState(state: TabState) {
+          // Only the top frame drives the badge; the count is what the user sees on this tab.
+          if (window.top !== window) return;
+          const message: TabStateMessage = {
+            type: 'geld:tab-state',
+            state: showBadge ? state : { ...state, hiddenCount: 0 },
+          };
+          void browser.runtime.sendMessage(message).catch(() => undefined);
+        },
       },
-    });
+      await loadCatalog(),
+    );
     controller.start();
 
-    const unwatch = settingsItem.watch((settings) => {
+    const unwatchSettings = settingsItem.watch((settings) => {
       showBadge = settings.showBadge;
       controller.updateSettings(settings);
     });
+    // The background fetched a newer pattern catalog: apply it without a reload.
+    const unwatchCatalog = watchCatalog((catalog) => controller.updateCatalog(catalog));
+    const unwatch = (): void => {
+      unwatchSettings();
+      unwatchCatalog();
+    };
 
     const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState) => void): boolean | undefined => {
       if (isToggleHiddenMessage(message)) {

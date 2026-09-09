@@ -23,6 +23,8 @@ export default defineConfig({
     icons: Object.fromEntries([16, 32, 128, 256, 512].map((size) => [String(size), `icon/${size}.png`])),
     permissions: [
       'storage',
+      // Daily check for a newer signed pattern catalog (no install warning).
+      'alarms',
       // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
       // toolbar icon can switch between the black and white marks.
       ...(manifestVersion === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
@@ -31,7 +33,8 @@ export default defineConfig({
     ],
     // patch-diff.githubusercontent.com serves the raw `.diff` that github.com
     // redirects to; it is fetched from the background script only.
-    // api.github.com is used only for the optional GitHub sign-in (gist sync).
+    // api.github.com serves the optional GitHub sign-in (gist sync) and the
+    // signed pattern catalog (catalog/patterns.json via the contents API).
     host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
     ...(manifestVersion === 3

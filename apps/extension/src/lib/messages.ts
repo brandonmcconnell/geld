@@ -98,6 +98,15 @@ export type AccountAction =
 
 export type AccountActionResponse = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
+/**
+ * Options → background: look for a newer pattern catalog right now. The
+ * outcome is also published through `local:catalogStatus`, which the options
+ * page watches; the response only lets the caller stop its spinner.
+ */
+export interface CatalogCheckMessage {
+  readonly type: 'geld:catalog-check';
+}
+
 export type GeldRequest =
   | FetchDiffRequest
   | ColorSchemeMessage
@@ -106,7 +115,8 @@ export type GeldRequest =
   | RevealFileMessage
   | EnsureContentMessage
   | TabStateMessage
-  | AccountActionMessage;
+  | AccountActionMessage
+  | CatalogCheckMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -175,6 +185,10 @@ const ACCOUNT_ACTIONS: ReadonlySet<string> = new Set<AccountAction>([
 
 export function isAccountActionMessage(value: unknown): value is AccountActionMessage {
   return isRecord(value) && value.type === 'geld:account' && typeof value.action === 'string' && ACCOUNT_ACTIONS.has(value.action);
+}
+
+export function isCatalogCheckMessage(value: unknown): value is CatalogCheckMessage {
+  return isRecord(value) && value.type === 'geld:catalog-check';
 }
 
 export function isAccountActionResponse(value: unknown): value is AccountActionResponse {

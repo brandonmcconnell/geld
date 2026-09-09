@@ -3,11 +3,12 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
+import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { settingsItem } from '../src/lib/storage';
 import type { FetchDiffResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
-import { isAccountActionMessage, isColorSchemeMessage, isEnsureContentMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
+import { isAccountActionMessage, isCatalogCheckMessage, isColorSchemeMessage, isEnsureContentMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 
@@ -219,6 +220,10 @@ export default defineBackground(() => {
       void handleAccountMessage(message).then(sendResponse);
       return true;
     }
+    if (isCatalogCheckMessage(message)) {
+      void checkCatalog(true).then(sendResponse);
+      return true;
+    }
     if (isEnsureContentMessage(message)) {
       void browser.tabs
         .get(message.tabId)
@@ -265,6 +270,10 @@ export default defineBackground(() => {
 
   // GitHub account: keep settings in the user's secret gist when signed in.
   startAccountSync();
+
+  // Pattern catalog: fetch the signed catalog/patterns.json from the repository
+  // daily so patterns can improve without a store release.
+  startCatalogUpdates();
 
   if (USES_OFFSCREEN_THEME_PROBE) {
     browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());

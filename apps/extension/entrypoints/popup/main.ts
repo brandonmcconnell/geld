@@ -7,6 +7,7 @@ import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, fieldsFor, isCategoryEnabled } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
+import { loadCatalog } from '../../src/lib/catalog';
 import { settingsItem } from '../../src/lib/storage';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
@@ -62,6 +63,8 @@ function orgOf(repo: string): string {
 
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
+  // Titles and descriptions come from the active catalog; the popup is short-lived, so one read is enough.
+  const catalog = await loadCatalog();
   const status = requireElement('status', HTMLSpanElement);
   mountAccountWidget(requireElement('account', HTMLDivElement), {
     variant: 'compact',
@@ -124,7 +127,7 @@ async function main(): Promise<void> {
     const grid = document.createElement('div');
     grid.className = 'popup__categories-grid';
     // Built-in and user-defined categories alike; a new custom category appears here after a reload of the popup.
-    for (const category of allCategories(settings)) {
+    for (const category of allCategories(settings, catalog)) {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.className = 'geld-checkbox';
@@ -312,7 +315,7 @@ async function main(): Promise<void> {
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggles) set(next[field.key]);
-    for (const category of allCategories(next)) {
+    for (const category of allCategories(next, catalog)) {
       const input = categoryInputs.get(category.id);
       if (input !== undefined) input.checked = isCategoryEnabled(next, category.id);
     }

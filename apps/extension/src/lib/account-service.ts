@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, findSettingsGist, readRemoteValidated, settingsEqual,
 import { browser } from 'wxt/browser';
 import type { AuthFlowState, RemoteInvalid, SyncState } from './account';
 import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem } from './account';
+import { loadCatalog } from './catalog';
 import { fetchAccount, pollForToken, requestDeviceCode } from './github-auth';
 import type { AccountActionMessage, AccountActionResponse } from './messages';
 import { settingsItem } from './storage';
@@ -140,7 +141,7 @@ async function initialSync(): Promise<void> {
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
       return;
     }
-    const read = await readRemoteValidated(account.token, existing.id);
+    const read = await readRemoteValidated(account.token, existing.id, await loadCatalog());
     if (read.kind === 'missing') {
       // The gist exists but has no settings file (e.g. the user deleted it): recreate it.
       const written = await writeRemote(account.token, existing.id, local);
@@ -222,7 +223,7 @@ async function pull(): Promise<AccountActionResponse> {
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null });
       return { ok: true };
     }
-    const read = await readRemoteValidated(account.token, gistId);
+    const read = await readRemoteValidated(account.token, gistId, await loadCatalog());
     if (read.kind === 'missing') return fail('The settings gist could not be read.');
     if (read.kind === 'invalid') return markInvalid(read);
     const { remote } = read;

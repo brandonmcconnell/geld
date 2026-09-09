@@ -1,5 +1,5 @@
-import type { HiddenCategory } from '@geld/core';
-import { CATEGORIES } from '@geld/core';
+import type { Catalog, HiddenCategory } from '@geld/core';
+import { BUNDLED_CATALOG } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 import { subtractTotals } from '@geld/core';
 import type { PathMatcher } from '@geld/core';
@@ -160,6 +160,8 @@ function diffPageUrlFor(page: PageInfo, url: URL): string | null {
  */
 export class GeldController {
   private settings: GeldSettings;
+  /** The active pattern catalog (bundled, or a newer fetched one); see `lib/catalog.ts`. */
+  private catalog: Catalog;
   private repoRules: readonly RepoRule[];
   private readonly matchers = new Map<string, PathMatcher>();
   private observer: MutationObserver | null = null;
@@ -196,8 +198,10 @@ export class GeldController {
   constructor(
     settings: GeldSettings,
     private readonly hooks: ControllerHooks,
+    catalog: Catalog = BUNDLED_CATALOG,
   ) {
     this.settings = settings;
+    this.catalog = catalog;
     this.repoRules = compileRepoRules(settings.repoRules);
     void whitespacePersistedItem.getValue().then((persisted) => this.whitespace.setPersisted(persisted));
   }
@@ -250,6 +254,18 @@ export class GeldController {
   updateSettings(settings: GeldSettings): void {
     this.settings = settings;
     this.repoRules = compileRepoRules(settings.repoRules);
+    this.reapply();
+  }
+
+  /** A newer catalog arrived (or the cache was dropped): reclassify everything with it. */
+  updateCatalog(catalog: Catalog): void {
+    if (catalog === this.catalog) return;
+    this.catalog = catalog;
+    this.reapply();
+  }
+
+  /** Settings or patterns changed under us: forget every derived state and start over. */
+  private reapply(): void {
     this.matchers.clear();
     this.settledHeader = null;
     // Per-page toggles were made against the old defaults; start fresh.
@@ -351,7 +367,7 @@ export class GeldController {
     const key = repo ?? '';
     let matcher = this.matchers.get(key);
     if (matcher === undefined) {
-      matcher = createMatcher(this.settings, repo);
+      matcher = createMatcher(this.settings, repo, this.catalog);
       this.matchers.set(key, matcher);
     }
     return matcher;
@@ -629,7 +645,7 @@ export class GeldController {
 
     removeTreeSection(host, present);
     let previous: HTMLElement | null = null;
-    for (const category of CATEGORIES) {
+    for (const category of this.catalog.categories) {
       const files = byCategory.get(category);
       if (files === undefined) continue;
       previous = renderTreeSection(
