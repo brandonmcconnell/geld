@@ -6,4 +6,4 @@
  * pair. Rotating the key means every installed extension rejects catalogs
  * signed with the new one until it updates to a build that embeds it.
  */
-export const CATALOG_PUBLIC_KEY = 'H+t0BsghP0lhlVjruGDD+p1p505b2ccrhas2/oz2TBQ=';
+export const CATALOG_PUBLIC_KEY = 'Yvjz7cRimAI717yM5Zk0nu26+9WnvZRWer0UqDD7w2U=';
