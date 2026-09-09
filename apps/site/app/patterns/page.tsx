@@ -88,7 +88,7 @@ export default function PatternsPage() {
                       <h3 className="text-base font-semibold">{group.label}</h3>
                       <p className="mt-1 text-[0.9375rem] leading-6 text-muted-foreground">{group.description}</p>
                       <p className="mt-2 font-mono text-sm text-muted-foreground">
-                        {group.patterns.length} {group.patterns.length === 1 ? 'pattern' : 'patterns'}
+                        {group.patterns.length === 0 ? 'decided from the diff, no patterns' : `${group.patterns.length} ${group.patterns.length === 1 ? 'pattern' : 'patterns'}`}
                         {category.id === 'tests' ? ' · toggle individually' : ''}
                       </p>
                     </div>

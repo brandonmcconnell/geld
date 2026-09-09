@@ -59,7 +59,7 @@ export function breakdownFromFiles(
   const classified: Classified[] = [];
   for (const file of files) {
     all = addTotals(all, { files: 1, additions: file.additions, deletions: file.deletions });
-    classified.push({ path: file.path, category: matcher.categorize(file.path), stats: file });
+    classified.push({ path: file.path, category: matcher.categorizeFile(file), stats: file });
   }
   return { all, hidden: buildBreakdown(classified) };
 }

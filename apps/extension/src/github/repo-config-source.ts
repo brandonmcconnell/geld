@@ -92,7 +92,6 @@ export class RepoConfigSource {
   private inFlight = 0;
   private persistent: CacheMap = {};
   private cacheReady = false;
-  private readonly ready: Promise<void>;
   /** Parsed results per repository, invalidated whenever a file for it lands. */
   private readonly resolved = new Map<string, ResolvedRepoConfig>();
 
@@ -101,7 +100,7 @@ export class RepoConfigSource {
     catalog: Catalog = BUNDLED_CATALOG,
   ) {
     this.catalog = catalog;
-    this.ready = cacheItem.getValue().then((value) => {
+    void cacheItem.getValue().then((value) => {
       const clean: CacheMap = {};
       const now = Date.now();
       for (const [key, entry] of Object.entries(value)) if (isCachedFile(entry) && now - entry.at < TTL_MS) clean[key] = entry;

@@ -1,5 +1,7 @@
 import type { Catalog, HiddenCategory } from './categories';
-import { BUNDLED_CATALOG, categoryById, hiddenCategoryFromCustom } from './categories';
+import { BUNDLED_CATALOG, CHANGE_KINDS_CATEGORY_ID, categoryById, hiddenCategoryFromCustom } from './categories';
+import type { ChangeKindId, FileFacts } from './change-kinds';
+import { changeKindsOf, isChangeKindId } from './change-kinds';
 import type { CompiledGlobs } from './glob';
 import { compileGlobs, globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
@@ -14,19 +16,37 @@ export interface PatternMatch {
   readonly source: 'built-in' | 'custom';
 }
 
+/** A file attributed to the Trivial changes category by what changed in it. */
+export interface KindMatch {
+  readonly category: HiddenCategory;
+  readonly kind: ChangeKindId;
+  readonly source: 'kind';
+}
+
+export type NoMatch = { readonly category: null; readonly rescuedBy: string | null };
+
 export interface PathMatcher {
-  /** Returns the category a path belongs to, or `null` if it should stay visible. */
+  /** Returns the category a path belongs to, or `null` if it should stay visible. Path only: change kinds need {@link categorizeFile}. */
   categorize(path: string): HiddenCategory | null;
+  /** Like {@link categorize}, but also weighs what changed (renames, binary, whitespace-only, …) when that category is on. */
+  categorizeFile(facts: FileFacts): HiddenCategory | null;
   /** Like {@link categorize} but also says which pattern decided. */
-  explain(path: string): PatternMatch | { readonly category: null; readonly rescuedBy: string | null };
+  explain(path: string): PatternMatch | NoMatch;
+  /** Like {@link categorizeFile} but also says which pattern or change kind decided. */
+  explainFile(facts: FileFacts): PatternMatch | KindMatch | NoMatch;
   /** Categories that can produce matches with the current settings, in matching order. */
   readonly activeCategories: readonly HiddenCategory[];
+  /** Whether {@link categorizeFile} can say more than {@link categorize}: the Trivial changes category is on with at least one kind. */
+  readonly usesChangeKinds: boolean;
 }
 
 const NEVER_MATCH: PathMatcher = {
   categorize: () => null,
+  categorizeFile: () => null,
   explain: () => ({ category: null, rescuedBy: null }),
+  explainFile: () => ({ category: null, rescuedBy: null }),
   activeCategories: [],
+  usesChangeKinds: false,
 };
 
 interface ScopedPatterns {
@@ -81,15 +101,18 @@ interface CompiledCategory {
   readonly builtIn: CompiledGlobs | null;
   readonly custom: CompiledGlobs | null;
   readonly excludes: CompiledGlobs;
+  /** Change kinds this category claims (only the Trivial changes category has any). */
+  readonly kinds: ReadonlySet<ChangeKindId>;
 }
 
-function compileCategory(category: HiddenCategory, builtInPatterns: readonly string[], user: ScopedPatterns): CompiledCategory | null {
-  if (builtInPatterns.length === 0 && user.includes.length === 0) return null;
+function compileCategory(category: HiddenCategory, builtInPatterns: readonly string[], user: ScopedPatterns, kinds: ReadonlySet<ChangeKindId> = new Set()): CompiledCategory | null {
+  if (builtInPatterns.length === 0 && user.includes.length === 0 && kinds.size === 0) return null;
   return {
     category,
     builtIn: builtInPatterns.length > 0 ? compileGlobs(builtInPatterns) : null,
     custom: user.includes.length > 0 ? compileGlobs(user.includes) : null,
     excludes: compileGlobs(user.excludes.map((pattern) => pattern.slice(1))),
+    kinds,
   };
 }
 
@@ -115,18 +138,25 @@ export function createMatcher(settings: GeldSettings, repo: string | null = null
   for (const category of catalog.categories) {
     if (!isCategoryEnabled(settings, category.id)) continue;
     const builtIn: string[] = [];
+    const kinds = new Set<ChangeKindId>();
     for (const group of category.groups) {
-      if (isGroupEnabled(settings, category.id, group.id)) builtIn.push(...group.patterns);
+      if (!isGroupEnabled(settings, category.id, group.id)) continue;
+      builtIn.push(...group.patterns);
+      if (category.id === CHANGE_KINDS_CATEGORY_ID && isChangeKindId(group.id)) kinds.add(group.id);
     }
-    const entry = compileCategory(category, builtIn, resolveCustomPatterns(categoryPatternLines(settings, category.id), repo));
+    const entry = compileCategory(category, builtIn, resolveCustomPatterns(categoryPatternLines(settings, category.id), repo), kinds);
     if (entry !== null) compiled.push(entry);
   }
   if (compiled.length === 0) return NEVER_MATCH;
 
   const cache = new Map<string, HiddenCategory | null>();
+  const usesChangeKinds = compiled.some((entry) => entry.kinds.size > 0);
 
-  const explain = (path: string): ReturnType<PathMatcher['explain']> => {
+  const explainFile = (facts: FileFacts): PatternMatch | KindMatch | NoMatch => {
+    const path = facts.path;
     let rescuedBy: string | null = null;
+    // Computed lazily: most files never reach a kind-based category.
+    let kinds: readonly ChangeKindId[] | null = null;
     for (const entry of compiled) {
       const rescue = entry.excludes.firstMatch(path);
       if (rescue !== null) {
@@ -137,20 +167,39 @@ export function createMatcher(settings: GeldSettings, repo: string | null = null
       if (builtIn !== null) return { category: entry.category, pattern: builtIn, source: 'built-in' };
       const custom = entry.custom?.firstMatch(path) ?? null;
       if (custom !== null) return { category: entry.category, pattern: custom, source: 'custom' };
+      if (entry.kinds.size > 0) {
+        kinds ??= changeKindsOf(facts);
+        const kind = kinds.find((candidate) => entry.kinds.has(candidate));
+        if (kind !== undefined) return { category: entry.category, kind, source: 'kind' };
+      }
     }
     return { category: null, rescuedBy };
   };
 
+  const explain = (path: string): PatternMatch | NoMatch => {
+    const verdict = explainFile({ path });
+    // A bare path carries no kinds, so a kind match cannot happen here.
+    return verdict.category !== null && verdict.source === 'kind' ? { category: null, rescuedBy: null } : verdict;
+  };
+
+  const categorize = (path: string): HiddenCategory | null => {
+    let result = cache.get(path);
+    if (result === undefined) {
+      result = explain(path).category;
+      cache.set(path, result);
+    }
+    return result;
+  };
+
   return {
     activeCategories: compiled.map((entry) => entry.category),
+    usesChangeKinds,
     explain,
-    categorize(path: string): HiddenCategory | null {
-      let result = cache.get(path);
-      if (result === undefined) {
-        result = explain(path).category;
-        cache.set(path, result);
-      }
-      return result;
+    explainFile,
+    categorize,
+    categorizeFile(facts: FileFacts): HiddenCategory | null {
+      if (!usesChangeKinds) return categorize(facts.path);
+      return explainFile(facts).category;
     },
   };
 }

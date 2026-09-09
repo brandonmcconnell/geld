@@ -221,6 +221,8 @@ async function main(): Promise<void> {
       runTester();
     });
     const heading = el('label', 'options__group-heading options__group-heading--checkbox', [checkbox, el('span', '', [title, description])]);
+    // Change-kind groups are decided from the diff: nothing to expand, no count.
+    if (group.patterns.length === 0) return el('div', 'options__group options__group--static', [heading]);
     const count = el('span', 'options__group-count', [`${group.patterns.length}`]);
     return el('details', 'options__group', [el('summary', '', [el('span', 'options__chevron', ['\u203a']), heading, count]), patternChips(group.patterns)]);
   }

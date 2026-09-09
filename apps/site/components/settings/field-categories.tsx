@@ -107,6 +107,24 @@ function CategoryRow({
 
 function GroupRow({ group, checked, disabled, onChange }: { readonly group: PatternGroup; readonly checked: boolean; readonly disabled: boolean; readonly onChange: (value: boolean) => void }) {
   const labelId = useId();
+  if (group.patterns.length === 0) {
+    // Change-kind groups are decided from the diff: nothing to expand.
+    return (
+      <li>
+        <div className="flex items-start gap-3 px-2 py-1.5">
+          <span className="mt-0.5 flex items-center">
+            <Checkbox checked={checked} disabled={disabled} onCheckedChange={onChange} aria-labelledby={labelId} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span id={labelId} className="block text-sm">
+              {group.label}
+            </span>
+            <span className="block text-xs text-muted-foreground">{group.description}</span>
+          </span>
+        </div>
+      </li>
+    );
+  }
   return (
     <li>
       <details className="group/patterns">

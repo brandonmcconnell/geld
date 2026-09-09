@@ -192,6 +192,11 @@ body {
   padding: 6px 8px;
 }
 
+/* A group decided from the diff rather than patterns: same row, nothing to open. */
+.options__group--static {
+  padding: 6px 8px 6px 32px;
+}
+
 .options__group > summary > .geld-chevron {
   order: 3;
   width: 14px;

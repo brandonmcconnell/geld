@@ -37,6 +37,21 @@ index 5555555..0000000
 @@ -1,2 +0,0 @@
 -gone
 -gone too
+diff --git a/scripts/run.sh b/scripts/run.sh
+old mode 100644
+new mode 100755
+diff --git a/src/indent.ts b/src/indent.ts
+index 6666666..7777777 100644
+--- a/src/indent.ts
++++ b/src/indent.ts
+@@ -1,3 +1,3 @@
+ function f() {
+-  return 1;
++    return 1;
+ }
+@@ -8,2 +8,2 @@
+-const x = [1, 2];
++const x = [1,2];
 `;
 
 describe('parseUnifiedDiff', () => {
@@ -49,6 +64,8 @@ describe('parseUnifiedDiff', () => {
       'docs/new.md',
       'img.png',
       'with space.ts',
+      'scripts/run.sh',
+      'src/indent.ts',
     ]);
   });
 
@@ -60,13 +77,23 @@ describe('parseUnifiedDiff', () => {
     expect(files[1]).toEqual({ path: 'src/a.test.ts', additions: 2, deletions: 0 });
   });
 
-  it('reports zero lines for pure renames and binary files', () => {
-    expect(files[2]).toEqual({ path: 'docs/new.md', additions: 0, deletions: 0 });
-    expect(files[3]).toEqual({ path: 'img.png', additions: 0, deletions: 0 });
+  it('reports zero lines for pure renames and binary files, and says which kind they are', () => {
+    expect(files[2]).toEqual({ path: 'docs/new.md', additions: 0, deletions: 0, kinds: ['renames'] });
+    expect(files[3]).toEqual({ path: 'img.png', additions: 0, deletions: 0, kinds: ['binary'] });
   });
 
   it('handles quoted paths and deletions', () => {
-    expect(files[4]).toEqual({ path: 'with space.ts', additions: 0, deletions: 2 });
+    expect(files[4]).toEqual({ path: 'with space.ts', additions: 0, deletions: 2, kinds: ['deleted'] });
+  });
+
+  it('spots mode-only and whitespace-only changes', () => {
+    expect(files[5]).toEqual({ path: 'scripts/run.sh', additions: 0, deletions: 0, kinds: ['modes'] });
+    expect(files[6]).toEqual({ path: 'src/indent.ts', additions: 2, deletions: 2, kinds: ['whitespace'] });
+  });
+
+  it('leaves ordinary edits without kinds', () => {
+    expect(files[0]?.kinds).toBeUndefined();
+    expect(files[1]?.kinds).toBeUndefined();
   });
 
   it('returns an empty list for empty input', () => {

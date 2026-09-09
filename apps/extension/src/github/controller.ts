@@ -10,7 +10,7 @@ import type { RepoRule } from '@geld/core';
 import { applyRepoConfigs, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
 import type { RepoConfigChoices } from '../lib/local-state';
 import { repoConfigChoicesItem, whitespacePersistedItem } from '../lib/local-state';
-import type { GeldSettings } from '@geld/core';
+import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
 import { DiffSource } from './diff-source';
@@ -21,6 +21,7 @@ import { detectHeadSha, shaFromCommitUrl } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, restoreHeaderStats } from './header-stats';
 import type { DiffEntry, DiffView } from './model';
+import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
 import { applyPrListStats, removePrListStats } from './pr-list';
@@ -186,6 +187,12 @@ export class GeldController {
   private readonly repoConfigs: RepoConfigSource;
   /** Per-repository answers when `repoConfigs` is `ask` (device-local). */
   private repoChoices: RepoConfigChoices = {};
+  /**
+   * The current page's raw diff by path, when the Trivial changes category is
+   * on and the diff has arrived: renames, binaries, whitespace-only edits and
+   * the like are only visible there, not in GitHub's file headers.
+   */
+  private diffFacts: ReadonlyMap<string, FileStats> | null = null;
   private currentView: DiffView | null = null;
   private currentPage: PageInfo | null = null;
   private pendingReveal: PendingReveal | null = null;
@@ -388,7 +395,7 @@ export class GeldController {
     // A click on a greyed-out row in GitHub's tree.
     const row = target.closest('li');
     const file = row === null ? undefined : view.treeFiles.find((candidate) => candidate.element === row);
-    if (file === undefined || this.matcherFor(repoFromPathname(window.location.pathname)).categorize(file.path) === null) return;
+    if (file === undefined || this.classify(this.matcherFor(repoFromPathname(window.location.pathname)), file.path, null) === null) return;
     // GitHub does not scroll to a collapsed file from its tree, so treat this
     // like a click in one of Geld's own panels: expand, scroll to it, flash.
     this.markTouched(key, file.path);
@@ -415,7 +422,7 @@ export class GeldController {
     if (view === null) return;
     const matcher = this.matcherFor(repoFromPathname(window.location.pathname));
     for (const entry of view.entries) {
-      if (matcher.categorize(entry.path) === null) continue;
+      if (this.classify(matcher, entry.path, entry.stats) === null) continue;
       for (const control of findViewedControls(entry.root).unviewed) activateControl(control);
     }
     this.schedule();
@@ -441,6 +448,26 @@ export class GeldController {
   revealPath(path: string): void {
     if (this.currentPage === null) return;
     this.reveal(path, this.currentPage.stateKey);
+  }
+
+  /**
+   * Which category a file on the page belongs to. Path first; when the
+   * Trivial changes category is on, what the diff says about the file too
+   * (falling back to the line counts GitHub shows, enough for "very large").
+   */
+  private classify(matcher: PathMatcher, path: string, stats: LineStats | null): HiddenCategory | null {
+    if (!matcher.usesChangeKinds) return matcher.categorize(path);
+    const file = this.diffFacts?.get(path);
+    return matcher.categorizeFile(file ?? { path, additions: stats?.additions ?? null, deletions: stats?.deletions ?? null });
+  }
+
+  /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */
+  private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
+    this.diffFacts = null;
+    if (!matcher.usesChangeKinds || page.diffUrl === null) return;
+    const sha = page.kind.startsWith('pull') ? detectHeadSha() : page.kind === 'commit' ? shaFromCommitUrl(url.pathname) : null;
+    const state = this.diffSource.request(page.diffUrl, sha);
+    if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
   }
 
   /** Matchers are cached per repository because custom patterns can be repo-scoped. */
@@ -496,6 +523,7 @@ export class GeldController {
     }
 
     const matcher = this.matcherFor(repo);
+    this.loadDiffFacts(page, url, matcher);
     const view = legacyAdapter.read() ?? reactAdapter.read();
     this.currentView = view;
 
@@ -578,8 +606,9 @@ export class GeldController {
     const classified: ClassifiedEntry[] = view.entries.map((entry) => ({
       entry,
       path: entry.path,
-      category: matcher.categorize(entry.path),
-      stats: entry.stats,
+      category: this.classify(matcher, entry.path, entry.stats),
+      // GitHub shows no counts for renames and binaries; the diff knows them (0/0).
+      stats: entry.stats ?? this.diffFacts?.get(entry.path) ?? null,
     }));
     const hiddenEntries = classified.filter((item) => item.category !== null);
     const hiddenAnchors = new Set<string>();
@@ -638,8 +667,9 @@ export class GeldController {
     const classified: ClassifiedEntry[] = view.entries.map((entry) => ({
       entry,
       path: entry.path,
-      category: matcher.categorize(entry.path),
-      stats: entry.stats,
+      category: this.classify(matcher, entry.path, entry.stats),
+      // GitHub shows no counts for renames and binaries; the diff knows them (0/0).
+      stats: entry.stats ?? this.diffFacts?.get(entry.path) ?? null,
     }));
     for (const item of classified) item.entry.root.setAttribute(ATTR_ENTRY, item.category === null ? 'visible' : 'hidden');
     // None of the grouped chrome applies here.
@@ -671,7 +701,7 @@ export class GeldController {
     removeSidebarLayout(host);
     view.treeRoot.setAttribute(ATTR_TREE_MODE, 'inline');
     for (const file of view.treeFiles) {
-      const category = matcher.categorize(file.path);
+      const category = this.classify(matcher, file.path, null);
       file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
       setInlineIcon(file.element, category);
     }
@@ -688,7 +718,7 @@ export class GeldController {
     const byCategory = new Map<HiddenCategory, TreeSectionFile[]>();
     let visibleFiles = 0;
     for (const file of view.treeFiles) {
-      const category = matcher.categorize(file.path);
+      const category = this.classify(matcher, file.path, null);
       file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
       if (category === null) {
         visibleFiles += 1;

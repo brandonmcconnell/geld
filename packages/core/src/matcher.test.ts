@@ -187,3 +187,26 @@ describe('settings interplay', () => {
     expect(rescued.categorize('tests/important/README.md')?.id).toBe('docs');
   });
 });
+
+describe('change kinds (Trivial changes category)', () => {
+  const on = { ...DEFAULT_SETTINGS, categories: { trivial: true } };
+
+  it('attributes files by what changed only when the category is on', () => {
+    const matcher = createMatcher(on);
+    expect(matcher.usesChangeKinds).toBe(true);
+    expect(matcher.categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })?.id).toBe('trivial');
+    expect(matcher.categorizeFile({ path: 'src/big.ts', additions: 900, deletions: 200 })?.id).toBe('trivial');
+    expect(matcher.categorizeFile({ path: 'src/plain.ts', additions: 3, deletions: 1 })).toBeNull();
+    expect(matcher.categorize('src/moved.ts')).toBeNull();
+    expect(createMatcher(DEFAULT_SETTINGS).categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })).toBeNull();
+  });
+
+  it('lets path categories win and honours group toggles and rescues', () => {
+    const matcher = createMatcher({ ...on, groups: { 'trivial/binary': false }, categoryPatterns: { trivial: ['!keep/**'] } });
+    expect(matcher.categorizeFile({ path: 'src/a.test.ts', kinds: ['renames'] })?.id).toBe('tests');
+    expect(matcher.categorizeFile({ path: 'logo.png', kinds: ['binary'] })).toBeNull();
+    expect(matcher.categorizeFile({ path: 'keep/moved.ts', kinds: ['renames'] })).toBeNull();
+    const verdict = matcher.explainFile({ path: 'src/moved.ts', kinds: ['renames'] });
+    expect(verdict.category !== null && verdict.source === 'kind' ? verdict.kind : null).toBe('renames');
+  });
+});

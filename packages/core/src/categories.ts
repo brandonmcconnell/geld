@@ -6,7 +6,7 @@ import { TEST_PATTERN_GROUPS } from './test-patterns';
  * rest are opt-in. Order matters: a path is attributed to the first matching
  * category. Users can add their own categories on top (see {@link CustomCategoryId}).
  */
-export type CategoryId = 'tests' | 'generated' | 'vendored' | 'agents' | 'docs' | 'tooling' | 'stories';
+export type CategoryId = 'tests' | 'generated' | 'vendored' | 'agents' | 'docs' | 'tooling' | 'stories' | 'trivial';
 
 /** Ids of user-defined categories are namespaced so they can never collide with built-ins. */
 export type CustomCategoryId = `custom:${string}`;
@@ -86,7 +86,7 @@ export interface Catalog {
  * Bump whenever {@link CATEGORIES} or {@link TEST_PATTERN_GROUPS} change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260909;
+export const CATALOG_VERSION = 20260910;
 
 /** The extension version that introduced the updatable catalog; older builds never fetch it. */
 export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
@@ -327,6 +327,31 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
       },
     ],
   },
+  {
+    id: 'trivial',
+    title: 'Trivial changes',
+    description:
+      'Files hidden for what changed in them rather than where they live: renames and permission changes with no edits, binary and deleted files, whitespace-only edits and very large diffs. Decided from the diff, so these groups have no patterns.',
+    icon: 'filter',
+    noun: 'trivial change',
+    nounPlural: 'trivial changes',
+    shortNoun: 'trivial',
+    shortNounPlural: 'trivial',
+    defaultEnabled: false,
+    groups: [
+      { id: 'renames', label: 'Renamed or moved without edits', description: 'The path changed, the contents did not.', patterns: [] },
+      { id: 'modes', label: 'Permission changes only', description: 'File mode flipped (100644 → 100755), no lines changed.', patterns: [] },
+      { id: 'binary', label: 'Binary files', description: 'Images, fonts, archives and anything else GitHub cannot show as text.', patterns: [] },
+      { id: 'deleted', label: 'Deleted files', description: 'Files removed by the change.', patterns: [] },
+      { id: 'whitespace', label: 'Whitespace-only edits', description: 'Every changed line differs only in spaces, tabs or line endings.', patterns: [] },
+      {
+        id: 'large',
+        label: 'Very large diffs',
+        description: 'More than a thousand changed lines in one file; GitHub stops rendering these by default too.',
+        patterns: [],
+      },
+    ],
+  },
 ];
 
 /** The catalog compiled into this build: the fallback, and where category defaults come from. */
@@ -336,7 +361,14 @@ export const BUNDLED_CATALOG: Catalog = {
   categories: CATEGORIES,
 };
 
-export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories'];
+export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories', 'trivial'];
+
+/**
+ * The category whose groups are change kinds (see `change-kinds.ts`) rather
+ * than path patterns. It is matched last, so a file that a path category
+ * claims is attributed there even when its change is also trivial.
+ */
+export const CHANGE_KINDS_CATEGORY_ID: CategoryId = 'trivial';
 
 /**
  * Look a built-in category up in a catalog. The set of category ids is fixed

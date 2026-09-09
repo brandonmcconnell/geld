@@ -56,6 +56,27 @@ function pressCollapseControl(entry: DiffEntry, want: 'expand' | 'collapse'): bo
   return false;
 }
 
+/**
+ * A renamed file's heading reads "old → new" plus a screen-reader sentence
+ * "old renamed to new"; the diff (and the file tree) know it by the new path.
+ */
+function renamedTo(region: Element): string | null {
+  for (const element of region.querySelectorAll('.sr-only')) {
+    const match = / renamed to (.+)$/.exec(cleanText(element.textContent));
+    if (match?.[1] !== undefined) return match[1];
+  }
+  return null;
+}
+
+/** The heading text minus a rename's "old →" prefix and its screen-reader suffix. */
+function headingPath(text: string | null | undefined): string {
+  const clean = cleanText(text);
+  const arrow = clean.lastIndexOf('→');
+  if (arrow === -1) return clean;
+  // Only reached when the screen-reader sentence is missing; the new path is the first token after the arrow.
+  return clean.slice(arrow + 1).trim().split(/\s+/)[0] ?? '';
+}
+
 export const reactAdapter: DiffViewAdapter = {
   kind: 'react',
   read(): DiffView | null {
@@ -80,7 +101,8 @@ export const reactAdapter: DiffViewAdapter = {
       if (root === null) continue;
       const path = cleanText(
         region.querySelector('button[data-file-path]')?.getAttribute('data-file-path') ??
-          region.querySelector('h3 a code, h3 code, h3 a')?.textContent,
+          renamedTo(region) ??
+          headingPath(region.querySelector('h3 a code, h3 code, h3 a')?.textContent),
       );
       if (path === '') continue;
       const anchor =
