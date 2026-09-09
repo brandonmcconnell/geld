@@ -25,6 +25,11 @@ jobs:
       - run: pnpm check
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+      # The pattern catalog the extension fetches at runtime is generated from
+      # core and signed offline. Fail if catalog/patterns.json drifted from the
+      # TypeScript or catalog/patterns.sig no longer matches it — an installed
+      # extension would silently ignore the file otherwise.
+      - run: pnpm catalog:check
       # Public client id of the GitHub OAuth App (device flow) used for sign-in.
       # Kept out of the source tree; set it as a repository Actions variable.
       - run: pnpm zip:all

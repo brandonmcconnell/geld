@@ -16,9 +16,17 @@
     "safari:open": "pnpm --filter @geld/extension safari:open",
     "dev:site": "pnpm --filter @geld/site dev",
     "build:site": "pnpm --filter @geld/site build",
-    "check": "pnpm -r run check",
+    "catalog:build": "tsx scripts/catalog-build.ts",
+    "catalog:check": "tsx scripts/catalog-build.ts --check",
+    "catalog:sign": "node scripts/catalog-sign.mjs",
+    "catalog:keygen": "node scripts/catalog-keygen.mjs",
+    "check": "pnpm -r run check && pnpm catalog:check",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint"
+  },
+  "devDependencies": {
+    "@geld/core": "workspace:*",
+    "tsx": "^4.23.13"
   }
 }
