@@ -235,17 +235,18 @@ jobs:
           mkdir -p ~/.private_keys && echo "$ASC_PRIVATE_KEY" | base64 --decode > ~/.private_keys/AuthKey_$ASC_KEY_ID.p8
           # Cloud signing: Xcode fetches/creates provisioning profiles (and the Mac
           # Installer Distribution certificate for the .pkg) with the API key.
-          # The archive is signed with the Apple Distribution certificate imported
-          # above. Left to itself, automatic signing would sign the archive with a
-          # *development* identity and, finding none on this fresh runner, mint a
-          # new "Mac Development" certificate every run — until the account hits
-          # Apple's certificate limit and every archive fails.
+          # The archive itself is signed ad hoc ("-"): a real signature carrying the
+          # entitlements (app sandbox), needing no certificate or profile. The
+          # export step below re-signs everything for the App Store with the
+          # imported Apple Distribution certificate, as it always has. Left to
+          # automatic signing, the archive would be signed with a *development*
+          # identity and, finding none on this fresh runner, Xcode minted a new
+          # "Mac Development" certificate every run until the account hit Apple's
+          # certificate cap and every archive failed.
           xcodebuild -project Geld.xcodeproj -scheme "Geld (macOS)" -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath build/Geld.xcarchive archive \
-            -allowProvisioningUpdates -authenticationKeyPath ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution"
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" PROVISIONING_PROFILE_SPECIFIER=""
           cat > ExportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
