@@ -613,8 +613,13 @@ div:has(> #diff-file-tree-filter) {
   white-space: nowrap;
 }
 
+/*
+ * Fixed, not absolute: a fixed box never adds to the document's scrollable
+ * overflow, so the tooltip cannot give the page a horizontal scrollbar when it
+ * is clamped against the right edge (see position() in ui/tooltip.ts).
+ */
 .geld-tooltip {
-  position: absolute;
+  position: fixed;
   z-index: 1000;
   display: grid;
   grid-template-columns: max-content max-content max-content max-content;
