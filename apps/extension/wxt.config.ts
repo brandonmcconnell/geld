@@ -1,6 +1,17 @@
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
+import { version as baseVersion } from './package.json';
+
+/**
+ * Stores need a strictly increasing manifest version but do not require a
+ * commit for it: Chrome, Edge, Firefox and Safari all accept four numeric
+ * parts, so CI appends its run number (`GELD_BUILD_NUMBER`) to the version in
+ * package.json — 0.1.1 becomes 0.1.1.68 — and every build is publishable.
+ * package.json only changes when the marketing version does.
+ */
+const buildNumber = process.env.GELD_BUILD_NUMBER?.trim() ?? '';
+const manifestVersion = /^\d+$/.test(buildNumber) ? `${baseVersion}.${buildNumber}` : baseVersion;
 
 /** `theme_icons` is Firefox-only and missing from the generic manifest typings. */
 interface ThemeAwareAction {
@@ -10,9 +21,12 @@ interface ThemeAwareAction {
 export default defineConfig({
   srcDir: '.',
   outDir: '.output',
-  manifest: ({ browser, manifestVersion }) => ({
+  manifest: ({ browser, manifestVersion: mv }) => ({
     name: 'Geld',
     short_name: 'Geld',
+    version: manifestVersion,
+    // Chrome shows this instead of the raw number; other browsers ignore it.
+    ...(browser === 'chrome' || browser === 'edge' ? { version_name: buildNumber === '' ? baseVersion : `${baseVersion} (build ${buildNumber})` } : {}),
     description:
       'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
     homepage_url: 'https://github.com/brandonmcconnell/geld',
@@ -25,16 +39,16 @@ export default defineConfig({
       'storage',
       // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
       // toolbar icon can switch between the black and white marks.
-      ...(manifestVersion === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
+      ...(mv === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
       // MV3: registers the content script on GitHub Enterprise hosts the user adds.
-      ...(manifestVersion === 3 ? ['scripting'] : []),
+      ...(mv === 3 ? ['scripting'] : []),
     ],
     // patch-diff.githubusercontent.com serves the raw `.diff` that github.com
     // redirects to; it is fetched from the background script only.
     // api.github.com is used only for the optional GitHub sign-in (gist sync).
     host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
-    ...(manifestVersion === 3
+    ...(mv === 3
       ? { optional_host_permissions: ['https://*/*'] }
       : { optional_permissions: ['https://*/*'] }),
     commands: {

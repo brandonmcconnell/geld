@@ -15,6 +15,8 @@ assets/brand/        Logo + logomark SVGs (black and white variants). Both apps 
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere) and `pnpm zip:all` artifacts.
 ```
 
+Store publishing is a separate manual workflow (`.github/workflows/publish.yml`, Actions → “Publish to stores”): it takes a release's zips and submits them to Chrome, Edge, Firefox and (when Apple secrets exist) Safari; stores with a submission already under review are skipped with a warning. Zips built by CI carry a four-part version (`package.json` version + run number, via `GELD_BUILD_NUMBER` in `wxt.config.ts`), so no bump commit is needed between store releases. Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
+
 Releases: every push to `main` that touches the extension (apps/extension, packages/core, assets/brand, the lockfile, or the workflow) publishes a GitHub Release from CI, tagged `v{version}-build.{run}` with one zip per browser plus `-sources.zip` for Firefox review, auto-generated notes (editable afterwards) and marked latest; the site's install buttons read `/releases/latest`. Bump `apps/extension/package.json` `version` for a new version number; the build number keeps tags unique. `workflow_dispatch` forces a release.
 
 Commands (root): `pnpm check` (typecheck + tests for core and the extension, plus lint + production build of the site), `pnpm test`, `pnpm build`, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`), `pnpm dev` (extension), `pnpm dev:site`.

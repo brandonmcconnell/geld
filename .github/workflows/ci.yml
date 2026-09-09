@@ -27,9 +27,13 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
       # Public client id of the GitHub OAuth App (device flow) used for sign-in.
       # Kept out of the source tree; set it as a repository Actions variable.
+      # The run number becomes the fourth part of the manifest version
+      # (0.1.1 → 0.1.1.68), so every build is publishable to the stores
+      # without a version-bump commit. Pull request builds stay at the base.
       - run: pnpm zip:all
         env:
           WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
+          GELD_BUILD_NUMBER: ${{ github.event_name == 'pull_request' && '' || github.run_number }}
       - id: version
         run: echo "version=$(node -p "require('./apps/extension/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
@@ -88,7 +92,7 @@ jobs:
           # The manifest version stays a plain x.y.z (stores require it); each
           # build on main gets its own tag so the release is never overwritten.
           tag="v${VERSION}-build.${RUN}"
-          title="Geld v${VERSION} (build ${RUN})"
+          title="Geld ${VERSION}.${RUN}"
           ls -1 dist
           gh release create "$tag" dist/*.zip \
             --target "$GITHUB_SHA" \
