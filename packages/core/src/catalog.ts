@@ -1,4 +1,6 @@
 import type { BuiltInCategory, Catalog, CategoryShape, PatternGroup } from './categories';
+import type { ListSurfaceSpec } from './list-surfaces';
+import { ListSurfaceError, listSurfaceJson, parseListSurfaces } from './list-surfaces';
 import { isWellFormedId } from './categories';
 import { isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
@@ -29,6 +31,8 @@ export interface CatalogDocument {
   readonly version: number;
   readonly minExtensionVersion: string;
   readonly categories: readonly CatalogEntry[];
+  /** Absent in documents written before list surfaces joined the catalog; the bundled ones apply then. */
+  readonly listSurfaces?: readonly ListSurfaceSpec[];
 }
 
 export type CatalogParse = { readonly ok: true; readonly document: CatalogDocument } | { readonly ok: false; readonly reason: string };
@@ -137,9 +141,10 @@ export function parseCatalog(value: unknown): CatalogParse {
       if (seen.has(category.id)) throw new CatalogError(`categories: duplicate category id "${category.id}"`);
       seen.add(category.id);
     }
-    return { ok: true, document: { version, minExtensionVersion, categories } };
+    const listSurfaces = value.listSurfaces === undefined ? undefined : parseListSurfaces(value.listSurfaces);
+    return { ok: true, document: listSurfaces === undefined ? { version, minExtensionVersion, categories } : { version, minExtensionVersion, categories, listSurfaces } };
   } catch (error) {
-    if (error instanceof CatalogError) return { ok: false, reason: error.message };
+    if (error instanceof CatalogError || error instanceof ListSurfaceError) return { ok: false, reason: error.message };
     throw error;
   }
 }
@@ -224,7 +229,13 @@ export function resolveCatalog(bundled: Catalog, fetched: CatalogDocument | null
       groups,
     };
   });
-  return { version: fetched.version, minExtensionVersion: fetched.minExtensionVersion, categories };
+  return {
+    version: fetched.version,
+    minExtensionVersion: fetched.minExtensionVersion,
+    categories,
+    // A newer document that carries surfaces replaces the bundled list outright (GitHub's UI is what changed).
+    listSurfaces: fetched.listSurfaces ?? bundled.listSurfaces,
+  };
 }
 
 /** `20260908` → `2026.09.08`; anything that is not a plausible date stays a plain number. */
@@ -262,6 +273,7 @@ export function serializeCatalog(catalog: Catalog): string {
       defaultEnabled: category.defaultEnabled,
       groups: category.groups.map((group) => ({ id: group.id, label: group.label, description: group.description, patterns: [...group.patterns] })),
     })),
+    listSurfaces: catalog.listSurfaces.map(listSurfaceJson),
   };
   return `${JSON.stringify(document, null, 2)}\n`;
 }

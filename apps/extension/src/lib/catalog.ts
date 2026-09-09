@@ -30,8 +30,12 @@ const SIG_URL = `${CONTENTS_URL}patterns.sig?ref=main`;
 const MAX_CATALOG_BYTES = 512 * 1024;
 
 export const CATALOG_ALARM = 'geld:catalog-check';
-/** How often the alarm fires; browser restarts also check (subject to {@link MIN_CHECK_INTERVAL_MS}). */
-export const CATALOG_CHECK_PERIOD_MINUTES = 24 * 60;
+/**
+ * How often the alarm fires; browser restarts also check (subject to
+ * {@link MIN_CHECK_INTERVAL_MS}). Six hours: the catalog now also carries the
+ * PR-list selectors, so a GitHub markup change should be fixed the same day.
+ */
+export const CATALOG_CHECK_PERIOD_MINUTES = 6 * 60;
 /** Startups closer together than this do not re-check; unauthenticated GitHub allows 60 requests an hour per IP. */
 const MIN_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** After a rate-limit response with no usable reset header, wait this long. */
@@ -254,7 +258,10 @@ export function startCatalogUpdates(): void {
     void browser.alarms
       .get(CATALOG_ALARM)
       .then((existing) => {
-        if (existing === undefined) return browser.alarms.create(CATALOG_ALARM, { periodInMinutes: CATALOG_CHECK_PERIOD_MINUTES });
+        // Recreate when the period changed in an update; alarms outlive the code that made them.
+        if (existing === undefined || existing.periodInMinutes !== CATALOG_CHECK_PERIOD_MINUTES) {
+          return browser.alarms.create(CATALOG_ALARM, { periodInMinutes: CATALOG_CHECK_PERIOD_MINUTES });
+        }
         return undefined;
       })
       .catch(() => undefined);

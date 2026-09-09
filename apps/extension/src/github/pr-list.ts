@@ -28,11 +28,11 @@ export interface ListRow {
 /**
  * Find every pull request row on the current page: issue/PR lists (classic
  * and React) and the "Stack #N" popover. Which UI a row belongs to is decided
- * by `list-surfaces.ts`; rows are stamped with `data-geld-surface` so CSS can
+ * by the catalog's list surfaces (`list-surfaces.ts`); rows are stamped with `data-geld-surface` so CSS can
  * address each UI on its own. Rows are re-discovered on every DOM mutation, so
  * lazily mounted or virtualised lists are covered.
  */
-export function findRows(): ListRow[] {
+export function findRows(surfaces: readonly ListSurface[]): ListRow[] {
   const rows = new Map<HTMLElement, ListRow>();
   for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"]')) {
     if (link.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
@@ -47,7 +47,7 @@ export function findRows(): ListRow[] {
     if (match === null) continue;
     // Only title links: they carry visible text and live in a list row.
     if ((link.textContent ?? '').trim() === '') continue;
-    const owner = surfaceOf(link);
+    const owner = surfaceOf(surfaces, link);
     if (owner === null || rows.has(owner.row)) continue;
     // Skip links that are clearly not the row's title (comments count, etc.).
     if (link.querySelector('svg') !== null && (link.textContent ?? '').trim().length < 4) continue;
@@ -95,6 +95,8 @@ function ensureChip(row: ListRow): HTMLElement {
 export interface PrListOptions {
   /** Matcher for a given repository (custom patterns can be repo-scoped). */
   readonly matcherFor: (repo: string) => PathMatcher;
+  /** The list UIs to recognise (from the active catalog). */
+  readonly surfaces: readonly ListSurface[];
   /** Leave comment-only lines of visible files out of the chip's numbers, as the header does. */
   readonly hideCommentLines: boolean;
   readonly repoRules: readonly RepoRule[];
@@ -137,7 +139,7 @@ function watchVisibility(rows: readonly ListRow[], onRowVisible: () => void): vo
 
 /** Add `+N −M` (excluding hidden files) to every PR row currently on the page. */
 export function applyPrListStats(options: PrListOptions): void {
-  const rows = findRows();
+  const rows = findRows(options.surfaces);
   watchVisibility(rows, options.onRowVisible);
   for (const row of rows) {
     if (!row.row.hasAttribute(SEEN_ATTRIBUTE)) continue;

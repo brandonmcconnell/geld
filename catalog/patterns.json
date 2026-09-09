@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260911,
+  "version": 20260912,
   "minExtensionVersion": "0.1.1",
   "categories": [
     {
@@ -617,6 +617,73 @@
           "patterns": []
         }
       ]
+    }
+  ],
+  "listSurfaces": [
+    {
+      "id": "classic-list",
+      "description": "Classic Rails PR/issue list (.js-issue-row rows, .opened-by metadata line, author link titled \"pull requests opened by X\"). Still served to signed-out visitors as of 2026-09.",
+      "row": ".js-issue-row",
+      "chipAnchors": [
+        {
+          "selector": ".opened-by",
+          "placement": "after"
+        }
+      ],
+      "authors": [
+        {
+          "selector": ".opened-by a, a[data-hovercard-type=\"user\"]",
+          "from": "label"
+        },
+        {
+          "selector": "a[href*=\"author%3A\"], a[href*=\"author:\"]",
+          "from": "href"
+        }
+      ]
+    },
+    {
+      "id": "react-list",
+      "description": "Primer ListView PR list rolling out to /pulls since 2026-09 (li[id*=\"-list-view-node-\"] rows, a[data-testid=\"listitem-title-link\"] titles, a Description-module__container line: \"#N · author opened … · Review required · checks\"), and the earlier React issues list (li[role=\"listitem\"]).",
+      "row": "li[id*=\"-list-view-node-\"], li[role=\"listitem\"]",
+      "notInside": "[class*=\"StackState\"]",
+      "chipAnchors": [
+        {
+          "selector": "[class*=\"Description-module__container\"], [data-testid=\"issue-pr-description\"]",
+          "placement": "append"
+        }
+      ],
+      "authors": [
+        {
+          "selector": "a[data-testid=\"author-filter-link\"], a[data-testid*=\"author\"]",
+          "from": "label"
+        },
+        {
+          "selector": "a[data-testid=\"author-filter-link\"], a[data-testid*=\"author\"]",
+          "from": "href"
+        },
+        {
+          "selector": "a[data-testid=\"author-filter-link\"]",
+          "from": "text"
+        },
+        {
+          "selector": "a[href*=\"author%3A\"], a[href*=\"author:\"]",
+          "from": "href"
+        }
+      ],
+      "css": ".geld-pr-stat[data-geld-surface='react-list'] { margin-left: 6px; font-size: 12px; vertical-align: baseline; }"
+    },
+    {
+      "id": "stack-popover",
+      "description": "Stacked pull requests popover: ActionList items inside [class*=\"StackState\"] with a \"#N · branch\" description. Names no author.",
+      "row": "li[data-component=\"ActionList.Item\"]",
+      "chipAnchors": [
+        {
+          "selector": "[data-component=\"ActionList.Description\"]",
+          "placement": "append"
+        }
+      ],
+      "authors": [],
+      "css": ".geld-pr-stat[data-geld-surface='stack-popover'] { margin-left: 8px; font-size: 11px; }"
     }
   ]
 }

@@ -557,20 +557,11 @@ div:has(> #diff-file-tree-filter) {
   margin-left: 8px;
 }
 
-/* classic-list: follows the ".opened-by" metadata span; inherits its size. */
-
-/* react-list (Primer ListView, 2026-09): appended to the description line ("#N · author opened … · Review required"). */
-.geld-pr-stat[data-geld-surface='react-list'] {
-  margin-left: 6px;
-  font-size: 12px;
-  vertical-align: baseline;
-}
-
-/* stack-popover: the chip follows "#N · branch" inside the item's description. */
-.geld-pr-stat[data-geld-surface='stack-popover'] {
-  margin-left: 8px;
-  font-size: 11px;
-}
+/*
+ * Per-surface chip rules (classic-list, react-list, stack-popover) live in the
+ * catalog (`@geld/core/list-surfaces.ts`, `css` per surface) and are injected
+ * as <style id="geld-surface-styles">, so they update without a release.
+ */
 
 .geld-pr-stat__sep {
   color: var(--fgColor-muted, #59636e);

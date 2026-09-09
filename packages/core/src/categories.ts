@@ -1,4 +1,6 @@
 import type { CategoryIconName } from './category-icons';
+import type { ListSurfaceSpec } from './list-surfaces';
+import { BUNDLED_LIST_SURFACES } from './list-surfaces';
 import { TEST_PATTERN_GROUPS } from './test-patterns';
 
 /**
@@ -80,13 +82,16 @@ export interface Catalog {
   /** Lowest extension version (first three numeric parts) that may use this catalog. */
   readonly minExtensionVersion: string;
   readonly categories: readonly BuiltInCategory[];
+  /** How PR lists are recognised and where chips go, per GitHub UI (see `list-surfaces.ts`); updatable like the patterns. */
+  readonly listSurfaces: readonly ListSurfaceSpec[];
 }
 
 /**
- * Bump whenever {@link CATEGORIES} or {@link TEST_PATTERN_GROUPS} change and
+ * Bump whenever {@link CATEGORIES}, {@link TEST_PATTERN_GROUPS} or the list
+ * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260911;
+export const CATALOG_VERSION = 20260912;
 
 /** The extension version that introduced the updatable catalog; older builds never fetch it. */
 export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
@@ -360,6 +365,7 @@ export const BUNDLED_CATALOG: Catalog = {
   version: CATALOG_VERSION,
   minExtensionVersion: CATALOG_MIN_EXTENSION_VERSION,
   categories: CATEGORIES,
+  listSurfaces: BUNDLED_LIST_SURFACES,
 };
 
 export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories', 'trivial'];

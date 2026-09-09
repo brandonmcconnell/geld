@@ -1,6 +1,7 @@
 import type { AuthorRules } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
+import type { ListSurface } from './list-surfaces';
 import type { ListRow } from './pr-list';
 import { findRows } from './pr-list';
 
@@ -10,7 +11,7 @@ import { findRows } from './pr-list';
  * says how many by whom, with a "Show" that reveals them for the visit.
  * Applied on every pass like everything else, so a list that re-renders or
  * paginates is simply re-hidden. Where the author is written per GitHub UI is
- * `list-surfaces.ts`'s business.
+ * the catalog's list surfaces' business (`list-surfaces.ts`).
  */
 
 export const ATTR_AUTHOR = 'data-geld-author';
@@ -23,17 +24,17 @@ function listOf(row: HTMLElement): HTMLElement {
   return row.parentElement ?? row;
 }
 
-export function applyAuthorHiding(rules: AuthorRules): void {
+export function applyAuthorHiding(rules: AuthorRules, surfaces: readonly ListSurface[]): void {
   if (rules.isEmpty) {
     removeAuthorHiding();
     return;
   }
   const hiddenByList = new Map<HTMLElement, { rows: ListRow[]; authors: Set<string> }>();
   const seenLists = new Set<HTMLElement>();
-  for (const item of findRows()) {
+  for (const item of findRows(surfaces)) {
+    // Surfaces that name no author (the stack popover) are left alone.
+    if (item.surface.spec.authors.length === 0) continue;
     const author = item.surface.authorOf(item.row);
-    // Surfaces without an author (the stack popover) are left alone.
-    if (author === null && item.surface.id === 'stack-popover') continue;
     const list = listOf(item.row);
     seenLists.add(list);
     if (author === null || !rules.hides(author)) {

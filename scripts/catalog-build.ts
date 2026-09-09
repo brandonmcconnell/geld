@@ -78,7 +78,9 @@ if (previous !== null) {
       }
     }
   }
-  const contentChanged = JSON.stringify(roundTrip.document.categories) !== JSON.stringify(previous.document.categories);
+  const contentChanged =
+    JSON.stringify(roundTrip.document.categories) !== JSON.stringify(previous.document.categories) ||
+    JSON.stringify(roundTrip.document.listSurfaces ?? null) !== JSON.stringify(previous.document.listSurfaces ?? null);
   if (catalog.version < previous.document.version) {
     fail(`CATALOG_VERSION ${catalog.version} is lower than the committed ${previous.document.version}`);
   }
@@ -93,7 +95,7 @@ if (previous !== null) {
     next = serializeCatalog(catalog);
     roundTrip = parseCatalog(JSON.parse(next));
     if (!roundTrip.ok) fail(`the bundled catalog does not validate after the version bump: ${roundTrip.reason}`);
-    console.log(`catalog: patterns changed; CATALOG_VERSION bumped ${previous.document.version} → ${bumped}`);
+    console.log(`catalog: content changed; CATALOG_VERSION bumped ${previous.document.version} → ${bumped}`);
   }
 }
 

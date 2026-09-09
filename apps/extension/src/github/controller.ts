@@ -25,6 +25,7 @@ import type { DiffEntry, DiffView } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
+import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, removePrListStats } from './pr-list';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
@@ -580,9 +581,12 @@ export class GeldController {
 
     this.applyWhitespace(page, view, url);
 
+    applySurfaceStyles(this.catalog);
+    const surfaces = surfacesOf(this.catalog);
     if (this.settings.showListStats) {
       applyPrListStats({
         matcherFor: (rowRepo) => this.matcherFor(rowRepo),
+        surfaces,
         hideCommentLines: this.settings.hideCommentLines,
         repoRules: this.repoRules,
         diffSource: this.diffSource,
@@ -591,7 +595,7 @@ export class GeldController {
     } else {
       removePrListStats();
     }
-    applyAuthorHiding(this.authorRules);
+    applyAuthorHiding(this.authorRules, surfaces);
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
@@ -1064,6 +1068,7 @@ export class GeldController {
     this.teardownView();
     removePrListStats();
     removeAuthorHiding();
+    removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     for (const element of queryAll('[data-geld-original]')) restoreManagedText(element);
     for (const element of queryAll('[data-geld-stat-host]')) detachBreakdownTooltip(element);

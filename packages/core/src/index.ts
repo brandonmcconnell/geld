@@ -14,6 +14,7 @@ export * from './diff-parse';
 export * from './format';
 export * from './gist-sync';
 export * from './glob';
+export * from './list-surfaces';
 export * from './matcher';
 export * from './pr-authors';
 export * from './repo-config';
