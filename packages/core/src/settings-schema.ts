@@ -187,6 +187,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: false,
         surfaces: ['extension'],
       },
+      {
+        kind: 'toggle',
+        key: 'autoUpdatePatterns',
+        label: 'Keep built-in patterns up to date',
+        description:
+          'Once a day Geld fetches the built-in pattern catalog from its GitHub repository (`api.github.com`, no sign-in) and uses it if it is newer, so new conventions are recognised without waiting for a store release. The file is signed; anything that does not verify is ignored. Which categories are on, and your own patterns, never change this way.',
+        popup: false,
+        surfaces: ['extension'],
+      },
     ],
   },
   {

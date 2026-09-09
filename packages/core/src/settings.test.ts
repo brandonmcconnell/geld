@@ -27,9 +27,14 @@ describe('normalizeSettings', () => {
   });
 
   it('keeps unknown category keys out and falls back to category defaults', () => {
-    const settings = normalizeSettings({ categories: { generated: true, bogus: true, 'custom:gone': false }, groups: { 'tests/e2e': false, 'tests/nope': false, 'nope/x': 1 } });
+    const settings = normalizeSettings({
+      categories: { generated: true, bogus: true, 'custom:gone': false },
+      groups: { 'tests/e2e': false, 'tests/nope': false, 'tests/Nope': false, 'nope/x': 1, 'tests/x': 'no' },
+    });
     expect(settings.categories).toEqual({ generated: true });
-    expect(settings.groups).toEqual({ 'tests/e2e': false });
+    // A well-formed key for a group this build does not know survives (it may
+    // belong to a newer catalog); malformed keys and non-boolean values do not.
+    expect(settings.groups).toEqual({ 'tests/e2e': false, 'tests/nope': false });
     expect(isCategoryEnabled(settings, 'tests')).toBe(true);
     expect(isCategoryEnabled(settings, 'generated')).toBe(true);
     expect(isGroupEnabled(settings, 'tests', 'e2e')).toBe(false);

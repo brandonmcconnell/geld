@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { Catalog } from './categories';
+import { BUNDLED_CATALOG } from './categories';
 import { serializeSettingsPayload } from './gist-sync';
 import { DEFAULT_SETTINGS } from './settings';
 import { collectSettingsIssues, describeValue, findJsonError, validateSettingsDocument, validateSettingsValue } from './settings-validate';
@@ -43,7 +45,7 @@ describe('validateSettingsDocument', () => {
         savedAt: 'yesterday',
         settings: {
           enabled: 'yes',
-          categories: { tests: 'on', nope: true },
+          categories: { tests: 'on', 'Not Ok': true },
           testGroups: [],
           customPatterns: ['*.snap', 42, 'a[z-a]', '[]'],
           repoRules: ['acme/*', '!'],
@@ -58,7 +60,7 @@ describe('validateSettingsDocument', () => {
       'settings.enabled: Expected true or false, got "yes".',
       'settings.expandedByDefault: Expected true or false, got 1.',
       'settings.categories.tests: Expected true or false, got "on".',
-      expect.stringMatching(/^settings\.categories\.nope: Unknown category "nope"\. Known: "tests", /),
+      expect.stringMatching(/^settings\.categories\.Not Ok: Unknown category "Not Ok"\. Known: "tests", /),
       'settings.testGroups: Expected an object mapping test group ids to true/false, got a list of 0.',
       'settings.customPatterns[1]: Expected a string, got 42.',
       'settings.customPatterns[2]: "a[z-a]" is not a valid pattern: range out of order in character class.',
@@ -74,8 +76,8 @@ describe('validateSettingsDocument', () => {
         geld: 1,
         settings: {
           categories: { 'custom:mine': true, 'custom:gone-but-fine': false },
-          groups: { 'tests/e2e': false, 'tests/nope': false, 'generated/lockfiles': 'no' },
-          categoryPatterns: { docs: ['*.md', 'a[z-a]'], bogus: ['x'], tests: 'nope' },
+          groups: { 'tests/e2e': false, 'tests/Nope': false, 'generated/lockfiles': 'no' },
+          categoryPatterns: { docs: ['*.md', 'a[z-a]'], Bogus: ['x'], tests: 'nope' },
           customCategories: [
             { id: 'custom:mine', title: 'Mine', icon: 'paintbrush', patterns: ['mine/**'] },
             { id: 'custom:mine', title: 'Dup', patterns: [] },
@@ -86,10 +88,10 @@ describe('validateSettingsDocument', () => {
       }),
     );
     expect(issues).toEqual([
-      expect.stringMatching(/^settings\.groups\.tests\/nope: Unknown pattern group "tests\/nope"\./),
+      expect.stringMatching(/^settings\.groups\.tests\/Nope: Unknown pattern group "tests\/Nope"\./),
       'settings.groups.generated/lockfiles: Expected true or false, got "no".',
       'settings.categoryPatterns.docs[1]: "a[z-a]" is not a valid pattern: range out of order in character class.',
-      expect.stringMatching(/^settings\.categoryPatterns\.bogus: Unknown built-in category "bogus"\./),
+      expect.stringMatching(/^settings\.categoryPatterns\.Bogus: Unknown built-in category "Bogus"\./),
       'settings.categoryPatterns.tests: Expected a list of strings, got "nope".',
       'settings.customCategories[1].id: Duplicate category id "custom:mine".',
       'settings.customCategories[2].id: Expected an id like "custom:design-tokens", got "nope".',
@@ -106,6 +108,40 @@ describe('validateSettingsDocument', () => {
 
   it('ignores unknown keys so newer settings never look like corruption', () => {
     expect(issuesOf('{"geld":1,"settings":{"enabled":true,"futureSetting":{"x":1}}}')).toEqual([]);
+  });
+
+  it('tolerates well-formed ids it does not know: a gist may come from a newer catalog or extension', () => {
+    // Ids are still checked for shape and their values for type, so a newer
+    // catalog's group or a newer build's category never reads as corruption.
+    expect(
+      issuesOf(
+        JSON.stringify({
+          geld: 1,
+          settings: {
+            categories: { tests: true, 'future-category': false },
+            groups: { 'tests/unit': false, 'tests/future-group': false },
+            categoryPatterns: { 'future-category': ['*.future'] },
+          },
+        }),
+      ),
+    ).toEqual([]);
+    expect(issuesOf(JSON.stringify({ geld: 1, settings: { groups: { 'tests/future-group': 'yes' }, categoryPatterns: { 'future-category': ['a[z-a]'] } } }))).toEqual([
+      'settings.groups.tests/future-group: Expected true or false, got "yes".',
+      'settings.categoryPatterns.future-category[0]: "a[z-a]" is not a valid pattern: range out of order in character class.',
+    ]);
+  });
+
+  it('checks group ids against the catalog it is given', () => {
+    const catalog: Catalog = {
+      ...BUNDLED_CATALOG,
+      version: BUNDLED_CATALOG.version + 1,
+      categories: BUNDLED_CATALOG.categories.map((category) =>
+        category.id === 'tests' ? { ...category, groups: [...category.groups, { id: 'bench', label: 'Benchmarks', description: '', patterns: ['*.bench.*'] }] } : category,
+      ),
+    };
+    const result = validateSettingsValue({ geld: 1, settings: { groups: { 'tests/bench': false } } }, catalog);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.settings.groups).toEqual({ 'tests/bench': false });
   });
 
   it('treats a non-object settings value as one issue', () => {

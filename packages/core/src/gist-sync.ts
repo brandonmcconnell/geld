@@ -1,3 +1,5 @@
+import type { Catalog } from './categories';
+import { BUNDLED_CATALOG } from './categories';
 import type { GeldSettings } from './settings';
 import { normalizeSettings } from './settings';
 import type { SettingsIssue } from './settings-validate';
@@ -158,13 +160,14 @@ async function readRemoteContent(token: string, gistId: string): Promise<{ summa
 /**
  * Read the gist **strictly**: a hand-edited file with problems comes back as
  * `invalid` with every issue listed, instead of being silently repaired. Use
- * this wherever the user can be told about the problem.
+ * this wherever the user can be told about the problem. Ids are validated
+ * against `catalog`; the extension passes its active one.
  */
-export async function readRemoteValidated(token: string, gistId: string): Promise<RemoteRead> {
+export async function readRemoteValidated(token: string, gistId: string, catalog: Catalog = BUNDLED_CATALOG): Promise<RemoteRead> {
   const read = await readRemoteContent(token, gistId);
   if (read === null) return { kind: 'missing' };
   const { summary, content } = read;
-  const validation = validateSettingsDocument(content);
+  const validation = validateSettingsDocument(content, catalog);
   if (!validation.ok) {
     return { kind: 'invalid', gistId: summary.id, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl, issues: validation.issues };
   }

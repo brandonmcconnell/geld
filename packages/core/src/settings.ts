@@ -1,5 +1,5 @@
-import type { AnyCategoryId, CategoryId, CustomCategory, GroupKey, HiddenCategory } from './categories';
-import { CATEGORIES, CATEGORY_IDS, categoryById, groupKey, hiddenCategoryFromCustom, isCategoryId, isCustomCategoryId, isGroupKey } from './categories';
+import type { AnyCategoryId, Catalog, CategoryId, CustomCategory, GroupKey, HiddenCategory } from './categories';
+import { BUNDLED_CATALOG, CATEGORY_IDS, categoryById, groupKey, hiddenCategoryFromCustom, isCategoryId, isCustomCategoryId, isWellFormedGroupKey } from './categories';
 import { isCategoryIconName } from './category-icons';
 import type { TestPatternGroupId } from './test-patterns';
 import { isTestPatternGroupId } from './test-patterns';
@@ -54,6 +54,12 @@ export interface GeldSettings {
   readonly shortcutEnabled: boolean;
   /** Show the hidden-file count on the toolbar icon. */
   readonly showBadge: boolean;
+  /**
+   * Fetch the signed pattern catalog from the Geld repository (daily) and use
+   * it when it is newer than the bundled one. Off: only the patterns that
+   * shipped with this build are used.
+   */
+  readonly autoUpdatePatterns: boolean;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
 }
@@ -71,6 +77,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   hideWhitespace: false,
   shortcutEnabled: true,
   showBadge: true,
+  autoUpdatePatterns: true,
   enterpriseHosts: [],
 };
 
@@ -108,7 +115,11 @@ function readGroups(value: unknown, legacyTestGroups: unknown): Partial<Record<G
   const result: Partial<Record<GroupKey, boolean>> = {};
   if (isRecord(value)) {
     for (const [key, enabled] of Object.entries(value)) {
-      if (isGroupKey(key) && typeof enabled === 'boolean') result[key] = enabled;
+      // Well-formed keys for groups this build does not know are kept, not
+      // dropped: they may belong to a newer pattern catalog (or have been
+      // written by a newer extension into the shared gist), and losing them
+      // would silently turn those groups back on there.
+      if (isWellFormedGroupKey(key) && typeof enabled === 'boolean') result[key] = enabled;
     }
   }
   // Settings saved when only test groups could be toggled.
@@ -164,10 +175,15 @@ function readCustomCategories(value: unknown): readonly CustomCategory[] {
   return result;
 }
 
+/**
+ * Whether a category hides anything. Built-in defaults deliberately come from
+ * the bundled catalog, never a fetched one: a remote file must not be able to
+ * switch a category on for everyone.
+ */
 export function isCategoryEnabled(settings: GeldSettings, id: AnyCategoryId): boolean {
   const stored = settings.categories[id];
   if (stored !== undefined) return stored;
-  return isCategoryId(id) ? categoryById(id).defaultEnabled : true;
+  return isCategoryId(id) ? categoryById(id, BUNDLED_CATALOG).defaultEnabled : true;
 }
 
 /** Whether a built-in pattern group applies (missing keys mean enabled). */
@@ -192,15 +208,15 @@ export function customCategoryById(settings: GeldSettings, id: AnyCategoryId): C
 /**
  * Every category the settings know about, in matching order: custom
  * categories first (a user's own definition beats a built-in), then the
- * built-ins in their fixed order.
+ * built-ins of `catalog` in their fixed order.
  */
-export function allCategories(settings: GeldSettings): readonly HiddenCategory[] {
-  return [...settings.customCategories.map(hiddenCategoryFromCustom), ...CATEGORIES];
+export function allCategories(settings: GeldSettings, catalog: Catalog = BUNDLED_CATALOG): readonly HiddenCategory[] {
+  return [...settings.customCategories.map(hiddenCategoryFromCustom), ...catalog.categories];
 }
 
 /** Look up any category id; `null` when a custom id is not (or no longer) defined. */
-export function findCategory(settings: GeldSettings, id: AnyCategoryId): HiddenCategory | null {
-  if (isCategoryId(id)) return categoryById(id);
+export function findCategory(settings: GeldSettings, id: AnyCategoryId, catalog: Catalog = BUNDLED_CATALOG): HiddenCategory | null {
+  if (isCategoryId(id)) return categoryById(id, catalog);
   const custom = customCategoryById(settings, id);
   return custom === null ? null : hiddenCategoryFromCustom(custom);
 }
@@ -210,16 +226,18 @@ export function findCategory(settings: GeldSettings, id: AnyCategoryId): HiddenC
  * a disabled group or extra patterns. UIs open the "advanced" disclosure
  * when this is true.
  */
-export function hasAdvancedSettings(settings: GeldSettings, categoryId: CategoryId): boolean {
-  return describeAdvancedSettings(settings, categoryId) !== null;
+export function hasAdvancedSettings(settings: GeldSettings, categoryId: CategoryId, catalog: Catalog = BUNDLED_CATALOG): boolean {
+  return describeAdvancedSettings(settings, categoryId, catalog) !== null;
 }
 
 /**
  * Short summary of what is customised in a built-in category, for its
  * collapsed row ("1 group off · 3 extra patterns"); `null` when nothing is.
+ * Only groups the catalog defines count: a stored key for a group this build
+ * does not know is kept but is not something the user can see here.
  */
-export function describeAdvancedSettings(settings: GeldSettings, categoryId: CategoryId): string | null {
-  const groupsOff = categoryById(categoryId).groups.filter((group) => !isGroupEnabled(settings, categoryId, group.id)).length;
+export function describeAdvancedSettings(settings: GeldSettings, categoryId: CategoryId, catalog: Catalog = BUNDLED_CATALOG): string | null {
+  const groupsOff = categoryById(categoryId, catalog).groups.filter((group) => !isGroupEnabled(settings, categoryId, group.id)).length;
   const extra = categoryPatternLines(settings, categoryId).filter((line) => !/^\[.*\]$/.test(line)).length;
   const parts: string[] = [];
   if (groupsOff > 0) parts.push(`${groupsOff} group${groupsOff === 1 ? '' : 's'} off`);
@@ -245,6 +263,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     hideWhitespace: bool(record, 'hideWhitespace', DEFAULT_SETTINGS.hideWhitespace),
     shortcutEnabled: bool(record, 'shortcutEnabled', DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record, 'showBadge', DEFAULT_SETTINGS.showBadge),
+    autoUpdatePatterns: bool(record, 'autoUpdatePatterns', DEFAULT_SETTINGS.autoUpdatePatterns),
     enterpriseHosts: isStringArray(record.enterpriseHosts)
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,

@@ -1,4 +1,5 @@
-import { CATEGORY_IDS, categoryById, isCategoryId, isCustomCategoryId, isGroupKey } from './categories';
+import type { Catalog } from './categories';
+import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustomCategoryId, isGroupKey, isWellFormedGroupKey, isWellFormedId } from './categories';
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
@@ -14,6 +15,16 @@ import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
  * Unknown keys are deliberately not reported: a newer Geld may add settings
  * that an older extension does not know about, and that must not look like
  * corruption. Everything Geld does know about is checked in full.
+ *
+ * The same reasoning applies to category and group ids. They are checked
+ * against `catalog` — the extension passes its active catalog (bundled or the
+ * newer fetched one) — but an id that is merely unknown, while well formed
+ * (`[a-z][a-z0-9-]*`, `category/group`), is tolerated and ignored rather than
+ * reported: the gist is shared between devices, the site and versions of Geld
+ * that may know a newer catalog or a newer category, and a slightly older
+ * extension must never declare it corrupted for that. The trade-off is that a
+ * typo in an id (`test` for `tests`) is no longer caught here; the value's
+ * type still is, and the UI never writes ids by hand.
  */
 
 export interface SettingsIssue {
@@ -59,12 +70,17 @@ function list(values: readonly string[]): string {
   return values.map((value) => `"${value}"`).join(', ');
 }
 
+/**
+ * `isAcceptable` decides which keys are not worth an issue: the ids the
+ * catalog knows plus any well-formed id (see the module comment); `known`
+ * only feeds the message for the rest.
+ */
 function checkBooleanMap(
   issues: SettingsIssue[],
   path: string,
   value: unknown,
   known: readonly string[],
-  isKnown: (key: string) => boolean,
+  isAcceptable: (key: string) => boolean,
   noun: string,
 ): void {
   if (value === undefined) return;
@@ -74,7 +90,7 @@ function checkBooleanMap(
   }
   for (const [key, enabled] of Object.entries(value)) {
     const keyPath = `${path}.${key}`;
-    if (!isKnown(key)) issues.push({ path: keyPath, message: `Unknown ${noun} "${key}". Known: ${list(known)}.` });
+    if (!isAcceptable(key)) issues.push({ path: keyPath, message: `Unknown ${noun} "${key}". Known: ${list(known)}.` });
     if (typeof enabled !== 'boolean') issues.push({ path: keyPath, message: `Expected true or false, got ${describeValue(enabled)}.` });
   }
 }
@@ -135,8 +151,6 @@ function hostProblem(line: string): string | null {
   return normalizeHost(line) === null ? `"${line}" is not a hostname Geld can run on (e.g. "github.example.com").` : null;
 }
 
-const GROUP_KEYS: readonly string[] = CATEGORY_IDS.flatMap((id) => categoryById(id).groups.map((group) => `${id}/${group.id}`));
-
 /** `settings.categoryPatterns`: an object of built-in category id → pattern lines. */
 function checkCategoryPatterns(issues: SettingsIssue[], path: string, value: unknown): void {
   if (value === undefined) return;
@@ -146,10 +160,11 @@ function checkCategoryPatterns(issues: SettingsIssue[], path: string, value: unk
   }
   for (const [key, lines] of Object.entries(value)) {
     const keyPath = `${path}.${key}`;
-    if (!isCategoryId(key)) {
+    if (!isCategoryId(key) && !isWellFormedId(key)) {
       issues.push({ path: keyPath, message: `Unknown built-in category "${key}". Known: ${list(CATEGORY_IDS)}.` });
       continue;
     }
+    // Lines under a category this build does not know are still checked: they are patterns wherever they apply.
     checkStringList(issues, keyPath, lines, customPatternProblem);
   }
 }
@@ -197,7 +212,7 @@ function checkCustomCategories(issues: SettingsIssue[], path: string, value: unk
  * bare settings object). Returns every problem found; an empty list means the
  * object is safe to normalise.
  */
-export function collectSettingsIssues(value: unknown, path = 'settings'): readonly SettingsIssue[] {
+export function collectSettingsIssues(value: unknown, path = 'settings', catalog: Catalog = BUNDLED_CATALOG): readonly SettingsIssue[] {
   const issues: SettingsIssue[] = [];
   if (!isRecord(value)) {
     issues.push({ path, message: `Expected an object of settings, got ${describeValue(value)}.` });
@@ -213,8 +228,8 @@ export function collectSettingsIssues(value: unknown, path = 'settings'): readon
     issues.push({ path: `${path}.hideTests`, message: `Expected true or false, got ${describeValue(value.hideTests)}.` });
   }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
-  checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key), 'category');
-  checkBooleanMap(issues, `${path}.groups`, value.groups, GROUP_KEYS, isGroupKey, 'pattern group');
+  checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
+  checkBooleanMap(issues, `${path}.groups`, value.groups, catalogGroupKeys(catalog), (key) => isGroupKey(key, catalog) || isWellFormedGroupKey(key), 'pattern group');
   checkCategoryPatterns(issues, `${path}.categoryPatterns`, value.categoryPatterns);
   checkCustomCategories(issues, `${path}.customCategories`, value.customCategories);
   // Keys from earlier versions, still accepted and migrated by normalizeSettings.
@@ -368,9 +383,10 @@ function jsonIssue(content: string, error: unknown): SettingsIssue {
 
 /**
  * Validate the text of a settings document. Accepts the `{ geld, savedAt,
- * settings }` payload Geld writes or a bare settings object.
+ * settings }` payload Geld writes or a bare settings object. Ids are checked
+ * against `catalog` (see the module comment).
  */
-export function validateSettingsDocument(content: string): SettingsValidation {
+export function validateSettingsDocument(content: string, catalog: Catalog = BUNDLED_CATALOG): SettingsValidation {
   if (content.trim() === '') return { ok: false, issues: [{ path: '$', message: 'The file is empty.' }] };
   let parsed: unknown;
   try {
@@ -390,16 +406,16 @@ export function validateSettingsDocument(content: string): SettingsValidation {
     issues.push({ path: 'savedAt', message: `Expected an ISO date string, got ${describeValue(parsed.savedAt)}.` });
   }
   const body = wrapped ? parsed.settings : parsed;
-  issues.push(...collectSettingsIssues(body, wrapped ? 'settings' : '$'));
+  issues.push(...collectSettingsIssues(body, wrapped ? 'settings' : '$', catalog));
   if (issues.length > 0) return { ok: false, issues };
   return { ok: true, settings: normalizeSettings(body) };
 }
 
 /** Validate an in-memory value the same way (used for imports that were already parsed). */
-export function validateSettingsValue(value: unknown): SettingsValidation {
+export function validateSettingsValue(value: unknown, catalog: Catalog = BUNDLED_CATALOG): SettingsValidation {
   const wrapped = isRecord(value) && 'settings' in value;
   const body = wrapped ? value.settings : value;
-  const issues = collectSettingsIssues(body, wrapped ? 'settings' : '$');
+  const issues = collectSettingsIssues(body, wrapped ? 'settings' : '$', catalog);
   if (issues.length > 0) return { ok: false, issues };
   return { ok: true, settings: normalizeSettings(body) };
 }
