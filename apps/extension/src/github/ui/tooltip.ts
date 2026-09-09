@@ -44,36 +44,67 @@ function render(breakdown: StatsBreakdown): void {
   );
 }
 
+/** Distance the tooltip keeps from the edges of the viewport. */
+const VIEWPORT_MARGIN = 8;
+/** Gap between the host and the tooltip; leaves room for the arrow. */
+const HOST_GAP = 6;
+/** The arrow is 12px wide and must stay clear of the rounded corners. */
+const ARROW_INSET = 12;
+
+/**
+ * Place the tooltip next to `host`, inside the viewport. The tooltip is
+ * `position: fixed`, so the coordinates are viewport coordinates and the box
+ * can never widen the document: the "N tests" host sits at the far right of
+ * GitHub's header, and an absolutely positioned box clamped against
+ * `window.innerWidth` — which includes the vertical scrollbar — used to poke
+ * under that scrollbar and give the page a horizontal one. The viewport is
+ * measured on `documentElement`, which excludes scrollbars.
+ */
 function position(host: HTMLElement): void {
   const element = ensureTooltip();
   const hostRect = host.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
   element.hidden = false;
   const tipRect = element.getBoundingClientRect();
-  const margin = 8;
-  let left = hostRect.left + hostRect.width / 2 - tipRect.width / 2;
-  left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
-  let top = hostRect.bottom + 6;
+  const hostCentre = hostRect.left + hostRect.width / 2;
+  const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - tipRect.width - VIEWPORT_MARGIN);
+  const left = Math.max(VIEWPORT_MARGIN, Math.min(hostCentre - tipRect.width / 2, maxLeft));
+  let top = hostRect.bottom + HOST_GAP;
   let placement = 'below';
-  if (top + tipRect.height > window.innerHeight - margin) {
-    top = hostRect.top - tipRect.height - 6;
+  if (top + tipRect.height > viewportHeight - VIEWPORT_MARGIN) {
+    top = hostRect.top - tipRect.height - HOST_GAP;
     placement = 'above';
   }
-  element.style.left = `${Math.round(left + window.scrollX)}px`;
-  element.style.top = `${Math.round(top + window.scrollY)}px`;
+  element.style.left = `${Math.round(left)}px`;
+  element.style.top = `${Math.round(top)}px`;
   element.dataset.placement = placement;
-  const arrowX = hostRect.left + hostRect.width / 2 - left;
+  const arrowX = Math.max(ARROW_INSET, Math.min(hostCentre - left, tipRect.width - ARROW_INSET));
   element.style.setProperty('--geld-arrow-x', `${Math.round(arrowX)}px`);
+}
+
+/** Keep a fixed tooltip glued to its host while the page scrolls or resizes. */
+function follow(): void {
+  if (activeHost !== null) position(activeHost);
 }
 
 function show(host: HTMLElement): void {
   const breakdown = providers.get(host)?.() ?? null;
   if (breakdown === null) return;
+  if (activeHost === null) {
+    window.addEventListener('scroll', follow, { capture: true, passive: true });
+    window.addEventListener('resize', follow, { passive: true });
+  }
   activeHost = host;
   render(breakdown);
   position(host);
 }
 
 export function hideTooltip(): void {
+  if (activeHost !== null) {
+    window.removeEventListener('scroll', follow, { capture: true });
+    window.removeEventListener('resize', follow);
+  }
   activeHost = null;
   if (tooltip !== null) tooltip.hidden = true;
 }
