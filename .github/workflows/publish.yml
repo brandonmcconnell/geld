@@ -170,9 +170,13 @@ jobs:
           if [ "$code" != "0" ] && grep -qiE "Conflict|409" sign.log; then
             echo "::warning title=Firefox::Skipped: AMO reported a conflict (a previous version is still being processed); will retry on the next run."; exit 0
           fi
-          # 429: AMO rate-limits uploads per add-on per day (several releases in one day hit it); the next run retries.
-          if [ "$code" != "0" ] && grep -qiE "status was 429|Too Many Requests|429" sign.log; then
-            echo "::warning title=Firefox::Skipped: AMO is rate-limiting uploads for this add-on; will retry on the next run."; exit 0
+          # AMO has a per-add-on daily submission quota (several releases in one day
+          # hit it). web-ext reports it as a 429 on the source upload or, on the
+          # version submission, as "Unknown Error" with a body reading "Request was
+          # throttled. Expected available in N seconds." Either way: next run retries.
+          if [ "$code" != "0" ] && grep -qiE "status was 429|Too Many Requests|429|throttled" sign.log; then
+            wait=$(grep -oiE "available in [0-9]+ seconds" sign.log | grep -oE "[0-9]+" | head -n 1)
+            echo "::warning title=Firefox::Skipped: AMO's daily submission quota for this add-on is used up${wait:+ (available again in about $((wait / 3600)) h)}; the next scheduled run retries."; exit 0
           fi
           [ "$code" = "0" ] || exit "$code"
           echo "::notice title=Firefox::Version uploaded; AMO signs and lists it after its automated review."
