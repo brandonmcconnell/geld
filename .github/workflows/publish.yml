@@ -181,6 +181,7 @@ jobs:
         run: |
           mkdir -p unpacked && unzip -q dist/*-firefox.zip -d unpacked
           known=$(node apps/extension/scripts/publish/amo-version-exists.mjs unpacked || echo "unknown")
+          echo "AMO already has this version: $known"
           if [ "$known" = "exists" ]; then
             echo "::notice title=Firefox::Skipped: AMO already has this version (checked without uploading)."; exit 0
           fi
@@ -243,6 +244,7 @@ jobs:
         run: |
           marketing="${TAG#v}"; marketing="${marketing%%-build.*}"; build="${TAG##*build.}"
           known=$(node apps/extension/scripts/publish/asc-build-exists.mjs sh.geld.safari "$marketing" "$build" || echo "unknown")
+          echo "App Store Connect already has build $marketing ($build): $known"
           echo "state=$known" >> "$GITHUB_OUTPUT"
           if [ "$known" = "exists" ]; then
             echo "::notice title=Safari::Skipped: App Store Connect already has build $marketing ($build) (checked without archiving)."
