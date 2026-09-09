@@ -135,6 +135,12 @@ export default function HowItWorksPage() {
                 serves when you append <code>.diff</code> to a pull request URL. Rows are fetched a few at a time, only when scrolled near the viewport,
                 and cached by the pull request&apos;s head commit. It can be switched off in the options.
               </p>
+              <p>
+                Lists can also hide pull requests by author: add logins under <strong>Hidden authors</strong> (<code>*[bot]</code> covers every GitHub
+                App such as dependabot[bot] or renovate[bot]) and those rows fold into a line that says how many by whom, with a <em>Show</em> to bring
+                them back for the visit. And when GitHub&apos;s own file filter is active on a diff (by extension, viewed state or <em>only files you
+                own</em> from CODEOWNERS), Geld leaves those files out of its counts too, which GitHub&apos;s header does not.
+              </p>
             </Prose>
             <Frame className="mt-8">
               <PrListRow

@@ -21,6 +21,8 @@ import {
   normalizeHost,
   parsePatternList,
   actionsFor,
+  authorRuleProblem,
+  pluralize,
   sectionsFor,
   serializeSettingsPayload,
   splitInlineCode,
@@ -566,6 +568,26 @@ async function main(): Promise<void> {
     choiceSetters.push(show);
     choiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
   }
+
+  /* Pull request lists: authors to hide */
+  applySchemaCopy('lists');
+  const authorsStatus = statusReporter(requireElement('authors-status', HTMLSpanElement));
+  const authorsArea = requireElement('hidden-authors', HTMLTextAreaElement);
+  authorsArea.value = settings.hiddenAuthors.join('\n');
+  authorsArea.addEventListener('input', () => {
+    authorsStatus(authorsArea.value.trim() !== settings.hiddenAuthors.join('\n') ? 'Unsaved changes' : '', 'neutral');
+  });
+  requireElement('save-authors', HTMLButtonElement).addEventListener('click', async () => {
+    const hiddenAuthors = parsePatternList(authorsArea.value);
+    const problem = hiddenAuthors.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+    if (problem !== null) {
+      authorsStatus(problem, 'error');
+      return;
+    }
+    settings = await settingsItem.patch({ hiddenAuthors });
+    authorsArea.value = hiddenAuthors.join('\n');
+    authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
+  });
 
   /* GitHub Enterprise Server hosts */
   applySchemaCopy('enterprise');

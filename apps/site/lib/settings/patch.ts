@@ -1,5 +1,6 @@
 import type { AnyCategoryId, BooleanSettingKey, CategoryId, ChoiceSettingKey, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
 import {
+  authorRuleProblem,
   compileGlobs,
   fieldsFor,
   isAnyCategoryId,
@@ -147,6 +148,10 @@ export function validateList(key: ListSettingKey, rawLines: readonly string[]): 
         if (!hosts.includes(host)) hosts.push(host);
       }
       return { ok: true, lines: hosts };
+    }
+    case 'hiddenAuthors': {
+      const problem = lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+      return problem === null ? { ok: true, lines } : { ok: false, message: problem };
     }
   }
 }

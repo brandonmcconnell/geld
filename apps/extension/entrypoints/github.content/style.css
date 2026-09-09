@@ -725,3 +725,38 @@ tr[data-geld-line='hidden'] {
 .geld-line-note__show:hover {
   text-decoration: underline;
 }
+
+/* Pull requests hidden by author (pr-authors.ts) ------------------------------ */
+
+[data-geld-author='hidden'] {
+  display: none !important;
+}
+
+.geld-author-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-author-note-item {
+  list-style: none;
+}
+
+.geld-author-note__show {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-author-note__show:hover {
+  text-decoration: underline;
+}

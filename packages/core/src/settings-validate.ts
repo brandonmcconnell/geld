@@ -4,6 +4,7 @@ import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
 import { REPO_CONFIG_MODES, isRepoConfigMode, normalizeHost, normalizeSettings } from './settings';
+import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 
 /**
@@ -239,6 +240,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   checkBooleanMap(issues, `${path}.testGroups`, value.testGroups, TEST_PATTERN_GROUP_IDS, isTestPatternGroupId, 'test group');
   checkStringList(issues, `${path}.customPatterns`, value.customPatterns, customPatternProblem);
   checkStringList(issues, `${path}.repoRules`, value.repoRules, repoRuleProblem);
+  checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }

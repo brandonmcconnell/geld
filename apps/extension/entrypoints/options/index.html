@@ -79,6 +79,22 @@ big-corp
         <div id="repository-choices"></div>
       </section>
 
+      <section class="options__card" data-section="lists">
+        <h2 class="options__title">Pull request lists</h2>
+        <p class="geld-help options__intro"></p>
+        <textarea
+          id="hidden-authors"
+          class="geld-textarea geld-code options__textarea"
+          rows="4"
+          spellcheck="false"
+          aria-label="Hidden authors"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="authors-status" aria-live="polite"></span>
+          <button id="save-authors" class="geld-button geld-button--primary" type="button">Save authors</button>
+        </div>
+      </section>
+
       <section class="options__card" data-section="enterprise">
         <h2 class="options__title">GitHub Enterprise Server</h2>
         <p class="geld-help options__intro">

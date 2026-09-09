@@ -7,7 +7,8 @@ import { createMatcher } from '@geld/core';
 import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/messages';
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
-import { applyRepoConfigs, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
+import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
+import type { AuthorRules } from '@geld/core';
 import type { RepoConfigChoices } from '../lib/local-state';
 import { repoConfigChoicesItem, whitespacePersistedItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
@@ -24,6 +25,7 @@ import type { DiffEntry, DiffView } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
+import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, removePrListStats } from './pr-list';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
@@ -169,6 +171,7 @@ export class GeldController {
   /** The active pattern catalog (bundled, or a newer fetched one); see `lib/catalog.ts`. */
   private catalog: Catalog;
   private repoRules: readonly RepoRule[];
+  private authorRules: AuthorRules;
   private readonly matchers = new Map<string, PathMatcher>();
   private observer: MutationObserver | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -221,6 +224,7 @@ export class GeldController {
     this.settings = settings;
     this.catalog = catalog;
     this.repoRules = compileRepoRules(settings.repoRules);
+    this.authorRules = compileAuthorRules(settings.hiddenAuthors);
     this.repoConfigs = new RepoConfigSource(() => this.onRepoConfigChange(), catalog);
     void whitespacePersistedItem.getValue().then((persisted) => this.whitespace.setPersisted(persisted));
     void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices));
@@ -274,6 +278,7 @@ export class GeldController {
   updateSettings(settings: GeldSettings): void {
     this.settings = settings;
     this.repoRules = compileRepoRules(settings.repoRules);
+    this.authorRules = compileAuthorRules(settings.hiddenAuthors);
     this.reapply();
   }
 
@@ -586,6 +591,7 @@ export class GeldController {
     } else {
       removePrListStats();
     }
+    applyAuthorHiding(this.authorRules);
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
@@ -1057,6 +1063,7 @@ export class GeldController {
     this.headerGroups = [];
     this.teardownView();
     removePrListStats();
+    removeAuthorHiding();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     for (const element of queryAll('[data-geld-original]')) restoreManagedText(element);
     for (const element of queryAll('[data-geld-stat-host]')) detachBreakdownTooltip(element);

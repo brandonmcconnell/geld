@@ -12,7 +12,7 @@ export const PR_STAT_CLASS = 'geld-pr-stat';
 
 const PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/;
 
-interface ListRow {
+export interface ListRow {
   readonly key: string;
   readonly repo: string;
   readonly number: string;
@@ -37,7 +37,7 @@ function rowOf(link: HTMLAnchorElement): HTMLElement | null {
 }
 
 /** Find every pull request row in an issues/PR list on the current page. */
-function findRows(): ListRow[] {
+export function findRows(): ListRow[] {
   const rows = new Map<HTMLElement, ListRow>();
   for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"]')) {
     if (link.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;

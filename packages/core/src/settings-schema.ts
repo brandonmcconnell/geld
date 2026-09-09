@@ -132,7 +132,7 @@ export interface ActionsField extends FieldBase {
 
 export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'enterprise' | 'maintenance';
+export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'lists' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -323,6 +323,29 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'ask', label: 'Ask once per repository', description: 'The popup asks the first time a repository provides one; the answer is remembered on this device.' },
           { value: 'never', label: 'Never', description: 'Only your own settings apply.' },
         ],
+      },
+    ],
+  },
+  {
+    id: 'lists',
+    title: 'Pull request lists',
+    intro:
+      'Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
+    fields: [
+      {
+        kind: 'list',
+        key: 'hiddenAuthors',
+        label: 'Hidden authors',
+        description: 'Pull request authors whose PRs are hidden in lists.',
+        popup: false,
+        rows: 4,
+        placeholder: '*[bot]\nrenovate*',
+        syntax: [
+          'A login as GitHub shows it: `dependabot[bot]`, `octocat`; a leading `@` is fine.',
+          '`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.',
+          'Matching ignores case. Lines starting with `#` are comments.',
+        ],
+        saveLabel: 'Save authors',
       },
     ],
   },

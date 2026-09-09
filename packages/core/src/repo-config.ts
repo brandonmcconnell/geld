@@ -44,6 +44,7 @@ const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'cu
 const PERSONAL_KEYS = [
   'enabled',
   'repoRules',
+  'hiddenAuthors',
   'groupHidden',
   'expandedByDefault',
   'hideCommentLines',

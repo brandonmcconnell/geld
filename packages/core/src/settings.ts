@@ -54,6 +54,12 @@ export interface GeldSettings {
   readonly hideCommentLines: boolean;
   /** Show `+N −M` (excluding hidden files) next to each pull request in PR lists. */
   readonly showListStats: boolean;
+  /**
+   * Pull requests to hide in lists and stacks, by author login: one pattern
+   * per line, `*` wildcards, case-insensitive (`*[bot]` hides every GitHub
+   * App such as dependabot[bot] or renovate[bot]).
+   */
+  readonly hiddenAuthors: readonly string[];
   /** Ask GitHub to hide whitespace-only changes (`?w=1`) on diff pages. */
   readonly hideWhitespace: boolean;
   /** Honour the browser keyboard shortcut that toggles hidden files. */
@@ -94,6 +100,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   expandedByDefault: false,
   hideCommentLines: false,
   showListStats: true,
+  hiddenAuthors: [],
   hideWhitespace: false,
   shortcutEnabled: true,
   showBadge: true,
@@ -282,6 +289,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
     hideCommentLines: bool(record, 'hideCommentLines', DEFAULT_SETTINGS.hideCommentLines),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),
+    hiddenAuthors: isStringArray(record.hiddenAuthors) ? record.hiddenAuthors : DEFAULT_SETTINGS.hiddenAuthors,
     hideWhitespace: bool(record, 'hideWhitespace', DEFAULT_SETTINGS.hideWhitespace),
     shortcutEnabled: bool(record, 'shortcutEnabled', DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record, 'showBadge', DEFAULT_SETTINGS.showBadge),
