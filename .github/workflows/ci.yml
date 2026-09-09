@@ -24,6 +24,11 @@ jobs:
           # Pull requests: the merge ref as usual. Pushes: the branch itself, so
           # the catalog step can push a commit back.
           ref: ${{ github.event_name == 'push' && github.ref || '' }}
+          # A deploy key with write access (secret CATALOG_DEPLOY_KEY) lets the
+          # catalog step push to main: the ruleset's bypass list has a "Deploy
+          # keys" entry, whereas the built-in GitHub Actions app cannot be added
+          # from the UI. Empty when the secret is absent → the default token.
+          ssh-key: ${{ secrets.CATALOG_DEPLOY_KEY }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -55,9 +60,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add catalog/patterns.json catalog/patterns.sig packages/core/src/categories.ts
           version=$(node -p "require('./catalog/patterns.json').version")
-          git commit -m "catalog: publish patterns ${version}" -m "Generated and signed by CI from packages/core."
+          # [skip ci]: a deploy-key push would otherwise start a second CI run (and
+          # release) for the commit this run is already about to release.
+          git commit -m "catalog: publish patterns ${version} [skip ci]" -m "Generated and signed by CI from packages/core."
           if ! git push origin HEAD:main; then
-            echo "::error title=Catalog::Could not push the signed catalog to main. If the branch ruleset requires pull requests, add the 'GitHub Actions' app to its bypass list (Settings → Rules → Rulesets → main → Bypass list)."
+            echo "::error title=Catalog::Could not push the signed catalog to main. Set up the CATALOG_DEPLOY_KEY secret (a deploy key with write access) and tick 'Deploy keys' in the main ruleset's bypass list — see apps/extension/store/PUBLISHING.md."
             exit 1
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

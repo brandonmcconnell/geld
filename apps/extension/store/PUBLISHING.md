@@ -23,7 +23,14 @@ Add these under **Settings → Secrets and variables → Actions → New reposit
 
 ### Pattern catalog — `GELD_CATALOG_PRIVATE_KEY`, plus a ruleset bypass
 
-The built-in pattern catalog (`catalog/patterns.json`) is fetched by installed extensions and must be signed with the Ed25519 key whose public half is in `packages/core/src/catalog-key.ts`. CI signs it: on every push to `main` it regenerates the JSON from `packages/core` (bumping `CATALOG_VERSION` automatically when the patterns changed), signs with this secret, verifies, and commits the result back to `main`. Generate a keypair with `pnpm catalog:keygen` (keep the private key in a password manager too — rotating it means committing the new public key; CI re-signs on the next push). Because CI pushes a commit, the `main` ruleset must let it: **Settings → Rules → Rulesets → main → Bypass list → add the GitHub Actions app**. Without the secret, a pattern change fails CI with a message saying so; you can still sign locally with `GELD_CATALOG_PRIVATE_KEY=… pnpm catalog:sign`.
+The built-in pattern catalog (`catalog/patterns.json`) is fetched by installed extensions and must be signed with the Ed25519 key whose public half is in `packages/core/src/catalog-key.ts`. CI signs it: on every push to `main` it regenerates the JSON from `packages/core` (bumping `CATALOG_VERSION` automatically when the patterns changed), signs with this secret, verifies, and commits the result back to `main`. Generate a keypair with `pnpm catalog:keygen` (keep the private key in a password manager too — rotating it means committing the new public key; CI re-signs on the next push). Because CI pushes a commit to `main`, it needs a way past the "pull request required" rule. The built-in GitHub Actions app cannot be added to a ruleset's bypass list from the UI, so CI pushes with a **deploy key** instead:
+
+1. On your machine: `ssh-keygen -t ed25519 -N "" -C "geld-ci" -f geld-ci` (creates `geld-ci` and `geld-ci.pub`).
+2. Repo → **Settings → Deploy keys → Add deploy key**: title `geld-ci`, key = contents of `geld-ci.pub`, tick **Allow write access**.
+3. Repo → **Settings → Secrets and variables → Actions**: new secret `CATALOG_DEPLOY_KEY` = contents of the private file `geld-ci` (the whole `-----BEGIN OPENSSH PRIVATE KEY-----` block).
+4. Repo → **Settings → Rules → Rulesets → main → Bypass list**: tick **Deploy keys**.
+
+Delete the local `geld-ci` file afterwards; the secret is the only copy needed. The commit CI makes carries `[skip ci]` so it does not start a second run. Without the secret, a pattern change fails CI with a message saying so; you can still sign locally with `GELD_CATALOG_PRIVATE_KEY=… pnpm catalog:sign`.
 
 ### Store credentials
 
