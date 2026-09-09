@@ -16,7 +16,7 @@ if (!zipPath || !extensionId || !clientId || !clientSecret || !refreshToken) {
 }
 
 // Chrome refuses uploads and publishes while a submission is pending review.
-const PENDING = /ITEM_PENDING_REVIEW|ITEM_NOT_UPDATABLE|pending review/i;
+const PENDING = /ITEM_PENDING_REVIEW|ITEM_NOT_UPDATABLE|pending review|in review/i;
 
 const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
   method: 'POST',

@@ -37,7 +37,11 @@ async function pollOperation(url, label) {
     const body = JSON.parse(text);
     if (body.status === 'Succeeded') return body;
     if (body.status === 'Failed') {
-      const detail = JSON.stringify(body.errors ?? body);
+      const detail = JSON.stringify(body);
+      if (body.errorCode === 'InProgressSubmission' || isPendingReview(0, detail)) {
+        console.log('Edge: skipped — a submission is already under review.');
+        process.exit(78);
+      }
       if (isDuplicateVersion(detail)) {
         console.log('Edge: skipped — the store already has this version.');
         process.exit(78);
