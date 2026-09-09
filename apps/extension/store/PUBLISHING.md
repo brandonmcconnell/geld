@@ -1,14 +1,18 @@
-# Publishing Geld to the stores
+# Publishing Geld
 
-Every push to `main` that touches the extension produces a GitHub Release (see `.github/workflows/ci.yml`) whose zips carry a **four-part version**: the version in `apps/extension/package.json` plus the CI run number, e.g. `0.1.1.68`. Stores only require the version to increase, so no bump commit is needed between store releases; change `package.json` only when the marketing version should change.
+Two things reach users, through two separate, fully automated paths. Nothing is done by hand in a store dashboard or a terminal once the one-time setup below exists.
 
-Publishing to the stores is automatic: `.github/workflows/publish.yml` runs **after every CI run on `main` that produced a release**, **every six hours**, and on demand (Actions → "Publish to stores" → Run workflow, where you can pick a release tag and channels). Each run takes the latest release and, per store, does one of three things:
+## Day to day
 
-- **submits** it when the store has an older version and nothing under review;
-- **skips** when the store already has this version (scheduled runs are idempotent);
-- **skips with a warning** when a submission is under review — Chrome and Edge have no API to cancel a review, so the next scheduled run picks the newest release up once it clears. Apple *can* withdraw a submission that is still waiting for review, and the Safari job does (`--reject_if_possible`), so there the newest build replaces the pending one.
+**Changing which files Geld hides** (the pattern catalog: `packages/core/src/categories.ts`, `test-patterns.ts`): edit, push to `main`. CI regenerates `catalog/patterns.json`, bumps `CATALOG_VERSION` if you did not, signs the file, verifies the signature and commits `catalog/patterns.{json,sig}` back to `main` as `catalog: publish patterns <version> [skip ci]`. Installed extensions fetch the catalog from this repository once a day (or on "Check now" in the options page), verify the signature against the public key compiled into them, and switch over. No store release is involved.
 
-Nothing needs to be visited by hand; the workflow summary lists what each store did.
+**Shipping a new extension version**: any push to `main` that touches the extension makes CI cut a GitHub Release whose zips carry a four-part version — the version in `apps/extension/package.json` plus the CI run number, e.g. `0.1.1.92`. Stores only need the version to increase, so nothing is bumped by hand; change `package.json` only when the marketing version should change (`0.1.1` → `0.2.0`). The publish workflow (`.github/workflows/publish.yml`) then runs **after every CI run on `main` that produced a release**, **every six hours**, and on demand (Actions → "Publish to stores" → Run workflow, where a release tag and channels can be chosen). For each store it does one of three things:
+
+- **submits** the latest release when the store has an older version and nothing under review;
+- **skips** when the store already has this version (repeated runs are idempotent);
+- **skips with a warning** when a submission is under review. Chrome and Edge have no API to cancel a review, so the newest release is picked up by the next scheduled run once the review clears. Apple can withdraw a submission that is still *waiting* for review, and the Safari job does, so there the newest build replaces the pending one.
+
+The only recurring task is glancing at the "Publish to stores" run summary now and then: it names any store that skipped or failed, and a bad credential shows up there.
 
 | Store | What the job does | Review |
 |---|---|---|
@@ -17,24 +21,35 @@ Nothing needs to be visited by hand; the workflow summary lists what each store 
 | Firefox AMO | `web-ext sign --channel listed` with the sources zip | usually minutes (auto-approval) |
 | Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and **submits for review** (withdrawing a submission still *waiting* for review; one already *in* review cannot be replaced and is reported as skipped) | 1–2 days |
 
-## Secrets
+## One-time setup
 
-Add these under **Settings → Secrets and variables → Actions → New repository secret**.
+All secrets go under **Settings → Secrets and variables → Actions → New repository secret**. Secret values are pasted exactly as generated, with no quotes, prefixes or surrounding text.
 
-### Pattern catalog — `GELD_CATALOG_PRIVATE_KEY`, plus a ruleset bypass
+### Catalog signing key — `GELD_CATALOG_PRIVATE_KEY`
 
-The built-in pattern catalog (`catalog/patterns.json`) is fetched by installed extensions and must be signed with the Ed25519 key whose public half is in `packages/core/src/catalog-key.ts`. CI signs it: on every push to `main` it regenerates the JSON from `packages/core` (bumping `CATALOG_VERSION` automatically when the patterns changed), signs with this secret, verifies, and commits the result back to `main`. Generate a keypair with `pnpm catalog:keygen` (keep the private key in a password manager too — rotating it means committing the new public key; CI re-signs on the next push). Because CI pushes a commit to `main`, it needs a way past the "pull request required" rule. The built-in GitHub Actions app cannot be added to a ruleset's bypass list from the UI, so CI pushes with a **deploy key** instead:
+The catalog is signed with an Ed25519 key. The **public** half lives in `packages/core/src/catalog-key.ts` and ships inside the extension, which refuses any catalog that does not verify against it; the **private** half is used only by CI to sign.
 
-1. On your machine: `ssh-keygen -t ed25519 -N "" -C "geld-ci" -f geld-ci` (creates `geld-ci` and `geld-ci.pub`).
-2. Repo → **Settings → Deploy keys → Add deploy key**: title `geld-ci`, key = contents of `geld-ci.pub`, tick **Allow write access**.
-3. Repo → **Settings → Secrets and variables → Actions**: new secret `CATALOG_DEPLOY_KEY` = contents of the private file `geld-ci` (the whole `-----BEGIN OPENSSH PRIVATE KEY-----` block).
-4. Repo → **Settings → Rules → Rulesets → main → Bypass list**: tick **Deploy keys**.
+1. `pnpm catalog:keygen` prints a public key and a private key (both base64, one line each).
+2. Put the public key in `packages/core/src/catalog-key.ts` (`CATALOG_PUBLIC_KEY`) and commit it.
+3. Put the private key in the secret `GELD_CATALOG_PRIVATE_KEY`. Keep a copy in a password manager as backup.
 
-Delete the local `geld-ci` file afterwards; the secret is the only copy needed. The commit CI makes carries `[skip ci]` so it does not start a second run. Without the secret, a pattern change fails CI with a message saying so; you can still sign locally with `GELD_CATALOG_PRIVATE_KEY=… pnpm catalog:sign`.
+Rotating the key is the same three steps; CI re-signs the catalog on the next push. If the secret is missing when a pattern changes, CI fails with a message saying so (`pnpm catalog:sign` with `GELD_CATALOG_PRIVATE_KEY` set signs locally as a fallback).
+
+### Deploy key for CI's catalog commit — `CATALOG_DEPLOY_KEY`
+
+The `main` ruleset requires pull requests, and CI needs to push the signed catalog straight to `main`. It does so with a deploy key that has write access, which the ruleset's bypass list can allow ("Deploy keys").
+
+1. On your machine: `ssh-keygen -t ed25519 -N "" -C "geld-ci" -f geld-ci`. This writes two files, `geld-ci` (private) and `geld-ci.pub` (public). The fingerprint and randomart it prints are informational; nothing from the terminal output is used.
+2. Repo → **Settings → Deploy keys → Add deploy key**: title `geld-ci`, key = the single line in `geld-ci.pub` (`ssh-ed25519 AAAA… geld-ci`), tick **Allow write access**.
+3. Secret `CATALOG_DEPLOY_KEY` = the entire contents of the private file `geld-ci`, from `-----BEGIN OPENSSH PRIVATE KEY-----` to `-----END OPENSSH PRIVATE KEY-----` inclusive (`pbcopy < geld-ci` copies it exactly).
+4. Repo → **Settings → Rules → Rulesets → main → Bypass list**: tick **Deploy keys**, save.
+5. Delete the local files (`rm geld-ci geld-ci.pub`); GitHub holds the only copies needed.
+
+The commit CI pushes carries `[skip ci]`, so it does not start a second run for a change the current run already releases.
 
 ### Store credentials
 
-The following are read only by the publish workflow.
+Read only by the publish workflow.
 
 ### Chrome Web Store — `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`
 
