@@ -535,12 +535,16 @@ div:has(> #diff-file-tree-filter) {
  * Kept as plain inline text on the baseline (no inline-flex, no vertical-align
  * tricks) so inserting it never changes the height of GitHub's metadata line.
  */
+/*
+ * PR list chips: `+N −M` next to each pull request. Which GitHub UI a chip sits
+ * in is stamped on it as data-geld-surface (see src/github/list-surfaces.ts);
+ * shared rules first, then one block per surface.
+ */
 .geld-pr-stat {
   display: inline;
   margin-left: 4px;
   font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 12px;
-  line-height: inherit;
   white-space: nowrap;
 }
 
@@ -548,12 +552,22 @@ div:has(> #diff-file-tree-filter) {
   margin-left: 4px;
 }
 
+/* Fallback placement (no metadata line found): right after the title link. */
 .geld-pr-stat--inline {
   margin-left: 8px;
 }
 
-/* Stack popover: the chip follows "#N · branch" inside the item's description. */
-[class*='StackState'] .geld-pr-stat {
+/* classic-list: follows the ".opened-by" metadata span; inherits its size. */
+
+/* react-list (Primer ListView, 2026-09): appended to the description line ("#N · author opened … · Review required"). */
+.geld-pr-stat[data-geld-surface='react-list'] {
+  margin-left: 6px;
+  font-size: 12px;
+  vertical-align: baseline;
+}
+
+/* stack-popover: the chip follows "#N · branch" inside the item's description. */
+.geld-pr-stat[data-geld-surface='stack-popover'] {
   margin-left: 8px;
   font-size: 11px;
 }

@@ -9,41 +9,14 @@ import { findRows } from './pr-list';
  * setting): the rows get `data-geld-author="hidden"` and one note per list
  * says how many by whom, with a "Show" that reveals them for the visit.
  * Applied on every pass like everything else, so a list that re-renders or
- * paginates is simply re-hidden.
+ * paginates is simply re-hidden. Where the author is written per GitHub UI is
+ * `list-surfaces.ts`'s business.
  */
 
 export const ATTR_AUTHOR = 'data-geld-author';
 const ATTR_NOTE = 'data-geld-author-note';
 const ATTR_SHOWN = 'data-geld-authors-shown';
 const NOTE_CLASS = 'geld-author-note';
-
-/**
- * The author login of a list row as GitHub shows it (`dependabot[bot]`). The
- * classic list names it in the author link's title; the React list and the
- * stack popover carry a hovercard URL; GitHub Apps link to `author:app/<name>`.
- */
-export function authorOf(row: HTMLElement): string | null {
-  for (const link of row.querySelectorAll<HTMLAnchorElement>('a')) {
-    const title = link.getAttribute('title') ?? link.getAttribute('aria-label') ?? '';
-    const byTitle = /opened by (\S+)/i.exec(title)?.[1];
-    if (byTitle !== undefined) return byTitle;
-  }
-  const app = row.querySelector<HTMLAnchorElement>('a[href*="author%3Aapp%2F"], a[href*="author:app/"]');
-  if (app !== null) {
-    const name = /author(?:%3A|:)app(?:%2F|\/)([^&+\s]+)/i.exec(app.getAttribute('href') ?? '')?.[1];
-    if (name !== undefined) return `${decodeURIComponent(name)}[bot]`;
-  }
-  const user = row.querySelector<HTMLAnchorElement>('a[data-hovercard-url^="/users/"], a[data-testid*="author"], a[href*="author%3A"]');
-  if (user !== null) {
-    const hovercard = /^\/users\/([^/]+)\/hovercard/.exec(user.getAttribute('data-hovercard-url') ?? '')?.[1];
-    if (hovercard !== undefined) return decodeURIComponent(hovercard);
-    const query = /author(?:%3A|:)([^&+\s]+)/i.exec(user.getAttribute('href') ?? '')?.[1];
-    if (query !== undefined) return decodeURIComponent(query);
-    const text = (user.textContent ?? '').trim();
-    if (text !== '' && !/\s/.test(text)) return text;
-  }
-  return null;
-}
 
 /** The element holding a list's rows (their common parent), where the note goes. */
 function listOf(row: HTMLElement): HTMLElement {
@@ -58,11 +31,11 @@ export function applyAuthorHiding(rules: AuthorRules): void {
   const hiddenByList = new Map<HTMLElement, { rows: ListRow[]; authors: Set<string> }>();
   const seenLists = new Set<HTMLElement>();
   for (const item of findRows()) {
-    // Stack popover items carry no author; only real list rows are considered.
-    if (!item.row.matches('.js-issue-row, li[role="listitem"]')) continue;
+    const author = item.surface.authorOf(item.row);
+    // Surfaces without an author (the stack popover) are left alone.
+    if (author === null && item.surface.id === 'stack-popover') continue;
     const list = listOf(item.row);
     seenLists.add(list);
-    const author = authorOf(item.row);
     if (author === null || !rules.hides(author)) {
       item.row.removeAttribute(ATTR_AUTHOR);
       continue;

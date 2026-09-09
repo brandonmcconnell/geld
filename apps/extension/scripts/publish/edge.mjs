@@ -24,9 +24,13 @@ function isPendingReview(status, text) {
   return status === 409 || /in progress|under review|pending|already (?:a|an) submission/i.test(text);
 }
 
-/** The store already has this (or a higher) version: nothing to publish. */
+/**
+ * The store already has this (or a higher) version: nothing to publish. Edge
+ * words it several ways ("version already exists", "The Zip version number
+ * needs to be higher than previous version: 0.1.1.113").
+ */
 function isDuplicateVersion(text) {
-  return /version.*(?:already|must be (?:higher|greater)|not (?:higher|greater))/i.test(text);
+  return /version.*(?:already|(?:must|needs?) (?:to )?be (?:higher|greater)|not (?:higher|greater))/i.test(text);
 }
 
 async function pollOperation(url, label) {

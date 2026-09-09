@@ -6,6 +6,8 @@ import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } fro
 import type { DiffSource } from './diff-source';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import { TESTS_COUNT_CLASS } from './header-stats';
+import type { ListSurface } from './list-surfaces';
+import { ATTR_SURFACE, surfaceOf } from './list-surfaces';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 export const PR_STAT_CLASS = 'geld-pr-stat';
@@ -19,24 +21,17 @@ export interface ListRow {
   readonly diffUrl: string;
   readonly row: HTMLElement;
   readonly titleLink: HTMLAnchorElement;
+  /** Which GitHub list UI the row belongs to (see `list-surfaces.ts`). */
+  readonly surface: ListSurface;
 }
 
 /**
- * The list row a PR title link belongs to. Issue/PR lists (classic and React)
- * and the "Stack #N" popover of stacked pull requests, whose items are
- * ActionList entries linking to each PR with a "#N · branch" description. The
- * popover mounts lazily and may virtualise; both are covered because chips
- * are re-applied on every DOM mutation.
+ * Find every pull request row on the current page: issue/PR lists (classic
+ * and React) and the "Stack #N" popover. Which UI a row belongs to is decided
+ * by `list-surfaces.ts`; rows are stamped with `data-geld-surface` so CSS can
+ * address each UI on its own. Rows are re-discovered on every DOM mutation, so
+ * lazily mounted or virtualised lists are covered.
  */
-function rowOf(link: HTMLAnchorElement): HTMLElement | null {
-  const listRow = link.closest<HTMLElement>('.js-issue-row, li[role="listitem"]');
-  if (listRow !== null) return listRow;
-  const item = link.closest<HTMLElement>('li[data-component="ActionList.Item"]');
-  if (item !== null && item.closest('[class*="StackState"]') !== null) return item;
-  return null;
-}
-
-/** Find every pull request row in an issues/PR list on the current page. */
 export function findRows(): ListRow[] {
   const rows = new Map<HTMLElement, ListRow>();
   for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"]')) {
@@ -52,40 +47,24 @@ export function findRows(): ListRow[] {
     if (match === null) continue;
     // Only title links: they carry visible text and live in a list row.
     if ((link.textContent ?? '').trim() === '') continue;
-    const row = rowOf(link);
-    if (row === null || rows.has(row)) continue;
+    const owner = surfaceOf(link);
+    if (owner === null || rows.has(owner.row)) continue;
     // Skip links that are clearly not the row's title (comments count, etc.).
     if (link.querySelector('svg') !== null && (link.textContent ?? '').trim().length < 4) continue;
-    const [, owner, repo, number] = match;
-    if (owner === undefined || repo === undefined || number === undefined) continue;
-    rows.set(row, {
-      key: `${owner}/${repo}#${number}`,
-      repo: `${owner}/${repo}`,
+    const [, repoOwner, repo, number] = match;
+    if (repoOwner === undefined || repo === undefined || number === undefined) continue;
+    owner.row.setAttribute(ATTR_SURFACE, owner.surface.id);
+    rows.set(owner.row, {
+      key: `${repoOwner}/${repo}#${number}`,
+      repo: `${repoOwner}/${repo}`,
       number,
-      diffUrl: `${url.origin}/${owner}/${repo}/pull/${number}.diff`,
-      row,
+      diffUrl: `${url.origin}/${repoOwner}/${repo}/pull/${number}.diff`,
+      row: owner.row,
       titleLink: link,
+      surface: owner.surface,
     });
   }
   return Array.from(rows.values());
-}
-
-/**
- * The metadata line ("#123 opened 2 days ago by …"). We look for the element
- * whose own text starts with the PR number, which both GitHub list UIs render.
- */
-function findMetaAnchor(row: HTMLElement, number: string): HTMLElement | null {
-  const legacy = row.querySelector<HTMLElement>('.opened-by');
-  if (legacy !== null) return legacy;
-  const prefix = `#${number}`;
-  let best: HTMLElement | null = null;
-  for (const element of row.querySelectorAll<HTMLElement>('span, div, p')) {
-    if (element.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    const text = (element.textContent ?? '').trim();
-    if (!text.startsWith(prefix) || text.length > 200) continue;
-    if (best === null || text.length <= (best.textContent ?? '').trim().length) best = element;
-  }
-  return best;
 }
 
 function ensureChip(row: ListRow): HTMLElement {
@@ -94,20 +73,21 @@ function ensureChip(row: ListRow): HTMLElement {
     if (existing.dataset.geldPr === row.key) return existing;
     existing.remove();
   }
-  const anchor = findMetaAnchor(row.row, row.number);
   const chip = createElement('span', {
     class: PR_STAT_CLASS,
     [OWN_UI_ATTRIBUTE]: '',
     'data-geld-pr': row.key,
+    [ATTR_SURFACE]: row.surface.id,
     'aria-label': 'Lines changed excluding test files',
   });
-  if (anchor !== null) {
-    // ActionList descriptions (stack popover) are block-level: append inside to stay on the "#N · branch" line.
-    if (anchor.getAttribute('data-component') === 'ActionList.Description') anchor.append(chip);
-    else anchor.insertAdjacentElement('afterend', chip);
-  } else {
+  const anchor = row.surface.chipAnchor(row.row, row.number);
+  if (anchor === null) {
     row.titleLink.insertAdjacentElement('afterend', chip);
     chip.classList.add(`${PR_STAT_CLASS}--inline`);
+  } else if (anchor.placement === 'append') {
+    anchor.element.append(chip);
+  } else {
+    anchor.element.insertAdjacentElement('afterend', chip);
   }
   return chip;
 }
