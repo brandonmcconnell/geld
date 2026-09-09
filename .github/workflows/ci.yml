@@ -10,16 +10,58 @@ on:
 jobs:
   check-and-pack:
     runs-on: ubuntu-latest
+    permissions:
+      # The catalog step commits signed pattern updates back to main.
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      # HEAD after the catalog step (a new commit when patterns changed), so the
+      # release is cut from the tree that was actually checked and packed.
+      sha: ${{ steps.catalog.outputs.sha || github.sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Pull requests: the merge ref as usual. Pushes: the branch itself, so
+          # the catalog step can push a commit back.
+          ref: ${{ github.event_name == 'push' && github.ref || '' }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Pattern catalog: when a push changes the built-in patterns, regenerate
+      # catalog/patterns.json (bumping CATALOG_VERSION if the author did not),
+      # sign it with the key in GELD_CATALOG_PRIVATE_KEY, verify, and commit it
+      # back to main. Installed extensions fetch this file, so nothing else is
+      # needed for a pattern change to reach users. Also re-signs after a key
+      # rotation (new public key, stale .sig). A push made with GITHUB_TOKEN
+      # does not start another CI run; the release below is cut from the new SHA.
+      - name: Sign and publish the pattern catalog
+        id: catalog
+        if: github.event_name == 'push'
+        env:
+          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
+        run: |
+          pnpm catalog:build --auto-version
+          if pnpm catalog:check; then echo "Catalog is current."; exit 0; fi
+          if [ -z "$GELD_CATALOG_PRIVATE_KEY" ]; then
+            echo "::error title=Catalog::The pattern catalog changed but the GELD_CATALOG_PRIVATE_KEY secret is not set, so it cannot be signed. Add the secret (see apps/extension/store/PUBLISHING.md) or sign locally with pnpm catalog:sign."
+            exit 1
+          fi
+          pnpm catalog:sign
+          pnpm catalog:check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog/patterns.json catalog/patterns.sig packages/core/src/categories.ts
+          version=$(node -p "require('./catalog/patterns.json').version")
+          git commit -m "catalog: publish patterns ${version}" -m "Generated and signed by CI from packages/core."
+          if ! git push origin HEAD:main; then
+            echo "::error title=Catalog::Could not push the signed catalog to main. If the branch ruleset requires pull requests, add the 'GitHub Actions' app to its bypass list (Settings → Rules → Rulesets → main → Bypass list)."
+            exit 1
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Catalog::Published patterns ${version}."
       # Typechecks and unit tests for every workspace package (core + extension),
       # plus lint and a production build of the site.
       - run: pnpm check
@@ -93,6 +135,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.check-and-pack.outputs.version }}
           RUN: ${{ github.run_number }}
+          TARGET_SHA: ${{ needs.check-and-pack.outputs.sha }}
         run: |
           # The manifest version stays a plain x.y.z (stores require it); each
           # build on main gets its own tag so the release is never overwritten.
@@ -100,7 +143,7 @@ jobs:
           title="Geld ${VERSION}.${RUN}"
           ls -1 dist
           gh release create "$tag" dist/*.zip \
-            --target "$GITHUB_SHA" \
+            --target "$TARGET_SHA" \
             --title "$title" \
             --generate-notes \
             --latest

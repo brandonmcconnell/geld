@@ -24,6 +24,19 @@ const root = new URL('../', import.meta.url);
 const jsonPath = fileURLToPath(new URL('catalog/patterns.json', root));
 const sigPath = fileURLToPath(new URL('catalog/patterns.sig', root));
 const check = process.argv.includes('--check');
+/**
+ * `--auto-version`: when the patterns changed but CATALOG_VERSION was not
+ * bumped, bump it here (today as YYYYMMDD, or previous + 1 if that is not
+ * higher) and rewrite the constant in categories.ts. CI uses this so a pattern
+ * edit needs no manual version step.
+ */
+const autoVersion = process.argv.includes('--auto-version');
+const categoriesPath = fileURLToPath(new URL('packages/core/src/categories.ts', root));
+
+function todayVersion(): number {
+  const now = new Date();
+  return now.getUTCFullYear() * 10000 + (now.getUTCMonth() + 1) * 100 + now.getUTCDate();
+}
 
 function fail(message: string): never {
   console.error(`catalog: ${message}`);
@@ -42,9 +55,10 @@ function readPrevious(): { text: string; document: CatalogDocument } | null {
   return { text, document: parsed.document };
 }
 
+let catalog = BUNDLED_CATALOG;
 /** The bundled catalog must itself pass the validation a fetched one goes through. */
-const next = serializeCatalog(BUNDLED_CATALOG);
-const roundTrip = parseCatalog(JSON.parse(next));
+let next = serializeCatalog(catalog);
+let roundTrip = parseCatalog(JSON.parse(next));
 if (!roundTrip.ok) fail(`the bundled catalog does not validate: ${roundTrip.reason}`);
 
 const extensionVersion: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('apps/extension/package.json', root)), 'utf8')).version;
@@ -65,11 +79,21 @@ if (previous !== null) {
     }
   }
   const contentChanged = JSON.stringify(roundTrip.document.categories) !== JSON.stringify(previous.document.categories);
-  if (BUNDLED_CATALOG.version < previous.document.version) {
-    fail(`CATALOG_VERSION ${BUNDLED_CATALOG.version} is lower than the committed ${previous.document.version}`);
+  if (catalog.version < previous.document.version) {
+    fail(`CATALOG_VERSION ${catalog.version} is lower than the committed ${previous.document.version}`);
   }
-  if (contentChanged && BUNDLED_CATALOG.version === previous.document.version) {
-    fail(`the patterns changed but CATALOG_VERSION is still ${BUNDLED_CATALOG.version}; bump it in packages/core/src/categories.ts`);
+  if (contentChanged && catalog.version === previous.document.version) {
+    if (!autoVersion) fail(`the patterns changed but CATALOG_VERSION is still ${catalog.version}; bump it in packages/core/src/categories.ts (or run with --auto-version)`);
+    const bumped = Math.max(todayVersion(), previous.document.version + 1);
+    const source = readFileSync(categoriesPath, 'utf8');
+    const rewritten = source.replace(/export const CATALOG_VERSION = \d+;/, `export const CATALOG_VERSION = ${bumped};`);
+    if (rewritten === source) fail('could not find `export const CATALOG_VERSION = <n>;` in categories.ts to bump it');
+    writeFileSync(categoriesPath, rewritten);
+    catalog = { ...catalog, version: bumped };
+    next = serializeCatalog(catalog);
+    roundTrip = parseCatalog(JSON.parse(next));
+    if (!roundTrip.ok) fail(`the bundled catalog does not validate after the version bump: ${roundTrip.reason}`);
+    console.log(`catalog: patterns changed; CATALOG_VERSION bumped ${previous.document.version} → ${bumped}`);
   }
 }
 
@@ -83,9 +107,9 @@ if (check) {
   }
   const verified = await verifyCatalogSignature(new Uint8Array(readFileSync(jsonPath)), signature, CATALOG_PUBLIC_KEY);
   if (!verified) fail('catalog/patterns.sig does not match catalog/patterns.json (or the public key in packages/core/src/catalog-key.ts); run `pnpm catalog:sign`');
-  console.log(`catalog ${BUNDLED_CATALOG.version}: file and signature are current`);
+  console.log(`catalog ${catalog.version}: file and signature are current`);
 } else {
   writeFileSync(jsonPath, next);
-  console.log(`catalog ${BUNDLED_CATALOG.version}: wrote ${jsonPath}${previous !== null && previous.text === next ? ' (unchanged)' : ''}`);
+  console.log(`catalog ${catalog.version}: wrote ${jsonPath}${previous !== null && previous.text === next ? ' (unchanged)' : ''}`);
   if (previous === null || previous.text !== next) console.log('now run `pnpm catalog:sign` (needs GELD_CATALOG_PRIVATE_KEY) and commit both files');
 }
