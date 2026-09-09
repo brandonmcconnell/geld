@@ -1,5 +1,6 @@
 import { cleanText, directChildOf, isHTMLElement, mostCommon, parseLineStats, query, queryAll } from '../dom';
 import type { DiffEntry, DiffView, DiffViewAdapter, TreeFileNode } from '../model';
+import { filteredPathsOf } from '../model';
 
 /**
  * GitHub's React diff UI, used on commit pages and the newer pull request
@@ -141,6 +142,7 @@ export const reactAdapter: DiffViewAdapter = {
       treeRoot,
       treeFiles,
       treeDirectories,
+      filteredPaths: filteredPathsOf(entries, treeFiles),
       tocItems: new Map(),
       expandEntry(entry: DiffEntry): boolean {
         return pressCollapseControl(entry, 'expand');

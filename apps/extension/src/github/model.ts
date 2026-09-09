@@ -37,6 +37,12 @@ export interface DiffView {
   readonly treeDirectories: readonly HTMLElement[];
   /** Compare-page table of contents items keyed by anchor. */
   readonly tocItems: ReadonlyMap<string, HTMLElement>;
+  /**
+   * Files GitHub's own file filter (extension, viewed, "files you own") has
+   * taken off the page: their tree item or diff carries `hidden`. Geld leaves
+   * them alone but keeps them out of the counts, as GitHub itself does not.
+   */
+  readonly filteredPaths: ReadonlySet<string>;
   /** Make sure a collapsed diff is expanded so it can be scrolled to. Returns `false` when no control was found yet. */
   expandEntry(entry: DiffEntry): boolean;
   /** Collapse an expanded diff with GitHub's own control. Returns `false` when no control was found yet. */
@@ -47,4 +53,16 @@ export interface DiffViewAdapter {
   readonly kind: DiffView['kind'];
   /** Return the view when this adapter recognises the current page. */
   read(): DiffView | null;
+}
+
+/**
+ * Paths GitHub's file filter hides on this page: a tree item or a diff root
+ * with the `hidden` attribute (GitHub toggles it client-side; the header
+ * numbers are not touched, so Geld mirrors the filter there).
+ */
+export function filteredPathsOf(entries: readonly DiffEntry[], treeFiles: readonly TreeFileNode[]): ReadonlySet<string> {
+  const filtered = new Set<string>();
+  for (const file of treeFiles) if (file.element.hidden) filtered.add(file.path);
+  for (const entry of entries) if (entry.root.hidden || entry.root.closest('[hidden]') !== null) filtered.add(entry.path);
+  return filtered;
 }

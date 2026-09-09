@@ -244,9 +244,9 @@ export class GeldController {
       childList: true,
       subtree: true,
       characterData: true,
-      // "Viewed" toggles flip these without adding or removing nodes.
+      // "Viewed" toggles flip these without adding or removing nodes; GitHub's file filter toggles `hidden`.
       attributes: true,
-      attributeFilter: ['aria-pressed', 'aria-checked', 'aria-label', 'data-file-user-viewed'],
+      attributeFilter: ['aria-pressed', 'aria-checked', 'aria-label', 'data-file-user-viewed', 'hidden'],
     });
     // Legacy checkboxes change without any attribute mutation.
     document.addEventListener('change', this.onChangeEvent, true);
@@ -469,6 +469,8 @@ export class GeldController {
   private classifyEntries(view: DiffView, matcher: PathMatcher): ClassifiedEntry[] {
     const items: ClassifiedEntry[] = view.entries.map((entry) => {
       const facts = this.diffFacts?.get(entry.path);
+      // GitHub's own filter took the file off the page: leave it be, count it apart.
+      if (view.filteredPaths.has(entry.path)) return { entry, path: entry.path, category: null, stats: entry.stats ?? facts ?? null, filtered: true };
       const category = this.classify(matcher, entry.path, entry.stats);
       const item: ClassifiedEntry = {
         entry,
@@ -715,7 +717,7 @@ export class GeldController {
     removeSidebarLayout(host);
     view.treeRoot.setAttribute(ATTR_TREE_MODE, 'inline');
     for (const file of view.treeFiles) {
-      const category = this.classify(matcher, file.path, null);
+      const category = view.filteredPaths.has(file.path) ? null : this.classify(matcher, file.path, null);
       file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
       setInlineIcon(file.element, category);
     }
@@ -732,10 +734,11 @@ export class GeldController {
     const byCategory = new Map<HiddenCategory, TreeSectionFile[]>();
     let visibleFiles = 0;
     for (const file of view.treeFiles) {
-      const category = this.classify(matcher, file.path, null);
+      const filtered = view.filteredPaths.has(file.path);
+      const category = filtered ? null : this.classify(matcher, file.path, null);
       file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
       if (category === null) {
-        visibleFiles += 1;
+        if (!filtered) visibleFiles += 1;
         continue;
       }
       const list = byCategory.get(category) ?? [];
@@ -967,7 +970,7 @@ export class GeldController {
     } else if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
       const state = this.diffSource.request(page.diffUrl, sha);
       if (state.status === 'ready') {
-        const fromDiff = breakdownFromFiles(state.files, matcher, this.settings.hideCommentLines);
+        const fromDiff = breakdownFromFiles(state.files, matcher, this.settings.hideCommentLines, view?.filteredPaths ?? null);
         headerHidden = fromDiff.hidden;
         allTotals ??= fromDiff.all;
       } else if (state.status === 'failed' && domIsComplete) {

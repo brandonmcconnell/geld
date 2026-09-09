@@ -1,5 +1,6 @@
 import { cleanText, isHTMLElement, parseLineStats, query, queryAll } from '../dom';
 import type { DiffEntry, DiffView, DiffViewAdapter, TreeFileNode } from '../model';
+import { filteredPathsOf } from '../model';
 
 /**
  * The long-standing server-rendered diff UI (web components + Turbo). Used on
@@ -88,6 +89,7 @@ export const legacyAdapter: DiffViewAdapter = {
       treeRoot,
       treeFiles,
       treeDirectories,
+      filteredPaths: filteredPathsOf(entries, treeFiles),
       tocItems,
       expandEntry(entry: DiffEntry): boolean {
         return setLegacyEntryExpanded(entry, true);
