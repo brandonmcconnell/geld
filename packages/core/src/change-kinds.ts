@@ -1,14 +1,14 @@
 /**
  * Kinds of change that make a file's diff not worth a reviewer's line-by-line
  * attention regardless of where the file lives: a rename without edits, a
- * permission flip, a binary blob, a deleted file, whitespace-only edits, or a
- * diff so large GitHub does not render it either. They are the groups of the
+ * permission flip, a binary blob, a deleted file, whitespace-only or
+ * comment-only edits, or a diff so large GitHub does not render it either. They are the groups of the
  * built-in "Trivial changes" category (`trivial`); unlike every other group
  * they are decided from what the diff says about the file, not from its path,
  * so their pattern lists are empty and the matcher consults {@link FileFacts}.
  */
 
-export const CHANGE_KIND_IDS = ['renames', 'modes', 'binary', 'deleted', 'whitespace', 'large'] as const;
+export const CHANGE_KIND_IDS = ['renames', 'modes', 'binary', 'deleted', 'whitespace', 'comments', 'large'] as const;
 export type ChangeKindId = (typeof CHANGE_KIND_IDS)[number];
 
 export function isChangeKindId(value: unknown): value is ChangeKindId {

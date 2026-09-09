@@ -50,7 +50,7 @@ export type SettingsValidation =
   | { readonly ok: true; readonly settings: GeldSettings }
   | { readonly ok: false; readonly issues: readonly SettingsIssue[] };
 
-const BOOLEAN_KEYS = ['enabled', 'groupHidden', 'expandedByDefault', 'showListStats', 'hideWhitespace', 'shortcutEnabled', 'showBadge'] as const;
+const BOOLEAN_KEYS = ['enabled', 'groupHidden', 'expandedByDefault', 'hideCommentLines', 'showListStats', 'hideWhitespace', 'shortcutEnabled', 'showBadge', 'autoUpdatePatterns'] as const;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -2,6 +2,7 @@ import type { HiddenCategory } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 import { formatCount, parseCount } from '@geld/core';
 import type { HiddenBreakdown } from './breakdown';
+import { hidesAnything } from './breakdown';
 import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import { originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
@@ -236,7 +237,7 @@ export function applyHeaderStats(
   }
   const nounPlural = hiddenNounPlural(activeCategories);
   renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
-  if (hidden.totals.files === 0) {
+  if (!hidesAnything(hidden)) {
     restoreNumbers(group);
     return;
   }

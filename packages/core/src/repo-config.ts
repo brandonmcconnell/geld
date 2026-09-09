@@ -46,6 +46,7 @@ const PERSONAL_KEYS = [
   'repoRules',
   'groupHidden',
   'expandedByDefault',
+  'hideCommentLines',
   'showListStats',
   'hideWhitespace',
   'shortcutEnabled',

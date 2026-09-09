@@ -25,6 +25,7 @@ import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
 import { applyPrListStats, removePrListStats } from './pr-list';
+import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import { categoryIconFor } from './ui/icons';
@@ -193,6 +194,8 @@ export class GeldController {
    * the like are only visible there, not in GitHub's file headers.
    */
   private diffFacts: ReadonlyMap<string, FileStats> | null = null;
+  /** Runs of comment-only lines the user has opened ("Show") on this visit. */
+  private readonly shownCommentRuns = new Set<string>();
   private currentView: DiffView | null = null;
   private currentPage: PageInfo | null = null;
   private pendingReveal: PendingReveal | null = null;
@@ -359,6 +362,7 @@ export class GeldController {
     // Per-page toggles were made against the old defaults; start fresh.
     this.diffExpanded.clear();
     this.inlineTouched.clear();
+    this.shownCommentRuns.clear();
     this.pendingReveal = null;
     this.teardown();
     this.apply();
@@ -461,10 +465,31 @@ export class GeldController {
     return matcher.categorizeFile(file ?? { path, additions: stats?.additions ?? null, deletions: stats?.deletions ?? null });
   }
 
+  /** Every rendered diff entry with its category, counts and (when on) the comment-only lines to collapse; the collapsing itself happens here too. */
+  private classifyEntries(view: DiffView, matcher: PathMatcher): ClassifiedEntry[] {
+    const items: ClassifiedEntry[] = view.entries.map((entry) => {
+      const facts = this.diffFacts?.get(entry.path);
+      const category = this.classify(matcher, entry.path, entry.stats);
+      const item: ClassifiedEntry = {
+        entry,
+        path: entry.path,
+        category,
+        // GitHub shows no counts for renames and binaries; the diff knows them (0/0).
+        stats: entry.stats ?? facts ?? null,
+      };
+      return this.settings.hideCommentLines && category === null && facts?.commentLines !== undefined ? { ...item, commentLines: facts.commentLines } : item;
+    });
+    for (const item of items) {
+      if (item.commentLines !== undefined && item.entry.anchor !== null) applyCommentRows(item.entry.root, item.entry.anchor, item.commentLines, this.shownCommentRuns);
+      else clearCommentRows(item.entry.root);
+    }
+    return items;
+  }
+
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
-    if (!matcher.usesChangeKinds || page.diffUrl === null) return;
+    if ((!matcher.usesChangeKinds && !this.settings.hideCommentLines) || page.diffUrl === null) return;
     const sha = page.kind.startsWith('pull') ? detectHeadSha() : page.kind === 'commit' ? shaFromCommitUrl(url.pathname) : null;
     const state = this.diffSource.request(page.diffUrl, sha);
     if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
@@ -551,6 +576,7 @@ export class GeldController {
     if (this.settings.showListStats) {
       applyPrListStats({
         matcherFor: (rowRepo) => this.matcherFor(rowRepo),
+        hideCommentLines: this.settings.hideCommentLines,
         repoRules: this.repoRules,
         diffSource: this.diffSource,
         onRowVisible: () => this.schedule(),
@@ -603,13 +629,7 @@ export class GeldController {
     matcher: PathMatcher,
   ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
     if (!this.settings.groupHidden) return this.applyInlineView(view, stateKey, matcher);
-    const classified: ClassifiedEntry[] = view.entries.map((entry) => ({
-      entry,
-      path: entry.path,
-      category: this.classify(matcher, entry.path, entry.stats),
-      // GitHub shows no counts for renames and binaries; the diff knows them (0/0).
-      stats: entry.stats ?? this.diffFacts?.get(entry.path) ?? null,
-    }));
+    const classified = this.classifyEntries(view, matcher);
     const hiddenEntries = classified.filter((item) => item.category !== null);
     const hiddenAnchors = new Set<string>();
     for (const item of classified) {
@@ -664,13 +684,7 @@ export class GeldController {
     stateKey: string,
     matcher: PathMatcher,
   ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
-    const classified: ClassifiedEntry[] = view.entries.map((entry) => ({
-      entry,
-      path: entry.path,
-      category: this.classify(matcher, entry.path, entry.stats),
-      // GitHub shows no counts for renames and binaries; the diff knows them (0/0).
-      stats: entry.stats ?? this.diffFacts?.get(entry.path) ?? null,
-    }));
+    const classified = this.classifyEntries(view, matcher);
     for (const item of classified) item.entry.root.setAttribute(ATTR_ENTRY, item.category === null ? 'visible' : 'hidden');
     // None of the grouped chrome applies here.
     view.container.removeAttribute(ATTR_CONTAINER);
@@ -953,7 +967,7 @@ export class GeldController {
     } else if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
       const state = this.diffSource.request(page.diffUrl, sha);
       if (state.status === 'ready') {
-        const fromDiff = breakdownFromFiles(state.files, matcher);
+        const fromDiff = breakdownFromFiles(state.files, matcher, this.settings.hideCommentLines);
         headerHidden = fromDiff.hidden;
         allTotals ??= fromDiff.all;
       } else if (state.status === 'failed' && domIsComplete) {
@@ -1028,6 +1042,7 @@ export class GeldController {
       for (const element of queryAll(`[${attribute}]`)) element.removeAttribute(attribute);
     }
     for (const element of queryAll(`.${INLINE_ICON_CLASS}`)) element.remove();
+    clearCommentRows(document);
     removeHiddenSection(document);
     removeTreeSection(document);
     removeSidebarLayout(document);

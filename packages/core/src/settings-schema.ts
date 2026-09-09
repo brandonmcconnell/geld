@@ -175,6 +175,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'hideCommentLines',
+        label: 'Hide comment-only lines',
+        description:
+          'Inside files that stay visible, collapse changed lines that only add, remove or edit code comments (in a language Geld knows). A row in the diff says how many and shows them on click; the header counts leave them out.',
+        popup: false,
+      },
+      {
+        kind: 'toggle',
         key: 'showListStats',
         label: 'Line counts in pull request lists',
         description:

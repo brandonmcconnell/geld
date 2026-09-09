@@ -46,6 +46,12 @@ export interface GeldSettings {
   readonly groupHidden: boolean;
   /** Show hidden files expanded instead of collapsed. Counts are adjusted either way. */
   readonly expandedByDefault: boolean;
+  /**
+   * Inside files that stay visible, collapse changed lines that only touch
+   * code comments (or are blank), with a row that says how many and shows
+   * them on click. Header counts exclude those lines.
+   */
+  readonly hideCommentLines: boolean;
   /** Show `+N −M` (excluding hidden files) next to each pull request in PR lists. */
   readonly showListStats: boolean;
   /** Ask GitHub to hide whitespace-only changes (`?w=1`) on diff pages. */
@@ -86,6 +92,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   repoRules: [],
   groupHidden: true,
   expandedByDefault: false,
+  hideCommentLines: false,
   showListStats: true,
   hideWhitespace: false,
   shortcutEnabled: true,
@@ -273,6 +280,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     repoRules: isStringArray(record.repoRules) ? record.repoRules : DEFAULT_SETTINGS.repoRules,
     groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
+    hideCommentLines: bool(record, 'hideCommentLines', DEFAULT_SETTINGS.hideCommentLines),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),
     hideWhitespace: bool(record, 'hideWhitespace', DEFAULT_SETTINGS.hideWhitespace),
     shortcutEnabled: bool(record, 'shortcutEnabled', DEFAULT_SETTINGS.shortcutEnabled),

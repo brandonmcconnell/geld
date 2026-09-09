@@ -115,6 +115,8 @@ function ensureChip(row: ListRow): HTMLElement {
 export interface PrListOptions {
   /** Matcher for a given repository (custom patterns can be repo-scoped). */
   readonly matcherFor: (repo: string) => PathMatcher;
+  /** Leave comment-only lines of visible files out of the chip's numbers, as the header does. */
+  readonly hideCommentLines: boolean;
   readonly repoRules: readonly RepoRule[];
   readonly diffSource: DiffSource;
   /** Called when a row scrolls near the viewport and its diff should be requested. */
@@ -170,7 +172,7 @@ export function applyPrListStats(options: PrListOptions): void {
 
     const matcher = options.matcherFor(row.repo);
     const chip = ensureChip(row);
-    const { all, hidden } = breakdownFromFiles(state.files, matcher);
+    const { all, hidden } = breakdownFromFiles(state.files, matcher, options.hideCommentLines);
     const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories));
     const label = hiddenLabel(hidden, matcher.activeCategories);
     const text = `${label} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;

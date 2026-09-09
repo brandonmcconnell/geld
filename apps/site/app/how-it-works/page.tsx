@@ -193,6 +193,14 @@ export default function HowItWorksPage() {
                 chips in the bottom row (<code>6 tests · 2 generated · 1 doc</code>) and one panel per category in the file tree. Every pattern is
                 listed on the <Link href="/patterns">patterns page</Link>, rendered from the same source the extension uses.
               </p>
+              <p>
+                One category is different: <strong>Trivial changes</strong> is decided from the diff rather than from paths. Its groups are kinds of
+                change: renames and permission changes with no edited lines, binary and deleted files, whitespace-only and comment-only edits, and
+                very large diffs. A file that a path category claims stays there; the rest is checked against the kinds you left on. Separately, the{' '}
+                <strong>Hide comment-only lines</strong> setting works inside files that stay visible: changed lines that only add, remove or edit
+                code comments (in a language Geld recognises) collapse into a row that says how many and shows them on click, and the header counts
+                leave them out.
+              </p>
             </Prose>
           </Step>
 

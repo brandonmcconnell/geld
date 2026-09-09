@@ -8,6 +8,7 @@ export * from './catalog';
 export * from './catalog-key';
 export * from './categories';
 export * from './change-kinds';
+export * from './comment-lines';
 export * from './category-icons';
 export * from './diff-parse';
 export * from './format';

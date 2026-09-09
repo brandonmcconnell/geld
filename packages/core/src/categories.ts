@@ -86,7 +86,7 @@ export interface Catalog {
  * Bump whenever {@link CATEGORIES} or {@link TEST_PATTERN_GROUPS} change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260910;
+export const CATALOG_VERSION = 20260911;
 
 /** The extension version that introduced the updatable catalog; older builds never fetch it. */
 export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
@@ -331,7 +331,7 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
     id: 'trivial',
     title: 'Trivial changes',
     description:
-      'Files hidden for what changed in them rather than where they live: renames and permission changes with no edits, binary and deleted files, whitespace-only edits and very large diffs. Decided from the diff, so these groups have no patterns.',
+      'Files hidden for what changed in them rather than where they live: renames and permission changes with no edits, binary and deleted files, whitespace-only or comment-only edits and very large diffs. Decided from the diff, so these groups have no patterns.',
     icon: 'filter',
     noun: 'trivial change',
     nounPlural: 'trivial changes',
@@ -344,6 +344,7 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
       { id: 'binary', label: 'Binary files', description: 'Images, fonts, archives and anything else GitHub cannot show as text.', patterns: [] },
       { id: 'deleted', label: 'Deleted files', description: 'Files removed by the change.', patterns: [] },
       { id: 'whitespace', label: 'Whitespace-only edits', description: 'Every changed line differs only in spaces, tabs or line endings.', patterns: [] },
+      { id: 'comments', label: 'Comment-only edits', description: 'Every changed line is a code comment (or blank), in a language Geld knows.', patterns: [] },
       {
         id: 'large',
         label: 'Very large diffs',

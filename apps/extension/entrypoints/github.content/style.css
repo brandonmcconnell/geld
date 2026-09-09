@@ -693,3 +693,35 @@ div:has(> #diff-file-tree-filter) {
 .geld-tooltip__del {
   color: #f85149;
 }
+
+/* Comment-only lines collapsed inside visible files (ui/comment-rows.ts) ------- */
+
+tr[data-geld-line='hidden'] {
+  display: none !important;
+}
+
+.geld-line-note__cell {
+  padding: 2px 12px !important;
+  background: var(--bgColor-muted, var(--color-canvas-subtle)) !important;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font: 12px var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.geld-line-note__show {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-line-note__show:hover {
+  text-decoration: underline;
+}

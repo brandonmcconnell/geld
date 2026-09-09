@@ -1,4 +1,6 @@
 import type { ChangeKindId } from './change-kinds';
+import type { CommentLines, CommentScanState, CommentSyntax } from './comment-lines';
+import { commentSyntaxFor, isCommentOnlyLine, newCommentScanState } from './comment-lines';
 
 /** Per-file line statistics. */
 export interface FileStats {
@@ -12,7 +14,17 @@ export interface FileStats {
    * cache entries written before this existed).
    */
   readonly kinds?: readonly ChangeKindId[];
+  /**
+   * Changed lines that only touch comments (see `comment-lines.ts`), by the
+   * line numbers GitHub shows. Absent when there are none, when the language
+   * is unknown, or when there are too many to be worth carrying around.
+   */
+  readonly commentLines?: CommentLines;
 }
+
+/** Above this many comment-only lines in one file the list is dropped (the `comments` kind still applies). */
+const MAX_COMMENT_LINES = 2000;
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
 /**
  * Extract the post-image path from a `diff --git a/x b/y` header line.
@@ -63,6 +75,14 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     /** Removed and added text of every hunk with whitespace stripped, to spot whitespace-only edits. */
     removed: string[];
     added: string[];
+    /** Comment tracking: the language (null = unknown), the line counters and the block state of each side. */
+    syntax: CommentSyntax | null;
+    oldLine: number;
+    newLine: number;
+    oldState: CommentScanState;
+    newState: CommentScanState;
+    commentAdded: number[];
+    commentRemoved: number[];
   }
   let current: Current | null = null;
   let inHunk = false;
@@ -75,8 +95,12 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       if (current.binary) kinds.push('binary');
       if (current.deleted) kinds.push('deleted');
       if (current.hunks > 0 && !current.binary && current.removed.join('') === current.added.join('')) kinds.push('whitespace');
-      const stats: FileStats = { path: current.path, additions: current.additions, deletions: current.deletions };
-      files.push(kinds.length === 0 ? stats : { ...stats, kinds });
+      const commentCount = current.commentAdded.length + current.commentRemoved.length;
+      if (commentCount > 0 && commentCount === current.additions + current.deletions) kinds.push('comments');
+      let stats: FileStats = { path: current.path, additions: current.additions, deletions: current.deletions };
+      if (kinds.length > 0) stats = { ...stats, kinds };
+      if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
+      files.push(stats);
     }
     current = null;
   };
@@ -88,7 +112,25 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       current =
         path === null
           ? null
-          : { path, additions: 0, deletions: 0, renamed: false, modeChanged: false, deleted: false, binary: false, hunks: 0, removed: [], added: [] };
+          : {
+              path,
+              additions: 0,
+              deletions: 0,
+              renamed: false,
+              modeChanged: false,
+              deleted: false,
+              binary: false,
+              hunks: 0,
+              removed: [],
+              added: [],
+              syntax: commentSyntaxFor(path),
+              oldLine: 0,
+              newLine: 0,
+              oldState: newCommentScanState(),
+              newState: newCommentScanState(),
+              commentAdded: [],
+              commentRemoved: [],
+            };
       inHunk = false;
       continue;
     }
@@ -97,6 +139,12 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     if (line.startsWith('@@')) {
       inHunk = true;
       current.hunks += 1;
+      const header = HUNK_HEADER.exec(line);
+      current.oldLine = Number(header?.[1] ?? 1);
+      current.newLine = Number(header?.[2] ?? 1);
+      // A hunk may start inside a block comment we never saw; assume it does not.
+      current.oldState = newCommentScanState();
+      current.newState = newCommentScanState();
       continue;
     }
     if (!inHunk) {
@@ -105,6 +153,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       if (line.startsWith('rename to ')) {
         current.path = line.slice('rename to '.length);
         current.renamed = true;
+        current.syntax = commentSyntaxFor(current.path);
       } else if (line.startsWith('rename from ')) current.renamed = true;
       else if (line.startsWith('old mode ') || line.startsWith('new mode ')) current.modeChanged = true;
       else if (line.startsWith('deleted file mode ')) current.deleted = true;
@@ -115,10 +164,25 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     // hunk every `+`/`-` prefix is a real change (even `--- sql comment`).
     if (line.startsWith('+')) {
       current.additions += 1;
-      current.added.push(line.slice(1).replace(WHITESPACE, ''));
+      const text = line.slice(1);
+      current.added.push(text.replace(WHITESPACE, ''));
+      if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
+      current.newLine += 1;
     } else if (line.startsWith('-')) {
       current.deletions += 1;
-      current.removed.push(line.slice(1).replace(WHITESPACE, ''));
+      const text = line.slice(1);
+      current.removed.push(text.replace(WHITESPACE, ''));
+      if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
+      current.oldLine += 1;
+    } else if (line.startsWith(' ') || line === '') {
+      // Context: advances both sides and carries block-comment state along.
+      const text = line.slice(1);
+      if (current.syntax !== null) {
+        isCommentOnlyLine(text, current.syntax, current.oldState);
+        isCommentOnlyLine(text, current.syntax, current.newState);
+      }
+      current.oldLine += 1;
+      current.newLine += 1;
     }
   }
   flush();
