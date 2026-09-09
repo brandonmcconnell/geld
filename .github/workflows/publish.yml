@@ -288,6 +288,11 @@ jobs:
             --submit_for_review --automatic_release --reject_if_possible \
             --force 2>&1 | tee deliver.log
           code=${PIPESTATUS[0]}
+          # No app record in App Store Connect for the bundle id yet (fastlane's find_app returns nil).
+          if [ "$code" != "0" ] && grep -qiE "find_app|team_id' for nil|Could not find app with bundle identifier" deliver.log; then
+            echo "::error title=Safari::Build exported, but App Store Connect has no app for sh.geld.safari. Create it once by hand (My Apps → + → New App, macOS, bundle id sh.geld.safari) and fill in the listing (name, category, description, screenshots, privacy policy, age rating); see PUBLISHING.md. Later runs then upload and submit automatically."
+            exit 1
+          fi
           if [ "$code" != "0" ] && grep -qiE "in review|cannot be rejected|already been submitted|IN_REVIEW" deliver.log; then
             echo "::warning title=Safari::Uploaded, but a submission is already in review and cannot be replaced; submit it in App Store Connect once that review ends."
             exit 0
