@@ -9,7 +9,7 @@ Publishing to the stores is a separate, deliberate step: **Actions → "Publish 
 | Chrome Web Store | uploads the zip, publishes to the default (public) target | hours–days |
 | Edge Add-ons | uploads to the draft, submits it with the notes | 1–7 days |
 | Firefox AMO | `web-ext sign --channel listed` with the sources zip | usually minutes (auto-approval) |
-| Safari | macOS runner: `safari:sync`, `xcodebuild archive`, export + upload to App Store Connect | 1–2 days; submitting the uploaded build for review is still done in App Store Connect |
+| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and **submits for review** (withdrawing a submission still *waiting* for review; one already *in* review cannot be replaced and is reported as skipped) | 1–2 days |
 
 ## Secrets
 
@@ -43,7 +43,9 @@ Add these under **Settings → Secrets and variables → Actions → New reposit
 1. `APPLE_TEAM_ID`: [developer.apple.com → Membership](https://developer.apple.com/account) → Team ID.
 2. App Store Connect API key: [App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys](https://appstoreconnect.apple.com/access/integrations/api) → generate a key with the **App Manager** role. Note the **Key ID** (`APPLE_ASC_KEY_ID`) and **Issuer ID** (`APPLE_ASC_ISSUER_ID`); download the `.p8` (downloadable once) and store it base64-encoded: `base64 -i AuthKey_XXXX.p8 | pbcopy` → `APPLE_ASC_PRIVATE_KEY`.
 3. Distribution certificate: on your Mac, Xcode → Settings → Accounts → Manage Certificates → **+ → Apple Distribution**. Then in Keychain Access export that certificate (with its private key) as a `.p12` with a password: `base64 -i cert.p12 | pbcopy` → `APPLE_CERTIFICATE_P12`; the password → `APPLE_CERTIFICATE_PASSWORD`. Provisioning profiles are created on the fly by Xcode's cloud signing with the API key (`-allowProvisioningUpdates`), so nothing else is needed.
-4. The job uploads the build to App Store Connect. Attaching it to a version and pressing **Submit for Review** is still manual in App Store Connect until we wire `fastlane deliver --submit_for_review` (needs the same API key). The workflow skips Safari with a warning until these secrets exist.
+4. The job uploads the build and submits it for review with `fastlane deliver` (release automatically after approval). Export compliance is answered as "uses no encryption" in `publish.yml` (`submission_information`); change it there if that ever stops being true. The App Store record for `sh.geld.safari` must already exist (it does once the first version has been created by hand). The workflow skips Safari with a warning until these secrets exist.
+5. The key must be a **Team** key (Users and Access → Integrations → App Store Connect API → *Team Keys* tab); the Issuer ID is shown once at the top of that tab, not per key. Individual keys have no issuer id and will not work here.
+6. Use a random passphrase for the `.p12`, never a password you use elsewhere: it is decrypted on every publishing runner.
 
 ## Store listing assets
 

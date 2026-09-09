@@ -9,7 +9,7 @@
 # 3. sets the Xcode MARKETING_VERSION to the version in package.json and bumps
 #    CURRENT_PROJECT_VERSION (the App Store build number) by one
 #
-# Run it before every archive. macOS only.
+# Run it before every archive. Works on macOS and Linux (CI); the archive itself needs Xcode.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -35,10 +35,20 @@ echo "Copied .output/safari-mv3 -> $RESOURCES"
 
 VERSION="$(node -p "require('./package.json').version")"
 CURRENT_BUILD="$(sed -n 's/.*CURRENT_PROJECT_VERSION = \([0-9]*\);.*/\1/p' "$PBXPROJ" | head -n 1)"
-NEXT_BUILD=$(( ${CURRENT_BUILD:-0} + 1 ))
+# CI passes its run number so every upload has a unique, increasing build number;
+# locally we bump the committed value by one.
+if [[ "${GELD_BUILD_NUMBER:-}" =~ ^[0-9]+$ ]]; then
+  NEXT_BUILD="$GELD_BUILD_NUMBER"
+else
+  NEXT_BUILD=$(( ${CURRENT_BUILD:-0} + 1 ))
+fi
 # Every target shares one version and one build number.
-sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $VERSION;/g; s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = $NEXT_BUILD;/g" "$PBXPROJ"
+# BSD and GNU sed disagree about -i; write through a temp file instead.
+sed -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = $VERSION;/g; s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = $NEXT_BUILD;/g" "$PBXPROJ" > "$PBXPROJ.tmp" && mv "$PBXPROJ.tmp" "$PBXPROJ"
 echo "Xcode version $VERSION, build $NEXT_BUILD"
+
+# In CI the refreshed wrapper is archived straight away and never committed.
+if [[ -n "${CI:-}" ]]; then exit 0; fi
 
 # The wrapper is tracked: the copied build and the bumped build number must land in git,
 # otherwise the next sync bumps from the wrong base and the archive drifts from main.
