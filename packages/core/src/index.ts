@@ -13,6 +13,7 @@ export * from './format';
 export * from './gist-sync';
 export * from './glob';
 export * from './matcher';
+export * from './repo-config';
 export * from './repo-rules';
 export * from './settings';
 export * from './settings-schema';

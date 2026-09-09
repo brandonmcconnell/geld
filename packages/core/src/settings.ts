@@ -62,6 +62,19 @@ export interface GeldSettings {
   readonly autoUpdatePatterns: boolean;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
+  /**
+   * Whether a repository's own `.github/geld.yml` (and its organisation's
+   * defaults) may add to these settings on that repository. `ask` waits for a
+   * one-time decision per repository, made in the popup.
+   */
+  readonly repoConfigs: RepoConfigMode;
+}
+
+export const REPO_CONFIG_MODES = ['always', 'ask', 'never'] as const;
+export type RepoConfigMode = (typeof REPO_CONFIG_MODES)[number];
+
+export function isRepoConfigMode(value: unknown): value is RepoConfigMode {
+  return typeof value === 'string' && REPO_CONFIG_MODES.some((mode) => mode === value);
 }
 
 export const DEFAULT_SETTINGS: GeldSettings = {
@@ -79,6 +92,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   showBadge: true,
   autoUpdatePatterns: true,
   enterpriseHosts: [],
+  repoConfigs: 'ask',
 };
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
@@ -267,6 +281,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     enterpriseHosts: isStringArray(record.enterpriseHosts)
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,
+    repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
   };
 }
 

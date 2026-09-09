@@ -3,7 +3,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustom
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
-import { normalizeHost, normalizeSettings } from './settings';
+import { REPO_CONFIG_MODES, isRepoConfigMode, normalizeHost, normalizeSettings } from './settings';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 
 /**
@@ -52,7 +52,7 @@ export type SettingsValidation =
 
 const BOOLEAN_KEYS = ['enabled', 'groupHidden', 'expandedByDefault', 'showListStats', 'hideWhitespace', 'shortcutEnabled', 'showBadge'] as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -75,7 +75,7 @@ function list(values: readonly string[]): string {
  * catalog knows plus any well-formed id (see the module comment); `known`
  * only feeds the message for the rest.
  */
-function checkBooleanMap(
+export function checkBooleanMap(
   issues: SettingsIssue[],
   path: string,
   value: unknown,
@@ -95,7 +95,7 @@ function checkBooleanMap(
   }
 }
 
-function checkStringList(
+export function checkStringList(
   issues: SettingsIssue[],
   path: string,
   value: unknown,
@@ -152,7 +152,7 @@ function hostProblem(line: string): string | null {
 }
 
 /** `settings.categoryPatterns`: an object of built-in category id → pattern lines. */
-function checkCategoryPatterns(issues: SettingsIssue[], path: string, value: unknown): void {
+export function checkCategoryPatterns(issues: SettingsIssue[], path: string, value: unknown): void {
   if (value === undefined) return;
   if (!isRecord(value)) {
     issues.push({ path, message: `Expected an object mapping category ids to pattern lists, got ${describeValue(value)}.` });
@@ -170,7 +170,7 @@ function checkCategoryPatterns(issues: SettingsIssue[], path: string, value: unk
 }
 
 /** `settings.customCategories`: a list of `{ id, title, icon, patterns }`. */
-function checkCustomCategories(issues: SettingsIssue[], path: string, value: unknown): void {
+export function checkCustomCategories(issues: SettingsIssue[], path: string, value: unknown): void {
   if (value === undefined) return;
   if (!Array.isArray(value)) {
     issues.push({ path, message: `Expected a list of categories, got ${describeValue(value)}.` });
@@ -226,6 +226,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   }
   if (value.hideTests !== undefined && typeof value.hideTests !== 'boolean') {
     issues.push({ path: `${path}.hideTests`, message: `Expected true or false, got ${describeValue(value.hideTests)}.` });
+  }
+  if (value.repoConfigs !== undefined && !isRepoConfigMode(value.repoConfigs)) {
+    issues.push({ path: `${path}.repoConfigs`, message: `Expected one of ${list(REPO_CONFIG_MODES)}, got ${describeValue(value.repoConfigs)}.` });
   }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');

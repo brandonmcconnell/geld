@@ -142,6 +142,81 @@ body {
   margin-top: 12px;
 }
 
+/* Repository config ----------------------------------------------------------- */
+
+.popup__repo-config {
+  margin-top: 12px;
+}
+
+.popup__repo-config .geld-alert {
+  padding: 10px 12px;
+}
+
+.popup__repo-config-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.popup__repo-config-title .geld-eyebrow {
+  color: var(--muted-foreground);
+}
+
+.popup__repo-config-title[data-tone='ok'] .geld-eyebrow {
+  color: var(--foreground);
+}
+
+.popup__repo-config-title[data-tone='error'] .geld-eyebrow {
+  color: var(--destructive);
+}
+
+.popup__repo-config-files {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.popup__repo-config-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.popup__repo-config-file a {
+  max-width: 100%;
+  color: var(--foreground);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup__repo-config-file a:hover {
+  text-decoration: underline;
+}
+
+.popup__repo-config-file span {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.popup__repo-config .geld-alert__list {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.popup__repo-config .geld-alert__actions {
+  margin-top: 10px;
+}
+
 /* Categories ----------------------------------------------------------------- */
 
 .popup__categories-title {

@@ -1,6 +1,4 @@
-import type { AnyCategoryId } from '@geld/core';
-import type { FileStats } from '@geld/core';
-import type { ChangeTotals } from '@geld/core';
+import type { AnyCategoryId, ChangeTotals, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
 
 /** Messages exchanged between the content script, popup and background. */
 
@@ -57,8 +55,34 @@ export interface TabCategoryState {
 }
 
 /** What Geld knows about the current tab; drives the popup and the badge. */
+export type RepoConfigDecision = 'use' | 'ignore' | 'undecided';
+
+/** One repository-provided config file, as the popup shows it. */
+export interface TabRepoConfigFile {
+  readonly kind: 'repo' | 'org' | 'gitattributes';
+  /** `owner/repo` holding the file. */
+  readonly repo: string;
+  readonly path: string;
+  readonly url: string;
+  /** "2 categories, 5 patterns"; empty when the file is invalid. */
+  readonly summary: string;
+  /** Validation problems; an empty list means the file is in use (or would be). */
+  readonly issues: readonly SettingsIssue[];
+}
+
+/** What the current repository provides and what Geld does with it. */
+export interface TabRepoConfig {
+  readonly repo: string;
+  readonly mode: RepoConfigMode;
+  readonly decision: RepoConfigDecision;
+  readonly loading: boolean;
+  readonly files: readonly TabRepoConfigFile[];
+}
+
 export interface TabState {
   readonly repo: string | null;
+  /** `null` when repository configs are off, or the page is not in a repository. */
+  readonly repoConfig: TabRepoConfig | null;
   readonly allowed: boolean;
   /** The repo rule that turned Geld off here, if any. */
   readonly rule: string | null;
@@ -169,7 +193,8 @@ export function isTabState(value: unknown): value is TabState {
     Array.isArray(value.categories) &&
     typeof value.expanded === 'boolean' &&
     (value.diffPageUrl === null || typeof value.diffPageUrl === 'string') &&
-    typeof value.onDiffPage === 'boolean'
+    typeof value.onDiffPage === 'boolean' &&
+    (value.repoConfig === null || isRecord(value.repoConfig))
   );
 }
 

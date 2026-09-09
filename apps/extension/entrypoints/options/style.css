@@ -66,6 +66,33 @@ body {
   border-top: 1px solid var(--border);
 }
 
+.options__divider--spaced {
+  margin-top: 20px;
+}
+
+/* Choice fields: a label, a segmented control and the chosen option's explanation. */
+.options__choice {
+  padding-top: 16px;
+}
+
+.options__choice .geld-row {
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.options__segments {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.options__choice-note {
+  margin-top: 8px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
 .options__textarea,
 .options__input {
   margin-top: 2px;

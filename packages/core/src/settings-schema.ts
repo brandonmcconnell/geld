@@ -19,6 +19,11 @@ export type ListSettingKey = {
   [K in keyof GeldSettings]: GeldSettings[K] extends readonly string[] ? K : never;
 }[keyof GeldSettings];
 
+/** Settings that pick one of a fixed set of string values. */
+export type ChoiceSettingKey = {
+  [K in keyof GeldSettings]: GeldSettings[K] extends string ? K : never;
+}[keyof GeldSettings];
+
 export type SettingsSurface = 'extension' | 'site';
 
 interface FieldBase {
@@ -35,6 +40,19 @@ interface FieldBase {
 export interface ToggleField extends FieldBase {
   readonly kind: 'toggle';
   readonly key: BooleanSettingKey;
+}
+
+export interface ChoiceOption<K extends ChoiceSettingKey = ChoiceSettingKey> {
+  readonly value: GeldSettings[K];
+  readonly label: string;
+  readonly description: string;
+}
+
+/** One of a few values, shown as a segmented control. */
+export interface ChoiceField<K extends ChoiceSettingKey = ChoiceSettingKey> extends FieldBase {
+  readonly kind: 'choice';
+  readonly key: K;
+  readonly options: readonly ChoiceOption<K>[];
 }
 
 /** Copy for a pattern editor (a textarea with syntax help and a save button). */
@@ -112,7 +130,7 @@ export interface ActionsField extends FieldBase {
   readonly actions: readonly MaintenanceAction[];
 }
 
-export type SettingsField = ToggleField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
+export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
 
 export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'enterprise' | 'maintenance';
 
@@ -285,6 +303,19 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         ],
         saveLabel: 'Save rules',
       },
+      {
+        kind: 'choice',
+        key: 'repoConfigs',
+        label: 'Repository configs',
+        description:
+          'A repository can ship a `.github/geld.yml` (and an organisation its defaults in its `.github` repository) that adds categories and patterns for everyone reviewing it. Repository-provided rules are counted and listed like your own; the popup says whose config is in use.',
+        popup: false,
+        options: [
+          { value: 'always', label: 'Always', description: 'Use every repository config without asking.' },
+          { value: 'ask', label: 'Ask once per repository', description: 'The popup asks the first time a repository provides one; the answer is remembered on this device.' },
+          { value: 'never', label: 'Never', description: 'Only your own settings apply.' },
+        ],
+      },
     ],
   },
   {
@@ -331,7 +362,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           {
             id: 'clear-cache',
             label: 'Clear cached diffs',
-            description: 'Forget the parsed diffs stored on this device; they are fetched again as needed.',
+            description: 'Forget the parsed diffs and repository config files stored on this device; they are fetched again as needed.',
             surfaces: ['extension'],
           },
           {
@@ -379,6 +410,10 @@ export function actionsFor(field: ActionsField, surface: SettingsSurface): reado
 
 export function toggleFields(fields: readonly SettingsField[]): readonly ToggleField[] {
   return fields.filter((field): field is ToggleField => field.kind === 'toggle');
+}
+
+export function choiceFields(fields: readonly SettingsField[]): readonly ChoiceField[] {
+  return fields.filter((field): field is ChoiceField => field.kind === 'choice');
 }
 
 export function listFields(fields: readonly SettingsField[]): readonly ListField[] {

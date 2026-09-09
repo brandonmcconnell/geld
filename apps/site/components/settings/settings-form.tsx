@@ -13,6 +13,7 @@ import { CategoriesRows } from '@/components/settings/field-categories';
 import { CustomCategoriesRows } from '@/components/settings/field-custom-categories';
 import type { LinesSaveResult } from '@/components/settings/field-list';
 import { ListEditor } from '@/components/settings/field-list';
+import { ChoiceRow } from '@/components/settings/field-choice';
 import { ToggleRow } from '@/components/settings/field-toggle';
 import { RichText } from '@/components/settings/rich-text';
 import type { Status } from '@/components/settings/save-status';
@@ -160,6 +161,16 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         checked={settings[field.key]}
                         disabled={signedOut || remoteInvalid}
                         onChange={(value) => void submit({ kind: 'toggle', key: field.key, value })}
+                      />
+                    );
+                  case 'choice':
+                    return (
+                      <ChoiceRow
+                        key={field.key}
+                        field={field}
+                        value={settings[field.key]}
+                        disabled={signedOut || remoteInvalid}
+                        onChange={(value) => void submit({ kind: 'choice', key: field.key, value })}
                       />
                     );
                   case 'categories':

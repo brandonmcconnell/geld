@@ -35,6 +35,7 @@ const STEPS: readonly Step[] = [
   { id: 'categories', title: 'Categories', short: 'Categories' },
   { id: 'repo-rules', title: 'Repository rules', short: 'Repository rules' },
   { id: 'custom-patterns', title: 'Your patterns & categories', short: 'Your patterns' },
+  { id: 'repo-config', title: 'Repository configs', short: 'Repository configs' },
   { id: 'whitespace', title: 'Hide whitespace', short: 'Hide whitespace' },
   { id: 'shortcut', title: 'Keyboard shortcut', short: 'Keyboard shortcut' },
   { id: 'enterprise', title: 'GitHub Enterprise Server', short: 'Enterprise Server' },
@@ -239,7 +240,47 @@ sandbox/
             </Prose>
           </Step>
 
-          <Step id="whitespace" index={8} title={STEPS[7]?.title ?? ''}>
+          <Step id="repo-config" index={8} title={STEPS[7]?.title ?? ''}>
+            <Prose>
+              <p>
+                A repository can carry its own Geld config for everyone who reviews it: commit <code>.github/geld.yml</code> to the default branch.
+                It is versioned and reviewed like any other file, and whoever may merge there decides what it says; Geld stores nothing. An
+                organisation puts its defaults in <code>geld.yml</code> at the root of its <code>.github</code> repository (
+                <code>acme/.github</code>), and a repository&apos;s own file is layered on top.
+              </p>
+              <p>
+                The file uses the same keys as the settings document: <code>categories</code> switches categories on or off, <code>groups</code>{' '}
+                built-in pattern groups, <code>categoryPatterns</code> adds patterns to a built-in category and <code>customCategories</code> defines
+                new ones. Personal settings (<code>enabled</code>, <code>repoRules</code>, layout) are rejected. Repositories that mark files{' '}
+                <code>linguist-generated</code> in <code>.gitattributes</code> feed the Generated category the same way, for free.
+              </p>
+              <pre>
+                <code>{`# .github/geld.yml
+categories:
+  docs: true                    # hide docs here even for people who keep them
+groups:
+  tests/snapshots: false        # …but always show snapshot changes
+categoryPatterns:
+  generated:
+    - src/api/__generated__/**
+customCategories:
+  - id: custom:fixtures
+    title: Fixtures
+    icon: package
+    patterns:
+      - fixtures/**`}</code>
+              </pre>
+              <p>
+                Because hiding is the whole point, a repository config is treated with care. Files it hides are counted and listed exactly like the
+                ones your own patterns hide, the popup names whose config is in use, and a <strong>Repository configs</strong> setting decides
+                whether they apply at all: <em>always</em>, <em>ask once per repository</em> (the default; the popup asks the first time and
+                remembers your answer on that device) or <em>never</em>. Files are fetched through your own GitHub session, so private repositories
+                work without any extra permission, and they are cached for half an hour.
+              </p>
+            </Prose>
+          </Step>
+
+          <Step id="whitespace" index={9} title={STEPS[8]?.title ?? ''}>
             <Prose>
               <p>
                 <strong>Hide whitespace changes</strong> uses GitHub&apos;s own diff setting rather than a re-implementation. Geld first reads GitHub&apos;s
@@ -250,7 +291,7 @@ sandbox/
             </Prose>
           </Step>
 
-          <Step id="shortcut" index={9} title={STEPS[8]?.title ?? ''}>
+          <Step id="shortcut" index={10} title={STEPS[9]?.title ?? ''}>
             <Prose>
               <p>
                 <Kbd keys={KEYBOARD_SHORTCUT} /> shows or hides the hidden files on the current page for the rest of the visit, without touching your
@@ -265,7 +306,7 @@ sandbox/
             </Prose>
           </Step>
 
-          <Step id="enterprise" index={10} title={STEPS[9]?.title ?? ''}>
+          <Step id="enterprise" index={11} title={STEPS[10]?.title ?? ''}>
             <Prose>
               <p>
                 Add your server&apos;s hostname in the options. The browser asks you to allow Geld on that host, and the content script is registered

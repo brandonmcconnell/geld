@@ -16,6 +16,7 @@ import {
   hiddenCategoryFromCustom,
   isCategoryEnabled,
   isGroupEnabled,
+  choiceFields,
   listFields,
   normalizeHost,
   parsePatternList,
@@ -523,6 +524,47 @@ async function main(): Promise<void> {
     runTester();
   });
 
+  /* Repository configs (and any other choice field of the section). */
+  const choiceHost = requireElement('repository-choices', HTMLDivElement);
+  const choiceSetters: Array<(value: GeldSettings) => void> = [];
+  for (const field of choiceFields(sections.find((section) => section.id === 'repositories')?.fields ?? [])) {
+    const label = el('span', 'geld-label', [field.label]);
+    label.id = `${field.key}-label`;
+    const help = el('p', 'geld-help', richText(field.description));
+    help.id = `${field.key}-help`;
+    const note = el('p', 'options__choice-note');
+    const group = el('div', 'options__segments');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-labelledby', label.id);
+    group.setAttribute('aria-describedby', help.id);
+    const buttons = new Map<string, HTMLButtonElement>();
+    const show = (value: GeldSettings): void => {
+      const current = value[field.key];
+      for (const [option, button] of buttons) {
+        button.setAttribute('aria-checked', String(option === current));
+        button.setAttribute('aria-pressed', String(option === current));
+      }
+      note.textContent = field.options.find((option) => option.value === current)?.description ?? '';
+    };
+    for (const option of field.options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'geld-button geld-button--small';
+      button.setAttribute('role', 'radio');
+      button.textContent = option.label;
+      button.title = option.description;
+      button.addEventListener('click', async () => {
+        settings = await settingsItem.patch({ [field.key]: option.value });
+        show(settings);
+      });
+      buttons.set(option.value, button);
+      group.append(button);
+    }
+    show(settings);
+    choiceSetters.push(show);
+    choiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
+  }
+
   /* GitHub Enterprise Server hosts */
   applySchemaCopy('enterprise');
   const hostsStatus = statusReporter(requireElement('hosts-status', HTMLSpanElement));
@@ -674,8 +716,8 @@ async function main(): Promise<void> {
     },
     import: () => importInput.click(),
     'clear-cache': async () => {
-      await browser.storage.local.remove('diffCache');
-      maintenanceStatus('Cached diffs cleared', 'success');
+      await browser.storage.local.remove(['diffCache', 'repoConfigCache']);
+      maintenanceStatus('Cached diffs and repository configs cleared', 'success');
     },
     reset: async () => {
       await settingsItem.setValue(DEFAULT_SETTINGS);
@@ -727,6 +769,7 @@ async function main(): Promise<void> {
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of generalSwitches) set(next[field.key]);
+    for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
     // Rebuilding while someone types in a pattern box would eat their input.
     if (signature !== lastSignature && !(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) {

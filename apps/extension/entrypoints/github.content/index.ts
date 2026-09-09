@@ -4,6 +4,7 @@ import { GeldController } from '../../src/github/controller';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
+import { repoConfigChoicesItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
 import './style.css';
 
@@ -43,9 +44,12 @@ export default defineContentScript({
     });
     // The background fetched a newer pattern catalog: apply it without a reload.
     const unwatchCatalog = watchCatalog((catalog) => controller.updateCatalog(catalog));
+    // The popup answered "use this repository's config?" (or the options page cleared the cache).
+    const unwatchChoices = repoConfigChoicesItem.watch((choices) => controller.updateRepoChoices(choices ?? {}));
     const unwatch = (): void => {
       unwatchSettings();
       unwatchCatalog();
+      unwatchChoices();
     };
 
     const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState) => void): boolean | undefined => {

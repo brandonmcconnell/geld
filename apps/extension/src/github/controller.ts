@@ -4,15 +4,18 @@ import type { ChangeTotals } from '@geld/core';
 import { subtractTotals } from '@geld/core';
 import type { PathMatcher } from '@geld/core';
 import { createMatcher } from '@geld/core';
-import type { TabState } from '../lib/messages';
+import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/messages';
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
-import { compileRepoRules, decideRepo, repoFromPathname } from '@geld/core';
-import { whitespacePersistedItem } from '../lib/local-state';
+import { applyRepoConfigs, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
+import type { RepoConfigChoices } from '../lib/local-state';
+import { repoConfigChoicesItem, whitespacePersistedItem } from '../lib/local-state';
 import type { GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
 import { DiffSource } from './diff-source';
+import type { ResolvedRepoConfig } from './repo-config-source';
+import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString } from './dom';
 import { detectHeadSha, shaFromCommitUrl } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
@@ -133,6 +136,7 @@ function setInlineIcon(row: HTMLElement, category: HiddenCategory | null): void 
 
 const IDLE_STATE: TabState = {
   repo: null,
+  repoConfig: null,
   allowed: true,
   rule: null,
   hasDiff: false,
@@ -178,6 +182,10 @@ export class GeldController {
     this.schedule();
   });
   private readonly whitespace = new WhitespaceRedirector(false, () => void whitespacePersistedItem.setValue(true));
+  /** Repository-provided configs (`.github/geld.yml`, org defaults, `.gitattributes`); see `repo-config-source.ts`. */
+  private readonly repoConfigs: RepoConfigSource;
+  /** Per-repository answers when `repoConfigs` is `ask` (device-local). */
+  private repoChoices: RepoConfigChoices = {};
   private currentView: DiffView | null = null;
   private currentPage: PageInfo | null = null;
   private pendingReveal: PendingReveal | null = null;
@@ -203,7 +211,9 @@ export class GeldController {
     this.settings = settings;
     this.catalog = catalog;
     this.repoRules = compileRepoRules(settings.repoRules);
+    this.repoConfigs = new RepoConfigSource(() => this.onRepoConfigChange(), catalog);
     void whitespacePersistedItem.getValue().then((persisted) => this.whitespace.setPersisted(persisted));
+    void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices));
   }
 
   start(): void {
@@ -261,7 +271,78 @@ export class GeldController {
   updateCatalog(catalog: Catalog): void {
     if (catalog === this.catalog) return;
     this.catalog = catalog;
+    this.repoConfigs.setCatalog(catalog);
     this.reapply();
+  }
+
+  /** The user answered a repository's "use this config?" (or changed an earlier answer). */
+  updateRepoChoices(choices: RepoConfigChoices): void {
+    if (JSON.stringify(choices) === JSON.stringify(this.repoChoices)) return;
+    this.repoChoices = choices;
+    this.onRepoConfigChange();
+  }
+
+  /**
+   * A config file arrived (or a choice changed): matchers embed the config,
+   * so they are rebuilt and the header is settled again with the new numbers.
+   * Per-page toggles survive; this is not a settings change.
+   */
+  private onRepoConfigChange(): void {
+    this.matchers.clear();
+    this.settledHeader = null;
+    this.applyHeaderNow();
+    this.schedule();
+  }
+
+  /** `always` uses it, `never` never looks, `ask` needs an answer per repository. */
+  private repoDecision(repo: string): RepoConfigDecision {
+    switch (this.settings.repoConfigs) {
+      case 'always':
+        return 'use';
+      case 'never':
+        return 'ignore';
+      case 'ask':
+        return this.repoChoices[repo] ?? 'undecided';
+    }
+  }
+
+  /** What `repo` provides, or `null` when configs are off (no lookup happens then). */
+  private resolvedConfig(repo: string | null): ResolvedRepoConfig | null {
+    if (repo === null || this.settings.repoConfigs === 'never') return null;
+    return this.repoConfigs.resolve(window.location.origin, repo);
+  }
+
+  /** The settings in force on `repo`: the user's, plus whatever the repository provides when allowed. */
+  private effectiveSettings(repo: string | null): GeldSettings {
+    const resolved = this.resolvedConfig(repo);
+    if (resolved === null || repo === null || this.repoDecision(repo) !== 'use') return this.settings;
+    const configs = validConfigs(resolved);
+    return configs.length === 0 ? this.settings : applyRepoConfigs(this.settings, configs);
+  }
+
+  /** Whether the header should wait: a config lookup for `repo` is still in flight, so the numbers may still change. */
+  private configPending(repo: string | null): boolean {
+    const resolved = this.resolvedConfig(repo);
+    return resolved !== null && resolved.loading && repo !== null && this.repoDecision(repo) === 'use';
+  }
+
+  private tabRepoConfig(repo: string | null): TabRepoConfig | null {
+    const resolved = this.resolvedConfig(repo);
+    if (resolved === null || repo === null) return null;
+    return {
+      repo,
+      mode: this.settings.repoConfigs,
+      decision: this.repoDecision(repo),
+      loading: resolved.loading,
+      files: resolved.files.map((file) => ({
+        kind: file.kind,
+        repo: file.repo,
+        path: file.path,
+        url: file.url,
+        summary: file.parse.ok ? describeRepoConfig(file.parse.config) : '',
+        issues: file.parse.ok ? [] : file.parse.issues,
+      })),
+    };
   }
 
   /** Settings or patterns changed under us: forget every derived state and start over. */
@@ -367,7 +448,7 @@ export class GeldController {
     const key = repo ?? '';
     let matcher = this.matchers.get(key);
     if (matcher === undefined) {
-      matcher = createMatcher(this.settings, repo, this.catalog);
+      matcher = createMatcher(this.effectiveSettings(repo), repo, this.catalog);
       this.matchers.set(key, matcher);
     }
     return matcher;
@@ -453,6 +534,7 @@ export class GeldController {
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
       repo,
+      repoConfig: this.tabRepoConfig(repo),
       allowed: true,
       rule: null,
       hasDiff: view !== null || (page.diffUrl !== null && header.hasGroups),
@@ -835,7 +917,10 @@ export class GeldController {
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
-    if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
+    if (this.configPending(repoFromPathname(url.pathname))) {
+      // Settle once, with the repository's config included, rather than twice.
+      this.headerGroups = [];
+    } else if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
       const state = this.diffSource.request(page.diffUrl, sha);
       if (state.status === 'ready') {
         const fromDiff = breakdownFromFiles(state.files, matcher);

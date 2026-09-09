@@ -1,4 +1,4 @@
-import type { AnyCategoryId, BooleanSettingKey, CategoryId, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
+import type { AnyCategoryId, BooleanSettingKey, CategoryId, ChoiceSettingKey, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
 import {
   compileGlobs,
   fieldsFor,
@@ -22,6 +22,7 @@ import {
  */
 export type SettingsPatch =
   | { readonly kind: 'toggle'; readonly key: BooleanSettingKey; readonly value: boolean }
+  | { readonly kind: 'choice'; readonly key: ChoiceSettingKey; readonly value: GeldSettings[ChoiceSettingKey] }
   | { readonly kind: 'category'; readonly id: AnyCategoryId; readonly value: boolean }
   | { readonly kind: 'group'; readonly categoryId: CategoryId; readonly groupId: string; readonly value: boolean }
   | { readonly kind: 'category-patterns'; readonly categoryId: CategoryId; readonly lines: readonly string[] }
@@ -36,6 +37,7 @@ const SITE_FIELDS = fieldsFor('site');
 /** Boolean keys the site is allowed to edit (schema-driven, so extension-only keys are refused). */
 export const SITE_TOGGLE_KEYS: readonly BooleanSettingKey[] = SITE_FIELDS.flatMap((field) => (field.kind === 'toggle' ? [field.key] : []));
 export const SITE_LIST_KEYS: readonly ListSettingKey[] = SITE_FIELDS.flatMap((field) => (field.kind === 'list' ? [field.key] : []));
+const SITE_CHOICE_FIELDS = SITE_FIELDS.flatMap((field) => (field.kind === 'choice' ? [field] : []));
 
 export const MAX_CATEGORY_TITLE = 40;
 
@@ -45,6 +47,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSiteToggleKey(value: unknown): value is BooleanSettingKey {
   return typeof value === 'string' && SITE_TOGGLE_KEYS.some((key) => key === value);
+}
+
+/** A choice key the site may edit, with a value among the field's options. */
+function isSiteChoice(key: unknown, value: unknown): key is ChoiceSettingKey {
+  const field = SITE_CHOICE_FIELDS.find((candidate) => candidate.key === key);
+  return field !== undefined && field.options.some((option) => option.value === value);
 }
 
 function isSiteListKey(value: unknown): value is ListSettingKey {
@@ -77,6 +85,8 @@ export function isSettingsPatch(value: unknown): value is SettingsPatch {
   switch (value.kind) {
     case 'toggle':
       return isSiteToggleKey(value.key) && typeof value.value === 'boolean';
+    case 'choice':
+      return isSiteChoice(value.key, value.value);
     case 'category':
       return isAnyCategoryId(value.id) && typeof value.value === 'boolean';
     case 'group':
@@ -171,6 +181,8 @@ export type PatchResult = { readonly ok: true; readonly settings: GeldSettings }
 export function applyPatch(base: GeldSettings, patch: SettingsPatch): PatchResult {
   switch (patch.kind) {
     case 'toggle':
+      return { ok: true, settings: { ...base, [patch.key]: patch.value } };
+    case 'choice':
       return { ok: true, settings: { ...base, [patch.key]: patch.value } };
     case 'category':
       return { ok: true, settings: { ...base, categories: { ...base.categories, [patch.id]: patch.value } } };
