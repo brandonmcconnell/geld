@@ -387,6 +387,7 @@ body {
 .options__catalog-note {
   margin: 6px 0 0;
   font-size: 12.5px;
+  text-align: right;
 }
 
 .options__catalog-note[data-tone='error'] {

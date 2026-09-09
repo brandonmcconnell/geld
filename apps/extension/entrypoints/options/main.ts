@@ -30,7 +30,7 @@ import {
 } from '@geld/core';
 import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, ToggleField } from '@geld/core';
 import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
-import type { CatalogStatus } from '../../src/lib/catalog';
+import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
@@ -709,13 +709,18 @@ async function main(): Promise<void> {
   });
 
   /* A newer catalog was fetched (or the cache dropped): the category cards show its groups and copy. */
-  catalogItem.watch((next) => {
+  function applyCatalog(next: CachedCatalog | null): void {
+    if (JSON.stringify(next) === JSON.stringify(cachedCatalog)) return;
     cachedCatalog = next;
     catalog = catalogFromCache(next);
     renderCatalogStatus();
     if (!(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) renderAll();
     runTester();
-  });
+  }
+  catalogItem.watch(applyCatalog);
+  // The background may have stored a catalog between the read at the top and
+  // this watch (typically right after install); read once more so it is not missed.
+  applyCatalog(await catalogItem.getValue());
 
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
   let lastSignature = categorySignature(settings);
