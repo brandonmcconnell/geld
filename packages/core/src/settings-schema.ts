@@ -91,9 +91,30 @@ export interface ListField extends FieldBase {
   readonly saveLabel: string;
 }
 
-export type SettingsField = ToggleField | CategoriesField | CustomCategoriesField | ListField;
+export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'reset';
 
-export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'enterprise';
+/** A one-off operation on the whole settings document. */
+export interface MaintenanceAction {
+  readonly id: MaintenanceActionId;
+  readonly label: string;
+  readonly description: string;
+  /** Destructive: styled as such and confirmed before running. */
+  readonly danger?: boolean;
+  /** Ask before running, with this question. */
+  readonly confirm?: string;
+  /** Surfaces where the action exists. Omitted means both. */
+  readonly surfaces?: readonly SettingsSurface[];
+}
+
+/** Buttons that act on the whole settings document (backup, restore, reset). */
+export interface ActionsField extends FieldBase {
+  readonly kind: 'actions';
+  readonly actions: readonly MaintenanceAction[];
+}
+
+export type SettingsField = ToggleField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
+
+export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -277,6 +298,44 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
     ],
   },
+  {
+    id: 'maintenance',
+    title: 'Backup & maintenance',
+    intro: '',
+    fields: [
+      {
+        kind: 'actions',
+        label: 'Backup & maintenance',
+        description: 'Export, import or reset every setting at once.',
+        popup: false,
+        actions: [
+          {
+            id: 'export',
+            label: 'Export settings (JSON)',
+            description: 'Download every setting as geld-settings.json, the same document the settings gist holds.',
+          },
+          {
+            id: 'import',
+            label: 'Import settings…',
+            description: 'Replace every setting with those in an exported file. The file is checked first and problems are listed.',
+          },
+          {
+            id: 'clear-cache',
+            label: 'Clear cached diffs',
+            description: 'Forget the parsed diffs stored on this device; they are fetched again as needed.',
+            surfaces: ['extension'],
+          },
+          {
+            id: 'reset',
+            label: 'Reset to defaults',
+            description: 'Put every setting back to how Geld ships.',
+            danger: true,
+            confirm: 'Reset every setting to the defaults? Custom categories, patterns and repository rules will be removed.',
+          },
+        ],
+      },
+    ],
+  },
 ];
 
 function visibleOn(field: SettingsField, surface: SettingsSurface): boolean {
@@ -302,6 +361,11 @@ export function sectionsFor(surface: SettingsSurface): readonly SettingsSection[
     ...section,
     fields: section.fields.filter((field) => visibleOn(field, surface)),
   })).filter((section) => section.fields.length > 0);
+}
+
+/** The actions of an {@link ActionsField} that exist on a surface. */
+export function actionsFor(field: ActionsField, surface: SettingsSurface): readonly MaintenanceAction[] {
+  return field.actions.filter((action) => action.surfaces === undefined || action.surfaces.includes(surface));
 }
 
 export function toggleFields(fields: readonly SettingsField[]): readonly ToggleField[] {

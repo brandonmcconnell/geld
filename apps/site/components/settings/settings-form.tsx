@@ -7,6 +7,8 @@ import { useCallback, useState } from 'react';
 
 import { saveSetting } from '@/app/settings/actions';
 import { GitHubIcon } from '@/components/icons';
+import type { ReplaceResult } from '@/components/settings/field-actions';
+import { ActionsRow } from '@/components/settings/field-actions';
 import { CategoriesRows } from '@/components/settings/field-categories';
 import { CustomCategoriesRows } from '@/components/settings/field-custom-categories';
 import type { LinesSaveResult } from '@/components/settings/field-list';
@@ -90,6 +92,10 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
   const onPatterns = async (categoryId: CategoryId, lines: readonly string[]): Promise<LinesSaveResult> => {
     const result = await submit({ kind: 'category-patterns', categoryId, lines });
     return result.ok ? { ok: true, lines: categoryPatternLines(result.settings, categoryId) } : result;
+  };
+  const onReplace = async (next: unknown): Promise<ReplaceResult> => {
+    const result = await submit({ kind: 'replace', settings: next });
+    return result.ok ? { ok: true } : result;
   };
   const onList = (key: ListSettingKey) => async (lines: readonly string[]): Promise<LinesSaveResult> => {
     const result = await submit({ kind: 'list', key, lines });
@@ -182,6 +188,8 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                     );
                   case 'list':
                     return <ListEditor key={field.key} field={field} lines={settings[field.key]} disabled={signedOut || remoteInvalid || busy} onSave={onList(field.key)} />;
+                  case 'actions':
+                    return <ActionsRow key="actions" field={field} settings={settings} disabled={signedOut || remoteInvalid || busy} onReplace={onReplace} />;
                 }
               })}
             </div>

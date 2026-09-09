@@ -20,6 +20,7 @@ import {
   listFields,
   normalizeHost,
   parsePatternList,
+  actionsFor,
   sectionsFor,
   serializeSettingsPayload,
   splitInlineCode,
@@ -28,7 +29,7 @@ import {
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
-import type { ListField, SettingsSectionId, ToggleField } from '@geld/core';
+import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, ToggleField } from '@geld/core';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import { settingsItem } from '../../src/lib/storage';
 import { accountItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, oauthClientIdItem, syncStateItem } from '../../src/lib/account';
@@ -622,20 +623,44 @@ async function main(): Promise<void> {
     oauthStatus(value === '' ? 'Using the built-in client id.' : 'Saved. Sign out and back in to use it.', 'success');
   });
 
-  /* Backup & maintenance */
+  /* Backup & maintenance: buttons come from the schema; behaviour is per action id. */
+  applySchemaCopy('maintenance');
   const maintenanceStatus = statusReporter(requireElement('maintenance-status', HTMLSpanElement));
-  requireElement('export', HTMLButtonElement).addEventListener('click', () => {
-    // Same document the gist holds, so an export can be dropped straight into a gist and vice versa.
-    const blob = new Blob([serializeSettingsPayload(settings)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'geld-settings.json';
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    maintenanceStatus('Exported geld-settings.json', 'success');
-  });
   const importInput = requireElement('import-file', HTMLInputElement);
-  requireElement('import', HTMLButtonElement).addEventListener('click', () => importInput.click());
+  const maintenanceHost = requireElement('maintenance-buttons', HTMLDivElement);
+  const actionsField = sections.find((section) => section.id === 'maintenance')?.fields.find((field): field is ActionsField => field.kind === 'actions');
+  const runMaintenance: Record<MaintenanceActionId, () => Promise<void> | void> = {
+    export: () => {
+      // Same document the gist holds, so an export can be dropped straight into a gist and vice versa.
+      const blob = new Blob([serializeSettingsPayload(settings)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'geld-settings.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      maintenanceStatus('Exported geld-settings.json', 'success');
+    },
+    import: () => importInput.click(),
+    'clear-cache': async () => {
+      await browser.storage.local.remove('diffCache');
+      maintenanceStatus('Cached diffs cleared', 'success');
+    },
+    reset: async () => {
+      await settingsItem.setValue(DEFAULT_SETTINGS);
+      maintenanceStatus('Restored default settings', 'success');
+    },
+  };
+  for (const action of actionsField === undefined ? [] : actionsFor(actionsField, 'extension')) {
+    const button = el('button', `geld-button${action.danger === true ? ' geld-button--danger' : ''}`, [action.label]);
+    button.type = 'button';
+    button.id = `maintenance-${action.id}`;
+    button.title = action.description;
+    button.addEventListener('click', () => {
+      if (action.confirm !== undefined && !window.confirm(action.confirm)) return;
+      void runMaintenance[action.id]();
+    });
+    maintenanceHost.insertBefore(button, importInput);
+  }
   importInput.addEventListener('change', async () => {
     const file = importInput.files?.[0];
     importInput.value = '';
@@ -649,14 +674,6 @@ async function main(): Promise<void> {
     }
     await settingsItem.setValue(result.settings);
     maintenanceStatus('Settings imported', 'success');
-  });
-  requireElement('clear-cache', HTMLButtonElement).addEventListener('click', async () => {
-    await browser.storage.local.remove('diffCache');
-    maintenanceStatus('Cached diffs cleared', 'success');
-  });
-  requireElement('reset', HTMLButtonElement).addEventListener('click', async () => {
-    await settingsItem.setValue(DEFAULT_SETTINGS);
-    maintenanceStatus('Restored default settings', 'success');
   });
 
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */

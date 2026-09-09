@@ -132,14 +132,10 @@ big-corp
         </div>
       </section>
 
-      <section class="options__card">
+      <section class="options__card" data-section="maintenance">
         <h2 class="options__title">Backup &amp; maintenance</h2>
-        <div class="options__buttons options__buttons--wrap">
-          <button id="export" class="geld-button" type="button">Export settings (JSON)</button>
-          <button id="import" class="geld-button" type="button">Import settings…</button>
+        <div class="options__buttons options__buttons--wrap" id="maintenance-buttons">
           <input id="import-file" type="file" accept="application/json,.json" hidden />
-          <button id="clear-cache" class="geld-button" type="button">Clear cached diffs</button>
-          <button id="reset" class="geld-button geld-button--danger" type="button">Reset to defaults</button>
           <span class="geld-status options__buttons-status" id="maintenance-status" aria-live="polite"></span>
         </div>
       </section>

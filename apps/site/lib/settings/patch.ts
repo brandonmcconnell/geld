@@ -10,6 +10,7 @@ import {
   groupKey,
   normalizeHost,
   parsePatternList,
+  validateSettingsValue,
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
@@ -26,7 +27,9 @@ export type SettingsPatch =
   | { readonly kind: 'category-patterns'; readonly categoryId: CategoryId; readonly lines: readonly string[] }
   | { readonly kind: 'custom-category'; readonly category: CustomCategory }
   | { readonly kind: 'remove-custom-category'; readonly id: AnyCategoryId }
-  | { readonly kind: 'list'; readonly key: ListSettingKey; readonly lines: readonly string[] };
+  | { readonly kind: 'list'; readonly key: ListSettingKey; readonly lines: readonly string[] }
+  /** Whole-document replacement: an imported file or the defaults. Validated strictly, never merged. */
+  | { readonly kind: 'replace'; readonly settings: unknown };
 
 const SITE_FIELDS = fieldsFor('site');
 
@@ -86,6 +89,8 @@ export function isSettingsPatch(value: unknown): value is SettingsPatch {
       return isCustomCategoryId(value.id);
     case 'list':
       return isSiteListKey(value.key) && isStringArray(value.lines);
+    case 'replace':
+      return isRecord(value.settings);
     default:
       return false;
   }
@@ -190,6 +195,13 @@ export function applyPatch(base: GeldSettings, patch: SettingsPatch): PatchResul
       const validated = validateList(patch.key, patch.lines);
       if (!validated.ok) return { ok: false, message: validated.message };
       return { ok: true, settings: { ...base, [patch.key]: validated.lines } };
+    }
+    case 'replace': {
+      const validated = validateSettingsValue(patch.settings);
+      if (validated.ok) return { ok: true, settings: validated.settings };
+      const shown = validated.issues.slice(0, 3).map((issue) => `${issue.path}: ${issue.message}`);
+      const more = validated.issues.length - shown.length;
+      return { ok: false, message: `That file has problems. ${shown.join(' ')}${more > 0 ? ` (+${more} more)` : ''}` };
     }
   }
 }
