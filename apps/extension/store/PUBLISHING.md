@@ -2,7 +2,13 @@
 
 Every push to `main` that touches the extension produces a GitHub Release (see `.github/workflows/ci.yml`) whose zips carry a **four-part version**: the version in `apps/extension/package.json` plus the CI run number, e.g. `0.1.1.68`. Stores only require the version to increase, so no bump commit is needed between store releases; change `package.json` only when the marketing version should change.
 
-Publishing to the stores is a separate, deliberate step: **Actions → "Publish to stores" → Run workflow** (`.github/workflows/publish.yml`). Pick a release tag (default: latest) and the channels. Stores review every submission, and Chrome, Edge and Apple refuse a new submission while one is under review, so publish batches rather than every push. A store that reports a pending review is *skipped* with a warning, not failed — run the workflow again once the review is through.
+Publishing to the stores is automatic: `.github/workflows/publish.yml` runs **after every CI run on `main` that produced a release**, **every six hours**, and on demand (Actions → "Publish to stores" → Run workflow, where you can pick a release tag and channels). Each run takes the latest release and, per store, does one of three things:
+
+- **submits** it when the store has an older version and nothing under review;
+- **skips** when the store already has this version (scheduled runs are idempotent);
+- **skips with a warning** when a submission is under review — Chrome and Edge have no API to cancel a review, so the next scheduled run picks the newest release up once it clears. Apple *can* withdraw a submission that is still waiting for review, and the Safari job does (`--reject_if_possible`), so there the newest build replaces the pending one.
+
+Nothing needs to be visited by hand; the workflow summary lists what each store did.
 
 | Store | What the job does | Review |
 |---|---|---|
@@ -13,7 +19,15 @@ Publishing to the stores is a separate, deliberate step: **Actions → "Publish 
 
 ## Secrets
 
-Add these under **Settings → Secrets and variables → Actions → New repository secret**. None of them are needed for CI itself; only the publish workflow reads them.
+Add these under **Settings → Secrets and variables → Actions → New repository secret**.
+
+### Pattern catalog — `GELD_CATALOG_PRIVATE_KEY`, plus a ruleset bypass
+
+The built-in pattern catalog (`catalog/patterns.json`) is fetched by installed extensions and must be signed with the Ed25519 key whose public half is in `packages/core/src/catalog-key.ts`. CI signs it: on every push to `main` it regenerates the JSON from `packages/core` (bumping `CATALOG_VERSION` automatically when the patterns changed), signs with this secret, verifies, and commits the result back to `main`. Generate a keypair with `pnpm catalog:keygen` (keep the private key in a password manager too — rotating it means committing the new public key; CI re-signs on the next push). Because CI pushes a commit, the `main` ruleset must let it: **Settings → Rules → Rulesets → main → Bypass list → add the GitHub Actions app**. Without the secret, a pattern change fails CI with a message saying so; you can still sign locally with `GELD_CATALOG_PRIVATE_KEY=… pnpm catalog:sign`.
+
+### Store credentials
+
+The following are read only by the publish workflow.
 
 ### Chrome Web Store — `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`
 

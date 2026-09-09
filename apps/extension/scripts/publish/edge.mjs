@@ -24,6 +24,11 @@ function isPendingReview(status, text) {
   return status === 409 || /in progress|under review|pending|already (?:a|an) submission/i.test(text);
 }
 
+/** The store already has this (or a higher) version: nothing to publish. */
+function isDuplicateVersion(text) {
+  return /version.*(?:already|must be (?:higher|greater)|not (?:higher|greater))/i.test(text);
+}
+
 async function pollOperation(url, label) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(url, { headers });
@@ -31,7 +36,14 @@ async function pollOperation(url, label) {
     if (!response.ok) throw new Error(`${label}: ${response.status} ${text}`);
     const body = JSON.parse(text);
     if (body.status === 'Succeeded') return body;
-    if (body.status === 'Failed') throw new Error(`${label} failed: ${JSON.stringify(body.errors ?? body)}`);
+    if (body.status === 'Failed') {
+      const detail = JSON.stringify(body.errors ?? body);
+      if (isDuplicateVersion(detail)) {
+        console.log('Edge: skipped — the store already has this version.');
+        process.exit(78);
+      }
+      throw new Error(`${label} failed: ${detail}`);
+    }
     await sleep(5000);
   }
   throw new Error(`${label}: timed out`);
@@ -47,6 +59,10 @@ const uploadText = await upload.text();
 if (!upload.ok) {
   if (isPendingReview(upload.status, uploadText)) {
     console.log(`Edge: skipped — a submission is already under review (${upload.status}).`);
+    process.exit(78);
+  }
+  if (isDuplicateVersion(uploadText)) {
+    console.log('Edge: skipped — the store already has this version.');
     process.exit(78);
   }
   throw new Error(`Edge upload failed: ${upload.status} ${uploadText}`);

@@ -27,6 +27,19 @@ const token = await tokenResponse.json();
 if (!tokenResponse.ok || typeof token.access_token !== 'string') throw new Error(`Chrome: could not get an access token: ${JSON.stringify(token)}`);
 const headers = { Authorization: `Bearer ${token.access_token}`, 'x-goog-api-version': '2' };
 
+// Idempotent across scheduled runs: the DRAFT projection reports the version
+// last uploaded (pending or live). If it is already this one, nothing to do.
+const target = /geld-([0-9.]+)-chrome\.zip$/.exec(basename(zipPath))?.[1] ?? null;
+const current = await fetch(`https://www.googleapis.com/chromewebstore/v1.1/items/${extensionId}?projection=DRAFT`, { headers });
+if (current.ok) {
+  const item = await current.json();
+  if (target !== null && item.crxVersion === target) {
+    console.log(`Chrome: skipped — version ${target} is already uploaded.`);
+    process.exit(78);
+  }
+  console.log(`Chrome: store has ${item.crxVersion ?? 'unknown'}, uploading ${target ?? basename(zipPath)}`);
+}
+
 console.log(`Chrome: uploading ${basename(zipPath)} to ${extensionId}`);
 const upload = await fetch(`https://www.googleapis.com/upload/chromewebstore/v1.1/items/${extensionId}`, {
   method: 'PUT',

@@ -1,10 +1,11 @@
 name: Publish to stores
 
-# Publishes an existing GitHub Release's zips to the browser stores. Manual by
-# design: every store reviews each submission (Chrome/Edge/Apple block a new
-# submission while one is under review), so publishing on every push would
-# mostly fail. Run it when a batch of changes is ready. Stores that report a
-# pending review are skipped, not failed.
+# Publishes a GitHub Release's zips to the browser stores. Runs automatically
+# after every CI run on main that produced a release, every six hours, and on
+# demand. Every store reviews each submission and Chrome/Edge/Apple refuse a new
+# one while the previous is under review (neither API can cancel a review), so
+# a store that is busy is *skipped* and the scheduled run publishes the newest
+# release once it clears. A version a store already has is skipped silently.
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   Chrome  : CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
@@ -15,6 +16,12 @@ name: Publish to stores
 # See apps/extension/store/PUBLISHING.md for where each comes from.
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       release:
@@ -34,19 +41,30 @@ concurrency:
   group: publish
   cancel-in-progress: false
 
+env:
+  DEFAULT_NOTES: 'Automated release. Source: https://github.com/brandonmcconnell/geld'
+
 jobs:
   assets:
     name: Fetch release zips
+    # After CI: only when it succeeded (it publishes the release in the same run).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
       version: ${{ steps.pick.outputs.version }}
+      channels: ${{ steps.pick.outputs.channels }}
+      notes: ${{ steps.pick.outputs.notes }}
     steps:
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED: ${{ inputs.release }}
+          CHANNELS: ${{ inputs.channels || 'chrome,edge,firefox,safari' }}
+          NOTES: ${{ inputs.notes || env.DEFAULT_NOTES }}
         run: |
+          echo "channels=$CHANNELS" >> "$GITHUB_OUTPUT"
+          echo "notes=$NOTES" >> "$GITHUB_OUTPUT"
           tag="$REQUESTED"
           if [ -z "$tag" ]; then tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName); fi
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.zip'
@@ -64,7 +82,7 @@ jobs:
   chrome:
     name: Chrome Web Store
     needs: assets
-    if: contains(inputs.channels, 'chrome')
+    if: contains(needs.assets.outputs.channels, 'chrome')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -85,13 +103,13 @@ jobs:
           set +e
           node apps/extension/scripts/publish/chrome.mjs dist/*-chrome.zip
           code=$?
-          if [ "$code" = "78" ]; then echo "::warning title=Chrome::Skipped: the item is pending review."; exit 0; fi
+          if [ "$code" = "78" ]; then echo "::notice title=Chrome::Skipped (pending review or already at this version); see log."; exit 0; fi
           exit $code
 
   edge:
     name: Microsoft Edge Add-ons
     needs: assets
-    if: contains(inputs.channels, 'edge')
+    if: contains(needs.assets.outputs.channels, 'edge')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -107,18 +125,18 @@ jobs:
           EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
           EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
           EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
-          PUBLISH_NOTES: ${{ inputs.notes }}
+          PUBLISH_NOTES: ${{ needs.assets.outputs.notes }}
         run: |
           set +e
           node apps/extension/scripts/publish/edge.mjs dist/*-edge.zip
           code=$?
-          if [ "$code" = "78" ]; then echo "::warning title=Edge::Skipped: a submission is already under review."; exit 0; fi
+          if [ "$code" = "78" ]; then echo "::notice title=Edge::Skipped (submission under review or already at this version); see log."; exit 0; fi
           exit $code
 
   firefox:
     name: Firefox Add-ons (AMO)
     needs: assets
-    if: contains(inputs.channels, 'firefox')
+    if: contains(needs.assets.outputs.channels, 'firefox')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v7
@@ -134,19 +152,27 @@ jobs:
       - env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-          NOTES: ${{ inputs.notes }}
+          NOTES: ${{ needs.assets.outputs.notes }}
         run: |
           mkdir -p unpacked && unzip -q dist/*-firefox.zip -d unpacked
+          set +e
           npx --yes web-ext@8 sign --source-dir unpacked --channel listed \
             --upload-source-code dist/*-sources.zip \
             --approval-timeout 0 \
-            --amo-metadata <(printf '{"version":{"release_notes":{"en-US":%s},"approval_notes":%s}}' "$(jq -Rn --arg n "$NOTES" '$n')" "$(jq -Rn --arg n "$NOTES" '$n')")
+            --amo-metadata <(printf '{"version":{"release_notes":{"en-US":%s},"approval_notes":%s}}' "$(jq -Rn --arg n "$NOTES" '$n')" "$(jq -Rn --arg n "$NOTES" '$n')") 2>&1 | tee sign.log
+          code=${PIPESTATUS[0]}
+          set -e
+          # Re-runs (scheduled) hit "Version already exists": nothing to do.
+          if [ "$code" != "0" ] && grep -qiE "version (already exists|.*already been uploaded|.*duplicate)" sign.log; then
+            echo "::notice title=Firefox::Skipped: AMO already has this version."; exit 0
+          fi
+          [ "$code" = "0" ] || exit "$code"
           echo "::notice title=Firefox::Version uploaded; AMO signs and lists it after its automated review."
 
   safari:
     name: Safari (App Store Connect)
     needs: assets
-    if: contains(inputs.channels, 'safari')
+    if: contains(needs.assets.outputs.channels, 'safari')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -236,7 +262,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           TAG: ${{ needs.assets.outputs.tag }}
-          NOTES: ${{ inputs.notes }}
+          NOTES: ${{ needs.assets.outputs.notes }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_HIDE_CHANGELOG: '1'
         working-directory: apps/extension/safari/Geld
@@ -260,6 +286,11 @@ jobs:
           code=${PIPESTATUS[0]}
           if [ "$code" != "0" ] && grep -qiE "in review|cannot be rejected|already been submitted|IN_REVIEW" deliver.log; then
             echo "::warning title=Safari::Uploaded, but a submission is already in review and cannot be replaced; submit it in App Store Connect once that review ends."
+            exit 0
+          fi
+          # Scheduled re-runs: this build number is already on App Store Connect.
+          if [ "$code" != "0" ] && grep -qiE "bundle version must be higher|already been used|has already been uploaded|redundant binary" deliver.log; then
+            echo "::notice title=Safari::Skipped: App Store Connect already has build $build."
             exit 0
           fi
           [ "$code" = "0" ] && echo "::notice title=Safari::Build $version ($build) uploaded and submitted for review."
