@@ -63,7 +63,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
         <CornerShapePolyfill />
         <TooltipProvider>
           <SiteHeader />
-          {/* Page content blurs and fades between routes (RouteTransition + `[data-route-phase]` in globals.css); header and footer stay put. */}
+          {/* Pages crossfade through a blur between routes (RouteTransition + `::view-transition-*(root)` in globals.css). */}
           <RouteTransition />
           <main id="main" className="flex-1">
             {children}

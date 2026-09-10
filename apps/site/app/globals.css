@@ -240,67 +240,63 @@
 }
 
 /*
- * Route transitions (components/route-transition): while a page leaves, <main>
- * fades out and a fixed, viewport-sized veil under the top bar blurs what is
- * behind it; the next page arrives the same way in reverse. Blurring the veil
- * costs a viewport's worth of pixels regardless of page length, which is why
- * this is not done with view-transition snapshots. Durations match
- * LEAVE_MS / ENTER_MS in the component.
+ * Route transitions (components/route-transition): the old page, frozen as it
+ * was, and the new page crossfade through a light blur. Both snapshots are the
+ * viewport (`root`), so this costs the same on any page length. Header and
+ * footer are identical on both sides and so appear still. Navigations the
+ * component did not start (back/forward) fade the new page in instead.
  */
-.route-veil {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  pointer-events: none;
-  /* Only real backdrop blur is worth it; without support there is just the fade. */
-  backdrop-filter: blur(0);
-  will-change: backdrop-filter;
+::view-transition-group(root) {
+  animation: none;
 }
 
-:root[data-route-phase='leaving'] main {
-  animation: 180ms ease-in both route-leave;
+::view-transition-old(root) {
+  animation: 160ms ease-in both route-out;
 }
 
-:root[data-route-phase='leaving'] .route-veil {
-  animation: 180ms ease-in both veil-in;
+::view-transition-new(root) {
+  animation: 160ms ease-out both route-in;
 }
 
-:root[data-route-phase='entering'] main {
-  animation: 320ms ease-out both route-enter;
-}
-
-:root[data-route-phase='entering'] .route-veil {
-  animation: 320ms ease-out both veil-out;
-}
-
-@keyframes route-leave {
+@keyframes route-out {
   to {
     opacity: 0;
+    filter: blur(6px);
   }
 }
 
-@keyframes route-enter {
+@keyframes route-in {
   from {
     opacity: 0;
+    filter: blur(6px);
   }
 }
 
-@keyframes veil-in {
-  to {
-    backdrop-filter: blur(6px);
-  }
-}
-
-@keyframes veil-out {
-  from {
-    backdrop-filter: blur(6px);
-  }
+:root[data-route-entering] main {
+  animation: 160ms ease-out both route-in;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-route-phase] main,
-  :root[data-route-phase] .route-veil {
-    animation: none;
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  :root[data-route-entering] main {
+    animation: none !important;
+  }
+}
+
+/*
+ * A secondary bar stuck under the top bar (components/sub-bar, the mobile
+ * section bar) shares its frosted surface: the top bar's bottom border goes
+ * so there is no seam between them. The mobile bar only exists below `lg`.
+ */
+:root:has([data-subbar='stuck']) .site-header {
+  border-bottom-color: transparent;
+}
+
+@media (width < 64rem) {
+  :root:has([data-subbar='mobile']) .site-header {
+    border-bottom-color: transparent;
   }
 }
 

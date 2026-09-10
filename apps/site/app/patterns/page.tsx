@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ExternalLink } from '@/components/external-link';
 import { PageIntro, Prose } from '@/components/section';
+import { SubBar } from '@/components/sub-bar';
 import { REPO_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
@@ -50,7 +51,7 @@ export default function PatternsPage() {
       </div>
 
       {/* Full-bleed bar that sticks under the top bar (h-14) so the category jumps stay reachable while reading. */}
-      <nav aria-label="Categories" className="sticky top-14 z-30 border-b bg-background/85 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <SubBar aria-label="Categories" className="py-3">
         <ul className="container-site flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {CATEGORIES.map((category) => (
             <li key={category.id} className="shrink-0">
@@ -63,7 +64,7 @@ export default function PatternsPage() {
             </li>
           ))}
         </ul>
-      </nav>
+      </SubBar>
 
       <div className="container-site pt-12 pb-24">
         <div className="flex flex-col gap-20">

@@ -1,15 +1,15 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-/** How long the old page takes to leave, and the new one to arrive. Mirrored in globals.css. */
-const LEAVE_MS = 180;
-const ENTER_MS = 320;
-/** Give up on a navigation that never lands (offline, blocked) so the page is not stuck faded out. */
-const LEAVE_TIMEOUT_MS = 3000;
+/** Crossfade length; mirrored by `::view-transition-*(root)` in globals.css. */
+const CROSSFADE_MS = 160;
+/** Give up waiting for a navigation that never lands (offline, blocked) so the page is not frozen. */
+const NAVIGATION_TIMEOUT_MS = 2500;
 
-type Phase = 'idle' | 'leaving' | 'entering';
+/** Resolved by the component when the router has committed a new pathname. */
+let settleNavigation: (() => void) | null = null;
 
 function internalDestination(event: MouseEvent): URL | null {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
@@ -25,72 +25,72 @@ function internalDestination(event: MouseEvent): URL | null {
 }
 
 /**
- * Page-to-page transition: the current page fades while a viewport-sized veil
- * blurs what is behind it, then the next page arrives the same way in
- * reverse (see `[data-route-phase]` in globals.css). Done on the live DOM
- * rather than with the View Transitions API because React's integration
- * snapshots the whole <main> (thousands of pixels tall, expensive to blur,
- * and drawn at the new scroll position so it appears to jump) and cancels the
- * cheap viewport-sized root snapshot that would avoid both.
+ * Page-to-page crossfade with a blur, done with a view transition that this
+ * component starts itself around `router.push`. Starting it here (rather than
+ * through React's <ViewTransition>) keeps the browser's viewport-sized root
+ * snapshot: the old page is frozen exactly as it was — scroll position
+ * included — while the new page renders and scrolls to the top underneath,
+ * and the two simply crossfade (see `::view-transition-*(root)` in
+ * globals.css). Blurring a viewport is cheap; snapshotting <main> is not.
  *
- * Internal link clicks are intercepted so the exit can play before the
- * router navigates; back/forward only plays the entrance.
+ * Navigations this component did not start (back/forward) get a short fade-in
+ * of the new page instead, since the old state cannot be captured after the
+ * fact. Browsers without the API navigate as before.
  */
 export function RouteTransition() {
   const router = useRouter();
   const pathname = usePathname();
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [seenPathname, setSeenPathname] = useState(pathname);
-  const pending = useRef<string | null>(null);
+  const ownNavigation = useRef(false);
+  const mounted = useRef(false);
 
-  // A new pathname committed: the new page is in the DOM, bring it in (state adjusted during render).
-  if (pathname !== seenPathname) {
-    setSeenPathname(pathname);
-    setPhase('entering');
-  }
-
+  // A new pathname committed: the new page is in the DOM.
   useEffect(() => {
-    pending.current = null;
+    if (settleNavigation !== null) {
+      // Our view transition is waiting for this: let it take the "new" snapshot.
+      settleNavigation();
+      settleNavigation = null;
+      ownNavigation.current = false;
+      return;
+    }
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    // Back/forward: the old state was not captured, so fade the new page in.
+    const root = document.documentElement;
+    root.dataset.routeEntering = '';
+    const timer = setTimeout(() => delete root.dataset.routeEntering, CROSSFADE_MS);
+    return () => {
+      clearTimeout(timer);
+      delete root.dataset.routeEntering;
+    };
   }, [pathname]);
 
   useEffect(() => {
-    if (phase !== 'entering') return;
-    const timer = setTimeout(() => setPhase('idle'), ENTER_MS);
-    return () => clearTimeout(timer);
-  }, [phase]);
-
-  useEffect(() => {
-    document.documentElement.dataset.routePhase = phase;
-    return () => {
-      delete document.documentElement.dataset.routePhase;
-    };
-  }, [phase]);
-
-  useEffect(() => {
+    if (typeof document.startViewTransition !== 'function') return;
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
     const onClick = (event: MouseEvent): void => {
       const url = internalDestination(event);
-      if (url === null || reduceMotion.matches) return;
-      // Take over from <Link>: stop its handler and navigate once the exit has played.
+      if (url === null || reduceMotion.matches || ownNavigation.current) return;
+      // Take over from <Link>: stop its handler and navigate inside the transition.
       event.preventDefault();
       event.stopPropagation();
       const href = url.pathname + url.search + url.hash;
-      if (pending.current !== null) return;
-      pending.current = href;
-      setPhase('leaving');
-      setTimeout(() => {
-        if (pending.current === href) router.push(href);
-      }, LEAVE_MS);
-      setTimeout(() => {
-        if (pending.current === href) {
-          pending.current = null;
-          setPhase('idle');
-        }
-      }, LEAVE_TIMEOUT_MS);
+      ownNavigation.current = true;
+      const committed = new Promise<void>((resolve) => {
+        settleNavigation = resolve;
+      });
+      const timeout = new Promise<void>((resolve) => {
+        setTimeout(resolve, NAVIGATION_TIMEOUT_MS);
+      });
+      document.startViewTransition(() => {
+        router.push(href);
+        return Promise.race([committed, timeout]);
+      });
     };
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
   }, [router]);
 
-  return <div aria-hidden="true" className="route-veil" />;
+  return null;
 }

@@ -63,8 +63,9 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
     <nav
       ref={navRef}
       aria-label="On this page"
+      data-subbar="mobile"
       // Above the backdrop while the list is open, so the bar stays crisp as the sheet's anchor.
-      className={cn('sticky top-14 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:hidden', open ? 'z-50' : 'z-30', className)}
+      className={cn('sticky top-[calc(3.5rem+1px)] border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:hidden', open ? 'z-50' : 'z-30', className)}
     >
       <Dialog.Root
         open={open}
