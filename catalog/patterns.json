@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260915,
+  "version": 20260916,
   "minExtensionVersion": "0.1.1",
   "categories": [
     {
@@ -615,7 +615,7 @@
     {
       "id": "large",
       "title": "Large diffs",
-      "description": "⚠️ Are you sure? Large diffs (1000+ lines) are often the real work.",
+      "description": "⚠️ **Are you sure?** Large diffs (1000+ lines) are often the real work.",
       "icon": "graph",
       "noun": "large diff",
       "nounPlural": "large diffs",
