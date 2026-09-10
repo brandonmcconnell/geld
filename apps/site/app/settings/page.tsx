@@ -7,10 +7,11 @@ import { redirect } from 'next/navigation';
 import { GitHubIcon } from '@/components/icons';
 import { PageIntro, Prose } from '@/components/section';
 import { CorruptedSettings } from '@/components/settings/corrupted-settings';
+import { ReconnectNotice } from '@/components/settings/reconnect-notice';
 import { SettingsForm } from '@/components/settings/settings-form';
 import { buttonVariants } from '@/components/ui/button';
 import { authConfig } from '@/lib/auth/config';
-import { getSession } from '@/lib/auth/session';
+import { resolveSession } from '@/lib/auth/session';
 
 export const metadata: Metadata = {
   title: 'Settings',
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type AuthNotice = 'denied' | 'state' | 'exchange' | 'unconfigured' | 'signed-out';
+type AuthNotice = 'denied' | 'state' | 'exchange' | 'unconfigured' | 'signed-out' | 'unavailable';
 
 const NOTICES: Readonly<Record<AuthNotice, string>> = {
   denied: 'Sign-in was cancelled on GitHub. Nothing was changed.',
@@ -26,6 +27,7 @@ const NOTICES: Readonly<Record<AuthNotice, string>> = {
   exchange: "GitHub didn't complete the sign-in. Please try again.",
   unconfigured: "Sign-in isn't configured in this environment.",
   'signed-out': "You've been signed out. Sign in again to keep editing.",
+  unavailable: "GitHub couldn't be reached to renew your sign-in. Try again in a moment.",
 };
 
 function isAuthNotice(value: unknown): value is AuthNotice {
@@ -49,8 +51,21 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
     );
   }
 
-  const session = await getSession(config);
-  if (session === null) {
+  // Pages cannot write cookies, so an expiring token is renewed by /auth/refresh
+  // and the page reloads; if GitHub was unreachable just now (`auth=unavailable`)
+  // stay here and offer a retry instead of bouncing back and forth.
+  const access = await resolveSession(config, null);
+  if (access.status === 'stale' && auth !== 'unavailable') redirect('/auth/refresh?next=/settings');
+  if (access.status === 'stale') {
+    return (
+      <SignedOutView notice={notice}>
+        <a href="/auth/refresh?next=/settings" className={buttonVariants({ size: 'lg' })}>
+          Try again
+        </a>
+      </SignedOutView>
+    );
+  }
+  if (access.status !== 'ok') {
     return (
       <SignedOutView notice={notice}>
         <a href="/auth/start?next=/settings" className={buttonVariants({ size: 'lg' })}>
@@ -58,11 +73,13 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
           Sign in with GitHub
         </a>
         <p className="text-xs text-muted-foreground">
-          Asks only for the <code className="code-chip">gist</code> scope. You can revoke it any time from your GitHub settings.
+          Signs you in through the Geld GitHub App; your settings live in a secret gist on your account. You can revoke it any time from your GitHub
+          settings.
         </p>
       </SignedOutView>
     );
   }
+  const { session } = access;
 
   let gistId: string | null = null;
   let settings: GeldSettings = DEFAULT_SETTINGS;
@@ -100,6 +117,7 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
           }
         />
         <div className="container-site pb-32">
+          {session.auth === 'oauth' ? <ReconnectNotice next="/settings" /> : null}
           <CorruptedSettings gistId={invalid.gistId} htmlUrl={invalid.htmlUrl} issues={invalid.issues} />
         </div>
       </>
@@ -119,6 +137,7 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         }
       />
       <div className="container-site pb-32">
+        {session.auth === 'oauth' ? <ReconnectNotice next="/settings" /> : null}
         <SettingsForm sections={SECTIONS} initialSettings={settings} initialGistId={gistId} updatedAt={updatedAt} login={session.login} />
       </div>
     </>
@@ -142,9 +161,9 @@ function SignedOutView({ notice, children }: { readonly notice: string | null; r
             open its popup or options.
           </p>
           <p>
-            Signing in here uses the same GitHub OAuth App as the extension, with the <code>gist</code> scope only. The token is stored in an encrypted
-            cookie in your browser; geld.sh has no database and only sees your settings while it is serving a request from you.{' '}
-            <Link href="/privacy#sign-in">Privacy policy</Link>.
+            Signing in here uses the same Geld GitHub App as the extension. The token is stored in an encrypted cookie in your browser, expires after
+            eight hours and is renewed while you keep using the site; geld.sh has no database and only sees your settings while it is serving a request
+            from you. <Link href="/privacy#sign-in">Privacy policy</Link>.
           </p>
         </Prose>
         <div className="mt-8 flex flex-col items-start gap-3">{children}</div>
