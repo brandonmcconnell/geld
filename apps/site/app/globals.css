@@ -317,6 +317,92 @@
   }
 }
 
+/*
+ * Mobile section bar (components/section-nav-mobile): the outgoing label
+ * blurs, fades and slides out in the scroll direction during the first half,
+ * then the incoming one arrives from the opposite side during the second, so
+ * the two are never visible together. `down` = the reader scrolled down.
+ */
+@utility subnav-label {
+  animation-duration: 320ms;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  &[data-motion='in-down'] {
+    animation-name: subnav-in-down;
+  }
+  &[data-motion='in-up'] {
+    animation-name: subnav-in-up;
+  }
+  &[data-motion='out-down'] {
+    animation-name: subnav-out-down;
+    pointer-events: none;
+  }
+  &[data-motion='out-up'] {
+    animation-name: subnav-out-up;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    &[data-motion^='out'] {
+      display: none;
+    }
+  }
+}
+
+@keyframes subnav-in-down {
+  0%,
+  50% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(100%);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+@keyframes subnav-in-up {
+  0%,
+  50% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-100%);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+@keyframes subnav-out-down {
+  0% {
+    animation-timing-function: ease-in;
+  }
+  50%,
+  100% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes subnav-out-up {
+  0% {
+    animation-timing-function: ease-in;
+  }
+  50%,
+  100% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(100%);
+  }
+}
+
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
