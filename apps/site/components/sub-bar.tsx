@@ -15,19 +15,21 @@ interface SubBarProps {
 }
 
 /**
- * A secondary bar that starts in the page flow and, once scrolled up to the
- * top bar, moves into the header's slot so both rows share one frosted
- * surface (no seam, no second blur). The header is in the flow too, so it
- * growing by the bar's height exactly replaces the space the bar left: nothing
- * below shifts. Detection uses a one-pixel sentinel just above the bar's place
- * in the flow: once the sentinel is under the top bar, the bar is stuck.
+ * A secondary bar that lives in the page flow and, once scrolled up to the
+ * top bar, is shown inside the header's slot instead, so both rows share one
+ * frosted surface. The in-flow original stays exactly where it is — made
+ * invisible and inert rather than removed — so nothing below it ever moves;
+ * and the header is fixed, so its growth does not move anything either.
+ * Detection uses a one-pixel sentinel just above the bar: once it is under the
+ * top bar, the bar is stuck.
  */
 export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarProps) {
   const sentinel = useRef<HTMLDivElement | null>(null);
   const [stuck, setStuck] = useState(false);
   const slot = useHeaderSlot();
+  const isCurrent = useIsCurrentPage();
   // A page the router keeps mounted but hidden must not put its bar in the header.
-  const portal = useIsCurrentPage() && slot !== null;
+  const inHeader = stuck && isCurrent && slot !== null;
 
   useEffect(() => {
     const node = sentinel.current;
@@ -46,16 +48,22 @@ export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarP
     return () => observer.disconnect();
   }, []);
 
-  const bar = (
-    <nav aria-label={ariaLabel} className={cn(stuck && portal ? undefined : 'border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70', className)}>
-      {children}
-    </nav>
-  );
-
   return (
     <>
       <div ref={sentinel} aria-hidden="true" className="h-px -mb-px" />
-      {stuck && portal ? createPortal(bar, slot) : <div className="sticky top-[calc(3.5rem+1px)] z-30">{bar}</div>}
+      <div className={cn('sticky top-[calc(3.5rem+1px)] z-30', inHeader && 'pointer-events-none invisible')} aria-hidden={inHeader} inert={inHeader}>
+        <nav aria-label={ariaLabel} className={cn('border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70', className)}>
+          {children}
+        </nav>
+      </div>
+      {inHeader && slot !== null
+        ? createPortal(
+            <nav aria-label={ariaLabel} className={className}>
+              {children}
+            </nav>,
+            slot,
+          )
+        : null}
     </>
   );
 }

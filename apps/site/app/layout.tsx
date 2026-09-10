@@ -52,7 +52,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
         {/* Applies a stored light/dark preference and the signed-in marker before first paint; plain inline so it runs during parsing. */}
         <script dangerouslySetInnerHTML={{ __html: `${THEME_INIT_SCRIPT}${ACCOUNT_INIT_SCRIPT}` }} />
       </head>
-      <body className="flex min-h-svh flex-col">
+      <body className="flex min-h-svh flex-col pt-[calc(3.5rem+1px)]">
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:bg-foreground focus:px-3 focus:py-2 focus:text-sm focus:text-background"
