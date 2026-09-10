@@ -1,9 +1,9 @@
 'use client';
 
-import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
+import { Dialog } from '@base-ui/react/dialog';
 import { cn } from 'cn';
 import { ChevronDownIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import type { SectionEntry } from '@/components/use-active-section';
 import { useActiveSection } from '@/components/use-active-section';
@@ -37,13 +37,18 @@ function Label({ entry, index, motion, onDone }: { readonly entry: SectionEntry;
  * Phone-sized stand-in for the sidebar table of contents: a bar stuck under
  * the top bar that names the section in view. When the section changes, the
  * old name blurs, fades and slides out in the scroll direction while the new
- * one arrives from the other side. Tapping it opens the full list.
+ * one arrives from the other side. Tapping it opens the full list as a modal
+ * sheet under the bar; the page cannot scroll while it is open.
  */
 export function SectionNavMobile({ entries, offset = 128, className }: SectionNavMobileProps) {
   const active = useActiveSection(entries, offset);
   const activeIndex = Math.max(0, entries.findIndex((entry) => entry.id === active));
   const [shown, setShown] = useState<Shown>({ index: activeIndex, direction: 'down', leaving: null });
   const [open, setOpen] = useState(false);
+  const navRef = useRef<HTMLElement | null>(null);
+  // Where the sheet starts: the bar's bottom edge, read when it opens.
+  const [sheetTop, setSheetTop] = useState(0);
+
   // The section changed since the last render: start the swap (state adjusted during render, not in an effect).
   if (activeIndex !== shown.index) {
     setShown({ index: activeIndex, direction: activeIndex > shown.index ? 'down' : 'up', leaving: shown.index });
@@ -56,12 +61,20 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
 
   return (
     <nav
+      ref={navRef}
       aria-label="On this page"
-      // Above the backdrop while the list is open, so the bar stays crisp as the popup's anchor.
+      // Above the backdrop while the list is open, so the bar stays crisp as the sheet's anchor.
       className={cn('sticky top-14 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:hidden', open ? 'z-50' : 'z-30', className)}
     >
-      <PopoverPrimitive.Root open={open} onOpenChange={setOpen} modal>
-        <PopoverPrimitive.Trigger
+      <Dialog.Root
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setSheetTop(navRef.current?.getBoundingClientRect().bottom ?? 0);
+          setOpen(next);
+        }}
+        modal
+      >
+        <Dialog.Trigger
           aria-label={`Section ${shown.index + 1} of ${entries.length}: ${current.label}. Show all sections.`}
           className="container-site flex w-full items-center justify-between gap-3 py-2.5 text-left text-sm outline-none focus-visible:bg-muted/60"
         >
@@ -78,41 +91,44 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
             </span>
             <ChevronDownIcon aria-hidden="true" className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-180')} />
           </span>
-        </PopoverPrimitive.Trigger>
-        <PopoverPrimitive.Portal>
-          <PopoverPrimitive.Backdrop className="fixed inset-0 z-40 bg-background/50 backdrop-blur-[2px] transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-none" />
-          <PopoverPrimitive.Positioner side="bottom" align="start" sideOffset={0} className="isolate z-50">
-            <PopoverPrimitive.Popup
-              className={cn(
-                'w-(--anchor-width) max-h-(--available-height) overflow-y-auto border-b bg-popover text-popover-foreground shadow-md outline-none',
-                'transition-[opacity,transform] duration-150 ease-out data-ending-style:-translate-y-1 data-ending-style:opacity-0 data-starting-style:-translate-y-1 data-starting-style:opacity-0 motion-reduce:transition-none',
-              )}
-            >
-              <ol className="container-site py-2">
-                {entries.map((entry, index) => {
-                  const isActive = index === shown.index;
-                  return (
-                    <li key={entry.id}>
-                      <a
-                        href={`#${entry.id}`}
-                        aria-current={isActive ? 'location' : undefined}
-                        onClick={() => setOpen(false)}
-                        className={cn(
-                          '-ml-px flex items-baseline gap-2.5 border-l py-2 pl-4 text-sm outline-none focus-visible:bg-muted/60',
-                          isActive ? 'border-foreground font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-                        )}
-                      >
-                        <span className="font-mono text-xs tabular-nums">{String(index + 1).padStart(2, '0')}</span>
-                        {entry.label}
-                      </a>
-                    </li>
-                  );
-                })}
-              </ol>
-            </PopoverPrimitive.Popup>
-          </PopoverPrimitive.Positioner>
-        </PopoverPrimitive.Portal>
-      </PopoverPrimitive.Root>
+        </Dialog.Trigger>
+        <Dialog.Portal>
+          {/* Sits under the top bar (z-40) and this bar (z-50), so both stay sharp; only the page behind dims. */}
+          <Dialog.Backdrop className="fixed inset-0 z-35 bg-background/50 backdrop-blur-[2px] transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-none" />
+          <Dialog.Popup
+            aria-label="Sections"
+            initialFocus={false}
+            finalFocus={false}
+            style={{ top: sheetTop, maxHeight: `calc(100dvh - ${sheetTop}px)` }}
+            className={cn(
+              'fixed inset-x-0 z-50 overflow-y-auto overscroll-contain border-b bg-background/85 shadow-md outline-none backdrop-blur supports-[backdrop-filter]:bg-background/70',
+              'transition-[opacity,transform] duration-150 ease-out data-ending-style:-translate-y-1 data-ending-style:opacity-0 data-starting-style:-translate-y-1 data-starting-style:opacity-0 motion-reduce:transition-none',
+            )}
+          >
+            <ol className="container-site py-2">
+              {entries.map((entry, index) => {
+                const isActive = index === shown.index;
+                return (
+                  <li key={entry.id}>
+                    <a
+                      href={`#${entry.id}`}
+                      aria-current={isActive ? 'location' : undefined}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        'flex items-baseline gap-2.5 py-2 text-sm outline-none focus-visible:bg-muted/60',
+                        isActive ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      <span className="font-mono text-xs tabular-nums">{String(index + 1).padStart(2, '0')}</span>
+                      {entry.label}
+                    </a>
+                  </li>
+                );
+              })}
+            </ol>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
     </nav>
   );
 }
