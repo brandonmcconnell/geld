@@ -126,13 +126,30 @@ code {
  * Calls to action take the logomark's cut corners; everything else is square.
  * Applied to buttons and the account control below. Hover deepens the cut by
  * 3px, and the cut-away corners still count as the element (::after covers
- * the full square plus 1px), as on the site.
+ * the full square plus 1px), as on the site. Browsers without `corner-shape`
+ * (Safari) get it from the hyperellipse polyfill (src/ui/corner-shape.ts),
+ * which reads the `--corner-shape` twin; `--corner-scale: 0` keeps corners
+ * square until it runs, and nothing animates there.
  */
+@supports not (corner-shape: bevel) {
+  :root {
+    --corner-scale: 0;
+  }
+
+  .geld-button,
+  .geld-account__summary,
+  .geld-account__avatar {
+    transition: none;
+  }
+}
+
 .geld-button,
 .geld-account__summary,
 .geld-account__avatar {
   position: relative;
-  border-radius: 0;
+  border-radius: calc(var(--cut) * var(--corner-scale, 1));
+  corner-shape: bevel square;
+  --corner-shape: bevel square;
   transition-property: color, background-color, border-color, border-radius;
   transition-duration: 150ms;
   transition-timing-function: ease-out;
@@ -145,19 +162,10 @@ code {
   inset: -1px;
 }
 
-@supports (corner-shape: bevel) {
-  .geld-button,
-  .geld-account__summary,
-  .geld-account__avatar {
-    border-radius: var(--cut);
-    corner-shape: bevel square;
-  }
-
-  .geld-button:hover,
-  .geld-account__summary:hover,
-  .geld-account__summary:hover .geld-account__avatar {
-    border-radius: calc(var(--cut) + 3px);
-  }
+.geld-button:hover,
+.geld-account__summary:hover,
+.geld-account__summary:hover .geld-account__avatar {
+  border-radius: calc((var(--cut) + 3px) * var(--corner-scale, 1));
 }
 
 /* Brand ------------------------------------------------------------------- */

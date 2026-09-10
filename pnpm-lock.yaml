@@ -20,6 +20,9 @@ importers:
       '@geld/core':
         specifier: workspace:*
         version: link:../../packages/core
+      hyperellipse:
+        specifier: ^1.0.5
+        version: 1.0.5
     devDependencies:
       '@types/node':
         specifier: ^26.4.1
@@ -54,6 +57,9 @@ importers:
       geist:
         specifier: ^1.7.2
         version: 1.7.2(next@16.3.4(@babel/core@7.29.7)(@types/node@26.4.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))
+      hyperellipse:
+        specifier: ^1.0.5
+        version: 1.0.5
       lucide-react:
         specifier: ^1.41.0
         version: 1.41.0(react@19.2.8)
@@ -1971,6 +1977,9 @@ packages:
 
   htmlparser2@10.1.0:
     resolution: {integrity: sha512-VTZkM9GWRAtEpveh7MSF6SjjrpNVNNVJfFup7xTY3UpFtm67foy9HDVXneLtFVt4pMz5kZtgNcvCniNFb1hlEQ==}
+
+  hyperellipse@1.0.5:
+    resolution: {integrity: sha512-kXHjOE7xShPPfD5wT6bTSxyuzspBmsTXnzN4rxZm3eIbRHWW2OIAc/TCCfIiJ9fAqppmi8uIQDi2OHDU3mzO7g==}
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -5041,6 +5050,8 @@ snapshots:
       domhandler: 5.0.3
       domutils: 3.2.2
       entities: 7.0.1
+
+  hyperellipse@1.0.5: {}
 
   ignore@5.3.2: {}
 

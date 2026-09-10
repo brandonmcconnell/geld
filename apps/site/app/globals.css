@@ -162,33 +162,48 @@
 }
 
 /*
+ * Browsers without `corner-shape` (Safari, Firefox) get it from the
+ * hyperellipse polyfill, loaded only there (components/corner-shape-polyfill).
+ * Until it runs, `--corner-scale: 0` keeps the cut corners square instead of
+ * flashing round ones; the polyfill neutralises the scale when it reads radii.
+ */
+@supports not (corner-shape: bevel) {
+  :root {
+    --corner-scale: 0;
+  }
+}
+
+/*
  * Control corners echo the logomark: square, with the top-left and
  * bottom-right corners cut on a diagonal. `corner-shape: bevel square` puts a
- * bevel on TL/BR and leaves TR/BL square; the radius sets the cut size.
- * Browsers without corner-shape get plain square corners (no radius at all).
+ * bevel on TL/BR and leaves TR/BL square; the radius sets the cut size. The
+ * `--corner-shape` twin is what the polyfill reads (Safari's parser drops the
+ * native declaration it does not know).
  */
 @utility geld-corners {
   --geld-cut: 0.5rem;
   position: relative;
-  border-radius: 0;
+  border-radius: calc(var(--geld-cut) * var(--corner-scale, 1));
+  corner-shape: bevel square;
+  --corner-shape: bevel square;
   transition-property: color, background-color, border-color, border-radius, opacity;
   transition-duration: 150ms;
   transition-timing-function: ease-out;
-  @supports (corner-shape: bevel) {
-    border-radius: var(--geld-cut);
-    corner-shape: bevel square;
-    /* Hover deepens the cut by 3px. A child inside a `group/geld` (the avatar
-       in the account chip) follows its parent's hover instead of its own. */
-    &:hover,
-    :where(.group\/geld:hover) & {
-      border-radius: calc(var(--geld-cut) + 3px);
-    }
+  /* Hover deepens the cut by 3px. A child inside a `group/geld` (the avatar
+     in the account chip) follows its parent's hover instead of its own. */
+  &:hover,
+  :where(.group\/geld:hover) & {
+    border-radius: calc((var(--geld-cut) + 3px) * var(--corner-scale, 1));
   }
   /* Hit area: the full square, including the cut-away corners, plus 1px. */
   &::after {
     content: '';
     position: absolute;
     inset: -1px;
+  }
+  /* The polyfill redraws on state change rather than per frame, so do not animate at all there. */
+  @supports not (corner-shape: bevel) {
+    transition: none;
   }
   @media (prefers-reduced-motion: reduce) {
     transition: none;

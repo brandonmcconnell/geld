@@ -42,6 +42,7 @@ import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
 import { categoryIcon } from '../../src/github/ui/icons';
 import { mountAccountWidget } from '../../src/ui/account-widget';
+import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 
 /* ------------------------------------------------------------------ helpers */
@@ -806,4 +807,5 @@ async function main(): Promise<void> {
   });
 }
 
+polyfillCornerShape();
 void main();

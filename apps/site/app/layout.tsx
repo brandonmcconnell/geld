@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { CornerShapePolyfill } from '@/components/corner-shape-polyfill';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { SmoothHashLinks } from '@/components/smooth-hash-links';
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
           Skip to content
         </a>
         <SmoothHashLinks />
+        <CornerShapePolyfill />
         <TooltipProvider>
           <SiteHeader />
           <main id="main" className="flex-1">
