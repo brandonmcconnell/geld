@@ -11,6 +11,24 @@ const NAVIGATION_TIMEOUT_MS = 2500;
 /** Resolved by the component when the router has committed a new pathname. */
 let settleNavigation: (() => void) | null = null;
 
+/**
+ * A couple of frames (or 50ms, whichever comes first) so the router's
+ * scroll-to-top has been applied before the browser captures the new page.
+ * Some engines otherwise snapshot it at the old scroll offset and jump when
+ * the transition ends.
+ */
+function afterScrollSettles(): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, 50);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  });
+}
+
 function internalDestination(event: MouseEvent): URL | null {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
   const target = event.target;
@@ -90,9 +108,12 @@ export function RouteTransition() {
       // are removed.
       const root = document.documentElement;
       root.dataset.routeTransition = '';
-      const transition = document.startViewTransition(() => {
+      const transition = document.startViewTransition(async () => {
         router.push(href);
-        return Promise.race([committed, timeout]);
+        await Promise.race([committed, timeout]);
+        // The router scrolls the new page to the top (or its hash) during commit; let that land before the capture.
+        if (url.hash === '') window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        await afterScrollSettles();
       });
       void transition.finished.finally(() => {
         delete root.dataset.routeTransition;
