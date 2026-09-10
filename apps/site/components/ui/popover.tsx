@@ -18,7 +18,6 @@ interface HoverHandlers {
 const HoverContext = createContext<HoverHandlers | null>(null);
 
 const OPEN_DELAY = 150;
-const CLOSE_DELAY = 60;
 
 /**
  * A popover that behaves like the extension's breakdown tooltip: it stays open
@@ -53,7 +52,9 @@ function Popover({ children, ...props }: Omit<PopoverPrimitive.Root.Props, 'open
       if (event.pointerType === 'mouse') schedule(true, OPEN_DELAY);
     },
     onPointerLeave: (event) => {
-      if (event.pointerType === 'mouse') schedule(false, CLOSE_DELAY);
+      if (event.pointerType !== 'mouse') return;
+      clear();
+      setOpen(false);
     },
     onPointerDown: (event) => {
       pointerType.current = event.pointerType;
@@ -116,11 +117,14 @@ function PopoverContent({
       <PopoverPrimitive.Positioner align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} className="isolate z-50">
         <PopoverPrimitive.Popup
           data-slot="popover-content"
-          // The content is read-only detail; keep focus on the trigger so it behaves like a tooltip.
+          // The content is read-only detail: never move focus into it, and do not move it back on close
+          // (a programmatic re-focus of the trigger would count as keyboard focus and reopen it).
           initialFocus={false}
+          finalFocus={false}
           className={cn(
             'z-50 w-fit max-w-xs origin-(--transform-origin) rounded-none border bg-popover text-xs text-popover-foreground shadow-md outline-none',
-            'transition-[opacity,transform] duration-150 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:transition-none',
+            // Quick fade-out (no scale) so leaving the trigger feels immediate; the entrance keeps the small scale-in.
+            'transition-[opacity,transform] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:duration-75 motion-reduce:transition-none',
             className,
           )}
           {...props}
