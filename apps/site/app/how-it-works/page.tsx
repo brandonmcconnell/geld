@@ -216,9 +216,12 @@ export default function HowItWorksPage() {
                 listed on the <Link href="/patterns">patterns page</Link>, rendered from the same source the extension uses.
               </p>
               <p>
-                One category is different: <strong>Trivial changes</strong> is decided from the diff rather than from paths. Its groups are kinds of
-                change: renames and permission changes with no edited lines, binary and deleted files, whitespace-only and comment-only edits, and
-                very large diffs. A file that a path category claims stays there; the rest is checked against the kinds you left on. Separately, the{' '}
+                Two categories are different: <strong>Trivial changes</strong> and <strong>Large diffs</strong> are decided from the diff rather than
+                from paths. Trivial changes are kinds of change: renames and permission changes with no edited lines, binary and deleted files,
+                whitespace-only and comment-only edits. Large diffs (a thousand or more changed lines in one file) are kept apart on purpose: they
+                are often where the real work is, so hiding them is a deliberate opt-in; by default Geld does the opposite and expands the ones GitHub
+                collapses (<strong>Expand large diffs</strong>, in General). A file that a path category claims stays there; the rest is checked
+                against the kinds you left on. Separately, the{' '}
                 <strong>Hide comment-only lines</strong> setting works inside files that stay visible: changed lines that only add, remove or edit
                 code comments (in a language Geld recognises) collapse into a row that says how many and shows them on click, and the header counts
                 leave them out.

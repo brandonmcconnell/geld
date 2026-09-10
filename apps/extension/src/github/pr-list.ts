@@ -156,15 +156,16 @@ export function applyPrListStats(options: PrListOptions): void {
     const chip = ensureChip(row);
     const { all, hidden } = breakdownFromFiles(state.files, matcher, options.hideCommentLines);
     const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories));
-    const label = hiddenLabel(hidden, matcher.activeCategories);
-    const text = `${label} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
+    // With nothing that could be hidden the chip is plain line counts: "0 hidden" would be noise.
+    const label = matcher.activeCategories.length === 0 ? null : hiddenLabel(hidden, matcher.activeCategories);
+    const text = `${label ?? ''} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
     if (chip.dataset.rendered !== text) {
       chip.dataset.rendered = text;
-      const tests = createElement('span', { class: `${PR_STAT_CLASS}__tests ${TESTS_COUNT_CLASS}` }, [label]);
-      tests.toggleAttribute('data-has-tests', hidden.totals.files > 0);
+      const tests = label === null ? [] : [createElement('span', { class: `${PR_STAT_CLASS}__tests ${TESTS_COUNT_CLASS}` }, [label])];
+      tests[0]?.toggleAttribute('data-has-tests', hidden.totals.files > 0);
       chip.replaceChildren(
         createElement('span', { class: `${PR_STAT_CLASS}__sep`, 'aria-hidden': 'true' }, ['\u2022']),
-        tests,
+        ...tests,
         createElement('span', { class: `${PR_STAT_CLASS}__add` }, [`+${formatCount(breakdown.visible.additions)}`]),
         createElement('span', { class: `${PR_STAT_CLASS}__del` }, [`\u2212${formatCount(breakdown.visible.deletions)}`]),
       );

@@ -52,6 +52,11 @@ export interface GeldSettings {
    * them on click. Header counts exclude those lines.
    */
   readonly hideCommentLines: boolean;
+  /**
+   * Load the diffs GitHub collapses for being large (1000+ changed lines) as
+   * soon as the page renders, for files Geld leaves visible.
+   */
+  readonly expandLargeDiffs: boolean;
   /** Show `+N −M` (excluding hidden files) next to each pull request in PR lists. */
   readonly showListStats: boolean;
   /**
@@ -99,6 +104,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   groupHidden: true,
   expandedByDefault: false,
   hideCommentLines: false,
+  expandLargeDiffs: true,
   showListStats: true,
   hiddenAuthors: [],
   hideWhitespace: false,
@@ -288,6 +294,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
     hideCommentLines: bool(record, 'hideCommentLines', DEFAULT_SETTINGS.hideCommentLines),
+    expandLargeDiffs: bool(record, 'expandLargeDiffs', DEFAULT_SETTINGS.expandLargeDiffs),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),
     hiddenAuthors: isStringArray(record.hiddenAuthors) ? record.hiddenAuthors : DEFAULT_SETTINGS.hiddenAuthors,
     hideWhitespace: bool(record, 'hideWhitespace', DEFAULT_SETTINGS.hideWhitespace),

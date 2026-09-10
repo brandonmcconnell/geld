@@ -183,6 +183,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'expandLargeDiffs',
+        label: 'Expand large diffs',
+        description:
+          'GitHub collapses files with 1000+ changed lines behind a "Load diff" button. Load them as soon as the page renders, unless Geld hides the file. Generated files GitHub collapses stay collapsed.',
+        popup: false,
+      },
+      {
+        kind: 'toggle',
         key: 'showListStats',
         label: 'Line counts in pull request lists',
         description:

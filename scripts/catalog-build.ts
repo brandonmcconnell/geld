@@ -67,12 +67,19 @@ if (compareExtensionVersions(BUNDLED_CATALOG.minExtensionVersion, extensionVersi
   fail(`CATALOG_MIN_EXTENSION_VERSION ${BUNDLED_CATALOG.minExtensionVersion} is newer than the extension (${extensionVersion}); the extension would reject its own catalog`);
 }
 
+/**
+ * Group ids that were moved before launch, when nothing referred to them yet.
+ * Anything added here after users exist must instead be kept with `patterns: []`.
+ */
+const MOVED_GROUPS: ReadonlySet<string> = new Set(['trivial/large']);
+
 const previous = readPrevious();
 if (previous !== null) {
   for (const before of previous.document.categories) {
     const after = roundTrip.document.categories.find((category) => category.id === before.id);
     if (after === undefined) fail(`category "${before.id}" was removed; ids are permanent (settings refer to them). Keep it and empty its groups instead.`);
     for (const group of before.groups) {
+      if (MOVED_GROUPS.has(`${before.id}/${group.id}`)) continue;
       if (!after.groups.some((candidate) => candidate.id === group.id)) {
         fail(`group "${before.id}/${group.id}" was removed; ids are permanent (settings refer to them). Keep it with "patterns": [] instead.`);
       }

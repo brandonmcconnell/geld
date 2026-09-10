@@ -8,7 +8,7 @@ import { TEST_PATTERN_GROUPS } from './test-patterns';
  * rest are opt-in. Order matters: a path is attributed to the first matching
  * category. Users can add their own categories on top (see {@link CustomCategoryId}).
  */
-export type CategoryId = 'tests' | 'generated' | 'vendored' | 'agents' | 'docs' | 'tooling' | 'stories' | 'trivial';
+export type CategoryId = 'tests' | 'generated' | 'vendored' | 'agents' | 'docs' | 'tooling' | 'stories' | 'trivial' | 'large';
 
 /** Ids of user-defined categories are namespaced so they can never collide with built-ins. */
 export type CustomCategoryId = `custom:${string}`;
@@ -335,7 +335,7 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
   {
     id: 'trivial',
     title: 'Trivial changes',
-    description: 'Renames, mode changes, binary or deleted files, whitespace- or comment-only edits and huge diffs.',
+    description: 'Renames, mode changes, binary/deleted files, space/comment-only edits.',
     icon: 'filter',
     noun: 'trivial change',
     nounPlural: 'trivial changes',
@@ -349,10 +349,23 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
       { id: 'deleted', label: 'Deleted files', description: 'Files removed by the change.', patterns: [] },
       { id: 'whitespace', label: 'Whitespace-only edits', description: 'Every changed line differs only in spaces, tabs or line endings.', patterns: [] },
       { id: 'comments', label: 'Comment-only edits', description: 'Every changed line is a code comment (or blank), in a language Geld knows.', patterns: [] },
+    ],
+  },
+  {
+    id: 'large',
+    title: 'Large diffs',
+    description: '⚠️ Are you sure? Large diffs (1000+ lines) are often the real work.',
+    icon: 'graph',
+    noun: 'large diff',
+    nounPlural: 'large diffs',
+    shortNoun: 'large',
+    shortNounPlural: 'large',
+    defaultEnabled: false,
+    groups: [
       {
         id: 'large',
         label: 'Very large diffs',
-        description: 'More than a thousand changed lines in one file; GitHub stops rendering these by default too.',
+        description: 'A thousand or more changed lines in one file; GitHub stops rendering these by default too.',
         patterns: [],
       },
     ],
@@ -367,14 +380,14 @@ export const BUNDLED_CATALOG: Catalog = {
   listSurfaces: BUNDLED_LIST_SURFACES,
 };
 
-export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories', 'trivial'];
+export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories', 'trivial', 'large'];
 
 /**
- * The category whose groups are change kinds (see `change-kinds.ts`) rather
- * than path patterns. It is matched last, so a file that a path category
- * claims is attributed there even when its change is also trivial.
+ * The categories whose groups are change kinds (see `change-kinds.ts`) rather
+ * than path patterns. They are matched last, so a file that a path category
+ * claims is attributed there even when its change is also trivial or large.
  */
-export const CHANGE_KINDS_CATEGORY_ID: CategoryId = 'trivial';
+export const CHANGE_KINDS_CATEGORY_IDS: readonly CategoryId[] = ['trivial', 'large'];
 
 /**
  * Look a built-in category up in a catalog. The set of category ids is fixed

@@ -1,5 +1,5 @@
 import type { Catalog, HiddenCategory } from './categories';
-import { BUNDLED_CATALOG, CHANGE_KINDS_CATEGORY_ID, categoryById, hiddenCategoryFromCustom } from './categories';
+import { BUNDLED_CATALOG, CHANGE_KINDS_CATEGORY_IDS, categoryById, hiddenCategoryFromCustom } from './categories';
 import type { ChangeKindId, FileFacts } from './change-kinds';
 import { changeKindsOf, isChangeKindId } from './change-kinds';
 import type { CompiledGlobs } from './glob';
@@ -142,7 +142,7 @@ export function createMatcher(settings: GeldSettings, repo: string | null = null
     for (const group of category.groups) {
       if (!isGroupEnabled(settings, category.id, group.id)) continue;
       builtIn.push(...group.patterns);
-      if (category.id === CHANGE_KINDS_CATEGORY_ID && isChangeKindId(group.id)) kinds.add(group.id);
+      if (CHANGE_KINDS_CATEGORY_IDS.includes(category.id) && isChangeKindId(group.id)) kinds.add(group.id);
     }
     const entry = compileCategory(category, builtIn, resolveCustomPatterns(categoryPatternLines(settings, category.id), repo), kinds);
     if (entry !== null) compiled.push(entry);

@@ -123,8 +123,7 @@ function PopoverContent({
           finalFocus={false}
           className={cn(
             'z-50 w-fit max-w-xs origin-(--transform-origin) rounded-none border bg-popover text-xs text-popover-foreground shadow-md outline-none',
-            // Quick fade-out (no scale) so leaving the trigger feels immediate; the entrance keeps the small scale-in.
-            'transition-[opacity,transform] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:duration-75 motion-reduce:transition-none',
+            'transition-[opacity,transform] duration-150 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:transition-none',
             className,
           )}
           {...props}

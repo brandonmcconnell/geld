@@ -32,6 +32,7 @@ import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import { categoryIconFor } from './ui/icons';
+import { expandLargeDiffs } from './large-diffs';
 import type { TreeSectionFile } from './ui/tree-section';
 import {
   applySidebarLayout,
@@ -580,6 +581,9 @@ export class GeldController {
     const allTotals = header.all;
 
     this.applyWhitespace(page, view, url);
+    if (view !== null && this.settings.expandLargeDiffs) {
+      expandLargeDiffs(view.entries, (entry) => entry.root.getAttribute(ATTR_ENTRY) === 'hidden');
+    }
 
     applySurfaceStyles(this.catalog);
     const surfaces = surfacesOf(this.catalog);

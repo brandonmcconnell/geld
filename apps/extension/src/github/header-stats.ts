@@ -231,7 +231,8 @@ export function applyHeaderStats(
   hidden: HiddenBreakdown,
   activeCategories: readonly HiddenCategory[],
 ): void {
-  if (group.original === null) {
+  // Nothing that could be hidden: GitHub's own numbers are right, so leave the header alone (no "0 hidden").
+  if (group.original === null || activeCategories.length === 0) {
     restoreHeaderStats(group);
     return;
   }

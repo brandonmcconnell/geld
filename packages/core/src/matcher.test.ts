@@ -188,14 +188,22 @@ describe('settings interplay', () => {
   });
 });
 
-describe('change kinds (Trivial changes category)', () => {
+describe('change kinds (Trivial changes and Large diffs categories)', () => {
   const on = { ...DEFAULT_SETTINGS, categories: { trivial: true } };
 
   it('attributes files by what changed only when the category is on', () => {
     const matcher = createMatcher(on);
     expect(matcher.usesChangeKinds).toBe(true);
     expect(matcher.categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })?.id).toBe('trivial');
-    expect(matcher.categorizeFile({ path: 'src/big.ts', additions: 900, deletions: 200 })?.id).toBe('trivial');
+    // Very large diffs are their own opt-in category, not trivial.
+    expect(matcher.categorizeFile({ path: 'src/big.ts', additions: 900, deletions: 200 })).toBeNull();
+    const large = createMatcher({ ...DEFAULT_SETTINGS, categories: { large: true } });
+    expect(large.usesChangeKinds).toBe(true);
+    expect(large.categorizeFile({ path: 'src/big.ts', additions: 900, deletions: 200 })?.id).toBe('large');
+    expect(large.categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })).toBeNull();
+    const both = createMatcher({ ...DEFAULT_SETTINGS, categories: { trivial: true, large: true } });
+    // A huge binary is trivial first (trivial is matched before large).
+    expect(both.categorizeFile({ path: 'blob.bin', additions: 2000, deletions: 0, kinds: ['binary'] })?.id).toBe('trivial');
     expect(matcher.categorizeFile({ path: 'src/plain.ts', additions: 3, deletions: 1 })).toBeNull();
     expect(matcher.categorize('src/moved.ts')).toBeNull();
     expect(createMatcher(DEFAULT_SETTINGS).categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })).toBeNull();
