@@ -11,6 +11,8 @@ import { ALL_TOTALS, HIDDEN_FILES, HIDDEN_TOTALS, VISIBLE_FILES, VISIBLE_TOTALS 
 import { SidebarAccordion } from '@/components/demo/sidebar-accordion';
 import { Kbd } from '@/components/kbd';
 import { PageIntro, Prose } from '@/components/section';
+import type { TocEntry } from '@/components/section-toc';
+import { SectionToc } from '@/components/section-toc';
 import { KEYBOARD_SHORTCUT } from '@/lib/site';
 
 export const metadata: Metadata = {
@@ -41,6 +43,8 @@ const STEPS: readonly Step[] = [
   { id: 'enterprise', title: 'GitHub Enterprise Server', short: 'Enterprise Server' },
 ];
 
+const TOC_ENTRIES: readonly TocEntry[] = STEPS.map((step) => ({ id: step.id, label: step.short }));
+
 export default function HowItWorksPage() {
   const geld = { hidden: HIDDEN_TOTALS, all: ALL_TOTALS, noun: TESTS_CATEGORY.shortNoun, nounPlural: TESTS_CATEGORY.shortNounPlural };
   return (
@@ -53,19 +57,7 @@ export default function HowItWorksPage() {
 
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
         <nav aria-label="On this page" className="hidden lg:block">
-          <ol className="sticky top-28 flex flex-col gap-2 border-l text-sm">
-            {STEPS.map((step, index) => (
-              <li key={step.id}>
-                <a
-                  href={`#${step.id}`}
-                  className="-ml-px flex items-baseline gap-2.5 border-l border-transparent py-1 pl-4 whitespace-nowrap text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-                >
-                  <span className="font-mono text-xs tabular-nums">{String(index + 1).padStart(2, '0')}</span>
-                  {step.short}
-                </a>
-              </li>
-            ))}
-          </ol>
+          <SectionToc entries={TOC_ENTRIES} className="sticky top-28" />
         </nav>
 
         <div className="flex min-w-0 flex-col gap-28 sm:gap-32">
