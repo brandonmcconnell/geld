@@ -335,7 +335,7 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
   {
     id: 'trivial',
     title: 'Trivial changes',
-    description: 'Renames, mode changes, binary or deleted files, whitespace-only edits and huge diffs.',
+    description: 'Renames, mode changes, binary or deleted files, whitespace- or comment-only edits and huge diffs.',
     icon: 'filter',
     noun: 'trivial change',
     nounPlural: 'trivial changes',
