@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
 /** Crossfade length; mirrored by `::view-transition-*(root)` in globals.css. */
-const CROSSFADE_MS = 160;
+const CROSSFADE_MS = 240;
 /** Give up waiting for a navigation that never lands (offline, blocked) so the page is not frozen. */
 const NAVIGATION_TIMEOUT_MS = 2500;
 
@@ -83,9 +83,18 @@ export function RouteTransition() {
       const timeout = new Promise<void>((resolve) => {
         setTimeout(resolve, NAVIGATION_TIMEOUT_MS);
       });
-      document.startViewTransition(() => {
+      // While the transition runs, the header wordmark's own 500ms reveal is
+      // switched off (globals.css): its new state is captured instantly and
+      // crossfades with everything else, instead of continuing to animate
+      // underneath the snapshots and jumping when they are removed.
+      const root = document.documentElement;
+      root.dataset.routeTransition = '';
+      const transition = document.startViewTransition(() => {
         router.push(href);
         return Promise.race([committed, timeout]);
+      });
+      void transition.finished.finally(() => {
+        delete root.dataset.routeTransition;
       });
     };
     document.addEventListener('click', onClick, true);

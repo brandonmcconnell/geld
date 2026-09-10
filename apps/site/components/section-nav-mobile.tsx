@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useHeaderSlot } from '@/components/use-header-slot';
+import { useIsCurrentPage } from '@/components/use-is-current-page';
 import type { SectionEntry } from '@/components/use-active-section';
 import { useActiveSection } from '@/components/use-active-section';
 
@@ -47,7 +48,8 @@ function Label({ entry, index, motion, onDone }: { readonly entry: SectionEntry;
  * in the site header's slot so it shares the header's frosted surface.
  */
 export function SectionNavMobile({ entries, offset = 128, className }: SectionNavMobileProps) {
-  const active = useActiveSection(entries, offset);
+  const isCurrent = useIsCurrentPage();
+  const active = useActiveSection(entries, offset, isCurrent);
   const activeIndex = Math.max(0, entries.findIndex((entry) => entry.id === active));
   const [shown, setShown] = useState<Shown>({ index: activeIndex, direction: 'down', leaving: null });
   const [open, setOpen] = useState(false);
@@ -70,7 +72,8 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
 
   const current = entries[shown.index];
   const leaving = shown.leaving === null ? undefined : entries[shown.leaving];
-  if (current === undefined || slot === null) return null;
+  // A page the router keeps mounted but hidden must not put its bar in the header.
+  if (current === undefined || slot === null || !isCurrent) return null;
 
   return createPortal(
     <nav ref={navRef} aria-label="On this page" className={cn('lg:hidden', className)}>

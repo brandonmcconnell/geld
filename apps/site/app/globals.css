@@ -220,16 +220,18 @@
 
 /*
  * Top-bar wordmark: hidden (transparent, blurred) while the page's hero
- * wordmark is still visible beneath the bar; JS sets data-covered once the
- * hero mark has scrolled under it. Pure CSS for the initial state so it is
- * right before hydration and independent of how the page was rendered.
+ * wordmark is still visible beneath the bar; JS sets data-hero after every
+ * route change and scroll. Pure CSS for the initial state so it is right
+ * before hydration and independent of how the page was rendered.
  */
 @utility header-brand {
   transition:
     opacity 500ms ease-out,
     filter 500ms ease-out;
   will-change: opacity, filter;
-  :root:has(#hero-wordmark) &:not([data-covered='true']) {
+  /* Before hydration (no data-hero yet): hidden whenever the page has a hero wordmark. */
+  :root:has(#hero-wordmark) &:not([data-hero]),
+  &[data-hero='showing'] {
     opacity: 0;
     filter: blur(5px);
     pointer-events: none;
@@ -251,29 +253,34 @@
 }
 
 ::view-transition-old(root) {
-  animation: 160ms ease-in both route-out;
+  animation: 240ms ease-in-out both route-out;
 }
 
 ::view-transition-new(root) {
-  animation: 160ms ease-out both route-in;
+  animation: 240ms ease-in-out both route-in;
 }
 
 @keyframes route-out {
   to {
     opacity: 0;
-    filter: blur(6px);
+    filter: blur(4px);
   }
 }
 
 @keyframes route-in {
   from {
     opacity: 0;
-    filter: blur(6px);
+    filter: blur(4px);
   }
 }
 
 :root[data-route-entering] main {
-  animation: 160ms ease-out both route-in;
+  animation: 240ms ease-out both route-in;
+}
+
+/* The header wordmark's reveal is part of the crossfade while a route transition runs (see RouteTransition). */
+:root[data-route-transition] .header-brand {
+  transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

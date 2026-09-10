@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useHeaderSlot } from '@/components/use-header-slot';
+import { useIsCurrentPage } from '@/components/use-is-current-page';
 
 interface SubBarProps {
   readonly 'aria-label': string;
@@ -25,6 +26,8 @@ export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarP
   const sentinel = useRef<HTMLDivElement | null>(null);
   const [stuck, setStuck] = useState(false);
   const slot = useHeaderSlot();
+  // A page the router keeps mounted but hidden must not put its bar in the header.
+  const portal = useIsCurrentPage() && slot !== null;
 
   useEffect(() => {
     const node = sentinel.current;
@@ -44,7 +47,7 @@ export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarP
   }, []);
 
   const bar = (
-    <nav aria-label={ariaLabel} className={cn(stuck && slot !== null ? undefined : 'border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70', className)}>
+    <nav aria-label={ariaLabel} className={cn(stuck && portal ? undefined : 'border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70', className)}>
       {children}
     </nav>
   );
@@ -52,7 +55,7 @@ export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarP
   return (
     <>
       <div ref={sentinel} aria-hidden="true" className="h-px -mb-px" />
-      {stuck && slot !== null ? createPortal(bar, slot) : <div className="sticky top-[calc(3.5rem+1px)] z-30">{bar}</div>}
+      {stuck && portal ? createPortal(bar, slot) : <div className="sticky top-[calc(3.5rem+1px)] z-30">{bar}</div>}
     </>
   );
 }

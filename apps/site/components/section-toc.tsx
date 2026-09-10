@@ -4,6 +4,7 @@ import { cn } from 'cn';
 
 import type { SectionEntry } from '@/components/use-active-section';
 import { useActiveSection } from '@/components/use-active-section';
+import { useIsCurrentPage } from '@/components/use-is-current-page';
 
 export type TocEntry = SectionEntry;
 
@@ -16,7 +17,7 @@ interface SectionTocProps {
 
 /** Numbered table of contents that highlights the section currently in view. */
 export function SectionToc({ entries, offset = 128, className }: SectionTocProps) {
-  const active = useActiveSection(entries, offset);
+  const active = useActiveSection(entries, offset, useIsCurrentPage());
 
   return (
     <ol className={cn('flex flex-col gap-2 border-l text-sm', className)}>

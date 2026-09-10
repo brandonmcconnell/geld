@@ -12,10 +12,11 @@ export interface SectionEntry {
  * past `offset` (the first one while still above it), or the final one once
  * the page is scrolled to the bottom. Updated at most once per frame.
  */
-export function useActiveSection(entries: readonly SectionEntry[], offset: number): string | null {
+export function useActiveSection(entries: readonly SectionEntry[], offset: number, enabled = true): string | null {
   const [active, setActive] = useState<string | null>(entries[0]?.id ?? null);
 
   useEffect(() => {
+    if (!enabled) return;
     const sections = entries.map((entry) => document.getElementById(entry.id)).filter((element): element is HTMLElement => element !== null);
     if (sections.length === 0) return;
     let frame: number | null = null;
@@ -46,7 +47,7 @@ export function useActiveSection(entries: readonly SectionEntry[], offset: numbe
       window.removeEventListener('resize', schedule);
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [entries, offset]);
+  }, [entries, offset, enabled]);
 
   return active;
 }
