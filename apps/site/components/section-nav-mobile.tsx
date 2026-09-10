@@ -4,7 +4,9 @@ import { Dialog } from '@base-ui/react/dialog';
 import { cn } from 'cn';
 import { ChevronDownIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
+import { useHeaderSlot } from '@/components/use-header-slot';
 import type { SectionEntry } from '@/components/use-active-section';
 import { useActiveSection } from '@/components/use-active-section';
 
@@ -38,7 +40,8 @@ function Label({ entry, index, motion, onDone }: { readonly entry: SectionEntry;
  * the top bar that names the section in view. When the section changes, the
  * old name blurs, fades and slides out in the scroll direction while the new
  * one arrives from the other side. Tapping it opens the full list as a modal
- * sheet under the bar; the page cannot scroll while it is open.
+ * sheet under the bar; the page cannot scroll while it is open. The bar lives
+ * in the site header's slot so it shares the header's frosted surface.
  */
 export function SectionNavMobile({ entries, offset = 128, className }: SectionNavMobileProps) {
   const active = useActiveSection(entries, offset);
@@ -48,6 +51,7 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
   const navRef = useRef<HTMLElement | null>(null);
   // Where the sheet starts: the bar's bottom edge, read when it opens.
   const [sheetTop, setSheetTop] = useState(0);
+  const slot = useHeaderSlot();
 
   // The section changed since the last render: start the swap (state adjusted during render, not in an effect).
   if (activeIndex !== shown.index) {
@@ -57,16 +61,10 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
 
   const current = entries[shown.index];
   const leaving = shown.leaving === null ? undefined : entries[shown.leaving];
-  if (current === undefined) return null;
+  if (current === undefined || slot === null) return null;
 
-  return (
-    <nav
-      ref={navRef}
-      aria-label="On this page"
-      data-subbar="mobile"
-      // Above the backdrop while the list is open, so the bar stays crisp as the sheet's anchor.
-      className={cn('sticky top-[calc(3.5rem+1px)] border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:hidden', open ? 'z-50' : 'z-30', className)}
-    >
+  return createPortal(
+    <nav ref={navRef} aria-label="On this page" className={cn('lg:hidden', className)}>
       <Dialog.Root
         open={open}
         onOpenChange={(next) => {
@@ -130,6 +128,7 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
-    </nav>
+    </nav>,
+    slot,
   );
 }

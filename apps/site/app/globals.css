@@ -285,21 +285,6 @@
   }
 }
 
-/*
- * A secondary bar stuck under the top bar (components/sub-bar, the mobile
- * section bar) shares its frosted surface: the top bar's bottom border goes
- * so there is no seam between them. The mobile bar only exists below `lg`.
- */
-:root:has([data-subbar='stuck']) .site-header {
-  border-bottom-color: transparent;
-}
-
-@media (width < 64rem) {
-  :root:has([data-subbar='mobile']) .site-header {
-    border-bottom-color: transparent;
-  }
-}
-
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
