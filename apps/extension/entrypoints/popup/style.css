@@ -12,11 +12,40 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* Never narrower than the wordmark (70px): a long login truncates before the logo gives. */
 .popup__brand-text {
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 4px;
+  min-width: 70px;
+}
+
+/* Signed in, the generic tagline is redundant; the wordmark centres on the account control. Live repo context stays. */
+.popup__header:has(.geld-account__summary) .geld-brand__tagline:not([data-context]) {
+  display: none;
+}
+
+/* The account control gives way first: it shrinks (much) more readily than the brand block and its login truncates. */
+.popup__header .geld-account {
+  flex: 0 8 auto;
   min-width: 0;
+}
+
+.popup__header .geld-account__menu,
+.popup__header .geld-account__summary {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.popup__header .geld-account__avatar {
+  flex-shrink: 0;
+}
+
+.popup__header .geld-account__login {
+  flex: 0 1 auto;
+  min-width: 3ch;
+  max-width: none;
 }
 
 /* Tight line box so the block's ink, not just its box, centres on the account control. */

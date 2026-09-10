@@ -364,6 +364,8 @@ async function main(): Promise<void> {
     const state = await requestTabState(tab.id);
     repo = state?.repo ?? repo;
     contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
+    // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
+    contextRepo.dataset.context = 'repo';
 
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
