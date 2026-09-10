@@ -239,6 +239,52 @@
   }
 }
 
+/*
+ * Route transitions: the page body blurs and fades out, then the next page
+ * blurs and fades in, echoing the header wordmark's reveal. Only the `.page`
+ * boundary (the <main> in the root layout) animates; the root snapshot is
+ * disabled so the header and footer stay still. No-ops where the View
+ * Transitions API is missing.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-group(.page) {
+  animation-duration: 0s;
+}
+
+::view-transition-old(.page) {
+  animation: 180ms ease-in both page-out;
+}
+
+::view-transition-new(.page) {
+  animation: 320ms ease-out both page-in;
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;

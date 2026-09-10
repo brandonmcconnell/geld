@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { ViewTransition } from 'react';
 import { CornerShapePolyfill } from '@/components/corner-shape-polyfill';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
@@ -62,9 +63,12 @@ export default function RootLayout({ children }: { readonly children: React.Reac
         <CornerShapePolyfill />
         <TooltipProvider>
           <SiteHeader />
-          <main id="main" className="flex-1">
-            {children}
-          </main>
+          {/* Page content blurs and fades between routes (see `::view-transition-*(.page)` in globals.css); header and footer stay put. */}
+          <ViewTransition default="page">
+            <main id="main" className="flex-1">
+              {children}
+            </main>
+          </ViewTransition>
           <SiteFooter />
         </TooltipProvider>
       </body>
