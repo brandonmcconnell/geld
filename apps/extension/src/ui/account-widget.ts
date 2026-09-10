@@ -223,7 +223,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       if (flow.status === 'pending' || flow.status === 'error') dialogWanted = true;
       lastFlowStatus = flow.status;
     }
-    if (account !== null) dialogWanted = false;
+    // An OAuth App account is signed in *and* mid-reconnect; keep its dialog open.
+    if (account !== null && account.auth !== 'oauth') dialogWanted = false;
     const node = ensureDialog();
     if (!dialogWanted || (flow.status !== 'pending' && flow.status !== 'error')) {
       if (node.open) node.close();
