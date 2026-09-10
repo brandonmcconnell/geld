@@ -240,113 +240,67 @@
 }
 
 /*
- * Route transitions: the page body blurs and fades out, then the next page
- * blurs and fades in, echoing the header wordmark's reveal. Only the `.page`
- * boundary (the <main> in the root layout) animates; the root snapshot is
- * disabled so the header and footer stay still. No-ops where the View
- * Transitions API is missing.
+ * Route transitions (components/route-transition): while a page leaves, <main>
+ * fades out and a fixed, viewport-sized veil under the top bar blurs what is
+ * behind it; the next page arrives the same way in reverse. Blurring the veil
+ * costs a viewport's worth of pixels regardless of page length, which is why
+ * this is not done with view-transition snapshots. Durations match
+ * LEAVE_MS / ENTER_MS in the component.
  */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
+.route-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  /* Only real backdrop blur is worth it; without support there is just the fade. */
+  backdrop-filter: blur(0);
+  will-change: backdrop-filter;
 }
 
-::view-transition-group(.page) {
-  animation-duration: 0s;
+:root[data-route-phase='leaving'] main {
+  animation: 180ms ease-in both route-leave;
 }
 
-::view-transition-old(.page) {
-  animation: 180ms ease-in both page-out;
+:root[data-route-phase='leaving'] .route-veil {
+  animation: 180ms ease-in both veil-in;
 }
 
-::view-transition-new(.page) {
-  animation: 320ms ease-out both page-in;
+:root[data-route-phase='entering'] main {
+  animation: 320ms ease-out both route-enter;
 }
 
-@keyframes page-out {
+:root[data-route-phase='entering'] .route-veil {
+  animation: 320ms ease-out both veil-out;
+}
+
+@keyframes route-leave {
   to {
     opacity: 0;
-    filter: blur(6px);
   }
 }
 
-@keyframes page-in {
+@keyframes route-enter {
   from {
     opacity: 0;
-    filter: blur(6px);
+  }
+}
+
+@keyframes veil-in {
+  to {
+    backdrop-filter: blur(6px);
+  }
+}
+
+@keyframes veil-out {
+  from {
+    backdrop-filter: blur(6px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-}
-
-/*
- * Mobile section bar (components/section-nav-mobile): the outgoing label
- * blurs, fades and slides in the scroll direction while the incoming one
- * arrives from the opposite side. `down` = the reader scrolled down.
- */
-@utility subnav-label {
-  animation-duration: 320ms;
-  animation-timing-function: ease-out;
-  animation-fill-mode: both;
-  &[data-motion='in-down'] {
-    animation-name: subnav-in-down;
-  }
-  &[data-motion='in-up'] {
-    animation-name: subnav-in-up;
-  }
-  &[data-motion='out-down'] {
-    animation-name: subnav-out-down;
-    animation-timing-function: ease-in;
-    pointer-events: none;
-  }
-  &[data-motion='out-up'] {
-    animation-name: subnav-out-up;
-    animation-timing-function: ease-in;
-    pointer-events: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
+  :root[data-route-phase] main,
+  :root[data-route-phase] .route-veil {
     animation: none;
-    &[data-motion^='out'] {
-      display: none;
-    }
-  }
-}
-
-@keyframes subnav-in-down {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-    transform: translateY(100%);
-  }
-}
-
-@keyframes subnav-in-up {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-    transform: translateY(-100%);
-  }
-}
-
-@keyframes subnav-out-down {
-  to {
-    opacity: 0;
-    filter: blur(4px);
-    transform: translateY(-100%);
-  }
-}
-
-@keyframes subnav-out-up {
-  to {
-    opacity: 0;
-    filter: blur(4px);
-    transform: translateY(100%);
   }
 }
 
