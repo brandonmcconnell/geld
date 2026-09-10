@@ -20,6 +20,9 @@ importers:
       '@geld/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@geld/github':
+        specifier: workspace:*
+        version: link:../../packages/github
       hyperellipse:
         specifier: ^1.0.5
         version: 1.0.5
