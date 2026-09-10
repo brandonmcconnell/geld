@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260914,
+  "version": 20260915,
   "minExtensionVersion": "0.1.1",
   "categories": [
     {
@@ -566,7 +566,7 @@
     {
       "id": "trivial",
       "title": "Trivial changes",
-      "description": "Renames, mode changes, binary or deleted files, whitespace- or comment-only edits and huge diffs.",
+      "description": "Renames, mode changes, binary/deleted files, space/comment-only edits.",
       "icon": "filter",
       "noun": "trivial change",
       "nounPlural": "trivial changes",
@@ -609,11 +609,24 @@
           "label": "Comment-only edits",
           "description": "Every changed line is a code comment (or blank), in a language Geld knows.",
           "patterns": []
-        },
+        }
+      ]
+    },
+    {
+      "id": "large",
+      "title": "Large diffs",
+      "description": "⚠️ Are you sure? Large diffs (1000+ lines) are often the real work.",
+      "icon": "graph",
+      "noun": "large diff",
+      "nounPlural": "large diffs",
+      "shortNoun": "large",
+      "shortNounPlural": "large",
+      "defaultEnabled": false,
+      "groups": [
         {
           "id": "large",
           "label": "Very large diffs",
-          "description": "More than a thousand changed lines in one file; GitHub stops rendering these by default too.",
+          "description": "A thousand or more changed lines in one file; GitHub stops rendering these by default too.",
           "patterns": []
         }
       ]
