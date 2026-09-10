@@ -70,14 +70,25 @@ export default function HowItWorksPage() {
                 on a page is hidden there is nothing left to review, so the hidden files start expanded.
               </p>
             </Prose>
-            <Frame className="mt-8">
-              <ul aria-label="Changed files with tests hidden">
-                {VISIBLE_FILES.map((file) => (
-                  <FileRow key={file.path} file={file} />
-                ))}
-              </ul>
-              <HiddenRow files={HIDDEN_FILES} noun={TESTS_CATEGORY.noun} nounPlural={TESTS_CATEGORY.nounPlural} defaultOpen />
-            </Frame>
+            {/* On wide screens an invisible copy with the list open sits in the same grid cell, so collapsing the row shrinks the frame without moving the page below. */}
+            <div className="mt-8 lg:grid lg:items-start lg:*:col-start-1 lg:*:row-start-1">
+              <Frame>
+                <ul aria-label="Changed files with tests hidden">
+                  {VISIBLE_FILES.map((file) => (
+                    <FileRow key={file.path} file={file} />
+                  ))}
+                </ul>
+                <HiddenRow files={HIDDEN_FILES} noun={TESTS_CATEGORY.noun} nounPlural={TESTS_CATEGORY.nounPlural} defaultOpen />
+              </Frame>
+              <Frame aria-hidden className="invisible max-lg:hidden">
+                <ul>
+                  {VISIBLE_FILES.map((file) => (
+                    <FileRow key={file.path} file={file} />
+                  ))}
+                </ul>
+                <HiddenRow files={HIDDEN_FILES} noun={TESTS_CATEGORY.noun} nounPlural={TESTS_CATEGORY.nounPlural} defaultOpen />
+              </Frame>
+            </div>
           </Step>
 
           <Step id="counts" index={2} title={STEPS[1]?.title ?? ''}>
@@ -115,6 +126,7 @@ export default function HowItWorksPage() {
                 hiddenTitle={TESTS_CATEGORY.title}
                 hiddenNoun={TESTS_CATEGORY.noun}
                 hiddenNounPlural={TESTS_CATEGORY.nounPlural}
+                fixedHeightOnDesktop
               />
             </div>
           </Step>
