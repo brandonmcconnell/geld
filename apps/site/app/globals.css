@@ -265,14 +265,30 @@
   animation: 180ms ease-in both route-out;
 }
 
+/* One 500ms track that holds the new page invisible for the first 180ms (36%)
+   rather than an animation-delay: WebKit does not reliably apply the backwards
+   fill during the delay, which let the new page show through the fading old one. */
 ::view-transition-new(root) {
-  animation: 320ms ease-out 180ms both route-in;
+  animation: 500ms linear both route-in-after-out;
 }
 
 @keyframes route-out {
   to {
     opacity: 0;
     filter: blur(6px);
+  }
+}
+
+@keyframes route-in-after-out {
+  0%,
+  36% {
+    opacity: 0;
+    filter: blur(6px);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
   }
 }
 

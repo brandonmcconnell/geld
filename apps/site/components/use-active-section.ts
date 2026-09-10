@@ -7,13 +7,19 @@ export interface SectionEntry {
   readonly label: string;
 }
 
+export interface ActiveSection {
+  readonly id: string | null;
+  /** False until the first measurement; before that `id` is just the first entry. */
+  readonly measured: boolean;
+}
+
 /**
  * Id of the section currently in view: the last one whose top has scrolled
  * past `offset` (the first one while still above it), or the final one once
  * the page is scrolled to the bottom. Updated at most once per frame.
  */
-export function useActiveSection(entries: readonly SectionEntry[], offset: number, enabled = true): string | null {
-  const [active, setActive] = useState<string | null>(entries[0]?.id ?? null);
+export function useActiveSection(entries: readonly SectionEntry[], offset: number, enabled = true): ActiveSection {
+  const [active, setActive] = useState<ActiveSection>({ id: entries[0]?.id ?? null, measured: false });
 
   useEffect(() => {
     if (!enabled) return;
@@ -33,7 +39,8 @@ export function useActiveSection(entries: readonly SectionEntry[], offset: numbe
           else break;
         }
       }
-      setActive((current ?? sections[0])?.id ?? null);
+      const id = (current ?? sections[0])?.id ?? null;
+      setActive((previous) => (previous.measured && previous.id === id ? previous : { id, measured: true }));
     };
     const schedule = (): void => {
       if (frame === null) frame = requestAnimationFrame(update);

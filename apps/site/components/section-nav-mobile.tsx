@@ -23,12 +23,24 @@ type Direction = 'down' | 'up';
 /** A little longer than the 320ms label animation in globals.css. */
 const LEAVE_FALLBACK_MS = 400;
 
+/** Set on <html> by RouteTransition while a page transition is being captured. */
+function routeTransitionRunning(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.dataset.routeTransition !== undefined;
+}
+
 interface Shown {
   readonly index: number;
   readonly direction: Direction;
   /** The label on its way out, animated in the same direction. */
   readonly leaving: number | null;
+  /**
+   * Swaps animate only once `settled`: the first measured section, and changes
+   * shortly after it (the hash scroll on load), land without a swap.
+   */
+  readonly primed: 'unmeasured' | 'settling' | 'settled';
 }
+
+const SETTLE_AFTER_PRIME_MS = 600;
 
 function Label({ entry, index, motion, onDone }: { readonly entry: SectionEntry; readonly index: number; readonly motion: string; readonly onDone?: () => void }) {
   return (
@@ -50,18 +62,35 @@ function Label({ entry, index, motion, onDone }: { readonly entry: SectionEntry;
 export function SectionNavMobile({ entries, offset = 128, className }: SectionNavMobileProps) {
   const isCurrent = useIsCurrentPage();
   const active = useActiveSection(entries, offset, isCurrent);
-  const activeIndex = Math.max(0, entries.findIndex((entry) => entry.id === active));
-  const [shown, setShown] = useState<Shown>({ index: activeIndex, direction: 'down', leaving: null });
+  const activeIndex = Math.max(0, entries.findIndex((entry) => entry.id === active.id));
+  const [shown, setShown] = useState<Shown>({ index: activeIndex, direction: 'down', leaving: null, primed: 'unmeasured' });
   const [open, setOpen] = useState(false);
   const navRef = useRef<HTMLElement | null>(null);
   // Where the sheet starts: the bar's bottom edge, read when it opens.
   const [sheetTop, setSheetTop] = useState(0);
   const slot = useHeaderSlot();
 
-  // The section changed since the last render: start the swap (state adjusted during render, not in an effect).
-  if (activeIndex !== shown.index) {
-    setShown({ index: activeIndex, direction: activeIndex > shown.index ? 'down' : 'up', leaving: shown.index });
+  // The section changed since the last render: start the swap (state adjusted
+  // during render, not in an effect). No swap animation for the first
+  // measurement or while a route transition is capturing the header: those
+  // must land on the final label at once, or the header's snapshot would
+  // freeze two labels mid-swap.
+  if (active.measured && activeIndex !== shown.index) {
+    const snap = shown.primed !== 'settled' || routeTransitionRunning();
+    const primed = shown.primed === 'unmeasured' ? 'settling' : shown.primed;
+    setShown(
+      snap
+        ? { index: activeIndex, direction: 'down', leaving: null, primed }
+        : { index: activeIndex, direction: activeIndex > shown.index ? 'down' : 'up', leaving: shown.index, primed },
+    );
+  } else if (active.measured && shown.primed === 'unmeasured') {
+    setShown({ ...shown, primed: 'settling' });
   }
+  useEffect(() => {
+    if (shown.primed !== 'settling') return;
+    const timer = setTimeout(() => setShown((current) => ({ ...current, primed: 'settled' })), SETTLE_AFTER_PRIME_MS);
+    return () => clearTimeout(timer);
+  }, [shown.primed]);
   const settle = (): void => setShown((current) => (current.leaving === null ? current : { ...current, leaving: null }));
   // animationend is the normal way out; the timer covers engines that skip it (interrupted or throttled animations), so an old label can never stay behind.
   useEffect(() => {

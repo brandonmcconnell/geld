@@ -17,7 +17,7 @@ interface SectionTocProps {
 
 /** Numbered table of contents that highlights the section currently in view. */
 export function SectionToc({ entries, offset = 128, className }: SectionTocProps) {
-  const active = useActiveSection(entries, offset, useIsCurrentPage());
+  const { id: active } = useActiveSection(entries, offset, useIsCurrentPage());
 
   return (
     <ol className={cn('flex flex-col gap-2 border-l text-sm', className)}>
