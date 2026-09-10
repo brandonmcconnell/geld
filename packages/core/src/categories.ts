@@ -91,7 +91,7 @@ export interface Catalog {
  * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260912;
+export const CATALOG_VERSION = 20260913;
 
 /** The extension version that introduced the updatable catalog; older builds never fetch it. */
 export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
