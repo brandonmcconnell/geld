@@ -68,8 +68,8 @@ function CategoryRow({
           <CategoryIcon name={category.icon} className="text-muted-foreground" />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">{category.title}</span>
-            <span id={helpId} className="block text-sm text-muted-foreground">
-              {category.description}
+            <span id={helpId} className="block text-sm text-pretty text-muted-foreground">
+              <RichText copy={category.description} />
             </span>
           </span>
           {customised !== null ? <span className="hidden text-xs text-muted-foreground sm:inline">{customised}</span> : null}

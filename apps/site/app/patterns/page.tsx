@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { ExternalLink } from '@/components/external-link';
 import { PageIntro, Prose } from '@/components/section';
+import { RichText } from '@/components/settings/rich-text';
 import { SubBar } from '@/components/sub-bar';
 import { REPO_URL } from '@/lib/site';
 
@@ -78,7 +79,9 @@ export default function PatternsPage() {
                 </h2>
                 <span className="border px-2.5 py-0.5 text-xs leading-5 text-muted-foreground">{category.defaultEnabled ? 'on by default' : 'opt-in'}</span>
               </div>
-              <p className="mt-2 max-w-2xl text-muted-foreground">{category.description}</p>
+              <p className="mt-2 max-w-2xl text-pretty text-muted-foreground">
+                <RichText copy={category.description} />
+              </p>
               <p className="mt-1.5 text-sm text-muted-foreground">
                 Label: <span className="font-mono">{category.shortNounPlural}</span> · Section: <span className="font-mono">{category.nounPlural}</span>
               </p>

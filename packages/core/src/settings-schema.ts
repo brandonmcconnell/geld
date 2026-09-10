@@ -6,7 +6,7 @@ import type { GeldSettings } from './settings';
  * three surfaces cannot drift. Behaviour that needs browser APIs (permission
  * prompts, keyboard-shortcut hints) is attached by the surface, keyed by `key`.
  *
- * Copy may use `backticks` for inline code; render with {@link splitInlineCode}.
+ * Copy may use `backticks` for inline code and **double asterisks** for emphasis; render with {@link splitInlineCode}.
  */
 
 /** Boolean settings, addressable by key. */
@@ -459,15 +459,35 @@ export function listFields(fields: readonly SettingsField[]): readonly ListField
   return fields.filter((field): field is ListField => field.kind === 'list');
 }
 
-export type InlineRun = { readonly kind: 'text'; readonly text: string } | { readonly kind: 'code'; readonly text: string };
+export type InlineRun =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'code'; readonly text: string }
+  | { readonly kind: 'strong'; readonly text: string };
 
-/** Split copy on `backticks` so each surface can render inline code its own way. */
+/**
+ * Split copy on `backticks` (inline code) and **double asterisks** (emphasis)
+ * so each surface can render them its own way. Code wins inside code: a `**`
+ * within backticks is left alone.
+ */
 export function splitInlineCode(copy: string): readonly InlineRun[] {
   const runs: InlineRun[] = [];
-  const parts = copy.split('`');
-  parts.forEach((part, index) => {
+  copy.split('`').forEach((part, index) => {
     if (part === '') return;
-    runs.push({ kind: index % 2 === 1 ? 'code' : 'text', text: part });
+    if (index % 2 === 1) {
+      runs.push({ kind: 'code', text: part });
+      return;
+    }
+    part.split('**').forEach((piece, pieceIndex) => {
+      if (piece === '') return;
+      runs.push({ kind: pieceIndex % 2 === 1 ? 'strong' : 'text', text: piece });
+    });
   });
   return runs;
+}
+
+/** The same copy with the markup removed, for places that only take text (tooltips, aria labels). */
+export function plainText(copy: string): string {
+  return splitInlineCode(copy)
+    .map((run) => run.text)
+    .join('');
 }

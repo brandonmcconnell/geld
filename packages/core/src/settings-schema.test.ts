@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from './settings';
-import { SETTINGS_SCHEMA, fieldsFor, listFields, sectionsFor, splitInlineCode, toggleFields } from './settings-schema';
+import { SETTINGS_SCHEMA, fieldsFor, listFields, plainText, sectionsFor, splitInlineCode, toggleFields } from './settings-schema';
 
 const allFields = SETTINGS_SCHEMA.flatMap((section) => section.fields);
 
@@ -58,5 +58,16 @@ describe('splitInlineCode', () => {
 
   it('returns plain text untouched', () => {
     expect(splitInlineCode('plain')).toEqual([{ kind: 'text', text: 'plain' }]);
+  });
+
+  it('marks **emphasis**, but not inside code', () => {
+    expect(splitInlineCode('⚠️ **Are you sure?** Use `a**b`.')).toEqual([
+      { kind: 'text', text: '⚠️ ' },
+      { kind: 'strong', text: 'Are you sure?' },
+      { kind: 'text', text: ' Use ' },
+      { kind: 'code', text: 'a**b' },
+      { kind: 'text', text: '.' },
+    ]);
+    expect(plainText('⚠️ **Are you sure?** Use `a**b`.')).toBe('⚠️ Are you sure? Use a**b.');
   });
 });

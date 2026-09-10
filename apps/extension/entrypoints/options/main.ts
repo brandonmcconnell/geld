@@ -102,7 +102,7 @@ function switchButton(id: string, checked: boolean, labelId: string, helpId: str
 
 /** Render schema copy, turning `backticks` into <code>. */
 function richText(copy: string): Node[] {
-  return splitInlineCode(copy).map((run) => (run.kind === 'code' ? el('code', '', [run.text]) : document.createTextNode(run.text)));
+  return splitInlineCode(copy).map((run) => (run.kind === 'code' ? el('code', '', [run.text]) : run.kind === 'strong' ? el('strong', '', [run.text]) : document.createTextNode(run.text)));
 }
 
 const sections = sectionsFor('extension');
@@ -281,7 +281,7 @@ async function main(): Promise<void> {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
     const customised = describeAdvancedSettings(settings, category.id, catalog);
-    const help = el('p', 'geld-help', [category.description]);
+    const help = el('p', 'geld-help options__category-description', richText(category.description));
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
     bindSwitch(button, isCategoryEnabled(settings, category.id), async (value) => {

@@ -11,6 +11,7 @@ import { ALL_TOTALS, HIDDEN_FILES, HIDDEN_TOTALS, VISIBLE_FILES, VISIBLE_TOTALS 
 import { SidebarAccordion } from '@/components/demo/sidebar-accordion';
 import { Kbd } from '@/components/kbd';
 import { PageIntro, Prose } from '@/components/section';
+import { RichText } from '@/components/settings/rich-text';
 import { SectionNavMobile } from '@/components/section-nav-mobile';
 import type { TocEntry } from '@/components/section-toc';
 import { SectionToc } from '@/components/section-toc';
@@ -207,7 +208,9 @@ export default function HowItWorksPage() {
                         {category.defaultEnabled ? 'on by default' : 'opt-in'}
                       </span>
                     </p>
-                    <p className="mt-1 text-sm text-muted-foreground">{category.description}</p>
+                    <p className="mt-1 text-sm text-pretty text-muted-foreground">
+                      <RichText copy={category.description} />
+                    </p>
                   </div>
                 </li>
               ))}

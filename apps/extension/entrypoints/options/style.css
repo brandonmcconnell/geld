@@ -173,6 +173,16 @@ body {
   min-width: 0;
 }
 
+/* Category descriptions never leave a single word on the last line. */
+.options__category-description {
+  text-wrap: pretty;
+}
+
+.options__category-description strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .options__groups {
   display: flex;
   flex-direction: column;

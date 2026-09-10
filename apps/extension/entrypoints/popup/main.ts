@@ -5,7 +5,7 @@ import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabSt
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, fieldsFor, isCategoryEnabled } from '@geld/core';
+import { allHosts, fieldsFor, isCategoryEnabled, plainText } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
 import type { TabRepoConfig, TabRepoConfigFile } from '../../src/lib/messages';
 import { loadCatalog } from '../../src/lib/catalog';
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
       categoryInputs.set(category.id, input);
       const label = document.createElement('label');
       label.className = 'popup__category';
-      label.title = category.description;
+      label.title = plainText(category.description);
       const text = document.createElement('span');
       text.textContent = category.title;
       label.append(input, text);

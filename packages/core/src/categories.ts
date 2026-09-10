@@ -354,7 +354,7 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
   {
     id: 'large',
     title: 'Large diffs',
-    description: '⚠️ Are you sure? Large diffs (1000+ lines) are often the real work.',
+    description: '⚠️ **Are you sure?** Large diffs (1000+ lines) are often the real work.',
     icon: 'graph',
     noun: 'large diff',
     nounPlural: 'large diffs',
