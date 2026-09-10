@@ -3,7 +3,7 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { cn } from 'cn';
 import { ChevronDownIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useHeaderSlot } from '@/components/use-header-slot';
@@ -18,6 +18,9 @@ interface SectionNavMobileProps {
 }
 
 type Direction = 'down' | 'up';
+
+/** A little longer than the 320ms label animation in globals.css. */
+const LEAVE_FALLBACK_MS = 400;
 
 interface Shown {
   readonly index: number;
@@ -58,6 +61,12 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
     setShown({ index: activeIndex, direction: activeIndex > shown.index ? 'down' : 'up', leaving: shown.index });
   }
   const settle = (): void => setShown((current) => (current.leaving === null ? current : { ...current, leaving: null }));
+  // animationend is the normal way out; the timer covers engines that skip it (interrupted or throttled animations), so an old label can never stay behind.
+  useEffect(() => {
+    if (shown.leaving === null) return;
+    const timer = setTimeout(settle, LEAVE_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [shown.leaving, shown.index]);
 
   const current = entries[shown.index];
   const leaving = shown.leaving === null ? undefined : entries[shown.leaving];
@@ -68,7 +77,8 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
       <Dialog.Root
         open={open}
         onOpenChange={(next) => {
-          if (next) setSheetTop(navRef.current?.getBoundingClientRect().bottom ?? 0);
+          // The sheet starts under the header's bottom border, so the border stays visible as the divider.
+          if (next) setSheetTop((navRef.current?.closest('header') ?? navRef.current)?.getBoundingClientRect().bottom ?? 0);
           setOpen(next);
         }}
         modal
