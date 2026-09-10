@@ -1,4 +1,5 @@
 import { CATEGORIES } from '@geld/core';
+import { cn } from 'cn';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -84,8 +85,9 @@ export default function PatternsPage() {
 
               <div className="mt-6 flex flex-col gap-6">
                 {category.groups.map((group) => (
-                  <div key={group.id} className="grid gap-3 border p-5 md:grid-cols-[240px_1fr] md:gap-8">
-                    <div>
+                  // Groups decided from the diff have no pattern column, so their text runs the full width instead of wrapping in a narrow one.
+                  <div key={group.id} className={cn('grid gap-3 border p-5', group.patterns.length > 0 && 'md:grid-cols-[240px_1fr] md:gap-8')}>
+                    <div className={cn(group.patterns.length === 0 && 'max-w-2xl')}>
                       <h3 className="text-base font-semibold">{group.label}</h3>
                       <p className="mt-1 text-[0.9375rem] leading-6 text-muted-foreground">{group.description}</p>
                       <p className="mt-2 font-mono text-sm text-muted-foreground">
@@ -93,13 +95,15 @@ export default function PatternsPage() {
                         {category.id === 'tests' ? ' · toggle individually' : ''}
                       </p>
                     </div>
-                    <ul className="flex flex-wrap gap-1.5" aria-label={`${group.label} patterns`}>
-                      {group.patterns.map((pattern) => (
-                        <li key={pattern}>
-                          <code className="code-chip inline-block max-w-full break-all whitespace-normal">{pattern}</code>
-                        </li>
-                      ))}
-                    </ul>
+                    {group.patterns.length > 0 ? (
+                      <ul className="flex flex-wrap gap-1.5" aria-label={`${group.label} patterns`}>
+                        {group.patterns.map((pattern) => (
+                          <li key={pattern}>
+                            <code className="code-chip inline-block max-w-full break-all whitespace-normal">{pattern}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 ))}
               </div>
