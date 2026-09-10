@@ -11,6 +11,7 @@ import { ALL_TOTALS, HIDDEN_FILES, HIDDEN_TOTALS, VISIBLE_FILES, VISIBLE_TOTALS 
 import { SidebarAccordion } from '@/components/demo/sidebar-accordion';
 import { Kbd } from '@/components/kbd';
 import { PageIntro, Prose } from '@/components/section';
+import { SectionNavMobile } from '@/components/section-nav-mobile';
 import type { TocEntry } from '@/components/section-toc';
 import { SectionToc } from '@/components/section-toc';
 import { KEYBOARD_SHORTCUT } from '@/lib/site';
@@ -49,6 +50,8 @@ export default function HowItWorksPage() {
   const geld = { hidden: HIDDEN_TOTALS, all: ALL_TOTALS, noun: TESTS_CATEGORY.shortNoun, nounPlural: TESTS_CATEGORY.shortNounPlural };
   return (
     <>
+      {/* Phones: the sidebar TOC below is hidden, so a bar under the top bar names the section in view (and lists them all on tap). */}
+      <SectionNavMobile entries={TOC_ENTRIES} />
       <PageIntro
         eyebrow="How it works"
         title="Everything Geld changes on GitHub, and nothing it doesn't."

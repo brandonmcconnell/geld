@@ -1,12 +1,11 @@
 'use client';
 
 import { cn } from 'cn';
-import { useEffect, useState } from 'react';
 
-export interface TocEntry {
-  readonly id: string;
-  readonly label: string;
-}
+import type { SectionEntry } from '@/components/use-active-section';
+import { useActiveSection } from '@/components/use-active-section';
+
+export type TocEntry = SectionEntry;
 
 interface SectionTocProps {
   readonly entries: readonly TocEntry[];
@@ -15,47 +14,9 @@ interface SectionTocProps {
   readonly className?: string;
 }
 
-/**
- * Numbered table of contents that highlights the section currently in view:
- * the last section whose top has scrolled past `offset` (the first one while
- * still above it), or the final one once the page is scrolled to the bottom.
- */
+/** Numbered table of contents that highlights the section currently in view. */
 export function SectionToc({ entries, offset = 128, className }: SectionTocProps) {
-  const [active, setActive] = useState<string | null>(null);
-
-  useEffect(() => {
-    const sections = entries.map((entry) => document.getElementById(entry.id)).filter((element): element is HTMLElement => element !== null);
-    if (sections.length === 0) return;
-    let frame: number | null = null;
-
-    const update = (): void => {
-      frame = null;
-      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
-      let current: HTMLElement | null = null;
-      if (atBottom) {
-        current = sections[sections.length - 1] ?? null;
-      } else {
-        for (const section of sections) {
-          if (section.getBoundingClientRect().top <= offset) current = section;
-          else break;
-        }
-      }
-      // Above the first section (the intro) the first entry is the sensible highlight.
-      setActive((current ?? sections[0])?.id ?? null);
-    };
-    const schedule = (): void => {
-      if (frame === null) frame = requestAnimationFrame(update);
-    };
-
-    update();
-    window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    return () => {
-      window.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
-      if (frame !== null) cancelAnimationFrame(frame);
-    };
-  }, [entries, offset]);
+  const active = useActiveSection(entries, offset);
 
   return (
     <ol className={cn('flex flex-col gap-2 border-l text-sm', className)}>

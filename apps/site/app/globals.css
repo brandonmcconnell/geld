@@ -285,6 +285,71 @@
   }
 }
 
+/*
+ * Mobile section bar (components/section-nav-mobile): the outgoing label
+ * blurs, fades and slides in the scroll direction while the incoming one
+ * arrives from the opposite side. `down` = the reader scrolled down.
+ */
+@utility subnav-label {
+  animation-duration: 320ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+  &[data-motion='in-down'] {
+    animation-name: subnav-in-down;
+  }
+  &[data-motion='in-up'] {
+    animation-name: subnav-in-up;
+  }
+  &[data-motion='out-down'] {
+    animation-name: subnav-out-down;
+    animation-timing-function: ease-in;
+    pointer-events: none;
+  }
+  &[data-motion='out-up'] {
+    animation-name: subnav-out-up;
+    animation-timing-function: ease-in;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    &[data-motion^='out'] {
+      display: none;
+    }
+  }
+}
+
+@keyframes subnav-in-down {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(100%);
+  }
+}
+
+@keyframes subnav-in-up {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes subnav-out-down {
+  to {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes subnav-out-up {
+  to {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(100%);
+  }
+}
+
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
