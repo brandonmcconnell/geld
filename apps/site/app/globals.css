@@ -243,42 +243,51 @@
 
 /*
  * Route transitions (components/route-transition): the old page, frozen as it
- * was, and the new page crossfade through a light blur. Both snapshots are the
- * viewport (`root`), so this costs the same on any page length. Header and
- * footer are identical on both sides and so appear still. Navigations the
- * component did not start (back/forward) fade the new page in instead.
+ * was (scroll position included), fades and blurs out; then the new page fades
+ * and blurs in. Both snapshots are the viewport (`root`), so this costs the
+ * same on any page length. The header is captured on its own
+ * (view-transition-name: site-header) and snaps straight to its new state, sub
+ * bar and all. Navigations the component did not start (back/forward) fade
+ * the new page in instead.
  */
-::view-transition-group(root) {
+::view-transition-group(root),
+::view-transition-group(site-header),
+::view-transition-old(site-header),
+::view-transition-new(site-header) {
   animation: none;
 }
 
+::view-transition-old(site-header) {
+  display: none;
+}
+
 ::view-transition-old(root) {
-  animation: 240ms ease-in-out both route-out;
+  animation: 180ms ease-in both route-out;
 }
 
 ::view-transition-new(root) {
-  animation: 240ms ease-in-out both route-in;
+  animation: 320ms ease-out 180ms both route-in;
 }
 
 @keyframes route-out {
   to {
     opacity: 0;
-    filter: blur(4px);
+    filter: blur(6px);
   }
 }
 
 @keyframes route-in {
   from {
     opacity: 0;
-    filter: blur(4px);
+    filter: blur(6px);
   }
 }
 
 :root[data-route-entering] main {
-  animation: 240ms ease-out both route-in;
+  animation: 320ms ease-out both route-in;
 }
 
-/* The header wordmark's reveal is part of the crossfade while a route transition runs (see RouteTransition). */
+/* The header snaps between pages, so its wordmark's reveal is switched off while a route transition runs (see RouteTransition). */
 :root[data-route-transition] .header-brand {
   transition: none;
 }

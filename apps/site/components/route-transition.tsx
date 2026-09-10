@@ -3,8 +3,8 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
-/** Crossfade length; mirrored by `::view-transition-*(root)` in globals.css. */
-const CROSSFADE_MS = 240;
+/** Fade-out plus fade-in; mirrored by `::view-transition-*(root)` in globals.css. */
+const ENTER_MS = 320;
 /** Give up waiting for a navigation that never lands (offline, blocked) so the page is not frozen. */
 const NAVIGATION_TIMEOUT_MS = 2500;
 
@@ -25,13 +25,14 @@ function internalDestination(event: MouseEvent): URL | null {
 }
 
 /**
- * Page-to-page crossfade with a blur, done with a view transition that this
- * component starts itself around `router.push`. Starting it here (rather than
- * through React's <ViewTransition>) keeps the browser's viewport-sized root
- * snapshot: the old page is frozen exactly as it was — scroll position
- * included — while the new page renders and scrolls to the top underneath,
- * and the two simply crossfade (see `::view-transition-*(root)` in
- * globals.css). Blurring a viewport is cheap; snapshotting <main> is not.
+ * Page-to-page fade: the old page blurs and fades out, then the new one blurs
+ * and fades in, via a view transition that this component starts itself
+ * around `router.push`. Starting it here (rather than through React's
+ * <ViewTransition>) keeps the browser's viewport-sized root snapshot: the old
+ * page is frozen exactly as it was — scroll position included — while the new
+ * page renders and scrolls to the top underneath. The header is snapshotted
+ * separately and snaps (see `::view-transition-*` in globals.css). Blurring a
+ * viewport is cheap; snapshotting <main> is not.
  *
  * Navigations this component did not start (back/forward) get a short fade-in
  * of the new page instead, since the old state cannot be captured after the
@@ -59,7 +60,7 @@ export function RouteTransition() {
     // Back/forward: the old state was not captured, so fade the new page in.
     const root = document.documentElement;
     root.dataset.routeEntering = '';
-    const timer = setTimeout(() => delete root.dataset.routeEntering, CROSSFADE_MS);
+    const timer = setTimeout(() => delete root.dataset.routeEntering, ENTER_MS);
     return () => {
       clearTimeout(timer);
       delete root.dataset.routeEntering;
@@ -84,9 +85,9 @@ export function RouteTransition() {
         setTimeout(resolve, NAVIGATION_TIMEOUT_MS);
       });
       // While the transition runs, the header wordmark's own 500ms reveal is
-      // switched off (globals.css): its new state is captured instantly and
-      // crossfades with everything else, instead of continuing to animate
-      // underneath the snapshots and jumping when they are removed.
+      // switched off (globals.css): the header snaps to its new state, instead
+      // of continuing to animate underneath the snapshots and jumping when they
+      // are removed.
       const root = document.documentElement;
       root.dataset.routeTransition = '';
       const transition = document.startViewTransition(() => {

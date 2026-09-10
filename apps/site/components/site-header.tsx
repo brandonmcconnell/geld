@@ -7,7 +7,7 @@ import { NAV_LINKS } from '@/lib/site';
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+    <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 [view-transition-name:site-header]">
       <div className="container-site flex h-14 items-center justify-between gap-6">
         <HeaderBrand />
         <nav aria-label="Primary" className="flex items-center gap-1 sm:gap-2">
