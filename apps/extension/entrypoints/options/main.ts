@@ -37,7 +37,7 @@ import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
-import { accountItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, oauthClientIdItem, syncStateItem } from '../../src/lib/account';
+import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
 import { categoryIcon } from '../../src/github/ui/icons';
@@ -708,18 +708,18 @@ async function main(): Promise<void> {
   [account, sync] = await Promise.all([accountItem.getValue(), syncStateItem.getValue().then((value) => ({ ...EMPTY_SYNC_STATE, ...value }))]);
   renderAccountCard();
 
-  const oauthStatus = statusReporter(requireElement('oauth-status', HTMLSpanElement));
-  const oauthInput = requireElement('oauth-client-id', HTMLInputElement);
-  oauthInput.value = await oauthClientIdItem.getValue();
-  oauthInput.placeholder = BUILT_IN_CLIENT_ID !== '' ? `${BUILT_IN_CLIENT_ID} (built in)` : 'Ov23li…';
-  requireElement('save-oauth', HTMLButtonElement).addEventListener('click', async () => {
-    const value = oauthInput.value.trim();
+  const clientIdStatus = statusReporter(requireElement('app-client-status', HTMLSpanElement));
+  const clientIdInput = requireElement('app-client-id', HTMLInputElement);
+  clientIdInput.value = await appClientIdItem.getValue();
+  clientIdInput.placeholder = BUILT_IN_CLIENT_ID !== '' ? `${BUILT_IN_CLIENT_ID} (built in)` : 'Iv23li…';
+  requireElement('save-app-client', HTMLButtonElement).addEventListener('click', async () => {
+    const value = clientIdInput.value.trim();
     if (value !== '' && !/^[A-Za-z0-9._-]{8,}$/.test(value)) {
-      oauthStatus('That does not look like a GitHub OAuth client id.', 'error');
+      clientIdStatus('That does not look like a GitHub App client id.', 'error');
       return;
     }
-    await oauthClientIdItem.setValue(value);
-    oauthStatus(value === '' ? 'Using the built-in client id.' : 'Saved. Sign out and back in to use it.', 'success');
+    await appClientIdItem.setValue(value);
+    clientIdStatus(value === '' ? 'Using the built-in client id.' : 'Saved. Sign out and back in to use it.', 'success');
   });
 
   /* Backup & maintenance: buttons come from the schema; behaviour is per action id. */

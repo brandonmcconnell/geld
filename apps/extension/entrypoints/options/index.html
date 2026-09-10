@@ -129,12 +129,13 @@ big-corp
       <section class="options__card">
         <h2 class="options__title">GitHub account</h2>
         <p class="geld-help options__intro" id="account-signed-out">
-          Sign in (top right) to keep these settings in sync across browsers and devices. Geld uses GitHub's
-          <em>device flow</em>: you confirm a short code on github.com, and the only permission requested is
-          <code>gist</code>. Your settings are stored in a <strong>secret gist on your own account</strong> named
+          Sign in (top right) to keep these settings in sync across browsers and devices. Geld signs you in through
+          the <strong>Geld GitHub App</strong> with GitHub's <em>device flow</em>: you confirm a short code on
+          github.com. Your settings are stored in a <strong>secret gist on your own account</strong> named
           <code>geld-settings.json</code>. There is no Geld server and no database — nobody but you (including Geld's
-          author) can read or change that gist, and the sign-in token never leaves this device. Signing in on another
-          browser asks whether to keep that device's settings or use the account's. The same settings can be edited at
+          author) can read or change that gist, and the sign-in token never leaves this device; it expires after eight
+          hours and is renewed here. Signing in on another browser asks whether to keep that device's settings or use
+          the account's. The same settings can be edited at
           <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
         </p>
         <p class="geld-help options__intro" id="account-signed-in" hidden>
@@ -145,15 +146,15 @@ big-corp
           <a id="account-gist" href="https://gist.github.com" target="_blank" rel="noreferrer">open the gist</a>. Sync
           now and sign out are in the account menu (top right).
         </p>
-        <label class="geld-label" for="oauth-client-id">OAuth App client id</label>
+        <label class="geld-label" for="app-client-id">GitHub App client id</label>
         <p class="geld-help">
-          The public client id of a GitHub OAuth App with <em>Device Flow</em> enabled. A default is built in; paste
-          your own to use a different app.
+          The public client id of a GitHub App with <em>Device Flow</em> enabled. A default is built in; paste your
+          own to sign in through a different app (for development).
         </p>
-        <input id="oauth-client-id" class="geld-input geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Ov23li…" aria-label="OAuth App client id" />
+        <input id="app-client-id" class="geld-input geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Iv23li…" aria-label="GitHub App client id" />
         <div class="geld-row options__actions">
-          <span class="geld-status" id="oauth-status" aria-live="polite"></span>
-          <button id="save-oauth" class="geld-button" type="button">Save client id</button>
+          <span class="geld-status" id="app-client-status" aria-live="polite"></span>
+          <button id="save-app-client" class="geld-button" type="button">Save client id</button>
         </div>
       </section>
 
