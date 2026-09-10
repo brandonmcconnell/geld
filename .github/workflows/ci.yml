@@ -86,7 +86,7 @@ jobs:
       # without a version-bump commit. Pull request builds stay at the base.
       - run: pnpm zip:all
         env:
-          WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
+          WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
           GELD_BUILD_NUMBER: ${{ github.event_name == 'pull_request' && '' || github.run_number }}
       - id: version
         run: echo "version=$(node -p "require('./apps/extension/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -125,7 +125,7 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
             echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|packages/core/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|packages/core/|packages/github/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "Only the site changed; no release."
