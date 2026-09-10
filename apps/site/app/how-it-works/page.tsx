@@ -120,14 +120,26 @@ export default function HowItWorksPage() {
                   where GitHub has not rendered it yet.
                 </p>
               </Prose>
-              <SidebarAccordion
-                visible={VISIBLE_FILES}
-                hidden={HIDDEN_FILES}
-                hiddenTitle={TESTS_CATEGORY.title}
-                hiddenNoun={TESTS_CATEGORY.noun}
-                hiddenNounPlural={TESTS_CATEGORY.nounPlural}
-                fixedHeightOnDesktop
-              />
+              {/* An invisible copy with the taller panel open shares the grid cell, so switching panels never moves the page below on wide screens. */}
+              <div className="md:grid md:items-start md:*:col-start-1 md:*:row-start-1">
+                <SidebarAccordion
+                  visible={VISIBLE_FILES}
+                  hidden={HIDDEN_FILES}
+                  hiddenTitle={TESTS_CATEGORY.title}
+                  hiddenNoun={TESTS_CATEGORY.noun}
+                  hiddenNounPlural={TESTS_CATEGORY.nounPlural}
+                />
+                <SidebarAccordion
+                  visible={VISIBLE_FILES}
+                  hidden={HIDDEN_FILES}
+                  hiddenTitle={TESTS_CATEGORY.title}
+                  hiddenNoun={TESTS_CATEGORY.noun}
+                  hiddenNounPlural={TESTS_CATEGORY.nounPlural}
+                  initialPanel="hidden"
+                  aria-hidden
+                  className="invisible max-md:hidden"
+                />
+              </div>
             </div>
           </Step>
 

@@ -33,11 +33,11 @@ function AccordionTrigger({ className, children, ...props }: AccordionPrimitive.
   );
 }
 
-function AccordionContent({ className, panelClassName, children, ...props }: AccordionPrimitive.Panel.Props & { readonly panelClassName?: string | undefined }) {
+function AccordionContent({ className, children, ...props }: AccordionPrimitive.Panel.Props) {
   return (
     <AccordionPrimitive.Panel
       data-slot="accordion-content"
-      className={cn('overflow-hidden text-sm data-closed:animate-accordion-up data-open:animate-accordion-down motion-reduce:animate-none', panelClassName)}
+      className="overflow-hidden text-sm data-closed:animate-accordion-up data-open:animate-accordion-down motion-reduce:animate-none"
       {...props}
     >
       <div className={cn('h-(--accordion-panel-height) pb-3 data-ending-style:h-0 data-starting-style:h-0', className)}>{children}</div>

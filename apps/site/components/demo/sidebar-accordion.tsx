@@ -77,7 +77,8 @@ export function SidebarAccordion({
   hiddenTitle,
   hiddenNoun,
   hiddenNounPlural,
-  fixedHeightOnDesktop = false,
+  initialPanel = 'changes',
+  'aria-hidden': ariaHidden,
   className,
 }: {
   readonly visible: readonly ClassifiedFile[];
@@ -85,23 +86,18 @@ export function SidebarAccordion({
   readonly hiddenTitle: string;
   readonly hiddenNoun: string;
   readonly hiddenNounPlural: string;
-  /**
-   * On wider screens, keep the card at a fixed height and let the open panel
-   * scroll (like the real sidebar), so switching panels never moves the page.
-   */
-  readonly fixedHeightOnDesktop?: boolean;
+  /** Which panel starts open. */
+  readonly initialPanel?: 'changes' | 'hidden';
+  /** Render as a non-interactive sizer (see the how-it-works page). */
+  readonly 'aria-hidden'?: boolean;
   readonly className?: string | undefined;
 }) {
   const visibleTree = mergeSingleChildDirectories(buildTree(visible));
   const hiddenTree = mergeSingleChildDirectories(buildTree(hidden));
-  const fixed = fixedHeightOnDesktop;
-  const itemClass = fixed ? 'md:flex md:flex-col md:data-open:min-h-0 md:data-open:flex-1' : undefined;
-  const panelClass = fixed ? 'md:flex md:min-h-0 md:flex-1 md:flex-col md:animate-none' : undefined;
-  const contentClass = fixed ? 'md:h-auto md:min-h-0 md:flex-1 md:overflow-y-auto' : undefined;
   return (
-    <div className={cn('overflow-hidden rounded-xl border bg-card font-mono text-xs shadow-xs', fixed && 'md:flex md:h-[22.5rem] md:flex-col', className)}>
-      <Accordion defaultValue={['changes']} className={cn('gap-0', fixed && 'md:min-h-0 md:flex-1')}>
-        <AccordionItem value="changes" className={itemClass}>
+    <div className={cn('overflow-hidden rounded-xl border bg-card font-mono text-xs shadow-xs', className)} aria-hidden={ariaHidden}>
+      <Accordion defaultValue={[initialPanel]} multiple={false} className="gap-0">
+        <AccordionItem value="changes">
           <AccordionTrigger className="px-3 font-sans">
             <span className="inline-flex items-center gap-2">
               <GitPullRequestIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
@@ -109,11 +105,11 @@ export function SidebarAccordion({
               <span className="rounded-full bg-muted px-1.5 font-mono text-[0.6875rem] text-muted-foreground ring-1 ring-border ring-inset">{visible.length}</span>
             </span>
           </AccordionTrigger>
-          <AccordionContent className={cn('px-3', contentClass)} panelClassName={panelClass}>
+          <AccordionContent className="px-3">
             <Tree node={visibleTree} depth={0} />
           </AccordionContent>
         </AccordionItem>
-        <AccordionItem value="hidden" className={itemClass}>
+        <AccordionItem value="hidden">
           <AccordionTrigger className="px-3 font-sans">
             <span className="inline-flex items-center gap-2">
               <FlaskConicalIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
@@ -121,7 +117,7 @@ export function SidebarAccordion({
               <span className="rounded-full bg-muted px-1.5 font-mono text-[0.6875rem] text-muted-foreground ring-1 ring-border ring-inset">{hidden.length}</span>
             </span>
           </AccordionTrigger>
-          <AccordionContent className={cn('px-3', contentClass)} panelClassName={panelClass}>
+          <AccordionContent className="px-3">
             <p className="mb-2 pl-1.5 font-sans text-muted-foreground">{pluralize(hidden.length, hiddenNoun, hiddenNounPlural)}. Browsing here never changes the diff.</p>
             <Tree node={hiddenTree} depth={0} />
           </AccordionContent>
