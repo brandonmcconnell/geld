@@ -21,7 +21,8 @@ interface SubBarProps {
  * invisible and inert rather than removed — so nothing below it ever moves;
  * and the header is fixed, so its growth does not move anything either.
  * Detection uses a one-pixel sentinel just above the bar: once it is under the
- * top bar, the bar is stuck.
+ * top bar, the bar is stuck. The same sentinel drives the header divider's
+ * scroll-linked fade over the last 50px of approach (globals.css).
  */
 export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarProps) {
   const sentinel = useRef<HTMLDivElement | null>(null);
@@ -50,7 +51,7 @@ export function SubBar({ 'aria-label': ariaLabel, children, className }: SubBarP
 
   return (
     <>
-      <div ref={sentinel} aria-hidden="true" className="h-px -mb-px" />
+      <div ref={sentinel} aria-hidden="true" className="subbar-sentinel h-px -mb-px" />
       <div className={cn('sticky top-[calc(3.5rem+1px)] z-30', inHeader && 'pointer-events-none invisible')} aria-hidden={inHeader} inert={inHeader}>
         <nav aria-label={ariaLabel} className={cn('border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70', className)}>
           {children}

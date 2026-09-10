@@ -20,8 +20,8 @@ export function SiteHeader() {
           <AccountMenu className="ml-1 sm:ml-2" />
         </nav>
       </div>
-      {/* The bottom border of the main row. When a secondary bar docks below, it fades out so the two rows become one surface; the slot then carries the bottom border. */}
-      <div aria-hidden="true" className="h-px bg-border transition-opacity duration-150 ease-out motion-reduce:transition-none group-has-[#site-subbar:not(:empty)]/header:opacity-0" />
+      {/* The bottom border of the main row. As a secondary bar approaches from below it fades out (scroll-linked, see `header-divider` in globals.css), so the two rows become one surface; the slot then carries the bottom border. */}
+      <div aria-hidden="true" className="header-divider h-px bg-border transition-opacity duration-150 ease-out motion-reduce:transition-none group-has-[#site-subbar:not(:empty)]/header:opacity-0" />
       {/* Pages mount a secondary bar here (see components/use-header-slot) so it shares this one frosted surface. */}
       <div id={HEADER_SLOT_ID} className="border-b empty:hidden" />
     </header>

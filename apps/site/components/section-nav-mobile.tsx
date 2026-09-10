@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 
 import { useHeaderSlot } from '@/components/use-header-slot';
 import { useIsCurrentPage } from '@/components/use-is-current-page';
+import { useMediaQuery } from '@/components/use-media-query';
 import type { SectionEntry } from '@/components/use-active-section';
 import { useActiveSection } from '@/components/use-active-section';
 
@@ -69,6 +70,8 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
   // Where the sheet starts: the bar's bottom edge, read when it opens.
   const [sheetTop, setSheetTop] = useState(0);
   const slot = useHeaderSlot();
+  // Below `lg` only; the sidebar TOC takes over above it, and an unused bar must not occupy the header slot.
+  const isPhone = useMediaQuery('(width < 64rem)');
 
   // The section changed since the last render: start the swap (state adjusted
   // during render, not in an effect). No swap animation for the first
@@ -102,10 +105,10 @@ export function SectionNavMobile({ entries, offset = 128, className }: SectionNa
   const current = entries[shown.index];
   const leaving = shown.leaving === null ? undefined : entries[shown.leaving];
   // A page the router keeps mounted but hidden must not put its bar in the header.
-  if (current === undefined || slot === null || !isCurrent) return null;
+  if (current === undefined || slot === null || !isCurrent || !isPhone) return null;
 
   return createPortal(
-    <nav ref={navRef} aria-label="On this page" className={cn('lg:hidden', className)}>
+    <nav ref={navRef} aria-label="On this page" className={className}>
       <Dialog.Root
         open={open}
         onOpenChange={(next) => {

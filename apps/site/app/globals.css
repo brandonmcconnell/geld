@@ -403,6 +403,38 @@
   }
 }
 
+/*
+ * Header divider fade, linked to scroll: as a page's secondary bar (its
+ * sentinel, `subbar-sentinel`) approaches the header, the divider under the
+ * header's main row fades over the last 50px, reaching 0 exactly when the bar
+ * docks. Pure CSS (a view timeline), so nothing runs per frame. Browsers
+ * without scroll-driven animations keep the 150ms fade set on the element.
+ */
+@supports (animation-timeline: view()) {
+  body {
+    timeline-scope: --subbar;
+  }
+
+  .subbar-sentinel {
+    view-timeline: --subbar block;
+    /* The header covers the top of the scrollport. */
+    view-timeline-inset: calc(3.5rem + 1px) 0;
+  }
+
+  .header-divider {
+    animation: header-divider-fade linear both;
+    animation-timeline: --subbar;
+    animation-range: contain calc(100% - 50px) contain 100%;
+    transition: none;
+  }
+
+  @keyframes header-divider-fade {
+    to {
+      opacity: 0;
+    }
+  }
+}
+
 /* Inline code chips used for patterns and paths. */
 @utility code-chip {
   @apply border bg-muted px-1.5 py-0.5 font-mono text-[0.8125em] whitespace-nowrap text-foreground;
