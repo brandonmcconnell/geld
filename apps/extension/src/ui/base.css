@@ -128,25 +128,14 @@ code {
  * 3px, and the cut-away corners still count as the element (::after covers
  * the full square plus 1px), as on the site. Browsers without `corner-shape`
  * (Safari) get it from the hyperellipse polyfill (src/ui/corner-shape.ts),
- * which reads the `--corner-shape` twin; `--corner-scale: 0` keeps corners
- * square until it runs, and nothing animates there.
+ * which reads the `--corner-shape` twin (see the @supports block below).
  */
-@supports not (corner-shape: bevel) {
-  :root {
-    --corner-scale: 0;
-  }
-
-  .geld-button,
-  .geld-account__summary,
-  .geld-account__avatar {
-    transition: none;
-  }
-}
-
 .geld-button,
 .geld-account__summary,
 .geld-account__avatar {
   position: relative;
+  /* How much deeper the cut gets on hover; zero where the polyfill draws it. */
+  --cut-hover: 3px;
   border-radius: calc(var(--cut) * var(--corner-scale, 1));
   corner-shape: bevel square;
   --corner-shape: bevel square;
@@ -165,7 +154,21 @@ code {
 .geld-button:hover,
 .geld-account__summary:hover,
 .geld-account__summary:hover .geld-account__avatar {
-  border-radius: calc((var(--cut) + 3px) * var(--corner-scale, 1));
+  border-radius: calc((var(--cut) + var(--cut-hover)) * var(--corner-scale, 1));
+}
+
+/* Without native corner-shape the cut is static: square until the polyfill runs, no deeper hover cut, nothing animates. */
+@supports not (corner-shape: bevel) {
+  :root {
+    --corner-scale: 0;
+  }
+
+  .geld-button,
+  .geld-account__summary,
+  .geld-account__avatar {
+    --cut-hover: 0px;
+    transition: none;
+  }
 }
 
 /* Brand ------------------------------------------------------------------- */

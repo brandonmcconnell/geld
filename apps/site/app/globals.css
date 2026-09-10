@@ -182,6 +182,8 @@
  */
 @utility geld-corners {
   --geld-cut: 0.5rem;
+  /* How much deeper the cut gets on hover; zero where the polyfill draws it (no per-frame updates there). */
+  --geld-cut-hover: 3px;
   position: relative;
   border-radius: calc(var(--geld-cut) * var(--corner-scale, 1));
   corner-shape: bevel square;
@@ -193,7 +195,7 @@
      in the account chip) follows its parent's hover instead of its own. */
   &:hover,
   :where(.group\/geld:hover) & {
-    border-radius: calc((var(--geld-cut) + 3px) * var(--corner-scale, 1));
+    border-radius: calc((var(--geld-cut) + var(--geld-cut-hover)) * var(--corner-scale, 1));
   }
   /* Hit area: the full square, including the cut-away corners, plus 1px. */
   &::after {
@@ -201,8 +203,9 @@
     position: absolute;
     inset: -1px;
   }
-  /* The polyfill redraws on state change rather than per frame, so do not animate at all there. */
+  /* Without native corner-shape the cut is static: no deeper hover cut and nothing animates. */
   @supports not (corner-shape: bevel) {
+    --geld-cut-hover: 0px;
     transition: none;
   }
   @media (prefers-reduced-motion: reduce) {
