@@ -270,6 +270,58 @@ async function main(): Promise<void> {
     return item;
   }
 
+  /** Problems shown per broken file before the list collapses into "and N more". */
+  const MAX_SHOWN_ISSUES = 6;
+
+  /** Octicon `alert`: the message itself lives in the title, so the row stays one line. */
+  function warningIcon(message: string): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', message);
+    svg.classList.add('popup__repo-config-warning');
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = message;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('fill', 'currentColor');
+    path.setAttribute(
+      'd',
+      'M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z',
+    );
+    svg.append(title, path);
+    return svg;
+  }
+
+  /**
+   * A broken file's problems, compactly: where (line/column or settings path)
+   * plus a warning icon whose title carries the message. A hand-edited file can
+   * fail in dozens of places; past a handful the count says enough.
+   */
+  function issueListFor(file: TabRepoConfigFile, prefixWithFile: boolean): HTMLUListElement {
+    const issues = document.createElement('ul');
+    issues.className = 'geld-alert__list popup__repo-config-issues';
+    for (const issue of file.issues.slice(0, MAX_SHOWN_ISSUES)) {
+      const item = document.createElement('li');
+      const where = issue.path === '$' ? 'whole file' : issue.path;
+      const path = document.createElement('code');
+      path.className = 'geld-alert__path';
+      path.textContent = prefixWithFile ? `${file.path}: ${where}` : where;
+      path.title = issue.message;
+      item.append(path, warningIcon(issue.message));
+      issues.append(item);
+    }
+    const hidden = file.issues.length - MAX_SHOWN_ISSUES;
+    if (hidden > 0) {
+      const more = document.createElement('li');
+      more.className = 'popup__repo-config-more';
+      more.textContent = `and ${pluralize(hidden, 'more problem', 'more problems')}`;
+      issues.append(more);
+    }
+    return issues;
+  }
+
   /**
    * Repository-provided config: what it is, whether it is in use, and the
    * one-time question when the setting is "ask". Hidden when there is nothing.
@@ -322,19 +374,7 @@ async function main(): Promise<void> {
     list.append(...config.files.map(fileRowFor));
     box.append(list);
 
-    for (const file of broken) {
-      const issues = document.createElement('ul');
-      issues.className = 'geld-alert__list';
-      for (const issue of file.issues) {
-        const item = document.createElement('li');
-        const path = document.createElement('code');
-        path.className = 'geld-alert__path';
-        path.textContent = broken.length > 1 ? `${file.path}: ${issue.path}` : issue.path;
-        item.append(path, document.createTextNode(` ${issue.message}`));
-        issues.append(item);
-      }
-      box.append(issues);
-    }
+    for (const file of broken) box.append(issueListFor(file, broken.length > 1));
 
     if (config.mode === 'ask' && config.files.length > 0) {
       const buttons = document.createElement('div');
