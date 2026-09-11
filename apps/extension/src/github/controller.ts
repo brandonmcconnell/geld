@@ -622,6 +622,8 @@ export class GeldController {
       categories: (effectiveHidden?.categories ?? []).map((entry) => ({
         id: entry.category.id,
         title: entry.category.title,
+        shortNoun: entry.category.shortNoun,
+        shortNounPlural: entry.category.shortNounPlural,
         count: entry.totals.files,
         paths: entry.paths,
       })),

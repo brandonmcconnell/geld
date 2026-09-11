@@ -155,7 +155,7 @@ export function applyPrListStats(options: PrListOptions): void {
     const matcher = options.matcherFor(row.repo);
     const chip = ensureChip(row);
     const { all, hidden } = breakdownFromFiles(state.files, matcher, options.hideCommentLines);
-    const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories));
+    const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories, hidden));
     // With nothing that could be hidden the chip is plain line counts: "0 hidden" would be noise.
     const label = matcher.activeCategories.length === 0 ? null : hiddenLabel(hidden, matcher.activeCategories);
     const text = `${label ?? ''} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;

@@ -387,7 +387,9 @@ async function main(): Promise<void> {
     files.hidden = !showStats;
     const paths = state?.categories.flatMap((entry) => entry.paths.map((path) => ({ path, title: entry.title }))) ?? [];
     if (showStats && state !== null && state.visible !== null && state.all !== null) {
-      statHidden.textContent = `${formatCount(state.hiddenCount)} hidden`;
+      // One category describing every hidden file names it ("3 generated"); a mix says "N hidden" and the title lists the split.
+      const only = state.categories.length === 1 ? state.categories[0] : undefined;
+      statHidden.textContent = only === undefined ? `${formatCount(state.hiddenCount)} hidden` : pluralize(state.hiddenCount, only.shortNoun, only.shortNounPlural);
       statAdd.textContent = `+${formatCount(state.visible.additions)}`;
       statDel.textContent = `\u2212${formatCount(state.visible.deletions)}`;
       const parts = state.categories.map((entry) => `${formatCount(entry.count)} ${entry.title.toLowerCase()}`);

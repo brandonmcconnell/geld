@@ -50,6 +50,9 @@ export interface EnsureContentResponse {
 export interface TabCategoryState {
   readonly id: AnyCategoryId;
   readonly title: string;
+  /** Compact nouns for counts ("test" / "tests"), so the popup can say "3 generated" when one category describes everything hidden. */
+  readonly shortNoun: string;
+  readonly shortNounPlural: string;
   readonly count: number;
   readonly paths: readonly string[];
 }

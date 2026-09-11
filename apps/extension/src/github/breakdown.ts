@@ -111,23 +111,34 @@ export function breakdownFromFiles(
 }
 
 /**
- * Wording for a set of hidden files: "6 tests" when only one category can be
- * hidden, otherwise "9 hidden" (the tooltip carries the per-category split).
+ * The one category that describes every hidden file, if there is one: the only
+ * category present in the breakdown, or the only one that can hide anything.
+ * With Tests and Generated both on but only generated files in a PR, the
+ * wording is "3 generated", not "3 hidden".
+ */
+export function onlyCategory(activeCategories: readonly HiddenCategory[], breakdown: HiddenBreakdown | null = null): HiddenCategory | undefined {
+  if (breakdown !== null && breakdown.categories.length === 1) return breakdown.categories[0]?.category;
+  return activeCategories.length === 1 ? activeCategories[0] : undefined;
+}
+
+/**
+ * Wording for a set of hidden files: "6 tests" when one category describes
+ * them all, otherwise "9 hidden" (the tooltip carries the per-category split).
  */
 export function hiddenLabel(breakdown: HiddenBreakdown, activeCategories: readonly HiddenCategory[]): string {
-  const only = activeCategories.length === 1 ? activeCategories[0] : undefined;
+  const only = onlyCategory(activeCategories, breakdown);
   if (only !== undefined) return pluralize(breakdown.totals.files, only.shortNoun, only.shortNounPlural);
   return `${formatCount(breakdown.totals.files)} hidden`;
 }
 
 /** Long-form noun for sentences ("test files" vs "hidden files"). */
-export function hiddenNounPlural(activeCategories: readonly HiddenCategory[]): string {
-  const only = activeCategories.length === 1 ? activeCategories[0] : undefined;
+export function hiddenNounPlural(activeCategories: readonly HiddenCategory[], breakdown: HiddenBreakdown | null = null): string {
+  const only = onlyCategory(activeCategories, breakdown);
   return only === undefined ? 'hidden files' : only.nounPlural;
 }
 
-export function hiddenNoun(activeCategories: readonly HiddenCategory[]): string {
-  const only = activeCategories.length === 1 ? activeCategories[0] : undefined;
+export function hiddenNoun(activeCategories: readonly HiddenCategory[], breakdown: HiddenBreakdown | null = null): string {
+  const only = onlyCategory(activeCategories, breakdown);
   return only === undefined ? 'hidden file' : only.noun;
 }
 

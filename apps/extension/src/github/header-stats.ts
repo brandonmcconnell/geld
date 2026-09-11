@@ -241,7 +241,7 @@ export function applyHeaderStats(
     restoreHeaderStats(group);
     return;
   }
-  const nounPlural = hiddenNounPlural(activeCategories);
+  const nounPlural = hiddenNounPlural(activeCategories, hidden);
   renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
   if (!hidesAnything(hidden)) {
     restoreNumbers(group);
