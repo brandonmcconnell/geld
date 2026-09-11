@@ -1,0 +1,69 @@
+name: Store listings
+
+# Uploads the listing screenshots in apps/extension/store/assets/ to the stores
+# whose APIs allow it: Firefox (AMO previews) and the Mac App Store (fastlane
+# deliver screenshots). Chrome Web Store and Edge Add-ons have no API for
+# listing assets; theirs are uploaded once by hand (see PUBLISHING.md → Store
+# listing assets). Run on demand after changing an asset; every step is
+# idempotent, so a re-run uploads nothing new.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channels:
+        description: 'Comma-separated stores: firefox, safari'
+        required: false
+        default: 'firefox,safari'
+
+concurrency:
+  group: store-listings
+  cancel-in-progress: false
+
+jobs:
+  firefox:
+    name: Firefox Add-ons (AMO) previews
+    if: contains(inputs.channels, 'firefox')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The script reads the add-on id from a built manifest.
+      - run: pnpm --filter @geld/extension build:firefox
+      - env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          node apps/extension/scripts/publish/amo-previews.mjs apps/extension/.output/firefox-mv2 \
+            apps/extension/store/assets/chrome-edge/screenshots/*.jpg
+
+  safari:
+    name: Mac App Store screenshots
+    if: contains(inputs.channels, 'safari')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_HIDE_CHANGELOG: '1'
+        run: |
+          if [ -z "$ASC_KEY_ID" ]; then echo "::warning title=Safari::Skipped: Apple credentials are not configured."; exit 0; fi
+          mkdir -p ~/.private_keys && echo "$ASC_PRIVATE_KEY" | base64 --decode > ~/.private_keys/AuthKey_$ASC_KEY_ID.p8
+          jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
+            '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
+          # deliver wants one folder per locale; Mac screenshots are recognised by their pixel size.
+          mkdir -p screenshots/en-US && cp apps/extension/store/assets/safari/screenshots/*.jpg screenshots/en-US/
+          fastlane deliver \
+            --api_key_path asc-key.json \
+            --app_identifier sh.geld.safari --platform osx \
+            --skip_binary_upload --skip_metadata --skip_app_version_update \
+            --screenshots_path screenshots --overwrite_screenshots \
+            --run_precheck_before_submit false --force
+          echo "::notice title=Safari::Screenshots uploaded to the current App Store Connect version."

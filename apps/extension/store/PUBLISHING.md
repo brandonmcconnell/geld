@@ -96,4 +96,9 @@ Read only by the publish workflow.
 | Marquee promo tile 1400×560 | `chrome-edge/promo/marquee-1400x560.{jpg,png}` | Chrome Web Store → Store listing → Marquee promo tile |
 | Small promo tile 440×280 | `chrome-edge/promo/small-440x280.{jpg,png}` | Chrome Web Store → Store listing → Small promo tile |
 
+**Getting them onto the stores.** Only two stores accept listing assets through an API, and the `Store listings` workflow (Actions → Store listings → Run workflow) handles those, idempotently: Firefox (the 1280×800 marquee becomes AMO preview 0) and the Mac App Store (`fastlane deliver` uploads `safari/screenshots/` to the current App Store Connect version). Run it after changing an asset. **Chrome and Edge have no API for listing assets**, so theirs are set once by hand:
+
+- Chrome Web Store: [developer dashboard](https://chrome.google.com/webstore/devconsole) → Geld → *Store listing*: upload `chrome-edge/screenshots/00-marquee-1280x800.jpg` as the **first** screenshot (the listing page's carousel shows screenshots only; promo tiles appear in store discovery, not on the listing), `chrome-edge/promo/small-440x280.png` as the small promo tile and `chrome-edge/promo/marquee-1400x560.png` as the marquee promo tile, then *Save draft* → *Submit for review* (listing-only changes are reviewed quickly and do not touch the published package).
+- Edge Add-ons: [Partner Center](https://partner.microsoft.com/dashboard/microsoftedge) → Geld → *Store listings* → English: `00-marquee-1280x800.jpg` as the first screenshot, `small-440x280.png` under *Promotional tiles* (small), `marquee-1400x560.png` (large), then *Save* and *Publish*.
+
 Demo video: `https://www.youtube.com/watch?v=Ma1QC9JYnD4` — Chrome and Edge have a "YouTube video URL" field on the store listing; Firefox and the App Store have none (App Store *previews* are uploaded video files), so put the link in the description there.
