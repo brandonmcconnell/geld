@@ -26,7 +26,7 @@ Store publishing (`.github/workflows/publish.yml`) runs after every CI release o
 
 Releases: every push to `main` that touches the extension (apps/extension, packages/core, assets/brand, the lockfile, or the workflow) publishes a GitHub Release from CI, tagged `v{version}-build.{run}` with one zip per browser plus `-sources.zip` for Firefox review, auto-generated notes (editable afterwards) and marked latest; the site's install buttons read `/releases/latest`. Bump `apps/extension/package.json` `version` for a new version number; the build number keeps tags unique. `workflow_dispatch` forces a release.
 
-Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build`, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`), `pnpm dev` (extension), `pnpm dev:site`.
+Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build`, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`), `pnpm dev` (extension; it does **not** launch a browser — load `apps/extension/.output/chrome-mv3-dev` once with "Load unpacked" in your own Chrome, or `firefox-mv2-dev` via about:debugging, and WXT rebuilds and reloads it on change; a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings the launcher back per developer), `pnpm dev:site`.
 
 ## Conventions
 
