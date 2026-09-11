@@ -1,6 +1,6 @@
 import type { BuiltInCategory, Catalog, CategoryShape, PatternGroup } from './categories';
-import type { ListSurfaceSpec } from './list-surfaces';
-import { ListSurfaceError, listSurfaceJson, parseListSurfaces } from './list-surfaces';
+import type { DiffstatSurfaceSpec, ListSurfaceSpec } from './list-surfaces';
+import { ListSurfaceError, diffstatSurfaceJson, listSurfaceJson, parseDiffstatSurfaces, parseListSurfaces } from './list-surfaces';
 import { isWellFormedId } from './categories';
 import { isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
@@ -33,6 +33,7 @@ export interface CatalogDocument {
   readonly categories: readonly CatalogEntry[];
   /** Absent in documents written before list surfaces joined the catalog; the bundled ones apply then. */
   readonly listSurfaces?: readonly ListSurfaceSpec[];
+  readonly diffstatSurfaces?: readonly DiffstatSurfaceSpec[];
 }
 
 export type CatalogParse = { readonly ok: true; readonly document: CatalogDocument } | { readonly ok: false; readonly reason: string };
@@ -142,7 +143,17 @@ export function parseCatalog(value: unknown): CatalogParse {
       seen.add(category.id);
     }
     const listSurfaces = value.listSurfaces === undefined ? undefined : parseListSurfaces(value.listSurfaces);
-    return { ok: true, document: listSurfaces === undefined ? { version, minExtensionVersion, categories } : { version, minExtensionVersion, categories, listSurfaces } };
+    const diffstatSurfaces = value.diffstatSurfaces === undefined ? undefined : parseDiffstatSurfaces(value.diffstatSurfaces);
+    return {
+      ok: true,
+      document: {
+        version,
+        minExtensionVersion,
+        categories,
+        ...(listSurfaces === undefined ? {} : { listSurfaces }),
+        ...(diffstatSurfaces === undefined ? {} : { diffstatSurfaces }),
+      },
+    };
   } catch (error) {
     if (error instanceof CatalogError || error instanceof ListSurfaceError) return { ok: false, reason: error.message };
     throw error;
@@ -235,6 +246,7 @@ export function resolveCatalog(bundled: Catalog, fetched: CatalogDocument | null
     categories,
     // A newer document that carries surfaces replaces the bundled list outright (GitHub's UI is what changed).
     listSurfaces: fetched.listSurfaces ?? bundled.listSurfaces,
+    diffstatSurfaces: fetched.diffstatSurfaces ?? bundled.diffstatSurfaces,
   };
 }
 
@@ -274,6 +286,7 @@ export function serializeCatalog(catalog: Catalog): string {
       groups: category.groups.map((group) => ({ id: group.id, label: group.label, description: group.description, patterns: [...group.patterns] })),
     })),
     listSurfaces: catalog.listSurfaces.map(listSurfaceJson),
+    diffstatSurfaces: catalog.diffstatSurfaces.map(diffstatSurfaceJson),
   };
   return `${JSON.stringify(document, null, 2)}\n`;
 }

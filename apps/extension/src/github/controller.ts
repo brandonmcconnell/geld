@@ -25,6 +25,7 @@ import type { DiffEntry, DiffView } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
+import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, removePrListStats } from './pr-list';
@@ -600,6 +601,13 @@ export class GeldController {
       removePrListStats();
     }
     applyAuthorHiding(this.authorRules, surfaces);
+    applyDiffstatSurfaces({
+      catalog: this.catalog,
+      matcherFor: (repo) => this.matcherFor(repo),
+      repoRules: this.repoRules,
+      diffSource: this.diffSource,
+      hideCommentLines: this.settings.hideCommentLines,
+    });
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({

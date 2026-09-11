@@ -51,6 +51,11 @@ function readOriginalTotals(
   return { files, additions: added, deletions: deleted };
 }
 
+/** A stat group assembled from elements found by a catalog diffstat surface (no file count on those). */
+export function statGroupFrom(host: HTMLElement, additions: HTMLElement | null, deletions: HTMLElement | null, srOnly: HTMLElement | null): HeaderStatGroup {
+  return { host, additions, deletions, srOnly, fileCounts: [], original: readOriginalTotals(additions, deletions, srOnly, []), sentence: false };
+}
+
 /** Legacy PR "Files changed" tab: `#diffstat` in the tab bar plus `#files_tab_counter`. */
 function findLegacyTabnavGroup(): HeaderStatGroup | null {
   const host = document.getElementById('diffstat');

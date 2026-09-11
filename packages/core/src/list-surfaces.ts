@@ -169,6 +169,99 @@ export function parseListSurfaces(value: unknown, path = 'listSurfaces'): readon
   });
 }
 
+/* ------------------------------------------------------------------------- */
+/* Diffstat surfaces                                                           */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Places where GitHub shows a `+N −M` diffstat for *some other* commit or pull
+ * request than the page's own (the page's own header is handled in code): the
+ * commit hovercard, for one. Geld finds the subject, fetches its `.diff`
+ * (cached per commit like everything else) and rewrites the numbers with the
+ * repository's matcher, exactly as the header and the PR-list chips do.
+ */
+export interface DiffstatSurfaceSpec {
+  /** Stable id, stamped on the diffstat host as `data-geld-surface`. */
+  readonly id: string;
+  readonly description: string;
+  /** Selector for the container holding one subject's diffstat (e.g. the hovercard). */
+  readonly root: string;
+  /**
+   * Where the subject is written: an attribute of the root, or the `href` of
+   * the first link inside the root that matches `selector`. The value must
+   * contain `/owner/repo/commit/<sha>` or `/owner/repo/pull/<n>`.
+   */
+  readonly subject: { readonly attribute: string } | { readonly selector: string };
+  /** The diffstat host inside the root, and the `+N` / `−M` elements inside it (selectors scoped to the host). */
+  readonly host: string;
+  readonly additions: string;
+  readonly deletions: string;
+  /** Screen-reader sentence to rewrite alongside, if any. */
+  readonly srOnly?: string;
+  readonly css?: string;
+}
+
+export const BUNDLED_DIFFSTAT_SURFACES: readonly DiffstatSurfaceSpec[] = [
+  {
+    id: 'commit-hovercard',
+    description:
+      'Commit hovercard (hovering a SHA or "Updated N minutes ago" link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/commit/<sha>/hovercard, with a legacy .diffstat (+N in .color-fg-success, −M in .color-fg-danger, "6 lines changed" in .sr-only).',
+    root: '.js-hovercard-content[data-hovercard-target-url*="/commit/"]',
+    subject: { attribute: 'data-hovercard-target-url' },
+    host: '.diffstat',
+    additions: '.color-fg-success',
+    deletions: '.color-fg-danger',
+    srOnly: '.sr-only',
+    // GitHub spaces +N and −M with whitespace inside the spans, which the rewrite trims.
+    css: `.diffstat[data-geld-surface='commit-hovercard'] .color-fg-danger { margin-left: 4px; }`,
+  },
+];
+
+export function parseDiffstatSurfaces(value: unknown, path = 'diffstatSurfaces'): readonly DiffstatSurfaceSpec[] {
+  if (!Array.isArray(value)) throw new ListSurfaceError(`${path}: expected a list, got ${describe(value)}`);
+  const seen = new Set<string>();
+  return value.map((entry: unknown, index): DiffstatSurfaceSpec => {
+    const at = `${path}[${index}]`;
+    if (!isRecord(entry)) throw new ListSurfaceError(`${at}: expected a surface object, got ${describe(entry)}`);
+    const id = entry.id;
+    if (typeof id !== 'string' || !ID_PATTERN.test(id)) throw new ListSurfaceError(`${at}.id: expected an id like "commit-hovercard", got ${describe(id)}`);
+    if (seen.has(id)) throw new ListSurfaceError(`${path}: duplicate surface id "${id}"`);
+    seen.add(id);
+    const description = entry.description;
+    if (typeof description !== 'string') throw new ListSurfaceError(`${at}.description: expected a string, got ${describe(description)}`);
+    const root = requireSelector(entry, 'root', at);
+    const subjectValue = entry.subject;
+    if (!isRecord(subjectValue)) throw new ListSurfaceError(`${at}.subject: expected { attribute } or { selector }, got ${describe(subjectValue)}`);
+    const subject: DiffstatSurfaceSpec['subject'] =
+      typeof subjectValue.attribute === 'string'
+        ? { attribute: subjectValue.attribute }
+        : { selector: requireSelector(subjectValue, 'selector', `${at}.subject`) };
+    if ('attribute' in subject && subject.attribute.trim() === '') throw new ListSurfaceError(`${at}.subject.attribute: must not be empty`);
+    const host = requireSelector(entry, 'host', at);
+    const additions = requireSelector(entry, 'additions', at);
+    const deletions = requireSelector(entry, 'deletions', at);
+    const srOnly = entry.srOnly === undefined ? undefined : requireSelector(entry, 'srOnly', at);
+    const css = entry.css;
+    if (css !== undefined && typeof css !== 'string') throw new ListSurfaceError(`${at}.css: expected a string, got ${describe(css)}`);
+    const spec: DiffstatSurfaceSpec = { id, description, root, subject, host, additions, deletions };
+    return { ...spec, ...(srOnly === undefined ? {} : { srOnly }), ...(css === undefined ? {} : { css }) };
+  });
+}
+
+export function diffstatSurfaceJson(spec: DiffstatSurfaceSpec): Record<string, unknown> {
+  return {
+    id: spec.id,
+    description: spec.description,
+    root: spec.root,
+    subject: 'attribute' in spec.subject ? { attribute: spec.subject.attribute } : { selector: spec.subject.selector },
+    host: spec.host,
+    additions: spec.additions,
+    deletions: spec.deletions,
+    ...(spec.srOnly === undefined ? {} : { srOnly: spec.srOnly }),
+    ...(spec.css === undefined ? {} : { css: spec.css }),
+  };
+}
+
 /** Stable JSON shape for `serializeCatalog`. */
 export function listSurfaceJson(spec: ListSurfaceSpec): Record<string, unknown> {
   return {

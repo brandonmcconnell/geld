@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260916,
+  "version": 20260917,
   "minExtensionVersion": "0.1.1",
   "categories": [
     {
@@ -697,6 +697,21 @@
       ],
       "authors": [],
       "css": ".geld-pr-stat[data-geld-surface='stack-popover'] { margin-left: 8px; font-size: 11px; }"
+    }
+  ],
+  "diffstatSurfaces": [
+    {
+      "id": "commit-hovercard",
+      "description": "Commit hovercard (hovering a SHA or \"Updated N minutes ago\" link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/commit/<sha>/hovercard, with a legacy .diffstat (+N in .color-fg-success, −M in .color-fg-danger, \"6 lines changed\" in .sr-only).",
+      "root": ".js-hovercard-content[data-hovercard-target-url*=\"/commit/\"]",
+      "subject": {
+        "attribute": "data-hovercard-target-url"
+      },
+      "host": ".diffstat",
+      "additions": ".color-fg-success",
+      "deletions": ".color-fg-danger",
+      "srOnly": ".sr-only",
+      "css": ".diffstat[data-geld-surface='commit-hovercard'] .color-fg-danger { margin-left: 4px; }"
     }
   ]
 }

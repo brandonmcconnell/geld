@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLED_CATALOG } from './categories';
 import { parseCatalog, resolveCatalog, serializeCatalog } from './catalog';
-import { BUNDLED_LIST_SURFACES, parseListSurfaces } from './list-surfaces';
+import { BUNDLED_LIST_SURFACES, parseDiffstatSurfaces, parseListSurfaces } from './list-surfaces';
 
 describe('list surfaces in the catalog', () => {
   it('round-trips through the serialized catalog', () => {
@@ -25,5 +25,14 @@ describe('list surfaces in the catalog', () => {
     expect(() => parseListSurfaces([{ id: 'a', description: '', row: '.r', chipAnchors: [], authors: [{ selector: 'a', from: 'magic' }] }])).toThrow(/authors\[0\]\.from/);
     const dup = { id: 'a', description: '', row: '.r', chipAnchors: [], authors: [] };
     expect(() => parseListSurfaces([dup, dup])).toThrow(/duplicate/);
+  });
+});
+
+describe('diffstat surfaces in the catalog', () => {
+  it('round-trips and validates', () => {
+    const parsed = parseCatalog(JSON.parse(serializeCatalog(BUNDLED_CATALOG)));
+    expect(parsed.ok && parsed.document.diffstatSurfaces).toEqual(BUNDLED_CATALOG.diffstatSurfaces);
+    expect(() => parseDiffstatSurfaces([{ id: 'x', description: '', root: '.r', subject: {}, host: '.h', additions: '.a', deletions: '.d' }])).toThrow(/subject/);
+    expect(() => parseDiffstatSurfaces([{ id: 'x', description: '', root: '.r', subject: { attribute: 'data-x' }, host: '.h', additions: '.a' }])).toThrow(/deletions/);
   });
 });

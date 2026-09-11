@@ -1,6 +1,6 @@
 import type { CategoryIconName } from './category-icons';
-import type { ListSurfaceSpec } from './list-surfaces';
-import { BUNDLED_LIST_SURFACES } from './list-surfaces';
+import type { DiffstatSurfaceSpec, ListSurfaceSpec } from './list-surfaces';
+import { BUNDLED_DIFFSTAT_SURFACES, BUNDLED_LIST_SURFACES } from './list-surfaces';
 import { TEST_PATTERN_GROUPS } from './test-patterns';
 
 /**
@@ -84,6 +84,8 @@ export interface Catalog {
   readonly categories: readonly BuiltInCategory[];
   /** How PR lists are recognised and where chips go, per GitHub UI (see `list-surfaces.ts`); updatable like the patterns. */
   readonly listSurfaces: readonly ListSurfaceSpec[];
+  /** Diffstats for other commits/PRs shown around GitHub (hovercards); same file, same mechanism. */
+  readonly diffstatSurfaces: readonly DiffstatSurfaceSpec[];
 }
 
 /**
@@ -91,7 +93,7 @@ export interface Catalog {
  * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260916;
+export const CATALOG_VERSION = 20260917;
 
 /** The extension version that introduced the updatable catalog; older builds never fetch it. */
 export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
@@ -378,6 +380,7 @@ export const BUNDLED_CATALOG: Catalog = {
   minExtensionVersion: CATALOG_MIN_EXTENSION_VERSION,
   categories: CATEGORIES,
   listSurfaces: BUNDLED_LIST_SURFACES,
+  diffstatSurfaces: BUNDLED_DIFFSTAT_SURFACES,
 };
 
 export const CATEGORY_IDS: readonly CategoryId[] = ['tests', 'generated', 'vendored', 'agents', 'docs', 'tooling', 'stories', 'trivial', 'large'];

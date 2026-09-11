@@ -133,7 +133,7 @@ export function surfaceOf(surfaces: readonly ListSurface[], link: HTMLAnchorElem
  * like the patterns.
  */
 export function applySurfaceStyles(catalog: Catalog): void {
-  const css = catalog.listSurfaces
+  const css = [...catalog.listSurfaces, ...catalog.diffstatSurfaces]
     .flatMap((surface) => (surface.css === undefined ? [] : [`/* ${surface.id} */\n${surface.css}`]))
     .join('\n\n');
   let style = document.getElementById(STYLE_ID);

@@ -87,7 +87,8 @@ if (previous !== null) {
   }
   const contentChanged =
     JSON.stringify(roundTrip.document.categories) !== JSON.stringify(previous.document.categories) ||
-    JSON.stringify(roundTrip.document.listSurfaces ?? null) !== JSON.stringify(previous.document.listSurfaces ?? null);
+    JSON.stringify(roundTrip.document.listSurfaces ?? null) !== JSON.stringify(previous.document.listSurfaces ?? null) ||
+    JSON.stringify(roundTrip.document.diffstatSurfaces ?? null) !== JSON.stringify(previous.document.diffstatSurfaces ?? null);
   if (catalog.version < previous.document.version) {
     fail(`CATALOG_VERSION ${catalog.version} is lower than the committed ${previous.document.version}`);
   }
