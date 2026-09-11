@@ -35,10 +35,12 @@
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0",
+    "web-ext": "^10.6.0",
     "wxt": "^0.21.4"
   },
   "dependencies": {
     "@geld/core": "workspace:*",
+    "@geld/github": "workspace:*",
     "hyperellipse": "^1.0.5"
   }
 }

@@ -1,10 +1,11 @@
 import type { GeldSettings, RemoteRead } from '@geld/core';
-import { DEFAULT_SETTINGS, findSettingsGist, readRemoteValidated, settingsEqual, SignedOutError, writeRemote } from '@geld/core';
+import { DEFAULT_SETTINGS, fetchGitHubProfile, findSettingsGist, readRemoteValidated, settingsEqual, SignedOutError, writeRemote } from '@geld/core';
+import type { TokenSet } from '@geld/github';
+import { createTokenSource, pollDeviceCode, refreshTokens, requestDeviceCode } from '@geld/github';
 import { browser } from 'wxt/browser';
-import type { AuthFlowState, RemoteInvalid, SyncState } from './account';
-import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem } from './account';
+import type { AuthFlowState, GitHubAccount, RemoteInvalid, SyncState } from './account';
+import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem, tokensOf, withTokens } from './account';
 import { loadCatalog } from './catalog';
-import { fetchAccount, pollForToken, requestDeviceCode } from './github-auth';
 import type { AccountActionMessage, AccountActionResponse } from './messages';
 import { settingsItem } from './storage';
 
@@ -12,6 +13,12 @@ import { settingsItem } from './storage';
  * Runs in the background so a sign-in or sync survives the popup closing.
  * State is published through `storage.local` items that the popup and options
  * page watch; they never talk to GitHub themselves.
+ *
+ * Sign-in is the Geld GitHub App's **device flow** (no client secret, no
+ * server). App tokens expire after eight hours, so this module is also the
+ * one place that refreshes them: every GitHub call goes through `withToken`,
+ * which renews the token ahead of expiry and retries once after a 401.
+ * Refresh tokens rotate on use, which is why only the background may refresh.
  */
 
 const PUSH_DEBOUNCE_MS = 1500;
@@ -42,12 +49,66 @@ async function markInvalid(read: Extract<RemoteRead, { kind: 'invalid' }>): Prom
   return fail('Your settings on GitHub could not be read. See the notice for details.');
 }
 
+/* ------------------------------------------------------------------ tokens */
+
+const tokenSource = createTokenSource({
+  store: {
+    async load(): Promise<TokenSet | null> {
+      const account = await accountItem.getValue();
+      return account === null ? null : tokensOf(account);
+    },
+    async save(tokens: TokenSet): Promise<void> {
+      const account = await accountItem.getValue();
+      if (account !== null) await accountItem.setValue(withTokens(account, tokens));
+    },
+  },
+  // Device-flow tokens refresh without a client secret, so the extension can do it alone.
+  refresh: async (refreshToken) => refreshTokens({ clientId: await effectiveClientId(), refreshToken }),
+});
+
+/** The sign-in is over (revoked, expired for good, or refused): forget it and say why. */
+async function signedOut(reason: string): Promise<void> {
+  await accountItem.setValue(null);
+  await setSync({ ...EMPTY_SYNC_STATE, lastError: reason });
+}
+
+/**
+ * Run a GitHub call with a token that is good for a while, refreshing first
+ * when needed. A 401 gets one forced refresh and retry (clock skew, or a token
+ * revoked and re-issued); a second 401 means the sign-in really is over.
+ * Throws `SignedOutError` once the account has been cleared.
+ */
+async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
+  const first = await tokenSource.get();
+  if (first.status === 'signed-out') {
+    await signedOut('GitHub signed Geld out; please sign in again.');
+    throw new SignedOutError();
+  }
+  if (first.status === 'unavailable') throw new Error(`Could not renew the GitHub sign-in: ${first.message}`);
+  try {
+    return await call(first.token);
+  } catch (error) {
+    if (!(error instanceof SignedOutError)) throw error;
+    const second = await tokenSource.get({ force: true });
+    if (second.status !== 'ok' || second.token === first.token) {
+      await signedOut('GitHub signed Geld out; please sign in again.');
+      throw error;
+    }
+    try {
+      return await call(second.token);
+    } catch (retryError) {
+      if (retryError instanceof SignedOutError) await signedOut('GitHub signed Geld out; please sign in again.');
+      throw retryError;
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ sign-in */
 
 async function signIn(): Promise<AccountActionResponse> {
   const clientId = await effectiveClientId();
   if (clientId === '') {
-    return fail('No GitHub OAuth client id is configured. Add one in the options page (Account section).');
+    return fail('No GitHub App client id is configured. Add one in the options page (Account section).');
   }
   cancelFlow?.();
   let cancelled = false;
@@ -80,7 +141,7 @@ async function signIn(): Promise<AccountActionResponse> {
       if (cancelled) return;
       let result;
       try {
-        result = await pollForToken(clientId, device);
+        result = await pollDeviceCode(clientId, device);
       } catch {
         continue; // transient network error; keep polling
       }
@@ -93,7 +154,11 @@ async function signIn(): Promise<AccountActionResponse> {
         return;
       }
       try {
-        const account = await fetchAccount(result.token, result.scopes);
+        const profile = await fetchGitHubProfile(result.tokens.accessToken);
+        // Replaces an OAuth App account in place (same user, same gist); the old
+        // token cannot be revoked from here (that needs the client secret), it
+        // is simply forgotten.
+        const account: GitHubAccount = withTokens({ ...profile, auth: 'app', token: '', expiresAt: null, refreshToken: null, refreshTokenExpiresAt: null, scopes: [] }, result.tokens);
         await accountItem.setValue(account);
         await authFlowItem.setValue({ status: 'idle' });
         await initialSync();
@@ -131,20 +196,20 @@ async function signOut(): Promise<AccountActionResponse> {
  * this device's settings. Identical → nothing. Different → ask the user.
  */
 async function initialSync(): Promise<void> {
-  const account = await accountItem.getValue();
-  if (account === null) return;
+  if ((await accountItem.getValue()) === null) return;
   try {
     const local = await settingsItem.getValue();
-    const existing = await findSettingsGist(account.token);
+    const existing = await withToken((token) => findSettingsGist(token));
     if (existing === null) {
-      const written = await writeRemote(account.token, null, local);
+      const written = await withToken((token) => writeRemote(token, null, local));
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
       return;
     }
-    const read = await readRemoteValidated(account.token, existing.id, await loadCatalog());
+    const catalog = await loadCatalog();
+    const read = await withToken((token) => readRemoteValidated(token, existing.id, catalog));
     if (read.kind === 'missing') {
       // The gist exists but has no settings file (e.g. the user deleted it): recreate it.
-      const written = await writeRemote(account.token, existing.id, local);
+      const written = await withToken((token) => writeRemote(token, existing.id, local));
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null, remoteInvalid: null });
       return;
     }
@@ -173,12 +238,14 @@ async function resolveChoice(useRemote: boolean): Promise<AccountActionResponse>
   const account = await accountItem.getValue();
   const state = await syncStateItem.getValue();
   if (account === null || state.pendingChoice === null || state.gistId === null) return fail('Nothing to resolve.');
+  const { pendingChoice, gistId } = state;
   try {
     if (useRemote) {
-      await applyRemoteLocally(state.pendingChoice.remote);
-      await setSync({ remoteUpdatedAt: state.pendingChoice.remoteUpdatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
+      await applyRemoteLocally(pendingChoice.remote);
+      await setSync({ remoteUpdatedAt: pendingChoice.remoteUpdatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
     } else {
-      const written = await writeRemote(account.token, state.gistId, await settingsItem.getValue());
+      const local = await settingsItem.getValue();
+      const written = await withToken((token) => writeRemote(token, gistId, local));
       await setSync({ remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null });
     }
     return { ok: true };
@@ -195,7 +262,7 @@ async function resetRemote(): Promise<AccountActionResponse> {
   if (account === null) return fail('Not signed in.');
   const gistId = state.remoteInvalid?.gistId ?? state.gistId;
   try {
-    const written = await writeRemote(account.token, gistId, DEFAULT_SETTINGS);
+    const written = await withToken((token) => writeRemote(token, gistId, DEFAULT_SETTINGS));
     await applyRemoteLocally(DEFAULT_SETTINGS);
     await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null, pendingChoice: null, remoteInvalid: null });
     return { ok: true };
@@ -217,13 +284,15 @@ async function pull(): Promise<AccountActionResponse> {
   const state = await syncStateItem.getValue();
   if (state.pendingChoice !== null) return fail('Choose which settings to keep first.');
   try {
-    const gistId = state.gistId ?? (await findSettingsGist(account.token))?.id ?? null;
+    const gistId = state.gistId ?? (await withToken((token) => findSettingsGist(token)))?.id ?? null;
     if (gistId === null) {
-      const written = await writeRemote(account.token, null, await settingsItem.getValue());
+      const local = await settingsItem.getValue();
+      const written = await withToken((token) => writeRemote(token, null, local));
       await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null });
       return { ok: true };
     }
-    const read = await readRemoteValidated(account.token, gistId, await loadCatalog());
+    const catalog = await loadCatalog();
+    const read = await withToken((token) => readRemoteValidated(token, gistId, catalog));
     if (read.kind === 'missing') return fail('The settings gist could not be read.');
     if (read.kind === 'invalid') return markInvalid(read);
     const { remote } = read;
@@ -263,7 +332,7 @@ async function push(settings: GeldSettings): Promise<void> {
   // Never write over a file the user is still fixing by hand.
   if (state.pendingChoice !== null || state.remoteInvalid !== null) return;
   try {
-    const written = await writeRemote(account.token, state.gistId, settings);
+    const written = await withToken((token) => writeRemote(token, state.gistId, settings));
     await setSync({ gistId: written.gistId, remoteUpdatedAt: written.updatedAt, lastSyncedAt: Date.now(), lastError: null });
   } catch (error) {
     await handleSyncError(error);
@@ -271,11 +340,8 @@ async function push(settings: GeldSettings): Promise<void> {
 }
 
 async function handleSyncError(error: unknown): Promise<void> {
-  if (error instanceof SignedOutError) {
-    await accountItem.setValue(null);
-    await setSync({ ...EMPTY_SYNC_STATE, lastError: 'GitHub signed Geld out; please sign in again.' });
-    return;
-  }
+  // `withToken` already cleared the account and recorded why.
+  if (error instanceof SignedOutError) return;
   await setSync({ lastError: error instanceof Error ? error.message : String(error) });
 }
 

@@ -1,4 +1,5 @@
 import { CORRUPTED_SETTINGS_COPY } from '@geld/core';
+import { RECONNECT_COPY } from '@geld/github';
 import { browser } from 'wxt/browser';
 import type { AuthFlowState, GitHubAccount, SyncState } from '../lib/account';
 import { accountItem, authFlowItem, EMPTY_SYNC_STATE, syncStateItem } from '../lib/account';
@@ -107,7 +108,9 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     avatar.width = 20;
     avatar.height = 20;
     const status =
-      sync.remoteInvalid !== null
+      account.auth === 'oauth'
+        ? RECONNECT_COPY.title
+        : sync.remoteInvalid !== null
         ? 'Sync paused: settings on GitHub are corrupted'
         : sync.lastError !== null
           ? `Sync error: ${sync.lastError}`
@@ -127,6 +130,23 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     details.append(summary, menu);
     host.append(details);
     if (localError !== null) promptHost.append(el('p', 'geld-status geld-account__error', [localError]));
+
+    if (account.auth === 'oauth') {
+      // Not dismissable on purpose: the old token keeps working, but only the
+      // App can be refreshed and used beyond the gist. Sign-in replaces it.
+      const alert = el('div', 'geld-alert geld-alert--notice', [
+        el('p', 'geld-alert__title', [RECONNECT_COPY.title]),
+        el('p', 'geld-alert__text', [RECONNECT_COPY.body]),
+        el('div', 'geld-alert__actions', [
+          button([svg(GITHUB_MARK), RECONNECT_COPY.action], 'geld-button--small geld-button--primary', () => {
+            dialogWanted = true;
+            void act('sign-in');
+          }),
+        ]),
+      ]);
+      alert.setAttribute('role', 'status');
+      promptHost.append(alert);
+    }
 
     const invalid = sync.remoteInvalid;
     if (invalid !== null) {
@@ -203,7 +223,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       if (flow.status === 'pending' || flow.status === 'error') dialogWanted = true;
       lastFlowStatus = flow.status;
     }
-    if (account !== null) dialogWanted = false;
+    // An OAuth App account is signed in *and* mid-reconnect; keep its dialog open.
+    if (account !== null && account.auth !== 'oauth') dialogWanted = false;
     const node = ensureDialog();
     if (!dialogWanted || (flow.status !== 'pending' && flow.status !== 'error')) {
       if (node.open) node.close();
@@ -228,7 +249,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       open.rel = 'noreferrer';
       const minutesLeft = Math.max(1, Math.round((flow.expiresAt - Date.now()) / 60000));
       children.push(
-        el('p', 'geld-dialog__text', ['Enter this one-time code on GitHub to connect your account. Geld only asks for access to gists.']),
+        el('p', 'geld-dialog__text', ['Enter this one-time code on GitHub to connect your account. Geld keeps your settings in a secret gist on it; nothing else is read or written until you use a feature that needs it.']),
         el('div', 'geld-dialog__code-row', [code, copy]),
         el('div', 'geld-dialog__actions', [open, button(['Cancel'], 'geld-button--link', () => void act('cancel-sign-in'))]),
         el('p', 'geld-dialog__note', [`Waiting for GitHub… this closes by itself once you approve. The code is valid for about ${minutesLeft} min.`]),
