@@ -12,7 +12,13 @@ import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 export const PR_STAT_CLASS = 'geld-pr-stat';
 
-const PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/;
+/**
+ * A link to a pull request, with or without a tab: lists link to `/pull/N`,
+ * but the stack popover on a PR's Changes tab links its siblings to
+ * `/pull/N/changes` (`/files`, `/commits`, `/checks` likewise). Which links are
+ * *rows* is still decided by the list surfaces, so this stays permissive.
+ */
+const PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/[a-z-]+)*\/?$/;
 
 export interface ListRow {
   readonly key: string;
