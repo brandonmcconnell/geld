@@ -242,6 +242,35 @@ body {
   font-size: 12px;
 }
 
+/* One row per problem: where it is, and a warning whose title holds the message. */
+.popup__repo-config-issues {
+  gap: 4px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.popup__repo-config-issues li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.popup__repo-config-issues .geld-alert__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup__repo-config-warning {
+  flex-shrink: 0;
+  color: var(--destructive);
+}
+
+.popup__repo-config-more {
+  color: var(--muted-foreground);
+}
+
 .popup__repo-config .geld-alert__actions {
   margin-top: 10px;
 }
