@@ -21,6 +21,12 @@ interface ThemeAwareAction {
 export default defineConfig({
   srcDir: '.',
   outDir: '.output',
+  // `pnpm dev` does not launch a throwaway browser: load `.output/chrome-mv3-dev`
+  // once via chrome://extensions → "Load unpacked" (about:debugging in Firefox)
+  // in your own profile — signed in, with your other extensions — and WXT
+  // rebuilds and reloads it on every change. To get the launcher back for
+  // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
+  webExt: { disabled: true },
   manifest: ({ browser, manifestVersion: mv }) => ({
     name: 'Geld',
     short_name: 'Geld',
