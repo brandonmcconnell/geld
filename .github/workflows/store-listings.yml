@@ -58,8 +58,16 @@ jobs:
           mkdir -p ~/.private_keys && echo "$ASC_PRIVATE_KEY" | base64 --decode > ~/.private_keys/AuthKey_$ASC_KEY_ID.p8
           jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
             '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
+          # Apple requires screenshots of the app/extension actually running,
+          # not title art. Only physical-Mac Safari captures belong here.
+          shopt -s nullglob
+          captures=(apps/extension/store/assets/safari/screenshots/*.jpg)
+          if [ "${#captures[@]}" = "0" ]; then
+            echo "::warning title=Safari::Skipped: no physical-Mac Safari screenshots are committed (see apps/extension/store/PUBLISHING.md)."
+            exit 0
+          fi
           # deliver wants one folder per locale; Mac screenshots are recognised by their pixel size.
-          mkdir -p screenshots/en-US && cp apps/extension/store/assets/safari/screenshots/*.jpg screenshots/en-US/
+          mkdir -p screenshots/en-US && cp "${captures[@]}" screenshots/en-US/
           fastlane deliver \
             --api_key_path asc-key.json \
             --app_identifier sh.geld.safari --platform osx \
