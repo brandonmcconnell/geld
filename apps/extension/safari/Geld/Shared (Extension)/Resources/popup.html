@@ -6,11 +6,11 @@
     <title>Geld</title>
     <!-- Toolbar icon for light toolbars; the background swaps in the white mark on dark ones. -->
     <meta name="manifest.default_icon" content="{&quot;16&quot;:&quot;icon/action/black-16.png&quot;,&quot;32&quot;:&quot;icon/action/black-32.png&quot;,&quot;48&quot;:&quot;icon/action/black-48.png&quot;}">
-    <script type="module" crossorigin src="/chunks/popup-DfYh1vv2.js"></script>
+    <script type="module" crossorigin src="/chunks/popup-QNm39sAR.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/browser-DzJe97Dp.js">
-    <link rel="modulepreload" crossorigin href="/chunks/switch-nSkmZzz-.js">
-    <link rel="stylesheet" crossorigin href="/assets/switch-DEYcKB9H.css">
-    <link rel="stylesheet" crossorigin href="/assets/popup-DXn8JZaJ.css">
+    <link rel="modulepreload" crossorigin href="/chunks/switch-DdFWyCI0.js">
+    <link rel="stylesheet" crossorigin href="/assets/switch-D4LGpa88.css">
+    <link rel="stylesheet" crossorigin href="/assets/popup-C6zNR8g9.css">
   </head>
   <body>
     <main class="popup">
@@ -38,6 +38,8 @@
           <button id="toggle-repo" class="geld-button geld-button--small" type="button"></button>
           <button id="toggle-org" class="geld-button geld-button--small" type="button"></button>
         </div>
+        <!-- Repository-provided config (.github/geld.yml, org defaults, .gitattributes); see repo-config-source.ts. -->
+        <div class="popup__repo-config" id="repo-config" hidden></div>
       </section>
 
       <!-- Rendered from @geld/core's SETTINGS_SCHEMA (fields flagged `popup`). -->
