@@ -2,6 +2,7 @@ import { storage } from 'wxt/utils/storage';
 import type { RepoConfig, RepoConfigParse, SettingsIssue } from '@geld/core';
 import { BUNDLED_CATALOG, ORG_CONFIG_PATHS, ORG_CONFIG_REPO, REPO_CONFIG_PATH, generatedConfigFrom, isEmptyRepoConfig, parseRepoConfig } from '@geld/core';
 import type { Catalog } from '@geld/core';
+import { looksLikeHtml } from '../lib/http';
 
 /**
  * Fetches and caches the files a repository uses to configure Geld:
@@ -209,6 +210,9 @@ export class RepoConfigSource {
         throw new Error(`HTTP ${response.status}`);
       } else {
         const body = await response.text();
+        // A 200 that is really a GitHub page (SSO interstitial, sign-in wall,
+        // unavailable repository) is not a config file; treat it like a blip.
+        if (looksLikeHtml(response.headers.get('content-type'), body)) throw new Error('HTML page instead of a file');
         text = body.length > MAX_BYTES ? body.slice(0, MAX_BYTES) : body;
       }
     } catch {

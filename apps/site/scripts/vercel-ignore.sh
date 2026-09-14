@@ -18,6 +18,7 @@ cd "$(dirname "$0")/../../.."
 SITE_PATHS=(
   apps/site
   packages/core
+  packages/github
   apps/extension/package.json
   assets/brand
   assets/screenshots

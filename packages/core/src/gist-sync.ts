@@ -12,14 +12,15 @@ import { validateSettingsDocument } from './settings-validate';
  * user's device (extension) or in their own browser session (geld.sh).
  *
  * Both the extension and the website use this module, so the file name, the
- * payload shape and the equality rule are defined exactly once.
+ * payload shape and the equality rule are defined exactly once. Tokens come
+ * from the Geld GitHub App (`@geld/github`; its "Gists" account permission
+ * covers everything here) or, during the migration period, from the retired
+ * OAuth App's `gist` scope.
  */
 
 const API = 'https://api.github.com';
 export const GIST_FILE = 'geld-settings.json';
 export const GIST_DESCRIPTION = 'Geld browser extension settings (managed by Geld; safe to delete)';
-/** OAuth scope needed to read and write the gist. */
-export const OAUTH_SCOPE = 'gist';
 
 export interface RemoteSettings {
   readonly gistId: string;
