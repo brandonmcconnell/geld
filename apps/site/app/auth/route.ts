@@ -1,17 +1,18 @@
-import { fetchGitHubProfile, OAUTH_SCOPE } from '@geld/core';
+import { fetchGitHubProfile } from '@geld/core';
+import { exchangeCode, revokeToken } from '@geld/github';
 import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { connection, NextResponse } from 'next/server';
 
 import { authConfig, authOrigin, callbackUrl } from '@/lib/auth/config';
-import { exchangeCode } from '@/lib/auth/github';
 import { DEFAULT_NEXT_PATH, safeNextPath } from '@/lib/auth/redirect';
-import { clearOAuthState, readOAuthState, writeSession } from '@/lib/auth/session';
+import { clearOAuthState, getSession, readOAuthState, writeSession } from '@/lib/auth/session';
+import { sessionFromTokens } from '@/lib/auth/session-model';
 
 /**
- * OAuth callback (the App's registered callback URL). Verifies `state`,
- * exchanges the code server-side, looks up the profile and stores everything
- * in the encrypted session cookie. Failures land on /settings with a reason.
+ * Web-flow callback (the App's registered callback URL). Verifies `state`,
+ * exchanges the code server-side, looks up the profile and stores the token
+ * pair in the encrypted session cookie. Failures land on /settings with a reason.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Always request-time: nothing here may be prerendered, even when sign-in is unconfigured.
@@ -38,13 +39,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (expected === null || state === null || code === null || state !== expected.state) return failed('state');
 
   // Must be byte-for-byte the redirect_uri used in the authorize request.
-  const exchange = await exchangeCode(config, code, callbackUrl());
+  const exchange = await exchangeCode({ clientId: config.clientId, clientSecret: config.clientSecret, code, redirectUri: callbackUrl() });
   if (!exchange.ok) return failed('exchange');
-  if (!exchange.scope.split(',').map((scope) => scope.trim()).includes(OAUTH_SCOPE)) return failed('exchange');
 
-  const profile = await fetchGitHubProfile(exchange.token).catch(() => null);
+  const profile = await fetchGitHubProfile(exchange.tokens.accessToken).catch(() => null);
   if (profile === null) return failed('exchange');
 
-  await writeSession(store, config, { token: exchange.token, login: profile.login, avatarUrl: profile.avatarUrl });
+  // Reconnecting after the OAuth → App move: retire the old token so it is not
+  // left valid in a cookie nobody can read any more. Best effort.
+  const previous = await getSession(config);
+  if (previous !== null && previous.auth === 'oauth' && config.legacy !== null) {
+    await revokeToken({ ...config.legacy, token: previous.token });
+  }
+
+  await writeSession(store, config, sessionFromTokens(exchange.tokens, { login: profile.login, avatarUrl: profile.avatarUrl }));
   return NextResponse.redirect(new URL(safeNextPath(expected.next), origin), 303);
 }

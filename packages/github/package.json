@@ -1,0 +1,21 @@
+{
+  "name": "@geld/github",
+  "version": "0.1.0",
+  "description": "GitHub App access shared by the Geld extension and website: user authorization (device and web flows), token refresh, and the API clients built on it. Pure TypeScript, no browser APIs.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}

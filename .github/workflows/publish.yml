@@ -263,7 +263,7 @@ jobs:
       # the build number). The release tag is vX.Y.Z-build.N → build number N.
       - if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
-          WXT_GITHUB_CLIENT_ID: ${{ vars.WXT_GITHUB_CLIENT_ID }}
+          WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
           TAG: ${{ needs.assets.outputs.tag }}
         run: |
           export GELD_BUILD_NUMBER="${TAG##*build.}"

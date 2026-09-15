@@ -586,6 +586,15 @@ summary::-webkit-details-marker {
   border-color: color-mix(in srgb, var(--destructive) 55%, transparent);
 }
 
+/* Something to do, nothing broken: the reconnect prompt after the OAuth → App move. */
+.geld-alert--notice {
+  border-color: var(--foreground);
+}
+
+.geld-alert--notice .geld-alert__title {
+  color: var(--foreground);
+}
+
 .geld-alert__title {
   margin-bottom: 4px;
   color: var(--destructive);

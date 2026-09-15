@@ -17,6 +17,7 @@
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@geld/core": "workspace:*",
+    "@geld/github": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.5",
     "geist": "^1.7.2",

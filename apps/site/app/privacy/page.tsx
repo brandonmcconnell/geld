@@ -35,8 +35,9 @@ export default function PrivacyPage() {
             </li>
             <li>Your settings are stored in your browser&apos;s extension sync storage. Nothing about your browsing is stored anywhere else.</li>
             <li>
-              Signing in with GitHub is optional and asks for the <code>gist</code> scope only. In the extension the token stays on your device; on
-              geld.sh it is kept only in an encrypted cookie in your own browser. There is no database.
+              Signing in with GitHub is optional and goes through the Geld GitHub App, whose permissions are listed on GitHub&apos;s consent screen; the
+              gist is the only thing sign-in itself touches. In the extension the token stays on your device; on geld.sh it is kept only in an encrypted
+              cookie in your own browser. There is no database.
             </li>
           </ul>
 
@@ -59,20 +60,23 @@ export default function PrivacyPage() {
           <h2 id="sign-in">Optional GitHub sign-in and settings sync</h2>
           <p>
             You can sign in with GitHub from the popup or the options page to sync your settings between browsers. This is off until you choose it.
-            Sign-in uses GitHub&apos;s OAuth <em>device flow</em>: Geld asks GitHub for a short code, you confirm it on github.com, and GitHub issues a
-            token with the <code>gist</code> scope only. There is no Geld server in this exchange and no client secret. Geld then reads your public
-            profile (login and avatar, shown in the popup) and keeps your settings in a <strong>secret gist on your own GitHub account</strong> named{' '}
-            <code>geld-settings.json</code>. Only you and Geld running in your signed-in browsers can read or change it. The token is stored in{' '}
-            <code>browser.storage.local</code> on the device that signed in and is never synced or sent anywhere except to <code>api.github.com</code>.
-            Signing out deletes the token; deleting the gist from GitHub removes the synced copy.
+            Sign-in goes through the <strong>Geld GitHub App</strong> using GitHub&apos;s <em>device flow</em>: Geld asks GitHub for a short code, you
+            confirm it on github.com, and GitHub issues a user access token for the App. There is no Geld server in this exchange and no client
+            secret. The App&apos;s permissions are shown on GitHub&apos;s consent screen; sign-in itself only uses the <em>gists</em> permission. Geld then
+            reads your public profile (login and avatar, shown in the popup) and keeps your settings in a{' '}
+            <strong>secret gist on your own GitHub account</strong> named <code>geld-settings.json</code>. Only you and Geld running in your signed-in
+            browsers can read or change it. The token expires after eight hours and is renewed by the extension on the device that signed in; it is
+            stored in <code>browser.storage.local</code> there and is never synced or sent anywhere except to <code>github.com</code> and{' '}
+            <code>api.github.com</code>. Signing out deletes the token; deleting the gist from GitHub removes the synced copy. You can uninstall or
+            revoke the App at any time from your GitHub settings.
           </p>
           <p>
-            You can also sign in on <strong>geld.sh/settings</strong> to edit the same gist from any browser. That uses the same OAuth App through
-            GitHub&apos;s web flow: GitHub sends a one-time code to <code>www.geld.sh/auth</code>, the site exchanges it for a <code>gist</code>-scoped token
-            and stores the token, your login and avatar URL in an <strong>encrypted, HttpOnly cookie in your browser</strong> (30 days, or until you
-            sign out, which also asks GitHub to revoke the token). geld.sh has no database and keeps nothing between requests: it reads or writes your
-            gist only while serving a request you make, and never logs its contents. A second, readable cookie holds just your login and avatar so the
-            page header can show them.
+            You can also sign in on <strong>geld.sh/settings</strong> to edit the same gist from any browser. That uses the same GitHub App through
+            GitHub&apos;s web flow: GitHub sends a one-time code to <code>www.geld.sh/auth</code>, the site exchanges it for a token and stores the token,
+            its refresh token, your login and avatar URL in an <strong>encrypted, HttpOnly cookie in your browser</strong> (30 days, or until you sign
+            out, which also asks GitHub to revoke the token). geld.sh has no database and keeps nothing between requests: it reads or writes your gist
+            and renews the token only while serving a request you make, and never logs their contents. A second, readable cookie holds just your login
+            and avatar so the page header can show them.
           </p>
 
           <h2 id="storage">Storage</h2>

@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@geld/core": "workspace:*",
+    "@geld/github": "workspace:*",
     "hyperellipse": "^1.0.5"
   }
 }
