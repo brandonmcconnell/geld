@@ -97,11 +97,12 @@ function ensureChip(row: ListRow): HTMLElement {
   if (anchor === null) {
     if (row.titleLink.nextElementSibling !== chip) row.titleLink.insertAdjacentElement('afterend', chip);
   } else if (anchor.placement === 'append') {
-    // GitHub can stream the description text after Geld inserts the chip. On a
-    // later pass, put the existing chip back at the end rather than leaving it
-    // before "#N · branch". Avoid touching an already-correct node: moving it
-    // on every observer pass would create another mutation indefinitely.
+    // GitHub can stream or replace children after Geld inserts the chip. On a
+    // later pass, restore the requested edge without touching an
+    // already-correct node (which would create another mutation indefinitely).
     if (anchor.element.lastChild !== chip) anchor.element.append(chip);
+  } else if (anchor.placement === 'prepend') {
+    if (anchor.element.firstChild !== chip) anchor.element.prepend(chip);
   } else if (anchor.element.nextElementSibling !== chip) {
     anchor.element.insertAdjacentElement('afterend', chip);
   }

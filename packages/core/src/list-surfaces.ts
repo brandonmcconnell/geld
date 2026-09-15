@@ -12,10 +12,17 @@
  * JSON; `resolveCatalog` prefers a newer fetched list when it carries one.
  */
 
-/** Where the chip is inserted relative to an anchor element. */
-export type ChipPlacement = 'after' | 'append';
+/**
+ * Where the chip is inserted relative to an anchor element: as its next
+ * sibling, as its last child, or as its first child. `prepend` exists for
+ * single-line, ellipsized anchors: floated right from the *start* of the line
+ * the chip stays on that line and shortens it, so the ellipsis falls on the
+ * anchor's own text (a branch name) instead of on the counts; a float that
+ * comes after the text is pushed below a full line instead.
+ */
+export type ChipPlacement = 'after' | 'append' | 'prepend';
 
-export const CHIP_PLACEMENTS: readonly ChipPlacement[] = ['after', 'append'];
+export const CHIP_PLACEMENTS: readonly ChipPlacement[] = ['after', 'append', 'prepend'];
 
 /** Where a row's author login can be read from. */
 export type AuthorSourceKind =
@@ -86,11 +93,20 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   },
   {
     id: 'stack-popover',
-    description: 'Stacked pull requests popover: ActionList items inside [class*="StackState"] with a "#N · branch" description. Names no author.',
+    description:
+      'Stacked pull requests popover: ActionList items inside [class*="StackState"] with a "#N · branch" description that GitHub ellipsizes on one line. Names no author.',
     row: 'li[data-component="ActionList.Item"]',
-    chipAnchors: [{ selector: '[data-component="ActionList.Description"]', placement: 'append' }],
+    // Prepended and floated right: the counts keep their full width on the
+    // right of the line and the branch name is what gets the ellipsis. The
+    // "•" separator is dropped there — the counts sit against the edge, not
+    // after the text, so a bullet would hang in the gap.
+    chipAnchors: [{ selector: '[data-component="ActionList.Description"]', placement: 'prepend' }],
     authors: [],
-    css: `.geld-pr-stat[data-geld-surface='stack-popover'] { margin-left: 8px; font-size: 11px; }`,
+    css: [
+      `.geld-pr-stat[data-geld-surface='stack-popover'] { float: right; margin-left: 12px; font-size: 11px; }`,
+      `.geld-pr-stat[data-geld-surface='stack-popover'] .geld-pr-stat__sep { display: none; }`,
+      `.geld-pr-stat[data-geld-surface='stack-popover'] .geld-pr-stat__sep + * { margin-left: 0; }`,
+    ].join('\n'),
   },
 ];
 
