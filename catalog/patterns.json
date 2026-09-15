@@ -1,7 +1,7 @@
 {
   "geldCatalog": 1,
-  "version": 20260917,
-  "minExtensionVersion": "0.1.1",
+  "version": 20260918,
+  "minExtensionVersion": "0.1.2",
   "categories": [
     {
       "id": "tests",
@@ -687,16 +687,16 @@
     },
     {
       "id": "stack-popover",
-      "description": "Stacked pull requests popover: ActionList items inside [class*=\"StackState\"] with a \"#N · branch\" description. Names no author.",
+      "description": "Stacked pull requests popover: ActionList items inside [class*=\"StackState\"] with a \"#N · branch\" description that GitHub ellipsizes on one line. Names no author.",
       "row": "li[data-component=\"ActionList.Item\"]",
       "chipAnchors": [
         {
           "selector": "[data-component=\"ActionList.Description\"]",
-          "placement": "append"
+          "placement": "prepend"
         }
       ],
       "authors": [],
-      "css": ".geld-pr-stat[data-geld-surface='stack-popover'] { margin-left: 8px; font-size: 11px; }"
+      "css": ".geld-pr-stat[data-geld-surface='stack-popover'] { float: right; margin-left: 12px; font-size: 11px; }\n.geld-pr-stat[data-geld-surface='stack-popover'] .geld-pr-stat__sep { display: none; }\n.geld-pr-stat[data-geld-surface='stack-popover'] .geld-pr-stat__sep + * { margin-left: 0; }"
     }
   ],
   "diffstatSurfaces": [

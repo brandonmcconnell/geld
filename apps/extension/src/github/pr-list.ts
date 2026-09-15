@@ -92,6 +92,8 @@ function ensureChip(row: ListRow): HTMLElement {
     chip.classList.add(`${PR_STAT_CLASS}--inline`);
   } else if (anchor.placement === 'append') {
     anchor.element.append(chip);
+  } else if (anchor.placement === 'prepend') {
+    anchor.element.prepend(chip);
   } else {
     anchor.element.insertAdjacentElement('afterend', chip);
   }

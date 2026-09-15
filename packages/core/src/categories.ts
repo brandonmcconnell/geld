@@ -93,10 +93,18 @@ export interface Catalog {
  * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260917;
+export const CATALOG_VERSION = 20260918;
 
-/** The extension version that introduced the updatable catalog; older builds never fetch it. */
-export const CATALOG_MIN_EXTENSION_VERSION = '0.1.1';
+/**
+ * The oldest extension version that can read this catalog. Raise it (with
+ * the extension's `package.json` version) whenever the catalog starts using
+ * a schema feature older parsers reject — they are strict, and a document
+ * they cannot parse is dropped whole, patterns included, so gating them out
+ * here instead leaves them on their last good catalog until the store
+ * updates them. 0.1.1 introduced the catalog; 0.1.2 the `prepend` chip
+ * placement.
+ */
+export const CATALOG_MIN_EXTENSION_VERSION = '0.1.2';
 
 export const CATEGORIES: readonly BuiltInCategory[] = [
   {

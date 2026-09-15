@@ -22,7 +22,7 @@ Most "the selector changed again" reports are a browser still on an older build.
 For each hook the relevant spec uses, find it in the paste:
 
 - List row: `row` (`closest()` from the title link), `notInside`.
-- Chip: `chipAnchors[].selector` + `placement` (`after` a metadata line / `append` into a block description).
+- Chip: `chipAnchors[].selector` + `placement` (`after` a metadata line / `append` into a block description / `prepend` into a one-line ellipsized description, paired with `float: right` in the surface CSS so the counts survive truncation and the text takes the ellipsis).
 - Author: `authors[]` (`label` = "opened by X" / "Filter by author X" in title or aria-label; `href` = `author:X` / `author:app/X`; `text`).
 - Diffstat: `root`, `subject` (root attribute or a link's href containing `/owner/repo/commit/<sha>` or `/pull/<n>`), `host`, `additions`, `deletions`, `srOnly`.
 - Title links must match `PULL_PATH` in `apps/extension/src/github/pr-list.ts` (`/owner/repo/pull/N` with an optional tab suffix such as `/changes`, `/files`). A link shape that regex rejects is a **code** fix.
@@ -35,13 +35,30 @@ Only use stable hooks: `data-testid`, `data-component`, `role`, id fragments (`l
 |---|---|---|
 | Selector moved, new hook, chip belongs elsewhere, author written elsewhere, chip CSS | the spec in `packages/core/src/list-surfaces.ts` | catalog publish (headless) |
 | A brand-new list UI or hovercard of the same shape | a new spec entry (new `id`) | catalog publish |
-| New placement kind, new author source kind, link path shape, page-header/diff adapters | code | release |
+| New placement kind, new author source kind, link path shape, page-header/diff adapters | code | release — and raise `CATALOG_MIN_EXTENSION_VERSION` (+ the extension `package.json` version) when the catalog starts using the new kind: older parsers are strict and would drop the whole document, patterns included |
 
 When a surface is similar to an existing one (same row shape, only the container differs) extend the existing entry (`row` may hold a selector list; `notInside` excludes) rather than adding a new id.
 
 ## 4. Verify with a fixture
 
-Build a minimal HTML fixture from the paste (rows, title links, description line, author link; strip SVG paths), serve it *as* a github.com URL through Puppeteer request interception so the content script runs, load the built extension (`pnpm --filter @geld/extension build`, `.output/chrome-mv3`, `browser.installExtension`), wait ~5 s for diffs to arrive, then assert: rows and chips carry `data-geld-surface="<id>"`, chip text is `• N tests +A −D`, author hiding folds the expected rows (seed `hiddenAuthors: ['*[bot]']` in `chrome.storage.sync`). For a catalog-only change also prove the headless path: seed `chrome.storage.local.catalog = { version: current+1, fetchedAt, json }` with the edited spec and check the *unmodified* build picks it up. For hovercards, insert the popover markup pointed at a real commit SHA.
+Build a minimal HTML fixture from the paste (rows, title links, description line, author link; strip SVG paths), serve it *as* a github.com URL through Puppeteer request interception so the content script runs, load the built extension (`pnpm --filter @geld/extension build`, `.output/chrome-mv3`), wait ~5 s for diffs to arrive, then assert:
+
+Launch exactly like this (puppeteer-core ≥ 23, installed outside the repo, e.g. `/tmp`). Branded Chrome ignores `--load-extension`, and Puppeteer's default args include `--disable-extensions`, which makes `installExtension()` return an id while the extension stays inert (no service-worker target, `ERR_BLOCKED_BY_CLIENT` on its pages, content script never runs). All three are needed: `enableExtensions: true` only drops that default flag; `--enable-unsafe-extension-debugging` in `args` is what makes `Extensions.loadUnpacked` available (without it: "Method not available"); `pipe: true` because that command is pipe-only. Use `/usr/bin/google-chrome-stable` directly — the `/usr/local/bin/google-chrome` wrapper pins its own profile and debugging port.
+
+```js
+const browser = await puppeteer.launch({
+  executablePath: '/usr/bin/google-chrome-stable',
+  headless: true,
+  pipe: true,
+  enableExtensions: true,
+  args: ['--enable-unsafe-extension-debugging', '--no-sandbox'],
+});
+await browser.installExtension('apps/extension/.output/chrome-mv3');
+// Sanity check before anything else — if this times out, the extension is not running:
+await browser.waitForTarget((t) => t.type() === 'service_worker', { timeout: 8000 });
+```
+
+Then intercept requests on a page: respond to the fixture URL (`https://github.com/<owner>/<repo>/pull/<n>/files` or `/pulls`) with the HTML, `continue()` `chrome-extension://` requests, and 404 everything else. Finally assert: rows and chips carry `data-geld-surface="<id>"`, chip text is `• N tests +A −D`, author hiding folds the expected rows (seed `hiddenAuthors: ['*[bot]']` in `chrome.storage.sync`). For a catalog-only change also prove the headless path: seed `chrome.storage.local.catalog = { version: current+1, fetchedAt, json }` with the edited spec and check the *unmodified* build picks it up. For hovercards, insert the popover markup pointed at a real commit SHA.
 
 ## 5. Land
 
