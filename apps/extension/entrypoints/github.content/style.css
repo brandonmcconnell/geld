@@ -564,16 +564,27 @@ div:has(> #diff-file-tree-filter) {
  */
 
 /*
- * GitHub turns stacks into a bottom drawer on phones. Keep the counts on
- * their own right-aligned line, with breathing room after the branch text.
- * This is coupled to ensureChip repairing React's streamed child order, so it
- * ships with that behavior rather than as remotely updated surface metadata.
+ * GitHub turns stacks into a bottom drawer on phones. The description text is
+ * an anonymous flex item; ordering the chip last keeps its visual position
+ * stable even while React streams that text after Geld's node. The DOM repair
+ * in ensureChip remains the idempotent backstop. When the row wraps, row-gap
+ * gives the counts breathing room and the auto margin keeps them on the right.
  */
 @media (max-width: 767px) {
+  [role='dialog'][data-position-narrow='bottom'] [data-component='ActionList.Description'] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+
   [role='dialog'][data-position-narrow='bottom'] .geld-pr-stat[data-geld-surface='stack-popover'] {
-    display: block;
+    order: 999;
+    flex: 0 0 auto;
     width: max-content;
-    margin: 6px 0 0 auto;
+    margin: 0 0 0 auto;
+    text-align: right;
   }
 }
 
