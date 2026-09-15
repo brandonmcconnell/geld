@@ -41,7 +41,24 @@ When a surface is similar to an existing one (same row shape, only the container
 
 ## 4. Verify with a fixture
 
-Build a minimal HTML fixture from the paste (rows, title links, description line, author link; strip SVG paths), serve it *as* a github.com URL through Puppeteer request interception so the content script runs, load the built extension (`pnpm --filter @geld/extension build`, `.output/chrome-mv3`, `browser.installExtension`), wait ~5 s for diffs to arrive, then assert: rows and chips carry `data-geld-surface="<id>"`, chip text is `• N tests +A −D`, author hiding folds the expected rows (seed `hiddenAuthors: ['*[bot]']` in `chrome.storage.sync`). For a catalog-only change also prove the headless path: seed `chrome.storage.local.catalog = { version: current+1, fetchedAt, json }` with the edited spec and check the *unmodified* build picks it up. For hovercards, insert the popover markup pointed at a real commit SHA.
+Build a minimal HTML fixture from the paste (rows, title links, description line, author link; strip SVG paths), serve it *as* a github.com URL through Puppeteer request interception so the content script runs, load the built extension (`pnpm --filter @geld/extension build`, `.output/chrome-mv3`), wait ~5 s for diffs to arrive, then assert:
+
+Launch exactly like this (puppeteer-core ≥ 23, installed outside the repo, e.g. `/tmp`). Branded Chrome ignores `--load-extension`, and Puppeteer's default args include `--disable-extensions`, which makes `installExtension()` return an id while the extension stays inert (no service-worker target, `ERR_BLOCKED_BY_CLIENT` on its pages, content script never runs). `enableExtensions: true` removes that flag and adds the unsafe-debugging flag; `pipe: true` is required with it. Use `/usr/bin/google-chrome-stable` directly — the `/usr/local/bin/google-chrome` wrapper pins its own profile and debugging port.
+
+```js
+const browser = await puppeteer.launch({
+  executablePath: '/usr/bin/google-chrome-stable',
+  headless: true,
+  pipe: true,
+  enableExtensions: true,
+  args: ['--no-sandbox'],
+});
+await browser.installExtension('apps/extension/.output/chrome-mv3');
+// Sanity check before anything else — if this times out, the extension is not running:
+await browser.waitForTarget((t) => t.type() === 'service_worker', { timeout: 8000 });
+```
+
+Then intercept requests on a page: respond to the fixture URL (`https://github.com/<owner>/<repo>/pull/<n>/files` or `/pulls`) with the HTML, `continue()` `chrome-extension://` requests, and 404 everything else. Finally assert: rows and chips carry `data-geld-surface="<id>"`, chip text is `• N tests +A −D`, author hiding folds the expected rows (seed `hiddenAuthors: ['*[bot]']` in `chrome.storage.sync`). For a catalog-only change also prove the headless path: seed `chrome.storage.local.catalog = { version: current+1, fetchedAt, json }` with the edited spec and check the *unmodified* build picks it up. For hovercards, insert the popover markup pointed at a real commit SHA.
 
 ## 5. Land
 
