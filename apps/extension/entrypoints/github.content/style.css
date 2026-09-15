@@ -563,6 +563,20 @@ div:has(> #diff-file-tree-filter) {
  * as <style id="geld-surface-styles">, so they update without a release.
  */
 
+/*
+ * GitHub turns stacks into a bottom drawer on phones. Keep the counts on
+ * their own right-aligned line, with breathing room after the branch text.
+ * This is coupled to ensureChip repairing React's streamed child order, so it
+ * ships with that behavior rather than as remotely updated surface metadata.
+ */
+@media (max-width: 767px) {
+  [role='dialog'][data-position-narrow='bottom'] .geld-pr-stat[data-geld-surface='stack-popover'] {
+    display: block;
+    width: max-content;
+    margin: 6px 0 0 auto;
+  }
+}
+
 .geld-pr-stat__sep {
   color: var(--fgColor-muted, #59636e);
   font-family: inherit;

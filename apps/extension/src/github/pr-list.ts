@@ -74,25 +74,35 @@ export function findRows(surfaces: readonly ListSurface[]): ListRow[] {
 }
 
 function ensureChip(row: ListRow): HTMLElement {
-  const existing = row.row.querySelector<HTMLElement>(`.${PR_STAT_CLASS}`);
+  let existing = row.row.querySelector<HTMLElement>(`.${PR_STAT_CLASS}`);
   if (existing !== null) {
-    if (existing.dataset.geldPr === row.key) return existing;
-    existing.remove();
+    if (existing.dataset.geldPr !== row.key) {
+      existing.remove();
+      existing = null;
+    }
   }
-  const chip = createElement('span', {
-    class: PR_STAT_CLASS,
-    [OWN_UI_ATTRIBUTE]: '',
-    'data-geld-pr': row.key,
-    [ATTR_SURFACE]: row.surface.id,
-    'aria-label': 'Lines changed excluding test files',
-  });
+
+  const chip =
+    existing ??
+    createElement('span', {
+      class: PR_STAT_CLASS,
+      [OWN_UI_ATTRIBUTE]: '',
+      'data-geld-pr': row.key,
+      'aria-label': 'Lines changed excluding test files',
+    });
+  chip.setAttribute(ATTR_SURFACE, row.surface.id);
+
   const anchor = row.surface.chipAnchor(row.row, row.number);
+  chip.classList.toggle(`${PR_STAT_CLASS}--inline`, anchor === null);
   if (anchor === null) {
-    row.titleLink.insertAdjacentElement('afterend', chip);
-    chip.classList.add(`${PR_STAT_CLASS}--inline`);
+    if (row.titleLink.nextElementSibling !== chip) row.titleLink.insertAdjacentElement('afterend', chip);
   } else if (anchor.placement === 'append') {
-    anchor.element.append(chip);
-  } else {
+    // GitHub can stream the description text after Geld inserts the chip. On a
+    // later pass, put the existing chip back at the end rather than leaving it
+    // before "#N · branch". Avoid touching an already-correct node: moving it
+    // on every observer pass would create another mutation indefinitely.
+    if (anchor.element.lastChild !== chip) anchor.element.append(chip);
+  } else if (anchor.element.nextElementSibling !== chip) {
     anchor.element.insertAdjacentElement('afterend', chip);
   }
   return chip;
