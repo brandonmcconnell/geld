@@ -251,9 +251,12 @@ export class GeldController {
       childList: true,
       subtree: true,
       characterData: true,
-      // "Viewed" toggles flip these without adding or removing nodes; GitHub's file filter toggles `hidden`.
+      // "Viewed" toggles flip these without adding or removing nodes; GitHub's
+      // file filter toggles `hidden`; collapsing or expanding the file tree
+      // pane flips Primer's `data-is-hidden` on the pane wrapper (the sidebar
+      // is measured for its layout, so it has to be looked at again once shown).
       attributes: true,
-      attributeFilter: ['aria-pressed', 'aria-checked', 'aria-label', 'data-file-user-viewed', 'hidden'],
+      attributeFilter: ['aria-pressed', 'aria-checked', 'aria-label', 'data-file-user-viewed', 'hidden', 'data-is-hidden'],
     });
     // Legacy checkboxes change without any attribute mutation.
     document.addEventListener('change', this.onChangeEvent, true);

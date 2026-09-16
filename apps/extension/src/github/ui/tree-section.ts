@@ -406,7 +406,10 @@ export function renderChangesHeader(
  */
 function centreFilterAboveHeader(header: HTMLElement, treeRoot: HTMLElement): void {
   const scroller = treeRoot.closest<HTMLElement>(`[${ATTR_SIDEBAR}]`);
-  if (scroller === null) return;
+  // A collapsed pane (display: none) measures as all zeros, which would read
+  // as "header touching the field" and grow the margin by the minimum gap on
+  // every pass; leave it for the pass after the pane is shown.
+  if (scroller === null || !isRendered(scroller)) return;
   const filter = previousVisibleBlock(header, scroller);
   if (filter === null) return;
 
@@ -505,6 +508,9 @@ class SidebarSizer {
   private scroller: HTMLElement | null = null;
   private frame = 0;
   private resizeObserver: ResizeObserver | null = null;
+  /** Viewport width and rendered state at the last direction check (see `update`). */
+  private checkedWidth = -1;
+  private checkedRendered = false;
 
   attach(scroller: HTMLElement): void {
     if (this.scroller !== scroller) {
@@ -530,6 +536,8 @@ class SidebarSizer {
     this.resizeObserver = null;
     if (this.frame !== 0) cancelAnimationFrame(this.frame);
     this.frame = 0;
+    this.checkedWidth = -1;
+    this.checkedRendered = false;
     if (this.scroller !== null) {
       this.unsize(this.scroller);
       for (const panel of this.scroller.querySelectorAll<HTMLElement>(`[${ATTR_TREE_LIST}], .geld-tree__group`)) {
@@ -581,9 +589,29 @@ class SidebarSizer {
     scroller.style.removeProperty(STICKY_TOP_PROPERTY);
   }
 
+  /**
+   * The row/column decision is only trustworthy when made on a rendered pane,
+   * and GitHub's own direction flips with the viewport (Primer stacks the pane
+   * wrapper below 768px and lays it out as a row above). So it is (re)taken
+   * here whenever the pane turns from unrendered to rendered — the "Files
+   * changed" tab opened with the tree collapsed, then expanded — or the
+   * viewport width changes. Never on scroll or pane drags: the check lifts our
+   * override to measure and costs a style recalculation.
+   */
+  private settleDirection(scroller: HTMLElement): void {
+    const rendered = isRendered(scroller);
+    const width = document.documentElement.clientWidth || window.innerWidth;
+    const stale = rendered !== this.checkedRendered || width !== this.checkedWidth;
+    if (!stale && scroller.hasAttribute(ATTR_SIDEBAR_LAYOUT)) return;
+    this.checkedRendered = rendered;
+    this.checkedWidth = width;
+    if (rendered) settleSidebarDirection(scroller);
+  }
+
   private update(): void {
     const scroller = this.scroller;
     if (scroller === null || !scroller.isConnected) return;
+    this.settleDirection(scroller);
     this.size(scroller);
     const list = openPanelList(scroller);
     if (list === null) return;
@@ -692,13 +720,9 @@ export function applySidebarLayout(treeRoot: HTMLElement, active: string): void 
     treeRoot.parentElement;
   if (root === null) return;
   root.setAttribute(ATTR_SIDEBAR, active);
-  // A flex-row root (Primer's pane wrapper holds dividers beside the pane)
-  // must keep its direction; anything else becomes a column.
-  if (!root.hasAttribute(ATTR_SIDEBAR_LAYOUT)) {
-    const style = getComputedStyle(root);
-    const isRow = style.display.includes('flex') && style.flexDirection.startsWith('row');
-    root.setAttribute(ATTR_SIDEBAR_LAYOUT, isRow ? 'row' : 'column');
-  }
+  // Decided once here when the pane is rendered; `SidebarSizer` takes it (or
+  // takes it again) when the pane appears later or the viewport width changes.
+  if (!root.hasAttribute(ATTR_SIDEBAR_LAYOUT)) settleSidebarDirection(root);
   treeRoot.setAttribute(ATTR_TREE_LIST, '');
   // Mark the chain between the root and the tree so heights propagate.
   const onPath = new Set<Element>();
@@ -722,6 +746,34 @@ function stickyRootOf(element: HTMLElement): HTMLElement | null {
     current = current.parentElement;
   }
   return null;
+}
+
+/**
+ * Record how the pane root lays out its children. A flex-row root (Primer's
+ * pane wrapper holds a divider beside the pane) must keep its direction —
+ * forcing a column there would stack the 1px full-height divider under the
+ * pane instead of next to it; anything else becomes a column.
+ *
+ * Measured with our own override lifted, so a previous decision cannot feed
+ * back into the next one. Nothing is recorded while the root is `display:
+ * none` (Primer hides a collapsed pane wrapper that way): its computed
+ * `display` says nothing about the direction it will have once shown, and
+ * the mistaken "column" that used to be cached here at that moment is
+ * exactly what left an expanded-later tree at content height.
+ */
+function settleSidebarDirection(root: HTMLElement): void {
+  const previous = root.getAttribute(ATTR_SIDEBAR_LAYOUT);
+  if (previous !== null) root.removeAttribute(ATTR_SIDEBAR_LAYOUT);
+  const style = getComputedStyle(root);
+  const display = style.display;
+  const isRow = display.includes('flex') && style.flexDirection.startsWith('row');
+  const direction = display === 'none' ? previous : isRow ? 'row' : 'column';
+  if (direction !== null) root.setAttribute(ATTR_SIDEBAR_LAYOUT, direction);
+}
+
+/** Whether `element` currently has a layout box (is not inside `display: none`). */
+function isRendered(element: HTMLElement): boolean {
+  return element.getClientRects().length > 0;
 }
 
 export function removeSidebarLayout(root: ParentNode = document): void {
