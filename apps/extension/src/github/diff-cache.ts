@@ -9,6 +9,13 @@ import { persist } from '../lib/context';
  * not moved is served from here with no network request; when it moves, the
  * entry for the old SHA is dropped as the new one is written. The provider
  * prefix leaves room for other forges later.
+ *
+ * Pull request *lists* know no head commit, so their rows are cached under
+ * `…:{pull}:latest` for {@link LATEST_TTL_MS}: GitHub rate-limits `.diff`
+ * requests by burst (about 48, then a block of a minute or more), and a list
+ * page revisited or paged through would otherwise spend that budget on diffs
+ * it fetched minutes ago. A SHA-keyed write refreshes the `latest` entry too,
+ * so opening a pull request keeps its row exact.
  */
 interface CachedDiff {
   readonly files: readonly FileStats[];
@@ -17,8 +24,11 @@ interface CachedDiff {
 
 type CacheMap = Record<string, CachedDiff>;
 
-const MAX_ENTRIES = 150;
+const MAX_ENTRIES = 400;
 const MAX_FILES_PER_ENTRY = 2000;
+/** How long a list row may show counts from a diff fetched without knowing the head commit. */
+const LATEST_TTL_MS = 30 * 60 * 1000;
+const LATEST = 'latest';
 
 const cacheItem = storage.defineItem<CacheMap>('local:diffCache', { fallback: {} });
 
@@ -50,9 +60,19 @@ export function diffCacheKey(diffUrl: string, sha: string): string | null {
   return null;
 }
 
+/** The `…:{pull}:latest` key for a pull request diff URL, or `null` for anything else (compare ranges, commits). */
+export function latestCacheKey(diffUrl: string): string | null {
+  const key = diffCacheKey(diffUrl, LATEST);
+  return key !== null && !key.includes(':commit:') ? key : null;
+}
+
 /** Everything before the SHA: entries sharing it describe the same pull request. */
 function subjectOf(key: string): string {
   return key.slice(0, key.lastIndexOf(':'));
+}
+
+function isLatest(key: string): boolean {
+  return key.endsWith(`:${LATEST}`);
 }
 
 export class DiffCache {
@@ -74,16 +94,27 @@ export class DiffCache {
   }
 
   get(key: string): readonly FileStats[] | null {
-    return this.map[key]?.files ?? null;
+    const entry = this.map[key];
+    if (entry === undefined) return null;
+    if (isLatest(key) && Date.now() - entry.at > LATEST_TTL_MS) return null;
+    return entry.files;
   }
 
   set(key: string, files: readonly FileStats[]): void {
     if (files.length > MAX_FILES_PER_ENTRY) return;
     const subject = subjectOf(key);
-    for (const existing of Object.keys(this.map)) {
-      if (existing !== key && subjectOf(existing) === subject) delete this.map[existing];
+    const at = Date.now();
+    if (isLatest(key)) {
+      // A list row's fetch: never newer than knowledge pinned to a commit, so
+      // it replaces only a previous `latest`.
+      this.map[key] = { files, at };
+    } else {
+      for (const existing of Object.keys(this.map)) {
+        if (existing !== key && subjectOf(existing) === subject) delete this.map[existing];
+      }
+      this.map[key] = { files, at };
+      if (!key.includes(':commit:')) this.map[`${subject}:${LATEST}`] = { files, at };
     }
-    this.map[key] = { files, at: Date.now() };
     const keys = Object.keys(this.map);
     if (keys.length > MAX_ENTRIES) {
       keys

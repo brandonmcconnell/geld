@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
@@ -39,9 +40,78 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 200;
 const cache = new Map<string, { readonly response: FetchDiffResponse; readonly at: number }>();
 
-/** After a 429/403 we pause all diff fetching for this long. */
+/*
+ * GitHub's `.diff` endpoint rate-limits by burst: measured, it serves some
+ * 45–48 requests in quick succession (less when the address was recently
+ * blocked) and then answers 429 to everything for a minute or more, with no
+ * Retry-After. Two list pages are enough to trip it,
+ * after which every row and every pull request page opened stays blank until
+ * the block lifts — and a page of rows retrying together trips it again. So
+ * requests are paced under that threshold (they wait for a slot rather than
+ * fail), and a 429 backs off for longer each time it repeats. The throttle
+ * state is persisted: this worker is stopped after ~30s idle, and forgetting
+ * a block mid-way would only get it extended.
+ */
+const DIFF_BUDGET = 30;
+const DIFF_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
-let cooldownUntil = 0;
+const RATE_LIMIT_COOLDOWN_MAX_MS = 15 * 60 * 1000;
+
+interface Throttle {
+  /** Unix ms of recent request starts, oldest first. */
+  readonly sent: number[];
+  readonly cooldownUntil: number;
+  /** Consecutive rate-limit answers; each doubles the next cooldown. */
+  readonly strikes: number;
+}
+
+const throttleItem = storage.defineItem<Throttle>('local:diffThrottle', { fallback: { sent: [], cooldownUntil: 0, strikes: 0 } });
+let throttle: Throttle | null = null;
+let throttleLoading: Promise<Throttle> | null = null;
+
+async function loadThrottle(): Promise<Throttle> {
+  if (throttle !== null) return throttle;
+  throttleLoading ??= throttleItem.getValue().then((value) => {
+    throttle = { sent: Array.isArray(value.sent) ? value.sent.filter((t): t is number => typeof t === 'number') : [], cooldownUntil: value.cooldownUntil, strikes: value.strikes };
+    return throttle;
+  });
+  return throttleLoading;
+}
+
+function saveThrottle(next: Throttle): void {
+  throttle = next;
+  void throttleItem.setValue(next).catch(() => undefined);
+}
+
+/** Wait for a slot in the sliding window, then claim it. */
+async function takeTurn(): Promise<void> {
+  for (;;) {
+    const current = await loadThrottle();
+    const now = Date.now();
+    const sent = current.sent.filter((t) => now - t < DIFF_WINDOW_MS);
+    if (sent.length < DIFF_BUDGET) {
+      saveThrottle({ ...current, sent: [...sent, now] });
+      return;
+    }
+    const oldest = sent[0] ?? now;
+    await new Promise((resolve) => setTimeout(resolve, oldest + DIFF_WINDOW_MS - now + 50));
+  }
+}
+
+/** A 429/403 arrived: block for longer each time it repeats, or for what GitHub asks. */
+async function recordRateLimit(retryAfterHeader: string | null): Promise<number> {
+  const current = await loadThrottle();
+  const strikes = current.strikes + 1;
+  const asked = Number.parseInt(retryAfterHeader ?? '', 10);
+  const cooldown = Number.isFinite(asked) && asked > 0 ? asked * 1000 : Math.min(RATE_LIMIT_COOLDOWN_MS * 2 ** (strikes - 1), RATE_LIMIT_COOLDOWN_MAX_MS);
+  saveThrottle({ ...current, strikes, cooldownUntil: Date.now() + cooldown });
+  return cooldown;
+}
+
+async function recordSuccess(): Promise<void> {
+  const current = await loadThrottle();
+  if (current.strikes !== 0) saveThrottle({ ...current, strikes: 0 });
+}
 
 function readCache(url: string): FetchDiffResponse | null {
   const hit = cache.get(url);
@@ -81,19 +151,22 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
 
   const cached = readCache(parsed.toString());
   if (cached !== null) return cached;
-  if (Date.now() < cooldownUntil) return { ok: false, reason: 'rate-limited' };
+  const state = await loadThrottle();
+  if (Date.now() < state.cooldownUntil) return { ok: false, reason: 'rate-limited', retryAfterMs: state.cooldownUntil - Date.now() };
+  await takeTurn();
 
   let result: FetchDiffResponse;
   try {
     const response = await fetch(parsed.toString(), {
       credentials: 'include',
+      // Only a diff will do: a number that is an issue redirects to an HTML
+      // page, which this turns into a 406 instead of an "empty diff".
       headers: { Accept: 'text/plain' },
       redirect: 'follow',
     });
     if (response.status === 429 || response.status === 403) {
-      // GitHub's abuse detection kicked in; stop asking for a while.
-      cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
-      result = { ok: false, reason: 'rate-limited' };
+      const retryAfterMs = await recordRateLimit(response.headers.get('retry-after'));
+      result = { ok: false, reason: 'rate-limited', retryAfterMs };
     } else if (!response.ok) {
       result = { ok: false, reason: `http-${response.status}` };
     } else {
@@ -103,6 +176,7 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
       } else {
         const text = await readWithLimit(response, MAX_DIFF_BYTES);
         result = { ok: true, files: parseUnifiedDiff(text) };
+        await recordSuccess();
       }
     }
   } catch (error) {

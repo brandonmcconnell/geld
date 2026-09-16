@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import type { FileStats } from '@geld/core';
 import type { FetchDiffRequest } from '../lib/messages';
 import { isFetchDiffResponse } from '../lib/messages';
-import { DiffCache, diffCacheKey } from './diff-cache';
+import { DiffCache, diffCacheKey, latestCacheKey } from './diff-cache';
 
 export type DiffFetchState =
   | { readonly status: 'idle' }
@@ -10,10 +10,12 @@ export type DiffFetchState =
   | { readonly status: 'ready'; readonly files: readonly FileStats[] }
   | { readonly status: 'failed'; readonly reason: string; readonly attempts: number };
 
-/** PR lists request one diff per row; keep GitHub happy by pacing them. */
+/** PR lists request one diff per row; the background paces them further, under GitHub's burst limit. */
 const MAX_CONCURRENT_FETCHES = 4;
-/** Slightly longer than the background cooldown so retries are not wasted. */
+/** When the background did not say how long its rate-limit block lasts. */
 const RATE_LIMIT_RETRY_MS = 70 * 1000;
+/** Retry a little after the block lifts, not exactly as it does. */
+const RATE_LIMIT_SLACK_MS = 2 * 1000;
 /**
  * Transient failures (the MV3 service worker restarting mid-request, a network
  * blip, a 5xx) retry on this schedule; without it one row in a list could stay
@@ -53,17 +55,18 @@ export class DiffSource {
   }
 
   /**
-   * Start fetching if needed and return the current state. When `sha` is known
-   * and the diff is on disk, the result is ready immediately with no request.
-   * Until the on-disk cache has loaded, a request with a SHA waits (reported as
-   * `loading`) rather than fetching something we very likely already have.
+   * Start fetching if needed and return the current state. When the diff is
+   * on disk — pinned to `sha`, or a recent enough `latest` for a list row that
+   * knows no SHA — the result is ready immediately with no request. Until the
+   * on-disk cache has loaded, a request waits (reported as `loading`) rather
+   * than fetching something we very likely already have.
    */
   request(diffUrl: string, sha: string | null = null): DiffFetchState {
     const key = this.keyFor(diffUrl, sha);
     const current = this.memory.get(key) ?? { status: 'idle' };
     if (current.status !== 'idle') return current;
 
-    const persistKey = sha === null ? null : diffCacheKey(diffUrl, sha);
+    const persistKey = sha === null ? latestCacheKey(diffUrl) : diffCacheKey(diffUrl, sha);
     if (persistKey !== null) {
       if (!this.cacheReady) return { status: 'loading' };
       const cached = this.persistent.get(persistKey);
@@ -106,6 +109,7 @@ export class DiffSource {
     const request: FetchDiffRequest = { type: 'geld:fetch-diff', url: diffUrl };
     const attempts = (this.retryAttempts.get(key) ?? 0) + 1;
     let reason: string;
+    let retryAfterMs: number | null = null;
     try {
       const response: unknown = await browser.runtime.sendMessage(request);
       if (isFetchDiffResponse(response) && response.ok) {
@@ -116,15 +120,17 @@ export class DiffSource {
         return;
       }
       reason = isFetchDiffResponse(response) && !response.ok ? response.reason : 'bad-response';
+      if (isFetchDiffResponse(response) && !response.ok && typeof response.retryAfterMs === 'number') retryAfterMs = response.retryAfterMs;
     } catch (error) {
       // Typically "message port closed": the service worker went away mid-request.
       reason = error instanceof Error ? error.message : 'fetch-failed';
     }
     this.memory.set(key, { status: 'failed', reason, attempts });
-    // Forget the failure later so the next apply() asks again — after the
-    // background cooldown for rate limits, on a short backoff for anything
+    // Forget the failure later so the next apply() asks again — once the
+    // background's rate-limit block lifts, on a short backoff for anything
     // transient. Definitive failures stay failed for this page.
-    const delay = reason === 'rate-limited' ? RATE_LIMIT_RETRY_MS : isDefinitive(reason) ? null : (TRANSIENT_RETRY_MS[attempts - 1] ?? null);
+    const delay =
+      reason === 'rate-limited' ? (retryAfterMs ?? RATE_LIMIT_RETRY_MS) + RATE_LIMIT_SLACK_MS : isDefinitive(reason) ? null : (TRANSIENT_RETRY_MS[attempts - 1] ?? null);
     if (delay !== null) {
       setTimeout(() => {
         const current = this.memory.get(key);
