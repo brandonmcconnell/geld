@@ -1,5 +1,6 @@
 import { storage } from 'wxt/utils/storage';
 import type { FileStats } from '@geld/core';
+import { persist } from '../lib/context';
 
 /**
  * Parsed diffs on disk, keyed by `github:{owner}:{repo}:{pull}:{sha}` (or
@@ -90,7 +91,7 @@ export class DiffCache {
         .slice(0, keys.length - MAX_ENTRIES)
         .forEach((key) => delete this.map[key]);
     }
-    void cacheItem.setValue(this.map);
+    persist(cacheItem.setValue(this.map));
   }
 
   async clear(): Promise<void> {

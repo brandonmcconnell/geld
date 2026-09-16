@@ -3,6 +3,7 @@ import { storage } from 'wxt/utils/storage';
 import type { RepoConfig, RepoConfigParse, SettingsIssue } from '@geld/core';
 import { BUNDLED_CATALOG, ORG_CONFIG_PATHS, ORG_CONFIG_REPO, REPO_CONFIG_PATH, generatedConfigFrom, isEmptyRepoConfig, parseRepoConfig } from '@geld/core';
 import type { Catalog } from '@geld/core';
+import { persist } from '../lib/context';
 import { looksLikeHtml } from '../lib/http';
 import type { FetchFileRequest } from '../lib/messages';
 import { isFetchFileResponse } from '../lib/messages';
@@ -115,7 +116,7 @@ export class RepoConfigSource {
       for (const [key, entry] of Object.entries(value)) if (isCachedFile(entry) && now - entry.at < TTL_MS) clean[key] = entry;
       this.persistent = clean;
       this.cacheReady = true;
-      if (Object.keys(clean).length !== Object.keys(value).length) void cacheItem.setValue(clean);
+      if (Object.keys(clean).length !== Object.keys(value).length) persist(cacheItem.setValue(clean));
       this.onChange();
     });
   }
@@ -225,7 +226,7 @@ export class RepoConfigSource {
     this.memory.set(job.key, { status: 'done', text });
     this.persistent[job.key] = { text, at: Date.now() };
     this.trim();
-    void cacheItem.setValue(this.persistent);
+    persist(cacheItem.setValue(this.persistent));
     this.invalidate(job.repo);
     this.onChange();
   }

@@ -9,6 +9,7 @@ import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
 import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
 import type { AuthorRules } from '@geld/core';
+import { extensionAlive, persist } from '../lib/context';
 import type { RepoConfigChoices } from '../lib/local-state';
 import { repoConfigChoicesItem, whitespacePersistedItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
@@ -189,7 +190,7 @@ export class GeldController {
     this.applyHeaderNow();
     this.schedule();
   });
-  private readonly whitespace = new WhitespaceRedirector(false, () => void whitespacePersistedItem.setValue(true));
+  private readonly whitespace = new WhitespaceRedirector(false, () => persist(whitespacePersistedItem.setValue(true)));
   /** Repository-provided configs (`.github/geld.yml`, org defaults, `.gitattributes`); see `repo-config-source.ts`. */
   private readonly repoConfigs: RepoConfigSource;
   /** Per-repository answers when `repoConfigs` is `ask` (device-local). */
@@ -542,6 +543,12 @@ export class GeldController {
 
   private apply(): void {
     if (this.stopped) return;
+    // The extension was reloaded, updated or removed while this tab was open:
+    // this copy is orphaned (a newer one takes over, or nothing should run).
+    if (!extensionAlive()) {
+      this.stop();
+      return;
+    }
     if (!this.settings.enabled) {
       this.teardown();
       this.publish({ ...IDLE_STATE, allowed: false });
@@ -1022,6 +1029,10 @@ export class GeldController {
   /** Header-only pass for the pre-paint paths; the full apply() follows debounced. */
   private applyHeaderNow(): void {
     if (this.stopped || !this.settings.enabled) return;
+    if (!extensionAlive()) {
+      this.stop();
+      return;
+    }
     const url = new URL(window.location.href);
     const page = describePage(url);
     if (page.diffUrl === null) return;
