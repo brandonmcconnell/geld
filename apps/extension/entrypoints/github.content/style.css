@@ -21,6 +21,11 @@
     --bgColor-danger-emphasis,
     var(--color-danger-emphasis, var(--fgColor-danger, #d1242f))
   );
+  /* The tooltip's surface follows the page (GitHub's tooltips are its
+     emphasis colour in either mode). Resolved here, at :root, so the values
+     survive the tooltip's own token scope below. */
+  --geld-tooltip-bg: var(--bgColor-emphasis, #25292e);
+  --geld-tooltip-fg: var(--fgColor-onEmphasis, #ffffff);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -682,8 +687,6 @@ div:has(> #diff-file-tree-filter) {
   align-items: baseline;
   padding: 8px 10px;
   border-radius: 6px;
-  background: var(--bgColor-emphasis, #25292e);
-  color: var(--fgColor-onEmphasis, #ffffff);
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
@@ -705,12 +708,12 @@ div:has(> #diff-file-tree-filter) {
 
 .geld-tooltip[data-placement='below']::after {
   top: -12px;
-  border-bottom-color: var(--bgColor-emphasis, #25292e);
+  border-bottom-color: var(--geld-tooltip-bg);
 }
 
 .geld-tooltip[data-placement='above']::after {
   bottom: -12px;
-  border-top-color: var(--bgColor-emphasis, #25292e);
+  border-top-color: var(--geld-tooltip-bg);
 }
 
 .geld-tooltip__title {
@@ -733,6 +736,36 @@ div:has(> #diff-file-tree-filter) {
 
 .geld-tooltip__files {
   opacity: 0.75;
+}
+
+/*
+ * The surface is always dark, so the counts use the colours GitHub puts on
+ * dark backgrounds: ui/tooltip.ts gives the element the user's dark theme
+ * (Primer's data-color-mode / data-dark-theme scope), and these are
+ * re-declared here so they resolve against *that* scope's tokens rather
+ * than inheriting the page's resolved values from :root. Text tokens, not
+ * the diffstat block colours: this is text on a dark surface.
+ */
+.geld-tooltip {
+  --geld-diff-addition-fg: var(--fgColor-success, #3fb950);
+  --geld-diff-deletion-fg: var(--fgColor-danger, #f85149);
+}
+
+/*
+ * Surface and text follow the page. Primer's theme-scope rule
+ * (`[data-color-mode][data-dark-theme]`, which the tooltip now matches) sets
+ * a background and colour of its own at higher specificity than a class, so
+ * these are declared to outrank it.
+ */
+div.geld-tooltip[role='tooltip'] {
+  background: var(--geld-tooltip-bg);
+  color: var(--geld-tooltip-fg);
+}
+
+/* The selected dark theme's sheet is not on the page: GitHub's default dark palette. */
+.geld-tooltip[data-geld-theme-fallback] {
+  --geld-diff-addition-fg: #3fb950;
+  --geld-diff-deletion-fg: #f85149;
 }
 
 .geld-tooltip__add,

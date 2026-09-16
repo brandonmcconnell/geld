@@ -19,8 +19,49 @@ function ensureTooltip(): HTMLElement {
     [OWN_UI_ATTRIBUTE]: '',
     hidden: '',
   });
+  adoptDarkTheme(tooltip);
   document.body.append(tooltip);
   return tooltip;
+}
+
+/**
+ * The tooltip is dark whatever the page is, so its `+N` / `−M` must be the
+ * colours GitHub uses on dark backgrounds — in the user's own dark theme, so
+ * a colourblind palette (blue/orange) carries over. Primer scopes every
+ * theme's tokens by attribute selector, and GitHub loads the selected light
+ * and dark theme sheets together, so giving the element the dark mode and
+ * theme attributes resolves the dark set inside it even on a light page.
+ * When the selected dark theme's sheet is not present, the tokens would
+ * silently inherit the page's light values instead; then the stylesheet's
+ * default dark palette applies.
+ */
+function adoptDarkTheme(element: HTMLElement): void {
+  const html = document.documentElement;
+  const dark = html.getAttribute('data-dark-theme') ?? 'dark';
+  element.setAttribute('data-color-mode', 'dark');
+  element.setAttribute('data-dark-theme', dark);
+  if (!scopeResolves(dark, html.getAttribute('data-light-theme') ?? 'light')) element.setAttribute('data-geld-theme-fallback', '');
+}
+
+/**
+ * Whether Primer's dark scope really yields the dark theme here: a probe in
+ * the dark scope and one in the light scope must disagree on a token. When
+ * the dark theme's sheet is absent the dark probe just inherits the page's
+ * values and matches the light one. Markup-independent — GitHub bundles the
+ * base themes and lazy-loads the accessible variants, so a `<link>` check
+ * would misjudge the former.
+ */
+function scopeResolves(dark: string, light: string): boolean {
+  const probe = (attributes: Record<string, string>): string => {
+    const element = createElement('div', { ...attributes, hidden: '' });
+    document.body.append(element);
+    const value = getComputedStyle(element).getPropertyValue('--fgColor-success').trim();
+    element.remove();
+    return value;
+  };
+  const inDark = probe({ 'data-color-mode': 'dark', 'data-dark-theme': dark });
+  const inLight = probe({ 'data-color-mode': 'light', 'data-light-theme': light });
+  return inDark !== '' && inDark !== inLight;
 }
 
 function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElement {
