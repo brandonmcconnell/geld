@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260919,
+  "version": 20260920,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -683,7 +683,7 @@
           "from": "href"
         }
       ],
-      "css": ".geld-pr-stat[data-geld-surface='react-list'] { margin-left: 6px; font-size: 12px; vertical-align: baseline; }"
+      "css": ".geld-pr-stat[data-geld-surface='react-list'] { --geld-chip-gap: 6px; font-size: 12px; vertical-align: baseline; }"
     },
     {
       "id": "stack-popover",

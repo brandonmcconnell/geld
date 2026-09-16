@@ -558,8 +558,12 @@ div:has(> #diff-file-tree-filter) {
  * shared rules first, then one block per surface.
  */
 .geld-pr-stat {
+  /* The gap on either side of the "•": text → bullet is the chip's own left
+     margin, bullet → counts the first count's. Surfaces that need a wider gap
+     set the one variable, so the bullet always sits centred between the two. */
+  --geld-chip-gap: 4px;
   display: inline;
-  margin-left: 4px;
+  margin-left: var(--geld-chip-gap);
   font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 12px;
   white-space: nowrap;
@@ -567,6 +571,10 @@ div:has(> #diff-file-tree-filter) {
 
 .geld-pr-stat > * + * {
   margin-left: 4px;
+}
+
+.geld-pr-stat > .geld-pr-stat__sep + * {
+  margin-left: var(--geld-chip-gap);
 }
 
 /* Fallback placement (no metadata line found): right after the title link. */

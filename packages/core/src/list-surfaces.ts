@@ -91,7 +91,8 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
       { selector: 'a[data-testid="author-filter-link"]', from: 'text' },
       { selector: 'a[href*="author%3A"], a[href*="author:"]', from: 'href' },
     ],
-    css: `.geld-pr-stat[data-geld-surface='react-list'] { margin-left: 6px; font-size: 12px; vertical-align: baseline; }`,
+    // --geld-chip-gap (github.content/style.css) spaces both sides of the "•" equally.
+    css: `.geld-pr-stat[data-geld-surface='react-list'] { --geld-chip-gap: 6px; font-size: 12px; vertical-align: baseline; }`,
   },
   {
     id: 'stack-popover',
