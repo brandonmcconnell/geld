@@ -17,11 +17,6 @@
    */
   --geld-diff-addition-fg: var(--fgColor-success, var(--color-fg-success, #1a7f37));
   --geld-diff-deletion-fg: var(--fgColor-danger, var(--color-fg-danger, #d1242f));
-  /* The tooltip's surface follows the page (GitHub's tooltips are its
-     emphasis colour in either mode). Resolved here, at :root, so the values
-     survive the tooltip's own token scope below. */
-  --geld-tooltip-bg: var(--bgColor-emphasis, #25292e);
-  --geld-tooltip-fg: var(--fgColor-onEmphasis, #ffffff);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -670,11 +665,18 @@ div:has(> #diff-file-tree-filter) {
 }
 
 /*
+ * A Primer overlay rather than a Primer tooltip: light surface on a light
+ * page, dark on a dark one, exactly like GitHub's hovercards and popovers,
+ * so the counts can use the page's own colours (the same `--geld-diff-*-fg`
+ * as the header) and read the same as GitHub's diffstat next to them.
+ *
  * Fixed, not absolute: a fixed box never adds to the document's scrollable
  * overflow, so the tooltip cannot give the page a horizontal scrollbar when it
  * is clamped against the right edge (see position() in ui/tooltip.ts).
  */
 .geld-tooltip {
+  --geld-tooltip-bg: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
+  --geld-tooltip-border: var(--borderColor-default, #d1d9e0);
   position: fixed;
   z-index: 1000;
   display: grid;
@@ -682,7 +684,10 @@ div:has(> #diff-file-tree-filter) {
   gap: 3px 12px;
   align-items: baseline;
   padding: 8px 10px;
+  border: 1px solid var(--geld-tooltip-border);
   border-radius: 6px;
+  background: var(--geld-tooltip-bg);
+  color: var(--fgColor-default, #1f2328);
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
@@ -694,32 +699,48 @@ div:has(> #diff-file-tree-filter) {
   display: none;
 }
 
+/* The caret is two stacked triangles: the border colour, then the surface one pixel in. */
+.geld-tooltip::before,
 .geld-tooltip::after {
   content: '';
   position: absolute;
   left: var(--geld-arrow-x, 50%);
   transform: translateX(-50%);
-  border: 6px solid transparent;
+  border: 7px solid transparent;
+}
+
+.geld-tooltip::after {
+  border-width: 6px;
+}
+
+.geld-tooltip[data-placement='below']::before {
+  top: -15px;
+  border-bottom-color: var(--geld-tooltip-border);
 }
 
 .geld-tooltip[data-placement='below']::after {
-  top: -12px;
+  top: -13px;
   border-bottom-color: var(--geld-tooltip-bg);
 }
 
+.geld-tooltip[data-placement='above']::before {
+  bottom: -15px;
+  border-top-color: var(--geld-tooltip-border);
+}
+
 .geld-tooltip[data-placement='above']::after {
-  bottom: -12px;
+  bottom: -13px;
   border-top-color: var(--geld-tooltip-bg);
 }
 
 .geld-tooltip__title {
   grid-column: 1 / -1;
   margin-bottom: 2px;
+  color: var(--fgColor-muted, #59636e);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  opacity: 0.7;
 }
 
 .geld-tooltip__row {
@@ -731,37 +752,7 @@ div:has(> #diff-file-tree-filter) {
 }
 
 .geld-tooltip__files {
-  opacity: 0.75;
-}
-
-/*
- * The surface is always dark, so the counts use the colours GitHub puts on
- * dark backgrounds: ui/tooltip.ts gives the element the user's dark theme
- * (Primer's data-color-mode / data-dark-theme scope), and these are
- * re-declared here so they resolve against *that* scope's tokens rather
- * than inheriting the page's resolved values from :root. Text tokens, not
- * the diffstat block colours: this is text on a dark surface.
- */
-.geld-tooltip {
-  --geld-diff-addition-fg: var(--fgColor-success, #3fb950);
-  --geld-diff-deletion-fg: var(--fgColor-danger, #f85149);
-}
-
-/*
- * Surface and text follow the page. Primer's theme-scope rule
- * (`[data-color-mode][data-dark-theme]`, which the tooltip now matches) sets
- * a background and colour of its own at higher specificity than a class, so
- * these are declared to outrank it.
- */
-div.geld-tooltip[role='tooltip'] {
-  background: var(--geld-tooltip-bg);
-  color: var(--geld-tooltip-fg);
-}
-
-/* The selected dark theme's sheet is not on the page: GitHub's default dark palette. */
-.geld-tooltip[data-geld-theme-fallback] {
-  --geld-diff-addition-fg: #3fb950;
-  --geld-diff-deletion-fg: #f85149;
+  color: var(--fgColor-muted, #59636e);
 }
 
 .geld-tooltip__add,
