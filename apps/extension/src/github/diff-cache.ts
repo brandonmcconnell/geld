@@ -10,12 +10,15 @@ import { persist } from '../lib/context';
  * entry for the old SHA is dropped as the new one is written. The provider
  * prefix leaves room for other forges later.
  *
- * Pull request *lists* know no head commit, so their rows are cached under
- * `…:{pull}:latest` for {@link LATEST_TTL_MS}: GitHub rate-limits `.diff`
- * requests by burst (about 48, then a block of a minute or more), and a list
- * page revisited or paged through would otherwise spend that budget on diffs
- * it fetched minutes ago. A SHA-keyed write refreshes the `latest` entry too,
- * so opening a pull request keeps its row exact.
+ * Pull request *lists* know no head commit (the list markup carries none), so
+ * their rows are cached under `…:{pull}:latest`, served stale-while-revalidate:
+ * an entry is used for up to {@link LATEST_MAX_AGE_MS} so a row is never
+ * blank, and one older than {@link LATEST_FRESH_MS} is refreshed in the
+ * background once shown. GitHub rate-limits `.diff` requests by burst (about
+ * 45–48, then a block of a minute or more), and a list page revisited or paged
+ * through would otherwise spend that budget on diffs it fetched minutes ago.
+ * A SHA-keyed write refreshes the `latest` entry too, so opening a pull
+ * request keeps its row exact.
  */
 interface CachedDiff {
   readonly files: readonly FileStats[];
@@ -26,8 +29,10 @@ type CacheMap = Record<string, CachedDiff>;
 
 const MAX_ENTRIES = 400;
 const MAX_FILES_PER_ENTRY = 2000;
-/** How long a list row may show counts from a diff fetched without knowing the head commit. */
-const LATEST_TTL_MS = 30 * 60 * 1000;
+/** A list row's counts are shown from disk without a refresh for this long... */
+const LATEST_FRESH_MS = 30 * 60 * 1000;
+/** ...and shown at all (while a refresh runs) for this long. */
+const LATEST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const LATEST = 'latest';
 
 const cacheItem = storage.defineItem<CacheMap>('local:diffCache', { fallback: {} });
@@ -96,8 +101,14 @@ export class DiffCache {
   get(key: string): readonly FileStats[] | null {
     const entry = this.map[key];
     if (entry === undefined) return null;
-    if (isLatest(key) && Date.now() - entry.at > LATEST_TTL_MS) return null;
+    if (isLatest(key) && Date.now() - entry.at > LATEST_MAX_AGE_MS) return null;
     return entry.files;
+  }
+
+  /** Whether an entry can be shown without a background refresh (SHA-keyed entries always can). */
+  isFresh(key: string): boolean {
+    const entry = this.map[key];
+    return entry !== undefined && (!isLatest(key) || Date.now() - entry.at <= LATEST_FRESH_MS);
   }
 
   set(key: string, files: readonly FileStats[]): void {

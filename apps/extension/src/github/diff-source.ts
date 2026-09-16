@@ -36,8 +36,10 @@ function isDefinitive(reason: string): boolean {
 export class DiffSource {
   /** Keyed by cache key when the commit is known (so a new push is a new entry), else by URL. */
   private readonly memory = new Map<string, DiffFetchState>();
-  private readonly queue: Array<{ readonly url: string; readonly key: string; readonly persistKey: string | null }> = [];
+  private readonly queue: Array<{ readonly url: string; readonly key: string; readonly persistKey: string | null; readonly revalidate: boolean }> = [];
   private readonly persistent = new DiffCache();
+  /** Keys whose stale on-disk entry is on screen while a fresh copy is fetched. */
+  private readonly revalidating = new Set<string>();
   /** Failed attempts so far per key, carried across the idle gap between retries. */
   private readonly retryAttempts = new Map<string, number>();
   private cacheReady = false;
@@ -73,13 +75,20 @@ export class DiffSource {
       if (cached !== null) {
         const ready: DiffFetchState = { status: 'ready', files: cached };
         this.memory.set(key, ready);
+        // Stale-while-revalidate for list rows: show the old counts now,
+        // refresh them in the background; the chip updates when that lands.
+        if (!this.persistent.isFresh(persistKey) && !this.revalidating.has(key)) {
+          this.revalidating.add(key);
+          this.queue.push({ url: diffUrl, key, persistKey, revalidate: true });
+          this.pump();
+        }
         return ready;
       }
     }
 
     const loading: DiffFetchState = { status: 'loading' };
     this.memory.set(key, loading);
-    this.queue.push({ url: diffUrl, key, persistKey });
+    this.queue.push({ url: diffUrl, key, persistKey, revalidate: false });
     this.pump();
     return loading;
   }
@@ -98,14 +107,14 @@ export class DiffSource {
       const next = this.queue.shift();
       if (next === undefined) return;
       this.inFlight += 1;
-      void this.load(next.url, next.key, next.persistKey).finally(() => {
+      void this.load(next.url, next.key, next.persistKey, next.revalidate).finally(() => {
         this.inFlight -= 1;
         this.pump();
       });
     }
   }
 
-  private async load(diffUrl: string, key: string, persistKey: string | null): Promise<void> {
+  private async load(diffUrl: string, key: string, persistKey: string | null, revalidate: boolean): Promise<void> {
     const request: FetchDiffRequest = { type: 'geld:fetch-diff', url: diffUrl };
     const attempts = (this.retryAttempts.get(key) ?? 0) + 1;
     let reason: string;
@@ -115,6 +124,7 @@ export class DiffSource {
       if (isFetchDiffResponse(response) && response.ok) {
         this.memory.set(key, { status: 'ready', files: response.files });
         this.retryAttempts.delete(key);
+        this.revalidating.delete(key);
         if (persistKey !== null) this.persistent.set(persistKey, response.files);
         this.onChange();
         return;
@@ -124,6 +134,11 @@ export class DiffSource {
     } catch (error) {
       // Typically "message port closed": the service worker went away mid-request.
       reason = error instanceof Error ? error.message : 'fetch-failed';
+    }
+    if (revalidate) {
+      // The stale counts stay on screen; a later visit tries again.
+      this.revalidating.delete(key);
+      return;
     }
     this.memory.set(key, { status: 'failed', reason, attempts });
     // Forget the failure later so the next apply() asks again — once the
