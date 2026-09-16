@@ -46,10 +46,23 @@ export default defineContentScript({
     const unwatchCatalog = watchCatalog((catalog) => controller.updateCatalog(catalog));
     // The popup answered "use this repository's config?" (or the options page cleared the cache).
     const unwatchChoices = repoConfigChoicesItem.watch((choices) => controller.updateRepoChoices(choices ?? {}));
+    // Retiring usually happens on a dead context (the extension was reloaded,
+    // updated or removed with this tab open, and either a newer copy took
+    // over or `onInvalidated` fired). `chrome.storage` and
+    // `chrome.runtime.onMessage` are gone with it, so unsubscribing throws —
+    // wxt/storage words it "You must add the 'storage' permission" — and the
+    // listeners it would remove are already dead. Every step is best-effort.
+    const quietly = (step: () => void): void => {
+      try {
+        step();
+      } catch {
+        // Context invalidated: nothing left to unsubscribe from.
+      }
+    };
     const unwatch = (): void => {
-      unwatchSettings();
-      unwatchCatalog();
-      unwatchChoices();
+      quietly(unwatchSettings);
+      quietly(unwatchCatalog);
+      quietly(unwatchChoices);
     };
 
     const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState) => void): boolean | undefined => {
@@ -82,7 +95,7 @@ export default defineContentScript({
       if (retired) return;
       retired = true;
       unwatch();
-      browser.runtime.onMessage.removeListener(onMessage);
+      quietly(() => browser.runtime.onMessage.removeListener(onMessage));
       controller.stop();
     };
     // A newer copy took over (see TAKEOVER above), or the extension was
