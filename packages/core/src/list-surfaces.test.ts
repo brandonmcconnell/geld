@@ -19,6 +19,12 @@ describe('list surfaces in the catalog', () => {
     expect(without.listSurfaces).toBe(BUNDLED_LIST_SURFACES);
   });
 
+  it('keeps the optional container selectors', () => {
+    const [spec] = parseListSurfaces([{ id: 'a', description: '', row: '.r', inside: '.stack', notInside: '.menu', chipAnchors: [], authors: [] }]);
+    expect(spec).toEqual({ id: 'a', description: '', row: '.r', inside: '.stack', notInside: '.menu', chipAnchors: [], authors: [] });
+    expect(() => parseListSurfaces([{ id: 'a', description: '', row: '.r', inside: '', chipAnchors: [], authors: [] }])).toThrow(/\.inside/);
+  });
+
   it('rejects malformed surfaces with a path', () => {
     expect(() => parseListSurfaces([{ id: 'x', description: '', row: '.r', chipAnchors: [{ selector: '.a', placement: 'inside' }], authors: [] }])).toThrow(/chipAnchors\[0\]\.placement/);
     expect(() => parseListSurfaces([{ id: 'Bad Id', description: '', row: '.r', chipAnchors: [], authors: [] }])).toThrow(/\.id/);

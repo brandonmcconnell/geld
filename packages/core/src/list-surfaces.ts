@@ -54,6 +54,8 @@ export interface ListSurfaceSpec {
   readonly description: string;
   /** `closest()` selector from a PR title link to its row. */
   readonly row: string;
+  /** The row belongs to this surface only when it sits inside an element matching this (rows of generic components, found in many menus). */
+  readonly inside?: string;
   /** The row does not belong to this surface when it sits inside an element matching this. */
   readonly notInside?: string;
   /** Tried in order; the first element found anchors the chip. Empty: fall back to the "#N" line, then the title. */
@@ -94,8 +96,10 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'stack-popover',
     description:
-      'Stacked pull requests popover: ActionList items inside [class*="StackState"] with a "#N · branch" description that GitHub ellipsizes on one line. Names no author.',
+      'Stacked pull requests, in both places GitHub lists a stack: the "Stack N/M" popover (ActionList items inside [class*="StackState"], description ellipsized on one line) and the merge box\'s "Stacked pull requests list" nav at the bottom of a PR (NavList items inside [class*="StackList"], with a trailing status label). Both: "#N · branch" in ActionList.Description. Names no author. The id predates the merge box list and is kept: CSS and older builds key on it.',
     row: 'li[data-component="ActionList.Item"]',
+    // ActionList items appear in many menus; only inside a stack do they count.
+    inside: '[class*="StackState"], [class*="StackList"], nav[aria-label="Stacked pull requests list"]',
     // Prepended and floated right: the counts keep their full width on the
     // right of the line and the branch name is what gets the ellipsis. The
     // "•" separator is dropped there — the counts sit against the edge, not
@@ -109,10 +113,6 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
     ].join('\n'),
   },
 ];
-
-/** The stack popover only counts when the item really is inside a stack. */
-export const STACK_SURFACE_ID = 'stack-popover';
-export const STACK_CONTAINER_SELECTOR = '[class*="StackState"]';
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
@@ -156,6 +156,7 @@ export function parseListSurfaces(value: unknown, path = 'listSurfaces'): readon
     const description = entry.description;
     if (typeof description !== 'string') throw new ListSurfaceError(`${at}.description: expected a string, got ${describe(description)}`);
     const row = requireSelector(entry, 'row', at);
+    const inside = entry.inside === undefined ? undefined : requireSelector(entry, 'inside', at);
     const notInside = entry.notInside === undefined ? undefined : requireSelector(entry, 'notInside', at);
     if (!Array.isArray(entry.chipAnchors)) throw new ListSurfaceError(`${at}.chipAnchors: expected a list, got ${describe(entry.chipAnchors)}`);
     const chipAnchors = entry.chipAnchors.map((anchor: unknown, anchorIndex): ChipAnchorSpec => {
@@ -181,7 +182,12 @@ export function parseListSurfaces(value: unknown, path = 'listSurfaces'): readon
     if (css !== undefined && typeof css !== 'string') throw new ListSurfaceError(`${at}.css: expected a string, got ${describe(css)}`);
     if (typeof css === 'string' && css.length > 20_000) throw new ListSurfaceError(`${at}.css: unreasonably long`);
     const spec: ListSurfaceSpec = { id, description, row, chipAnchors, authors };
-    return { ...spec, ...(notInside === undefined ? {} : { notInside }), ...(css === undefined ? {} : { css }) };
+    return {
+      ...spec,
+      ...(inside === undefined ? {} : { inside }),
+      ...(notInside === undefined ? {} : { notInside }),
+      ...(css === undefined ? {} : { css }),
+    };
   });
 }
 
@@ -284,6 +290,7 @@ export function listSurfaceJson(spec: ListSurfaceSpec): Record<string, unknown> 
     id: spec.id,
     description: spec.description,
     row: spec.row,
+    ...(spec.inside === undefined ? {} : { inside: spec.inside }),
     ...(spec.notInside === undefined ? {} : { notInside: spec.notInside }),
     chipAnchors: spec.chipAnchors.map((anchor) => ({ selector: anchor.selector, placement: anchor.placement })),
     authors: spec.authors.map((source) => ({ selector: source.selector, from: source.from })),

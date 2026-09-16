@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260918,
+  "version": 20260919,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -687,8 +687,9 @@
     },
     {
       "id": "stack-popover",
-      "description": "Stacked pull requests popover: ActionList items inside [class*=\"StackState\"] with a \"#N · branch\" description that GitHub ellipsizes on one line. Names no author.",
+      "description": "Stacked pull requests, in both places GitHub lists a stack: the \"Stack N/M\" popover (ActionList items inside [class*=\"StackState\"], description ellipsized on one line) and the merge box's \"Stacked pull requests list\" nav at the bottom of a PR (NavList items inside [class*=\"StackList\"], with a trailing status label). Both: \"#N · branch\" in ActionList.Description. Names no author. The id predates the merge box list and is kept: CSS and older builds key on it.",
       "row": "li[data-component=\"ActionList.Item\"]",
+      "inside": "[class*=\"StackState\"], [class*=\"StackList\"], nav[aria-label=\"Stacked pull requests list\"]",
       "chipAnchors": [
         {
           "selector": "[data-component=\"ActionList.Description\"]",

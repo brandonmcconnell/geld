@@ -1,5 +1,4 @@
 import type { Catalog, ChipPlacement, ListSurfaceSpec } from '@geld/core';
-import { STACK_CONTAINER_SELECTOR, STACK_SURFACE_ID } from '@geld/core';
 import { cleanText, OWN_UI_ATTRIBUTE } from './dom';
 
 /**
@@ -58,22 +57,27 @@ function selectorIsValid(selector: string): boolean {
 }
 
 function compileSurface(spec: ListSurfaceSpec): ListSurface | null {
-  const selectors = [spec.row, spec.notInside ?? ':root', ...spec.chipAnchors.map((anchor) => anchor.selector), ...spec.authors.map((source) => source.selector)];
+  const selectors = [
+    spec.row,
+    spec.inside ?? ':root',
+    spec.notInside ?? ':root',
+    ...spec.chipAnchors.map((anchor) => anchor.selector),
+    ...spec.authors.map((source) => source.selector),
+  ];
   const broken = selectors.find((selector) => !selectorIsValid(selector));
   if (broken !== undefined) {
     console.warn(`Geld: list surface "${spec.id}" has an invalid selector and is skipped: ${broken}`);
     return null;
   }
-  const notInside = spec.notInside;
+  const { inside, notInside } = spec;
   return {
     id: spec.id,
     spec,
     rowOf(link) {
       const row = link.closest<HTMLElement>(spec.row);
       if (row === null) return null;
+      if (inside !== undefined && row.closest(inside) === null) return null;
       if (notInside !== undefined && row.closest(notInside) !== null) return null;
-      // The stack popover's items are ActionList entries found in many menus; only inside a stack do they count.
-      if (spec.id === STACK_SURFACE_ID && row.closest(STACK_CONTAINER_SELECTOR) === null) return null;
       return row;
     },
     chipAnchor(row, number) {
