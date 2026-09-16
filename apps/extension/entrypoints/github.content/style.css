@@ -6,6 +6,23 @@
  * from Primer's CSS variables so light/dark/high-contrast themes just work.
  */
 
+:root {
+  /*
+   * Match GitHub's diffstat blocks, including its blue/orange accessible-color
+   * themes. These are deliberately not the generic success/danger foreground
+   * tokens: GitHub gives additions their own diffstat colour and uses danger
+   * emphasis for deletion blocks.
+   */
+  --geld-diff-addition-fg: var(
+    --diffStat-addition-bgColor,
+    var(--color-diffstat-addition-bg, var(--fgColor-success, #1a7f37))
+  );
+  --geld-diff-deletion-fg: var(
+    --bgColor-danger-emphasis,
+    var(--color-danger-emphasis, var(--fgColor-danger, #d1242f))
+  );
+}
+
 /* ------------------------------------------------------------------------ */
 /* Diff list: flex ordering lets us move test files to the bottom without   */
 /* touching the DOM order (React keeps working, Turbo keeps working).       */
@@ -141,11 +158,11 @@
 }
 
 .geld-hidden-section__add {
-  color: var(--fgColor-success, #1a7f37);
+  color: var(--geld-diff-addition-fg);
 }
 
 .geld-hidden-section__del {
-  color: var(--fgColor-danger, #d1242f);
+  color: var(--geld-diff-deletion-fg);
 }
 
 .geld-hidden-section__note {
@@ -563,17 +580,42 @@ div:has(> #diff-file-tree-filter) {
  * as <style id="geld-surface-styles">, so they update without a release.
  */
 
+/*
+ * GitHub turns stacks into a bottom drawer on phones. The description text is
+ * an anonymous flex item; ordering the chip last keeps its visual position
+ * stable even while React streams that text after Geld's node. The DOM repair
+ * in ensureChip remains the idempotent backstop. When the row wraps, row-gap
+ * gives the counts breathing room and the auto margin keeps them on the right.
+ */
+@media (max-width: 767px) {
+  [role='dialog'][data-position-narrow='bottom'] [data-component='ActionList.Description'] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+
+  [role='dialog'][data-position-narrow='bottom'] .geld-pr-stat[data-geld-surface='stack-popover'] {
+    order: 999;
+    flex: 0 0 auto;
+    width: max-content;
+    margin: 0 0 0 auto;
+    text-align: right;
+  }
+}
+
 .geld-pr-stat__sep {
   color: var(--fgColor-muted, #59636e);
   font-family: inherit;
 }
 
 .geld-pr-stat__add {
-  color: var(--fgColor-success, #1a7f37);
+  color: var(--geld-diff-addition-fg);
 }
 
 .geld-pr-stat__del {
-  color: var(--fgColor-danger, #d1242f);
+  color: var(--geld-diff-deletion-fg);
 }
 
 .geld-pr-stat[data-geld-stat-host] {
@@ -692,11 +734,11 @@ div:has(> #diff-file-tree-filter) {
 }
 
 .geld-tooltip__add {
-  color: #3fb950;
+  color: var(--geld-diff-addition-fg);
 }
 
 .geld-tooltip__del {
-  color: #f85149;
+  color: var(--geld-diff-deletion-fg);
 }
 
 /* Comment-only lines collapsed inside visible files (ui/comment-rows.ts) ------- */
