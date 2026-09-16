@@ -21,7 +21,7 @@ Most "the selector changed again" reports are a browser still on an older build.
 
 For each hook the relevant spec uses, find it in the paste:
 
-- List row: `row` (`closest()` from the title link), `notInside`.
+- List row: `row` (`closest()` from the title link), `inside` (rows of generic components count only within this container — stacks: `StackState` popover, `StackList` merge-box nav), `notInside`.
 - Chip: `chipAnchors[].selector` + `placement` (`after` a metadata line / `append` into a block description / `prepend` into a one-line ellipsized description, paired with `float: right` in the surface CSS so the counts survive truncation and the text takes the ellipsis).
 - Author: `authors[]` (`label` = "opened by X" / "Filter by author X" in title or aria-label; `href` = `author:X` / `author:app/X`; `text`).
 - Diffstat: `root`, `subject` (root attribute or a link's href containing `/owner/repo/commit/<sha>` or `/pull/<n>`), `host`, `additions`, `deletions`, `srOnly`.
@@ -33,7 +33,7 @@ Only use stable hooks: `data-testid`, `data-component`, `role`, id fragments (`l
 
 | Change | Where | Ships as |
 |---|---|---|
-| Selector moved, new hook, chip belongs elsewhere, author written elsewhere, chip CSS | the spec in `packages/core/src/list-surfaces.ts` | catalog publish (headless) |
+| Selector moved, new hook, new container for an existing row shape (`inside`), chip belongs elsewhere, author written elsewhere, chip CSS (widen the bullet gap with `--geld-chip-gap`, not `margin-left`) | the spec in `packages/core/src/list-surfaces.ts` | catalog publish (headless) |
 | A brand-new list UI or hovercard of the same shape | a new spec entry (new `id`) | catalog publish |
 | New placement kind, new author source kind, link path shape, page-header/diff adapters | code | release — and raise `CATALOG_MIN_EXTENSION_VERSION` (+ the extension `package.json` version) when the catalog starts using the new kind: older parsers are strict and would drop the whole document, patterns included |
 
