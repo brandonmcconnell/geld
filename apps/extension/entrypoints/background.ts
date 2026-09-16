@@ -6,14 +6,25 @@ import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { settingsItem } from '../src/lib/storage';
-import type { FetchDiffResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
-import { isAccountActionMessage, isCatalogCheckMessage, isColorSchemeMessage, isEnsureContentMessage, isFetchDiffRequest, isTabStateMessage } from '../src/lib/messages';
+import {
+  isAccountActionMessage,
+  isCatalogCheckMessage,
+  isColorSchemeMessage,
+  isEnsureContentMessage,
+  isFetchDiffRequest,
+  isFetchFileRequest,
+  isTabStateMessage,
+} from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
+import { looksLikeHtml } from '../src/lib/http';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
+/** Repository config files (`.github/geld.yml`, `.gitattributes`) are read up to this much. */
+const MAX_FILE_BYTES = 256 * 1024;
 
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 
@@ -102,6 +113,50 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
     writeCache(parsed.toString(), result);
   }
   return result;
+}
+
+/** Public raw files on github.com: `raw.githubusercontent.com/owner/repo/HEAD/path`. */
+const PUBLIC_RAW_HOST = 'raw.githubusercontent.com';
+const PUBLIC_RAW_PATH = /^\/[^/]+\/[^/]+\/HEAD\/.+/;
+/** An Enterprise server serves raw files itself: `https://host/owner/repo/raw/HEAD/path`. */
+const ENTERPRISE_RAW_PATH = /^\/[^/]+\/[^/]+\/raw\/HEAD\/.+/;
+
+/**
+ * One repository file for the content script's repo-config lookup (an
+ * organisation's `.github` repository, which GitHub requires to be public).
+ * Done here so the common outcome — no such file — is a 404 in this worker's
+ * console, not in every pull request's.
+ *
+ * On github.com the file is read from raw.githubusercontent.com *without*
+ * credentials: this worker has no host permission there, so the browser
+ * applies CORS, and the host's `Access-Control-Allow-Origin: *` is only
+ * accepted for an uncredentialed request (that is also why github.com's own
+ * `/raw/` redirect cannot be followed from here). Enterprise hosts are
+ * granted, serve raw files on the same origin, and get the session cookie.
+ */
+async function fetchFile(url: string): Promise<FetchFileResponse> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, reason: 'invalid-url' };
+  }
+  const publicRaw = parsed.hostname === PUBLIC_RAW_HOST && PUBLIC_RAW_PATH.test(parsed.pathname);
+  const enterpriseRaw =
+    parsed.hostname !== 'github.com' && (await allowedHosts()).has(parsed.hostname) && ENTERPRISE_RAW_PATH.test(parsed.pathname);
+  if (parsed.protocol !== 'https:' || (!publicRaw && !enterpriseRaw)) return { ok: false, reason: 'disallowed-url' };
+  try {
+    const response = await fetch(parsed.toString(), { credentials: publicRaw ? 'omit' : 'include', cache: 'no-store', redirect: 'follow' });
+    if (response.status === 404) return { ok: true, text: null };
+    if (!response.ok) return { ok: false, reason: `http-${response.status}` };
+    const body = await response.text();
+    // A 200 that is really a GitHub page (SSO interstitial, sign-in wall,
+    // unavailable repository) is not a config file.
+    if (looksLikeHtml(response.headers.get('content-type'), body)) return { ok: false, reason: 'html' };
+    return { ok: true, text: body.length > MAX_FILE_BYTES ? body.slice(0, MAX_FILE_BYTES) : body };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
+  }
 }
 
 async function readWithLimit(response: Response, limit: number): Promise<string> {
@@ -230,6 +285,10 @@ export default defineBackground(() => {
         .then((tab) => ensureTab(message.tabId, tab.url))
         .catch((): EnsureContentResponse => ({ injected: false }))
         .then(sendResponse);
+      return true;
+    }
+    if (isFetchFileRequest(message)) {
+      void fetchFile(message.url).then(sendResponse);
       return true;
     }
     if (!isFetchDiffRequest(message)) return undefined;

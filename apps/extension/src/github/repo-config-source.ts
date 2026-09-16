@@ -1,18 +1,25 @@
+import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { RepoConfig, RepoConfigParse, SettingsIssue } from '@geld/core';
 import { BUNDLED_CATALOG, ORG_CONFIG_PATHS, ORG_CONFIG_REPO, REPO_CONFIG_PATH, generatedConfigFrom, isEmptyRepoConfig, parseRepoConfig } from '@geld/core';
 import type { Catalog } from '@geld/core';
 import { looksLikeHtml } from '../lib/http';
+import type { FetchFileRequest } from '../lib/messages';
+import { isFetchFileResponse } from '../lib/messages';
 
 /**
  * Fetches and caches the files a repository uses to configure Geld:
  * `.github/geld.yml` in the repository, the organisation's defaults in its
  * `.github` repository, and `.gitattributes` for `linguist-generated`.
  *
- * Requests go through the page's own origin (`/owner/repo/raw/HEAD/path`),
- * so the session cookie is sent and private repositories work with no extra
- * permission or token: github.com answers with a redirect to
- * raw.githubusercontent.com, which allows any origin to read the file.
+ * Most repositories have none of these, and a `fetch` that ends in 404 is
+ * printed as an error in the console of whichever context made it — so no
+ * request here is allowed to 404 in the page (see {@link RepoConfigSource.readFile}):
+ * the repository's own files are read from the page with the session cookie
+ * (private repositories work with no token) but only after GitHub's
+ * directory listing said they exist; the organisation's `.github` repository,
+ * public by GitHub's own rule for default community files, is read by the
+ * background from raw.githubusercontent.com.
  *
  * Files are cached on disk per `github:{owner}:{repo}:{path}` (a missing file
  * is cached too) and refreshed after {@link TTL_MS}; a network error is
@@ -24,6 +31,7 @@ const RETRY_MS = 60 * 1000;
 const MAX_ENTRIES = 400;
 const MAX_CONCURRENT = 2;
 const MAX_BYTES = 256 * 1024;
+const PUBLIC_RAW_HOST = 'raw.githubusercontent.com';
 
 interface CachedFile {
   /** `null`: the repository has no such file. */
@@ -203,18 +211,7 @@ export class RepoConfigSource {
   private async fetchFile(job: Job): Promise<void> {
     let text: string | null;
     try {
-      const response = await fetch(`${job.origin}/${job.repo}/raw/HEAD/${job.path}`, { credentials: 'same-origin', cache: 'no-store', redirect: 'follow' });
-      if (response.status === 404) {
-        text = null;
-      } else if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      } else {
-        const body = await response.text();
-        // A 200 that is really a GitHub page (SSO interstitial, sign-in wall,
-        // unavailable repository) is not a config file; treat it like a blip.
-        if (looksLikeHtml(response.headers.get('content-type'), body)) throw new Error('HTML page instead of a file');
-        text = body.length > MAX_BYTES ? body.slice(0, MAX_BYTES) : body;
-      }
+      text = await this.readFile(job);
     } catch {
       // Network blip, rate limit, signed-out redirect loop: behave as if there
       // were no file so the page settles, try again in a while, store nothing.
@@ -231,6 +228,58 @@ export class RepoConfigSource {
     void cacheItem.setValue(this.persistent);
     this.invalidate(job.repo);
     this.onChange();
+  }
+
+  /**
+   * The file's text, `null` when the repository has no such file; throws on
+   * anything transient. Which context reads it is chosen so that an expected
+   * miss never shows up as a 404 in the page's console:
+   *
+   * - The organisation's `.github` repository has to be public (GitHub's rule
+   *   for default community files), so the background reads it — from
+   *   raw.githubusercontent.com without credentials on github.com, where the
+   *   host's `Access-Control-Allow-Origin: *` is accepted; from the server's
+   *   own `raw` path on an Enterprise host. A miss is a 404 in the worker.
+   * - The repository's own files may be private, so they are read from the
+   *   page with the session cookie — but only once GitHub's directory
+   *   listing (a same-origin JSON request, 200 whenever the repository is
+   *   visible) says the file exists. Without a usable listing the file is
+   *   fetched directly, which is the pre-listing behaviour.
+   */
+  private async readFile(job: Job): Promise<string | null> {
+    if (job.repo.endsWith(`/${ORG_CONFIG_REPO}`)) return readViaBackground(job);
+    const exists = await this.exists(job);
+    if (exists === false) return null;
+    return readFromPage(job);
+  }
+
+  /** Whether `job.path` exists according to the directory listings; `null` when a listing could not be read. */
+  private async exists(job: Job): Promise<boolean | null> {
+    let directory = '';
+    for (const segment of job.path.split('/')) {
+      const paths = await this.listing(job.origin, job.repo, directory);
+      if (paths === null) return null;
+      const path = directory === '' ? segment : `${directory}/${segment}`;
+      if (!paths.has(path)) return false;
+      directory = path;
+    }
+    return true;
+  }
+
+  private readonly listings = new Map<string, { readonly at: number; readonly paths: Promise<ReadonlySet<string> | null> }>();
+
+  /**
+   * The paths directly inside `directory` of `repo` at HEAD, from the JSON
+   * GitHub's file browser serves for its tree pages. Memoised per directory
+   * for {@link TTL_MS}, the same lifetime as the files themselves.
+   */
+  private listing(origin: string, repo: string, directory: string): Promise<ReadonlySet<string> | null> {
+    const key = `${origin}/${repo}/${directory}`;
+    const known = this.listings.get(key);
+    if (known !== undefined && Date.now() - known.at < TTL_MS) return known.paths;
+    const paths = readListing(origin, repo, directory);
+    this.listings.set(key, { at: Date.now(), paths });
+    return paths;
   }
 
   /** A file of `repo` changed; every repository that may read it (all of an org's repos for `.github`) is re-resolved. */
@@ -259,4 +308,59 @@ function cacheKey(origin: string, repo: string, path: string): string {
 
 function fileUrl(origin: string, repo: string, path: string): string {
   return `${origin}/${repo}/blob/HEAD/${path}`;
+}
+
+/** `/owner/repo/raw/HEAD/path` on the page's origin: the session cookie decides access; github.com redirects to the CORS-open raw host. */
+async function readFromPage(job: Job): Promise<string | null> {
+  const response = await fetch(`${job.origin}/${job.repo}/raw/HEAD/${job.path}`, { credentials: 'same-origin', cache: 'no-store', redirect: 'follow' });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const body = await response.text();
+  // A 200 that is really a GitHub page (SSO interstitial, sign-in wall,
+  // unavailable repository) is not a config file; treat it like a blip.
+  if (looksLikeHtml(response.headers.get('content-type'), body)) throw new Error('HTML page instead of a file');
+  return body.length > MAX_BYTES ? body.slice(0, MAX_BYTES) : body;
+}
+
+/** The background reads the file (`geld:fetch-file`); anything but a file or a definite miss is a blip. */
+async function readViaBackground(job: Job): Promise<string | null> {
+  const url =
+    new URL(job.origin).hostname === 'github.com'
+      ? `https://${PUBLIC_RAW_HOST}/${job.repo}/HEAD/${job.path}`
+      : `${job.origin}/${job.repo}/raw/HEAD/${job.path}`;
+  const request: FetchFileRequest = { type: 'geld:fetch-file', url };
+  const response: unknown = await browser.runtime.sendMessage(request);
+  if (!isFetchFileResponse(response) || !response.ok) throw new Error('file unavailable');
+  return response.text;
+}
+
+/**
+ * GitHub's file browser answers `Accept: application/json` on a tree URL with
+ * the page's data, including the directory's entries (`payload.tree.items[]
+ * .path`). `null` when the answer is not that shape (signed-out HTML, a
+ * changed payload, an Enterprise version without this route).
+ */
+async function readListing(origin: string, repo: string, directory: string): Promise<ReadonlySet<string> | null> {
+  try {
+    const url = `${origin}/${repo}/tree/HEAD${directory === '' ? '' : `/${directory}`}?noancestors=1`;
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (!isRecord(body) || !isRecord(body.payload) || !isRecord(body.payload.tree) || !Array.isArray(body.payload.tree.items)) return null;
+    const paths = new Set<string>();
+    for (const item of body.payload.tree.items) {
+      if (isRecord(item) && typeof item.path === 'string') paths.add(item.path);
+    }
+    return paths;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

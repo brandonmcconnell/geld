@@ -284,8 +284,9 @@ sandbox/
               <p>
                 A repository can carry its own Geld config for everyone who reviews it: commit <code>.github/geld.yml</code> to the default branch.
                 It is versioned and reviewed like any other file, and whoever may merge there decides what it says; Geld stores nothing. An
-                organisation puts its defaults in <code>geld.yml</code> at the root of its <code>.github</code> repository (
-                <code>acme/.github</code>), and a repository&apos;s own file is layered on top.
+                organisation puts its defaults in <code>geld.yml</code> at the root of its public <code>.github</code> repository (
+                <code>acme/.github</code>, the same place GitHub reads default community files from), and a repository&apos;s own file is
+                layered on top.
               </p>
               <p>
                 The file uses the same keys as the settings document: <code>categories</code> switches categories on or off, <code>groups</code>{' '}

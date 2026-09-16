@@ -11,6 +11,22 @@ export type FetchDiffResponse =
   | { readonly ok: true; readonly files: readonly FileStats[] }
   | { readonly ok: false; readonly reason: string };
 
+/**
+ * Content script → background: read one public repository file (an
+ * organisation's `.github` defaults) by its raw URL. Fetched from the
+ * background rather than the page so that a missing file — the normal case —
+ * does not put a red "404" line in the page's console attributed to Geld.
+ */
+export interface FetchFileRequest {
+  readonly type: 'geld:fetch-file';
+  readonly url: string;
+}
+
+export type FetchFileResponse =
+  /** `text` is `null` when the repository has no such file (404). */
+  | { readonly ok: true; readonly text: string | null }
+  | { readonly ok: false; readonly reason: string };
+
 /** Sent by the offscreen document whenever the OS/browser colour scheme changes. */
 export interface ColorSchemeMessage {
   readonly type: 'geld:color-scheme';
@@ -136,6 +152,7 @@ export interface CatalogCheckMessage {
 
 export type GeldRequest =
   | FetchDiffRequest
+  | FetchFileRequest
   | ColorSchemeMessage
   | ToggleHiddenMessage
   | GetTabStateMessage
@@ -156,6 +173,16 @@ export function isFetchDiffRequest(value: unknown): value is FetchDiffRequest {
 export function isFetchDiffResponse(value: unknown): value is FetchDiffResponse {
   if (!isRecord(value)) return false;
   if (value.ok === true) return Array.isArray(value.files);
+  return value.ok === false && typeof value.reason === 'string';
+}
+
+export function isFetchFileRequest(value: unknown): value is FetchFileRequest {
+  return isRecord(value) && value.type === 'geld:fetch-file' && typeof value.url === 'string';
+}
+
+export function isFetchFileResponse(value: unknown): value is FetchFileResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return value.text === null || typeof value.text === 'string';
   return value.ok === false && typeof value.reason === 'string';
 }
 
