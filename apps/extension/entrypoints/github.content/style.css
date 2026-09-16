@@ -692,7 +692,9 @@ div:has(> #diff-file-tree-filter) {
   line-height: 16px;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.2));
+  /* A ring-free shadow: Primer's floating shadows start with a 0 0 0 1px
+     layer (opaque in dark themes) that would double the border above. */
+  box-shadow: var(--shadow-resting-medium, 0 1px 1px rgba(31, 35, 40, 0.1), 0 3px 6px rgba(31, 35, 40, 0.12));
 }
 
 .geld-tooltip[hidden] {
