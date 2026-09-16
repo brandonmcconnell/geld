@@ -46,7 +46,7 @@ function render(breakdown: StatsBreakdown): void {
 
 /** Distance the tooltip keeps from the edges of the viewport. */
 const VIEWPORT_MARGIN = 8;
-/** Gap between the host and the tooltip; leaves room for the 7px bordered caret. */
+/** Gap between the host and the tooltip; the bordered caret is 7px tall. */
 const HOST_GAP = 8;
 /** The arrow is 12px wide and must stay clear of the rounded corners. */
 const ARROW_INSET = 12;

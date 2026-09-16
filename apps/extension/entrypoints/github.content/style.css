@@ -699,7 +699,13 @@ div:has(> #diff-file-tree-filter) {
   display: none;
 }
 
-/* The caret is two stacked triangles: the border colour, then the surface one pixel in. */
+/*
+ * The caret is two stacked triangles, the border colour under the surface
+ * colour. Both bases sit on the padding edge (`top`/`bottom: 0` is the
+ * padding box, the 1px border lies just outside it), so the inner triangle
+ * covers the border row and the body flows into the caret without a seam;
+ * the outer one, 1px larger, shows only along the slopes.
+ */
 .geld-tooltip::before,
 .geld-tooltip::after {
   content: '';
@@ -714,22 +720,22 @@ div:has(> #diff-file-tree-filter) {
 }
 
 .geld-tooltip[data-placement='below']::before {
-  top: -15px;
+  top: -14px;
   border-bottom-color: var(--geld-tooltip-border);
 }
 
 .geld-tooltip[data-placement='below']::after {
-  top: -13px;
+  top: -12px;
   border-bottom-color: var(--geld-tooltip-bg);
 }
 
 .geld-tooltip[data-placement='above']::before {
-  bottom: -15px;
+  bottom: -14px;
   border-top-color: var(--geld-tooltip-border);
 }
 
 .geld-tooltip[data-placement='above']::after {
-  bottom: -13px;
+  bottom: -12px;
   border-top-color: var(--geld-tooltip-bg);
 }
 
