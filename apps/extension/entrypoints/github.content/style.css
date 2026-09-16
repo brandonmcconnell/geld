@@ -686,8 +686,8 @@ div:has(> #diff-file-tree-filter) {
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
-  /* No shadow, like GitHub's own tooltips. */
   pointer-events: none;
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.2));
 }
 
 .geld-tooltip[hidden] {
