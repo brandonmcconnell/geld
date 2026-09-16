@@ -205,12 +205,15 @@ export const TESTS_COUNT_CLASS = 'geld-tests-count';
  */
 function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): void {
   let label = group.host.querySelector<HTMLElement>(`.${TESTS_COUNT_CLASS}`);
+  // The first count GitHub renders. A deletions-only change has no "+N" span
+  // at all (not "+0"), so the "−M" span is the neighbour then.
+  const neighbour = group.additions ?? group.deletions;
   if (label === null) {
     label = document.createElement('span');
     label.className = TESTS_COUNT_CLASS;
     label.setAttribute('data-geld-ui', '');
-    if (group.additions !== null) {
-      group.additions.insertAdjacentElement('beforebegin', label);
+    if (neighbour !== null) {
+      neighbour.insertAdjacentElement('beforebegin', label);
       // GitHub separates "+N" and "−M" with either a flex gap or a literal
       // space; a space after the label reproduces whichever is in use.
       if (!group.sentence) label.after(document.createTextNode(' '));
@@ -218,9 +221,9 @@ function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): 
       group.host.prepend(label);
     }
   }
-  if (group.additions !== null) {
+  if (neighbour !== null) {
     // Match the neighbouring count exactly (GitHub styles those spans directly).
-    const reference = getComputedStyle(group.additions);
+    const reference = getComputedStyle(neighbour);
     label.style.font = reference.font;
     label.style.letterSpacing = reference.letterSpacing;
   }
