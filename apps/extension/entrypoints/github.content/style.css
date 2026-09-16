@@ -6,6 +6,23 @@
  * from Primer's CSS variables so light/dark/high-contrast themes just work.
  */
 
+:root {
+  /*
+   * Match GitHub's diffstat blocks, including its blue/orange accessible-color
+   * themes. These are deliberately not the generic success/danger foreground
+   * tokens: GitHub gives additions their own diffstat colour and uses danger
+   * emphasis for deletion blocks.
+   */
+  --geld-diff-addition-fg: var(
+    --diffStat-addition-bgColor,
+    var(--color-diffstat-addition-bg, var(--fgColor-success, #1a7f37))
+  );
+  --geld-diff-deletion-fg: var(
+    --bgColor-danger-emphasis,
+    var(--color-danger-emphasis, var(--fgColor-danger, #d1242f))
+  );
+}
+
 /* ------------------------------------------------------------------------ */
 /* Diff list: flex ordering lets us move test files to the bottom without   */
 /* touching the DOM order (React keeps working, Turbo keeps working).       */
@@ -141,11 +158,11 @@
 }
 
 .geld-hidden-section__add {
-  color: var(--fgColor-success, #1a7f37);
+  color: var(--geld-diff-addition-fg);
 }
 
 .geld-hidden-section__del {
-  color: var(--fgColor-danger, #d1242f);
+  color: var(--geld-diff-deletion-fg);
 }
 
 .geld-hidden-section__note {
@@ -594,11 +611,11 @@ div:has(> #diff-file-tree-filter) {
 }
 
 .geld-pr-stat__add {
-  color: var(--fgColor-success, #1a7f37);
+  color: var(--geld-diff-addition-fg);
 }
 
 .geld-pr-stat__del {
-  color: var(--fgColor-danger, #d1242f);
+  color: var(--geld-diff-deletion-fg);
 }
 
 .geld-pr-stat[data-geld-stat-host] {
@@ -717,11 +734,11 @@ div:has(> #diff-file-tree-filter) {
 }
 
 .geld-tooltip__add {
-  color: #3fb950;
+  color: var(--geld-diff-addition-fg);
 }
 
 .geld-tooltip__del {
-  color: #f85149;
+  color: var(--geld-diff-deletion-fg);
 }
 
 /* Comment-only lines collapsed inside visible files (ui/comment-rows.ts) ------- */
