@@ -109,8 +109,8 @@ function position(host: HTMLElement): void {
   element.hidden = false;
   const tipRect = element.getBoundingClientRect();
   const hostCentre = hostRect.left + hostRect.width / 2;
-  const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - tipRect.width - VIEWPORT_MARGIN);
-  const left = Math.max(VIEWPORT_MARGIN, Math.min(hostCentre - tipRect.width / 2, maxLeft));
+  const bounds = horizontalBounds(host, tipRect.width, viewportWidth);
+  const left = Math.max(bounds.left, Math.min(hostCentre - tipRect.width / 2, bounds.right - tipRect.width));
   let top = hostRect.bottom + HOST_GAP;
   let placement = 'below';
   if (top + tipRect.height > viewportHeight - VIEWPORT_MARGIN) {
@@ -122,6 +122,25 @@ function position(host: HTMLElement): void {
   element.dataset.placement = placement;
   const arrowX = Math.max(ARROW_INSET, Math.min(hostCentre - left, tipRect.width - ARROW_INSET));
   element.style.setProperty('--geld-arrow-x', `${Math.round(arrowX)}px`);
+}
+
+/**
+ * The horizontal extent the tooltip stays within: the host's content column
+ * rather than the viewport, so it never hangs past the edge of the content
+ * around it. That column is the widest ancestor that is still inset from the
+ * viewport on both sides — GitHub's centred, max-width page container, or the
+ * diff column beside the file tree — and wide enough to hold the tooltip;
+ * full-bleed wrappers do not qualify. The viewport, with a margin, otherwise.
+ */
+function horizontalBounds(host: HTMLElement, tipWidth: number, viewportWidth: number): { readonly left: number; readonly right: number } {
+  let column: DOMRect | null = null;
+  for (let element = host.parentElement; element !== null && element !== document.body; element = element.parentElement) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width < tipWidth || rect.left < VIEWPORT_MARGIN || rect.right > viewportWidth - VIEWPORT_MARGIN) continue;
+    if (column === null || rect.width > column.width) column = rect;
+  }
+  if (column !== null) return { left: column.left, right: column.right };
+  return { left: VIEWPORT_MARGIN, right: Math.max(VIEWPORT_MARGIN + tipWidth, viewportWidth - VIEWPORT_MARGIN) };
 }
 
 /** Keep a fixed tooltip glued to its host while the page scrolls or resizes. */
