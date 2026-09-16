@@ -262,13 +262,24 @@
 
 /*
  * GitHub wraps the "Filter files" field in a div with 16px of bottom padding
- * (`tmp-pb-3`). Our Changes header now owns the spacing under the field, so
- * that padding only pushes the field off-centre between the sidebar's top
- * edge and the header. Matched structurally: the class name is a temporary
- * utility GitHub may rename.
+ * (`tmp-pb-3`). While our accordion is on, the Changes header owns the
+ * spacing under the field (centreFilterAboveHeader), so that padding only
+ * pushes the field off-centre between the sidebar's top edge and the header.
+ * Scoped to the accordion: with nothing hidden the sidebar is GitHub's own
+ * and the padding is what separates the field from the tree. Matched
+ * structurally: the class name is a temporary utility GitHub may rename.
  */
-div:has(> #diff-file-tree-filter) {
+[data-geld-sidebar] div:has(> #diff-file-tree-filter) {
   padding-bottom: 0 !important;
+}
+
+/*
+ * The header has no chevron, so its icon leads the row; inset it the way
+ * GitHub's top-level chevron stroke is (about 8px in from the row's edge),
+ * not flush. The classic view's rows already start 8px in.
+ */
+.geld-tree__row.geld-tree-section__header {
+  padding-left: max(var(--geld-indent-base), 8px);
 }
 
 .geld-tree-section[data-view='legacy'] {
