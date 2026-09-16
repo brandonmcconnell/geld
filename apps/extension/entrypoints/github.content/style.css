@@ -8,19 +8,15 @@
 
 :root {
   /*
-   * Match GitHub's diffstat blocks, including its blue/orange accessible-color
-   * themes. These are deliberately not the generic success/danger foreground
-   * tokens: GitHub gives additions their own diffstat colour and uses danger
-   * emphasis for deletion blocks.
+   * The colours of GitHub's own "+N" / "−M" *text* (header, PR rows), which
+   * follow the accessible blue/orange themes too. Everything Geld paints with
+   * these is text, so the text tokens — not the diffstat *block* colours
+   * (--diffStat-addition-bgColor, --bgColor-danger-emphasis): those are a
+   * different, darker shade in dark themes (dark_colorblind: #bd561d block vs
+   * #f0883e text), which put a darker orange next to GitHub's lighter one.
    */
-  --geld-diff-addition-fg: var(
-    --diffStat-addition-bgColor,
-    var(--color-diffstat-addition-bg, var(--fgColor-success, #1a7f37))
-  );
-  --geld-diff-deletion-fg: var(
-    --bgColor-danger-emphasis,
-    var(--color-danger-emphasis, var(--fgColor-danger, #d1242f))
-  );
+  --geld-diff-addition-fg: var(--fgColor-success, var(--color-fg-success, #1a7f37));
+  --geld-diff-deletion-fg: var(--fgColor-danger, var(--color-fg-danger, #d1242f));
   /* The tooltip's surface follows the page (GitHub's tooltips are its
      emphasis colour in either mode). Resolved here, at :root, so the values
      survive the tooltip's own token scope below. */
