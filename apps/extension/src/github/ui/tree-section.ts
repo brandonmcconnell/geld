@@ -169,10 +169,12 @@ function build(
 ): TreeSectionParts {
   const title = createElement('span', { class: 'geld-tree__label geld-tree__label--root' });
   const count = createElement('span', { class: `${TREE_SECTION_CLASS}__count` });
+  // No chevron: the panels are not an accordion (one is always open, never
+  // several), so the header's icon leads the row and the chevrons below it
+  // belong to folders only.
   const header = row(
     1,
     [
-      createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
       createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [
         svgFromString(categoryIconFor(category)),
       ]),
@@ -372,7 +374,6 @@ export function renderChangesHeader(
     const header = row(
       1,
       [
-        createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
         createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [svgFromString(ICON_FILE_DIFF)]),
         createElement('span', { class: 'geld-tree__label geld-tree__label--root' }, ['Changes']),
         count,
