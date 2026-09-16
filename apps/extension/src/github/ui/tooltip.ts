@@ -11,10 +11,14 @@ const providers = new WeakMap<HTMLElement, BreakdownProvider>();
 let tooltip: HTMLElement | null = null;
 let activeHost: HTMLElement | null = null;
 
+/** One shared tooltip element; the active host points at it with `aria-describedby`. */
+const TOOLTIP_ID = 'geld-line-counts';
+
 function ensureTooltip(): HTMLElement {
   if (tooltip !== null && tooltip.isConnected) return tooltip;
   tooltip = createElement('div', {
     class: 'geld-tooltip',
+    id: TOOLTIP_ID,
     role: 'tooltip',
     [OWN_UI_ATTRIBUTE]: '',
     hidden: '',
@@ -23,12 +27,22 @@ function ensureTooltip(): HTMLElement {
   return tooltip;
 }
 
+/**
+ * One line of the breakdown. The cells are grid items (the row is
+ * `display: contents`); the whitespace between them creates no grid item —
+ * any other text would — but keeps a screen reader from running
+ * "Excluding test files12 files+42−26" together. "−" is U+2212, read "minus".
+ */
 function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElement {
   return createElement('div', { class: `geld-tooltip__row${emphasised ? ' geld-tooltip__row--strong' : ''}` }, [
     createElement('span', { class: 'geld-tooltip__label' }, [label]),
+    ' ',
     createElement('span', { class: 'geld-tooltip__files' }, [pluralize(totals.files, 'file', 'files')]),
+    ' ',
     createElement('span', { class: 'geld-tooltip__add' }, [`+${formatCount(totals.additions)}`]),
+    ' ',
     createElement('span', { class: 'geld-tooltip__del' }, [`\u2212${formatCount(totals.deletions)}`]),
+    ' ',
   ]);
 }
 
@@ -36,7 +50,6 @@ function render(breakdown: StatsBreakdown): void {
   const element = ensureTooltip();
   const capitalised = `${breakdown.nounPlural[0]?.toUpperCase() ?? ''}${breakdown.nounPlural.slice(1)}`;
   element.replaceChildren(
-    createElement('div', { class: 'geld-tooltip__title' }, ['Line counts']),
     row(`Excluding ${breakdown.nounPlural}`, breakdown.visible, true),
     row(`Including ${breakdown.nounPlural}`, breakdown.all, false),
     row(`${capitalised} only`, breakdown.hidden, false),
@@ -107,25 +120,47 @@ function follow(): void {
   if (activeHost !== null) position(activeHost);
 }
 
+/** Escape dismisses the tooltip without moving the pointer or focus (WCAG 1.4.13). */
+function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') hideTooltip();
+}
+
 function show(host: HTMLElement): void {
   const breakdown = providers.get(host)?.() ?? null;
   if (breakdown === null) return;
   if (activeHost === null) {
     window.addEventListener('scroll', follow, { capture: true, passive: true });
     window.addEventListener('resize', follow, { passive: true });
+    document.addEventListener('keydown', onKeyDown, true);
   }
+  if (activeHost !== null && activeHost !== host) describe(activeHost, false);
   activeHost = host;
   render(breakdown);
   position(host);
+  describe(host, true);
 }
 
 export function hideTooltip(): void {
   if (activeHost !== null) {
     window.removeEventListener('scroll', follow, { capture: true });
     window.removeEventListener('resize', follow);
+    document.removeEventListener('keydown', onKeyDown, true);
+    describe(activeHost, false);
   }
   activeHost = null;
   if (tooltip !== null) tooltip.hidden = true;
+}
+
+/**
+ * Point the host's `aria-describedby` at the tooltip while it is shown for
+ * that host (the element is shared, so its text is only this host's then),
+ * keeping any ids GitHub already lists there.
+ */
+function describe(host: HTMLElement, on: boolean): void {
+  const ids = (host.getAttribute('aria-describedby') ?? '').split(/\s+/).filter((id) => id !== '' && id !== TOOLTIP_ID);
+  if (on) ids.push(TOOLTIP_ID);
+  if (ids.length === 0) host.removeAttribute('aria-describedby');
+  else host.setAttribute('aria-describedby', ids.join(' '));
 }
 
 /**

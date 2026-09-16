@@ -741,16 +741,6 @@ div:has(> #diff-file-tree-filter) {
   border-top-color: var(--geld-tooltip-bg);
 }
 
-.geld-tooltip__title {
-  grid-column: 1 / -1;
-  margin-bottom: 2px;
-  color: var(--fgColor-muted, #59636e);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .geld-tooltip__row {
   display: contents;
 }
