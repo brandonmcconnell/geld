@@ -616,7 +616,7 @@
 }
 
 /*
- * Per-surface chip rules (classic-list, react-list, stack-popover) live in the
+ * Per-surface chip rules (classic-list, react-list, stack-popover, stack-list) live in the
  * catalog (`@geld/core/list-surfaces.ts`, `css` per surface) and are injected
  * as <style id="geld-surface-styles">, so they update without a release.
  */

@@ -97,10 +97,10 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'stack-popover',
     description:
-      'Stacked pull requests, in both places GitHub lists a stack: the "Stack N/M" popover (ActionList items inside [class*="StackState"], description ellipsized on one line) and the merge box\'s "Stacked pull requests list" nav at the bottom of a PR (NavList items inside [class*="StackList"], with a trailing status label). Both: "#N · branch" in ActionList.Description. Names no author. The id predates the merge box list and is kept: CSS and older builds key on it.',
+      'The "Stack N/M" popover on a stacked pull request: ActionList items inside [class*="StackState"], "#N · branch" in an ActionList.Description ellipsized on one line. Names no author.',
     row: 'li[data-component="ActionList.Item"]',
     // ActionList items appear in many menus; only inside a stack do they count.
-    inside: '[class*="StackState"], [class*="StackList"], nav[aria-label="Stacked pull requests list"]',
+    inside: '[class*="StackState"]',
     // Prepended and floated right: the counts keep their full width on the
     // right of the line and the branch name is what gets the ellipsis. The
     // "•" separator is dropped there — the counts sit against the edge, not
@@ -112,6 +112,16 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
       `.geld-pr-stat[data-geld-surface='stack-popover'] .geld-pr-stat__sep { display: none; }`,
       `.geld-pr-stat[data-geld-surface='stack-popover'] .geld-pr-stat__sep + * { margin-left: 0; }`,
     ].join('\n'),
+  },
+  {
+    id: 'stack-list',
+    description:
+      'The merge box\'s "Stacked pull requests list" nav at the bottom of a PR: NavList items inside [class*="StackList"], "#N · branch" in an ActionList.Description with a status label ("Ready" / "Not ready") trailing the row. The counts follow the branch name inline — floated right they would butt against labels of differing widths and never line up.',
+    row: 'li[data-component="ActionList.Item"]',
+    inside: '[class*="StackList"], nav[aria-label="Stacked pull requests list"]',
+    chipAnchors: [{ selector: '[data-component="ActionList.Description"]', placement: 'append' }],
+    authors: [],
+    css: `.geld-pr-stat[data-geld-surface='stack-list'] { --geld-chip-gap: 6px; font-size: 11px; }`,
   },
 ];
 
