@@ -36,12 +36,12 @@ export function PrListRow({ number, title, author, when, comments, shown, hidden
         </PopoverTrigger>
         <PopoverContent className="px-3 py-2 text-xs tabular-nums">
           <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1">
-            <dt className="text-muted-foreground">Essential</dt>
+            <dt className="font-medium text-muted-foreground">Essential</dt>
             <dd className="font-semibold">{formatDiffstat(shown)}</dd>
-            <dt className="text-muted-foreground">{`${nounPlural[0]?.toUpperCase() ?? ''}${nounPlural.slice(1)}`}</dt>
+            <dt className="font-medium text-muted-foreground">{`${nounPlural[0]?.toUpperCase() ?? ''}${nounPlural.slice(1)}`}</dt>
             <dd className="font-semibold">{formatDiffstat(hidden)}</dd>
             <div className="col-span-2 my-0.5 border-t" role="separator" />
-            <dt className="text-muted-foreground">Total</dt>
+            <dt className="font-medium text-muted-foreground">Total</dt>
             <dd className="font-semibold">{formatDiffstat(all)}</dd>
           </dl>
         </PopoverContent>

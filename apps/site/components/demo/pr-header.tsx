@@ -92,7 +92,7 @@ function Tab({
 function Breakdown({ label, totals, className }: { readonly label: string; readonly totals: ChangeTotals; readonly className?: string }) {
   return (
     <div className={cn('flex items-center justify-between gap-6 px-3 py-1.5 text-xs', className)}>
-      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-muted-foreground">{label}</span>
       <span className="font-semibold tabular-nums">
         {pluralize(totals.files, 'file', 'files')} · {formatDiffstat(totals)}
       </span>

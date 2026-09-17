@@ -650,6 +650,7 @@
 .geld-pr-stat__add,
 .geld-pr-stat__del,
 .geld-hidden-section__stats,
+.geld-tooltip__files,
 .geld-tooltip__add,
 .geld-tooltip__del {
   font-weight: 600;
@@ -768,10 +769,10 @@
   display: contents;
 }
 
-/* Labels stay at the page's regular weight; the counts get the shared
-   treatment above (sans-serif, 600), so every row reads like the header. */
+/* Same size and family as the counts (both inherit the tooltip's), one
+   weight below them: counts 600 via the shared rule above, labels 500. */
 .geld-tooltip__label {
-  font-weight: var(--geld-tooltip-label-weight, 400);
+  font-weight: var(--geld-tooltip-label-weight, 500);
 }
 
 /* The line above "Total": a grid item spanning every column, sized by its
