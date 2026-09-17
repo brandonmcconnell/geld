@@ -1,4 +1,4 @@
-import { formatCount } from '@geld/core';
+import { formatCount, pluralize } from '@geld/core';
 import type { PathMatcher } from '@geld/core';
 import type { RepoRule } from '@geld/core';
 import { decideRepo } from '@geld/core';
@@ -179,12 +179,15 @@ export function applyPrListStats(options: PrListOptions): void {
     const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories, hidden), matcher.activeCategories);
     // With nothing that could be hidden the chip is plain line counts: "0 hidden" would be noise.
     const label = matcher.activeCategories.length === 0 ? null : hiddenLabel(hidden, matcher.activeCategories);
-    const text = `${label ?? ''} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
+    // Surfaces without a file count of their own (the hovercard) lead with ours.
+    const files = row.surface.spec.showFiles === true ? pluralize(breakdown.visible.files, 'file', 'files') : null;
+    const text = `${files ?? ''}|${label ?? ''} +${formatCount(breakdown.visible.additions)} \u2212${formatCount(breakdown.visible.deletions)}`;
     if (chip.dataset.rendered !== text) {
       chip.dataset.rendered = text;
       const tests = label === null ? [] : [createElement('span', { class: `${PR_STAT_CLASS}__tests ${TESTS_COUNT_CLASS}` }, [label])];
       tests[0]?.toggleAttribute('data-has-tests', hidden.totals.files > 0);
       chip.replaceChildren(
+        ...(files === null ? [] : [createElement('span', { class: `${PR_STAT_CLASS}__files` }, [files])]),
         createElement('span', { class: `${PR_STAT_CLASS}__sep`, 'aria-hidden': 'true' }, ['\u2022']),
         ...tests,
         createElement('span', { class: `${PR_STAT_CLASS}__add` }, [`+${formatCount(breakdown.visible.additions)}`]),

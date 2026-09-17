@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260921,
+  "version": 20260922,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -712,6 +712,20 @@
       ],
       "authors": [],
       "css": ".geld-pr-stat[data-geld-surface='stack-list'] { --geld-chip-gap: 6px; font-size: 11px; }"
+    },
+    {
+      "id": "pr-hovercard",
+      "description": "The pull request hovercard (hovering a \"#N\" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap row of state badges; the chip goes on its own line under the badges, leading with the file count since the card shows none. Names no author.",
+      "row": ".js-hovercard-content[data-hovercard-target-url*=\"/pull/\"]",
+      "chipAnchors": [
+        {
+          "selector": ".d-flex.flex-column.f4 > .d-flex.flex-wrap",
+          "placement": "after"
+        }
+      ],
+      "authors": [],
+      "css": ".geld-pr-stat[data-geld-surface='pr-hovercard'] { display: inline-block; align-self: flex-start; margin: 8px 0 0; font-size: 12px; line-height: 18px; }\n.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__files { color: var(--fgColor-muted, #59636e); }",
+      "showFiles": true
     }
   ],
   "diffstatSurfaces": [

@@ -675,6 +675,7 @@
  * and danger colours (`--geld-diff-*-fg`, :root). Tabular figures keep
  * stacked counts aligned where they form columns (the tooltip).
  */
+.geld-pr-stat__files,
 .geld-pr-stat__tests,
 .geld-pr-stat__add,
 .geld-pr-stat__del,
@@ -731,7 +732,13 @@
   --geld-tooltip-bg: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
   --geld-tooltip-border: var(--borderColor-default, #d1d9e0);
   position: fixed;
-  z-index: 1000;
+  /* Just above GitHub's hovercards (inline z-index: 1000 on .js-hovercard-content),
+     whose PR card hosts one of our chips; both are children of <body>, so only
+     z-index decides. Fixed, not absolute: the host can sit inside a sticky
+     header, a scrolling pane or an overlay, and a fixed box in viewport
+     coordinates escapes all of their clipping and stacking, so one
+     positioning routine works for every host. */
+  z-index: 1001;
   display: grid;
   grid-template-columns: max-content max-content max-content max-content;
   gap: 3px 12px;

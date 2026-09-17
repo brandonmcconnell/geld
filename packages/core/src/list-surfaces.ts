@@ -64,6 +64,11 @@ export interface ListSurfaceSpec {
   readonly authors: readonly AuthorSourceSpec[];
   /** Extra CSS for Geld's elements on this surface (injected as-is; author it against `[data-geld-surface="<id>"]`). */
   readonly css?: string;
+  /**
+   * Lead the chip with the number of files it counts ("6 files • 2 tests +111 −3"),
+   * for surfaces that show no file count of their own (the PR hovercard).
+   */
+  readonly showFiles?: boolean;
 }
 
 export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
@@ -122,6 +127,19 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
     chipAnchors: [{ selector: '[data-component="ActionList.Description"]', placement: 'append' }],
     authors: [],
     css: `.geld-pr-stat[data-geld-surface='stack-list'] { --geld-chip-gap: 6px; font-size: 11px; }`,
+  },
+  {
+    id: 'pr-hovercard',
+    description:
+      'The pull request hovercard (hovering a "#N" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap row of state badges; the chip goes on its own line under the badges, leading with the file count since the card shows none. Names no author.',
+    row: '.js-hovercard-content[data-hovercard-target-url*="/pull/"]',
+    chipAnchors: [{ selector: '.d-flex.flex-column.f4 > .d-flex.flex-wrap', placement: 'after' }],
+    authors: [],
+    showFiles: true,
+    css: [
+      `.geld-pr-stat[data-geld-surface='pr-hovercard'] { display: inline-block; align-self: flex-start; margin: 8px 0 0; font-size: 12px; line-height: 18px; }`,
+      `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__files { color: var(--fgColor-muted, #59636e); }`,
+    ].join('\n'),
   },
 ];
 
@@ -192,12 +210,15 @@ export function parseListSurfaces(value: unknown, path = 'listSurfaces'): readon
     const css = entry.css;
     if (css !== undefined && typeof css !== 'string') throw new ListSurfaceError(`${at}.css: expected a string, got ${describe(css)}`);
     if (typeof css === 'string' && css.length > 20_000) throw new ListSurfaceError(`${at}.css: unreasonably long`);
+    const showFiles = entry.showFiles;
+    if (showFiles !== undefined && typeof showFiles !== 'boolean') throw new ListSurfaceError(`${at}.showFiles: expected true or false, got ${describe(showFiles)}`);
     const spec: ListSurfaceSpec = { id, description, row, chipAnchors, authors };
     return {
       ...spec,
       ...(inside === undefined ? {} : { inside }),
       ...(notInside === undefined ? {} : { notInside }),
       ...(css === undefined ? {} : { css }),
+      ...(showFiles === undefined ? {} : { showFiles }),
     };
   });
 }
@@ -306,5 +327,6 @@ export function listSurfaceJson(spec: ListSurfaceSpec): Record<string, unknown> 
     chipAnchors: spec.chipAnchors.map((anchor) => ({ selector: anchor.selector, placement: anchor.placement })),
     authors: spec.authors.map((source) => ({ selector: source.selector, from: source.from })),
     ...(spec.css === undefined ? {} : { css: spec.css }),
+    ...(spec.showFiles === undefined ? {} : { showFiles: spec.showFiles }),
   };
 }
