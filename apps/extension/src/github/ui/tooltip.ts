@@ -139,9 +139,12 @@ function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Escape') hideTooltip();
 }
 
-function show(host: HTMLElement): void {
-  const breakdown = providers.get(host)?.() ?? null;
-  if (breakdown === null) return;
+/** A single line in place of the breakdown, while a diff is on its way or when it cannot be had. */
+function renderMessage(message: string): void {
+  ensureTooltip().replaceChildren(createElement('div', { class: 'geld-tooltip__message' }, [message]));
+}
+
+function present(host: HTMLElement, content: StatsBreakdown | string): void {
   if (activeHost === null) {
     window.addEventListener('scroll', follow, { capture: true, passive: true });
     window.addEventListener('resize', follow, { passive: true });
@@ -149,9 +152,34 @@ function show(host: HTMLElement): void {
   }
   if (activeHost !== null && activeHost !== host) describe(activeHost, false);
   activeHost = host;
-  render(breakdown);
+  if (typeof content === 'string') renderMessage(content);
+  else render(content);
   position(host);
   describe(host, true);
+}
+
+function show(host: HTMLElement): void {
+  const breakdown = providers.get(host)?.() ?? null;
+  if (breakdown === null) return;
+  present(host, breakdown);
+}
+
+/**
+ * Show the tooltip for `host` right now, without binding hover listeners —
+ * for hosts whose hovering is decided elsewhere (commit links, which wait for
+ * hover intent and for the diff to arrive). `hideTooltip` closes it.
+ */
+export function showBreakdownTooltip(host: HTMLElement, breakdown: StatsBreakdown): void {
+  present(host, breakdown);
+}
+
+export function showTooltipMessage(host: HTMLElement, message: string): void {
+  present(host, message);
+}
+
+/** The element the tooltip is currently shown for, if any. */
+export function tooltipHost(): HTMLElement | null {
+  return activeHost;
 }
 
 export function hideTooltip(): void {

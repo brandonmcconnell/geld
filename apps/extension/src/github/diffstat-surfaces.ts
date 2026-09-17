@@ -4,6 +4,8 @@ import { breakdownFromFiles } from './breakdown';
 import type { DiffSource } from './diff-source';
 import { applyHeaderStats, statGroupFrom } from './header-stats';
 import { ATTR_SURFACE } from './list-surfaces';
+import type { Subject } from './subject';
+import { subjectFrom } from './subject';
 
 /**
  * Diffstats GitHub shows for *another* commit or pull request than the page's
@@ -15,29 +17,6 @@ import { ATTR_SURFACE } from './list-surfaces';
  */
 
 const ATTR_SUBJECT = 'data-geld-diffstat';
-
-const COMMIT_PATH = /\/([^/\s]+)\/([^/\s]+)\/commit\/([0-9a-f]{7,40})(?:[/?#]|$)/i;
-const PULL_PATH = /\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#]|$)/;
-
-interface Subject {
-  readonly repo: string;
-  readonly diffUrl: string;
-  /** Commit SHA when the subject is a commit (pins the cache); PRs are keyed by URL. */
-  readonly sha: string | null;
-}
-
-function subjectFrom(value: string | null): Subject | null {
-  if (value === null) return null;
-  const commit = COMMIT_PATH.exec(value);
-  if (commit?.[1] !== undefined && commit[2] !== undefined && commit[3] !== undefined) {
-    return { repo: `${commit[1]}/${commit[2]}`, diffUrl: `${window.location.origin}/${commit[1]}/${commit[2]}/commit/${commit[3]}.diff`, sha: commit[3].toLowerCase() };
-  }
-  const pull = PULL_PATH.exec(value);
-  if (pull?.[1] !== undefined && pull[2] !== undefined && pull[3] !== undefined) {
-    return { repo: `${pull[1]}/${pull[2]}`, diffUrl: `${window.location.origin}/${pull[1]}/${pull[2]}/pull/${pull[3]}.diff`, sha: null };
-  }
-  return null;
-}
 
 function subjectOf(root: HTMLElement, spec: DiffstatSurfaceSpec): Subject | null {
   if ('attribute' in spec.subject) return subjectFrom(root.getAttribute(spec.subject.attribute));

@@ -192,9 +192,9 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       {
         kind: 'toggle',
         key: 'showListStats',
-        label: 'Line counts in pull request lists',
+        label: 'Line counts in lists and on commits',
         description:
-          'Adds "N tests +A −D" to each PR on list pages such as /pulls, with the breakdown on hover. Diffs are fetched only for rows you scroll to.',
+          'Adds "N tests +A −D" to each PR on list pages such as /pulls, with the breakdown on hover, and shows the same breakdown when you rest on a commit link (the PR timeline, the Commits tab) for a moment. Diffs are fetched only for rows you scroll to and commits you hover.',
         popup: false,
       },
       {

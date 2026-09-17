@@ -57,7 +57,7 @@ export interface GeldSettings {
    * soon as the page renders, for files Geld leaves visible.
    */
   readonly expandLargeDiffs: boolean;
-  /** Show `+N −M` (excluding hidden files) next to each pull request in PR lists. */
+  /** Show `+N −M` (excluding hidden files) next to each pull request in PR lists, and the breakdown tooltip on hovered commit links. */
   readonly showListStats: boolean;
   /**
    * Pull requests to hide in lists and stacks, by author login: one pattern

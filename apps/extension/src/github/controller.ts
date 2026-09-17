@@ -26,6 +26,7 @@ import type { DiffEntry, DiffView } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
+import { applyCommitHover, removeCommitHover } from './commit-hover';
 import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
@@ -621,6 +622,7 @@ export class GeldController {
     applySurfaceStyles(this.catalog);
     const surfaces = surfacesOf(this.catalog);
     this.applyListChips(surfaces);
+    this.applyCommitTooltips();
     applyAuthorHiding(this.authorRules, surfaces);
     applyDiffstatSurfaces({
       catalog: this.catalog,
@@ -670,6 +672,20 @@ export class GeldController {
       repoRules: this.repoRules,
       diffSource: this.diffSource,
       onRowVisible: () => this.schedule(),
+    });
+  }
+
+  /** The breakdown tooltip on commit links (timeline, Commits tab), fetched on hover intent only. */
+  private applyCommitTooltips(): void {
+    if (this.stopped || !this.settings.enabled || !this.settings.showListStats) {
+      removeCommitHover();
+      return;
+    }
+    applyCommitHover({
+      matcherFor: (repo) => this.matcherFor(repo),
+      repoRules: this.repoRules,
+      diffSource: this.diffSource,
+      hideCommentLines: this.settings.hideCommentLines,
     });
   }
 
@@ -1123,6 +1139,7 @@ export class GeldController {
     this.headerGroups = [];
     this.teardownView();
     removePrListStats();
+    removeCommitHover();
     removeAuthorHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);

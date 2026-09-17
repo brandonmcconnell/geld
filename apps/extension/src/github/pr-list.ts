@@ -51,6 +51,10 @@ export function findRows(surfaces: readonly ListSurface[]): ListRow[] {
     if (url.origin !== window.location.origin) continue;
     const match = PULL_PATH.exec(url.pathname);
     if (match === null) continue;
+    // The merge box's checks list names each check with a link to
+    // `/pull/N/checks?check_run_id=…`: a row per check, all of them the page's
+    // own PR, so a chip there repeats the header on every line.
+    if (url.searchParams.has('check_run_id')) continue;
     // Only title links: they carry visible text and live in a list row.
     if ((link.textContent ?? '').trim() === '') continue;
     const owner = surfaceOf(surfaces, link);
