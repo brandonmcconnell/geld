@@ -5,7 +5,7 @@ import type { DiffFetchState, DiffSource } from './diff-source';
 import { isOwnElement } from './dom';
 import type { Subject } from './subject';
 import { commitSubjectFrom } from './subject';
-import { hideTooltip, showBreakdownTooltip, showTooltipMessage, tooltipHost } from './ui/tooltip';
+import { hideTooltip, showBreakdownTooltip, showTooltipLoading, showTooltipMessage, tooltipHost } from './ui/tooltip';
 
 /**
  * Line counts for the commits a page links to — the conversation timeline
@@ -113,7 +113,7 @@ function present(): void {
     }
     case 'idle':
     case 'loading':
-      showTooltipMessage(link, 'Counting\u2026');
+      showTooltipLoading(link);
       return;
     case 'failed':
       showTooltipMessage(link, state.reason === 'rate-limited' ? 'GitHub is rate limiting diffs \u2014 try again shortly' : 'Line counts unavailable for this commit');

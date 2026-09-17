@@ -1,7 +1,7 @@
 import type { ChangeTotals } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import type { StatsBreakdown } from '../breakdown';
-import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 
 export type { StatsBreakdown } from '../breakdown';
 
@@ -138,12 +138,29 @@ function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Escape') hideTooltip();
 }
 
-/** A single line in place of the breakdown, while a diff is on its way or when it cannot be had. */
+/** A single line in place of the breakdown when the counts cannot be had. */
 function renderMessage(message: string): void {
   ensureTooltip().replaceChildren(createElement('div', { class: 'geld-tooltip__message' }, [message]));
 }
 
-function present(host: HTMLElement, content: StatsBreakdown | string): void {
+/**
+ * Primer's Spinner at its small size (16px) — the same partial ring GitHub
+ * shows while its own content loads — with the text for screen readers only.
+ */
+const SPINNER_SVG = `<svg height="16" width="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="geld-tooltip__spinner">
+  <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
+  <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
+</svg>`;
+
+function renderLoading(): void {
+  ensureTooltip().replaceChildren(
+    createElement('div', { class: 'geld-tooltip__loading' }, [svgFromString(SPINNER_SVG), createElement('span', { class: 'geld-sr-only' }, ['Counting'])]),
+  );
+}
+
+type TooltipContent = StatsBreakdown | { readonly message: string } | { readonly loading: true };
+
+function present(host: HTMLElement, content: TooltipContent): void {
   if (activeHost === null) {
     window.addEventListener('scroll', follow, { capture: true, passive: true });
     window.addEventListener('resize', follow, { passive: true });
@@ -151,7 +168,8 @@ function present(host: HTMLElement, content: StatsBreakdown | string): void {
   }
   if (activeHost !== null && activeHost !== host) describe(activeHost, false);
   activeHost = host;
-  if (typeof content === 'string') renderMessage(content);
+  if ('loading' in content) renderLoading();
+  else if ('message' in content) renderMessage(content.message);
   else render(content);
   position(host);
   describe(host, true);
@@ -173,7 +191,12 @@ export function showBreakdownTooltip(host: HTMLElement, breakdown: StatsBreakdow
 }
 
 export function showTooltipMessage(host: HTMLElement, message: string): void {
-  present(host, message);
+  present(host, { message });
+}
+
+/** GitHub's own small spinner while a commit's diff is on its way. */
+export function showTooltipLoading(host: HTMLElement): void {
+  present(host, { loading: true });
 }
 
 /** The element the tooltip is currently shown for, if any. */

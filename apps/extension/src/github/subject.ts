@@ -11,8 +11,12 @@ export interface Subject {
 }
 
 const COMMIT_PATH = /\/([^/\s]+)\/([^/\s]+)\/commit\/([0-9a-f]{7,40})(?:[/?#]|$)/i;
-/** A commit viewed inside a pull request (`/pull/N/commits/<sha>`, the timeline and Commits tab). */
-const PULL_COMMIT_PATH = /\/([^/\s]+)\/([^/\s]+)\/pull\/\d+\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i;
+/**
+ * A commit viewed inside a pull request: `/pull/N/commits/<sha>` (the
+ * timeline, the classic Commits tab) or `/pull/N/changes/<sha>` (the React
+ * Commits tab links each commit to the Changes tab with it selected).
+ */
+const PULL_COMMIT_PATH = /\/([^/\s]+)\/([^/\s]+)\/pull\/\d+\/(?:commits|changes|files)\/([0-9a-f]{7,40})(?:[/?#]|$)/i;
 const PULL_PATH = /\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#]|$)/;
 
 export function subjectFrom(value: string | null): Subject | null {

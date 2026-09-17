@@ -792,6 +792,38 @@
   color: var(--fgColor-muted, #59636e);
 }
 
+/* Primer's small Spinner (ui/tooltip.ts), one line tall so the box grows
+   into the breakdown rather than shrinking to it. */
+.geld-tooltip__loading {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  height: 16px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-tooltip__spinner {
+  animation: geld-tooltip-rotate 1s linear infinite;
+}
+
+.geld-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes geld-tooltip-rotate {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 .geld-tooltip__add,
 .geld-tooltip__del {
   text-align: right;
