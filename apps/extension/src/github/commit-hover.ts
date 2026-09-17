@@ -112,9 +112,11 @@ function present(): void {
       return;
     }
     case 'idle':
-    case 'loading':
-      showTooltipLoading(link);
+    case 'loading': {
+      const active = options.matcherFor(subject.repo).activeCategories;
+      showTooltipLoading(link, { hasHidden: active.length > 0, hiddenTitle: active.length === 1 ? (active[0]?.title ?? null) : null });
       return;
+    }
     case 'failed':
       showTooltipMessage(link, state.reason === 'rate-limited' ? 'GitHub is rate limiting diffs \u2014 try again shortly' : 'Line counts unavailable for this commit');
       return;

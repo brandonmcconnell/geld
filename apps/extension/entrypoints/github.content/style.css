@@ -792,18 +792,60 @@
   color: var(--fgColor-muted, #59636e);
 }
 
-/* Primer's small Spinner (ui/tooltip.ts), one line tall so the box grows
-   into the breakdown rather than shrinking to it. */
-.geld-tooltip__loading {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: center;
-  height: 16px;
-  color: var(--fgColor-muted, #59636e);
+/*
+ * Skeleton bars for the numbers still being counted (ui/tooltip.ts): Primer's
+ * SkeletonText look — a muted bar with a slow shimmer, still under reduced
+ * motion. Widths approximate the finished columns so the box barely moves
+ * when the counts land. Inline-block at the text's cap height keeps the
+ * grid's baseline alignment with the real labels beside them.
+ */
+.geld-tooltip__skeleton {
+  display: inline-block;
+  height: 10px;
+  border-radius: 3px;
+  vertical-align: -1px;
+  background: linear-gradient(
+    270deg,
+    var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2)),
+    var(--bgColor-muted, #f6f8fa),
+    var(--bgColor-muted, #f6f8fa),
+    var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2))
+  );
+  background-size: 400% 100%;
+  animation: geld-shimmer 1.5s linear infinite;
 }
 
-.geld-tooltip__spinner {
-  animation: geld-tooltip-rotate 1s linear infinite;
+.geld-tooltip__skeleton--label {
+  width: 52px;
+}
+
+.geld-tooltip__skeleton--files {
+  width: 38px;
+}
+
+.geld-tooltip__skeleton--add {
+  width: 30px;
+}
+
+.geld-tooltip__skeleton--del {
+  width: 24px;
+}
+
+@keyframes geld-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-tooltip__skeleton {
+    animation: none;
+    background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  }
 }
 
 .geld-sr-only {

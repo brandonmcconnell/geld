@@ -1,7 +1,7 @@
 import type { ChangeTotals } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import type { StatsBreakdown } from '../breakdown';
-import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 
 export type { StatsBreakdown } from '../breakdown';
 
@@ -144,21 +144,44 @@ function renderMessage(message: string): void {
 }
 
 /**
- * Primer's Spinner at its small size (16px) — the same partial ring GitHub
- * shows while its own content loads — with the text for screen readers only.
+ * What the breakdown will look like before the diff is in: the rows whose
+ * labels are already known, with Primer-style skeleton bars for the numbers.
+ * A commit rarely touches more than one hidden category, so the shape is at
+ * most Essential + one hidden row + Total, however many categories are on;
+ * with nothing filtered it is a single row of counts.
  */
-const SPINNER_SVG = `<svg height="16" width="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="geld-tooltip__spinner">
-  <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke" fill="none"></circle>
-  <path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
-</svg>`;
-
-function renderLoading(): void {
-  ensureTooltip().replaceChildren(
-    createElement('div', { class: 'geld-tooltip__loading' }, [svgFromString(SPINNER_SVG), createElement('span', { class: 'geld-sr-only' }, ['Counting'])]),
-  );
+export interface LoadingShape {
+  /** Whether any category is active, i.e. whether there is a hidden row and a total at all. */
+  readonly hasHidden: boolean;
+  /** The hidden row's title when only one category is on; otherwise it is a bar too. */
+  readonly hiddenTitle: string | null;
 }
 
-type TooltipContent = StatsBreakdown | { readonly message: string } | { readonly loading: true };
+function skeleton(cell: string, width: string): HTMLElement {
+  return createElement('span', { class: `geld-tooltip__${cell}` }, [createElement('span', { class: `geld-tooltip__skeleton geld-tooltip__skeleton--${width}` })]);
+}
+
+function skeletonRow(label: string | null): HTMLElement {
+  return createElement('div', { class: 'geld-tooltip__row' }, [
+    label === null ? skeleton('label', 'label') : createElement('span', { class: 'geld-tooltip__label' }, [label]),
+    ' ',
+    skeleton('files', 'files'),
+    ' ',
+    skeleton('add', 'add'),
+    ' ',
+    skeleton('del', 'del'),
+    ' ',
+  ]);
+}
+
+function renderLoading(shape: LoadingShape): void {
+  const rows = shape.hasHidden
+    ? [skeletonRow('Essential'), skeletonRow(shape.hiddenTitle), createElement('div', { class: 'geld-tooltip__rule', role: 'separator' }), skeletonRow('Total')]
+    : [skeletonRow('Essential')];
+  ensureTooltip().replaceChildren(...rows, createElement('span', { class: 'geld-sr-only' }, ['Counting']));
+}
+
+type TooltipContent = StatsBreakdown | { readonly message: string } | { readonly loading: LoadingShape };
 
 function present(host: HTMLElement, content: TooltipContent): void {
   if (activeHost === null) {
@@ -168,7 +191,7 @@ function present(host: HTMLElement, content: TooltipContent): void {
   }
   if (activeHost !== null && activeHost !== host) describe(activeHost, false);
   activeHost = host;
-  if ('loading' in content) renderLoading();
+  if ('loading' in content) renderLoading(content.loading);
   else if ('message' in content) renderMessage(content.message);
   else render(content);
   position(host);
@@ -194,9 +217,9 @@ export function showTooltipMessage(host: HTMLElement, message: string): void {
   present(host, { message });
 }
 
-/** GitHub's own small spinner while a commit's diff is on its way. */
-export function showTooltipLoading(host: HTMLElement): void {
-  present(host, { loading: true });
+/** Skeleton rows in the breakdown's shape while a commit's diff is on its way. */
+export function showTooltipLoading(host: HTMLElement, shape: LoadingShape): void {
+  present(host, { loading: shape });
 }
 
 /** The element the tooltip is currently shown for, if any. */
