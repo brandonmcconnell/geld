@@ -719,6 +719,17 @@
   display: none;
 }
 
+/*
+ * While the mirror is showing, the "wants to merge … into" summary goes
+ * under the badges, not beside them. GitHub stacks the two only below its
+ * `sm` breakpoint (544px, `flex-sm-row` — an !important utility) but drops
+ * the diffstat a little above it, so in between the mirror shared its line
+ * with a summary squeezed into three.
+ */
+[data-component='PageHeader.Description'] > div:has(> div > .geld-header-mirror:not([hidden])) {
+  flex-direction: column !important;
+}
+
 .geld-header-mirror__add {
   color: var(--geld-diff-addition-fg);
 }
