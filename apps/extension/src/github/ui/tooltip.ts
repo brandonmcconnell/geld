@@ -33,11 +33,11 @@ function ensureTooltip(): HTMLElement {
  * any other text would — but keeps a screen reader from running
  * "Excluding test files12 files+42−26" together. "−" is U+2212, read "minus".
  */
-function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElement {
+function row(label: string, totals: ChangeTotals): HTMLElement {
   // Comment-only lines live inside files that stay visible, so a row of lines
   // alone has no file count of its own to show.
   const files = totals.files === 0 && totals.additions + totals.deletions > 0 ? '' : pluralize(totals.files, 'file', 'files');
-  return createElement('div', { class: `geld-tooltip__row${emphasised ? ' geld-tooltip__row--strong' : ''}` }, [
+  return createElement('div', { class: 'geld-tooltip__row' }, [
     createElement('span', { class: 'geld-tooltip__label' }, [label]),
     ' ',
     createElement('span', { class: 'geld-tooltip__files' }, [files]),
@@ -55,18 +55,18 @@ function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElem
  */
 function render(breakdown: StatsBreakdown): void {
   const element = ensureTooltip();
-  const hiddenRows = breakdown.categories.map((entry) => row(entry.category.title, entry.totals, false));
+  const hiddenRows = breakdown.categories.map((entry) => row(entry.category.title, entry.totals));
   if (breakdown.lines.additions + breakdown.lines.deletions > 0) {
-    hiddenRows.push(row('Comments', { files: 0, additions: breakdown.lines.additions, deletions: breakdown.lines.deletions }, false));
+    hiddenRows.push(row('Comments', { files: 0, additions: breakdown.lines.additions, deletions: breakdown.lines.deletions }));
   }
-  if (breakdown.filtered.files > 0) hiddenRows.push(row('Filtered by GitHub', breakdown.filtered, false));
+  if (breakdown.filtered.files > 0) hiddenRows.push(row('Filtered by GitHub', breakdown.filtered));
   // Nothing set aside: still say what would have been ("Tests · 0 files").
-  if (hiddenRows.length === 0) hiddenRows.push(row(breakdown.emptyTitle, breakdown.hidden, false));
+  if (hiddenRows.length === 0) hiddenRows.push(row(breakdown.emptyTitle, breakdown.hidden));
   element.replaceChildren(
-    row('Essential', breakdown.visible, true),
+    row('Essential', breakdown.visible),
     ...hiddenRows,
     createElement('div', { class: 'geld-tooltip__rule', role: 'separator' }),
-    row('Total', breakdown.all, false),
+    row('Total', breakdown.all),
   );
 }
 

@@ -34,15 +34,15 @@ export function PrListRow({ number, title, author, when, comments, shown, hidden
           <span className="text-addition">+{formatCount(shown.additions)}</span>
           <span className="text-deletion">&minus;{formatCount(shown.deletions)}</span>
         </PopoverTrigger>
-        <PopoverContent className="px-3 py-2 font-mono text-xs tabular-nums">
+        <PopoverContent className="px-3 py-2 text-xs tabular-nums">
           <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1">
-            <dt className="font-medium">Essential</dt>
-            <dd className="font-medium">{formatDiffstat(shown)}</dd>
+            <dt className="text-muted-foreground">Essential</dt>
+            <dd className="font-semibold">{formatDiffstat(shown)}</dd>
             <dt className="text-muted-foreground">{`${nounPlural[0]?.toUpperCase() ?? ''}${nounPlural.slice(1)}`}</dt>
-            <dd>{formatDiffstat(hidden)}</dd>
+            <dd className="font-semibold">{formatDiffstat(hidden)}</dd>
             <div className="col-span-2 my-0.5 border-t" role="separator" />
             <dt className="text-muted-foreground">Total</dt>
-            <dd>{formatDiffstat(all)}</dd>
+            <dd className="font-semibold">{formatDiffstat(all)}</dd>
           </dl>
         </PopoverContent>
       </Popover>

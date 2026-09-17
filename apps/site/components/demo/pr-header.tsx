@@ -45,7 +45,7 @@ export function PrHeader({ shown, geld, className }: PrHeaderProps) {
               {formatCount(geld.hidden.files)} {geld.hidden.files === 1 ? geld.noun : geld.nounPlural}
             </PopoverTrigger>
             <PopoverContent className="p-0">
-              <Breakdown label="Essential" totals={shown} strong />
+              <Breakdown label="Essential" totals={shown} />
               <Breakdown label={`${geld.nounPlural[0]?.toUpperCase() ?? ''}${geld.nounPlural.slice(1)}`} totals={geld.hidden} />
               <Breakdown label="Total" totals={geld.all} className="border-t" />
             </PopoverContent>
@@ -89,21 +89,11 @@ function Tab({
 }
 
 /** One row of the same sum the extension's tooltip shows: Essential, what was set aside, then Total. */
-function Breakdown({
-  label,
-  totals,
-  strong,
-  className,
-}: {
-  readonly label: string;
-  readonly totals: ChangeTotals;
-  readonly strong?: boolean;
-  readonly className?: string;
-}) {
+function Breakdown({ label, totals, className }: { readonly label: string; readonly totals: ChangeTotals; readonly className?: string }) {
   return (
-    <div className={cn('flex items-center justify-between gap-6 px-3 py-1.5 text-xs', strong && 'font-medium', className)}>
-      <span className={strong ? undefined : 'text-muted-foreground'}>{label}</span>
-      <span className="font-mono tabular-nums">
+    <div className={cn('flex items-center justify-between gap-6 px-3 py-1.5 text-xs', className)}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold tabular-nums">
         {pluralize(totals.files, 'file', 'files')} · {formatDiffstat(totals)}
       </span>
     </div>

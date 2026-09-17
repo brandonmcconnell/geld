@@ -755,8 +755,10 @@
   display: contents;
 }
 
-.geld-tooltip__row--strong {
-  font-weight: 600;
+/* Labels stay at the page's regular weight; the counts are GitHub's own
+   header treatment (sans-serif, 600), so every row reads like the header. */
+.geld-tooltip__label {
+  font-weight: var(--geld-tooltip-label-weight, 400);
 }
 
 /* The line above "Total": a grid item spanning every column, sized by its
@@ -778,7 +780,8 @@
 
 .geld-tooltip__add,
 .geld-tooltip__del {
-  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
