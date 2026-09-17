@@ -439,6 +439,35 @@
   pointer-events: none;
 }
 
+/*
+ * Like Primer's TreeView: on devices that can hover, the guide lines only
+ * show while the pointer is over the list (or focus is inside it); on touch
+ * devices they are always there.
+ */
+@media (hover: hover) {
+  .geld-tree__group::before {
+    background: transparent;
+  }
+
+  .geld-tree__item--root > .geld-tree__group:hover .geld-tree__group::before,
+  .geld-tree__item--root > .geld-tree__group:focus-within .geld-tree__group::before {
+    background: var(--borderColor-muted, rgba(209, 217, 224, 0.7));
+  }
+}
+
+/*
+ * GitHub's own tree starts its top-level chevrons 16px from the list's edge;
+ * our category headers lead with a 16px icon inset 8px, so the chevrons sat
+ * 8px left of the icons above them. Inset every row of GitHub's tree by 8px
+ * (on the item container, so its hover background, guide lines and nested
+ * rows all move together and its width is untouched — syncGeometry copies
+ * the list's own padding onto our sections, so the list itself must stay).
+ */
+[data-geld-tree-list] [class*='TreeView-item-container'],
+[data-geld-tree-list] [class*='TreeViewItemContainer'] {
+  padding-left: 8px;
+}
+
 .geld-tree__item {
   margin: 0;
 }
