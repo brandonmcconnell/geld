@@ -69,7 +69,7 @@ function Tree({ node, depth }: { readonly node: TreeNode; readonly depth: number
 
 /**
  * The file-tree sidebar as Geld renders it: GitHub's own tree becomes a
- * "Changes" panel and each hidden category gets one of its own.
+ * "Essential" panel and each hidden category gets one of its own.
  */
 export function SidebarAccordion({
   visible,
@@ -101,7 +101,7 @@ export function SidebarAccordion({
           <AccordionTrigger className="px-3 font-sans">
             <span className="inline-flex items-center gap-2">
               <GitPullRequestIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
-              Changes
+              Essential
               <span className="rounded-full bg-muted px-1.5 font-mono text-[0.6875rem] text-muted-foreground ring-1 ring-border ring-inset">{visible.length}</span>
             </span>
           </AccordionTrigger>

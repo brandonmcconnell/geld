@@ -45,9 +45,9 @@ export function PrHeader({ shown, geld, className }: PrHeaderProps) {
               {formatCount(geld.hidden.files)} {geld.hidden.files === 1 ? geld.noun : geld.nounPlural}
             </PopoverTrigger>
             <PopoverContent className="p-0">
-              <Breakdown label={`Excluding ${geld.nounPlural}`} totals={shown} />
-              <Breakdown label={`Including ${geld.nounPlural}`} totals={geld.all} />
-              <Breakdown label={`${geld.nounPlural[0]?.toUpperCase() ?? ''}${geld.nounPlural.slice(1)} only`} totals={geld.hidden} />
+              <Breakdown label="Essential" totals={shown} strong />
+              <Breakdown label={`${geld.nounPlural[0]?.toUpperCase() ?? ''}${geld.nounPlural.slice(1)}`} totals={geld.hidden} />
+              <Breakdown label="Total" totals={geld.all} className="border-t" />
             </PopoverContent>
           </Popover>
         ) : null}
@@ -88,10 +88,21 @@ function Tab({
   );
 }
 
-function Breakdown({ label, totals }: { readonly label: string; readonly totals: ChangeTotals }) {
+/** One row of the same sum the extension's tooltip shows: Essential, what was set aside, then Total. */
+function Breakdown({
+  label,
+  totals,
+  strong,
+  className,
+}: {
+  readonly label: string;
+  readonly totals: ChangeTotals;
+  readonly strong?: boolean;
+  readonly className?: string;
+}) {
   return (
-    <div className="flex items-center justify-between gap-6 px-3 py-1.5 text-xs not-last:border-b">
-      <span className="text-muted-foreground">{label}</span>
+    <div className={cn('flex items-center justify-between gap-6 px-3 py-1.5 text-xs', strong && 'font-medium', className)}>
+      <span className={strong ? undefined : 'text-muted-foreground'}>{label}</span>
       <span className="font-mono tabular-nums">
         {pluralize(totals.files, 'file', 'files')} · {formatDiffstat(totals)}
       </span>

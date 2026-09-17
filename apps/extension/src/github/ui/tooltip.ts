@@ -34,10 +34,13 @@ function ensureTooltip(): HTMLElement {
  * "Excluding test files12 files+42−26" together. "−" is U+2212, read "minus".
  */
 function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElement {
+  // Comment-only lines live inside files that stay visible, so a row of lines
+  // alone has no file count of its own to show.
+  const files = totals.files === 0 && totals.additions + totals.deletions > 0 ? '' : pluralize(totals.files, 'file', 'files');
   return createElement('div', { class: `geld-tooltip__row${emphasised ? ' geld-tooltip__row--strong' : ''}` }, [
     createElement('span', { class: 'geld-tooltip__label' }, [label]),
     ' ',
-    createElement('span', { class: 'geld-tooltip__files' }, [pluralize(totals.files, 'file', 'files')]),
+    createElement('span', { class: 'geld-tooltip__files' }, [files]),
     ' ',
     createElement('span', { class: 'geld-tooltip__add' }, [`+${formatCount(totals.additions)}`]),
     ' ',
@@ -46,14 +49,25 @@ function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElem
   ]);
 }
 
+/**
+ * The breakdown reads top to bottom as a sum: what is left to review, then
+ * each thing Geld set aside, a rule, and the total GitHub prints.
+ */
 function render(breakdown: StatsBreakdown): void {
   const element = ensureTooltip();
   const capitalised = `${breakdown.nounPlural[0]?.toUpperCase() ?? ''}${breakdown.nounPlural.slice(1)}`;
+  const hiddenRows = breakdown.categories.map((entry) => row(entry.category.title, entry.totals, false));
+  if (breakdown.lines.additions + breakdown.lines.deletions > 0) {
+    hiddenRows.push(row('Comments', { files: 0, additions: breakdown.lines.additions, deletions: breakdown.lines.deletions }, false));
+  }
+  if (breakdown.filtered.files > 0) hiddenRows.push(row('Filtered by GitHub', breakdown.filtered, false));
+  // Nothing set aside: still say what would have been ("Tests · 0 files").
+  if (hiddenRows.length === 0) hiddenRows.push(row(capitalised, breakdown.hidden, false));
   element.replaceChildren(
-    row(`Excluding ${breakdown.nounPlural}`, breakdown.visible, true),
-    row(`Including ${breakdown.nounPlural}`, breakdown.all, false),
-    row(`${capitalised} only`, breakdown.hidden, false),
-    ...breakdown.categories.map((entry) => row(` ${entry.category.title}`, entry.totals, false)),
+    row('Essential', breakdown.visible, true),
+    ...hiddenRows,
+    createElement('div', { class: 'geld-tooltip__rule', role: 'separator' }),
+    row('Total', breakdown.all, false),
   );
 }
 

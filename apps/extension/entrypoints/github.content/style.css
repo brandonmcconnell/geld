@@ -262,7 +262,7 @@
 
 /*
  * GitHub wraps the "Filter files" field in a div with 16px of bottom padding
- * (`tmp-pb-3`). While our accordion is on, the Changes header owns the
+ * (`tmp-pb-3`). While our accordion is on, the Essential header owns the
  * spacing under the field (centreFilterAboveHeader), so that padding only
  * pushes the field off-centre between the sidebar's top edge and the header.
  * Scoped to the accordion: with nothing hidden the sidebar is GitHub's own
@@ -361,7 +361,7 @@
   background: var(--bgColor-default, #fff);
 }
 
-/* GitHub's own tree is the "Changes" panel: it scrolls on its own when open... */
+/* GitHub's own tree is the "Essential" panel: it scrolls on its own when open... */
 [data-geld-tree-list] {
   flex: 1 1 auto;
   min-height: 0;
@@ -757,6 +757,14 @@
 
 .geld-tooltip__row--strong {
   font-weight: 600;
+}
+
+/* The line above "Total": a grid item spanning every column, sized by its
+   margins since the row gap is shared with the surrounding rows. */
+.geld-tooltip__rule {
+  grid-column: 1 / -1;
+  margin: 3px 0;
+  border-top: 1px solid var(--geld-tooltip-border);
 }
 
 .geld-tooltip__files {

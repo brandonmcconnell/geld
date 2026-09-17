@@ -114,7 +114,7 @@ export default function HowItWorksPage() {
             <div className="grid gap-10 md:grid-cols-[1fr_260px] md:items-start">
               <Prose>
                 <p>
-                  GitHub&apos;s file tree becomes a full-height accordion. The original tree is the <strong>Changes</strong> panel, and every hidden
+                  GitHub&apos;s file tree becomes a full-height accordion. The original tree is the <strong>Essential</strong> panel (what is left to review), and every hidden
                   category gets a panel of its own (<em>Tests</em>, <em>Generated</em>, <em>Docs</em>, …) with a descriptive icon. One panel is open at a
                   time and fills the sidebar with its own scrollbar, so every heading stays visible.
                 </p>
@@ -217,7 +217,7 @@ export default function HowItWorksPage() {
             </ol>
             <Prose>
               <p>
-                With one category on, labels read <code>6 tests</code>; with several, <code>9 hidden</code> with the per-category split in the tooltip,
+                With one category on, labels read <code>6 tests</code>; with several, <code>9 hidden</code> with one tooltip row per category,
                 chips in the bottom row (<code>6 tests · 2 generated · 1 doc</code>) and one panel per category in the file tree. Every pattern is
                 listed on the <Link href="/patterns">patterns page</Link>, rendered from the same source the extension uses.
               </p>

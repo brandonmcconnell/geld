@@ -160,7 +160,7 @@ export interface StatsBreakdown {
   readonly filtered: ChangeTotals;
   /** Long noun for the hidden set ("test files" / "hidden files"). */
   readonly nounPlural: string;
-  /** Per-category rows when more than one category is present. */
+  /** One row per active category with hidden files, in catalog order. */
   readonly categories: readonly CategoryTotals[];
 }
 
@@ -172,6 +172,6 @@ export function statsBreakdown(all: ChangeTotals, hidden: HiddenBreakdown, nounP
     lines: hidden.lines,
     filtered: hidden.filtered,
     nounPlural,
-    categories: hidden.categories.length > 1 ? hidden.categories : [],
+    categories: hidden.categories,
   };
 }

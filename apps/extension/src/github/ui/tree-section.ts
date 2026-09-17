@@ -354,7 +354,7 @@ interface ChangesHeaderParts {
 const changesParts = new WeakMap<HTMLElement, ChangesHeaderParts>();
 
 /**
- * A header for GitHub's own tree ("Changes"), so it behaves like the other
+ * A header for GitHub's own tree ("Essential": what is left to review), so it behaves like the other
  * accordion panels. It is inserted right before the tree and never wraps it.
  */
 export function renderChangesHeader(
@@ -375,7 +375,7 @@ export function renderChangesHeader(
       1,
       [
         createElement('span', { class: 'geld-tree__visual geld-tree__visual--root' }, [svgFromString(ICON_FILE_DIFF)]),
-        createElement('span', { class: 'geld-tree__label geld-tree__label--root' }, ['Changes']),
+        createElement('span', { class: 'geld-tree__label geld-tree__label--root' }, ['Essential']),
         count,
       ],
       { class: `geld-tree__row ${TREE_SECTION_CLASS}__header`, 'aria-expanded': 'false' },
@@ -393,7 +393,7 @@ export function renderChangesHeader(
   parts.root.dataset.view = state.view;
   parts.count.textContent = formatCount(state.count);
   parts.header.setAttribute('aria-expanded', String(state.active));
-  parts.header.setAttribute('aria-label', `Changes: ${formatCount(state.count)} files`);
+  parts.header.setAttribute('aria-label', `Essential: ${formatCount(state.count)} files`);
   parts.root.toggleAttribute('data-active', state.active);
   syncGeometry(parts.root, treeRoot);
   centreFilterAboveHeader(parts.root, treeRoot);
@@ -643,7 +643,7 @@ const OVERHANG_PROPERTY = '--geld-overhang';
 /** Read by the stylesheet: the pane's height is `100vh` minus this. */
 const STICKY_TOP_PROPERTY = '--geld-sticky-top';
 
-/** The scrolling list of the open panel: GitHub's tree for "Changes", else the active section's group. */
+/** The scrolling list of the open panel: GitHub's tree for "Essential", else the active section's group. */
 function openPanelList(root: HTMLElement): HTMLElement | null {
   return root.getAttribute(ATTR_SIDEBAR) === CHANGES_SECTION_ID
     ? root.querySelector<HTMLElement>(`[${ATTR_TREE_LIST}]`)
