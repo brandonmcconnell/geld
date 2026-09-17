@@ -64,11 +64,6 @@ export interface ListSurfaceSpec {
   readonly authors: readonly AuthorSourceSpec[];
   /** Extra CSS for Geld's elements on this surface (injected as-is; author it against `[data-geld-surface="<id>"]`). */
   readonly css?: string;
-  /**
-   * Lead the chip with the number of files it counts ("6 files • 2 tests +111 −3"),
-   * for surfaces that show no file count of their own (the PR hovercard).
-   */
-  readonly showFiles?: boolean;
 }
 
 export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
@@ -131,17 +126,15 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'pr-hovercard',
     description:
-      'The pull request hovercard (hovering a "#N" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap.gap-2 row of state badges ("Open", "Draft", …); the chip joins that row after the badges, vertically centred on them, leading with the file count since the card shows none. Names no author.',
+      'The pull request hovercard (hovering a "#N" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap.gap-2 row of state badges ("Open", "Draft", …); the chip joins that row after the badges, vertically centred on them. Names no author.',
     row: '.js-hovercard-content[data-hovercard-target-url*="/pull/"]',
     chipAnchors: [{ selector: '.d-flex.flex-column.f4 > .d-flex.flex-wrap', placement: 'append' }],
     authors: [],
-    showFiles: true,
     // One flex item in the badge row: nowrap keeps it whole, so when the row
     // runs out of room the counts wrap under the badge together. No bullet:
     // it follows a badge, not running text.
     css: [
       `.geld-pr-stat[data-geld-surface='pr-hovercard'] { align-self: center; margin: 0; font-size: 12px; line-height: 18px; white-space: nowrap; }`,
-      `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__files { color: var(--fgColor-muted, #59636e); }`,
       `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep { display: none; }`,
       `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep + * { margin-left: 4px; }`,
     ].join('\n'),
@@ -215,15 +208,12 @@ export function parseListSurfaces(value: unknown, path = 'listSurfaces'): readon
     const css = entry.css;
     if (css !== undefined && typeof css !== 'string') throw new ListSurfaceError(`${at}.css: expected a string, got ${describe(css)}`);
     if (typeof css === 'string' && css.length > 20_000) throw new ListSurfaceError(`${at}.css: unreasonably long`);
-    const showFiles = entry.showFiles;
-    if (showFiles !== undefined && typeof showFiles !== 'boolean') throw new ListSurfaceError(`${at}.showFiles: expected true or false, got ${describe(showFiles)}`);
     const spec: ListSurfaceSpec = { id, description, row, chipAnchors, authors };
     return {
       ...spec,
       ...(inside === undefined ? {} : { inside }),
       ...(notInside === undefined ? {} : { notInside }),
       ...(css === undefined ? {} : { css }),
-      ...(showFiles === undefined ? {} : { showFiles }),
     };
   });
 }
@@ -332,6 +322,5 @@ export function listSurfaceJson(spec: ListSurfaceSpec): Record<string, unknown> 
     chipAnchors: spec.chipAnchors.map((anchor) => ({ selector: anchor.selector, placement: anchor.placement })),
     authors: spec.authors.map((source) => ({ selector: source.selector, from: source.from })),
     ...(spec.css === undefined ? {} : { css: spec.css }),
-    ...(spec.showFiles === undefined ? {} : { showFiles: spec.showFiles }),
   };
 }

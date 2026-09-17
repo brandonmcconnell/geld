@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260923,
+  "version": 20260924,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -715,7 +715,7 @@
     },
     {
       "id": "pr-hovercard",
-      "description": "The pull request hovercard (hovering a \"#N\" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap.gap-2 row of state badges (\"Open\", \"Draft\", …); the chip joins that row after the badges, vertically centred on them, leading with the file count since the card shows none. Names no author.",
+      "description": "The pull request hovercard (hovering a \"#N\" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap.gap-2 row of state badges (\"Open\", \"Draft\", …); the chip joins that row after the badges, vertically centred on them. Names no author.",
       "row": ".js-hovercard-content[data-hovercard-target-url*=\"/pull/\"]",
       "chipAnchors": [
         {
@@ -724,8 +724,7 @@
         }
       ],
       "authors": [],
-      "css": ".geld-pr-stat[data-geld-surface='pr-hovercard'] { align-self: center; margin: 0; font-size: 12px; line-height: 18px; white-space: nowrap; }\n.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__files { color: var(--fgColor-muted, #59636e); }\n.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep { display: none; }\n.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep + * { margin-left: 4px; }",
-      "showFiles": true
+      "css": ".geld-pr-stat[data-geld-surface='pr-hovercard'] { align-self: center; margin: 0; font-size: 12px; line-height: 18px; white-space: nowrap; }\n.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep { display: none; }\n.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep + * { margin-left: 4px; }"
     }
   ],
   "diffstatSurfaces": [
