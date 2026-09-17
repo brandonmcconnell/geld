@@ -251,7 +251,7 @@ export function applyHeaderStats(
     return;
   }
   const all = group.original;
-  const breakdown = statsBreakdown(all, hidden, nounPlural);
+  const breakdown = statsBreakdown(all, hidden, nounPlural, activeCategories);
   const { visible } = breakdown;
 
   if (group.additions !== null) {

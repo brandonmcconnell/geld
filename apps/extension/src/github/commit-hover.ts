@@ -21,6 +21,7 @@ import { hideTooltip, showBreakdownTooltip, showTooltipMessage, tooltipHost } fr
 
 /** How long the pointer rests on a commit link before Geld counts it. */
 export const HOVER_INTENT_MS = 300;
+const ATTR_HELD_TITLE = 'data-geld-held-title';
 
 export interface CommitHoverOptions {
   readonly matcherFor: (repo: string) => PathMatcher;
@@ -66,9 +67,31 @@ function clearIntent(): void {
   intentTimer = null;
 }
 
+/**
+ * GitHub gives commit message links a `title` with the full message, and the
+ * browser's own tooltip for it would land on top of Geld's. Hold the title
+ * while Geld's tooltip is up and give it back after.
+ */
+function holdTitle(link: HTMLAnchorElement): void {
+  const title = link.getAttribute('title');
+  if (title === null) return;
+  link.setAttribute(ATTR_HELD_TITLE, title);
+  link.removeAttribute('title');
+}
+
+function releaseTitle(link: HTMLAnchorElement): void {
+  const title = link.getAttribute(ATTR_HELD_TITLE);
+  if (title === null) return;
+  link.setAttribute('title', title);
+  link.removeAttribute(ATTR_HELD_TITLE);
+}
+
 function disarm(): void {
   clearIntent();
-  if (armed !== null && tooltipHost() === armed.link) hideTooltip();
+  if (armed !== null) {
+    if (tooltipHost() === armed.link) hideTooltip();
+    releaseTitle(armed.link);
+  }
   armed = null;
   presented = null;
 }
@@ -85,7 +108,7 @@ function present(): void {
     case 'ready': {
       const matcher = options.matcherFor(subject.repo);
       const { all, hidden } = breakdownFromFiles(state.files, matcher, options.hideCommentLines);
-      showBreakdownTooltip(link, statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories, hidden)));
+      showBreakdownTooltip(link, statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories, hidden), matcher.activeCategories));
       return;
     }
     case 'idle':
@@ -103,6 +126,7 @@ function arm(): void {
   if (hovered === null) return;
   armed = hovered;
   presented = null;
+  holdTitle(armed.link);
   present();
 }
 
@@ -165,6 +189,7 @@ export function applyCommitHover(next: CommitHoverOptions): void {
 }
 
 export function removeCommitHover(): void {
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(`a[${ATTR_HELD_TITLE}]`)) releaseTitle(link);
   if (bound) {
     document.removeEventListener('mouseover', onMouseOver, { capture: true });
     document.removeEventListener('mouseout', onMouseOut, { capture: true });

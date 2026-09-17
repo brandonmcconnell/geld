@@ -55,14 +55,13 @@ function row(label: string, totals: ChangeTotals, emphasised: boolean): HTMLElem
  */
 function render(breakdown: StatsBreakdown): void {
   const element = ensureTooltip();
-  const capitalised = `${breakdown.nounPlural[0]?.toUpperCase() ?? ''}${breakdown.nounPlural.slice(1)}`;
   const hiddenRows = breakdown.categories.map((entry) => row(entry.category.title, entry.totals, false));
   if (breakdown.lines.additions + breakdown.lines.deletions > 0) {
     hiddenRows.push(row('Comments', { files: 0, additions: breakdown.lines.additions, deletions: breakdown.lines.deletions }, false));
   }
   if (breakdown.filtered.files > 0) hiddenRows.push(row('Filtered by GitHub', breakdown.filtered, false));
   // Nothing set aside: still say what would have been ("Tests · 0 files").
-  if (hiddenRows.length === 0) hiddenRows.push(row(capitalised, breakdown.hidden, false));
+  if (hiddenRows.length === 0) hiddenRows.push(row(breakdown.emptyTitle, breakdown.hidden, false));
   element.replaceChildren(
     row('Essential', breakdown.visible, true),
     ...hiddenRows,
