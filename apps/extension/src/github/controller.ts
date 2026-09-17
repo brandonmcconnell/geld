@@ -284,6 +284,9 @@ export class GeldController {
     });
     // Legacy checkboxes change without any attribute mutation.
     document.addEventListener('change', this.onChangeEvent, true);
+    // GitHub hides the header diffstat by container width; the mirror beside
+    // the state label (header-stats.ts) is toggled on apply, so resizing re-applies.
+    window.addEventListener('resize', this.onResize, { passive: true });
     // Inline layout: a real click on a hidden file hands control of it to the
     // user. Listen on mousedown, not click: GitHub's React tree acts on
     // mousedown and re-renders the row before mouseup, so no click ever fires.
@@ -296,6 +299,7 @@ export class GeldController {
     if (this.stopped) return;
     this.stopped = true;
     document.removeEventListener('change', this.onChangeEvent, true);
+    window.removeEventListener('resize', this.onResize);
     document.removeEventListener('mousedown', this.onUserClick, true);
     document.removeEventListener('keydown', this.onUserKey, true);
     this.observer?.disconnect();
@@ -446,6 +450,10 @@ export class GeldController {
     touched.add(path);
     this.inlineTouched.set(stateKey, touched);
   }
+
+  private readonly onResize = (): void => {
+    this.schedule();
+  };
 
   private readonly onChangeEvent = (event: Event): void => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox' && !isOwnElement(event.target)) this.schedule();

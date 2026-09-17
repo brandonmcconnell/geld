@@ -675,6 +675,9 @@
  * and danger colours (`--geld-diff-*-fg`, :root). Tabular figures keep
  * stacked counts aligned where they form columns (the tooltip).
  */
+.geld-header-mirror__tests,
+.geld-header-mirror__add,
+.geld-header-mirror__del,
 .geld-pr-stat__tests,
 .geld-pr-stat__add,
 .geld-pr-stat__del,
@@ -705,6 +708,31 @@
   text-decoration: underline dotted;
   text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
   text-underline-offset: 3px;
+}
+
+/*
+ * The header counts' stand-in beside the state label on narrow screens
+ * (header-stats.ts syncNarrowMirror): GitHub's own header diffstat text.
+ */
+.geld-header-mirror {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.geld-header-mirror[hidden] {
+  display: none;
+}
+
+.geld-header-mirror__add {
+  color: var(--geld-diff-addition-fg);
+}
+
+.geld-header-mirror__del {
+  color: var(--geld-diff-deletion-fg);
 }
 
 /*

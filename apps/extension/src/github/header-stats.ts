@@ -3,8 +3,9 @@ import type { ChangeTotals } from '@geld/core';
 import { formatCount, parseCount } from '@geld/core';
 import type { HiddenBreakdown } from './breakdown';
 import { hidesAnything } from './breakdown';
+import type { StatsBreakdown } from './breakdown';
 import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
-import { originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
+import { createElement, OWN_UI_ATTRIBUTE, originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -248,6 +249,7 @@ export function applyHeaderStats(
   renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
   if (!hidesAnything(hidden)) {
     restoreNumbers(group);
+    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
     return;
   }
   const all = group.original;
@@ -279,9 +281,57 @@ export function applyHeaderStats(
   }
 
   attachBreakdownTooltip(group.host, () => breakdown);
+  syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), hidden.totals.files > 0, visible, () => breakdown);
+}
+
+const MIRROR_CLASS = 'geld-header-mirror';
+
+/**
+ * GitHub drops the header diffstat on narrow screens (its wrapper is
+ * `hideWhenVeryNarrowContainer`), and the tab bar has no room for it. A copy
+ * of the counts then goes beside the state label ("Open"), after the stack
+ * button when there is one, and is shown exactly while the original is not
+ * (checked on every apply; the controller re-applies on resize).
+ */
+function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boolean, visible: ChangeTotals, provider: (() => StatsBreakdown) | null): void {
+  const header = group.host.closest<HTMLElement>('[data-component="PageHeader"]');
+  const stateRow = header?.querySelector<HTMLElement>('[data-component="StateLabel"]')?.parentElement ?? null;
+  if (stateRow === null || stateRow.contains(group.host)) return;
+  let mirror = stateRow.querySelector<HTMLElement>(`.${MIRROR_CLASS}`);
+  if (mirror === null) {
+    mirror = createElement('span', { class: MIRROR_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [
+      createElement('span', { class: `${MIRROR_CLASS}__tests ${TESTS_COUNT_CLASS}` }),
+      createElement('span', { class: `${MIRROR_CLASS}__add` }),
+      createElement('span', { class: `${MIRROR_CLASS}__del` }),
+    ]);
+    stateRow.append(mirror);
+  } else if (stateRow.lastElementChild !== mirror) {
+    stateRow.append(mirror);
+  }
+  const [tests, add, del] = mirror.children;
+  if (tests instanceof HTMLElement) {
+    if (tests.textContent !== label) tests.textContent = label;
+    tests.toggleAttribute('data-has-tests', hasTests);
+  }
+  const addText = `+${formatCount(visible.additions)}`;
+  const delText = `\u2212${formatCount(visible.deletions)}`;
+  if (add instanceof HTMLElement && add.textContent !== addText) add.textContent = addText;
+  if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
+  mirror.hidden = group.host.getClientRects().length > 0;
+  if (provider === null) detachBreakdownTooltip(mirror);
+  else attachBreakdownTooltip(mirror, provider);
+}
+
+function removeNarrowMirror(group: HeaderStatGroup): void {
+  const header = group.host.closest<HTMLElement>('[data-component="PageHeader"]');
+  for (const mirror of header?.querySelectorAll<HTMLElement>(`.${MIRROR_CLASS}`) ?? []) {
+    detachBreakdownTooltip(mirror);
+    mirror.remove();
+  }
 }
 
 export function restoreHeaderStats(group: HeaderStatGroup): void {
+  removeNarrowMirror(group);
   restoreNumbers(group);
   for (const label of group.host.querySelectorAll(`.${TESTS_COUNT_CLASS}`)) {
     const spacer = label.nextSibling;
