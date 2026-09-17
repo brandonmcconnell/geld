@@ -204,7 +204,7 @@ export const TESTS_COUNT_CLASS = 'geld-tests-count';
  * "0 tests") so it is obvious the numbers have been checked; underlined only
  * when there is a breakdown to show on hover.
  */
-function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): void {
+function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): HTMLElement {
   let label = group.host.querySelector<HTMLElement>(`.${TESTS_COUNT_CLASS}`);
   // The first count GitHub renders. A deletions-only change has no "+N" span
   // at all (not "+0"), so the "−M" span is the neighbour then.
@@ -232,6 +232,7 @@ function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): 
   const rendered = group.sentence ? `${text}, ` : text;
   if (label.textContent !== rendered) label.textContent = rendered;
   label.toggleAttribute('data-has-tests', count > 0);
+  return label;
 }
 
 /** Rewrite one header group so it shows totals without the hidden files. */
@@ -246,7 +247,7 @@ export function applyHeaderStats(
     return;
   }
   const nounPlural = hiddenNounPlural(activeCategories, hidden);
-  renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
+  const tooltipAnchor = renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
   if (!hidesAnything(hidden)) {
     restoreNumbers(group);
     syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
@@ -280,7 +281,7 @@ export function applyHeaderStats(
     }
   }
 
-  attachBreakdownTooltip(group.host, () => breakdown);
+  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown);
   syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), hidden.totals.files > 0, visible, () => breakdown);
 }
 
@@ -319,7 +320,7 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
   mirror.hidden = group.host.getClientRects().length > 0;
   if (provider === null) detachBreakdownTooltip(mirror);
-  else attachBreakdownTooltip(mirror, provider);
+  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider);
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {

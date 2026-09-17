@@ -193,7 +193,8 @@ export function applyPrListStats(options: PrListOptions): void {
     }
 
     if (hidden.totals.files > 0) {
-      attachBreakdownTooltip(chip, () => breakdown);
+      const tooltipAnchor = chip.querySelector<HTMLElement>(`.${PR_STAT_CLASS}__tests`) ?? chip;
+      attachBreakdownTooltip(chip, tooltipAnchor, () => breakdown);
       chip.dataset.hasTests = '';
     } else {
       detachBreakdownTooltip(chip);

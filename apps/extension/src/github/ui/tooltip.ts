@@ -7,12 +7,18 @@ export type { StatsBreakdown } from '../breakdown';
 
 type BreakdownProvider = () => StatsBreakdown | null;
 
-const providers = new WeakMap<HTMLElement, BreakdownProvider>();
+interface TooltipBinding {
+  readonly anchor: HTMLElement;
+  readonly provider: BreakdownProvider;
+}
+
+const providers = new WeakMap<HTMLElement, TooltipBinding>();
 let tooltip: HTMLElement | null = null;
 let activeHost: HTMLElement | null = null;
 
 /** One shared tooltip element; the active host points at it with `aria-describedby`. */
 const TOOLTIP_ID = 'geld-line-counts';
+const TOOLTIP_ANCHOR_ATTRIBUTE = 'data-geld-tooltip-anchor';
 
 function ensureTooltip(): HTMLElement {
   if (tooltip !== null && tooltip.isConnected) return tooltip;
@@ -74,9 +80,6 @@ function render(breakdown: StatsBreakdown): void {
 const VIEWPORT_MARGIN = 8;
 /** Gap between the host and the tooltip; the bordered caret is 7px tall. */
 const HOST_GAP = 8;
-/** The arrow is 12px wide and must stay clear of the rounded corners. */
-const ARROW_INSET = 12;
-
 /**
  * Place the tooltip next to `host`, inside the viewport. The tooltip is
  * `position: fixed`, so the coordinates are viewport coordinates and the box
@@ -88,25 +91,28 @@ const ARROW_INSET = 12;
  */
 function position(host: HTMLElement): void {
   const element = ensureTooltip();
-  const hostRect = host.getBoundingClientRect();
+  const boundAnchor = providers.get(host)?.anchor;
+  const anchor = boundAnchor?.isConnected === true ? boundAnchor : host;
+  const anchorRect = anchor.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth;
   const viewportHeight = document.documentElement.clientHeight;
   element.hidden = false;
   const tipRect = element.getBoundingClientRect();
-  const hostCentre = hostRect.left + hostRect.width / 2;
+  const anchorCentre = anchorRect.left + anchorRect.width / 2;
   const bounds = horizontalBounds(host, tipRect.width, viewportWidth);
-  const left = Math.max(bounds.left, Math.min(hostCentre - tipRect.width / 2, bounds.right - tipRect.width));
-  let top = hostRect.bottom + HOST_GAP;
+  const left = Math.max(bounds.left, Math.min(anchorCentre - tipRect.width / 2, bounds.right - tipRect.width));
+  let top = anchorRect.bottom + HOST_GAP;
   let placement = 'below';
   if (top + tipRect.height > viewportHeight - VIEWPORT_MARGIN) {
-    top = hostRect.top - tipRect.height - HOST_GAP;
+    top = anchorRect.top - tipRect.height - HOST_GAP;
     placement = 'above';
   }
   element.style.left = `${Math.round(left)}px`;
   element.style.top = `${Math.round(top)}px`;
   element.dataset.placement = placement;
-  const arrowX = Math.max(ARROW_INSET, Math.min(hostCentre - left, tipRect.width - ARROW_INSET));
-  element.style.setProperty('--geld-arrow-x', `${Math.round(arrowX)}px`);
+  // The box may slide to stay on screen; the caret still points at the centre
+  // of the one underlined count rather than the centre of the whole host.
+  element.style.setProperty('--geld-arrow-x', `${Math.round(anchorCentre - left)}px`);
 }
 
 /**
@@ -199,7 +205,7 @@ function present(host: HTMLElement, content: TooltipContent): void {
 }
 
 function show(host: HTMLElement): void {
-  const breakdown = providers.get(host)?.() ?? null;
+  const breakdown = providers.get(host)?.provider() ?? null;
   if (breakdown === null) return;
   present(host, breakdown);
 }
@@ -254,9 +260,12 @@ function describe(host: HTMLElement, on: boolean): void {
  * Show a breakdown tooltip while hovering or focusing `host`. Calling this
  * again for the same host simply swaps the data provider.
  */
-export function attachBreakdownTooltip(host: HTMLElement, provider: BreakdownProvider): void {
-  const alreadyBound = providers.has(host);
-  providers.set(host, provider);
+export function attachBreakdownTooltip(host: HTMLElement, anchor: HTMLElement, provider: BreakdownProvider): void {
+  const previous = providers.get(host);
+  const alreadyBound = previous !== undefined;
+  if (previous?.anchor !== anchor) previous?.anchor.removeAttribute(TOOLTIP_ANCHOR_ATTRIBUTE);
+  providers.set(host, { anchor, provider });
+  anchor.setAttribute(TOOLTIP_ANCHOR_ATTRIBUTE, '');
   if (alreadyBound) {
     if (activeHost === host) show(host);
     return;
@@ -274,6 +283,7 @@ export function attachBreakdownTooltip(host: HTMLElement, provider: BreakdownPro
 
 export function detachBreakdownTooltip(host: HTMLElement): void {
   // Listeners stay bound but become inert once the provider is gone.
+  providers.get(host)?.anchor.removeAttribute(TOOLTIP_ANCHOR_ATTRIBUTE);
   providers.delete(host);
   host.removeAttribute('data-geld-stat-host');
   if (host.hasAttribute('data-geld-added-tabindex')) {

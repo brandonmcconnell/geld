@@ -662,13 +662,6 @@
   cursor: help;
 }
 
-.geld-pr-stat[data-has-tests] .geld-pr-stat__add,
-.geld-pr-stat[data-has-tests] .geld-pr-stat__del {
-  text-decoration: underline dotted;
-  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
-  text-underline-offset: 3px;
-}
-
 /*
  * Every count Geld draws is set the way GitHub sets the header's own
  * `+N −M`: the page's sans-serif at 600 (no monospace), in the same success
@@ -703,8 +696,7 @@
   outline-offset: 2px;
 }
 
-[data-geld-stat-host] [data-geld-original],
-.geld-tests-count[data-has-tests] {
+[data-geld-tooltip-anchor] {
   text-decoration: underline dotted;
   text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
   text-underline-offset: 3px;
