@@ -27,9 +27,10 @@ import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
 import { applyDiffstatSurfaces } from './diffstat-surfaces';
+import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
-import { applyPrListStats, removePrListStats } from './pr-list';
+import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
@@ -90,6 +91,24 @@ function headerNodesAdded(records: readonly MutationRecord[]): boolean {
     for (const node of record.addedNodes) {
       if (!(node instanceof Element)) continue;
       if (node.matches(HEADER_NODE_SELECTOR) || node.querySelector(HEADER_NODE_SELECTOR) !== null) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Did this batch take one of Geld's PR-row chips off the page? GitHub's React
+ * lists re-render their rows wholesale (the merge box's stacked-PR list does
+ * so on every status poll, replacing each row's content), and a chip that
+ * disappears with the old row would otherwise be missing until the debounced
+ * pass — a visible blink, several times a minute.
+ */
+function chipRemoved(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    if (record.type !== 'childList') continue;
+    for (const node of record.removedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (node.matches(`.${PR_STAT_CLASS}`) || node.querySelector(`.${PR_STAT_CLASS}`) !== null) return true;
     }
   }
   return false;
@@ -246,6 +265,9 @@ export class GeldController {
       } else {
         this.reassertHeader();
       }
+      // Likewise before paint: chips whose row GitHub just re-rendered come
+      // straight back from the in-memory diff states, so no frame lacks them.
+      if (chipRemoved(records)) this.applyListChips();
       this.schedule();
     });
     this.observer.observe(document.documentElement, {
@@ -598,18 +620,7 @@ export class GeldController {
 
     applySurfaceStyles(this.catalog);
     const surfaces = surfacesOf(this.catalog);
-    if (this.settings.showListStats) {
-      applyPrListStats({
-        matcherFor: (rowRepo) => this.matcherFor(rowRepo),
-        surfaces,
-        hideCommentLines: this.settings.hideCommentLines,
-        repoRules: this.repoRules,
-        diffSource: this.diffSource,
-        onRowVisible: () => this.schedule(),
-      });
-    } else {
-      removePrListStats();
-    }
+    this.applyListChips(surfaces);
     applyAuthorHiding(this.authorRules, surfaces);
     applyDiffstatSurfaces({
       catalog: this.catalog,
@@ -643,6 +654,23 @@ export class GeldController {
     });
 
     this.observer?.takeRecords();
+  }
+
+  /** `+N −M` chips on every PR row of the page (lists, stack popover, merge-box stack list). */
+  private applyListChips(surfaces: readonly ListSurface[] = surfacesOf(this.catalog)): void {
+    if (this.stopped || !this.settings.enabled) return;
+    if (!this.settings.showListStats) {
+      removePrListStats();
+      return;
+    }
+    applyPrListStats({
+      matcherFor: (rowRepo) => this.matcherFor(rowRepo),
+      surfaces,
+      hideCommentLines: this.settings.hideCommentLines,
+      repoRules: this.repoRules,
+      diffSource: this.diffSource,
+      onRowVisible: () => this.schedule(),
+    });
   }
 
   /** Arriving via `#geld-reveal=<path>` (from the popup on another tab of the PR): reveal, then drop the hash. */
