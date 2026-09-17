@@ -8,7 +8,7 @@ export function Diffstat({ totals, className, blocks = true }: { readonly totals
   const green = total === 0 ? 0 : Math.round((totals.additions / total) * 5);
   const red = total === 0 ? 0 : 5 - green;
   return (
-    <span className={cn('inline-flex items-center gap-1.5 font-mono text-[0.8125rem] tabular-nums', className)}>
+    <span className={cn('inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums', className)}>
       <span className="text-addition">+{formatCount(totals.additions)}</span>
       <span className="text-deletion">&minus;{formatCount(totals.deletions)}</span>
       {blocks ? (

@@ -29,7 +29,7 @@ export function PrListRow({ number, title, author, when, comments, shown, hidden
         </p>
       </div>
       <Popover>
-        <PopoverTrigger className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40">
+        <PopoverTrigger className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-muted/40 px-1.5 py-0.5 text-xs font-semibold tabular-nums outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40">
           <span className="text-muted-foreground">{pluralize(hidden.files, noun, nounPlural)}</span>
           <span className="text-addition">+{formatCount(shown.additions)}</span>
           <span className="text-deletion">&minus;{formatCount(shown.deletions)}</span>

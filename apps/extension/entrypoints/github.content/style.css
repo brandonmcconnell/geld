@@ -147,7 +147,6 @@
 }
 
 .geld-hidden-section__stats {
-  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 12px;
   display: inline-flex;
   gap: 6px;
@@ -570,7 +569,6 @@
   --geld-chip-gap: 4px;
   display: inline;
   margin-left: var(--geld-chip-gap);
-  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -621,7 +619,6 @@
 
 .geld-pr-stat__sep {
   color: var(--fgColor-muted, #59636e);
-  font-family: inherit;
 }
 
 .geld-pr-stat__add {
@@ -641,6 +638,22 @@
   text-decoration: underline dotted;
   text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
   text-underline-offset: 3px;
+}
+
+/*
+ * Every count Geld draws is set the way GitHub sets the header's own
+ * `+N −M`: the page's sans-serif at 600 (no monospace), in the same success
+ * and danger colours (`--geld-diff-*-fg`, :root). Tabular figures keep
+ * stacked counts aligned where they form columns (the tooltip).
+ */
+.geld-pr-stat__tests,
+.geld-pr-stat__add,
+.geld-pr-stat__del,
+.geld-hidden-section__stats,
+.geld-tooltip__add,
+.geld-tooltip__del {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -755,8 +768,8 @@
   display: contents;
 }
 
-/* Labels stay at the page's regular weight; the counts are GitHub's own
-   header treatment (sans-serif, 600), so every row reads like the header. */
+/* Labels stay at the page's regular weight; the counts get the shared
+   treatment above (sans-serif, 600), so every row reads like the header. */
 .geld-tooltip__label {
   font-weight: var(--geld-tooltip-label-weight, 400);
 }
@@ -780,8 +793,6 @@
 
 .geld-tooltip__add,
 .geld-tooltip__del {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
