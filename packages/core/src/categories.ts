@@ -93,7 +93,7 @@ export interface Catalog {
  * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260922;
+export const CATALOG_VERSION = 20260923;
 
 /**
  * The oldest extension version that can read this catalog. Raise it (with

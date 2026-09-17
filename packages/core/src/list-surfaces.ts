@@ -131,14 +131,19 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'pr-hovercard',
     description:
-      'The pull request hovercard (hovering a "#N" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap row of state badges; the chip goes on its own line under the badges, leading with the file count since the card shows none. Names no author.',
+      'The pull request hovercard (hovering a "#N" or PR link): .js-hovercard-content whose data-hovercard-target-url is /owner/repo/pull/N/hovercard. Its top box is a .d-flex.flex-column.f4 with the title link and a .d-flex.flex-wrap.gap-2 row of state badges ("Open", "Draft", …); the chip joins that row after the badges, vertically centred on them, leading with the file count since the card shows none. Names no author.',
     row: '.js-hovercard-content[data-hovercard-target-url*="/pull/"]',
-    chipAnchors: [{ selector: '.d-flex.flex-column.f4 > .d-flex.flex-wrap', placement: 'after' }],
+    chipAnchors: [{ selector: '.d-flex.flex-column.f4 > .d-flex.flex-wrap', placement: 'append' }],
     authors: [],
     showFiles: true,
+    // One flex item in the badge row: nowrap keeps it whole, so when the row
+    // runs out of room the counts wrap under the badge together. No bullet:
+    // it follows a badge, not running text.
     css: [
-      `.geld-pr-stat[data-geld-surface='pr-hovercard'] { display: inline-block; align-self: flex-start; margin: 8px 0 0; font-size: 12px; line-height: 18px; }`,
+      `.geld-pr-stat[data-geld-surface='pr-hovercard'] { align-self: center; margin: 0; font-size: 12px; line-height: 18px; white-space: nowrap; }`,
       `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__files { color: var(--fgColor-muted, #59636e); }`,
+      `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep { display: none; }`,
+      `.geld-pr-stat[data-geld-surface='pr-hovercard'] .geld-pr-stat__sep + * { margin-left: 4px; }`,
     ].join('\n'),
   },
 ];
