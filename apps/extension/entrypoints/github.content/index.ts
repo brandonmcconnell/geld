@@ -18,11 +18,21 @@ export default defineContentScript({
     // any older copy still running in the page must step aside first.
     const TAKEOVER = 'geld:takeover';
     document.dispatchEvent(new CustomEvent(TAKEOVER));
+    // Listen before the first await: a copy injected while this one still loads its settings
+    // would otherwise be missed, and two copies would then fight over the page.
+    let retired = false;
+    let retire = (): void => {
+      retired = true;
+    };
+    document.addEventListener(TAKEOVER, () => retire(), { once: true });
 
-    let showBadge = (await settingsItem.getValue()).showBadge;
+    const settings = await settingsItem.getValue();
+    const catalog = await loadCatalog();
+    if (retired) return;
+    let showBadge = settings.showBadge;
 
     const controller = new GeldController(
-      await settingsItem.getValue(),
+      settings,
       {
         onTabState(state: TabState) {
           // Only the top frame drives the badge; the count is what the user sees on this tab.
@@ -34,7 +44,7 @@ export default defineContentScript({
           void browser.runtime.sendMessage(message).catch(() => undefined);
         },
       },
-      await loadCatalog(),
+      catalog,
     );
     controller.start();
 
@@ -90,17 +100,15 @@ export default defineContentScript({
     ctx.addEventListener(document, 'turbo:render', () => controller.requestRefresh());
     ctx.addEventListener(document, 'soft-nav:end', () => controller.requestRefresh());
 
-    let retired = false;
-    const retire = (): void => {
+    retire = (): void => {
       if (retired) return;
       retired = true;
       unwatch();
       quietly(() => browser.runtime.onMessage.removeListener(onMessage));
       controller.stop();
     };
-    // A newer copy took over (see TAKEOVER above), or the extension was
-    // reloaded, updated or removed and this copy is orphaned.
-    document.addEventListener(TAKEOVER, retire, { once: true });
-    ctx.onInvalidated(retire);
+    // A newer copy took over (see TAKEOVER above, listened for from the start), or the
+    // extension was reloaded, updated or removed and this copy is orphaned.
+    ctx.onInvalidated(() => retire());
   },
 });
