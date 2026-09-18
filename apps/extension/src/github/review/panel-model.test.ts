@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, EMPTY_CHECKS, isCurrent, itemMarkdown, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checksHealth, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -53,6 +53,29 @@ describe('panel model', () => {
       ],
     };
     expect(authorLabels(merged)).toEqual(['Bugbot', 'alice']);
+  });
+});
+
+describe('digestMarkdown', () => {
+  it('carries bot verdicts with links and excerpts even without review items', () => {
+    const meta = {
+      v: 1 as const,
+      generatedAt: '2026-09-18T12:00:00.000Z',
+      headSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      producer: { kind: 'crawler' as const, version: '0.1.0', ai: false },
+      items: [],
+      bots: [{ id: 'greptile', login: 'greptile-apps[bot]', verdict: 'findings' as const, score: 5, reviewedSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', sourceId: 'issuecomment-88' }],
+      reviewers: [],
+      fold: { comments: [], events: [] },
+    };
+    const md = digestMarkdown(meta, { owner: 'acme', repo: 'widgets', number: 123, origin: 'https://github.com' }, () => false, {
+      status: ['CI: 8 successful'],
+      excerptFor: () => 'Confidence Score: 5/5. The PR appears safe to merge.',
+    });
+    expect(md).toContain('## Review digest — acme/widgets#123');
+    expect(md).toContain('- CI: 8 successful');
+    expect(md).toContain('- ✅ **Greptile 5/5** — [run summary](https://github.com/acme/widgets/pull/123#issuecomment-88)');
+    expect(md).toContain('  Confidence Score: 5/5.');
   });
 });
 
