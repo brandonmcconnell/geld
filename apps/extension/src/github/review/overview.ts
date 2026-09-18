@@ -14,13 +14,17 @@ import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComment, tickSummaryCheckbox } from './actions';
 import { avatarSrcFor, avatarSrcOf } from './crawler';
-import { cachedRewrite, maybeRewriteBotTitles } from './ai';
+import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { digestText, foldKey, itemKey, mountPanel, unmountPanel } from './panel';
+import { foldKey, itemKey, mountPanel, unmountPanel } from './panel';
+import { digestMarkdown, itemMarkdown } from './panel-model';
+import type { MarkdownSubject } from './panel-model';
+import { fixVisible } from '@geld/review';
+import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelModel, RequestableBot } from './panel';
 import type { QuickViewTarget } from './quick-view';
 import { renderQuickView } from './quick-view';
@@ -173,29 +177,21 @@ function requestableBots(meta: GeldPrMeta): readonly RequestableBot[] {
   return bots;
 }
 
-function withCachedTitles(meta: GeldPrMeta): GeldPrMeta {
-  let changed = false;
-  const items = meta.items.map((item) => {
-    const update = cachedRewrite(item.id);
-    if (update === null || item.rewritten) return item;
-    changed = true;
-    return {
-      ...item,
-      title: update.title,
-      rewritten: true,
-      ...(update.severity === undefined ? {} : { severity: update.severity }),
-    };
-  });
-  return changed ? { ...meta, items } : meta;
-}
-
 function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: GeldPrMeta): { readonly meta: GeldPrMeta; readonly freshness: PanelModel['freshness'] } {
-  if (found === null) return { meta: withCachedTitles(crawled), freshness: 'local' };
+  if (found === null) return { meta: withAi(crawled), freshness: 'local' };
   const usable = usableMeta(found);
   if (found.freshness === 'fresh' && usable.truncated !== true) {
-    return { meta: withCachedTitles(usable), freshness: 'fresh' };
+    return { meta: withAi(usable), freshness: 'fresh' };
   }
-  return { meta: withCachedTitles(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
+  return { meta: withAi(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
+}
+
+function subjectOf(): MarkdownSubject | null {
+  const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
+  if (match === null) return null;
+  const [, owner, repo, number] = match;
+  if (owner === undefined || repo === undefined || number === undefined) return null;
+  return { owner, repo, number: Number.parseInt(number, 10), origin: location.origin };
 }
 
 /** What an open row shows in its slot: the item's comments, or a fold's nodes. */
@@ -236,6 +232,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.loadMoreTries = 0;
     visit.revealedFolds = new Set();
     visit.manualDone = new Set();
+    resetAiForVisit();
   }
   const crawledDom = crawlConversation();
   const found = findSummaryComment(document);
@@ -259,6 +256,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
   }
   const compacting = settings.compactTimeline !== 'off';
   const repo = repoFromPathname(window.location.pathname) ?? '';
+  const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
+  const subject = subjectOf();
 
   const model: PanelModel = {
     meta,
@@ -275,6 +274,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
+    aiPending: aiPending(),
+    fixFor,
   };
   const reapply = (): void => applyReviewOverview(settings);
   const mounted = mountPanel(model, {
@@ -315,7 +316,16 @@ export function applyReviewOverview(settings: GeldSettings): void {
       focusReply(anchor);
     },
     onCopy: () => {
-      void copyText(digestText(meta));
+      void copyText(digestMarkdown(meta, subject, (item) => fixFor(item) !== null));
+    },
+    onCopyItem: (id) => {
+      const item = meta.items.find((entry) => entry.id === id);
+      if (item !== undefined) void copyText(itemMarkdown(item, subject, fixFor(item) !== null));
+    },
+    onCopyFix: (id) => {
+      const item = meta.items.find((entry) => entry.id === id);
+      const fix = item === undefined ? null : fixFor(item);
+      if (fix !== null) void copyText(fix.text);
     },
     onFullTimeline: () => {
       visit.fullTimeline = !visit.fullTimeline;
@@ -350,8 +360,10 @@ export function applyReviewOverview(settings: GeldSettings): void {
 
   if (!visit.rewriteStarted && !meta.producer.ai) {
     visit.rewriteStarted = true;
-    void maybeRewriteBotTitles(meta.items, settings).then((rewritten) => {
-      if (rewritten.length > 0) reapply();
+    const comments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
+    void consolidateInBrowser(meta, comments, settings, reapply).then(() => {
+      // Sources arrive in pages; another pass may find new items to ask about.
+      visit.rewriteStarted = false;
     });
   }
 }

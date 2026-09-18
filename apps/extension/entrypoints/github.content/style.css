@@ -1245,6 +1245,96 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--geld-review-accent);
 }
 
+/* ---- TL;DR and AI shimmer -------------------------------------------------- */
+
+.geld-review__tldr {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/*
+ * Text the model is still working on: a soft highlight sweeping across the
+ * words (the "thinking" treatment), on the text itself so the layout does
+ * not move when the result lands. Reduced motion keeps it static.
+ */
+@keyframes geld-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.geld-review [data-pending] {
+  background: linear-gradient(90deg, var(--geld-review-muted) 0%, var(--geld-review-muted) 35%, var(--fgColor-default, #1f2328) 50%, var(--geld-review-muted) 65%, var(--geld-review-muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: geld-shimmer 1.8s linear infinite;
+}
+
+.geld-review__skeleton {
+  display: block;
+  height: 10px;
+  margin: 5px 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--geld-review-border-muted) 25%, var(--geld-review-hover) 50%, var(--geld-review-border-muted) 75%);
+  background-size: 200% 100%;
+  animation: geld-shimmer 1.8s linear infinite;
+}
+
+.geld-review__ai {
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 4px;
+  color: var(--geld-review-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 16px;
+}
+
+/* ---- Geld notes under an open item: merged context and the fix ------------ */
+
+.geld-review__notes {
+  padding: 10px 16px 0 40px;
+}
+
+.geld-review__context {
+  margin: 0 0 8px;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 13px;
+}
+
+.geld-review__fix-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
+.geld-review__fix {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--geld-review-border-muted);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---- groups and rows (the merge box checks list, borrowed) --------------- */
 
 .geld-review__rows {
@@ -1771,5 +1861,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   .geld-review__group-btn .octicon,
   .geld-review__chevron .octicon {
     transition: none;
+  }
+
+  .geld-review [data-pending],
+  .geld-review__skeleton {
+    animation: none;
   }
 }
