@@ -1,72 +1,53 @@
 /**
  * Hide bot comments / low-signal events (and, in minimal mode, human
- * comments on done items) without removing them, so GitHub's Resolve and
- * quick-view teleport still work. Each fold is one accordion row.
+ * comments on done items) without removing them. Nothing is inserted into
+ * the timeline: the panel at the top lists every fold as one row, and
+ * expanding a row brings the real nodes up (see teleport.ts). Hidden nodes
+ * keep their ids, so GitHub's Resolve and permalinks keep working.
  */
 
+import { botTitle, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { isTeleported } from './teleport';
 
 export const ATTR_FOLDED = 'data-geld-folded';
-export const FOLD_CLASS = 'geld-review-fold';
+const ATTR_VISIT = 'data-geld-timeline';
 
 export interface FoldGroup {
   readonly key: string;
   readonly label: string;
+  /** Login the group belongs to (bot runs), for the row's avatar. */
+  readonly author: string | null;
   readonly nodes: readonly HTMLElement[];
 }
 
-const ATTR_VISIT = 'data-geld-timeline';
-const ATTR_FOLD_SIG = 'data-geld-fold-sig';
-
 export function clearFolds(root: ParentNode = document): void {
   for (const node of root.querySelectorAll(`[${ATTR_FOLDED}]`)) node.removeAttribute(ATTR_FOLDED);
-  for (const fold of root.querySelectorAll(`.${FOLD_CLASS}`)) fold.remove();
-  if (root instanceof Document) root.documentElement.removeAttribute('data-geld-fold-sig');
-  else document.documentElement.removeAttribute('data-geld-fold-sig');
 }
 
-function insertFold(group: FoldGroup, expanded: boolean): void {
-  const first = group.nodes[0];
-  if (first === undefined || first.parentElement === null) return;
-  const row = createElement('div', { class: FOLD_CLASS, [OWN_UI_ATTRIBUTE]: '', 'data-geld-fold': group.key });
-  const button = createElement('button', { type: 'button', class: 'geld-review-fold__btn' }, [
-    expanded ? `Hide ${group.label}` : group.label,
-  ]);
-  button.setAttribute('aria-expanded', String(expanded));
-  row.append(button);
-  first.parentElement.insertBefore(row, first);
-  const apply = (open: boolean): void => {
-    button.textContent = open ? `Hide ${group.label}` : group.label;
-    button.setAttribute('aria-expanded', String(open));
-    for (const node of group.nodes) {
-      if (open) node.removeAttribute(ATTR_FOLDED);
-      else node.setAttribute(ATTR_FOLDED, 'hidden');
-    }
-  };
-  apply(expanded);
-  button.addEventListener('click', () => {
-    const open = button.getAttribute('aria-expanded') !== 'true';
-    apply(open);
-  });
+function setFolded(node: HTMLElement, hidden: boolean): void {
+  if (hidden) {
+    if (node.getAttribute(ATTR_FOLDED) !== 'hidden') node.setAttribute(ATTR_FOLDED, 'hidden');
+  } else if (node.hasAttribute(ATTR_FOLDED)) {
+    node.removeAttribute(ATTR_FOLDED);
+  }
 }
 
-function foldSignature(groups: readonly FoldGroup[], expandedKeys: ReadonlySet<string>): string {
-  return groups
-    .map((group) => {
-      const ids = group.nodes.map((node) => node.id).join(',');
-      return `${group.key}:${group.nodes.length}:${ids}:${expandedKeys.has(group.key) ? '1' : '0'}`;
-    })
-    .join('|');
-}
-
-export function applyFolds(groups: readonly FoldGroup[], expandedKeys: ReadonlySet<string>): void {
-  const signature = foldSignature(groups, expandedKeys);
-  if (document.documentElement.getAttribute(ATTR_FOLD_SIG) === signature) return;
-  clearFolds();
-  document.documentElement.setAttribute(ATTR_FOLD_SIG, signature);
+/**
+ * Hide every node of every group except those in `revealed` groups or being
+ * quick-viewed; un-hide anything that no longer belongs to a group.
+ */
+export function applyFolds(groups: readonly FoldGroup[], revealed: ReadonlySet<string>): void {
+  const keep = new Set<HTMLElement>();
   for (const group of groups) {
-    if (group.nodes.length === 0) continue;
-    insertFold(group, expandedKeys.has(group.key));
+    const hidden = !revealed.has(group.key);
+    for (const node of group.nodes) {
+      keep.add(node);
+      setFolded(node, hidden && !isTeleported(node));
+    }
+  }
+  for (const node of document.querySelectorAll<HTMLElement>(`[${ATTR_FOLDED}]`)) {
+    if (!keep.has(node)) node.removeAttribute(ATTR_FOLDED);
   }
 }
 
@@ -90,15 +71,19 @@ export function groupBotRuns(
   const flush = (): void => {
     if (run === null || run.nodes.length === 0) return;
     const count = run.nodes.length;
-    const label = `${count} comment${count === 1 ? '' : 's'} from ${run.author}`;
-    groups.push({ key: `bot:${run.anchors[0] ?? run.author}`, label, nodes: run.nodes });
+    const name = botTitle(resolveBotId(run.author) ?? `custom:${run.author}`, run.author);
+    const label = `${count} comment${count === 1 ? '' : 's'} from ${name}`;
+    groups.push({ key: `bot:${run.anchors[0] ?? run.author}`, label, author: run.author, nodes: run.nodes });
     run = null;
   };
+  const seen = new Set<HTMLElement>();
   for (const comment of comments) {
     if (!botAnchors.has(comment.anchor)) {
       flush();
       continue;
     }
+    if (seen.has(comment.root)) continue;
+    seen.add(comment.root);
     if (run !== null && run.author === comment.author) {
       run.nodes.push(comment.root);
       run.anchors.push(comment.anchor);
@@ -108,11 +93,13 @@ export function groupBotRuns(
     }
   }
   flush();
-  if (events.length > 0) {
+  const eventNodes = events.map((event) => event.root).filter((node) => !seen.has(node));
+  if (eventNodes.length > 0) {
     groups.push({
       key: 'events',
-      label: `${events.length} event${events.length === 1 ? '' : 's'}`,
-      nodes: events.map((event) => event.root),
+      label: `${eventNodes.length} event${eventNodes.length === 1 ? '' : 's'}`,
+      author: null,
+      nodes: eventNodes,
     });
   }
   return groups;
@@ -122,9 +109,9 @@ export function groupDoneHumans(
   comments: readonly { readonly author: string; readonly anchor: string; readonly root: HTMLElement }[],
   doneAnchors: ReadonlySet<string>,
 ): FoldGroup | null {
-  const nodes = comments.filter((comment) => doneAnchors.has(comment.anchor) && !comment.author.endsWith('[bot]')).map((comment) => comment.root);
+  const nodes = [...new Set(comments.filter((comment) => doneAnchors.has(comment.anchor) && !comment.author.endsWith('[bot]')).map((comment) => comment.root))];
   if (nodes.length === 0) return null;
-  return { key: 'done-human', label: `${nodes.length} comment${nodes.length === 1 ? '' : 's'} on done items`, nodes };
+  return { key: 'done-human', label: `${nodes.length} comment${nodes.length === 1 ? '' : 's'} on done items`, author: null, nodes };
 }
 
 export function collapseDescription(on: boolean): void {
@@ -138,13 +125,13 @@ export function collapseDescription(on: boolean): void {
     body.parentElement?.querySelector('.geld-review-desc')?.remove();
     return;
   }
-  if (body.getAttribute('data-geld-desc') === 'collapsed') return;
+  if (body.hasAttribute('data-geld-desc')) return;
   body.setAttribute('data-geld-desc', 'collapsed');
-  const toggle = createElement('button', { type: 'button', class: 'geld-review-desc', [OWN_UI_ATTRIBUTE]: '' }, ['Show full']);
+  const toggle = createElement('button', { type: 'button', class: 'geld-review-desc', [OWN_UI_ATTRIBUTE]: '' }, ['Show full description']);
   toggle.addEventListener('click', () => {
     const collapsed = body.getAttribute('data-geld-desc') === 'collapsed';
     body.setAttribute('data-geld-desc', collapsed ? 'open' : 'collapsed');
-    toggle.textContent = collapsed ? 'Show less' : 'Show full';
+    toggle.textContent = collapsed ? 'Show less' : 'Show full description';
   });
   body.insertAdjacentElement('afterend', toggle);
 }
