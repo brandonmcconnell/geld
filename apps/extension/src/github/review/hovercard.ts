@@ -22,6 +22,8 @@ export interface HoverPreview {
   /** Further messages in the thread beyond the one shown. */
   readonly more: number;
   readonly onReply: (() => void) | null;
+  /** Open the row: one more way in, always offered. */
+  readonly onOpen: () => void;
 }
 
 export type HoverProvider = (row: HTMLElement) => HoverPreview | null;
@@ -63,10 +65,17 @@ function show(row: HTMLElement): void {
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [preview.name]));
   if (preview.bot) head.append(createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
   if (preview.time !== '') head.append(createElement('span', { class: `${CARD_CLASS}__time` }, [preview.time]));
+  // Capped and faded rather than line-clamped: tables and code blocks ignore line clamps.
   const body = createElement('div', { class: `${CARD_CLASS}__body` });
   if (preview.body !== null) body.append(preview.body);
   const foot = createElement('div', { class: `${CARD_CLASS}__foot` });
   if (preview.more > 0) foot.append(createElement('span', { class: `${CARD_CLASS}__more` }, [`+ ${preview.more} more message${preview.more === 1 ? '' : 's'}`]));
+  const open = createElement('button', { type: 'button', class: `${CARD_CLASS}__open` }, [preview.more > 0 ? 'See full thread' : 'See full comment']);
+  open.addEventListener('click', () => {
+    hide();
+    preview.onOpen();
+  });
+  foot.append(open);
   if (preview.onReply !== null) {
     const reply = createElement('button', { type: 'button', class: `${CARD_CLASS}__reply` }, [svgFromString(ICON_REPLY), createElement('span', {}, ['Reply'])]);
     const onReply = preview.onReply;
@@ -76,11 +85,13 @@ function show(row: HTMLElement): void {
     });
     foot.append(reply);
   }
-  card = createElement('div', { class: CARD_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, [head, body, ...(foot.childElementCount > 0 ? [foot] : [])]);
+  card = createElement('div', { class: CARD_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, [head, body, foot]);
   card.addEventListener('mouseleave', (event) => {
     if (rowOf(event.relatedTarget) !== currentRow) hide();
   });
   document.body.append(card);
+  // Fade only what is actually cut off.
+  if (body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
   place(row, card);
 }
 
@@ -137,7 +148,14 @@ function install(): void {
     },
     { capture: true, passive: true },
   );
-  document.addEventListener('mousedown', hide, true);
+  document.addEventListener(
+    'mousedown',
+    (event) => {
+      if (card !== null && event.target instanceof Node && card.contains(event.target)) return;
+      hide();
+    },
+    true,
+  );
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hide();
   });

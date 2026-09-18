@@ -272,7 +272,8 @@ export function checksSummary(counts: CheckCounts): string {
 }
 
 export interface RequiredReviews {
-  readonly required: number;
+  /** Null when the page no longer states the requirement (it was met before we saw it). */
+  readonly required: number | null;
   readonly approvals: number;
   readonly changesRequested: boolean;
 }
@@ -282,13 +283,34 @@ export interface RequiredReviews {
  * required" plus the approvals the payload knows (or "N approvals" on the
  * page). Null when the merge box does not require reviews.
  */
-export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRecord[]): RequiredReviews | null {
-  const required = /(?:at least\s+)?(\d+)\s+approving review/i.exec(text)?.[1] ?? (/\breview required\b/i.test(text) ? '1' : null);
-  if (required === null) return null;
-  const fromPage = /(\d+)\s+approvals?\b/i.exec(text)?.[1];
-  const approvals = Math.max(reviewers.filter((reviewer) => reviewer.state === 'approved').length, fromPage === undefined ? 0 : Number.parseInt(fromPage, 10));
+export interface RequiredReviewsOptions {
+  /** The requirement seen earlier on this visit: once satisfied, GitHub's merge box stops stating it. */
+  readonly knownRequired?: number | null;
+}
+
+/**
+ * The merge box says "At least N approving reviews are required" while
+ * unsatisfied and "N approving reviews by reviewers with write access" once
+ * met — the second N counts approvals, not the requirement. Approvals are the
+ * larger of that sentence and the reviewers whose latest review approved.
+ * `required` is null when the page no longer states it and nothing was
+ * remembered; the row then shows "N approved".
+ */
+export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRecord[], options: RequiredReviewsOptions = {}): RequiredReviews | null {
+  const stated = /at least\s+(\d+)\s+approving review/i.exec(text)?.[1];
+  const satisfied = /(\d+)\s+approving reviews?\s+by\b/i.exec(text)?.[1];
+  const approvedByPage = /(\d+)\s+approvals?\b/i.exec(text)?.[1];
+  const mentionsReviews = stated !== undefined || satisfied !== undefined || /\breview required\b/i.test(text) || /\bchanges approved\b/i.test(text);
+  if (!mentionsReviews && reviewers.length === 0) return null;
+  const known = options.knownRequired ?? null;
+  const required = stated !== undefined ? Number.parseInt(stated, 10) : known !== null ? known : /\breview required\b/i.test(text) ? 1 : null;
+  const approvals = Math.max(
+    reviewers.filter((reviewer) => reviewer.state === 'approved').length,
+    satisfied === undefined ? 0 : Number.parseInt(satisfied, 10),
+    approvedByPage === undefined ? 0 : Number.parseInt(approvedByPage, 10),
+  );
   return {
-    required: Number.parseInt(required, 10),
+    required,
     approvals,
     changesRequested: reviewers.some((reviewer) => reviewer.state === 'changes_requested') || /\bchanges requested\b/i.test(text),
   };
@@ -296,5 +318,13 @@ export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRe
 
 export function reviewsHealth(reviews: RequiredReviews): Health {
   if (reviews.changesRequested) return 'bad';
+  if (reviews.required === null) return reviews.approvals > 0 ? 'good' : 'pending';
   return reviews.approvals >= reviews.required ? 'good' : 'pending';
+}
+
+/** "2/1 approvals", "2 approved" (requirement unknown) or "changes requested". */
+export function reviewsLabel(reviews: RequiredReviews): string {
+  if (reviews.changesRequested) return 'changes requested';
+  if (reviews.required === null) return `${reviews.approvals} approved`;
+  return `${reviews.approvals}/${reviews.required} approvals`;
 }

@@ -7,6 +7,7 @@
  */
 
 import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
+import { wornPiecesOf } from './teleport';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
@@ -24,7 +25,7 @@ export function threadRootOf(anchor: string): HTMLElement | null {
 /** Where a thread's controls are: its container, wherever quick view has put it (ids travel with the node). */
 function scopesFor(anchor: string): readonly ParentNode[] {
   const thread = threadRootOf(anchor);
-  return thread === null ? [] : [thread];
+  return thread === null ? [] : [thread, ...wornPiecesOf(thread)];
 }
 
 function buttonsIn(scope: ParentNode): readonly HTMLElement[] {
@@ -171,4 +172,20 @@ export function postTopLevelComment(body: string): boolean {
   const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
   submit?.click();
   return submit !== undefined && submit !== null;
+}
+
+const REACTION_OPENER =
+  '.js-reaction-popover-container summary, details.js-add-reaction summary, summary[aria-label*="reaction" i], button[aria-label*="add reaction" i], button[aria-label*="add or remove reaction" i], [data-testid="add-reaction-button"], [data-testid="reactions-menu-button"]';
+
+/** Open GitHub's own reaction picker on the comment at `anchor` (wherever it is shown right now). */
+export function openReactions(anchor: string): boolean {
+  const scopes = scopesFor(anchor);
+  for (const scope of scopes) {
+    const opener = scope.querySelector<HTMLElement>(REACTION_OPENER);
+    if (opener !== null) {
+      opener.click();
+      return true;
+    }
+  }
+  return false;
 }
