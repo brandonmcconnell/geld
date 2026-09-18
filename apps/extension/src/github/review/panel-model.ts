@@ -44,7 +44,8 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode): readonly Insta
   for (const item of meta.items) {
     for (const source of item.sources) if (source.bot !== undefined) add(source.bot, source.author, null);
   }
-  return [...found.values()];
+  // Alphabetical: the page's link order changes as nodes move into the panel, and buttons must not shuffle.
+  return [...found.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 const ORDER: Readonly<Record<ReviewItemStatus, number>> = {
@@ -248,7 +249,8 @@ export function checkCountsFrom(text: string): CheckCounts | null {
       const count = Number.parseInt(match?.[1] ?? '0', 10);
       if (state === null || !Number.isFinite(count)) continue;
       found = true;
-      counts[state] += count;
+      // The section heading and the expanded group heading state the same number; never add them up.
+      counts[state] = Math.max(counts[state], count);
     }
   }
   return found ? counts : null;

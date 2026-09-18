@@ -89,6 +89,8 @@ describe('status rows', () => {
     // Expanded: the summary sentence and the per-group headings both appear; the sentence alone counts.
     expect(checkCountsFrom('1 failing, 7 skipped, 59 successful checks\n1 failing check\n7 skipped checks\n59 successful checks')).toEqual({ success: 59, failure: 1, pending: 0, skipped: 7, neutral: 0 });
     expect(checkCountsFrom('All checks have passed\n3 successful checks')).toEqual({ success: 3, failure: 0, pending: 0, skipped: 0, neutral: 0 });
+    // Expanded with a single state: the heading and the group repeat "3 successful checks".
+    expect(checkCountsFrom('All checks have passed\n3 successful checks\n3 successful checks')).toEqual({ success: 3, failure: 0, pending: 0, skipped: 0, neutral: 0 });
   });
 
   it('reads required reviews', () => {
