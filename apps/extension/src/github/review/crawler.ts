@@ -41,15 +41,9 @@ export function authorOf(root: Element): Author | null {
   return { login: bot && !/\[bot\]$/i.test(text) ? `${text}[bot]` : text, bot };
 }
 
-/** The comment's body, wherever it is: in place, or moved into the panel's quick view. */
 function bodyElementOf(root: Element): HTMLElement | null {
   const body = root.querySelector(BODY_SELECTOR);
-  if (body instanceof HTMLElement) return body;
-  if (root.id !== '') {
-    const moved = document.querySelector(`.geld-review__qv-comment[data-geld-qv="${root.id}"] .geld-review__qv-body > *`);
-    if (moved instanceof HTMLElement) return moved;
-  }
-  return null;
+  return body instanceof HTMLElement ? body : null;
 }
 
 const BLOCK = /^(P|DIV|H[1-6]|LI|PRE|BLOCKQUOTE|TR|DETAILS|SUMMARY|SECTION|ARTICLE|UL|OL|TABLE|HR|BR)$/;

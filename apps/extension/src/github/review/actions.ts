@@ -8,8 +8,6 @@
 
 import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
 
-const QUICK_VIEW_SCOPE = '.geld-review__slot-body';
-
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
   return node === null ? null : rowOf(node);
@@ -23,14 +21,10 @@ export function threadRootOf(anchor: string): HTMLElement | null {
   return thread instanceof HTMLElement ? thread : node;
 }
 
-/** Where a thread's controls can be: the thread itself, or the panel's quick view when they were moved there. */
+/** Where a thread's controls are: its container, wherever quick view has put it (ids travel with the node). */
 function scopesFor(anchor: string): readonly ParentNode[] {
-  const scopes: ParentNode[] = [];
   const thread = threadRootOf(anchor);
-  if (thread !== null) scopes.push(thread);
-  const slot = document.querySelector(QUICK_VIEW_SCOPE);
-  if (slot !== null && slot.querySelector(`[data-geld-qv="${anchor}"]`) !== null) scopes.push(slot);
-  return scopes;
+  return thread === null ? [] : [thread];
 }
 
 function buttonsIn(scope: ParentNode): readonly HTMLElement[] {
@@ -80,7 +74,8 @@ export function tickSummaryCheckbox(commentRoot: HTMLElement, itemAnchors: reado
   return false;
 }
 
-const REPLY_OPENER = '.review-thread-reply-button, button.js-inline-comment-form-reply, button[data-testid="comment-reply"], .js-comment-quote-reply, button[aria-label^="Reply" i]';
+/** The thread's collapsed "Reply…" control (never a comment's "Quote reply" menu item, which sits earlier in the DOM). */
+const REPLY_OPENER = '.review-thread-reply-button, button.js-inline-comment-form-reply, button.js-toggle-inline-comment-form, button[data-testid="comment-reply"], button[aria-label^="Reply" i]';
 
 /** Open the reply box of the thread that holds `anchor` and focus it without scrolling. */
 export function focusReply(anchor: string): boolean {
@@ -93,7 +88,7 @@ export function focusReply(anchor: string): boolean {
     }
     return null;
   };
-  const opener = find<HTMLElement>(REPLY_OPENER) ?? buttonsIn(scopes[0] ?? document).find((button) => /^reply/i.test(textOf(button))) ?? null;
+  const opener = find<HTMLElement>(REPLY_OPENER) ?? buttonsIn(scopes[0] ?? document).find((button) => /^reply\b/i.test(textOf(button)) && !button.matches('[role="menuitem"]')) ?? null;
   opener?.click();
   const focusBox = (): boolean => {
     const box = find<HTMLTextAreaElement>('textarea');
@@ -104,6 +99,16 @@ export function focusReply(anchor: string): boolean {
   if (focusBox()) return true;
   window.setTimeout(focusBox, 150);
   return opener !== null;
+}
+
+/** GitHub's "Quote reply" from a comment's own ⋯ menu; the comment may be in the panel's quick view. */
+export function quoteReply(anchor: string): boolean {
+  const comment = document.getElementById(anchor);
+  if (comment === null) return false;
+  const button = comment.querySelector<HTMLElement>('.js-comment-quote-reply, [role="menuitem"][data-testid*="quote" i], button[aria-label*="Quote" i]');
+  if (button === null) return false;
+  button.click();
+  return true;
 }
 
 export async function copyText(text: string): Promise<void> {
