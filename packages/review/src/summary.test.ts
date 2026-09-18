@@ -231,7 +231,11 @@ describe('buildMeta', () => {
 describe('bots + prompts', () => {
   it('parses greptile scores and known logins', () => {
     expect(looksLikeBotLogin('cursor[bot]')).toBe(true);
-    expect(parseBotBody('Greptile 4/5. Found 1 issue.', 'greptile')).toEqual({ count: 1, score: 4, clean: false });
+    expect(parseBotBody('Greptile 4/5. Found 1 issue.', 'greptile')).toEqual({ count: 1, score: 4, clean: false, severity: null });
+    expect(parseBotBody('1 high severity bug found.', 'bugbot').severity).toBe('high');
+    // A deploy bot's comment is not a review verdict.
+    expect(verdictsFrom([], [{ author: 'vercel[bot]', body: 'Deployment ready', anchor: 'issuecomment-5' }], 'aaa')).toEqual([]);
+    expect(verdictsFrom([], [{ author: 'acme[bot]', body: 'Found 2 issues', anchor: 'issuecomment-6' }], 'aaa', ['acme[bot]'])[0]?.count).toBe(2);
     const verdicts = verdictsFrom(
       [{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'success', sha: 'aaa' }],
       [],

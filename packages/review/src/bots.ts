@@ -113,10 +113,14 @@ export function botTitle(id: string, login: string): string {
   return login;
 }
 
+export type FindingSeverity = 'low' | 'medium' | 'high';
+
 export interface ParsedBotBody {
   readonly count: number | null;
   readonly score: number | null;
   readonly clean: boolean;
+  /** Worst severity the bot named ("high severity", "critical", "security"). */
+  readonly severity: FindingSeverity | null;
 }
 
 /**
@@ -136,7 +140,14 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
     /\bno (?:issues|bugs|findings|problems)\b/i.test(text) ||
     /\b(?:looks good|lgtm|all clean|no bugs found)\b/i.test(text) ||
     (count === 0 && score === null);
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean };
+  const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(text)
+    ? 'high'
+    : /\bmedium(?: severity)?\b/i.test(text)
+      ? 'medium'
+      : /\blow(?: severity)?\b/i.test(text)
+        ? 'low'
+        : null;
+  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity };
 }
 
 export interface RawCheckRun {
@@ -152,17 +163,26 @@ export interface DerivedBotVerdict {
   readonly verdict: 'clean' | 'findings' | 'failed' | 'running';
   readonly count?: number;
   readonly score?: number;
+  readonly severity?: FindingSeverity;
   readonly reviewedSha: string;
   readonly checkName?: string;
   readonly sourceId?: string;
 }
 
-function withOptionalCount(base: DerivedBotVerdict, count: number | null, score: number | null): DerivedBotVerdict {
+function withOptionalCount(base: DerivedBotVerdict, parsed: ParsedBotBody): DerivedBotVerdict {
   return {
     ...base,
-    ...(count !== null ? { count } : {}),
-    ...(score !== null ? { score } : {}),
+    ...(parsed.count !== null ? { count: parsed.count } : {}),
+    ...(parsed.score !== null ? { score: parsed.score } : {}),
+    ...(parsed.severity !== null ? { severity: parsed.severity } : {}),
   };
+}
+
+/** A registered review bot, or one the user listed; any other `[bot]` (deploy previews, CI) is not a reviewer. */
+function reviewBotIdFor(login: string, extraLogins: readonly string[]): string | null {
+  const known = botByLogin(login);
+  if (known !== null) return known.id;
+  return extraLogins.some((entry) => entry.toLowerCase() === login.toLowerCase()) ? `custom:${login.toLowerCase()}` : null;
 }
 
 /**
@@ -196,25 +216,18 @@ export function verdictsFrom(
   }
 
   for (const comment of comments) {
-    const id = resolveBotId(comment.author, extraLogins);
-    if (id === null) continue;
+    const id = reviewBotIdFor(comment.author, extraLogins);
+    if (id === null || isTriggerComment(comment.body, extraLogins)) continue;
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== undefined) {
       const verdict = parsed.clean && existing.verdict === 'failed' ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
-      byId.set(id, withOptionalCount({ ...existing, verdict, sourceId: comment.anchor, login }, parsed.count, parsed.score));
+      byId.set(id, withOptionalCount({ ...existing, verdict, sourceId: comment.anchor, login }, parsed));
       continue;
     }
     const verdict = parsed.clean ? 'clean' : 'findings';
-    byId.set(
-      id,
-      withOptionalCount(
-        { id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor },
-        parsed.count,
-        parsed.score,
-      ),
-    );
+    byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
   }
 
   return [...byId.values()];

@@ -221,6 +221,7 @@ export function crawlConversation(root: ParentNode = document): {
   }
 
   for (const node of root.querySelectorAll(COMMENT_SELECTOR)) {
+    // GitHub repeats a comment's id on the group and the comment inside; document order gives the outermost first.
     if (!usable(node) || seen.has(node.id)) continue;
     seen.add(node.id);
     const author = authorOf(node);

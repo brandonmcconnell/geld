@@ -18918,6 +18918,7 @@ var PRODUCER_KINDS = ["action", "app", "crawler"];
 var FIX_SOURCES = ["bot", "human", "ai"];
 var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
 var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN);
+var FINDING_SEVERITIES = ["low", "medium", "high"];
 var isoDate = external_exports.string().refine((value) => !Number.isNaN(Date.parse(value)), { error: "Expected an ISO date string." });
 var sha = external_exports.string().regex(/^[0-9a-f]{7,40}$/i, { error: "Expected a git SHA." });
 var reviewSourceSchema = external_exports.object({
@@ -18958,6 +18959,7 @@ var botVerdictSchema = external_exports.object({
   verdict: external_exports.enum(BOT_VERDICTS),
   count: external_exports.number().int().nonnegative().optional(),
   score: external_exports.number().optional(),
+  severity: external_exports.enum(FINDING_SEVERITIES).optional(),
   reviewedSha: sha,
   checkName: external_exports.string().min(1).optional(),
   sourceId: external_exports.string().min(1).optional()
@@ -19027,7 +19029,8 @@ function botVerdictFrom(value) {
   };
   const counted = value.count === void 0 ? record3 : { ...record3, count: value.count };
   const scored = value.score === void 0 ? counted : { ...counted, score: value.score };
-  const named = value.checkName === void 0 ? scored : { ...scored, checkName: value.checkName };
+  const graded = value.severity === void 0 ? scored : { ...scored, severity: value.severity };
+  const named = value.checkName === void 0 ? graded : { ...graded, checkName: value.checkName };
   return value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
 }
 function metaFrom(value) {
@@ -19232,14 +19235,21 @@ function parseBotBody(body, botId) {
   const countMatch = botId === "greptile" ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text) : /(\d+)\s+(?:issue|finding|bug|problem)s?\b/i.exec(text);
   const count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
   const clean = /\bno (?:issues|bugs|findings|problems)\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found)\b/i.test(text) || count === 0 && score === null;
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean };
+  const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(text) ? "high" : /\bmedium(?: severity)?\b/i.test(text) ? "medium" : /\blow(?: severity)?\b/i.test(text) ? "low" : null;
+  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity };
 }
-function withOptionalCount(base, count, score) {
+function withOptionalCount(base, parsed) {
   return {
     ...base,
-    ...count !== null ? { count } : {},
-    ...score !== null ? { score } : {}
+    ...parsed.count !== null ? { count: parsed.count } : {},
+    ...parsed.score !== null ? { score: parsed.score } : {},
+    ...parsed.severity !== null ? { severity: parsed.severity } : {}
   };
+}
+function reviewBotIdFor(login, extraLogins) {
+  const known = botByLogin(login);
+  if (known !== null) return known.id;
+  return extraLogins.some((entry2) => entry2.toLowerCase() === login.toLowerCase()) ? `custom:${login.toLowerCase()}` : null;
 }
 function verdictsFrom(checks, comments, headSha, extraLogins = []) {
   const byId = /* @__PURE__ */ new Map();
@@ -19260,25 +19270,18 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     byId.set(bot.id, record3);
   }
   for (const comment of comments) {
-    const id = resolveBotId(comment.author, extraLogins);
-    if (id === null) continue;
+    const id = reviewBotIdFor(comment.author, extraLogins);
+    if (id === null || isTriggerComment(comment.body, extraLogins)) continue;
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
       const verdict2 = parsed.clean && existing.verdict === "failed" ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
-      byId.set(id, withOptionalCount({ ...existing, verdict: verdict2, sourceId: comment.anchor, login }, parsed.count, parsed.score));
+      byId.set(id, withOptionalCount({ ...existing, verdict: verdict2, sourceId: comment.anchor, login }, parsed));
       continue;
     }
     const verdict = parsed.clean ? "clean" : "findings";
-    byId.set(
-      id,
-      withOptionalCount(
-        { id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor },
-        parsed.count,
-        parsed.score
-      )
-    );
+    byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
   }
   return [...byId.values()];
 }

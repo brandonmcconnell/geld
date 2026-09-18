@@ -52,10 +52,22 @@ function card(parts: CommentParts, anchor: string): HTMLElement {
   return createElement('div', { class: 'geld-review__qv-comment', 'data-geld-qv': anchor }, [head, createElement('div', { class: 'geld-review__qv-body' })]);
 }
 
-/** Comment ids inside a timeline node, in order; the node itself when it is one. */
+const COMMENT_ID = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/;
+
+/**
+ * Comment nodes inside a timeline row, outermost per id. GitHub puts the
+ * same `issuecomment-N` id on a comment group and the comment inside it;
+ * both would otherwise become a card, the inner one without a timestamp.
+ */
 function commentNodesIn(root: HTMLElement): readonly HTMLElement[] {
-  if (/^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/.test(root.id)) return [root];
-  return [...root.querySelectorAll<HTMLElement>('[id^="discussion_r"], [id^="issuecomment-"], [id^="pullrequestreview-"]')].filter((node) => /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/.test(node.id));
+  if (COMMENT_ID.test(root.id)) return [root];
+  const matches = [...root.querySelectorAll<HTMLElement>('[id^="discussion_r"], [id^="issuecomment-"], [id^="pullrequestreview-"]')].filter((node) => COMMENT_ID.test(node.id));
+  const seen = new Set<string>();
+  return matches.filter((node) => {
+    if (seen.has(node.id) || matches.some((other) => other !== node && other.contains(node))) return false;
+    seen.add(node.id);
+    return true;
+  });
 }
 
 /** Fill `slot` for `target`. Returns false when a comment could only be shown as a read-only clone. */

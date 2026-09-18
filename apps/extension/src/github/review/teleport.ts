@@ -13,13 +13,14 @@ interface Moved {
   readonly node: HTMLElement;
   readonly placeholder: Comment;
   readonly hadFolded: string | null;
+  readonly hadHidden: string | null;
 }
 
 const moved = new Map<HTMLElement, Moved>();
 const clones = new Set<HTMLElement>();
 
 export function isReactManaged(node: Element): boolean {
-  return node.closest('react-app, [data-react-app], [data-reactroot]') !== null;
+  return node.closest('react-app, react-partial, [data-react-app], [data-reactroot]') !== null;
 }
 
 export function isTeleported(node: Element): boolean {
@@ -44,6 +45,7 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
       if (!(clone instanceof HTMLElement)) continue;
       stripIds(clone);
       clone.removeAttribute('data-geld-folded');
+      clone.removeAttribute('hidden');
       clone.setAttribute(ATTR_CLONE, '');
       clones.add(clone);
       slot.append(clone);
@@ -52,8 +54,10 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
     }
     const placeholder = document.createComment('geld:quick-view');
     node.replaceWith(placeholder);
-    moved.set(node, { node, placeholder, hadFolded: node.getAttribute('data-geld-folded') });
+    moved.set(node, { node, placeholder, hadFolded: node.getAttribute('data-geld-folded'), hadHidden: node.getAttribute('hidden') });
     node.removeAttribute('data-geld-folded');
+    // A folded row carries hidden="until-found"; away from the timeline it must render.
+    node.removeAttribute('hidden');
     node.setAttribute(ATTR_TELEPORTED, '');
     slot.append(node);
   }
@@ -65,6 +69,7 @@ export function restoreAll(): void {
   for (const entry of moved.values()) {
     entry.node.removeAttribute(ATTR_TELEPORTED);
     if (entry.hadFolded !== null) entry.node.setAttribute('data-geld-folded', entry.hadFolded);
+    if (entry.hadHidden !== null) entry.node.setAttribute('hidden', entry.hadHidden);
     if (entry.placeholder.parentNode !== null) entry.placeholder.replaceWith(entry.node);
     else entry.node.remove();
   }

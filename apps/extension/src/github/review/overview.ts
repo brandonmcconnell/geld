@@ -6,10 +6,8 @@
  */
 
 import type { GeldSettings } from '@geld/core';
-import { repoFromPathname } from '@geld/core';
 import type { GeldPrMeta, ReviewItem } from '@geld/review';
 import { clusterComments, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
-import { reviewNudgeDismissedItem } from '../../lib/local-state';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComments, tickSummaryCheckbox } from './actions';
@@ -20,8 +18,8 @@ import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { foldKey, itemKey, mountPanel, unmountPanel } from './panel';
-import { digestMarkdown, itemMarkdown } from './panel-model';
+import { CHECKS_KEY, foldKey, itemKey, mountPanel, unmountPanel } from './panel';
+import { checkCountsFrom, digestMarkdown, itemMarkdown, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -40,7 +38,6 @@ interface VisitState {
   fullTimeline: boolean;
   openKey: string | null;
   collapsedGroups: Set<GroupId>;
-  nudgeDismissed: Record<string, boolean>;
   rewriteStarted: boolean;
   pageKey: string;
   generatedAt: string;
@@ -55,7 +52,6 @@ const visit: VisitState = {
   fullTimeline: false,
   openKey: null,
   collapsedGroups: new Set<GroupId>(['done']),
-  nudgeDismissed: {},
   rewriteStarted: false,
   pageKey: '',
   generatedAt: '',
@@ -63,10 +59,6 @@ const visit: VisitState = {
   revealedFolds: new Set(),
   manualDone: new Set(),
 };
-
-void reviewNudgeDismissedItem.getValue().then((value) => {
-  visit.nudgeDismissed = { ...value };
-});
 
 function hideSummary(root: HTMLElement | null): void {
   for (const node of document.querySelectorAll(`[${ATTR_SUMMARY}]`)) {
@@ -179,6 +171,39 @@ function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: Geld
   return { meta: withAi(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
 }
 
+/**
+ * GitHub's merge box: the checks list and the review requirements live
+ * there, in either the legacy Rails markup or the React partial. The CI row
+ * shows its counts and, opened, the section itself (read-only clone).
+ */
+const MERGE_BOX_SELECTOR = 'react-partial[partial-name="mergebox"], [data-testid="mergebox-partial"], .mergeability-details, .merge-pr, .js-merge-pr';
+
+function mergeBox(): HTMLElement | null {
+  const box = document.querySelector(MERGE_BOX_SELECTOR);
+  return box instanceof HTMLElement ? box : null;
+}
+
+/** The checks section, remembered once found: quick view moves it out of the merge box, and the counts must keep reading from it. */
+let checksSectionEl: HTMLElement | null = null;
+
+function checksSection(): HTMLElement | null {
+  if (checksSectionEl !== null && checksSectionEl.isConnected) return checksSectionEl;
+  const box = mergeBox();
+  if (box === null) return null;
+  const candidates = [...box.querySelectorAll<HTMLElement>('section, .merge-status-list, [data-testid*="checks" i], [class*="MergeBox"]')];
+  checksSectionEl = candidates.find((node) => checkCountsFrom(node.textContent ?? '') !== null) ?? null;
+  return checksSectionEl;
+}
+
+/** Merge box text plus the checks section's, wherever quick view has put it. */
+function mergeBoxText(): string {
+  const box = mergeBox();
+  const section = checksSection();
+  const parts = [box?.textContent ?? ''];
+  if (section !== null && (box === null || !box.contains(section))) parts.push(section.textContent ?? '');
+  return parts.join('\n');
+}
+
 function subjectOf(): MarkdownSubject | null {
   const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
   if (match === null) return null;
@@ -187,8 +212,12 @@ function subjectOf(): MarkdownSubject | null {
   return { owner, repo, number: Number.parseInt(number, 10), origin: location.origin };
 }
 
-/** What an open row shows in its slot: the item's comments, or a fold's nodes. */
+/** What an open row shows in its slot: the item's comments, a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): QuickViewTarget | null {
+  if (key === CHECKS_KEY) {
+    const section = checksSection();
+    return section === null ? null : { kind: 'nodes', nodes: [section] };
+  }
   if (key.startsWith('fold:')) {
     const nodes = groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
     return nodes.length === 0 ? null : { kind: 'nodes', nodes };
@@ -225,6 +254,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.loadMoreTries = 0;
     visit.revealedFolds = new Set();
     visit.manualDone = new Set();
+    checksSectionEl = null;
     resetAiForVisit();
   }
   const crawledDom = crawlConversation();
@@ -248,9 +278,11 @@ export function applyReviewOverview(settings: GeldSettings): void {
     if (group !== null) revealed.add(group.key);
   }
   const compacting = settings.compactTimeline !== 'off';
-  const repo = repoFromPathname(window.location.pathname) ?? '';
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
   const subject = subjectOf();
+  const boxText = mergeBoxText();
+  const requestable = installedBots(meta, document);
+  const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
   const model: PanelModel = {
     meta,
@@ -260,11 +292,14 @@ export function applyReviewOverview(settings: GeldSettings): void {
     collapsedGroups: visit.collapsedGroups,
     fullTimeline: visit.fullTimeline,
     compacting,
-    nudge: found === null && visit.nudgeDismissed[repo] !== true,
+    nudge: found === null,
     viewingAnchor,
     folds: foldRows(groups),
-    requestable: installedBots(meta, document),
+    requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
+    botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
+    checks: checkCountsFrom(boxText),
+    reviews: requiredReviewsFrom(boxText, meta.reviewers),
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
@@ -330,9 +365,15 @@ export function applyReviewOverview(settings: GeldSettings): void {
       const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
       void postTopLevelComments(triggers);
     },
-    onDismissNudge: () => {
-      visit.nudgeDismissed = { ...visit.nudgeDismissed, [repo]: true };
-      void reviewNudgeDismissedItem.setValue(visit.nudgeDismissed);
+    onOpenAnchor: (anchor) => {
+      // Folded here? Open its row. Otherwise let the browser take the reader to it in the timeline.
+      const group = compacting && !visit.fullTimeline ? groupContaining(groups, anchor) : null;
+      if (group === null) {
+        location.hash = anchor;
+        return;
+      }
+      visit.collapsedGroups.delete('hidden');
+      visit.openKey = foldKey(group.key);
       reapply();
     },
   });

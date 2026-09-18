@@ -9,7 +9,7 @@
  * itself is hidden — its content is this.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import {
@@ -21,13 +21,12 @@ import {
   ICON_COPY,
   ICON_DOT_FILL,
   ICON_KEBAB_HORIZONTAL,
-  ICON_LINK,
   ICON_REPLY,
   ICON_SYNC,
-  ICON_X,
+  ICON_X_CIRCLE_FILL,
 } from '../ui/icons';
-import { authorLabels, isCurrent, splitItems, statusBadge, verdictLabel, verdictTone } from './panel-model';
-import type { InstalledBot } from './panel-model';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, splitItems, statusBadge, verdictLabel } from './panel-model';
+import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import { restoreAll } from './teleport';
 
@@ -69,6 +68,11 @@ export interface PanelModel {
   readonly requestable: readonly InstalledBot[];
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
   readonly summaryAnchorFor: (botId: string) => string | null;
+  /** The page's icon for a bot (from its `/apps/` link or comments). */
+  readonly botIconFor: (botId: string) => string | null;
+  /** CI checks as the merge box reports them; null when the page has no checks section. */
+  readonly checks: CheckCounts | null;
+  readonly reviews: RequiredReviews | null;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
   readonly avatarsFor: (item: ReviewItem) => readonly Avatar[];
   /** Timeline nodes hidden by compaction (for the "show full timeline" row). */
@@ -93,7 +97,8 @@ export interface PanelHandlers {
   readonly onFullTimeline: () => void;
   /** Post the trigger comment of each bot, in order. */
   readonly onRequest: (botIds: readonly string[]) => void;
-  readonly onDismissNudge: () => void;
+  /** Show the comment at `anchor` where the reader is: inside compact view when it is folded there, else in the timeline. */
+  readonly onOpenAnchor: (anchor: string) => void;
 }
 
 export function itemKey(id: string): string {
@@ -103,6 +108,10 @@ export function itemKey(id: string): string {
 export function foldKey(key: string): string {
   return `fold:${key}`;
 }
+
+/** Row key for the CI checks row; its slot shows GitHub's own checks section. */
+export const CHECKS_KEY = 'checks';
+const NUDGE_CLASS = 'geld-review-nudge';
 
 function icon(markup: string): SVGElement {
   return svgFromString(markup);
@@ -285,7 +294,12 @@ function notesFor(item: ReviewItem, model: PanelModel, handlers: PanelHandlers):
     if (anchor === null) continue;
     const label = botTitle(botId, item.sources.find((source) => source.bot === botId)?.author ?? botId);
     if (summaryLinks.length > 0) summaryLinks.push(document.createTextNode(' · '));
-    summaryLinks.push(createElement('a', { class: `${PANEL_CLASS}__link`, href: `#${anchor}` }, [`${label}'s review summary`]));
+    const link = createElement('a', { class: `${PANEL_CLASS}__link`, href: `#${anchor}` }, [`${label}'s review summary`]);
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      handlers.onOpenAnchor(anchor);
+    });
+    summaryLinks.push(link);
   }
   if (summaryLinks.length > 0) notes.append(createElement('p', { class: `${PANEL_CLASS}__summaries` }, summaryLinks));
   if (fix !== null) {
@@ -319,82 +333,194 @@ function plural(count: number, noun: string, nounPlural = `${noun}s`): string {
   return `${count} ${count === 1 ? noun : nounPlural}`;
 }
 
-function verdictChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandlers): HTMLElement {
-  const current = isCurrent(bot, model.meta.headSha);
-  const chip = createElement(
-    'span',
-    { class: `${PANEL_CLASS}__chip`, 'data-tone': verdictTone(bot), 'data-current': String(current), title: current ? 'Reviewed the current commit' : 'Reviewed an earlier commit' },
-    [createElement('span', {}, [verdictLabel(bot)])],
-  );
-  if (!current) chip.append(createElement('span', { class: `${PANEL_CLASS}__chip-note` }, ['behind']));
-  if (bot.sourceId !== undefined) {
-    chip.append(createElement('a', { class: `${PANEL_CLASS}__chip-link`, href: `#${bot.sourceId}`, 'aria-label': 'Show the review', title: 'Show the review' }, [icon(ICON_LINK)]));
-  }
-  const request = model.requestable.find((entry) => entry.id === bot.id);
-  if (request !== undefined) {
-    const rerun = createElement('button', { type: 'button', class: `${PANEL_CLASS}__chip-link`, 'aria-label': `Re-run ${request.label}`, title: `Re-run: posts “${request.trigger}”` }, [icon(ICON_SYNC)]);
-    rerun.addEventListener('click', () => handlers.onRequest([bot.id]));
-    chip.append(rerun);
-  }
-  return chip;
+
+
+
+/* ---- status rows: review bots · CI checks · required reviews -------------- */
+
+const HEALTH_ICON: Readonly<Record<Health, string>> = {
+  good: ICON_CHECK_CIRCLE_FILL,
+  warn: ICON_DOT_FILL,
+  bad: ICON_X_CIRCLE_FILL,
+  pending: ICON_DOT_FILL,
+};
+
+function healthGlyph(health: Health, label: string): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(HEALTH_ICON[health])]);
 }
 
-function reviewerChip(reviewer: ReviewerRecord): HTMLElement {
-  const tone = reviewer.state === 'approved' ? 'success' : reviewer.state === 'changes_requested' ? 'danger' : 'neutral';
-  const label =
-    reviewer.state === 'approved' ? 'approved' : reviewer.state === 'changes_requested' ? 'requested changes' : reviewer.state === 'pending' ? 'pending' : 'commented';
-  return createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': tone, title: `@${reviewer.login} ${label}` }, [
-    ...(reviewer.state === 'approved' ? [icon(ICON_CHECK)] : []),
-    createElement('span', {}, [`@${reviewer.login}`]),
-    createElement('span', { class: `${PANEL_CLASS}__chip-note` }, [label]),
+function anchorLink(anchor: string, label: string, handlers: PanelHandlers, children: Node[]): HTMLElement {
+  const link = createElement('a', { class: `${PANEL_CLASS}__bot`, href: `#${anchor}`, title: label }, children);
+  link.addEventListener('click', (event) => {
+    event.preventDefault();
+    handlers.onOpenAnchor(anchor);
+  });
+  return link;
+}
+
+/** One bot: its icon, name, detail and a traffic-light glyph; clicking opens its run summary where the reader is. */
+function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandlers): HTMLElement {
+  const health = botHealth(bot);
+  const current = isCurrent(bot, model.meta.headSha);
+  const label = `${verdictLabel(bot)}${current ? '' : ' (earlier commit)'}`;
+  const children: Node[] = [];
+  const iconSrc = model.botIconFor(bot.id);
+  if (iconSrc !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [botTitle(bot.id, bot.login)]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [botDetail(bot)]));
+  children.push(healthGlyph(health, label));
+  if (bot.sourceId !== undefined) return anchorLink(bot.sourceId, label, handlers, children);
+  return createElement('span', { class: `${PANEL_CLASS}__bot`, title: label, ...(current ? {} : { 'data-current': 'false' }) }, children);
+}
+
+/** Re-run menu: one entry per installed bot plus All; choosing one turns the menu into a confirm. */
+function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+  if (model.requestable.length === 0) return null;
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu` });
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon`, 'aria-label': 'Request a review', title: 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' }, [icon(ICON_SYNC)]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' });
+  const choices: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[]; readonly prompt: string; readonly iconSrc: string | null }> = [
+    ...model.requestable.map((bot) => ({ label: `Re-run ${bot.label}`, ids: [bot.id], prompt: `Post “${bot.trigger}”?`, iconSrc: bot.iconSrc })),
+    ...(model.requestable.length > 1
+      ? [{ label: 'Re-run all', ids: model.requestable.map((bot) => bot.id), prompt: `Post ${model.requestable.length} comments: ${model.requestable.map((bot) => `“${bot.trigger}”`).join(', ')}?`, iconSrc: null }]
+      : []),
+  ];
+  const render = (): void => {
+    list.replaceChildren(
+      createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']),
+      ...choices.map((choice) => {
+        const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item`, role: 'menuitem' });
+        if (choice.iconSrc !== null) item.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: choice.iconSrc, alt: '', width: '16', height: '16' }));
+        item.append(createElement('span', {}, [choice.label]));
+        item.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const yes = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--primary`, role: 'menuitem' }, ['Post comment']);
+          const no = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item`, role: 'menuitem' }, ['Cancel']);
+          yes.addEventListener('click', (inner) => {
+            inner.stopPropagation();
+            details.removeAttribute('open');
+            render();
+            handlers.onRequest(choice.ids);
+          });
+          no.addEventListener('click', (inner) => {
+            inner.stopPropagation();
+            render();
+          });
+          list.replaceChildren(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, [choice.prompt]), yes, no);
+          yes.focus({ preventScroll: true });
+        });
+        return item;
+      }),
+    );
+  };
+  render();
+  details.addEventListener('toggle', () => {
+    if (!details.hasAttribute('open')) render();
+  });
+  details.append(summary, list);
+  return details;
+}
+
+/** GitHub's own status ring: one arc per state, in its colours, drawn around a 16px circle. */
+function checksRing(counts: CheckCounts): SVGElement {
+  const total = checksTotal(counts);
+  const r = 6;
+  const circumference = 2 * Math.PI * r;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add(`${PANEL_CLASS}__ring`);
+  let offset = 0;
+  const segments: ReadonlyArray<readonly [keyof CheckCounts, number]> = [
+    ['success', counts.success],
+    ['failure', counts.failure],
+    ['pending', counts.pending],
+    ['skipped', counts.skipped],
+    ['neutral', counts.neutral],
+  ];
+  for (const [state, count] of segments) {
+    if (count === 0 || total === 0) continue;
+    const length = (count / total) * circumference;
+    const arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    arc.setAttribute('cx', '8');
+    arc.setAttribute('cy', '8');
+    arc.setAttribute('r', String(r));
+    arc.setAttribute('fill', 'none');
+    arc.setAttribute('stroke-width', '2.5');
+    arc.setAttribute('stroke-dasharray', `${length} ${circumference - length}`);
+    arc.setAttribute('stroke-dashoffset', String(-offset));
+    arc.setAttribute('transform', 'rotate(-90 8 8)');
+    arc.setAttribute('data-state', state);
+    svg.append(arc);
+    offset += length;
+  }
+  return svg;
+}
+
+function statusRow(label: string, lead: Node, content: Node[], right: Node[], extra: Readonly<Record<string, string>> = {}): HTMLElement {
+  return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, ...extra }, [
+    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [lead]),
+    createElement('span', { class: `${PANEL_CLASS}__label` }, [label]),
+    createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+    createElement('span', { class: `${PANEL_CLASS}__right` }, right),
   ]);
 }
 
-/** A bot button: its own icon (rounded square, like GitHub draws Apps) inside an outlined pill of the same corner family. */
-function requestButton(label: string, iconSrc: string | null, prompt: string, ids: readonly string[], handlers: PanelHandlers): HTMLElement {
-  const holder = createElement('span', { class: `${PANEL_CLASS}__request-bot` });
-  const ask = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot-btn`, title: prompt, [ATTR_FOCUS]: `request:${ids.join(',')}` });
-  if (iconSrc !== null) ask.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
-  ask.append(createElement('span', {}, [label]));
-  const confirm = createElement('span', { class: `${PANEL_CLASS}__confirm`, hidden: '' }, [createElement('span', {}, [prompt])]);
-  const yes = iconButton(ICON_CHECK, 'Post it');
-  const no = iconButton(ICON_X, 'Cancel');
-  confirm.append(yes, no);
-  ask.addEventListener('click', () => {
-    ask.hidden = true;
-    confirm.hidden = false;
-    yes.focus({ preventScroll: true });
-  });
-  no.addEventListener('click', () => {
-    confirm.hidden = true;
-    ask.hidden = false;
-    ask.focus({ preventScroll: true });
-  });
-  yes.addEventListener('click', () => {
-    confirm.hidden = true;
-    ask.hidden = false;
-    handlers.onRequest(ids);
-  });
-  holder.append(ask, confirm);
-  return holder;
-}
-
-function requestRow(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
-  if (model.requestable.length === 0) return null;
-  const row = createElement('div', { class: `${PANEL_CLASS}__request` }, [createElement('span', { class: `${PANEL_CLASS}__request-label` }, ['Request a review'])]);
-  for (const bot of model.requestable) row.append(requestButton(bot.label, bot.iconSrc, `Post “${bot.trigger}”?`, [bot.id], handlers));
-  if (model.requestable.length > 1) {
-    row.append(
-      requestButton(
-        'All',
-        null,
-        `Post ${model.requestable.length} comments: ${model.requestable.map((bot) => `“${bot.trigger}”`).join(', ')}?`,
-        model.requestable.map((bot) => bot.id),
-        handlers,
+function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+  const rows = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--status`, role: 'list' });
+  if (model.meta.bots.length > 0 || model.requestable.length > 0) {
+    const worst: Health = model.meta.bots.map(botHealth).reduce<Health>((acc, health) => (acc === 'bad' || health === 'bad' ? 'bad' : acc === 'warn' || health === 'warn' ? 'warn' : acc === 'pending' || health === 'pending' ? 'pending' : 'good'), 'good');
+    const chips = model.meta.bots.map((bot) => botChip(bot, model, handlers));
+    const menu = rerunMenu(model, handlers);
+    rows.append(
+      statusRow(
+        'Review bots',
+        icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
+        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__detail` }, ['No reviews yet'])] : chips,
+        menu === null ? [] : [menu],
+        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst },
       ),
     );
   }
-  return row;
+  if (model.checks !== null) {
+    const health = checksHealth(model.checks);
+    const open = model.openKey === CHECKS_KEY;
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}` }, [
+      createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`${checksTotal(model.checks)} checks`]),
+      createElement('span', { class: `${PANEL_CLASS}__detail` }, [checksSummary(model.checks)]),
+    ]);
+    main.addEventListener('click', () => handlers.onToggle(CHECKS_KEY));
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [checksRing(model.checks)]),
+      createElement('span', { class: `${PANEL_CLASS}__label` }, ['CI checks']),
+      main,
+      createElement('span', { class: `${PANEL_CLASS}__right` }, [healthGlyph(health, checksSummary(model.checks)), chevron(open)]),
+    ]);
+    if (open) row.setAttribute('data-open', '');
+    rows.append(row);
+    if (open) rows.append(slotRow(CHECKS_KEY));
+  }
+  if (model.reviews !== null) {
+    const health = reviewsHealth(model.reviews);
+    const marks = createElement('span', { class: `${PANEL_CLASS}__marks`, 'aria-hidden': 'true' });
+    for (let index = 0; index < Math.max(model.reviews.required, model.reviews.approvals); index += 1) {
+      marks.append(createElement('span', { class: `${PANEL_CLASS}__mark`, 'data-done': String(index < model.reviews.approvals) }, [icon(index < model.reviews.approvals ? ICON_CHECK : ICON_CIRCLE)]));
+    }
+    const text = model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`;
+    rows.append(
+      statusRow(
+        'Reviews',
+        icon(ICON_COMMENT_DISCUSSION),
+        [createElement('span', { class: `${PANEL_CLASS}__detail` }, [text]), marks],
+        [healthGlyph(health, text)],
+        { 'data-health': health },
+      ),
+    );
+  }
+  return rows.childElementCount === 0 ? null : rows;
 }
 
 function signatureOf(model: PanelModel): string {
@@ -416,10 +542,13 @@ function signatureOf(model: PanelModel): string {
     hiddenCount: model.hiddenCount,
     pending: [...model.aiPending].sort(),
     tldr: model.meta.summary?.tldr ?? '',
-    bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.reviewedSha}`),
+    bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
+    checks: model.checks,
+    reviews: model.reviews,
+    icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
   });
 }
 
@@ -477,14 +606,12 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   else if (model.freshness === 'local') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh`, title: 'No Geld summary comment on this pull request yet; built from the page.' }, ['from this page']));
-  const chips = createElement('div', { class: `${PANEL_CLASS}__chips` });
-  for (const bot of model.meta.bots) chips.append(verdictChip(bot, model, handlers));
-  for (const reviewer of model.meta.reviewers) chips.append(reviewerChip(reviewer));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
-  const copy = iconButton(ICON_COPY, 'Copy digest');
+  const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
-  const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, chips, tools]);
+  const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, tools]);
+  const status = statusRows(model, handlers);
   const tldrPending = model.aiPending.has('tldr');
   const tldr =
     model.meta.summary !== undefined
@@ -529,24 +656,15 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
 
   const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, 'aria-label': 'Geld review digest' }, [
     head,
+    ...(status === null ? [] : [status]),
     ...(tldr === null ? [] : [tldr]),
     rows,
   ]);
 
   /* Footer */
-  const footerBits: Node[] = [];
-  const request = requestRow(model, handlers);
-  if (request !== null) footerBits.push(request);
-  if (model.truncated) footerBits.push(createElement('p', { class: `${PANEL_CLASS}__note` }, ['The summary was truncated; the rest of the discussion is still in the timeline.']));
-  if (model.nudge) {
-    const nudge = createElement('p', { class: `${PANEL_CLASS}__note` }, ['Add the Geld Action to this repository and this digest is ready before the page opens. ']);
-    nudge.append(createElement('a', { href: 'https://www.geld.sh/how-it-works#summary', target: '_blank', rel: 'noreferrer' }, ['How']), document.createTextNode(' · '));
-    const dismiss = createElement('button', { type: 'button', class: `${PANEL_CLASS}__link` }, ['Dismiss']);
-    dismiss.addEventListener('click', () => handlers.onDismissNudge());
-    nudge.append(dismiss);
-    footerBits.push(nudge);
+  if (model.truncated) {
+    panel.append(createElement('div', { class: `${PANEL_CLASS}__foot` }, [createElement('p', { class: `${PANEL_CLASS}__note` }, ['The summary was truncated; the rest of the discussion is still in the timeline.'])]));
   }
-  if (footerBits.length > 0) panel.append(createElement('div', { class: `${PANEL_CLASS}__foot` }, footerBits));
   if (model.compacting && (model.hiddenCount > 0 || model.fullTimeline)) {
     // The one control for the timeline itself, shaped like GitHub's own "N hidden items · Load more" bar.
     const toggle = createElement('button', { type: 'button', class: `${PANEL_CLASS}__timeline-btn`, 'aria-pressed': String(model.fullTimeline), [ATTR_FOCUS]: 'timeline' }, [
@@ -561,6 +679,15 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   panel.style.marginLeft = cardStyle.marginLeft;
   panel.style.marginRight = cardStyle.marginRight;
   card.insertAdjacentElement('afterend', panel);
+  // Below the box, not in it: a quiet, persistent pointer to the Action while this repository lacks it.
+  document.querySelector(`.${NUDGE_CLASS}`)?.remove();
+  if (model.nudge) {
+    const nudge = createElement('p', { class: NUDGE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Built from this page. Add the Geld Action to this repository and the digest is ready before the page opens — ']);
+    nudge.append(createElement('a', { href: 'https://www.geld.sh/how-it-works#summary', target: '_blank', rel: 'noreferrer' }, ['how']), document.createTextNode('.'));
+    nudge.style.marginLeft = cardStyle.marginLeft;
+    nudge.style.marginRight = cardStyle.marginRight;
+    panel.insertAdjacentElement('afterend', nudge);
+  }
   restoreFocus(panel, focusKey);
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
 }
@@ -568,6 +695,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
 export function unmountPanel(): void {
   restoreAll();
   document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`)?.remove();
+  document.querySelector(`.${NUDGE_CLASS}`)?.remove();
   for (const card of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) card.removeAttribute(ATTR_ATTACHED);
 }
 
