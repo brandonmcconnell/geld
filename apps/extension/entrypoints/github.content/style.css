@@ -1029,13 +1029,28 @@ tr[data-geld-line='hidden'] {
  * attributes, never removed: ids stay resolvable for permalinks, GitHub's
  * Resolve keeps working, and "Show the full timeline" is one attribute flip.
  */
-[data-geld-summary='hidden'],
-[data-geld-folded='hidden'] {
+[data-geld-summary='hidden'] {
   display: none !important;
+}
+
+/*
+ * Folded items carry `hidden="until-found"` so find-in-page still searches
+ * them. Primer's `[hidden] { display: none !important }` would defeat that,
+ * so display is restored and the box is zeroed instead: the UA's
+ * `content-visibility: hidden` skips the contents (rail pseudo-elements
+ * included), and without padding or borders nothing of the row remains.
+ */
+[data-geld-folded='hidden'] {
+  display: block !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 html[data-geld-timeline='full'] [data-geld-folded] {
   display: revert !important;
+  content-visibility: visible !important;
 }
 
 /* The description card the panel grows out of: one box, shared border. */
@@ -1445,8 +1460,25 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--geld-review-done-fg);
 }
 
+.geld-review__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__chevron .octicon {
+  transition: transform 120ms ease;
+}
+
+.geld-review__chevron[data-open='true'] .octicon {
+  transform: rotate(180deg);
+}
+
 @media (hover: hover) {
-  .geld-review__row .geld-review__right > .geld-review__icon:not([aria-expanded='true']),
+  .geld-review__row .geld-review__right > .geld-review__icon,
   .geld-review__row .geld-review__right > .geld-review__menu:not([open]) {
     opacity: 0;
   }
@@ -1599,6 +1631,32 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   opacity: 0.6;
 }
 
+/* ---- the timeline's one control ------------------------------------------ */
+
+.geld-review__timeline {
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px;
+  border-top: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-subtle);
+  border-radius: 0 0 6px 6px;
+}
+
+.geld-review__timeline-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review__timeline-btn:hover {
+  color: var(--geld-review-accent);
+  text-decoration: underline;
+}
+
 /* ---- footer: request a review · notes ------------------------------------ */
 
 .geld-review__foot {
@@ -1703,9 +1761,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   text-decoration: underline;
 }
 
+.geld-review__qv-bot {
+  padding: 0 5px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 2em;
+  color: var(--geld-review-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .geld-review__meter > i,
-  .geld-review__group-btn .octicon {
+  .geld-review__group-btn .octicon,
+  .geld-review__chevron .octicon {
     transition: none;
   }
 }
