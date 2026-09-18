@@ -19141,9 +19141,9 @@ var REVIEW_BOTS = [
   {
     id: "bugbot",
     title: "Bugbot",
-    logins: ["cursor[bot]", "cursor-bugs[bot]", "bugbot[bot]"],
+    logins: ["cursor[bot]", "cursor-bugs[bot]", "bugbot[bot]", "cursor-com[bot]"],
     checkNames: ["Cursor Bugbot", "Bugbot"],
-    triggers: ["bugbot run", "@cursor bugbot"],
+    triggers: ["bugbot run", "cursor review", "@cursor review"],
     configFiles: [".cursor/BUGBOT.md"]
   },
   {
@@ -19151,7 +19151,7 @@ var REVIEW_BOTS = [
     title: "Greptile",
     logins: ["greptile-apps[bot]", "greptile[bot]"],
     checkNames: ["Greptile"],
-    triggers: ["@greptile"],
+    triggers: ["@greptileai", "@greptile", "@greptileai review"],
     configFiles: [".greptile.yml", ".greptile.yaml"]
   },
   {
@@ -19159,7 +19159,7 @@ var REVIEW_BOTS = [
     title: "Devin",
     logins: ["devin-ai-integration[bot]", "devin[bot]"],
     checkNames: ["Devin"],
-    triggers: ["@devin"],
+    triggers: ["/devin review", "@devin review", "@devin"],
     configFiles: []
   },
   {
@@ -19167,7 +19167,7 @@ var REVIEW_BOTS = [
     title: "Codex",
     logins: ["chatgpt-codex-connector[bot]", "openai-codex[bot]", "codex[bot]"],
     checkNames: ["Codex"],
-    triggers: ["@codex"],
+    triggers: ["@codex review", "@codex"],
     configFiles: [".codex/", "AGENTS.md"]
   },
   {
@@ -19183,7 +19183,7 @@ var REVIEW_BOTS = [
     title: "CodeRabbit",
     logins: ["coderabbitai[bot]"],
     checkNames: ["CodeRabbit"],
-    triggers: ["@coderabbitai review", "@coderabbitai"],
+    triggers: ["@coderabbitai review", "@coderabbitai full review", "@coderabbitai"],
     configFiles: [".coderabbit.yaml", ".coderabbit.yml"]
   },
   {
@@ -19281,6 +19281,22 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     );
   }
   return [...byId.values()];
+}
+var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
+function isTriggerComment(body, extraLogins = []) {
+  const text = body.replace(/[`*_~]/g, "").replace(/\s+/g, " ").trim().replace(/[.!]+$/, "").toLowerCase();
+  if (text === "" || text.length > 60) return false;
+  for (const bot of REVIEW_BOTS) {
+    if (bot.triggers.some((trigger) => trigger.toLowerCase() === text)) return true;
+  }
+  for (const login of extraLogins) {
+    const handle2 = `@${login.replace(/\[bot\]$/i, "").toLowerCase()}`;
+    if (text === handle2 || text.startsWith(`${handle2} `)) return GENERIC_TRIGGER.test(text);
+  }
+  if (!GENERIC_TRIGGER.test(text)) return false;
+  const handle = /^@([\w-]+)/.exec(text)?.[1];
+  if (handle === void 0) return true;
+  return REVIEW_BOTS.some((bot) => bot.triggers.some((trigger) => trigger.toLowerCase().startsWith(`@${handle}`)) || bot.logins.some((login) => login.toLowerCase().startsWith(handle)));
 }
 
 // ../../packages/review/src/cluster.ts
@@ -19429,11 +19445,11 @@ function sourceExcerpts(comments, item) {
     return `${who}: ${body.length > EXCERPT_CHARS ? `${body.slice(0, EXCERPT_CHARS)}\u2026` : body}`;
   });
 }
-function isBotSummaryComment(comment, extraLogins = []) {
-  return comment.kind !== "thread" && (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author));
+function isReviewItemComment(comment, extraLogins = []) {
+  return comment.kind === "thread" && comment.body.trim() !== "" && !isTriggerComment(comment.body, extraLogins);
 }
 function clusterComments(comments, extraLogins = []) {
-  const atoms = comments.filter((comment) => comment.body.trim() !== "" && !isBotSummaryComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
+  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
   const parent = atoms.map((_, index) => index);
   const find = (index) => {
     const current = parent[index] ?? index;
@@ -20034,7 +20050,7 @@ function foldOf(pr, extraLogins) {
   const comments = [];
   for (const comment of pr.comments) {
     if (looksLikeSummaryBody(comment.body)) continue;
-    if (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author)) {
+    if (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author) || isTriggerComment(comment.body, extraLogins)) {
       comments.push(`issuecomment-${comment.databaseId}`);
     }
   }

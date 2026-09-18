@@ -117,6 +117,16 @@ export function groupBotRuns(
   return groups;
 }
 
+/** Comments that only ask a bot to run ("@greptileai", "bugbot run"): one row, whoever wrote them. */
+export function groupTriggers(
+  comments: readonly { readonly anchor: string; readonly root: HTMLElement }[],
+  triggerAnchors: ReadonlySet<string>,
+): FoldGroup | null {
+  const nodes = [...new Set(comments.filter((comment) => triggerAnchors.has(comment.anchor)).map((comment) => comment.root))];
+  if (nodes.length === 0) return null;
+  return { key: 'triggers', label: `${nodes.length} review request${nodes.length === 1 ? '' : 's'}`, author: null, nodes };
+}
+
 export function groupDoneHumans(
   comments: readonly { readonly author: string; readonly anchor: string; readonly root: HTMLElement }[],
   doneAnchors: ReadonlySet<string>,
