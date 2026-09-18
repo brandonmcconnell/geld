@@ -35,12 +35,21 @@ export function tickSummaryCheckbox(commentRoot: HTMLElement, itemAnchors: reado
 export function focusReply(anchor: string): boolean {
   const root = timelineRootOf(anchor);
   if (root === null) return false;
-  const opener = root.querySelector<HTMLElement>(
+  // Quick view may have moved the reply control into the panel's slot.
+  const scopes: ParentNode[] = [root, ...document.querySelectorAll('.geld-review__qv-reply')];
+  const find = <T extends Element>(selector: string): T | null => {
+    for (const scope of scopes) {
+      const hit = scope.querySelector<T>(selector);
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+  const opener = find<HTMLElement>(
     '.review-thread-reply-button, button.js-inline-comment-form-reply, button[data-testid="comment-reply"], .js-comment-quote-reply, button[aria-label^="Reply" i]',
   );
   opener?.click();
   const focusBox = (): boolean => {
-    const box = root.querySelector<HTMLTextAreaElement>('textarea');
+    const box = find<HTMLTextAreaElement>('textarea');
     if (box === null) return false;
     box.focus({ preventScroll: true });
     return true;
@@ -50,15 +59,21 @@ export function focusReply(anchor: string): boolean {
   return opener !== null;
 }
 
+const RESOLVE_SELECTOR = 'button[data-resolved-text], form.js-resolvable-toggler button, button[aria-label*="esolve conversation" i], button[name="resolve"]';
+
+/** GitHub's Resolve/Unresolve for the thread holding `anchor`, wherever quick view may have moved it. */
 export function clickResolve(anchor: string): boolean {
   const root = timelineRootOf(anchor);
   if (root === null) return false;
-  const button = root.querySelector<HTMLButtonElement>(
-    'button[data-resolved-text], form.js-resolvable-toggler button, button[aria-label*="esolve conversation" i], button[name="resolve"]',
-  );
+  const button = root.querySelector<HTMLButtonElement>(RESOLVE_SELECTOR) ?? document.querySelector<HTMLButtonElement>(`.geld-review__slot-body ${RESOLVE_SELECTOR}`);
   if (button === null) return false;
   button.click();
   return true;
+}
+
+export function isResolvable(anchor: string): boolean {
+  const root = timelineRootOf(anchor);
+  return root !== null && (root.querySelector(RESOLVE_SELECTOR) !== null || document.querySelector(`.geld-review__slot-body ${RESOLVE_SELECTOR}`) !== null);
 }
 
 export async function copyText(text: string): Promise<void> {
