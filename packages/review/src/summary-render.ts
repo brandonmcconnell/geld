@@ -54,7 +54,11 @@ function sourcesOf(item: ReviewItem): string {
 
 function itemLine(item: ReviewItem, checked: boolean): string {
   const box = checked ? '- [x]' : '- [ ]';
-  return `${box} **${escapeMd(item.title)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item)}`;
+  const head = `${box} **${escapeMd(item.title)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item)}`;
+  const extra: string[] = [];
+  if (item.context !== undefined) extra.push(`  ${escapeMd(item.context)}`);
+  if (item.fix !== undefined) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', '  ```suggestion', ...item.fix.text.split('\n').map((line) => `  ${line}`), '  ```', '', '  </details>');
+  return [head, ...extra].join('\n');
 }
 
 function groupItems(items: readonly ReviewItem[]): { open: ReviewItem[]; done: ReviewItem[] } {
@@ -125,6 +129,9 @@ export function renderSummary(
     headerLine(meta),
     '',
   ];
+  if (meta.summary !== undefined) {
+    lines.push(meta.summary.tldr, '');
+  }
   if (open.length > 0) {
     lines.push(`**Open (${open.length})**`);
     for (const item of open) lines.push(itemLine(item, false));

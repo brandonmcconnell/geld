@@ -20,7 +20,7 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline';
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'suggestedFixes';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
 export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
@@ -414,13 +414,26 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         saveLabel: 'Save bots',
       },
       {
+        kind: 'choice',
+        key: 'suggestedFixes',
+        label: 'Suggested fixes',
+        description: 'Review bots often attach a fix; with AI on, Geld can propose one too. Choose which appear on an item.',
+        popup: false,
+        options: [
+          { value: 'bots', label: 'From bots', description: 'Show the fix a review bot attached to its comment.' },
+          { value: 'ai', label: 'From AI', description: 'Only fixes the consolidation model proposes (needs a gateway key).' },
+          { value: 'all', label: 'Both', description: 'Bot fixes and, with AI on, proposed ones.' },
+          { value: 'off', label: 'Off', description: 'Never show a suggested fix; the finding alone.' },
+        ],
+      },
+      {
         kind: 'text',
         key: 'aiBaseUrl',
         label: 'AI gateway URL',
         description:
-          'Optional OpenAI-compatible origin used to rewrite bot-only titles in the browser when the Action did not. The key never leaves this device (`storage.local`) and no request is made until you set one.',
+          'Optional OpenAI-compatible origin (Vercel AI Gateway, OpenAI, or your own) used to consolidate bot findings and write the TL;DR when the Action did not. The key never leaves this device (`storage.local`, never the gist) and no request is made until you set one.',
         popup: false,
-        placeholder: 'https://api.openai.com',
+        placeholder: 'https://ai-gateway.vercel.sh',
         autocomplete: 'off',
         surfaces: ['extension'],
       },
@@ -430,7 +443,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'AI model',
         description: 'Model id from the gateway’s `/v1/models` list. Empty until you pick one.',
         popup: false,
-        placeholder: 'gpt-4.1-mini',
+        placeholder: 'openai/gpt-4.1-mini',
         autocomplete: 'off',
         surfaces: ['extension'],
       },

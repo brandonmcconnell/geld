@@ -64,6 +64,7 @@ const PERSONAL_KEYS = [
   'reviewBots',
   'aiBaseUrl',
   'aiModel',
+  'suggestedFixes',
 ] as const;
 
 /**
