@@ -125,6 +125,18 @@ export function avatarSrcFor(anchor: string): string | null {
   return avatarSrcOf(document.getElementById(anchor));
 }
 
+/** Any avatar the page shows for `login` — the reviewers sidebar, another comment, a hovercard link. */
+export function avatarSrcForLogin(login: string): string | null {
+  const bare = login.replace(/\[bot\]$/i, '');
+  const selectors = [`img[alt="@${bare}"]`, `a[href="/${bare}"] img`, `a[href$="/${bare}"][data-hovercard-type] img`, `img[alt="${bare}"]`, `a[href="/apps/${bare}"] img`];
+  for (const selector of selectors) {
+    const img = document.querySelector(selector);
+    const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
+    if (src !== '') return src;
+  }
+  return null;
+}
+
 function pathLineOf(root: Element): { readonly path?: string; readonly line?: number } {
   const fileLink = root.querySelector('a[href*="/files"][href*="#"], a[href*="/blob/"], [data-path]');
   const href = fileLink?.getAttribute('href') ?? '';
@@ -301,7 +313,7 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
     reviews.push({
       anchor: node.id,
       author,
-      avatarSrc: avatarSrcOf(node),
+      avatarSrc: avatarSrcOf(node) ?? avatarSrcForLogin(author.login),
       // The verdict sentence sits in the row's own header; the comment's words must not vote.
       state: reviewStateOf(textOutside(node, comment)),
       createdAt: createdAtOf(node),

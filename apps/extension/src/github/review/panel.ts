@@ -12,7 +12,7 @@
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_DOT_FILL, ICON_KEBAB_HORIZONTAL, ICON_REPLY, ICON_SKIP, ICON_SMILEY, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_DOT_FILL, ICON_HISTORY, ICON_KEBAB_HORIZONTAL, ICON_REPLY, ICON_SKIP, ICON_SMILEY, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -373,7 +373,8 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   }
   right.append(chevron(open, toggle));
-  const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]);
+  // Events are not comments; the clock says so.
+  const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(fold.key === 'events' ? ICON_HISTORY : ICON_COMMENT_DISCUSSION)]);
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold`, 'data-geld-fold': fold.key }, [
     glyph,
     ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true }], fold.label, true)]),
@@ -626,13 +627,16 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [reviewsLabel(model.reviews)]), marks);
     }
     const open = model.openKey === REVIEWS_KEY;
-    const count = model.comments.length;
-    content.push(
-      createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: `${plural(count, 'review')} and comments from people` }, [
-        icon(ICON_COMMENT_DISCUSSION),
-        createElement('span', {}, [String(count)]),
-      ]),
-    );
+    // Only comments count here; a bare verdict is already in the approvals.
+    const count = model.comments.filter((entry) => entry.hasBody).length;
+    if (count > 0) {
+      content.push(
+        createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: `${plural(count, 'review comment')} from people` }, [
+          icon(ICON_COMMENT_DISCUSSION),
+          createElement('span', {}, [String(count)]),
+        ]),
+      );
+    }
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
       createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
     ]);
@@ -694,7 +698,7 @@ function reactionButton(myReaction: string | null, focusKey: string, onReact: ()
 export function renderCommentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   let nested: HTMLElement | null = null;
-  if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews or comments from people yet.']));
+  if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews yet.']));
   for (const entry of model.comments) {
     const open = entry.hasBody && model.openSubKey === entry.anchor;
     const lead =
@@ -877,7 +881,6 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
       }
     }
   }
-  if (total === 0 && model.folds.length === 0) rows.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No review comments yet.']));
 
   const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, 'aria-label': 'Geld review digest' }, [
     head,
