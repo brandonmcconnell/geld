@@ -89,7 +89,16 @@ const HOST_GAP = 8;
  * under that scrollbar and give the page a horizontal one. The viewport is
  * measured on `documentElement`, which excludes scrollbars.
  */
+/** A host that left the DOM, or is no longer rendered, has nothing to point a tooltip at. */
+function hostGone(host: HTMLElement): boolean {
+  return !host.isConnected || host.getClientRects().length === 0;
+}
+
 function position(host: HTMLElement): void {
+  if (hostGone(host)) {
+    hideTooltip();
+    return;
+  }
   const element = ensureTooltip();
   const boundAnchor = providers.get(host)?.anchor;
   const anchor = boundAnchor?.isConnected === true ? boundAnchor : host;
@@ -137,6 +146,37 @@ function horizontalBounds(host: HTMLElement, tipWidth: number, viewportWidth: nu
 /** Keep a fixed tooltip glued to its host while the page scrolls or resizes. */
 function follow(): void {
   if (activeHost !== null) position(activeHost);
+}
+
+/**
+ * GitHub's React lists re-render rows wholesale (the merge box's stack list
+ * does when the PR's state changes), removing the hovered host from under the
+ * open tooltip: `mouseleave` never fires for a removed element and the
+ * `position: fixed` box would sit at its last coordinates, or snap to the
+ * viewport's corner once `follow` measured an empty rect. While a tooltip is
+ * up, the document is watched and the tooltip closes the moment its host is
+ * detached or hidden; a replacement host gets its own tooltip on hover.
+ */
+let hostWatcher: MutationObserver | null = null;
+let hostCheck: number | null = null;
+
+function checkHost(): void {
+  hostCheck = null;
+  if (activeHost !== null && hostGone(activeHost)) hideTooltip();
+}
+
+function watchHost(): void {
+  hostWatcher ??= new MutationObserver(() => {
+    // Coalesce a burst of mutations into one check, after React has finished the commit.
+    hostCheck ??= requestAnimationFrame(checkHost);
+  });
+  hostWatcher.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
+}
+
+function unwatchHost(): void {
+  hostWatcher?.disconnect();
+  if (hostCheck !== null) cancelAnimationFrame(hostCheck);
+  hostCheck = null;
 }
 
 /** Escape dismisses the tooltip without moving the pointer or focus (WCAG 1.4.13). */
@@ -194,6 +234,7 @@ function present(host: HTMLElement, content: TooltipContent): void {
     window.addEventListener('scroll', follow, { capture: true, passive: true });
     window.addEventListener('resize', follow, { passive: true });
     document.addEventListener('keydown', onKeyDown, true);
+    watchHost();
   }
   if (activeHost !== null && activeHost !== host) describe(activeHost, false);
   activeHost = host;
@@ -201,7 +242,8 @@ function present(host: HTMLElement, content: TooltipContent): void {
   else if ('message' in content) renderMessage(content.message);
   else render(content);
   position(host);
-  describe(host, true);
+  // A host that vanished between the hover and now closed the tooltip in position().
+  if (activeHost === host) describe(host, true);
 }
 
 function show(host: HTMLElement): void {
@@ -238,6 +280,7 @@ export function hideTooltip(): void {
     window.removeEventListener('scroll', follow, { capture: true });
     window.removeEventListener('resize', follow);
     document.removeEventListener('keydown', onKeyDown, true);
+    unwatchHost();
     describe(activeHost, false);
   }
   activeHost = null;
