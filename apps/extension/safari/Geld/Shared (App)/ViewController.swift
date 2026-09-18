@@ -16,11 +16,24 @@ import SafariServices
 typealias PlatformViewController = NSViewController
 #endif
 
-let extensionBundleIdentifier = "sh.geld.safari.Extension"
+private let extensionBundleIdentifier = "sh.geld.safari.Extension"
+
+private enum AppAction: String {
+    case openPreferences = "open-preferences"
+    case openDemo = "open-demo"
+    case openHelp = "open-help"
+    case openPrivacy = "open-privacy"
+}
 
 class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMessageHandler {
 
     @IBOutlet var webView: WKWebView!
+
+    private var pageIsReady = false
+
+#if os(macOS)
+    private var activationObserver: NSObjectProtocol?
+#endif
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -33,49 +46,105 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
 
         self.webView.configuration.userContentController.add(self, name: "controller")
 
-        self.webView.loadFileURL(Bundle.main.url(forResource: "Main", withExtension: "html")!, allowingReadAccessTo: Bundle.main.resourceURL!)
+        guard let pageURL = Bundle.main.url(forResource: "Main", withExtension: "html") else {
+            return
+        }
+        self.webView.loadFileURL(pageURL, allowingReadAccessTo: Bundle.main.resourceURL!)
+
+#if os(macOS)
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshExtensionState()
+        }
+#endif
+    }
+
+    deinit {
+#if os(macOS)
+        if let activationObserver {
+            NotificationCenter.default.removeObserver(activationObserver)
+        }
+#endif
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pageIsReady = true
+        refreshExtensionState()
+    }
+
+    private func refreshExtensionState() {
+        guard pageIsReady else {
+            return
+        }
+
 #if os(iOS)
         webView.evaluateJavaScript("show('ios')")
 #elseif os(macOS)
-        webView.evaluateJavaScript("show('mac')")
-
         SFSafariExtensionManager.getStateOfSafariExtension(withIdentifier: extensionBundleIdentifier) { (state, error) in
-            guard let state = state, error == nil else {
-                // Insert code to inform the user that something went wrong.
+            guard error == nil, let state else {
+                DispatchQueue.main.async {
+                    self.webView.evaluateJavaScript("show('mac')")
+                }
                 return
             }
 
             DispatchQueue.main.async {
-                if #available(macOS 13, *) {
-                    webView.evaluateJavaScript("show('mac', \(state.isEnabled), true)")
-                } else {
-                    webView.evaluateJavaScript("show('mac', \(state.isEnabled), false)")
-                }
+                self.webView.evaluateJavaScript("show('mac', \(state.isEnabled))")
             }
         }
 #endif
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-#if os(macOS)
-        if (message.body as! String != "open-preferences") {
+        guard
+            let actionName = message.body as? String,
+            let action = AppAction(rawValue: actionName)
+        else {
             return
         }
 
-        SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { error in
-            guard error == nil else {
-                // Insert code to inform the user that something went wrong.
-                return
-            }
-
-            DispatchQueue.main.async {
-                NSApp.terminate(self)
-            }
+        switch action {
+#if os(macOS)
+        case .openPreferences:
+            SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { _ in }
+#else
+        case .openPreferences:
+            break
+#endif
+        case .openDemo:
+            openDemoPullRequest()
+        case .openHelp:
+            openExternalURL("https://www.geld.sh/how-it-works")
+        case .openPrivacy:
+            openExternalURL("https://www.geld.sh/privacy")
         }
+    }
+
+    private func openDemoPullRequest() {
+        let address = "https://github.com/wxt-dev/wxt/pull/2544/files"
+        guard let url = URL(string: address) else {
+            return
+        }
+
+#if os(macOS)
+        SFSafariApplication.openWindow(with: url) { _ in }
+#elseif os(iOS)
+        UIApplication.shared.open(url)
 #endif
     }
 
+    private func openExternalURL(_ address: String) {
+        guard let url = URL(string: address) else {
+            return
+        }
+
+#if os(macOS)
+        NSWorkspace.shared.open(url)
+#elseif os(iOS)
+        UIApplication.shared.open(url)
+#endif
+    }
 }

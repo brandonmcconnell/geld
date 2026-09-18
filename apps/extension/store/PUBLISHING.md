@@ -76,27 +76,47 @@ Read only by the publish workflow.
 
 [addons.mozilla.org → Tools → Manage API Keys](https://addons.mozilla.org/developers/addon/api/key/) → generate credentials. The **JWT issuer** (`user:…:…`) is `AMO_JWT_ISSUER`, the **JWT secret** is `AMO_JWT_SECRET`. The add-on id is fixed in the manifest (`geld@brandonmcconnell.com`) and must match the listing.
 
-### Safari — `APPLE_TEAM_ID`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`, `APPLE_ASC_PRIVATE_KEY`, `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`
+### Safari — signing secrets plus physical-device review evidence
+
+Secrets: `APPLE_TEAM_ID`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`, `APPLE_ASC_PRIVATE_KEY`, `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`.
+
+Repository variables: `SAFARI_REVIEW_VIDEO_URL`, `SAFARI_REVIEW_TEST_DEVICE`.
 
 1. `APPLE_TEAM_ID`: [developer.apple.com → Membership](https://developer.apple.com/account) → Team ID.
 2. App Store Connect API key: [App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys](https://appstoreconnect.apple.com/access/integrations/api) → generate a key with the **Admin** role (cloud signing — Xcode creating provisioning profiles on the runner — is refused with "Cloud signing permission error" for App Manager keys). Note the **Key ID** (`APPLE_ASC_KEY_ID`) and **Issuer ID** (`APPLE_ASC_ISSUER_ID`); download the `.p8` (downloadable once) and store it base64-encoded: `base64 -i AuthKey_XXXX.p8 | pbcopy` → `APPLE_ASC_PRIVATE_KEY`.
 3. Distribution certificates — **two** are needed for a Mac App Store `.pkg`: on your Mac, Xcode → Settings → Accounts → Manage Certificates → **+ → Apple Distribution** (signs the app) and **+ → Mac Installer Distribution** (signs the installer package; without it export fails with "No signing certificate 'Mac Installer Distribution' found"). In Keychain Access (login keychain → My Certificates) select **both** certificates, right-click → Export 2 items… → one `.p12` with a password: `base64 -i certs.p12 | pbcopy` → `APPLE_CERTIFICATE_P12`; the password → `APPLE_CERTIFICATE_PASSWORD`. Provisioning profiles are created on the fly by Xcode's cloud signing with the API key (`-allowProvisioningUpdates`), so nothing else is needed.
-4. The job uploads the build and submits it for review with `fastlane deliver` (release automatically after approval). Export compliance is answered as "uses no encryption" in `publish.yml` (`submission_information`); change it there if that ever stops being true. The App Store record for `sh.geld.safari` must exist first, and Apple only lets the *first* version of an app be set up by hand: [App Store Connect → My Apps → +  → New App](https://appstoreconnect.apple.com/apps): platform **macOS**, name **Geld**, primary language English (U.S.), bundle ID **sh.geld.safari** (pick it from the list; it exists because the Xcode project registered it), SKU e.g. `geld-safari`. Then on the new app's version page fill in what a first submission needs: category (Developer Tools), description, keywords, support URL `https://github.com/brandonmcconnell/geld`, marketing URL `https://geld.sh`, privacy policy URL `https://www.geld.sh/privacy`, the App Privacy questionnaire (no data collected), age rating (none), and at least one Mac screenshot — `store/assets/safari/screenshots/00-marquee-2880x1800.jpg`. Leave the build empty; the publish workflow attaches builds and submits from then on. The workflow skips Safari with a warning until these secrets exist.
-5. The key must be a **Team** key (Users and Access → Integrations → App Store Connect API → *Team Keys* tab); the Issuer ID is shown once at the top of that tab, not per key. Individual keys have no issuer id and will not work here.
-6. Use a random passphrase for the `.p12`, never a password you use elsewhere: it is decrypted on every publishing runner.
+4. Record the complete user flow on the physical Mac used for testing, running the latest public macOS and Safari. Begin by launching Geld, then show: the containing app; Safari Settings → Extensions; enabling Geld and granting `github.com` access; `https://github.com/wxt-dev/wxt/pull/2544/files`; the corrected counts and hidden-files row; revealing the tests; the toolbar popup; and Geld's settings. Do not expose credentials or private repositories. Upload the MP4/MOV somewhere App Review can access without signing in. Set `SAFARI_REVIEW_VIDEO_URL` to that stable URL and `SAFARI_REVIEW_TEST_DEVICE` to the exact model and software, for example `14-inch MacBook Pro (2023) — macOS 26.0 (25A...), Safari 26.0`. The publish workflow refuses to submit Safari without both values, because Apple requires this evidence for the new app.
+5. The job renders `store/safari-review-notes.txt` with that recording, device, version and build, writes the complete purpose/setup/services/regions disclosure into App Review Information, then uploads the build and submits it with `fastlane deliver` (release automatically after approval). Export compliance is answered as "uses no encryption" in `publish.yml` (`submission_information`); change it there if that ever stops being true.
+6. The App Store record for `sh.geld.safari` must exist first, and Apple only lets the *first* version of an app be set up by hand: [App Store Connect → My Apps → + → New App](https://appstoreconnect.apple.com/apps): platform **macOS**, primary language English (U.S.), bundle ID **sh.geld.safari**, SKU e.g. `geld-safari`. On the version page fill in: category (Developer Tools), description, keywords, support URL `https://www.geld.sh/faq`, marketing URL `https://www.geld.sh`, privacy policy URL `https://www.geld.sh/privacy`, the App Privacy questionnaire, age rating, and physical-Mac screenshots as described below. Leave the build empty; the publish workflow attaches builds and submits from then on.
+7. The key must be a **Team** key (Users and Access → Integrations → App Store Connect API → *Team Keys* tab); the Issuer ID is shown once at the top of that tab, not per key. Individual keys have no issuer id and will not work here.
+8. Use a random passphrase for the `.p12`, never a password you use elsewhere: it is decrypted on every publishing runner.
+
+#### Responding to Guideline 2.1 information requests
+
+A Safari Web Extension is supposed to be submitted as a macOS containing app with an embedded extension; the presence of a normal macOS app record is not a packaging mistake. Apple’s generated containing app reports the enabled state and opens Safari Settings, while the actual product works inside Safari.
+
+When App Review asks for more information:
+
+1. Reply in the rejection thread with every numbered answer from `store/safari-review-notes.txt`.
+2. Add the same text to **App Review Information → Notes** so future reviewers see it.
+3. Attach the physical-Mac recording or provide its no-login URL.
+4. Replace title-art screenshots with the physical Safari captures listed in `store/assets/safari/README.md`.
+5. If only information or screenshots changed, Apple permits resubmitting the same build. If the containing app, extension, permissions, or behavior changed, upload and select a new build.
+
+The publish workflow keeps future notes in sync through fastlane’s `app_review_information`. It will not submit Safari until the two review-evidence variables are set.
 
 ## Store listing assets
 
-`store/assets/` holds what the listings need. All rendered from `store/assets/raw/*.html` (headless Chrome, downscaled with sharp); re-render when the copy or brand changes.
+`store/assets/` holds what the listings need. Chrome/Edge promotional art is rendered from `store/assets/raw/*.html` (headless Chrome, downscaled with sharp). Mac App Store screenshots are captured from the real containing app and Safari extension on a physical Mac; title art is not a valid substitute under App Review Guideline 2.3.3.
 
 | Asset | Path | Used by |
 |---|---|---|
 | Marquee screenshot 1280×800 | `chrome-edge/screenshots/00-marquee-1280x800.jpg` | Chrome, Edge, Firefox — first screenshot |
-| Marquee screenshot 2880×1800 | `safari/screenshots/00-marquee-2880x1800.jpg` | Mac App Store — first screenshot |
+| Physical Mac screenshots | `safari/screenshots/*.jpg` | Mac App Store; capture list in `safari/README.md` |
 | Marquee promo tile 1400×560 | `chrome-edge/promo/marquee-1400x560.{jpg,png}` | Chrome Web Store → Store listing → Marquee promo tile |
 | Small promo tile 440×280 | `chrome-edge/promo/small-440x280.{jpg,png}` | Chrome Web Store → Store listing → Small promo tile |
 
-**Getting them onto the stores.** Only two stores accept listing assets through an API, and the `Store listings` workflow (Actions → Store listings → Run workflow) handles those, idempotently: Firefox (the 1280×800 marquee becomes AMO preview 0) and the Mac App Store (`fastlane deliver` uploads `safari/screenshots/` to the current App Store Connect version). Run it after changing an asset. **Chrome and Edge have no API for listing assets**, so theirs are set once by hand:
+**Getting them onto the stores.** Only two stores accept listing assets through an API, and the `Store listings` workflow (Actions → Store listings → Run workflow) handles those, idempotently: Firefox (the 1280×800 marquee becomes AMO preview 0) and the Mac App Store (`fastlane deliver` uploads the physical captures in `safari/screenshots/` to the current App Store Connect version). With no physical captures committed, the Safari job skips instead of replacing real screenshots with title art. Run it after changing an asset. **Chrome and Edge have no API for listing assets**, so theirs are set once by hand:
 
 - Chrome Web Store: [developer dashboard](https://chrome.google.com/webstore/devconsole) → Geld → *Store listing*: upload `chrome-edge/screenshots/00-marquee-1280x800.jpg` as the **first** screenshot (the listing page's carousel shows screenshots only; promo tiles appear in store discovery, not on the listing), `chrome-edge/promo/small-440x280.png` as the small promo tile and `chrome-edge/promo/marquee-1400x560.png` as the marquee promo tile, then *Save draft* → *Submit for review* (listing-only changes are reviewed quickly and do not touch the published package).
 - Edge Add-ons: [Partner Center](https://partner.microsoft.com/dashboard/microsoftedge) → Geld → *Store listings* → English: `00-marquee-1280x800.jpg` as the first screenshot, `small-440x280.png` under *Promotional tiles* (small), `marquee-1400x560.png` (large), then *Save* and *Publish*.
