@@ -3,7 +3,7 @@
  * Kept DOM-free so they can be unit tested.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewItemStatus } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
 import { botByAppSlug, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor } from '@geld/review';
 
 export interface InstalledBot {
@@ -144,4 +144,121 @@ export function authorLabels(item: ReviewItem): readonly string[] {
     labels.push(label);
   }
   return labels;
+}
+
+/* ---- status rows: bots, CI checks, required reviews ---------------------- */
+
+/** Traffic light for a bot's verdict: green check, yellow dot, red X, or gray while running. */
+export type Health = 'good' | 'warn' | 'bad' | 'pending';
+
+export function botHealth(bot: BotVerdictRecord): Health {
+  if (bot.verdict === 'running') return 'pending';
+  if (bot.verdict === 'failed') return 'bad';
+  if (bot.verdict === 'clean') return 'good';
+  if (bot.severity === 'high') return 'bad';
+  if (bot.score !== undefined) return bot.score >= 5 ? 'good' : bot.score >= 3 ? 'warn' : 'bad';
+  if (bot.count === 0) return 'good';
+  return 'warn';
+}
+
+/** Short text beside the glyph: "4/5", "2 issues", "clean", "running". */
+export function botDetail(bot: BotVerdictRecord): string {
+  if (bot.verdict === 'running') return 'running';
+  if (bot.verdict === 'failed') return 'failed';
+  if (bot.verdict === 'clean') return 'clean';
+  if (bot.score !== undefined) return `${bot.score}/5`;
+  if (bot.count !== undefined) return `${bot.count} issue${bot.count === 1 ? '' : 's'}`;
+  return 'findings';
+}
+
+export type CheckState = 'success' | 'failure' | 'pending' | 'skipped' | 'neutral';
+
+export interface CheckCounts {
+  readonly success: number;
+  readonly failure: number;
+  readonly pending: number;
+  readonly skipped: number;
+  readonly neutral: number;
+}
+
+export const EMPTY_CHECKS: CheckCounts = { success: 0, failure: 0, pending: 0, skipped: 0, neutral: 0 };
+
+export function checksTotal(counts: CheckCounts): number {
+  return counts.success + counts.failure + counts.pending + counts.skipped + counts.neutral;
+}
+
+const CHECK_WORDS: ReadonlyArray<readonly [RegExp, CheckState]> = [
+  [/successful|passed|passing/i, 'success'],
+  [/failing|failed|failure|error(?:ed)?|cancell?ed|timed out|action required/i, 'failure'],
+  [/in progress|pending|queued|waiting|expected|running/i, 'pending'],
+  [/skipped/i, 'skipped'],
+  [/neutral|stale/i, 'neutral'],
+];
+
+function stateOfWord(word: string): CheckState | null {
+  return CHECK_WORDS.find(([pattern]) => pattern.test(word))?.[1] ?? null;
+}
+
+/**
+ * Check counts from the merge box's own headings: the new merge box writes
+ * "1 in progress check", "3 skipped checks", "8 successful checks"; the
+ * legacy one "All checks have passed" plus one row per check. Returns null
+ * when no checks section is on the page.
+ */
+export function checkCountsFrom(text: string): CheckCounts | null {
+  const counts = { ...EMPTY_CHECKS };
+  let found = false;
+  for (const match of text.matchAll(/(\d+)\s+((?:in progress|action required|timed out|[a-z]+))\s+checks?\b/gi)) {
+    const state = stateOfWord(match[2] ?? '');
+    const count = Number.parseInt(match[1] ?? '0', 10);
+    if (state === null || !Number.isFinite(count)) continue;
+    found = true;
+    counts[state] += count;
+  }
+  return found ? counts : null;
+}
+
+export function checksHealth(counts: CheckCounts): Health {
+  if (counts.failure > 0) return 'bad';
+  if (counts.pending > 0) return 'pending';
+  if (counts.success > 0) return 'good';
+  return 'warn';
+}
+
+export function checksSummary(counts: CheckCounts): string {
+  const parts: string[] = [];
+  if (counts.failure > 0) parts.push(`${counts.failure} failing`);
+  if (counts.pending > 0) parts.push(`${counts.pending} in progress`);
+  if (counts.success > 0) parts.push(`${counts.success} successful`);
+  if (counts.skipped > 0) parts.push(`${counts.skipped} skipped`);
+  if (counts.neutral > 0) parts.push(`${counts.neutral} neutral`);
+  return parts.join(' · ');
+}
+
+export interface RequiredReviews {
+  readonly required: number;
+  readonly approvals: number;
+  readonly changesRequested: boolean;
+}
+
+/**
+ * "2 approving reviews are required" / "At least 1 approving review is
+ * required" plus the approvals the payload knows (or "N approvals" on the
+ * page). Null when the merge box does not require reviews.
+ */
+export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRecord[]): RequiredReviews | null {
+  const required = /(?:at least\s+)?(\d+)\s+approving review/i.exec(text)?.[1] ?? (/\breview required\b/i.test(text) ? '1' : null);
+  if (required === null) return null;
+  const fromPage = /(\d+)\s+approvals?\b/i.exec(text)?.[1];
+  const approvals = Math.max(reviewers.filter((reviewer) => reviewer.state === 'approved').length, fromPage === undefined ? 0 : Number.parseInt(fromPage, 10));
+  return {
+    required: Number.parseInt(required, 10),
+    approvals,
+    changesRequested: reviewers.some((reviewer) => reviewer.state === 'changes_requested') || /\bchanges requested\b/i.test(text),
+  };
+}
+
+export function reviewsHealth(reviews: RequiredReviews): Health {
+  if (reviews.changesRequested) return 'bad';
+  return reviews.approvals >= reviews.required ? 'good' : 'pending';
 }
