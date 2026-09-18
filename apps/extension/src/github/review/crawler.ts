@@ -6,7 +6,7 @@
  * comments and review bodies as single comments.
  */
 
-import type { RawComment, ThreadPeer } from '@geld/review';
+import type { RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
 import { wornPiecesOf } from './teleport';
 
@@ -31,6 +31,10 @@ export interface Author {
  * wearing on the comment's behalf (teleport.ts), so a worn comment still
  * has an author, a time and an avatar for the crawler.
  */
+export function findIn(root: Element, selector: string): Element | null {
+  return find(root, selector);
+}
+
 function find(root: Element, selector: string): Element | null {
   const own = root.querySelector(selector);
   if (own !== null) return own;
@@ -249,4 +253,78 @@ export function crawlConversation(root: ParentNode = document): {
     events.push({ anchor: node.id, root: timelineRootOf(node) });
   }
   return { comments, events };
+}
+
+export type CrawledReviewState = 'approved' | 'changes_requested' | 'commented' | 'dismissed';
+
+export interface CrawledReview {
+  readonly anchor: string;
+  readonly author: Author;
+  readonly avatarSrc: string | null;
+  readonly state: CrawledReviewState;
+  readonly createdAt: string;
+  /** The timeline row holding the review. */
+  readonly root: HTMLElement;
+  /** The review's own comment ("left a comment"), when it wrote one; never a thread comment. */
+  readonly comment: HTMLElement | null;
+}
+
+const REVIEW_COMMENT = '.timeline-comment, .js-comment-container, [data-testid="comment-container"]';
+
+function reviewStateOf(text: string): CrawledReviewState {
+  if (/\bapproved\b/i.test(text)) return 'approved';
+  if (/\brequested changes\b/i.test(text)) return 'changes_requested';
+  if (/\bdismissed\b/i.test(text)) return 'dismissed';
+  return 'commented';
+}
+
+/** Every review verdict in the timeline (`pullrequestreview-N`), with its comment when it has one. */
+export function crawlReviews(root: ParentNode = document): readonly CrawledReview[] {
+  const reviews: CrawledReview[] = [];
+  const seen = new Set<string>();
+  for (const node of root.querySelectorAll<HTMLElement>('[id^="pullrequestreview-"]')) {
+    if (!/^pullrequestreview-\d+$/.test(node.id) || seen.has(node.id) || node.closest('form') !== null) continue;
+    seen.add(node.id);
+    const author = authorOf(node);
+    if (author === null) continue;
+    // The comment may be on loan to a panel row right now; its placeholder still sits here.
+    const candidates = [...node.querySelectorAll<HTMLElement>(REVIEW_COMMENT), ...wornPiecesOf(node).flatMap((piece) => (piece.matches(REVIEW_COMMENT) ? [piece] : [...piece.querySelectorAll<HTMLElement>(REVIEW_COMMENT)]))];
+    const comment = candidates.find((candidate) => candidate.closest(THREAD_SELECTOR) === null && bodyElementOf(candidate) !== null) ?? null;
+    reviews.push({
+      anchor: node.id,
+      author,
+      avatarSrc: avatarSrcOf(node),
+      // The verdict sentence sits in the row's own header; the comment's words must not vote.
+      state: reviewStateOf(textOutside(node, comment)),
+      createdAt: createdAtOf(node),
+      root: timelineRootOf(node),
+      comment,
+    });
+  }
+  return reviews;
+}
+
+function textOutside(root: Element, excluded: Element | null): string {
+  const parts: string[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+    if (excluded === null || !excluded.contains(text)) parts.push(text.nodeValue ?? '');
+  }
+  return parts.join(' ');
+}
+
+/** Each reviewer's latest verdict, for the approvals count. */
+export function latestReviewers(reviews: readonly CrawledReview[]): readonly ReviewerRecord[] {
+  const latest = new Map<string, ReviewerState>();
+  for (const review of reviews) {
+    if (review.author.bot) continue;
+    if (review.state === 'dismissed') {
+      latest.delete(review.author.login);
+      continue;
+    }
+    // A plain comment does not withdraw an earlier verdict.
+    if (review.state === 'commented' && latest.has(review.author.login)) continue;
+    latest.set(review.author.login, review.state);
+  }
+  return [...latest].map(([login, state]) => ({ login, state }));
 }
