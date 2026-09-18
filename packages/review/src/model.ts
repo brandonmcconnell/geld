@@ -108,12 +108,15 @@ export interface ReviewSummary {
   readonly forItems: readonly string[];
 }
 
+export const FINDING_SEVERITIES = ['low', 'medium', 'high'] as const;
+
 export interface BotVerdictRecord {
   readonly id: string;
   readonly login: string;
   readonly verdict: BotVerdict;
   readonly count?: number;
   readonly score?: number;
+  readonly severity?: (typeof FINDING_SEVERITIES)[number];
   readonly reviewedSha: string;
   readonly checkName?: string;
   readonly sourceId?: string;
@@ -202,6 +205,7 @@ export const botVerdictSchema = z.object({
   verdict: z.enum(BOT_VERDICTS),
   count: z.number().int().nonnegative().optional(),
   score: z.number().optional(),
+  severity: z.enum(FINDING_SEVERITIES).optional(),
   reviewedSha: sha,
   checkName: z.string().min(1).optional(),
   sourceId: z.string().min(1).optional(),
@@ -286,7 +290,8 @@ function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictReco
   };
   const counted = value.count === undefined ? record : { ...record, count: value.count };
   const scored = value.score === undefined ? counted : { ...counted, score: value.score };
-  const named = value.checkName === undefined ? scored : { ...scored, checkName: value.checkName };
+  const graded = value.severity === undefined ? scored : { ...scored, severity: value.severity };
+  const named = value.checkName === undefined ? graded : { ...graded, checkName: value.checkName };
   return value.sourceId === undefined ? named : { ...named, sourceId: value.sourceId };
 }
 

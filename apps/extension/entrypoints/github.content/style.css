@@ -1249,6 +1249,189 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--geld-review-accent);
 }
 
+/* ---- status rows: review bots · CI checks · reviews ------------------------ */
+
+.geld-review__rows--status .geld-review__row--status {
+  min-height: 40px;
+  gap: 10px;
+}
+
+.geld-review__label {
+  flex: 0 0 auto;
+  min-width: 88px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__status-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+.geld-review__row--status .geld-review__status--muted {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__row--status[data-health='good'] .geld-review__status--muted {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__row--status[data-health='warn'] .geld-review__status--muted {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__row--status[data-health='bad'] .geld-review__status--muted {
+  color: var(--geld-review-danger-fg);
+}
+
+/* A bot: icon · name · detail · traffic light, in one outlined pill whose corners follow the icon's. */
+.geld-review__bot {
+  --geld-bot-icon: 16px;
+  --geld-bot-pad: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(var(--geld-bot-icon) + 2 * var(--geld-bot-pad) + 2px);
+  padding: 0 var(--geld-bot-pad) 0 var(--geld-bot-pad);
+  border: 1px solid var(--geld-review-border);
+  border-radius: calc(var(--geld-bot-pad) + 4px);
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.geld-review__bot:is(a):hover {
+  border-color: var(--geld-review-muted);
+  background: var(--geld-review-subtle);
+  text-decoration: none;
+}
+
+.geld-review__bot[data-current='false'] {
+  opacity: 0.7;
+}
+
+.geld-review__bot-icon {
+  width: var(--geld-bot-icon, 16px);
+  height: var(--geld-bot-icon, 16px);
+  border-radius: 4px;
+  background: var(--geld-review-hover);
+}
+
+.geld-review__bot-name {
+  padding-left: 1px;
+}
+
+.geld-review__bot-detail {
+  color: var(--geld-review-muted);
+  font-weight: 400;
+}
+
+.geld-review__health {
+  display: inline-flex;
+  align-items: center;
+}
+
+.geld-review__health .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__health[data-health='good'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__health[data-health='warn'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__health[data-health='bad'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__health[data-health='pending'] {
+  color: var(--geld-review-muted);
+}
+
+/* GitHub's status ring colours. */
+.geld-review__ring circle[data-state='success'] {
+  stroke: var(--geld-review-done-fg);
+}
+
+.geld-review__ring circle[data-state='failure'] {
+  stroke: var(--geld-review-danger-fg);
+}
+
+.geld-review__ring circle[data-state='pending'] {
+  stroke: var(--geld-review-attention-fg);
+}
+
+.geld-review__ring circle[data-state='skipped'],
+.geld-review__ring circle[data-state='neutral'] {
+  stroke: var(--geld-review-muted);
+}
+
+.geld-review__marks {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.geld-review__mark {
+  display: inline-flex;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__mark[data-done='true'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__mark .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__menu-title {
+  padding: 4px 8px 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
+.geld-review__menu-item {
+  display: flex;
+  align-items: center;
+}
+
+.geld-review__menu-item > .geld-review__bot-icon {
+  margin-right: 8px;
+}
+
+.geld-review__menu-item--primary {
+  color: var(--geld-review-accent);
+  font-weight: 600;
+}
+
+/* Under the box: the one nudge, persistent while the Action is missing. */
+.geld-review-nudge {
+  margin: 6px 0 16px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review-nudge a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* ---- TL;DR and AI shimmer -------------------------------------------------- */
 
 .geld-review__tldr {
@@ -1806,79 +1989,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border-top: 1px solid var(--geld-review-border-muted);
   color: var(--geld-review-muted);
   font-size: 12px;
-}
-
-.geld-review__request {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.geld-review__request-label {
-  margin-right: 4px;
-}
-
-.geld-review__request-bot {
-  display: inline-flex;
-  align-items: center;
-}
-
-/*
- * One button per bot: its own icon (a rounded square, as GitHub draws
- * Apps) sitting flush inside an outlined pill whose radius is the icon's
- * plus the padding, so the two corners are concentric.
- */
-.geld-review__bot-btn {
-  --geld-bot-icon: 16px;
-  --geld-bot-pad: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: calc(var(--geld-bot-icon) + 2 * var(--geld-bot-pad) + 2px);
-  padding: 0 10px 0 var(--geld-bot-pad);
-  border: 1px solid var(--geld-review-border);
-  border-radius: calc(var(--geld-bot-pad) + 4px);
-  background: var(--geld-review-bg);
-  color: var(--fgColor-default, var(--color-fg-default));
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.geld-review__bot-btn:not(:has(.geld-review__bot-icon)) {
-  padding-left: 10px;
-}
-
-.geld-review__bot-btn:hover {
-  background: var(--geld-review-subtle);
-  border-color: var(--geld-review-muted);
-}
-
-.geld-review__bot-icon {
-  width: var(--geld-bot-icon);
-  height: var(--geld-bot-icon);
-  border-radius: 4px;
-  background: var(--geld-review-hover);
-}
-
-.geld-review__confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 26px;
-  padding: 0 2px 0 8px;
-  border: 1px solid var(--geld-review-border);
-  border-radius: 8px;
-  background: var(--geld-review-bg);
-  color: var(--fgColor-default, var(--color-fg-default));
-}
-
-.geld-review__confirm .geld-review__icon {
-  width: 22px;
-  height: 22px;
 }
 
 .geld-review__note {
