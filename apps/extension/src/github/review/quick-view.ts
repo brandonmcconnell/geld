@@ -7,12 +7,12 @@
  */
 
 import { createElement } from '../dom';
-import { timelineRootOf } from './actions';
+import { threadRootOf } from './actions';
+import { authorOf, avatarSrcOf } from './crawler';
 import { isReactManaged, teleportInto } from './teleport';
 
-const BODY_SELECTOR = '.js-comment-body, .comment-body, [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body';
+const BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
 const REPLY_SELECTOR = '.review-thread-reply, .js-inline-comment-form-container, form.js-inline-comment-form, [data-testid="review-thread-reply"]';
-const AVATAR_SELECTOR = 'img.avatar, img[data-testid="github-avatar"], img[class*="avatar" i]';
 
 export type QuickViewTarget =
   | { readonly kind: 'comments'; readonly anchors: readonly string[] }
@@ -22,31 +22,32 @@ interface CommentParts {
   readonly node: HTMLElement;
   readonly body: HTMLElement | null;
   readonly login: string;
+  readonly bot: boolean;
   readonly avatarSrc: string | null;
   readonly time: string;
 }
 
 function partsOf(node: HTMLElement): CommentParts {
   const body = node.querySelector(BODY_SELECTOR);
-  const author = node.querySelector('a.author, a[data-hovercard-type="user"], [data-testid="comment-author"]');
-  const avatar = node.querySelector<HTMLImageElement>(AVATAR_SELECTOR);
+  const author = authorOf(node);
   const time = node.querySelector('relative-time, time-ago, time');
   return {
     node,
     body: body instanceof HTMLElement ? body : null,
-    login: (author?.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/^@/, ''),
-    avatarSrc: avatar?.currentSrc || avatar?.getAttribute('src') || null,
+    login: author?.login ?? '',
+    bot: author?.bot ?? false,
+    avatarSrc: avatarSrcOf(node),
     time: (time?.textContent ?? '').trim(),
   };
 }
 
 function card(parts: CommentParts, anchor: string): HTMLElement {
-  const isBot = /\[bot\]$/i.test(parts.login);
   const head = createElement('div', { class: 'geld-review__qv-head' });
   if (parts.avatarSrc !== null) {
-    head.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': isBot ? 'bot' : 'user', src: parts.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': parts.bot ? 'bot' : 'user', src: parts.avatarSrc, alt: '', width: '20', height: '20' }));
   }
-  head.append(createElement('a', { class: 'geld-review__qv-login', href: `#${anchor}` }, [parts.login || 'ghost']));
+  head.append(createElement('a', { class: 'geld-review__qv-login', href: `#${anchor}` }, [parts.login.replace(/\[bot\]$/i, '') || 'ghost']));
+  if (parts.bot) head.append(createElement('span', { class: 'geld-review__qv-bot' }, ['bot']));
   if (parts.time !== '') head.append(createElement('span', { class: 'geld-review__qv-time' }, [parts.time]));
   return createElement('div', { class: 'geld-review__qv-comment', 'data-geld-qv': anchor }, [head, createElement('div', { class: 'geld-review__qv-body' })]);
 }
@@ -78,7 +79,7 @@ export function renderQuickView(slot: HTMLElement, target: QuickViewTarget): boo
     list.append(entry);
     const bodyHost = entry.querySelector<HTMLElement>('.geld-review__qv-body');
     if (bodyHost !== null && !teleportInto(bodyHost, [parts.body])) live = false;
-    const root = timelineRootOf(node.id);
+    const root = threadRootOf(node.id);
     if (root !== null && !replyHosts.has(root)) {
       const reply = root.querySelector(REPLY_SELECTOR) ?? root.querySelector('.review-thread-reply-button')?.parentElement ?? null;
       if (reply instanceof HTMLElement && !isReactManaged(reply)) replyHosts.set(root, reply);

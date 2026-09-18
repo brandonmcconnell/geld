@@ -6,6 +6,7 @@
 import type { GeldPrMeta, ParseResult } from '@geld/review';
 import { ALLOWED_SUMMARY_AUTHORS, isAllowedSummaryAuthor, parseSummaryElement, SUMMARY_HEADING } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
+import { authorOf as crawlAuthor } from './crawler';
 
 export const ATTR_SUMMARY = 'data-geld-summary';
 
@@ -20,12 +21,10 @@ export interface FoundSummary {
 }
 
 function authorOf(root: Element): string {
-  const link = root.querySelector('a.author, a[data-hovercard-type="user"], a[href*="/apps/"]');
-  const text = (link?.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/^@/, '');
-  if (text !== '') return text;
-  const href = link?.getAttribute('href') ?? '';
+  const author = crawlAuthor(root);
+  if (author !== null) return author.login;
+  const href = root.querySelector('a[href*="/apps/"]')?.getAttribute('href') ?? '';
   if (href.includes('github-actions')) return 'github-actions[bot]';
-  if (/\/apps\/geld(?:-sh)?(?:\/|$)/.test(href)) return 'geld[bot]';
   return '';
 }
 

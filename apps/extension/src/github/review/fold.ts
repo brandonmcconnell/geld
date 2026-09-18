@@ -22,15 +22,27 @@ export interface FoldGroup {
 }
 
 export function clearFolds(root: ParentNode = document): void {
-  for (const node of root.querySelectorAll(`[${ATTR_FOLDED}]`)) node.removeAttribute(ATTR_FOLDED);
+  for (const node of root.querySelectorAll<HTMLElement>(`[${ATTR_FOLDED}]`)) setFolded(node, false);
 }
 
+/**
+ * Folded nodes get `hidden="until-found"`: the browser's find-in-page still
+ * searches them and fires `beforematch` (handled in overview.ts, which
+ * reveals that fold) — a collapsed timeline that Ctrl+F can see through.
+ * Where `until-found` is unsupported the attribute degrades to plain hidden.
+ */
 function setFolded(node: HTMLElement, hidden: boolean): void {
   if (hidden) {
     if (node.getAttribute(ATTR_FOLDED) !== 'hidden') node.setAttribute(ATTR_FOLDED, 'hidden');
+    if (node.getAttribute('hidden') !== 'until-found') node.setAttribute('hidden', 'until-found');
   } else if (node.hasAttribute(ATTR_FOLDED)) {
     node.removeAttribute(ATTR_FOLDED);
+    if (node.getAttribute('hidden') === 'until-found') node.removeAttribute('hidden');
   }
+}
+
+export function isFoldedNode(node: Element): boolean {
+  return node.getAttribute(ATTR_FOLDED) === 'hidden';
 }
 
 /**
@@ -47,7 +59,7 @@ export function applyFolds(groups: readonly FoldGroup[], revealed: ReadonlySet<s
     }
   }
   for (const node of document.querySelectorAll<HTMLElement>(`[${ATTR_FOLDED}]`)) {
-    if (!keep.has(node)) node.removeAttribute(ATTR_FOLDED);
+    if (!keep.has(node)) setFolded(node, false);
   }
 }
 
@@ -72,7 +84,7 @@ export function groupBotRuns(
     if (run === null || run.nodes.length === 0) return;
     const count = run.nodes.length;
     const name = botTitle(resolveBotId(run.author) ?? `custom:${run.author}`, run.author);
-    const label = `${count} comment${count === 1 ? '' : 's'} from ${name}`;
+    const label = `${count} ${name} comment${count === 1 ? '' : 's'}`;
     groups.push({ key: `bot:${run.anchors[0] ?? run.author}`, label, author: run.author, nodes: run.nodes });
     run = null;
   };
@@ -97,7 +109,7 @@ export function groupBotRuns(
   if (eventNodes.length > 0) {
     groups.push({
       key: 'events',
-      label: `${eventNodes.length} event${eventNodes.length === 1 ? '' : 's'}`,
+      label: `${eventNodes.length} timeline event${eventNodes.length === 1 ? '' : 's'}`,
       author: null,
       nodes: eventNodes,
     });

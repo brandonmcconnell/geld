@@ -70,6 +70,9 @@ export function guessSeverity(body: string, bot: boolean, humanQuestion: boolean
 interface Atom {
   readonly sources: ReviewSource[];
   readonly bodies: string[];
+  /** First sentence of the comment that opened the thread: the concern itself, not a reply. */
+  readonly title: string;
+  readonly humanLead: boolean;
   readonly path: string | undefined;
   readonly line: number | undefined;
   readonly suggestion: string | null;
@@ -100,9 +103,12 @@ function atomFrom(comment: RawComment, extraLogins: readonly string[]): Atom {
     if (source.bot !== undefined) botIds.add(source.bot);
     else if (!looksLikeBotLogin(source.author)) humanAuthors.push(source.author);
   }
+  const lead = sources[0];
   return {
     sources,
     bodies,
+    title: firstSentence(comment.body),
+    humanLead: lead !== undefined && lead.bot === undefined && !looksLikeBotLogin(lead.author),
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
@@ -134,9 +140,13 @@ function mergeAtom(a: Atom, b: Atom): Atom {
       sources.push(source);
     }
   }
+  // A person's words win over a bot's when two threads on the same lines merge.
+  const humanLead = a.humanLead || b.humanLead;
   return {
     sources,
     bodies: [...a.bodies, ...b.bodies],
+    title: a.humanLead || !b.humanLead ? a.title : b.title,
+    humanLead,
     path: a.path ?? b.path,
     line: a.line ?? b.line,
     suggestion: a.suggestion ?? b.suggestion,
@@ -146,12 +156,6 @@ function mergeAtom(a: Atom, b: Atom): Atom {
     resolved: a.resolved && b.resolved,
     outdated: a.outdated || b.outdated,
   };
-}
-
-function titleOf(atom: Atom): string {
-  const humanIndex = atom.sources.findIndex((source) => source.bot === undefined && !looksLikeBotLogin(source.author));
-  const body = humanIndex >= 0 ? (atom.bodies[humanIndex] ?? atom.bodies[0]) : atom.bodies[0];
-  return firstSentence(body ?? '');
 }
 
 function severityOf(atom: Atom): ReviewSeverity {
@@ -175,7 +179,7 @@ function itemFromAtom(atom: Atom): ReviewItem {
   );
   const item: ReviewItem = {
     id,
-    title: titleOf(atom),
+    title: atom.title,
     rewritten: false,
     severity: severityOf(atom),
     status: atom.outdated ? 'outdated' : atom.resolved ? 'resolved' : 'open',
@@ -191,8 +195,15 @@ function itemFromAtom(atom: Atom): ReviewItem {
  * Group comments into review items. Threads are already one atom; atoms then
  * merge when they share a location, suggestion, or bot rule.
  */
+/** A bot's top-level comment is its run summary (a verdict, folded away), not a review finding. */
+export function isBotSummaryComment(comment: RawComment, extraLogins: readonly string[] = []): boolean {
+  return comment.kind !== 'thread' && (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author));
+}
+
 export function clusterComments(comments: readonly RawComment[], extraLogins: readonly string[] = []): readonly ReviewItem[] {
-  const atoms = comments.filter((comment) => comment.body.trim() !== '').map((comment) => atomFrom(comment, extraLogins));
+  const atoms = comments
+    .filter((comment) => comment.body.trim() !== '' && !isBotSummaryComment(comment, extraLogins))
+    .map((comment) => atomFrom(comment, extraLogins));
   const parent = atoms.map((_, index) => index);
   const find = (index: number): number => {
     const current = parent[index] ?? index;

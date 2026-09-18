@@ -20,11 +20,9 @@ import {
   ICON_COMMENT_DISCUSSION,
   ICON_COPY,
   ICON_DOT_FILL,
-  ICON_EYE,
   ICON_KEBAB_HORIZONTAL,
   ICON_LINK,
   ICON_REPLY,
-  ICON_ROWS,
   ICON_SYNC,
   ICON_X,
 } from '../ui/icons';
@@ -54,6 +52,11 @@ export interface RequestableBot {
   readonly trigger: string;
 }
 
+export interface Avatar {
+  readonly src: string;
+  readonly bot: boolean;
+}
+
 export interface PanelModel {
   readonly meta: GeldPrMeta;
   readonly freshness: 'fresh' | 'stale' | 'partial' | 'local';
@@ -67,8 +70,10 @@ export interface PanelModel {
   readonly viewingAnchor: string | null;
   readonly folds: readonly FoldRow[];
   readonly requestable: readonly RequestableBot[];
-  /** Avatar URLs (up to two) for a row, read from the source comments on the page. */
-  readonly avatarsFor: (item: ReviewItem) => readonly string[];
+  /** Avatars (up to two) for a row, read from the source comments on the page. */
+  readonly avatarsFor: (item: ReviewItem) => readonly Avatar[];
+  /** Timeline nodes hidden by compaction (for the "show full timeline" row). */
+  readonly hiddenCount: number;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -101,18 +106,23 @@ function iconButton(markup: string, label: string, extra: Readonly<Record<string
   return createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon`, 'aria-label': label, title: label, ...extra }, [icon(markup)]);
 }
 
-function avatar(src: string, bot: boolean): HTMLElement {
-  return createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': bot ? 'bot' : 'user', src, alt: '', width: '20', height: '20', loading: 'lazy' });
+function avatarImg(entry: Avatar): HTMLElement {
+  return createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy' });
 }
 
-function avatarStack(sources: readonly string[], fallback: string, bot: boolean): HTMLElement {
+/** Bots and Apps are rounded squares on GitHub, people are circles; the same pictures the page shows. */
+function avatarStack(avatars: readonly Avatar[], fallback: string, bot: boolean): HTMLElement {
   const stack = createElement('span', { class: `${PANEL_CLASS}__avatars`, 'aria-hidden': 'true' });
-  if (sources.length === 0) {
+  if (avatars.length === 0) {
     stack.append(createElement('span', { class: `${PANEL_CLASS}__avatar ${PANEL_CLASS}__avatar--letter`, 'data-kind': bot ? 'bot' : 'user' }, [fallback.charAt(0).toUpperCase() || '?']));
     return stack;
   }
-  for (const src of sources.slice(0, 2)) stack.append(avatar(src, bot));
+  for (const entry of avatars.slice(0, 2)) stack.append(avatarImg(entry));
   return stack;
+}
+
+function chevron(open: boolean): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__chevron`, 'aria-hidden': 'true', 'data-open': String(open) }, [icon(ICON_CHEVRON_DOWN)]);
 }
 
 function statusIcon(item: ReviewItem): SVGElement {
@@ -176,11 +186,6 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   const badge = statusBadge(item.status);
   if (badge !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__pill`, 'data-badge': item.status }, [badge]));
-  const view = iconButton(ICON_EYE, open ? 'Close' : 'View here', { 'aria-expanded': String(open) });
-  view.addEventListener('click', (event) => {
-    event.stopPropagation();
-    handlers.onToggle(key);
-  });
   const reply = iconButton(ICON_REPLY, 'Reply');
   reply.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -196,7 +201,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     entries.push({ label: 'Show in timeline', href: `#${first.anchor}` });
     entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(first.anchor) });
   }
-  right.append(view, reply, menu(entries));
+  right.append(reply, menu(entries), chevron(open));
 
   const row = createElement(
     'li',
@@ -215,20 +220,16 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
     createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [fold.label]),
   ]);
   main.addEventListener('click', () => handlers.onToggle(key));
-  const view = iconButton(ICON_EYE, open ? 'Close' : 'View here', { 'aria-expanded': String(open) });
-  view.addEventListener('click', (event) => {
-    event.stopPropagation();
-    handlers.onToggle(key);
-  });
-  const right = createElement('span', { class: `${PANEL_CLASS}__right` }, [view]);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
     right.append(menu([{ label: 'Show in timeline', href: `#${anchor}` }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }]));
   }
+  right.append(chevron(open));
   const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]);
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold`, 'data-geld-fold': fold.key }, [
     glyph,
-    ...(fold.avatarSrc === null ? [] : [avatarStack([fold.avatarSrc], fold.label, true)]),
+    ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true }], fold.label, true)]),
     main,
     right,
   ]);
@@ -327,7 +328,8 @@ function signatureOf(model: PanelModel): string {
     viewingAnchor: model.viewingAnchor,
     generatedAt: model.meta.generatedAt,
     headSha: model.meta.headSha,
-    items: model.meta.items.map((item) => `${item.id}:${item.status}:${item.title}:${model.avatarsFor(item).join(',')}:${model.resolvable(item) ? 'r' : ''}`),
+    items: model.meta.items.map((item) => `${item.id}:${item.status}:${item.title}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}`),
+    hiddenCount: model.hiddenCount,
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.reviewedSha}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}`),
@@ -395,11 +397,6 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   const copy = iconButton(ICON_COPY, 'Copy digest');
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
-  if (model.compacting) {
-    const timeline = iconButton(ICON_ROWS, model.fullTimeline ? 'Compact the timeline' : 'Show the full timeline', { 'aria-pressed': String(model.fullTimeline) });
-    timeline.addEventListener('click', () => handlers.onFullTimeline());
-    tools.append(timeline);
-  }
   const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, chips, tools]);
 
   /* Groups */
@@ -419,9 +416,12 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     if (!model.collapsedGroups.has('done')) appendRows(done);
   }
   if (model.folds.length > 0 && !model.fullTimeline) {
-    const hiddenCount = model.folds.reduce((sum, fold) => sum + fold.count, 0);
-    rows.append(groupHeading('hidden', `${plural(hiddenCount, 'hidden activity', 'hidden activities')}`, model, handlers));
-    if (!model.collapsedGroups.has('hidden')) {
+    // One fold is its own row; a heading over a single row would just repeat it.
+    if (model.folds.length > 1) {
+      const hiddenCount = model.folds.reduce((sum, fold) => sum + fold.count, 0);
+      rows.append(groupHeading('hidden', plural(hiddenCount, 'hidden item'), model, handlers));
+    }
+    if (model.folds.length === 1 || !model.collapsedGroups.has('hidden')) {
       for (const fold of model.folds) {
         rows.append(foldRowEl(fold, model, handlers));
         if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey));
@@ -446,7 +446,19 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     footerBits.push(nudge);
   }
   if (footerBits.length > 0) panel.append(createElement('div', { class: `${PANEL_CLASS}__foot` }, footerBits));
+  if (model.compacting && (model.hiddenCount > 0 || model.fullTimeline)) {
+    // The one control for the timeline itself, shaped like GitHub's own "N hidden items · Load more" bar.
+    const toggle = createElement('button', { type: 'button', class: `${PANEL_CLASS}__timeline-btn`, 'aria-pressed': String(model.fullTimeline) }, [
+      model.fullTimeline ? 'Compact timeline' : `Show ${plural(model.hiddenCount, 'hidden item')} in the timeline`,
+    ]);
+    toggle.addEventListener('click', () => handlers.onFullTimeline());
+    panel.append(createElement('div', { class: `${PANEL_CLASS}__timeline` }, [toggle]));
+  }
 
+  // The description card may hang past the timeline rail (`ml-n3`); share its horizontal geometry.
+  const cardStyle = getComputedStyle(card);
+  panel.style.marginLeft = cardStyle.marginLeft;
+  panel.style.marginRight = cardStyle.marginRight;
   card.insertAdjacentElement('afterend', panel);
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
 }

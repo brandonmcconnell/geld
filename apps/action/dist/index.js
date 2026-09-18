@@ -19316,9 +19316,12 @@ function atomFrom(comment, extraLogins) {
     if (source.bot !== void 0) botIds.add(source.bot);
     else if (!looksLikeBotLogin(source.author)) humanAuthors.push(source.author);
   }
+  const lead = sources[0];
   return {
     sources,
     bodies,
+    title: firstSentence(comment.body),
+    humanLead: lead !== void 0 && lead.bot === void 0 && !looksLikeBotLogin(lead.author),
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
@@ -19348,9 +19351,12 @@ function mergeAtom(a, b) {
       sources.push(source);
     }
   }
+  const humanLead = a.humanLead || b.humanLead;
   return {
     sources,
     bodies: [...a.bodies, ...b.bodies],
+    title: a.humanLead || !b.humanLead ? a.title : b.title,
+    humanLead,
     path: a.path ?? b.path,
     line: a.line ?? b.line,
     suggestion: a.suggestion ?? b.suggestion,
@@ -19360,11 +19366,6 @@ function mergeAtom(a, b) {
     resolved: a.resolved && b.resolved,
     outdated: a.outdated || b.outdated
   };
-}
-function titleOf(atom) {
-  const humanIndex = atom.sources.findIndex((source) => source.bot === void 0 && !looksLikeBotLogin(source.author));
-  const body = humanIndex >= 0 ? atom.bodies[humanIndex] ?? atom.bodies[0] : atom.bodies[0];
-  return firstSentence(body ?? "");
 }
 function severityOf(atom) {
   const human = atom.humanAuthors.length > 0;
@@ -19386,7 +19387,7 @@ function itemFromAtom(atom) {
   );
   const item = {
     id,
-    title: titleOf(atom),
+    title: atom.title,
     rewritten: false,
     severity: severityOf(atom),
     status: atom.outdated ? "outdated" : atom.resolved ? "resolved" : "open",
@@ -19397,8 +19398,11 @@ function itemFromAtom(atom) {
   if (atom.line !== void 0) return { ...item, line: atom.line };
   return item;
 }
+function isBotSummaryComment(comment, extraLogins = []) {
+  return comment.kind !== "thread" && (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author));
+}
 function clusterComments(comments, extraLogins = []) {
-  const atoms = comments.filter((comment) => comment.body.trim() !== "").map((comment) => atomFrom(comment, extraLogins));
+  const atoms = comments.filter((comment) => comment.body.trim() !== "" && !isBotSummaryComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
   const parent = atoms.map((_, index) => index);
   const find = (index) => {
     const current = parent[index] ?? index;
@@ -20002,17 +20006,17 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
           path
           line
           comments(first: 50) {
-            nodes { databaseId author { login } body createdAt }
+            nodes { databaseId author { login __typename } body createdAt }
           }
         }
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login } body createdAt }
+        nodes { databaseId author { login __typename } body createdAt }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login } state body submittedAt commit { oid } }
+        nodes { databaseId author { login __typename } state body submittedAt commit { oid } }
       }
       commits(last: 1) {
         nodes {
@@ -20035,7 +20039,8 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
 }
 `;
 function loginOf(author) {
-  return author?.login ?? "ghost";
+  const login = author?.login ?? "ghost";
+  return author?.__typename === "Bot" && !/\[bot\]$/i.test(login) ? `${login}[bot]` : login;
 }
 async function loadPullRequest(client, owner, repo, number4) {
   const threads = [];

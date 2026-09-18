@@ -1,42 +1,91 @@
 /**
- * Panel actions that talk to GitHub's own controls: tick a task-list
- * checkbox on the (hidden) summary comment, open a thread's reply box,
- * click Resolve, or post a review-request trigger as a top-level comment.
- * None of these scroll the page; focus is taken with `preventScroll`.
+ * Panel actions delegate to GitHub's own controls so every side effect
+ * (form submit, Turbo refresh, optimistic UI) is GitHub's, not ours: the
+ * thread's Resolve/Unresolve button, its Reply control, the task-list
+ * checkbox on the (hidden) summary comment, the new-comment form for a
+ * bot trigger. None of these scroll the page; focus uses `preventScroll`.
  */
 
-const TIMELINE_ROOT = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], .js-comment-container';
+import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
+
+const QUICK_VIEW_SCOPE = '.geld-review__slot-body';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
+  return node === null ? null : rowOf(node);
+}
+
+/** The review-thread container that holds `anchor`, or the comment's timeline row. */
+export function threadRootOf(anchor: string): HTMLElement | null {
+  const node = document.getElementById(anchor);
   if (node === null) return null;
-  const root = node.closest(TIMELINE_ROOT);
-  return root instanceof HTMLElement ? root : node;
+  const thread = node.closest(THREAD_SELECTOR) ?? node.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]');
+  return thread instanceof HTMLElement ? thread : node;
+}
+
+/** Where a thread's controls can be: the thread itself, or the panel's quick view when they were moved there. */
+function scopesFor(anchor: string): readonly ParentNode[] {
+  const scopes: ParentNode[] = [];
+  const thread = threadRootOf(anchor);
+  if (thread !== null) scopes.push(thread);
+  const slot = document.querySelector(QUICK_VIEW_SCOPE);
+  if (slot !== null && slot.querySelector(`[data-geld-qv="${anchor}"]`) !== null) scopes.push(slot);
+  return scopes;
+}
+
+function buttonsIn(scope: ParentNode): readonly HTMLElement[] {
+  return [...scope.querySelectorAll<HTMLElement>('button, summary, input[type="submit"]')];
+}
+
+function textOf(node: HTMLElement): string {
+  return (node.textContent ?? node.getAttribute('aria-label') ?? node.getAttribute('value') ?? '').replace(/\s+/g, ' ').trim();
+}
+
+const RESOLVE = /^(un)?resolve conversation$/i;
+
+function resolveButton(anchor: string): HTMLElement | null {
+  for (const scope of scopesFor(anchor)) {
+    const hit =
+      buttonsIn(scope).find((button) => RESOLVE.test(textOf(button)) || RESOLVE.test(button.getAttribute('aria-label') ?? '')) ??
+      scope.querySelector<HTMLElement>('button[data-resolved-text], form[action*="/resolve"] button, form[action*="/unresolve"] button, button[name="resolve"]');
+    if (hit !== undefined && hit !== null) return hit;
+  }
+  return null;
+}
+
+export function isResolvable(anchor: string): boolean {
+  return resolveButton(anchor) !== null;
+}
+
+/** Click GitHub's Resolve/Unresolve for the thread holding `anchor`. */
+export function clickResolve(anchor: string): boolean {
+  const button = resolveButton(anchor);
+  if (button === null) return false;
+  button.click();
+  return true;
 }
 
 export function tickSummaryCheckbox(commentRoot: HTMLElement, itemAnchors: readonly string[], checked: boolean): boolean {
   const items = commentRoot.querySelectorAll<HTMLInputElement>('input.task-list-item-checkbox, input[type="checkbox"]');
   for (const box of items) {
     const row = box.closest('li, .task-list-item, p, div');
-    const text = row?.textContent ?? '';
-    if (!itemAnchors.some((anchor) => text.includes(`#${anchor}`) || text.includes(anchor))) continue;
+    const links = [...(row?.querySelectorAll('a[href^="#"]') ?? [])].map((link) => (link.getAttribute('href') ?? '').slice(1));
+    if (!itemAnchors.some((anchor) => links.includes(anchor))) continue;
     if (box.checked === checked) return true;
-    if (box.disabled) {
-      box.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      if (box.checked === checked) return true;
-    }
+    // GitHub disables the box for readers without write access; a click still
+    // reaches its task-list handler when the user can edit.
     box.click();
-    return true;
+    return box.checked === checked;
   }
   return false;
 }
 
+const REPLY_OPENER = '.review-thread-reply-button, button.js-inline-comment-form-reply, button[data-testid="comment-reply"], .js-comment-quote-reply, button[aria-label^="Reply" i]';
+
 /** Open the reply box of the thread that holds `anchor` and focus it without scrolling. */
 export function focusReply(anchor: string): boolean {
-  const root = timelineRootOf(anchor);
-  if (root === null) return false;
-  // Quick view may have moved the reply control into the panel's slot.
-  const scopes: ParentNode[] = [root, ...document.querySelectorAll('.geld-review__qv-reply')];
+  const scopes = scopesFor(anchor);
+  if (scopes.length === 0) return false;
   const find = <T extends Element>(selector: string): T | null => {
     for (const scope of scopes) {
       const hit = scope.querySelector<T>(selector);
@@ -44,9 +93,7 @@ export function focusReply(anchor: string): boolean {
     }
     return null;
   };
-  const opener = find<HTMLElement>(
-    '.review-thread-reply-button, button.js-inline-comment-form-reply, button[data-testid="comment-reply"], .js-comment-quote-reply, button[aria-label^="Reply" i]',
-  );
+  const opener = find<HTMLElement>(REPLY_OPENER) ?? buttonsIn(scopes[0] ?? document).find((button) => /^reply/i.test(textOf(button))) ?? null;
   opener?.click();
   const focusBox = (): boolean => {
     const box = find<HTMLTextAreaElement>('textarea');
@@ -57,23 +104,6 @@ export function focusReply(anchor: string): boolean {
   if (focusBox()) return true;
   window.setTimeout(focusBox, 150);
   return opener !== null;
-}
-
-const RESOLVE_SELECTOR = 'button[data-resolved-text], form.js-resolvable-toggler button, button[aria-label*="esolve conversation" i], button[name="resolve"]';
-
-/** GitHub's Resolve/Unresolve for the thread holding `anchor`, wherever quick view may have moved it. */
-export function clickResolve(anchor: string): boolean {
-  const root = timelineRootOf(anchor);
-  if (root === null) return false;
-  const button = root.querySelector<HTMLButtonElement>(RESOLVE_SELECTOR) ?? document.querySelector<HTMLButtonElement>(`.geld-review__slot-body ${RESOLVE_SELECTOR}`);
-  if (button === null) return false;
-  button.click();
-  return true;
-}
-
-export function isResolvable(anchor: string): boolean {
-  const root = timelineRootOf(anchor);
-  return root !== null && (root.querySelector(RESOLVE_SELECTOR) !== null || document.querySelector(`.geld-review__slot-body ${RESOLVE_SELECTOR}`) !== null);
 }
 
 export async function copyText(text: string): Promise<void> {
