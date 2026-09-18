@@ -4,24 +4,22 @@
  * collapsible reply box with Resolve; a bot's comment; an event row —
  * moved into the slot under the row (teleport.ts) and compacted by CSS.
  * GitHub sees its own DOM, so replying, resolving, reacting and editing
- * behave exactly as they do in the timeline. Inside a `<react-app>`
- * island the node is shown as a read-only clone instead.
+ * behave exactly as they do in the timeline (teleport.ts keeps React-owned
+ * nodes working too).
  */
 
 import { createElement } from '../dom';
 import { teleportInto } from './teleport';
-import type { TeleportOptions } from './teleport';
 
 const COMMENT_CONTAINER = '.js-comment-container, .review-comment, .timeline-comment, [data-testid="comment-container"], [id^="issuecomment-"], [id^="discussion_r"]';
 const BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
 
-/** Fill `slot` with `nodes`. Returns false when a node could only be shown as a read-only clone. */
-export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[], options: TeleportOptions = {}): boolean {
+/** Fill `slot` with `nodes`. */
+export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]): void {
   const list = createElement('div', { class: 'geld-review__qv' });
   slot.replaceChildren(list);
-  const live = teleportInto(list, nodes, options);
+  teleportInto(list, nodes);
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
-  return live;
 }
 
 /**

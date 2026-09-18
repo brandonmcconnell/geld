@@ -1303,31 +1303,112 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   animation: geld-spin 1.6s linear infinite;
 }
 
-/* One level down: people's comments inside the Reviews row. */
-.geld-review__rows--sub .geld-review__row--sub {
+/* One level down: reviews, threads and people's comments inside the Reviews row. */
+.geld-review__slot[data-kind='list'] > .geld-review__slot-body {
+  padding: 0;
+}
+
+.geld-review__rows--sub {
+  border-bottom: 0;
+}
+
+.geld-review__rows--sub > .geld-review__row--sub:first-child,
+.geld-review__slot--sub {
+  border-top: 0;
+}
+
+.geld-review__rows--sub > .geld-review__row--sub {
   min-height: 36px;
-  padding-left: 40px;
+  padding-left: 24px;
 }
 
-.geld-review__rows--sub .geld-review__row--sub .geld-review__main {
+.geld-review__rows--sub > .geld-review__row--sub + .geld-review__row--sub,
+.geld-review__rows--sub > .geld-review__slot--sub + .geld-review__row--sub {
+  border-top: 1px solid var(--geld-review-border-muted);
+}
+
+.geld-review__main--entry {
+  align-items: center;
   min-height: 36px;
 }
 
-.geld-review__rows--sub .geld-review__row--sub .geld-review__title {
-  line-height: 36px;
-  font-size: 13px;
-}
-
-.geld-review__rows--sub .geld-review__row--sub .geld-review__detail {
-  line-height: 36px;
-}
-
-.geld-review__status--blank {
+.geld-review__main--static {
   cursor: default;
 }
 
+.geld-review__name {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.geld-review__preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--geld-review-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__preview--verdict {
+  font-style: italic;
+}
+
+.geld-review__time {
+  margin-right: 4px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geld-review__status--verdict {
+  cursor: default;
+}
+
+.geld-review__status--verdict[data-verdict='approved'] {
+  color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+}
+
+.geld-review__status--verdict[data-verdict='changes_requested'] {
+  color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+}
+
+/* The row says who and when; the worn header only lends its actions (react, ⋯). */
+.geld-review__row--sub .geld-review__head-slot {
+  max-width: none;
+}
+
+.geld-review__row--sub .geld-review__head-slot .timeline-comment-header-text,
+.geld-review__row--sub .geld-review__head-slot h3,
+.geld-review__row--sub .geld-review__head-slot [data-testid='comment-header'] > :not(:last-child) {
+  display: none !important;
+}
+
+.geld-review__react {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__react-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .geld-review__slot--sub .geld-review__slot-body {
-  padding-left: 56px;
+  padding: 4px 16px 12px 48px;
+}
+
+/* A review's comment comes without its card: the row above is its header. */
+.geld-review__slot--sub .geld-review__qv .timeline-comment,
+.geld-review__slot--sub .geld-review__qv .js-comment-container {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+}
+
+.geld-review__slot--sub .geld-review__qv .comment-body {
+  padding: 0 !important;
 }
 
 .geld-review__label {
@@ -1572,12 +1653,27 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review-hovercard__body {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  line-clamp: 5;
+  position: relative;
+  max-height: 120px;
   overflow: hidden;
   font-size: 13px;
+}
+
+/* Fade the cut rather than clamp lines: tables and code blocks ignore line clamps. */
+.geld-review-hovercard__body[data-clipped] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+}
+
+.geld-review-hovercard__body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 12px;
+}
+
+.geld-review-hovercard__body pre {
+  overflow-x: auto;
+  font-size: 12px;
 }
 
 .geld-review-hovercard__body > * {
@@ -1603,6 +1699,20 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   margin-top: 8px;
   color: var(--fgColor-muted, #59636e);
   font-size: 12px;
+}
+
+.geld-review-hovercard__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review-hovercard__open:hover {
+  text-decoration: underline;
 }
 
 .geld-review-hovercard__reply {
@@ -2211,11 +2321,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   gap: 6px;
   max-width: 55%;
   min-width: 0;
-  overflow: hidden;
   color: var(--geld-review-muted);
   font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
+}
+
+/* The worn ⋯ menu drops over the content below the row. */
+.geld-review__row[data-open] {
+  position: relative;
+  z-index: 2;
 }
 
 .geld-review__head-slot:empty {
@@ -2232,8 +2347,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__head-slot > * {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .geld-review__head-slot .timeline-comment-header,
@@ -2304,11 +2417,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--geld-review-muted);
 }
 
-.geld-review__slot-body [data-geld-clone] textarea,
-.geld-review__slot-body [data-geld-clone] button {
-  pointer-events: none;
-  opacity: 0.6;
-}
 
 /* ---- the timeline's one control ------------------------------------------ */
 

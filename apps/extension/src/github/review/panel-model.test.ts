@@ -98,6 +98,11 @@ describe('status rows', () => {
       changesRequested: false,
     });
     expect(requiredReviewsFrom('Merging is blocked', [])).toBeNull();
+    // Once met, the merge box counts approvals rather than stating the requirement; the requirement seen earlier is kept.
+    expect(requiredReviewsFrom('Changes approved\n2 approving reviews by reviewers with write access.', [], { knownRequired: 1 })).toEqual({ required: 1, approvals: 2, changesRequested: false });
+    expect(requiredReviewsFrom('Changes approved\n2 approving reviews by reviewers with write access.', [])).toEqual({ required: null, approvals: 2, changesRequested: false });
+    // Approvals seen in the timeline count even when the box says nothing yet.
+    expect(requiredReviewsFrom('Review required\nAt least 1 approving review is required by reviewers with write access.', [{ login: 'a', state: 'approved' }, { login: 'b', state: 'approved' }])).toEqual({ required: 1, approvals: 2, changesRequested: false });
   });
 
   it('grades bots', () => {
