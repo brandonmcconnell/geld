@@ -30,7 +30,7 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { renderQuickView, wearHeader } from './quick-view';
-import { restoreAll, teleportInto } from './teleport';
+import { compareHome, restoreAll, teleportInto } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -180,6 +180,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
     count: group.nodes.length,
     avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
     firstAnchor: firstAnchorIn(group.nodes[0] ?? null),
+    time: group.nodes.length === 1 ? timeTextOf(group.nodes[0] ?? null) : '',
   }));
 }
 
@@ -288,7 +289,7 @@ function cloneRing(source: SVGElement): SVGElement {
 }
 
 function timeTextOf(node: Element | null): string {
-  return (node?.querySelector('relative-time, time-ago, time')?.textContent ?? '').trim();
+  return (node === null ? '' : (findIn(node, 'relative-time, time-ago, time')?.textContent ?? '')).trim();
 }
 
 /** Per open Reviews entry, the node its quick view shows: a review's own comment rather than its whole timeline row. */
@@ -361,7 +362,7 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
     const x = nodes.get(a) ?? null;
     const y = nodes.get(b) ?? null;
     if (x === null || y === null) return x === null ? (y === null ? 0 : 1) : -1;
-    return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+    return compareHome(x, y);
   };
   return list.map((entry) => ({ ...entry, myReaction: entry.hasBody ? myReactionOn(entry.anchor) : null })).sort((a, b) => before(a.anchor, b.anchor));
 }
@@ -547,6 +548,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }),
     myReactionFor: (anchor) => myReactionOn(anchor),
+    timeFor: (anchor) => timeTextOf(document.getElementById(anchor)),
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
@@ -699,7 +701,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       } else {
         renderQuickView(mounted.slot, nodes);
         // One comment (a thread's first, a bot's) wears its own header on the row; groups of many keep theirs.
-        const head = mounted.root.querySelector<HTMLElement>(`.geld-review__row[data-open] > [${ATTR_HEAD_SLOT}]`);
+        const head = mounted.root.querySelector<HTMLElement>(`.geld-review__row[data-open] [${ATTR_HEAD_SLOT}]`);
         const first = nodes[0];
         if (head !== null && first !== undefined && (nodes.length === 1 || visit.openKey.startsWith('item:'))) wearHeader(head, first);
         else head?.remove();

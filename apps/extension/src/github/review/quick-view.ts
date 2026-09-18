@@ -34,6 +34,10 @@ export function commentHeaderPieces(node: HTMLElement): readonly HTMLElement[] {
   if (container === null) return [];
   const body = container.querySelector<HTMLElement>(BODY_SELECTOR);
   if (body === null) return [];
+  // A minimized comment ("This comment has been minimized · Show comment") is a <details>; its summary is its
+  // header, and pulled out of the details it would leave GitHub's toggle broken and both labels showing.
+  const details = body.closest('details');
+  if (details !== null && node.contains(details)) return [];
   const pieces: HTMLElement[] = [];
   let cursor: HTMLElement = body;
   while (cursor !== container && cursor.parentElement !== null) {
