@@ -17,7 +17,8 @@ interface Moved {
 }
 
 const moved = new Map<HTMLElement, Moved>();
-const clones = new Set<HTMLElement>();
+/** Read-only clones of React-owned nodes, with the source they mirror and the markup they were taken from. */
+const clones = new Map<HTMLElement, { readonly source: HTMLElement; snapshot: string }>();
 
 export function isReactManaged(node: Element): boolean {
   return node.closest('react-app, react-partial, [data-react-app], [data-reactroot]') !== null;
@@ -41,13 +42,8 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
   for (const node of nodes) {
     if (moved.has(node) || node.parentElement === slot) continue;
     if (isReactManaged(node)) {
-      const clone = node.cloneNode(true);
-      if (!(clone instanceof HTMLElement)) continue;
-      stripIds(clone);
-      clone.removeAttribute('data-geld-folded');
-      clone.removeAttribute('hidden');
-      clone.setAttribute(ATTR_CLONE, '');
-      clones.add(clone);
+      const clone = cloneOf(node);
+      clones.set(clone, { source: node, snapshot: node.innerHTML });
       slot.append(clone);
       live = false;
       continue;
@@ -64,6 +60,37 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
   return live;
 }
 
+function cloneOf(node: HTMLElement): HTMLElement {
+  const clone = node.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) throw new Error('Expected an element clone');
+  stripIds(clone);
+  clone.removeAttribute('data-geld-folded');
+  clone.removeAttribute('hidden');
+  clone.removeAttribute('inert');
+  for (const hidden of clone.querySelectorAll('[inert], [style*="visibility: hidden"]')) {
+    hidden.removeAttribute('inert');
+    if (hidden instanceof HTMLElement) hidden.style.visibility = '';
+  }
+  clone.setAttribute(ATTR_CLONE, '');
+  return clone;
+}
+
+/** React re-rendered a cloned source (checks expanded, a status changed): refresh the clone in place. Returns whether anything changed. */
+export function syncClones(): boolean {
+  let changed = false;
+  for (const [clone, entry] of clones) {
+    if (!entry.source.isConnected || !clone.isConnected) continue;
+    const markup = entry.source.innerHTML;
+    if (markup === entry.snapshot) continue;
+    const fresh = cloneOf(entry.source);
+    clone.replaceWith(fresh);
+    clones.delete(clone);
+    clones.set(fresh, { source: entry.source, snapshot: markup });
+    changed = true;
+  }
+  return changed;
+}
+
 /** Put every quick-viewed node back where it came from and drop clones. */
 export function restoreAll(): void {
   for (const entry of moved.values()) {
@@ -74,7 +101,7 @@ export function restoreAll(): void {
     else entry.node.remove();
   }
   moved.clear();
-  for (const clone of clones) clone.remove();
+  for (const clone of clones.keys()) clone.remove();
   clones.clear();
 }
 
