@@ -2,15 +2,19 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
+import { completeChat, listModels } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
+import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
+  isAiCompleteRequest,
+  isAiModelsRequest,
   isCatalogCheckMessage,
   isColorSchemeMessage,
   isEnsureContentMessage,
@@ -363,6 +367,33 @@ export default defineBackground(() => {
     }
     if (isFetchFileRequest(message)) {
       void fetchFile(message.url).then(sendResponse);
+      return true;
+    }
+    if (isAiModelsRequest(message)) {
+      void (async () => {
+        const denied = await hasGatewayPermission(message.baseUrl);
+        if (denied !== null) return { ok: false as const, reason: denied };
+        if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
+        return listModels(fetch, message.baseUrl, message.apiKey);
+      })().then(sendResponse);
+      return true;
+    }
+    if (isAiCompleteRequest(message)) {
+      void (async () => {
+        const denied = await hasGatewayPermission(message.baseUrl);
+        if (denied !== null) return { ok: false as const, reason: denied };
+        if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
+        if (message.model.trim() === '') return { ok: false as const, reason: 'No model selected.' };
+        return completeChat({
+          fetch,
+          baseUrl: message.baseUrl,
+          apiKey: message.apiKey,
+          model: message.model,
+          messages: message.messages,
+          ...(message.jsonSchema === undefined ? {} : { jsonSchema: message.jsonSchema }),
+          ...(message.schemaName === undefined ? {} : { schemaName: message.schemaName }),
+        });
+      })().then(sendResponse);
       return true;
     }
     if (!isFetchDiffRequest(message)) return undefined;
