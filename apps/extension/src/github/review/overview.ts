@@ -7,26 +7,29 @@
 
 import type { GeldSettings } from '@geld/core';
 import type { GeldPrMeta, ReviewItem } from '@geld/review';
-import { clusterComments, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
+import { clusterComments, firstSentence, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
-import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox } from './actions';
-import { avatarSrcFor, avatarSrcOf } from './crawler';
+import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
+import { authorOf, avatarSrcFor, avatarSrcOf } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { CHECKS_KEY, foldKey, itemKey, mountPanel, unmountPanel } from './panel';
+import { CHECKS_KEY, foldKey, itemKey, mountPanel, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
+import type { HumanComment } from './panel';
+import { hideHoverCard, setHoverProvider } from './hovercard';
+import type { HoverPreview } from './hovercard';
 import { checkCountsFrom, checksSummary, digestMarkdown, itemMarkdown, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
-import type { Avatar, FoldRow, GroupId, PanelModel } from './panel';
+import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { renderQuickView } from './quick-view';
-import { restoreAll } from './teleport';
+import { restoreAll, syncClones } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -43,6 +46,8 @@ interface VisitState {
   loadMoreTries: number;
   /** A permalink (or find-in-page hit) still to be honoured: open its row and land on it once. */
   pendingAnchor: string | null;
+  /** Comment open inside the Reviews row's list. */
+  openSubKey: string | null;
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
 }
@@ -56,6 +61,7 @@ const visit: VisitState = {
   generatedAt: '',
   loadMoreTries: 0,
   pendingAnchor: null,
+  openSubKey: null,
   manualDone: new Set(),
 };
 
@@ -195,7 +201,7 @@ function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: Geld
  * shows its counts and, opened, the section itself (read-only clone).
  */
 const MERGE_BOX_SELECTOR =
-  'react-partial[partial-name*="merge" i], [data-testid="mergebox-partial"], #partial-pull-merging, .pull-merging, .js-pull-merging, .mergeability-details, .merge-pr, .js-merge-pr';
+  '[data-testid="mergebox-border-container"], react-partial[partial-name*="merge" i], [data-testid="mergebox-partial"], #partial-pull-merging, .pull-merging, .js-pull-merging, .mergeability-details, .merge-pr, .js-merge-pr';
 const CHECK_HEADING = /^\d+\s+(?:in progress|action required|timed out|[a-z]+)\s+checks?$/i;
 
 function mergeBox(): HTMLElement | null {
@@ -217,6 +223,13 @@ let mergeHomeEl: HTMLElement | null = null;
  */
 function checksSection(): HTMLElement | null {
   if (checksSectionEl !== null && checksSectionEl.isConnected) return checksSectionEl;
+  // The React merge box labels its sections; nothing else on the page carries this label.
+  const labelled = document.querySelector('section[aria-label="Checks"]');
+  if (labelled instanceof HTMLElement && labelled.closest('.geld-review') === null) {
+    checksSectionEl = labelled;
+    mergeHomeEl = mergeBox() ?? labelled.parentElement;
+    return checksSectionEl;
+  }
   const headings = [...document.querySelectorAll<HTMLElement>('button, summary, h2, h3, h4, span, p, div')].filter(
     (node) => node.childElementCount <= 2 && CHECK_HEADING.test((node.textContent ?? '').replace(/\s+/g, ' ').trim()) && node.closest('.geld-review') === null,
   );
@@ -248,6 +261,86 @@ function mergeBoxText(): string {
   return parts.join('\n');
 }
 
+/** GitHub's 32px status ring, shrunk to the row's 16px lead. */
+function cloneRing(source: SVGElement): SVGElement {
+  const ring = source.cloneNode(true);
+  if (!(ring instanceof SVGElement)) return source;
+  ring.setAttribute('width', '16');
+  ring.setAttribute('height', '16');
+  ring.removeAttribute('style');
+  for (const circle of ring.querySelectorAll<SVGElement>('circle')) circle.style.transition = 'none';
+  return ring;
+}
+
+function timeTextOf(node: Element | null): string {
+  return (node?.querySelector('relative-time, time-ago, time')?.textContent ?? '').trim();
+}
+
+/** People's comments for the Reviews row: threads (resolvable) and top-level comments (not), never bots or review requests. */
+function humanComments(crawled: Crawled, meta: GeldPrMeta, settings: GeldSettings): readonly HumanComment[] {
+  const list: HumanComment[] = [];
+  for (const entry of crawled.comments) {
+    if (entry.author.bot || isTriggerComment(entry.comment.body, settings.reviewBots)) continue;
+    const anchor = entry.comment.anchor;
+    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
+    const resolvable = entry.comment.kind === 'thread';
+    list.push({
+      anchor,
+      author: entry.author.login,
+      avatarSrc: entry.avatarSrc,
+      title: firstSentence(entry.comment.body),
+      time: timeTextOf(document.getElementById(anchor)),
+      resolvable,
+      done: resolvable && (item !== undefined ? !isOpenStatus(item.status) : entry.comment.isResolved === true),
+      replies: Math.max(0, (entry.comment.threadAnchors?.length ?? 1) - 1),
+    });
+  }
+  return list;
+}
+
+const HOVER_BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
+
+/** What the hover card shows for a collapsed row: its first comment, clamped, plus a way to reply. */
+function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly FoldGroup[], handlers: PanelHandlers): HoverPreview | null {
+  const itemId = row.getAttribute('data-geld-item');
+  const foldId = row.getAttribute('data-geld-fold');
+  let anchor: string | null = null;
+  let more = 0;
+  let onReply: (() => void) | null = null;
+  if (itemId !== null) {
+    const item = meta.items.find((entry) => entry.id === itemId);
+    if (item === undefined) return null;
+    anchor = item.sources[0]?.anchor ?? null;
+    more = item.sources.length - 1;
+    onReply = () => handlers.onReply(item.id);
+  } else if (foldId !== null) {
+    const group = groups.find((entry) => entry.key === foldId);
+    const first = group?.nodes[0] ?? null;
+    if (first === null) return null;
+    anchor = first.id !== '' ? first.id : first.querySelector('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"], [id^="event-"]')?.id ?? null;
+    more = (group?.nodes.length ?? 1) - 1;
+  }
+  if (anchor === null) return null;
+  const node = document.getElementById(anchor);
+  if (node === null) return null;
+  const author = authorOf(node);
+  const body = node.querySelector(HOVER_BODY_SELECTOR);
+  const preview = body instanceof HTMLElement ? body.cloneNode(true) : null;
+  if (preview instanceof HTMLElement) {
+    preview.removeAttribute('id');
+    for (const child of preview.querySelectorAll('[id]')) child.removeAttribute('id');
+  }
+  return {
+    avatarSrc: avatarSrcOf(node),
+    name: (author?.login ?? 'ghost').replace(/\[bot\]$/i, ''),
+    bot: author?.bot ?? false,
+    time: timeTextOf(node),
+    body: preview instanceof HTMLElement ? preview : null,
+    more,
+    onReply,
+  };
+}
+
 function subjectOf(): MarkdownSubject | null {
   const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
   if (match === null) return null;
@@ -258,6 +351,8 @@ function subjectOf(): MarkdownSubject | null {
 
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
+  // The Reviews row renders its own list; the panel itself stands in for "something to show".
+  if (key === REVIEWS_KEY) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
     return section === null ? [] : [section];
@@ -292,6 +387,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.rewriteStarted = false;
     visit.loadMoreTries = 0;
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
+    visit.openSubKey = null;
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
@@ -332,6 +428,9 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
   const subject = subjectOf();
   const boxText = mergeBoxText();
+  const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
+  const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
+  const comments = humanComments(crawledDom, meta, settings);
   const requestable = installedBots(meta, document);
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
@@ -350,6 +449,10 @@ export function applyReviewOverview(settings: GeldSettings): void {
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
     checks: checkCountsFrom(checksSection()?.textContent ?? boxText),
+    checksRing,
+    comments,
+    openSubKey: visit.openSubKey,
+    running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: requiredReviewsFrom(boxText, meta.reviewers),
     avatarsFor,
     resolvable: itemResolvable,
@@ -358,7 +461,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     fixFor,
   };
   const reapply = (): void => applyReviewOverview(settings);
-  const mounted = mountPanel(model, {
+  const panelHandlers: PanelHandlers = {
     onToggle: (key) => {
       visit.openKey = visit.openKey === key ? null : key;
       reapply();
@@ -438,6 +541,13 @@ export function applyReviewOverview(settings: GeldSettings): void {
       const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
       void postTopLevelComments(triggers);
     },
+    onToggleSub: (anchor) => {
+      visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
+      reapply();
+    },
+    onResolveAnchor: (anchor) => {
+      clickResolve(anchor);
+    },
     onShowInTimeline: (anchor) => {
       visit.fullTimeline = true;
       visit.openKey = null;
@@ -456,7 +566,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
       visit.openKey = key;
       reapply();
     },
-  });
+  };
+  const mounted = mountPanel(model, panelHandlers);
 
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
@@ -464,11 +575,23 @@ export function applyReviewOverview(settings: GeldSettings): void {
       visit.openKey = null;
       restoreAll();
     } else if (mounted.slot.childElementCount === 0) {
-      renderQuickView(mounted.slot, nodes);
+      // The React merge box renders its check list only once expanded: ask GitHub to expand before mirroring it.
+      if (visit.openKey === CHECKS_KEY) nodes[0]?.querySelector<HTMLElement>('button[aria-label="Expand checks"], button[aria-expanded="false"][aria-label*="checks" i]')?.click();
+      if (visit.openKey === REVIEWS_KEY) {
+        const nested = renderCommentsList(mounted.slot, model, panelHandlers);
+        const subNode = visit.openSubKey === null ? null : timelineRootOf(visit.openSubKey);
+        if (nested !== null && subNode !== null) renderQuickView(nested, [subNode]);
+        else if (visit.openSubKey !== null && subNode === null) visit.openSubKey = null;
+      } else {
+        renderQuickView(mounted.slot, nodes);
+      }
+    } else {
+      syncClones();
     }
   } else {
     restoreAll();
   }
+  setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   applyFolds(foldTargets, new Set());
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
@@ -511,6 +634,8 @@ export function onReviewBeforeMatch(event: Event, settings: GeldSettings): void 
 }
 
 export function teardownReviewOverview(): void {
+  hideHoverCard();
+  setHoverProvider(null);
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());
