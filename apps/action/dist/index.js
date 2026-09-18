@@ -18915,6 +18915,7 @@ var REVIEWER_STATES = ["approved", "changes_requested", "commented", "pending"];
 var SOURCE_KINDS = ["thread", "comment", "review"];
 var ADDRESSED_VERDICTS = ["yes", "partly", "no", "unclear"];
 var PRODUCER_KINDS = ["action", "app", "crawler"];
+var FIX_SOURCES = ["bot", "human", "ai"];
 var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
 var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN);
 var isoDate = external_exports.string().refine((value) => !Number.isNaN(Date.parse(value)), { error: "Expected an ISO date string." });
@@ -18929,6 +18930,10 @@ var addressedSchema = external_exports.object({
   verdict: external_exports.enum(ADDRESSED_VERDICTS),
   evidence: external_exports.array(external_exports.string().min(1))
 });
+var suggestedFixSchema = external_exports.object({
+  text: external_exports.string().min(1),
+  source: external_exports.enum(FIX_SOURCES)
+});
 var reviewItemSchema = external_exports.object({
   id: external_exports.string().min(1),
   title: external_exports.string().min(1),
@@ -18938,7 +18943,14 @@ var reviewItemSchema = external_exports.object({
   path: external_exports.string().min(1).optional(),
   line: external_exports.number().int().positive().optional(),
   sources: external_exports.array(reviewSourceSchema).min(1),
-  addressed: addressedSchema.optional()
+  addressed: addressedSchema.optional(),
+  context: external_exports.string().min(1).optional(),
+  fix: suggestedFixSchema.optional()
+});
+var reviewSummarySchema = external_exports.object({
+  tldr: external_exports.string().min(1),
+  updatedAt: isoDate,
+  forItems: external_exports.array(external_exports.string().min(1))
 });
 var botVerdictSchema = external_exports.object({
   id: external_exports.string().min(1),
@@ -18972,7 +18984,8 @@ var geldPrMetaSchema = external_exports.object({
   bots: external_exports.array(botVerdictSchema),
   reviewers: external_exports.array(reviewerSchema),
   fold: foldSchema,
-  truncated: external_exports.boolean().optional()
+  truncated: external_exports.boolean().optional(),
+  summary: reviewSummarySchema.optional()
 });
 var deeplinkSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -19001,8 +19014,9 @@ function reviewItemFrom(value) {
   };
   const located = value.path === void 0 ? item : { ...item, path: value.path };
   const numbered = value.line === void 0 ? located : { ...located, line: value.line };
-  if (value.addressed === void 0) return numbered;
-  return { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
+  const judged = value.addressed === void 0 ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
+  const explained = value.context === void 0 ? judged : { ...judged, context: value.context };
+  return value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
 }
 function botVerdictFrom(value) {
   const record3 = {
@@ -19027,7 +19041,8 @@ function metaFrom(value) {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events }
   };
-  return value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
+  const flagged = value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
+  return value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
 }
 function parseGeldPrMeta(value) {
   const parsed = geldPrMetaSchema.safeParse(value);
@@ -19274,7 +19289,7 @@ var RULE_ID = /(?:\brule\b|\bcheck\b)[:\s#]+([a-z0-9][\w.-]{1,80})/i;
 function suggestionOf(body) {
   const match = SUGGESTION.exec(body);
   const block = match?.[1];
-  return block === void 0 ? null : block.replace(/\s+/g, " ").trim();
+  return block === void 0 ? null : block.replace(/\s+$/, "").replace(/^\n+/, "");
 }
 function ruleIdOf(body) {
   const match = RULE_ID.exec(body);
@@ -19325,6 +19340,7 @@ function atomFrom(comment, extraLogins) {
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
+    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== void 0 && (lead.bot !== void 0 || looksLikeBotLogin(lead.author)) ? "bot" : "human",
     ruleId: ruleIdOf(comment.body),
     botIds,
     humanAuthors,
@@ -19360,6 +19376,7 @@ function mergeAtom(a, b) {
     path: a.path ?? b.path,
     line: a.line ?? b.line,
     suggestion: a.suggestion ?? b.suggestion,
+    suggestionBy: a.suggestion !== null ? a.suggestionBy : b.suggestionBy,
     ruleId: a.ruleId ?? b.ruleId,
     botIds,
     humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
@@ -19391,12 +19408,26 @@ function itemFromAtom(atom) {
     rewritten: false,
     severity: severityOf(atom),
     status: atom.outdated ? "outdated" : atom.resolved ? "resolved" : "open",
-    sources: atom.sources
+    sources: atom.sources,
+    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}
   };
   if (atom.path !== void 0 && atom.line !== void 0) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== void 0) return { ...item, path: atom.path };
   if (atom.line !== void 0) return { ...item, line: atom.line };
   return item;
+}
+var EXCERPT_CHARS = 700;
+function sourceExcerpts(comments, item) {
+  const bodies = /* @__PURE__ */ new Map();
+  for (const comment of comments) {
+    bodies.set(comment.anchor, comment.body);
+    for (const peer of comment.threadAnchors ?? []) bodies.set(peer.anchor, peer.body);
+  }
+  return item.sources.map((source) => {
+    const body = (bodies.get(source.anchor) ?? "").replace(/\s+/g, " ").trim();
+    const who = source.bot !== void 0 ? `${source.bot}` : `@${source.author}`;
+    return `${who}: ${body.length > EXCERPT_CHARS ? `${body.slice(0, EXCERPT_CHARS)}\u2026` : body}`;
+  });
 }
 function isBotSummaryComment(comment, extraLogins = []) {
   return comment.kind !== "thread" && (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author));
@@ -19465,6 +19496,96 @@ function applyAddressedAll(items, forItem, semanticById = /* @__PURE__ */ new Ma
   return items.map((item) => applyAddressed(item, forItem(item), semanticById.get(item.id)));
 }
 
+// ../../packages/review/src/consolidate.ts
+function anchorKey(item) {
+  return item.sources.map((source) => source.anchor).sort().join("|");
+}
+function carriedFrom(previous) {
+  const carried = { title: previous.title };
+  const graded = { ...carried, severity: previous.severity };
+  const explained = previous.context === void 0 ? graded : { ...graded, context: previous.context };
+  return previous.fix === void 0 || previous.fix.source !== "ai" ? explained : { ...explained, fix: previous.fix };
+}
+function planConsolidation(previous, items, options) {
+  const scope = options.scope ?? "bots";
+  const previousByAnchors = /* @__PURE__ */ new Map();
+  const previousByAnchor = /* @__PURE__ */ new Map();
+  for (const item of previous?.items ?? []) {
+    if (!item.rewritten) continue;
+    previousByAnchors.set(anchorKey(item), item);
+    for (const source of item.sources) previousByAnchor.set(source.anchor, item);
+  }
+  const carried = /* @__PURE__ */ new Map();
+  const pending = [];
+  for (const item of items) {
+    if (scope === "bots" && !isBotOnly(item)) continue;
+    if (!isOpenStatus(item.status)) continue;
+    const same = previousByAnchors.get(anchorKey(item));
+    if (same !== void 0) {
+      carried.set(item.id, carriedFrom(same));
+      continue;
+    }
+    const grownFrom = item.sources.map((source) => previousByAnchor.get(source.anchor)).find((candidate) => candidate !== void 0);
+    const input3 = {
+      id: item.id,
+      title: item.title,
+      sources: item.sources.map((source) => source.anchor),
+      excerpts: sourceExcerpts(options.comments, item),
+      wantFix: options.wantFix === true && item.fix === void 0,
+      ...item.path === void 0 ? {} : { path: item.path },
+      ...item.line === void 0 ? {} : { line: item.line },
+      ...grownFrom === void 0 ? {} : { previousTitle: grownFrom.title },
+      ...grownFrom?.context === void 0 ? {} : { previousContext: grownFrom.context }
+    };
+    pending.push(input3);
+  }
+  return { carried, pending };
+}
+function applyConsolidation(items, carried, outputs) {
+  const fresh = new Map(outputs.map((entry2) => [entry2.id, entry2]));
+  return items.map((item) => {
+    const output2 = fresh.get(item.id);
+    if (output2 !== void 0) {
+      const next2 = { ...item, title: output2.title, rewritten: true };
+      const graded2 = output2.severity === void 0 ? next2 : { ...next2, severity: output2.severity };
+      const explained2 = output2.context === void 0 ? graded2 : { ...graded2, context: output2.context };
+      return output2.fix === void 0 || item.fix !== void 0 ? explained2 : { ...explained2, fix: { text: output2.fix, source: "ai" } };
+    }
+    const carry = carried.get(item.id);
+    if (carry === void 0) return item;
+    const next = { ...item, title: carry.title, rewritten: true };
+    const graded = carry.severity === void 0 ? next : { ...next, severity: carry.severity };
+    const explained = carry.context === void 0 ? graded : { ...graded, context: carry.context };
+    return carry.fix === void 0 || item.fix !== void 0 ? explained : { ...explained, fix: carry.fix };
+  });
+}
+function summaryKey(items) {
+  return items.filter((item) => isOpenStatus(item.status)).map((item) => item.id).sort();
+}
+function summaryIsCurrent(summary, items) {
+  if (summary === void 0) return false;
+  const key = summaryKey(items);
+  return key.length === summary.forItems.length && key.every((id, index) => id === summary.forItems[index]);
+}
+function summaryInput(items) {
+  return items.filter((item) => isOpenStatus(item.status)).map((item) => ({
+    id: item.id,
+    title: item.title,
+    severity: item.severity,
+    status: item.status,
+    ...item.path === void 0 ? {} : { path: item.path }
+  }));
+}
+function summaryRecord(tldr, items, updatedAt) {
+  return { tldr, updatedAt, forItems: summaryKey(items) };
+}
+function fixVisible(fix, mode) {
+  if (fix === void 0 || mode === "off") return false;
+  if (mode === "all") return true;
+  if (mode === "ai") return fix.source === "ai";
+  return fix.source !== "ai";
+}
+
 // ../../packages/review/src/summary-render.ts
 function escapeMd(text) {
   return text.replace(/([\\`*_[\]<>])/g, "\\$1");
@@ -19489,7 +19610,11 @@ function sourcesOf(item) {
 }
 function itemLine(item, checked) {
   const box = checked ? "- [x]" : "- [ ]";
-  return `${box} **${escapeMd(item.title)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item)}`;
+  const head = `${box} **${escapeMd(item.title)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item)}`;
+  const extra = [];
+  if (item.context !== void 0) extra.push(`  ${escapeMd(item.context)}`);
+  if (item.fix !== void 0) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", "  ```suggestion", ...item.fix.text.split("\n").map((line) => `  ${line}`), "  ```", "", "  </details>");
+  return [head, ...extra].join("\n");
 }
 function groupItems(items) {
   const open2 = [];
@@ -19546,6 +19671,9 @@ function renderSummary(meta3, subject) {
     headerLine(meta3),
     ""
   ];
+  if (meta3.summary !== void 0) {
+    lines.push(meta3.summary.tldr, "");
+  }
   if (open2.length > 0) {
     lines.push(`**Open (${open2.length})**`);
     for (const item of open2) lines.push(itemLine(item, false));
@@ -19623,12 +19751,20 @@ function tickedItemIds(body, items) {
 }
 
 // ../../packages/review/src/prompts.ts
-var CONSOLIDATE_SYSTEM = `You rewrite review-bot findings into short titles for a pull-request digest.
+var CONSOLIDATE_SYSTEM = `You consolidate code-review findings for a pull-request digest. Each item is one concern; its sources are the comments (from review bots and people) that raised it.
 Rules:
-- One title per item. At most 80 characters, no trailing period.
-- Keep the author's meaning; do not invent bugs.
-- Mention the symbol or file when it helps.
+- "title": one line, at most 80 characters, no trailing period. Say what is wrong or asked, naming the symbol or file when it helps. Keep the reporters' meaning; never invent a bug.
+- "context": at most two sentences with what a reader needs beyond the title \u2014 the consequence, the condition, the reasoning a source gave. Omit it when the title already says everything. Merge duplicates: when several sources report the same thing, keep the union of useful detail once.
+- When "previousTitle" is given, the item was already summarised; change the title and context only as much as the new sources require. Prefer keeping them.
+- "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. Omit otherwise.
+- "severity": one of the allowed values when you can tell; omit otherwise.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
+var SUMMARY_SYSTEM = `You write the TL;DR of a pull request's review state for its digest.
+Rules:
+- At most three sentences, plain prose, no lists, no headings, no emoji.
+- Say what kind of feedback is open (bugs, questions, nits), where it clusters, and what is blocking if anything. Do not repeat every item.
+- When "previousTldr" is given, keep its wording where it still holds and change only what the item list requires.
+- Return JSON only: {"tldr": "..."}.`;
 var ADDRESSED_SYSTEM = `You decide whether a review finding still applies given later discussion and the files that changed.
 Verdicts: "yes" (fixed or no longer applies), "partly", "no", "unclear".
 Return JSON only. Every id must be one of the ids you were given. Do not quote comment text at length; evidence is short phrases.`;
@@ -19637,10 +19773,13 @@ var consolidateOutputSchema = external_exports.object({
     external_exports.object({
       id: external_exports.string().min(1),
       title: external_exports.string().min(1).max(120),
-      severity: external_exports.enum(SEVERITIES).optional()
+      severity: external_exports.enum(SEVERITIES).optional(),
+      context: external_exports.string().max(600).optional(),
+      fix: external_exports.string().max(2e3).optional()
     })
   )
 });
+var summaryOutputSchema = external_exports.object({ tldr: external_exports.string().min(1).max(600) });
 var addressedOutputSchema = external_exports.object({
   items: external_exports.array(
     external_exports.object({
@@ -19664,6 +19803,9 @@ function keepKnownIds(items, allowed) {
 function consolidateUserPrompt(items) {
   return JSON.stringify({ items }, null, 2);
 }
+function summaryUserPrompt(items, previousTldr) {
+  return JSON.stringify(previousTldr === null ? { items } : { previousTldr, items }, null, 2);
+}
 function addressedUserPrompt(items) {
   return JSON.stringify({ items }, null, 2);
 }
@@ -19681,11 +19823,19 @@ var CONSOLIDATE_JSON_SCHEMA = {
         properties: {
           id: { type: "string" },
           title: { type: "string" },
-          severity: { type: "string", enum: [...SEVERITIES] }
+          severity: { type: "string", enum: [...SEVERITIES] },
+          context: { type: "string" },
+          fix: { type: "string" }
         }
       }
     }
   }
+};
+var SUMMARY_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["tldr"],
+  properties: { tldr: { type: "string" } }
 };
 var ADDRESSED_JSON_SCHEMA = {
   type: "object",
@@ -19707,32 +19857,43 @@ var ADDRESSED_JSON_SCHEMA = {
     }
   }
 };
+function issuesOf2(error61) {
+  return error61.issues.map((issue2) => `${issue2.path.join(".") || "$"}: ${issue2.message}`);
+}
 function parseConsolidateOutput(text, allowedIds) {
   const json2 = parseJsonObject(text);
   if (!json2.ok) return json2;
   const parsed = consolidateOutputSchema.safeParse(json2.value);
-  if (!parsed.success) {
-    return { ok: false, issues: parsed.error.issues.map((issue2) => `${issue2.path.join(".") || "$"}: ${issue2.message}`) };
-  }
-  const kept = keepKnownIds(parsed.data.items, allowedIds).map(
-    (entry2) => entry2.severity === void 0 ? { id: entry2.id, title: entry2.title } : { id: entry2.id, title: entry2.title, severity: entry2.severity }
-  );
+  if (!parsed.success) return { ok: false, issues: issuesOf2(parsed.error) };
+  const kept = keepKnownIds(parsed.data.items, allowedIds).map((entry2) => {
+    const item = { id: entry2.id, title: entry2.title.trim().replace(/\.$/, "") };
+    const graded = entry2.severity === void 0 ? item : { ...item, severity: entry2.severity };
+    const context = entry2.context?.trim() ?? "";
+    const explained = context === "" ? graded : { ...graded, context };
+    const fix = entry2.fix?.trim() ?? "";
+    return fix === "" ? explained : { ...explained, fix };
+  });
   return { ok: true, value: kept };
+}
+function parseSummaryOutput(text) {
+  const json2 = parseJsonObject(text);
+  if (!json2.ok) return json2;
+  const parsed = summaryOutputSchema.safeParse(json2.value);
+  if (!parsed.success) return { ok: false, issues: issuesOf2(parsed.error) };
+  return { ok: true, value: parsed.data.tldr.trim() };
 }
 function parseAddressedOutput(text, allowedIds) {
   const json2 = parseJsonObject(text);
   if (!json2.ok) return json2;
   const parsed = addressedOutputSchema.safeParse(json2.value);
-  if (!parsed.success) {
-    return { ok: false, issues: parsed.error.issues.map((issue2) => `${issue2.path.join(".") || "$"}: ${issue2.message}`) };
-  }
-  const kept = keepKnownIds(parsed.data.items, allowedIds);
-  return { ok: true, value: kept };
+  if (!parsed.success) return { ok: false, issues: issuesOf2(parsed.error) };
+  return { ok: true, value: keepKnownIds(parsed.data.items, allowedIds) };
 }
 
 // ../../packages/review/src/ai-client.ts
 function joinUrl(base, path) {
-  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  const origin = base.replace(/\/+$/, "").replace(/\/v1$/i, "");
+  return `${origin}/${path.replace(/^\/+/, "")}`;
 }
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -19830,6 +19991,9 @@ function threadToComment(thread) {
   if (line !== void 0) return { ...comment, line };
   return comment;
 }
+function rawCommentsOf(pr) {
+  return collectRawComments(pr);
+}
 function collectRawComments(pr) {
   const comments = [];
   for (const thread of pr.threads) {
@@ -19896,18 +20060,11 @@ function humanRepliedIn(item, pr) {
   }
   return false;
 }
-function applyRewrites(items, rewritten) {
-  if (rewritten.length === 0) return items;
-  const byId = new Map(rewritten.map((entry2) => [entry2.id, entry2]));
+function keepAllowedFixes(items, mode) {
   return items.map((item) => {
-    const update = byId.get(item.id);
-    if (update === void 0 || !isBotOnly(item)) return item;
-    return {
-      ...item,
-      title: update.title,
-      rewritten: true,
-      ...update.severity !== void 0 ? { severity: update.severity } : {}
-    };
+    if (item.fix === void 0 || fixVisible(item.fix, mode)) return item;
+    const { fix: _dropped, ...rest } = item;
+    return rest;
   });
 }
 function semanticMap(entries) {
@@ -19936,7 +20093,9 @@ function buildMeta(pr, options) {
     }),
     semanticMap(options.semantic ?? [])
   );
-  items = applyRewrites(items, options.rewritten ?? []);
+  const botOnlyOutputs = (options.rewritten ?? []).filter((entry2) => items.some((item) => item.id === entry2.id && isBotOnly(item)));
+  items = applyConsolidation(items, options.carried ?? /* @__PURE__ */ new Map(), botOnlyOutputs);
+  items = keepAllowedFixes(items, options.suggestedFixes ?? "bots");
   const maxItems = options.maxItems;
   const uncappedCount = items.length;
   if (maxItems !== void 0 && items.length > maxItems) {
@@ -19956,7 +20115,8 @@ function buildMeta(pr, options) {
     bots,
     reviewers: reviewersOf(pr),
     fold: foldOf(pr, extra),
-    ...uncappedCount > items.length ? { truncated: true } : {}
+    ...uncappedCount > items.length ? { truncated: true } : {},
+    ...options.summary === void 0 ? {} : { summary: options.summary }
   };
   return truncateMeta(meta3, options.budget ?? PAYLOAD_BUDGET);
 }
@@ -20191,7 +20351,8 @@ function shouldSkipSelfEdit(event) {
 }
 
 // src/main.ts
-var ACTION_VERSION = "0.1.0";
+var ACTION_VERSION = "0.2.0";
+var FIX_MODES = ["all", "bots", "ai", "off"];
 function input2(name) {
   const key = `INPUT_${name.replaceAll(" ", "_").toUpperCase()}`;
   return process.env[key] ?? "";
@@ -20208,51 +20369,70 @@ function readEventPayload() {
 function extraBots(raw) {
   return raw.split(/[,\n]/).map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "");
 }
-async function maybeRewrite(items, apiKey, baseUrl, model) {
-  if (apiKey === "" || model === "" || items.length === 0) return [];
-  const payload = items.map((item) => {
-    const entry2 = {
-      id: item.id,
-      title: item.title,
-      sources: item.sources.map((source) => source.anchor),
-      excerpt: item.title
-    };
-    if (item.path !== void 0 && item.line !== void 0) return { ...entry2, path: item.path, line: item.line };
-    if (item.path !== void 0) return { ...entry2, path: item.path };
-    if (item.line !== void 0) return { ...entry2, line: item.line };
-    return entry2;
-  });
+function fixMode(raw) {
+  return FIX_MODES.find((mode) => mode === raw.trim()) ?? "bots";
+}
+async function consolidate(ai, pending) {
+  if (pending.length === 0) return [];
   const result = await completeChat({
-    fetch,
-    baseUrl,
-    apiKey,
-    model,
+    fetch: ai.fetch,
+    baseUrl: ai.baseUrl,
+    apiKey: ai.apiKey,
+    model: ai.model,
     messages: [
       { role: "system", content: CONSOLIDATE_SYSTEM },
-      { role: "user", content: consolidateUserPrompt(payload) }
+      { role: "user", content: consolidateUserPrompt(pending) }
     ],
     jsonSchema: CONSOLIDATE_JSON_SCHEMA,
     schemaName: "geld_consolidate",
-    timeoutMs: 45e3
+    timeoutMs: 6e4
   });
   if (!result.ok) {
-    console.warn(`AI rewrite skipped: ${result.reason}`);
+    console.warn(`AI consolidation skipped: ${result.reason}`);
     return [];
   }
-  const parsed = parseConsolidateOutput(result.text, new Set(items.map((item) => item.id)));
+  const parsed = parseConsolidateOutput(result.text, new Set(pending.map((item) => item.id)));
   if (!parsed.ok) {
-    console.warn(`AI rewrite ignored: ${parsed.issues.join("; ")}`);
+    console.warn(`AI consolidation ignored: ${parsed.issues.join("; ")}`);
     return [];
   }
   return parsed.value;
 }
-async function maybeAddressed(items, apiKey, baseUrl, model, changedPaths) {
-  if (apiKey === "" || model === "" || items.length === 0) return [];
+async function writeTldr(ai, items, previous, now) {
+  if (previous !== void 0 && summaryIsCurrent(previous, items)) return previous;
+  const open2 = summaryInput(items);
+  if (open2.length === 0) return void 0;
   const result = await completeChat({
-    fetch,
-    baseUrl,
-    apiKey,
-    model,
+    fetch: ai.fetch,
+    baseUrl: ai.baseUrl,
+    apiKey: ai.apiKey,
+    model: ai.model,
+    messages: [
+      { role: "system", content: SUMMARY_SYSTEM },
+      { role: "user", content: summaryUserPrompt(open2, previous?.tldr ?? null) }
+    ],
+    jsonSchema: SUMMARY_JSON_SCHEMA,
+    schemaName: "geld_summary",
+    timeoutMs: 45e3
+  });
+  if (!result.ok) {
+    console.warn(`AI summary skipped: ${result.reason}`);
+    return previous;
+  }
+  const parsed = parseSummaryOutput(result.text);
+  if (!parsed.ok) {
+    console.warn(`AI summary ignored: ${parsed.issues.join("; ")}`);
+    return previous;
+  }
+  return summaryRecord(parsed.value, items, now);
+}
+async function judgeAddressed(ai, items, changedPaths) {
+  if (items.length === 0) return [];
+  const result = await completeChat({
+    fetch: ai.fetch,
+    baseUrl: ai.baseUrl,
+    apiKey: ai.apiKey,
+    model: ai.model,
     messages: [
       { role: "system", content: ADDRESSED_SYSTEM },
       {
@@ -20263,7 +20443,7 @@ async function maybeAddressed(items, apiKey, baseUrl, model, changedPaths) {
             title: item.title,
             ...item.path === void 0 ? {} : { path: item.path },
             changed: item.path !== void 0 && changedPaths.includes(item.path),
-            excerpt: item.title,
+            excerpt: item.context ?? item.title,
             laterReplies: ""
           }))
         )
@@ -20304,38 +20484,43 @@ async function run(env = process.env, fetchImpl = fetch) {
   const client = { token, fetch: fetchImpl };
   const loaded = await loadPullRequest(client, event.owner, event.repo, event.number);
   const existing = findSummaryComment(loaded.comments);
-  const laterPaths = existing?.meta != null && existing.meta.headSha.toLowerCase() !== loaded.headSha.toLowerCase() ? await filesChangedBetween(client, event.owner, event.repo, existing.meta.headSha, loaded.headSha) : [];
+  const previous = existing?.meta ?? null;
+  const laterPaths = previous !== null && previous.headSha.toLowerCase() !== loaded.headSha.toLowerCase() ? await filesChangedBetween(client, event.owner, event.repo, previous.headSha, loaded.headSha) : [];
   const pr = { ...loaded, changedPaths: laterPaths };
-  const aiKey = input2("ai-key") || env.INPUT_AI_KEY || "";
-  const baseUrl = input2("ai-base-url") || env.INPUT_AI_BASE_URL || "https://api.openai.com";
+  const apiKey = input2("ai-key") || env.INPUT_AI_KEY || "";
+  const baseUrl = input2("ai-base-url") || env.INPUT_AI_BASE_URL || "https://ai-gateway.vercel.sh";
   const model = input2("model") || env.INPUT_MODEL || "";
   const extras = extraBots(input2("extra-bots") || env.INPUT_EXTRA_BOTS || "");
+  const suggestedFixes = fixMode(input2("suggested-fixes") || env.INPUT_SUGGESTED_FIXES || "bots");
   const maxItemsRaw = Number.parseInt(input2("max-items") || env.INPUT_MAX_ITEMS || "80", 10);
   const maxItems = Number.isFinite(maxItemsRaw) && maxItemsRaw > 0 ? maxItemsRaw : 80;
-  const producer = { kind: "action", version: ACTION_VERSION, ai: aiKey !== "" && model !== "" };
-  const draft = buildMeta(pr, {
-    producer: { ...producer, ai: false },
-    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    extraBotLogins: extras,
-    previous: existing?.meta ?? null,
-    previousBody: existing?.body ?? "",
-    maxItems
+  const useAi = apiKey !== "" && model !== "";
+  const producer = { kind: "action", version: ACTION_VERSION, ai: useAi };
+  const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const common = { extraBotLogins: extras, previous, previousBody: existing?.body ?? "", maxItems, suggestedFixes };
+  const draft = buildMeta(pr, { ...common, producer: { ...producer, ai: false }, generatedAt });
+  if (!useAi) {
+    const body2 = renderSummary(draft, { owner: event.owner, repo: event.repo, number: event.number });
+    const id2 = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body2);
+    console.log(`Upserted Geld summary comment ${id2} on ${event.owner}/${event.repo}#${event.number} (${draft.items.length} items).`);
+    return;
+  }
+  const ai = { apiKey, baseUrl, model, fetch: fetchImpl };
+  const plan = planConsolidation(previous, draft.items, {
+    comments: rawCommentsOf(pr),
+    wantFix: suggestedFixes === "all" || suggestedFixes === "ai"
   });
-  const rewritten = producer.ai ? await maybeRewrite(botOnlyForRewrite(draft.items), aiKey, baseUrl, model) : [];
-  const semantic = producer.ai ? await maybeAddressed(botOnlyForRewrite(draft.items), aiKey, baseUrl, model, pr.changedPaths ?? []) : [];
-  const meta3 = buildMeta(pr, {
-    producer,
-    generatedAt: draft.generatedAt,
-    extraBotLogins: extras,
-    previous: existing?.meta ?? null,
-    previousBody: existing?.body ?? "",
-    rewritten,
-    semantic,
-    maxItems
-  });
+  const rewritten = await consolidate(ai, plan.pending);
+  const consolidated = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried });
+  const semantic = await judgeAddressed(ai, botOnlyForRewrite(consolidated.items), pr.changedPaths);
+  const judged = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic });
+  const summary = await writeTldr(ai, judged.items, previous?.summary, generatedAt);
+  const meta3 = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic, ...summary === void 0 ? {} : { summary } });
   const body = renderSummary(meta3, { owner: event.owner, repo: event.repo, number: event.number });
   const id = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body);
-  console.log(`Upserted Geld summary comment ${id} on ${event.owner}/${event.repo}#${event.number} (${meta3.items.length} items).`);
+  console.log(
+    `Upserted Geld summary comment ${id} on ${event.owner}/${event.repo}#${event.number} (${meta3.items.length} items, ${plan.pending.length} consolidated, ${plan.carried.size} carried${summary === previous?.summary ? ", TL;DR kept" : ", TL;DR written"}).`
+  );
 }
 var entry = process.argv[1] ?? "";
 if (entry.endsWith("index.js") || entry.endsWith("main.ts")) {

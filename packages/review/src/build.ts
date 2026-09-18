@@ -3,13 +3,15 @@
  * GeldPrMeta. Pure; the Action supplies GitHub data and optional AI output.
  */
 
-import type { AddressedEvidence, GeldPrMeta, ProducerRecord, ReviewItem, ReviewerRecord, ReviewerState } from './model';
+import type { AddressedEvidence, GeldPrMeta, ProducerRecord, ReviewItem, ReviewSummary, ReviewerRecord, ReviewerState } from './model';
 import { META_VERSION, PAYLOAD_BUDGET, STATUS_RANK, truncateMeta } from './model';
 import { looksLikeBotLogin, resolveBotId, verdictsFrom } from './bots';
 import type { RawCheckRun } from './bots';
 import type { RawComment } from './cluster';
 import { clusterComments, isBotOnly } from './cluster';
 import { applyAddressedAll } from './addressed';
+import type { Carried } from './consolidate';
+import { applyConsolidation, fixVisible } from './consolidate';
 import { looksLikeSummaryBody, tickedItemIds } from './summary-parse';
 import type { AddressedOutputItem, ConsolidateOutputItem } from './prompts';
 
@@ -63,8 +65,14 @@ export interface BuildOptions {
   readonly extraBotLogins?: readonly string[];
   readonly previous?: GeldPrMeta | null;
   readonly previousBody?: string;
+  /** Fresh model output for items whose sources changed. */
   readonly rewritten?: readonly ConsolidateOutputItem[];
+  /** Previous model output for items whose sources did not change. */
+  readonly carried?: ReadonlyMap<string, Carried>;
   readonly semantic?: readonly AddressedOutputItem[];
+  readonly summary?: ReviewSummary;
+  /** Which suggested fixes to keep in the payload; `bots` by default. */
+  readonly suggestedFixes?: 'all' | 'bots' | 'ai' | 'off';
   readonly budget?: number;
   /** Soft cap on items (open first) before the character budget. */
   readonly maxItems?: number;
@@ -106,6 +114,11 @@ function threadToComment(thread: RawThread): RawComment | null {
   if (path !== undefined) return { ...comment, path };
   if (line !== undefined) return { ...comment, line };
   return comment;
+}
+
+/** The comments `buildMeta` clusters, for callers that need excerpts (consolidation prompts). */
+export function rawCommentsOf(pr: RawPullRequest): readonly RawComment[] {
+  return collectRawComments(pr);
 }
 
 function collectRawComments(pr: RawPullRequest): readonly RawComment[] {
@@ -178,18 +191,11 @@ function humanRepliedIn(item: ReviewItem, pr: RawPullRequest): boolean {
   return false;
 }
 
-function applyRewrites(items: readonly ReviewItem[], rewritten: readonly ConsolidateOutputItem[]): readonly ReviewItem[] {
-  if (rewritten.length === 0) return items;
-  const byId = new Map(rewritten.map((entry) => [entry.id, entry]));
+function keepAllowedFixes(items: readonly ReviewItem[], mode: 'all' | 'bots' | 'ai' | 'off'): readonly ReviewItem[] {
   return items.map((item) => {
-    const update = byId.get(item.id);
-    if (update === undefined || !isBotOnly(item)) return item;
-    return {
-      ...item,
-      title: update.title,
-      rewritten: true,
-      ...(update.severity !== undefined ? { severity: update.severity } : {}),
-    };
+    if (item.fix === undefined || fixVisible(item.fix, mode)) return item;
+    const { fix: _dropped, ...rest } = item;
+    return rest;
   });
 }
 
@@ -220,7 +226,10 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
     }),
     semanticMap(options.semantic ?? []),
   );
-  items = applyRewrites(items, options.rewritten ?? []);
+  // People's words stay theirs: model output is applied to bot-only items only.
+  const botOnlyOutputs = (options.rewritten ?? []).filter((entry) => items.some((item) => item.id === entry.id && isBotOnly(item)));
+  items = applyConsolidation(items, options.carried ?? new Map<string, Carried>(), botOnlyOutputs);
+  items = keepAllowedFixes(items, options.suggestedFixes ?? 'bots');
   const maxItems = options.maxItems;
   const uncappedCount = items.length;
   if (maxItems !== undefined && items.length > maxItems) {
@@ -242,6 +251,7 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
     reviewers: reviewersOf(pr),
     fold: foldOf(pr, extra),
     ...(uncappedCount > items.length ? { truncated: true as const } : {}),
+    ...(options.summary === undefined ? {} : { summary: options.summary }),
   };
   return truncateMeta(meta, options.budget ?? PAYLOAD_BUDGET);
 }

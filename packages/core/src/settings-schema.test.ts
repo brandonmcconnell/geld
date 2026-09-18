@@ -35,7 +35,7 @@ describe('SETTINGS_SCHEMA', () => {
   });
 
   it('covers choice and text keys too', () => {
-    expect(choiceFields(allFields).map((field) => field.key).sort()).toEqual(['compactTimeline', 'repoConfigs']);
+    expect(choiceFields(allFields).map((field) => field.key).sort()).toEqual(['compactTimeline', 'repoConfigs', 'suggestedFixes']);
     expect(textFields(allFields).map((field) => field.key).sort()).toEqual(['aiBaseUrl', 'aiModel']);
     expect(sectionsFor('site').some((section) => section.id === 'review')).toBe(true);
     expect(textFields(fieldsFor('site'))).toEqual([]);

@@ -31,8 +31,10 @@ export interface ModelInfo {
   readonly id: string;
 }
 
-function joinUrl(base: string, path: string): string {
-  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+/** `https://ai-gateway.vercel.sh/v1` and `https://api.openai.com` both work: a trailing `/v1` is folded into the path. */
+export function joinUrl(base: string, path: string): string {
+  const origin = base.replace(/\/+$/, '').replace(/\/v1$/i, '');
+  return `${origin}/${path.replace(/^\/+/, '')}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

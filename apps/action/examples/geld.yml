@@ -5,7 +5,8 @@
 # the action only calls the GitHub API — it never checks out the pull request
 # head. Copy this file to `.github/workflows/geld.yml`.
 #
-# Optional AI: add repository secret GELD_AI_KEY and pass it as `ai-key`.
+# Optional AI: add repository secret GELD_AI_KEY (your own gateway key) and
+# uncomment the ai-* inputs below.
 
 name: Geld summary
 
@@ -44,4 +45,8 @@ jobs:
         uses: brandonmcconnell/geld/apps/action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          ai-key: ${{ secrets.GELD_AI_KEY }}
+          # Optional AI (bring your own key; nothing is sent without it):
+          # ai-key: ${{ secrets.GELD_AI_KEY }}
+          # ai-base-url: https://ai-gateway.vercel.sh
+          # model: openai/gpt-4.1-mini
+          # suggested-fixes: bots

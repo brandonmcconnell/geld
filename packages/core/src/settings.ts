@@ -113,6 +113,19 @@ export interface GeldSettings {
   readonly aiBaseUrl: string;
   /** Model id at that gateway. Empty until the user picks one from `/v1/models`. */
   readonly aiModel: string;
+  /**
+   * Suggested fixes on review items. `bots`: show the fix a review bot
+   * attached (a ```suggestion block). `ai`: only fixes the consolidation
+   * model proposes. `all`: both. `off`: never show one.
+   */
+  readonly suggestedFixes: SuggestedFixMode;
+}
+
+export const SUGGESTED_FIX_MODES = ['all', 'bots', 'ai', 'off'] as const;
+export type SuggestedFixMode = (typeof SUGGESTED_FIX_MODES)[number];
+
+export function isSuggestedFixMode(value: unknown): value is SuggestedFixMode {
+  return typeof value === 'string' && SUGGESTED_FIX_MODES.some((mode) => mode === value);
 }
 
 export const REPO_CONFIG_MODES = ['always', 'ask', 'never'] as const;
@@ -155,6 +168,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   reviewBots: [],
   aiBaseUrl: '',
   aiModel: '',
+  suggestedFixes: 'bots',
 };
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
@@ -359,6 +373,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? record.aiBaseUrl.trim() : DEFAULT_SETTINGS.aiBaseUrl,
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
+    suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
   };
 }
 

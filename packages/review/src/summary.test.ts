@@ -118,6 +118,28 @@ describe('render / parse round trip', () => {
     if (parsed.ok) expect(parsed.value.headSha).toBe(meta.headSha);
   });
 
+  it('round-trips context, fixes and the TL;DR', () => {
+    const base = buildMeta(fixturePr(), { producer: { ...PRODUCER, ai: true }, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const bot = base.items.find((item) => item.sources.every((source) => source.bot !== undefined));
+    expect(bot).toBeDefined();
+    if (bot === undefined) return;
+    const meta = buildMeta(fixturePr(), {
+      producer: { ...PRODUCER, ai: true },
+      generatedAt: '2026-09-18T12:00:00.000Z',
+      rewritten: [{ id: bot.id, title: 'Remove the unused import', context: 'Left behind by the refactor.', fix: '-import { x } from "y";' }],
+      suggestedFixes: 'all',
+      summary: { tldr: 'One bot nit and one open question; nothing blocking.', updatedAt: '2026-09-18T12:00:00.000Z', forItems: base.items.map((item) => item.id).sort() },
+    });
+    const item = meta.items.find((entry) => entry.id === bot.id);
+    expect(item?.context).toBe('Left behind by the refactor.');
+    expect(item?.fix).toEqual({ text: '-import { x } from "y";', source: 'ai' });
+    const body = renderSummary(meta, { owner: 'acme', repo: 'widgets', number: 123 });
+    expect(body).toContain('nothing blocking');
+    expect(parseSummaryBody(body)).toEqual({ ok: true, value: meta });
+    const noFixes = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z', rewritten: [{ id: bot.id, title: 'x', fix: 'y' }], suggestedFixes: 'off' });
+    expect(noFixes.items.find((entry) => entry.id === bot.id)?.fix).toBeUndefined();
+  });
+
   it('reads a QueryRoot the way GitHub renders <pre lang="geld">', () => {
     const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const withNbsp = JSON.stringify(meta).replace(/: /g, ':\u00a0');

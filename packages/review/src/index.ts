@@ -2,6 +2,7 @@ export * from './model';
 export * from './bots';
 export * from './cluster';
 export * from './addressed';
+export * from './consolidate';
 export * from './summary-render';
 export * from './summary-parse';
 export * from './prompts';

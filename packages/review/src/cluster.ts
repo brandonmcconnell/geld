@@ -4,7 +4,7 @@
  * the same bot rule id.
  */
 
-import type { ReviewItem, ReviewSeverity, ReviewSource, SourceKind } from './model';
+import type { FixSource, ReviewItem, ReviewSeverity, ReviewSource, SourceKind } from './model';
 import { itemIdFor } from './model';
 import { looksLikeBotLogin, resolveBotId } from './bots';
 
@@ -35,7 +35,7 @@ const RULE_ID = /(?:\brule\b|\bcheck\b)[:\s#]+([a-z0-9][\w.-]{1,80})/i;
 export function suggestionOf(body: string): string | null {
   const match = SUGGESTION.exec(body);
   const block = match?.[1];
-  return block === undefined ? null : block.replace(/\s+/g, ' ').trim();
+  return block === undefined ? null : block.replace(/\s+$/, '').replace(/^\n+/, '');
 }
 
 export function ruleIdOf(body: string): string | null {
@@ -76,6 +76,7 @@ interface Atom {
   readonly path: string | undefined;
   readonly line: number | undefined;
   readonly suggestion: string | null;
+  readonly suggestionBy: FixSource | null;
   readonly ruleId: string | null;
   readonly botIds: Set<string>;
   readonly humanAuthors: string[];
@@ -112,6 +113,7 @@ function atomFrom(comment: RawComment, extraLogins: readonly string[]): Atom {
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
+    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== undefined && (lead.bot !== undefined || looksLikeBotLogin(lead.author)) ? 'bot' : 'human',
     ruleId: ruleIdOf(comment.body),
     botIds,
     humanAuthors,
@@ -150,6 +152,7 @@ function mergeAtom(a: Atom, b: Atom): Atom {
     path: a.path ?? b.path,
     line: a.line ?? b.line,
     suggestion: a.suggestion ?? b.suggestion,
+    suggestionBy: a.suggestion !== null ? a.suggestionBy : b.suggestionBy,
     ruleId: a.ruleId ?? b.ruleId,
     botIds,
     humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
@@ -184,11 +187,28 @@ function itemFromAtom(atom: Atom): ReviewItem {
     severity: severityOf(atom),
     status: atom.outdated ? 'outdated' : atom.resolved ? 'resolved' : 'open',
     sources: atom.sources,
+    ...(atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}),
   };
   if (atom.path !== undefined && atom.line !== undefined) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== undefined) return { ...item, path: atom.path };
   if (atom.line !== undefined) return { ...item, line: atom.line };
   return item;
+}
+
+const EXCERPT_CHARS = 700;
+
+/** What each source of an item said, trimmed, for a model prompt. */
+export function sourceExcerpts(comments: readonly RawComment[], item: ReviewItem): readonly string[] {
+  const bodies = new Map<string, string>();
+  for (const comment of comments) {
+    bodies.set(comment.anchor, comment.body);
+    for (const peer of comment.threadAnchors ?? []) bodies.set(peer.anchor, peer.body);
+  }
+  return item.sources.map((source) => {
+    const body = (bodies.get(source.anchor) ?? '').replace(/\s+/g, ' ').trim();
+    const who = source.bot !== undefined ? `${source.bot}` : `@${source.author}`;
+    return `${who}: ${body.length > EXCERPT_CHARS ? `${body.slice(0, EXCERPT_CHARS)}…` : body}`;
+  });
 }
 
 /**
