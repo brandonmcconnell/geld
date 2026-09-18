@@ -8,6 +8,7 @@
 
 import type { RawComment, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
+import { wornPiecesOf } from './teleport';
 
 const ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/;
 const COMMENT_SELECTOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]';
@@ -25,13 +26,29 @@ export interface Author {
  * GitHub shows an App as "cursor" plus a "bot" label, linked to `/apps/cursor`;
  * the API (and the Action) know the same account as `cursor[bot]`.
  */
+/**
+ * `root.querySelector`, also looking through header pieces a panel row is
+ * wearing on the comment's behalf (teleport.ts), so a worn comment still
+ * has an author, a time and an avatar for the crawler.
+ */
+function find(root: Element, selector: string): Element | null {
+  const own = root.querySelector(selector);
+  if (own !== null) return own;
+  for (const piece of wornPiecesOf(root)) {
+    if (piece.matches(selector)) return piece;
+    const inside = piece.querySelector(selector);
+    if (inside !== null) return inside;
+  }
+  return null;
+}
+
 export function authorOf(root: Element): Author | null {
   const link =
-    root.querySelector('a.author') ??
-    root.querySelector('a[data-testid="author-link"]') ??
-    root.querySelector('a[data-hovercard-type="user"]') ??
-    root.querySelector('a[data-hovercard-type="organization"]') ??
-    root.querySelector('a[href^="/apps/"]');
+    find(root, 'a.author') ??
+    find(root, 'a[data-testid="author-link"]') ??
+    find(root, 'a[data-hovercard-type="user"]') ??
+    find(root, 'a[data-hovercard-type="organization"]') ??
+    find(root, 'a[href^="/apps/"]');
   if (link === null) return null;
   const text = (link.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/^@/, '');
   if (text === '') return null;
@@ -93,8 +110,8 @@ export function avatarSrcOf(node: Element | null): string | null {
   const row = node.closest('.TimelineItem, .js-timeline-item, [data-testid="timeline-row"]');
   if (row !== null && row !== node) scopes.push(row);
   for (const scope of scopes) {
-    const img = scope.querySelector<HTMLImageElement>(AVATAR_SELECTOR);
-    const src = img?.currentSrc || img?.getAttribute('src') || '';
+    const img = find(scope, AVATAR_SELECTOR);
+    const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
     if (src !== '') return src;
   }
   return null;
@@ -171,7 +188,7 @@ function withLocation(base: RawComment, extra: { readonly path?: string; readonl
 }
 
 function createdAtOf(node: Element): string {
-  return node.querySelector('relative-time, time-ago, time')?.getAttribute('datetime') ?? '';
+  return find(node, 'relative-time, time-ago, time')?.getAttribute('datetime') ?? '';
 }
 
 export function crawlConversation(root: ParentNode = document): {
