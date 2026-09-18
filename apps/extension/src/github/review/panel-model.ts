@@ -235,14 +235,21 @@ function stateOfWord(word: string): CheckState | null {
  * when no checks section is on the page.
  */
 export function checkCountsFrom(text: string): CheckCounts | null {
+  // "8 successful checks" (one heading per state) or "1 failing, 7 skipped, 59 successful checks" (one
+  // sentence). The React merge box shows both once expanded; the sentence alone is the whole picture.
+  const sentences = [...text.matchAll(/((?:\d+\s+[a-z][a-z ]*?,\s*)*\d+\s+[a-z][a-z ]*?)\s+checks?\b/gi)].map((match) => match[1] ?? '');
+  const summary = sentences.find((sentence) => sentence.includes(','));
   const counts = { ...EMPTY_CHECKS };
   let found = false;
-  for (const match of text.matchAll(/(\d+)\s+((?:in progress|action required|timed out|[a-z]+))\s+checks?\b/gi)) {
-    const state = stateOfWord(match[2] ?? '');
-    const count = Number.parseInt(match[1] ?? '0', 10);
-    if (state === null || !Number.isFinite(count)) continue;
-    found = true;
-    counts[state] += count;
+  for (const sentence of summary === undefined ? sentences : [summary]) {
+    for (const part of sentence.split(',')) {
+      const match = /(\d+)\s+([a-z][a-z ]*)/i.exec(part.trim());
+      const state = stateOfWord(match?.[2] ?? '');
+      const count = Number.parseInt(match?.[1] ?? '0', 10);
+      if (state === null || !Number.isFinite(count)) continue;
+      found = true;
+      counts[state] += count;
+    }
   }
   return found ? counts : null;
 }
