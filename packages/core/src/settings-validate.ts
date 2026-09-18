@@ -3,7 +3,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustom
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
-import { REPO_CONFIG_MODES, isRepoConfigMode, normalizeHost, normalizeSettings } from './settings';
+import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings } from './settings';
 import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 
@@ -51,7 +51,7 @@ export type SettingsValidation =
   | { readonly ok: true; readonly settings: GeldSettings }
   | { readonly ok: false; readonly issues: readonly SettingsIssue[] };
 
-const BOOLEAN_KEYS = ['enabled', 'groupHidden', 'expandedByDefault', 'hideCommentLines', 'expandLargeDiffs', 'showListStats', 'hideWhitespace', 'shortcutEnabled', 'showBadge', 'autoUpdatePatterns'] as const;
+const BOOLEAN_KEYS = ['enabled', 'groupHidden', 'expandedByDefault', 'hideCommentLines', 'expandLargeDiffs', 'showListStats', 'hideWhitespace', 'shortcutEnabled', 'showBadge', 'autoUpdatePatterns', 'prOverview', 'collapseDescription'] as const;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -231,6 +231,15 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.repoConfigs !== undefined && !isRepoConfigMode(value.repoConfigs)) {
     issues.push({ path: `${path}.repoConfigs`, message: `Expected one of ${list(REPO_CONFIG_MODES)}, got ${describeValue(value.repoConfigs)}.` });
   }
+  if (value.compactTimeline !== undefined && !isCompactTimelineMode(value.compactTimeline)) {
+    issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
+  }
+  if (value.aiBaseUrl !== undefined && typeof value.aiBaseUrl !== 'string') {
+    issues.push({ path: `${path}.aiBaseUrl`, message: `Expected a string, got ${describeValue(value.aiBaseUrl)}.` });
+  }
+  if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
+    issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
+  }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
   checkBooleanMap(issues, `${path}.groups`, value.groups, catalogGroupKeys(catalog), (key) => isGroupKey(key, catalog) || isWellFormedGroupKey(key), 'pattern group');
@@ -241,6 +250,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   checkStringList(issues, `${path}.customPatterns`, value.customPatterns, customPatternProblem);
   checkStringList(issues, `${path}.repoRules`, value.repoRules, repoRuleProblem);
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
+  checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }

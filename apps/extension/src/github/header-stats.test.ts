@@ -39,6 +39,7 @@ describe('describePage', () => {
     expect(files.stateKey).toBe('/wxt-dev/wxt/pull/2544');
 
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544')).kind).toBe('pull-conversation');
+    expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/conversation')).kind).toBe('pull-conversation');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/commits')).kind).toBe('pull-other');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/files/abc123')).kind).toBe('pull-files');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/changes')).kind).toBe('pull-files');

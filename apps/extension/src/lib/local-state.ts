@@ -14,3 +14,9 @@ export const whitespacePersistedItem = storage.defineItem<boolean>('local:whites
 export type RepoConfigChoice = 'use' | 'ignore';
 export type RepoConfigChoices = Readonly<Record<string, RepoConfigChoice>>;
 export const repoConfigChoicesItem = storage.defineItem<RepoConfigChoices>('local:repoConfigChoices', { fallback: {} });
+
+/** OpenAI-compatible gateway key. Never synced; never written to the gist. */
+export const aiKeyItem = storage.defineItem<string>('local:aiKey', { fallback: '' });
+
+/** Visit-local: the user dismissed the "add the Geld action" nudge for this repo. */
+export const reviewNudgeDismissedItem = storage.defineItem<Readonly<Record<string, boolean>>>('local:reviewNudgeDismissed', { fallback: {} });

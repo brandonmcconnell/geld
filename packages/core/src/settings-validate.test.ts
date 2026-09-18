@@ -163,6 +163,12 @@ describe('collectSettingsIssues', () => {
   it('finds nothing wrong with the defaults', () => {
     expect(collectSettingsIssues(DEFAULT_SETTINGS)).toEqual([]);
   });
+
+  it('rejects an unknown compactTimeline value', () => {
+    expect(collectSettingsIssues({ ...DEFAULT_SETTINGS, compactTimeline: 'loud' })).toEqual([
+      { path: 'settings.compactTimeline', message: 'Expected one of "off", "compact", "minimal", got "loud".' },
+    ]);
+  });
 });
 
 describe('describeValue', () => {
