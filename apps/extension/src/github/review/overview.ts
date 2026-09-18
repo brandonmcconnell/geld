@@ -18,7 +18,7 @@ import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { CHECKS_KEY, foldKey, itemKey, mountPanel, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
+import { ATTR_GEAR_SLOT, ATTR_HEAD_SLOT, CHECKS_KEY, foldKey, itemKey, mountPanel, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
 import type { HumanComment } from './panel';
 import { hideHoverCard, setHoverProvider } from './hovercard';
 import type { HoverPreview } from './hovercard';
@@ -28,8 +28,8 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { renderQuickView } from './quick-view';
-import { restoreAll, syncClones } from './teleport';
+import { renderQuickView, wearHeader } from './quick-view';
+import { restoreAll, syncClones, teleportInto } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -261,6 +261,17 @@ function mergeBoxText(): string {
   return parts.join('\n');
 }
 
+/** GitHub's checks-settings gear (and its tooltip) move from the check list into the CI row itself. */
+function wearGear(root: HTMLElement, slot: HTMLElement): void {
+  const target = root.querySelector<HTMLElement>(`[${ATTR_GEAR_SLOT}]`);
+  if (target === null || target.childElementCount > 0) return;
+  const gear = slot.querySelector<HTMLElement>('button[data-action="open_checks_settings"]');
+  if (gear === null) return;
+  const tooltip = gear.nextElementSibling;
+  const nodes = tooltip instanceof HTMLElement && tooltip.matches('[data-component="Tooltip"]') ? [gear, tooltip] : [gear];
+  teleportInto(target, nodes, { live: true });
+}
+
 /** GitHub's 32px status ring, shrunk to the row's 16px lead. */
 function cloneRing(source: SVGElement): SVGElement {
   const ring = source.cloneNode(true);
@@ -355,7 +366,12 @@ function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[
   if (key === REVIEWS_KEY) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
-    return section === null ? [] : [section];
+    if (section === null) return [];
+    // The React merge box: GitHub renders the check list only once expanded, and its
+    // section header repeats what the row says, so the expandable content is shown alone.
+    section.querySelector<HTMLElement>('button[aria-label="Expand checks"], button[aria-expanded="false"][aria-label*="checks" i]')?.click();
+    const content = section.querySelector<HTMLElement>('[class*="MergeBoxExpandable-module__expandableWrapper"]');
+    return [content ?? section];
   }
   if (key.startsWith('fold:')) return groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
   const item = meta.items.find((entry) => itemKey(entry.id) === key);
@@ -575,18 +591,32 @@ export function applyReviewOverview(settings: GeldSettings): void {
       visit.openKey = null;
       restoreAll();
     } else if (mounted.slot.childElementCount === 0) {
-      // The React merge box renders its check list only once expanded: ask GitHub to expand before mirroring it.
-      if (visit.openKey === CHECKS_KEY) nodes[0]?.querySelector<HTMLElement>('button[aria-label="Expand checks"], button[aria-expanded="false"][aria-label*="checks" i]')?.click();
       if (visit.openKey === REVIEWS_KEY) {
         const nested = renderCommentsList(mounted.slot, model, panelHandlers);
         const subNode = visit.openSubKey === null ? null : timelineRootOf(visit.openSubKey);
-        if (nested !== null && subNode !== null) renderQuickView(nested, [subNode]);
-        else if (visit.openSubKey !== null && subNode === null) visit.openSubKey = null;
+        if (nested !== null && subNode !== null) {
+          renderQuickView(nested, [subNode]);
+          const head = mounted.root.querySelector<HTMLElement>(`[data-geld-sub][data-open] [${ATTR_HEAD_SLOT}]`);
+          if (head !== null) wearHeader(head, subNode);
+        } else if (visit.openSubKey !== null && subNode === null) {
+          visit.openSubKey = null;
+        }
+      } else if (visit.openKey === CHECKS_KEY) {
+        // The expandable content's siblings inside its section never change, so the live node can move:
+        // the ⋯ menus and the settings gear keep working, which a clone's never would.
+        renderQuickView(mounted.slot, nodes, { live: true });
+        wearGear(mounted.root, mounted.slot);
       } else {
         renderQuickView(mounted.slot, nodes);
+        // One comment (a thread's first, a bot's) wears its own header on the row; groups of many keep theirs.
+        const head = mounted.root.querySelector<HTMLElement>(`.geld-review__row[data-open] > [${ATTR_HEAD_SLOT}]`);
+        const first = nodes[0];
+        if (head !== null && first !== undefined && (nodes.length === 1 || visit.openKey.startsWith('item:'))) wearHeader(head, first);
+        else head?.remove();
       }
     } else {
       syncClones();
+      if (visit.openKey === CHECKS_KEY) wearGear(mounted.root, mounted.slot);
     }
   } else {
     restoreAll();
@@ -603,6 +633,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   }
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
+  if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
 
   if (!visit.rewriteStarted && !meta.producer.ai) {
     visit.rewriteStarted = true;

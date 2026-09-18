@@ -1256,7 +1256,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   gap: 10px;
 }
 
-.geld-review__main--status {
+.geld-review__main.geld-review__main--status {
+  align-items: center;
   min-height: 40px;
 }
 
@@ -1499,6 +1500,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 /* Under the box: the one nudge, persistent while the Action is missing. Block flow, so it takes its own room. */
+.geld-review-nudge__link {
+  white-space: nowrap;
+}
+
 .geld-review-nudge {
   display: block;
   position: relative;
@@ -1841,6 +1846,15 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   text-align: center;
 }
 
+.geld-review__avatar,
+.geld-review__bot-icon,
+.geld-review-hovercard__avatar,
+.geld-review__head-slot .avatar {
+  /* A faint ring so an avatar never blends into the surface, in either scheme. */
+  outline: 1px solid rgb(128 128 128 / 15%);
+  outline-offset: -1px;
+}
+
 .geld-review__avatar[data-kind='bot'] {
   border-radius: 4px;
 }
@@ -1934,7 +1948,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   justify-content: center;
   width: 28px;
   height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
   color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+.geld-review__chevron:hover {
+  background: var(--geld-review-hover);
 }
 
 .geld-review__chevron .octicon {
@@ -2077,10 +2100,199 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   font-size: 14px !important;
 }
 
-/* Event rows: GitHub's condensed items, without the rail. */
+/* No speech-bubble caret: the comment is the row's content, not a card beside an avatar. */
+.geld-review__qv .timeline-comment::before,
+.geld-review__qv .timeline-comment::after,
+.geld-review__qv .review-comment::before,
+.geld-review__qv .review-comment::after {
+  display: none !important;
+}
+
+.geld-review__qv .timeline-comment,
+.geld-review__qv .js-comment-container {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Event rows: GitHub's condensed items, without the rail. The badge sits in the status column (16px) and the text
+ * starts where the rows' labels do (16 + 16 + 8). */
 .geld-review__qv .TimelineItem--condensed {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px;
   padding: 4px 0 !important;
   font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review__qv .TimelineItem--condensed .TimelineItem-badge {
+  display: inline-flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px !important;
+  height: 20px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__qv .TimelineItem--condensed .TimelineItem-body {
+  margin-top: 0 !important;
+}
+
+/* The CI checks list fills its area edge to edge and keeps GitHub's own scroll height. */
+.geld-review__slot[data-kind='checks'] .geld-review__slot-body {
+  padding: 0;
+}
+
+.geld-review__slot[data-kind='checks'] [class*='MergeBoxSectionHeader-module__wrapper'] {
+  display: none !important;
+}
+
+.geld-review__slot[data-kind='checks'] [class*='MergeBoxExpandable-module__expandableWrapper'] {
+  visibility: visible !important;
+}
+
+.geld-review__gear-slot {
+  display: inline-flex;
+  align-items: center;
+}
+
+.geld-review__gear-slot > button {
+  width: 28px !important;
+  height: 28px !important;
+  color: var(--geld-review-muted) !important;
+}
+
+/* Check counts wear their state glyphs. */
+.geld-review__checks-breakdown {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+}
+
+.geld-review__check-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.geld-review__check-part .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__check-part[data-state='failure'] .octicon {
+  color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+}
+
+.geld-review__check-part[data-state='success'] .octicon {
+  color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+}
+
+.geld-review__check-part[data-state='pending'] .octicon {
+  color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
+}
+
+/* ---- an open row wears its comment's header --------------------------------- */
+
+.geld-review__head-slot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  max-width: 55%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.geld-review__head-slot:empty {
+  display: none;
+}
+
+.geld-review__row[data-head] > .geld-review__main {
+  flex: 1 1 auto;
+}
+
+.geld-review__row[data-head] > .geld-review__main .geld-review__detail {
+  display: none;
+}
+
+.geld-review__head-slot > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geld-review__head-slot .timeline-comment-header,
+.geld-review__head-slot [data-testid='comment-header'] {
+  display: flex !important;
+  flex: 1 1 auto;
+  align-items: center;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+}
+
+.geld-review__head-slot .timeline-comment-header-text,
+.geld-review__head-slot h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 20px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geld-review__head-slot .timeline-comment-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.geld-review__head-slot summary {
+  list-style: none;
+}
+
+.geld-review__head-slot summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The row already shows who; the comment's own avatar would say it twice. */
+.geld-review__head-slot .avatar,
+.geld-review__head-slot .avatar-parent-child,
+.geld-review__head-slot .TimelineItem-avatar {
+  display: none !important;
+}
+
+.geld-review__head-slot .Label,
+.geld-review__head-slot [data-component='Label'] {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---- compact timeline: commit rows sit tighter ------------------------------ */
+
+html[data-geld-timeline='compact'] .TimelineItem--condensed,
+html[data-geld-timeline='compact'] .js-commit-group .TimelineItem,
+html[data-geld-timeline='compact'] [data-testid='commit-row'],
+html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
 }
 
 .geld-review__qv-empty {
