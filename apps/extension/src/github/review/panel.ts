@@ -53,6 +53,19 @@ export interface Avatar {
   readonly bot: boolean;
 }
 
+export interface HumanComment {
+  readonly anchor: string;
+  readonly author: string;
+  readonly avatarSrc: string | null;
+  readonly title: string;
+  readonly time: string;
+  /** A review thread: GitHub can resolve it. Top-level comments cannot. */
+  readonly resolvable: boolean;
+  readonly done: boolean;
+  /** Replies in the thread beyond the first comment. */
+  readonly replies: number;
+}
+
 export interface PanelModel {
   readonly meta: GeldPrMeta;
   readonly freshness: 'fresh' | 'stale' | 'partial' | 'local';
@@ -72,7 +85,15 @@ export interface PanelModel {
   readonly botIconFor: (botId: string) => string | null;
   /** CI checks as the merge box reports them; null when the page has no checks section. */
   readonly checks: CheckCounts | null;
+  /** GitHub's own status ring from the merge box, cloned, when it has one. */
+  readonly checksRing: SVGElement | null;
   readonly reviews: RequiredReviews | null;
+  /** People's comments on the page — threads (resolvable) and top-level comments (not) — for the Reviews row's list. */
+  readonly comments: readonly HumanComment[];
+  /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
+  readonly openSubKey: string | null;
+  /** A review bot is still running: the re-run control spins. */
+  readonly running: boolean;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
   readonly avatarsFor: (item: ReviewItem) => readonly Avatar[];
   /** Timeline nodes hidden by compaction (for the "show full timeline" row). */
@@ -103,6 +124,10 @@ export interface PanelHandlers {
   readonly onOpenAnchor: (anchor: string) => void;
   /** Leave compact view for the full timeline and jump to `anchor` there. */
   readonly onShowInTimeline: (anchor: string) => void;
+  /** Open or close a comment inside the Reviews row's list. */
+  readonly onToggleSub: (anchor: string) => void;
+  /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
+  readonly onResolveAnchor: (anchor: string, done: boolean) => void;
 }
 
 export function itemKey(id: string): string {
@@ -115,6 +140,8 @@ export function foldKey(key: string): string {
 
 /** Row key for the CI checks row; its slot shows GitHub's own checks section. */
 export const CHECKS_KEY = 'checks';
+/** Row key for the Reviews row; its slot lists people's comments. */
+export const REVIEWS_KEY = 'reviews';
 const NUDGE_CLASS = 'geld-review-nudge';
 
 function icon(markup: string): SVGElement {
@@ -179,7 +206,29 @@ interface MenuEntry {
   readonly onSelect?: () => void;
 }
 
+let menusInstalled = false;
+
+/** A click anywhere outside an open ⋯ / ⟳ menu closes it, like GitHub's own menus. */
+function installMenuDismissal(): void {
+  if (menusInstalled) return;
+  menusInstalled = true;
+  document.addEventListener(
+    'mousedown',
+    (event) => {
+      for (const open of document.querySelectorAll<HTMLDetailsElement>(`.${PANEL_CLASS}__menu[open]`)) {
+        if (!(event.target instanceof Node) || !open.contains(event.target)) open.removeAttribute('open');
+      }
+    },
+    true,
+  );
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    for (const open of document.querySelectorAll<HTMLDetailsElement>(`.${PANEL_CLASS}__menu[open]`)) open.removeAttribute('open');
+  });
+}
+
 function menu(entries: readonly MenuEntry[], focusKey: string): HTMLElement {
+  installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu` });
   const summary = createElement('summary', { class: `${PANEL_CLASS}__icon`, 'aria-label': 'More actions', title: 'More actions', role: 'button', [ATTR_FOCUS]: `menu:${focusKey}` }, [icon(ICON_KEBAB_HORIZONTAL)]);
   summary.addEventListener('click', (event) => event.stopPropagation());
@@ -382,8 +431,13 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
 /** Re-run menu: one entry per installed bot plus All; choosing one turns the menu into a confirm. */
 function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (model.requestable.length === 0) return null;
+  installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu` });
-  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon`, 'aria-label': 'Request a review', title: 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' }, [icon(ICON_SYNC)]);
+  const summary = createElement(
+    'summary',
+    { class: `${PANEL_CLASS}__icon${model.running ? ` ${PANEL_CLASS}__icon--spin` : ''}`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
+    [icon(ICON_SYNC)],
+  );
   summary.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' });
   const choices: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[]; readonly prompt: string; readonly iconSrc: string | null }> = [
@@ -500,7 +554,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     ]);
     main.addEventListener('click', () => handlers.onToggle(CHECKS_KEY));
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
-      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [checksRing(model.checks)]),
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
       createElement('span', { class: `${PANEL_CLASS}__label` }, ['CI checks']),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [healthGlyph(health, checksSummary(model.checks)), chevron(open)]),
@@ -509,24 +563,90 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     rows.append(row);
     if (open) rows.append(slotRow(CHECKS_KEY));
   }
-  if (model.reviews !== null) {
-    const health = reviewsHealth(model.reviews);
-    const marks = createElement('span', { class: `${PANEL_CLASS}__marks`, 'aria-hidden': 'true' });
-    for (let index = 0; index < Math.max(model.reviews.required, model.reviews.approvals); index += 1) {
-      marks.append(createElement('span', { class: `${PANEL_CLASS}__mark`, 'data-done': String(index < model.reviews.approvals) }, [icon(index < model.reviews.approvals ? ICON_CHECK : ICON_CIRCLE)]));
+  if (model.reviews !== null || model.comments.length > 0) {
+    const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
+    const content: Node[] = [];
+    if (model.reviews !== null) {
+      const marks = createElement('span', { class: `${PANEL_CLASS}__marks`, 'aria-hidden': 'true' });
+      for (let index = 0; index < Math.max(model.reviews.required, model.reviews.approvals); index += 1) {
+        marks.append(createElement('span', { class: `${PANEL_CLASS}__mark`, 'data-done': String(index < model.reviews.approvals) }, [icon(index < model.reviews.approvals ? ICON_CHECK : ICON_CIRCLE)]));
+      }
+      const text = model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`;
+      content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [text]), marks);
     }
-    const text = model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`;
-    rows.append(
-      statusRow(
-        'Reviews',
+    const open = model.openKey === REVIEWS_KEY;
+    const count = model.comments.length;
+    content.push(
+      createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: `${plural(count, 'comment')} from people` }, [
         icon(ICON_COMMENT_DISCUSSION),
-        [createElement('span', { class: `${PANEL_CLASS}__status-text` }, [text]), marks],
-        [healthGlyph(health, text)],
-        { 'data-health': health },
-      ),
+        createElement('span', {}, [String(count)]),
+      ]),
     );
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
+      createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+    ]);
+    main.addEventListener('click', () => handlers.onToggle(REVIEWS_KEY));
+    const right: Node[] = [];
+    if (model.reviews !== null) right.push(healthGlyph(health, model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`));
+    right.push(chevron(open));
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]),
+      createElement('span', { class: `${PANEL_CLASS}__label` }, ['Reviews']),
+      main,
+      createElement('span', { class: `${PANEL_CLASS}__right` }, right),
+    ]);
+    if (open) row.setAttribute('data-open', '');
+    rows.append(row);
+    if (open) rows.append(slotRow(REVIEWS_KEY));
   }
   return rows.childElementCount === 0 ? null : rows;
+}
+
+/**
+ * The Reviews row's list: one line per comment from a person — threads with
+ * their resolve circle, top-level comments without — and, one level down,
+ * the open comment's own node. Returns the nested slot for that node.
+ */
+export function renderCommentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  let nested: HTMLElement | null = null;
+  if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No comments from people yet.']));
+  for (const comment of model.comments) {
+    const open = model.openSubKey === comment.anchor;
+    const lead = comment.resolvable
+      ? (() => {
+          const status = createElement(
+            'button',
+            { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': comment.done ? 'Unresolve' : 'Resolve', title: comment.done ? 'Unresolve conversation' : 'Resolve conversation', 'aria-pressed': String(comment.done), [ATTR_FOCUS]: `status:sub:${comment.anchor}` },
+            [icon(comment.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)],
+          );
+          status.addEventListener('click', (event) => {
+            event.stopPropagation();
+            handlers.onResolveAnchor(comment.anchor, !comment.done);
+          });
+          return status;
+        })()
+      : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--blank`, 'aria-hidden': 'true' });
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${comment.anchor}` }, [
+      createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [comment.title]),
+      createElement('span', { class: `${PANEL_CLASS}__detail` }, [[comment.author, comment.time, comment.replies > 0 ? plural(comment.replies, 'reply', 'replies') : ''].filter((part) => part !== '').join(' — ')]),
+    ]);
+    main.addEventListener('click', () => handlers.onToggleSub(comment.anchor));
+    const row = createElement(
+      'li',
+      { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': comment.anchor, 'data-state': comment.done ? 'done' : 'open' },
+      [lead, avatarStack(comment.avatarSrc === null ? [] : [{ src: comment.avatarSrc, bot: false }], comment.author, false), main, createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open)])],
+    );
+    if (open) row.setAttribute('data-open', '');
+    list.append(row);
+    if (open) {
+      const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
+      list.append(createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub` }, [body]));
+      nested = body;
+    }
+  }
+  slot.replaceChildren(list);
+  return nested;
 }
 
 function signatureOf(model: PanelModel): string {
@@ -553,7 +673,11 @@ function signatureOf(model: PanelModel): string {
     folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
+    ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
+    comments: model.comments.map((comment) => `${comment.anchor}:${comment.done ? 'd' : 'o'}:${comment.title}:${comment.replies}:${comment.avatarSrc ?? ''}`),
+    openSubKey: model.openSubKey,
+    running: model.running,
     icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
   });
 }
@@ -605,17 +729,13 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   const percent = total === 0 ? 0 : Math.round((doneCount / total) * 100);
   const waiting = model.meta.items.filter((item) => item.status === 'needs-reply').length;
 
-  /* Summary strip */
-  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [
-    createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']),
-    createElement('span', { class: `${PANEL_CLASS}__progress`, title: `${doneCount} of ${total} review items done` }, [
-      createElement('span', { class: `${PANEL_CLASS}__meter`, 'aria-hidden': 'true' }, [createElement('i', { style: `width:${percent}%` })]),
-      createElement('span', {}, [total === 0 ? 'No review items' : `${doneCount} of ${total} done`]),
-    ]),
-  ]);
+  /* Summary strip: the meter only once there is something to measure. */
+  const progress = createElement('span', { class: `${PANEL_CLASS}__progress`, title: total === 0 ? 'No review items yet' : `${doneCount} of ${total} review items resolved` });
+  if (total > 0) progress.append(createElement('span', { class: `${PANEL_CLASS}__meter`, 'aria-hidden': 'true' }, [createElement('i', { style: `width:${percent}%` })]));
+  progress.append(createElement('span', {}, [total === 0 ? 'No review items' : `${doneCount}/${total} resolved`]));
+  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']), progress]);
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
-  else if (model.freshness === 'local') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh`, title: 'No Geld summary comment on this pull request yet; built from the page.' }, ['from this page']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
@@ -694,12 +814,21 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   if (model.nudge) {
     const nudge = createElement('p', { class: NUDGE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Built from this page. Add the Geld Action to this repository and the digest is ready before the page opens — ']);
     nudge.append(createElement('a', { href: 'https://www.geld.sh/how-it-works#summary', target: '_blank', rel: 'noreferrer' }, ['how']), document.createTextNode('.'));
-    nudge.style.marginLeft = cardStyle.marginLeft;
+    // The card hangs over the timeline rail (ml-n3) and covers it; plain text cannot, so start it past the rail.
     nudge.style.marginRight = cardStyle.marginRight;
     panel.insertAdjacentElement('afterend', nudge);
+    nudge.style.paddingLeft = `${railIndent(nudge)}px`;
   }
   restoreFocus(panel, focusKey);
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
+}
+
+/** Pixels from the nudge's left edge to just past the timeline rail (GitHub draws it at a TimelineItem's left edge). */
+function railIndent(nudge: HTMLElement): number {
+  const item = document.querySelector('.js-discussion .TimelineItem, .js-timeline-item .TimelineItem, .TimelineItem, [class*="TimelineItem"]');
+  if (!(item instanceof HTMLElement)) return 24;
+  const rail = item.getBoundingClientRect().left + 2;
+  return Math.max(0, Math.round(rail - nudge.getBoundingClientRect().left) + 14);
 }
 
 export function unmountPanel(): void {
