@@ -123,11 +123,40 @@ export function itemMarkdown(item: ReviewItem, subject: MarkdownSubject | null, 
   return lines.join('\n');
 }
 
-export function digestMarkdown(meta: GeldPrMeta, subject: MarkdownSubject | null, showFix: (item: ReviewItem) => boolean): string {
+export interface DigestExtras {
+  /** Status lines for the top: CI checks, required reviews. */
+  readonly status: readonly string[];
+  /** Short text of a bot's run summary, by its comment anchor. */
+  readonly excerptFor: (anchor: string) => string | null;
+}
+
+const HEALTH_MARK: Readonly<Record<Health, string>> = { good: '✅', warn: '🟡', bad: '❌', pending: '⏳' };
+
+/**
+ * The whole digest as Markdown for an agent or a teammate: TL;DR, status,
+ * one line per bot with a link to its run summary and what it said, then
+ * every item with its sources. Without review threads this is still the
+ * bots' verdicts and summaries, not just a count.
+ */
+export function digestMarkdown(meta: GeldPrMeta, subject: MarkdownSubject | null, showFix: (item: ReviewItem) => boolean, extras?: DigestExtras): string {
+  const link = (anchor: string): string => (subject === null ? `#${anchor}` : `${subject.origin}/${subject.owner}/${subject.repo}/pull/${subject.number}#${anchor}`);
   const { open, done } = splitItems(meta.items);
-  const lines = [`## Review digest — ${doneItemCount(meta.items)} of ${meta.items.length} done`];
+  const title = subject === null ? 'Review digest' : `Review digest — ${subject.owner}/${subject.repo}#${subject.number}`;
+  const lines = [`## ${title}`];
   if (meta.summary !== undefined) lines.push('', meta.summary.tldr);
-  if (meta.bots.length > 0) lines.push('', meta.bots.map((bot) => verdictLabel(bot)).join(' · '));
+  const status = [...(extras?.status ?? [])];
+  if (meta.items.length > 0) status.unshift(`${doneItemCount(meta.items)} of ${meta.items.length} review items done`);
+  if (status.length > 0) lines.push('', ...status.map((line) => `- ${line}`));
+  if (meta.bots.length > 0) {
+    lines.push('', '### Review bots', '');
+    for (const bot of meta.bots) {
+      const head = `- ${HEALTH_MARK[botHealth(bot)]} **${verdictLabel(bot)}**${isCurrent(bot, meta.headSha) ? '' : ' (earlier commit)'}`;
+      const source = bot.sourceId === undefined ? '' : ` — [run summary](${link(bot.sourceId)})`;
+      const excerpt = bot.sourceId === undefined ? null : extras?.excerptFor(bot.sourceId) ?? null;
+      lines.push(head + source);
+      if (excerpt !== null && excerpt !== '') lines.push(`  ${excerpt}`);
+    }
+  }
   if (open.length > 0) lines.push('', '### Open', '', ...open.map((item) => itemMarkdown(item, subject, showFix(item))));
   if (done.length > 0) lines.push('', '### Done', '', ...done.map((item) => itemMarkdown(item, subject, showFix(item))));
   return lines.join('\n');

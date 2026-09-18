@@ -19,7 +19,7 @@ import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupTr
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { CHECKS_KEY, foldKey, itemKey, mountPanel, unmountPanel } from './panel';
-import { checkCountsFrom, digestMarkdown, itemMarkdown, requiredReviewsFrom } from './panel-model';
+import { checkCountsFrom, checksSummary, digestMarkdown, itemMarkdown, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -176,7 +176,9 @@ function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: Geld
  * there, in either the legacy Rails markup or the React partial. The CI row
  * shows its counts and, opened, the section itself (read-only clone).
  */
-const MERGE_BOX_SELECTOR = 'react-partial[partial-name="mergebox"], [data-testid="mergebox-partial"], .mergeability-details, .merge-pr, .js-merge-pr';
+const MERGE_BOX_SELECTOR =
+  'react-partial[partial-name*="merge" i], [data-testid="mergebox-partial"], #partial-pull-merging, .pull-merging, .js-pull-merging, .mergeability-details, .merge-pr, .js-merge-pr';
+const CHECK_HEADING = /^\d+\s+(?:in progress|action required|timed out|[a-z]+)\s+checks?$/i;
 
 function mergeBox(): HTMLElement | null {
   const box = document.querySelector(MERGE_BOX_SELECTOR);
@@ -185,22 +187,46 @@ function mergeBox(): HTMLElement | null {
 
 /** The checks section, remembered once found: quick view moves it out of the merge box, and the counts must keep reading from it. */
 let checksSectionEl: HTMLElement | null = null;
+/** Where that section came from — the merge box — so its text can be read while the section is away. */
+let mergeHomeEl: HTMLElement | null = null;
 
+/**
+ * The merge box's checks section, located by its own headings ("1 in
+ * progress check", "8 successful checks") rather than by container
+ * markup, which differs between the Rails and React merge boxes: the
+ * nearest ancestor that holds every such heading, stopping before the
+ * merge box itself.
+ */
 function checksSection(): HTMLElement | null {
   if (checksSectionEl !== null && checksSectionEl.isConnected) return checksSectionEl;
+  const headings = [...document.querySelectorAll<HTMLElement>('button, summary, h2, h3, h4, span, p, div')].filter(
+    (node) => node.childElementCount <= 2 && CHECK_HEADING.test((node.textContent ?? '').replace(/\s+/g, ' ').trim()) && node.closest('.geld-review') === null,
+  );
+  const first = headings[0];
+  if (first === undefined) return null;
   const box = mergeBox();
-  if (box === null) return null;
-  const candidates = [...box.querySelectorAll<HTMLElement>('section, .merge-status-list, [data-testid*="checks" i], [class*="MergeBox"]')];
-  checksSectionEl = candidates.find((node) => checkCountsFrom(node.textContent ?? '') !== null) ?? null;
+  let ancestor: HTMLElement | null = first.parentElement;
+  while (ancestor !== null && ancestor !== box && ancestor !== document.body && !headings.every((heading) => ancestor?.contains(heading) === true)) {
+    ancestor = ancestor.parentElement;
+  }
+  if (ancestor === null || ancestor === document.body) return null;
+  // Legacy merge boxes list one "check" per row: step out to the section that also holds the rows.
+  let section = ancestor;
+  while (section.parentElement !== null && section.parentElement !== box && section.parentElement !== document.body && section.matches('button, summary, h2, h3, h4, span, p')) {
+    section = section.parentElement;
+  }
+  checksSectionEl = section === box ? null : section;
+  if (checksSectionEl !== null) mergeHomeEl = box ?? checksSectionEl.parentElement;
   return checksSectionEl;
 }
 
 /** Merge box text plus the checks section's, wherever quick view has put it. */
 function mergeBoxText(): string {
-  const box = mergeBox();
   const section = checksSection();
-  const parts = [box?.textContent ?? ''];
-  if (section !== null && (box === null || !box.contains(section))) parts.push(section.textContent ?? '');
+  // No recognisable container: the checks section's original parent is the merge box in every markup seen so far.
+  const home = mergeBox() ?? mergeHomeEl;
+  const parts = [home?.textContent ?? ''];
+  if (section !== null && (home === null || !home.contains(section))) parts.push(section.textContent ?? '');
   return parts.join('\n');
 }
 
@@ -255,6 +281,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.revealedFolds = new Set();
     visit.manualDone = new Set();
     checksSectionEl = null;
+    mergeHomeEl = null;
     resetAiForVisit();
   }
   const crawledDom = crawlConversation();
@@ -270,6 +297,9 @@ export function applyReviewOverview(settings: GeldSettings): void {
     if (clickLoadMore()) visit.loadMoreTries += 1;
   }
   const groups = foldGroups(meta, settings, crawledDom);
+  // In compact mode GitHub's checks section lives in the CI row instead of the merge box.
+  const checksNode = settings.compactTimeline === 'off' || visit.fullTimeline ? null : checksSection();
+  const foldTargets: readonly FoldGroup[] = checksNode === null ? groups : [...groups, { key: CHECKS_KEY, label: 'CI checks', author: null, nodes: [checksNode] }];
   // A permalinked comment stays where the browser scrolled to: its fold is
   // revealed in place rather than pulled up into the panel.
   const revealed = new Set<string>(visit.revealedFolds);
@@ -298,7 +328,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
-    checks: checkCountsFrom(boxText),
+    checks: checkCountsFrom(checksSection()?.textContent ?? boxText),
     reviews: requiredReviewsFrom(boxText, meta.reviewers),
     avatarsFor,
     resolvable: itemResolvable,
@@ -345,7 +375,21 @@ export function applyReviewOverview(settings: GeldSettings): void {
       focusReply(anchor);
     },
     onCopy: () => {
-      void copyText(digestMarkdown(meta, subject, (item) => fixFor(item) !== null));
+      const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, entry.comment.body]));
+      const status: string[] = [];
+      if (model.checks !== null) status.push(`CI: ${checksSummary(model.checks)}`);
+      if (model.reviews !== null) status.push(`Reviews: ${model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`}`);
+      void copyText(
+        digestMarkdown(meta, subject, (item) => fixFor(item) !== null, {
+          status,
+          excerptFor: (anchor) => {
+            const body = bodies.get(anchor);
+            if (body === undefined) return null;
+            const flat = body.replace(/\s+/g, ' ').trim();
+            return flat.length > 280 ? `${flat.slice(0, 277)}…` : flat;
+          },
+        }),
+      );
     },
     onCopyItem: (id) => {
       const item = meta.items.find((entry) => entry.id === id);
@@ -389,7 +433,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   } else {
     restoreAll();
   }
-  applyFolds(groups, revealed);
+  applyFolds(foldTargets, revealed);
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
 

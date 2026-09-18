@@ -479,7 +479,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       statusRow(
         'Review bots',
         icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
-        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__detail` }, ['No reviews yet'])] : chips,
+        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet'])] : chips,
         menu === null ? [] : [menu],
         { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst },
       ),
@@ -514,7 +514,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       statusRow(
         'Reviews',
         icon(ICON_COMMENT_DISCUSSION),
-        [createElement('span', { class: `${PANEL_CLASS}__detail` }, [text]), marks],
+        [createElement('span', { class: `${PANEL_CLASS}__status-text` }, [text]), marks],
         [healthGlyph(health, text)],
         { 'data-health': health },
       ),
