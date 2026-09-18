@@ -1308,7 +1308,13 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 /* ---- Geld notes under an open item: merged context and the fix ------------ */
 
 .geld-review__notes {
-  padding: 10px 16px 0 40px;
+  padding: 12px 16px 0 40px;
+}
+
+.geld-review__summaries {
+  margin: 0 0 8px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
 }
 
 .geld-review__context {
@@ -1627,16 +1633,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 /* ---- quick view: slim cards holding the real comment bodies --------------- */
 
 .geld-review__slot {
-  background: var(--geld-review-subtle);
+  /* The selected row is tinted; what opens under it reads on the page's own surface. */
+  background: var(--geld-review-bg);
+  /* Content here settles late (avatars, bot images); never let it become the scroll anchor. */
+  overflow-anchor: none;
 }
 
 .geld-review__slot-body {
-  padding: 4px 16px 12px 40px;
+  padding: 8px 16px 16px 40px;
 }
 
 .geld-review__qv-comment + .geld-review__qv-comment {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--geld-review-border-muted);
 }
 
@@ -1644,8 +1653,15 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 28px;
-  font-size: 12px;
+  min-height: 24px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.geld-review__qv-head .geld-review__avatar {
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
 }
 
 .geld-review__qv-login {
@@ -1664,13 +1680,18 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__qv-body {
-  padding-left: 28px;
+  padding-left: 32px;
 }
 
-/* GitHub's comment body keeps its own markdown styles; only the scale changes. */
+/*
+ * GitHub's comment body keeps its own markdown styles; only the scale
+ * changes. Bots love an h2 ("Confidence Score: 5/5"), which at 24px owns
+ * the card, so headings are capped to something a compact view can carry.
+ */
 .geld-review__qv-body > * {
   padding: 0 !important;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .geld-review__qv-body > * > :first-child {
@@ -1679,6 +1700,34 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__qv-body > * > :last-child {
   margin-bottom: 0 !important;
+}
+
+.geld-review__qv-body h1,
+.geld-review__qv-body h2 {
+  margin: 0 0 8px !important;
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+  font-size: 16px !important;
+}
+
+.geld-review__qv-body h3,
+.geld-review__qv-body h4 {
+  margin: 0 0 6px !important;
+  font-size: 14px !important;
+}
+
+.geld-review__qv-body p,
+.geld-review__qv-body ul,
+.geld-review__qv-body ol,
+.geld-review__qv-body table,
+.geld-review__qv-body pre,
+.geld-review__qv-body blockquote,
+.geld-review__qv-body details {
+  margin-bottom: 8px !important;
+}
+
+.geld-review__qv-body hr {
+  margin: 12px 0 !important;
 }
 
 .geld-review__qv-raw {
@@ -1699,8 +1748,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__qv-reply {
-  margin-top: 10px;
-  padding-left: 28px;
+  margin-top: 12px;
+  padding-left: 32px;
 }
 
 .geld-review__qv-reply > * {
@@ -1775,32 +1824,54 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
 }
 
-.geld-review__button {
-  height: 24px;
-  padding: 0 10px;
+/*
+ * One button per bot: its own icon (a rounded square, as GitHub draws
+ * Apps) sitting flush inside an outlined pill whose radius is the icon's
+ * plus the padding, so the two corners are concentric.
+ */
+.geld-review__bot-btn {
+  --geld-bot-icon: 16px;
+  --geld-bot-pad: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(var(--geld-bot-icon) + 2 * var(--geld-bot-pad) + 2px);
+  padding: 0 10px 0 var(--geld-bot-pad);
   border: 1px solid var(--geld-review-border);
-  border-radius: 6px;
+  border-radius: calc(var(--geld-bot-pad) + 4px);
   background: var(--geld-review-bg);
   color: var(--fgColor-default, var(--color-fg-default));
   font: inherit;
   font-size: 12px;
   font-weight: 500;
+  line-height: 1;
   cursor: pointer;
 }
 
-.geld-review__button:hover {
+.geld-review__bot-btn:not(:has(.geld-review__bot-icon)) {
+  padding-left: 10px;
+}
+
+.geld-review__bot-btn:hover {
   background: var(--geld-review-subtle);
   border-color: var(--geld-review-muted);
+}
+
+.geld-review__bot-icon {
+  width: var(--geld-bot-icon);
+  height: var(--geld-bot-icon);
+  border-radius: 4px;
+  background: var(--geld-review-hover);
 }
 
 .geld-review__confirm {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 24px;
+  height: 26px;
   padding: 0 2px 0 8px;
   border: 1px solid var(--geld-review-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--geld-review-bg);
   color: var(--fgColor-default, var(--color-fg-default));
 }

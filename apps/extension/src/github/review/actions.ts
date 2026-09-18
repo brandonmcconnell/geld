@@ -119,6 +119,40 @@ export async function copyText(text: string): Promise<void> {
   }
 }
 
+/**
+ * Post several trigger comments one after another: each bot wants its own
+ * comment, and GitHub's form only accepts the next one once it has cleared.
+ */
+export async function postTopLevelComments(bodies: readonly string[]): Promise<number> {
+  let posted = 0;
+  for (const body of bodies) {
+    if (!postTopLevelComment(body)) break;
+    posted += 1;
+    const cleared = await waitForCommentForm(6000);
+    if (!cleared) break;
+  }
+  return posted;
+}
+
+function waitForCommentForm(timeoutMs: number): Promise<boolean> {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const tick = (): void => {
+      const field = document.querySelector<HTMLTextAreaElement>('#new_comment_field, textarea[name="comment[body]"]');
+      if (field !== null && field.value === '' && !field.disabled) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - started > timeoutMs) {
+        resolve(false);
+        return;
+      }
+      window.setTimeout(tick, 250);
+    };
+    window.setTimeout(tick, 400);
+  });
+}
+
 export function postTopLevelComment(body: string): boolean {
   const field =
     document.querySelector<HTMLTextAreaElement>('#new_comment_field') ??
