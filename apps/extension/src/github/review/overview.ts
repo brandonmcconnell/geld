@@ -10,7 +10,7 @@ import type { GeldPrMeta, ReviewItem } from '@geld/review';
 import { clusterComments, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
-import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComments, tickSummaryCheckbox } from './actions';
+import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox } from './actions';
 import { avatarSrcFor, avatarSrcOf } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
@@ -25,7 +25,6 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import type { QuickViewTarget } from './quick-view';
 import { renderQuickView } from './quick-view';
 import { restoreAll } from './teleport';
 
@@ -42,8 +41,8 @@ interface VisitState {
   pageKey: string;
   generatedAt: string;
   loadMoreTries: number;
-  /** Folds revealed in place for this visit (find-in-page hit one of their nodes). */
-  revealedFolds: Set<string>;
+  /** A permalink (or find-in-page hit) still to be honoured: open its row and land on it once. */
+  pendingAnchor: string | null;
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
 }
@@ -56,7 +55,7 @@ const visit: VisitState = {
   pageKey: '',
   generatedAt: '',
   loadMoreTries: 0,
-  revealedFolds: new Set(),
+  pendingAnchor: null,
   manualDone: new Set(),
 };
 
@@ -124,6 +123,25 @@ function groupContaining(groups: readonly FoldGroup[], anchor: string): FoldGrou
   const target = document.getElementById(anchor);
   if (target === null) return null;
   return groups.find((group) => group.nodes.some((node) => node === target || node.contains(target))) ?? null;
+}
+
+/** The panel row that holds `anchor`: an item's row, a fold's, or null when it is not on the page. */
+function rowKeyFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): string | null {
+  const item = meta.items.find((entry) => entry.sources.some((source) => source.anchor === anchor));
+  if (item !== undefined) return itemKey(item.id);
+  const group = groupContaining(groups, anchor);
+  return group === null ? null : foldKey(group.key);
+}
+
+/** The timeline rows of an item: each source thread's row (all its comments, reply box and Resolve), once. */
+function itemNodes(item: ReviewItem): readonly HTMLElement[] {
+  const roots: HTMLElement[] = [];
+  for (const source of item.sources) {
+    const thread = threadRootOf(source.anchor);
+    const row = thread?.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') ?? thread;
+    if (row instanceof HTMLElement && !roots.includes(row)) roots.push(row);
+  }
+  return roots;
 }
 
 function avatarsFor(item: ReviewItem): readonly Avatar[] {
@@ -238,20 +256,15 @@ function subjectOf(): MarkdownSubject | null {
   return { owner, repo, number: Number.parseInt(number, 10), origin: location.origin };
 }
 
-/** What an open row shows in its slot: the item's comments, a fold's nodes, or the merge box's checks. */
-function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): QuickViewTarget | null {
+/** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
+function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
   if (key === CHECKS_KEY) {
     const section = checksSection();
-    return section === null ? null : { kind: 'nodes', nodes: [section] };
+    return section === null ? [] : [section];
   }
-  if (key.startsWith('fold:')) {
-    const nodes = groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
-    return nodes.length === 0 ? null : { kind: 'nodes', nodes };
-  }
+  if (key.startsWith('fold:')) return groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
   const item = meta.items.find((entry) => itemKey(entry.id) === key);
-  if (item === undefined) return null;
-  const anchors = item.sources.map((source) => source.anchor).filter((anchor) => document.getElementById(anchor) !== null);
-  return anchors.length === 0 ? null : { kind: 'comments', anchors };
+  return item === undefined ? [] : itemNodes(item);
 }
 
 function itemResolvable(item: ReviewItem): boolean {
@@ -278,7 +291,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.fullTimeline = false;
     visit.rewriteStarted = false;
     visit.loadMoreTries = 0;
-    visit.revealedFolds = new Set();
+    visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
@@ -297,17 +310,25 @@ export function applyReviewOverview(settings: GeldSettings): void {
     if (clickLoadMore()) visit.loadMoreTries += 1;
   }
   const groups = foldGroups(meta, settings, crawledDom);
-  // In compact mode GitHub's checks section lives in the CI row instead of the merge box.
-  const checksNode = settings.compactTimeline === 'off' || visit.fullTimeline ? null : checksSection();
-  const foldTargets: readonly FoldGroup[] = checksNode === null ? groups : [...groups, { key: CHECKS_KEY, label: 'CI checks', author: null, nodes: [checksNode] }];
-  // A permalinked comment stays where the browser scrolled to: its fold is
-  // revealed in place rather than pulled up into the panel.
-  const revealed = new Set<string>(visit.revealedFolds);
-  if (viewingAnchor !== null) {
-    const group = groupContaining(groups, viewingAnchor);
-    if (group !== null) revealed.add(group.key);
-  }
   const compacting = settings.compactTimeline !== 'off';
+  const hidingTimeline = compacting && !visit.fullTimeline;
+  // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
+  // both fold out of the page, so nothing below is left to reveal or scroll to.
+  const foldTargets: FoldGroup[] = [...groups];
+  if (hidingTimeline) {
+    for (const item of meta.items) foldTargets.push({ key: itemKey(item.id), label: item.title, author: null, nodes: itemNodes(item) });
+    const checksNode = checksSection();
+    if (checksNode !== null) foldTargets.push({ key: CHECKS_KEY, label: 'CI checks', author: null, nodes: [checksNode] });
+  }
+  // A permalink (or a find-in-page hit) opens its row here rather than revealing the original down the page.
+  if (visit.pendingAnchor !== null && hidingTimeline) {
+    const key = rowKeyFor(visit.pendingAnchor, meta, groups);
+    if (key !== null) {
+      visit.openKey = key;
+      if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
+      else if (!isOpenStatus(meta.items.find((item) => itemKey(item.id) === key)?.status ?? 'open')) visit.collapsedGroups.delete('done');
+    }
+  }
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
   const subject = subjectOf();
   const boxText = mergeBoxText();
@@ -374,6 +395,14 @@ export function applyReviewOverview(settings: GeldSettings): void {
       reapply();
       focusReply(anchor);
     },
+    onQuoteReply: (id) => {
+      const item = meta.items.find((entry) => entry.id === id);
+      const anchor = item === undefined ? null : firstThreadAnchor(item);
+      if (anchor === null) return;
+      visit.openKey = itemKey(id);
+      reapply();
+      quoteReply(anchor);
+    },
     onCopy: () => {
       const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, entry.comment.body]));
       const status: string[] = [];
@@ -409,31 +438,46 @@ export function applyReviewOverview(settings: GeldSettings): void {
       const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
       void postTopLevelComments(triggers);
     },
+    onShowInTimeline: (anchor) => {
+      visit.fullTimeline = true;
+      visit.openKey = null;
+      reapply();
+      // The browser's own fragment jump; with the timeline shown there is nothing folded to bounce off.
+      location.hash = anchor;
+    },
     onOpenAnchor: (anchor) => {
-      // Folded here? Open its row. Otherwise let the browser take the reader to it in the timeline.
-      const group = compacting && !visit.fullTimeline ? groupContaining(groups, anchor) : null;
-      if (group === null) {
+      // Held by a row here? Open it. Otherwise let the browser take the reader to it in the timeline.
+      const key = hidingTimeline ? rowKeyFor(anchor, meta, groups) : null;
+      if (key === null) {
         location.hash = anchor;
         return;
       }
-      visit.collapsedGroups.delete('hidden');
-      visit.openKey = foldKey(group.key);
+      if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
+      visit.openKey = key;
       reapply();
     },
   });
 
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
-    const target = quickViewFor(visit.openKey, meta, groups);
-    if (target === null) {
+    const nodes = quickViewFor(visit.openKey, meta, groups);
+    if (nodes.length === 0) {
       visit.openKey = null;
       restoreAll();
     } else if (mounted.slot.childElementCount === 0) {
-      renderQuickView(mounted.slot, target);
+      renderQuickView(mounted.slot, nodes);
     }
   } else {
     restoreAll();
   }
-  applyFolds(foldTargets, revealed);
+  applyFolds(foldTargets, new Set());
+  // The browser's fragment jump went to the original's (now empty) place in
+  // the timeline; the one correction Geld makes is to land on the row that
+  // holds it, once, instantly.
+  if (visit.pendingAnchor !== null && mounted !== null && (visit.openKey === rowKeyFor(visit.pendingAnchor, meta, groups) || visit.loadMoreTries >= MAX_LOAD_MORE)) {
+    const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${visit.openKey}"]`);
+    if (row instanceof HTMLElement && hidingTimeline) row.scrollIntoView({ block: 'start', behavior: 'instant' });
+    if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
+  }
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
 
@@ -448,23 +492,21 @@ export function applyReviewOverview(settings: GeldSettings): void {
 }
 
 /**
- * Find-in-page matched inside a folded node (`hidden="until-found"`): the
- * browser has already dropped the attribute; keep that fold revealed so the
- * next pass does not hide the match again.
+ * Find-in-page (or a fragment jump) matched inside a folded node
+ * (`hidden="until-found"`): the browser has already dropped the attribute.
+ * Rather than leaving the original revealed down the page, open the panel
+ * row that holds it, where the reader will land.
  */
 export function onReviewBeforeMatch(event: Event, settings: GeldSettings): void {
   const target = event.target;
   if (!(target instanceof Element)) return;
   const node = target.closest('[data-geld-folded]');
   if (node === null || !isFoldedNode(node)) return;
-  const page = describePage(new URL(window.location.href));
-  if (page.kind !== 'pull-conversation') return;
-  const crawledDom = crawlConversation();
-  const headSha = detectHeadSha() ?? ZERO_SHA;
-  const meta = buildFromComments(crawledDom, settings, headSha, visit.generatedAt);
-  for (const group of foldGroups(meta, settings, crawledDom)) {
-    if (group.nodes.some((candidate) => candidate === node || candidate.contains(node))) visit.revealedFolds.add(group.key);
-  }
+  if (describePage(new URL(window.location.href)).kind !== 'pull-conversation') return;
+  const anchor = node.id !== '' ? node.id : node.querySelector('[id^="discussion_r"], [id^="issuecomment-"], [id^="pullrequestreview-"], [id^="event-"]')?.id ?? null;
+  if (anchor === null) return;
+  visit.pendingAnchor = anchor;
+  visit.loadMoreTries = MAX_LOAD_MORE;
   applyReviewOverview(settings);
 }
 
@@ -477,12 +519,15 @@ export function teardownReviewOverview(): void {
   visit.rewriteStarted = false;
   visit.openKey = null;
   visit.pageKey = '';
-  visit.revealedFolds = new Set();
+  visit.pendingAnchor = null;
 }
 
 export function onReviewHashChange(settings: GeldSettings): void {
   if (describePage(new URL(window.location.href)).kind !== 'pull-conversation') return;
   const anchor = sourceAnchorFromHash(location.hash);
-  if (anchor !== null) visit.loadMoreTries = 0;
+  if (anchor !== null) {
+    visit.loadMoreTries = 0;
+    visit.pendingAnchor = anchor;
+  }
   applyReviewOverview(settings);
 }

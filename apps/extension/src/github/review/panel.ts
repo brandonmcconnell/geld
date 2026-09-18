@@ -90,6 +90,8 @@ export interface PanelHandlers {
   readonly onToggleGroup: (group: GroupId) => void;
   readonly onStatus: (itemId: string, done: boolean) => void;
   readonly onReply: (itemId: string) => void;
+  /** GitHub's own "Quote reply" on the item's first comment. */
+  readonly onQuoteReply: (itemId: string) => void;
   readonly onCopy: () => void;
   readonly onCopyLink: (anchor: string) => void;
   readonly onCopyItem: (itemId: string) => void;
@@ -99,6 +101,8 @@ export interface PanelHandlers {
   readonly onRequest: (botIds: readonly string[]) => void;
   /** Show the comment at `anchor` where the reader is: inside compact view when it is folded there, else in the timeline. */
   readonly onOpenAnchor: (anchor: string) => void;
+  /** Leave compact view for the full timeline and jump to `anchor` there. */
+  readonly onShowInTimeline: (anchor: string) => void;
 }
 
 export function itemKey(id: string): string {
@@ -239,11 +243,13 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     label: resolvable ? (done ? 'Unresolve conversation' : 'Resolve conversation') : done ? 'Reopen' : 'Mark done',
     onSelect: () => handlers.onStatus(item.id, !done),
   });
+  entries.push({ label: 'Quote reply', onSelect: () => handlers.onQuoteReply(item.id) });
   entries.push({ label: 'Copy as Markdown', onSelect: () => handlers.onCopyItem(item.id) });
   if (model.fixFor(item) !== null) entries.push({ label: 'Copy suggested fix', onSelect: () => handlers.onCopyFix(item.id) });
   if (first !== undefined) {
-    entries.push({ label: 'Show in timeline', href: `#${first.anchor}` });
-    entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(first.anchor) });
+    const anchor = first.anchor;
+    entries.push({ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) });
+    entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) });
   }
   right.append(reply, menu(entries, key), chevron(open));
 
@@ -267,7 +273,7 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
-    right.append(menu([{ label: 'Show in timeline', href: `#${anchor}` }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
+    right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   }
   right.append(chevron(open));
   const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]);
@@ -575,8 +581,12 @@ export interface MountedPanel {
 export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
-  if (existing !== null && existing.getAttribute(ATTR_SIG) === signature && existing.isConnected) {
-    return { root: existing, slot: existing.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
+  if (existing !== null && existing.isConnected) {
+    const slot = existing.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`);
+    if (existing.getAttribute(ATTR_SIG) === signature) return { root: existing, slot };
+    // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
+    const active = document.activeElement;
+    if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
   }
   const card = descriptionCard();
   if (card === null) return null;

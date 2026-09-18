@@ -1822,7 +1822,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-hover);
 }
 
-/* ---- quick view: slim cards holding the real comment bodies --------------- */
+/* ---- quick view: GitHub's own nodes, moved here and compacted --------------- */
 
 .geld-review__slot {
   /* The selected row is tinted; what opens under it reads on the page's own surface. */
@@ -1832,123 +1832,75 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__slot-body {
-  padding: 8px 16px 16px 40px;
+  padding: 8px 16px 12px;
 }
 
-.geld-review__qv-comment + .geld-review__qv-comment {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--geld-review-border-muted);
-}
-
-.geld-review__qv-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  margin-bottom: 6px;
-  font-size: 14px;
-}
-
-.geld-review__qv-head .geld-review__avatar {
-  width: 24px;
-  height: 24px;
-  line-height: 24px;
-}
-
-.geld-review__qv-login {
-  color: var(--fgColor-default, var(--color-fg-default));
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.geld-review__qv-login:hover {
-  color: var(--geld-review-accent);
-  text-decoration: underline;
-}
-
-.geld-review__qv-time {
-  color: var(--geld-review-muted);
-}
-
-.geld-review__qv-body {
-  padding-left: 32px;
+.geld-review__qv > * + * {
+  margin-top: 8px !important;
 }
 
 /*
- * GitHub's comment body keeps its own markdown styles; only the scale
- * changes. Bots love an h2 ("Confidence Score: 5/5"), which at 24px owns
- * the card, so headings are capped to something a compact view can carry.
+ * A timeline item carries the rail, an avatar gutter and generous padding;
+ * the row above already says who and where, so only the comment card stays.
  */
-.geld-review__qv-body > * {
+.geld-review__qv .TimelineItem,
+.geld-review__qv .js-timeline-item {
+  margin: 0 !important;
   padding: 0 !important;
+}
+
+.geld-review__qv .TimelineItem::before,
+.geld-review__qv .js-timeline-item::before {
+  display: none !important;
+}
+
+.geld-review__qv .TimelineItem-avatar,
+.geld-review__qv .avatar-parent-child {
+  display: none !important;
+}
+
+.geld-review__qv .TimelineItem-body,
+.geld-review__qv .timeline-comment-group,
+.geld-review__qv .timeline-comment,
+.geld-review__qv .ml-n3 {
+  margin-left: 0 !important;
+  max-width: none !important;
+}
+
+/* The row already names the file and line. */
+.geld-review__qv .js-resolvable-timeline-thread-container > .file-header,
+.geld-review__qv .review-thread-component > .file-header {
+  display: none !important;
+}
+
+.geld-review__qv .js-resolvable-timeline-thread-container,
+.geld-review__qv .review-thread-component {
+  border-radius: 6px;
+}
+
+.geld-review__qv .comment-body,
+.geld-review__qv .markdown-body {
   font-size: 14px;
-  line-height: 1.5;
 }
 
-.geld-review__qv-body > * > :first-child {
+/* Bots love an h2 ("Confidence Score: 5/5"); capped so it does not own the card. */
+.geld-review__qv .markdown-body h1,
+.geld-review__qv .markdown-body h2 {
   margin-top: 0 !important;
-}
-
-.geld-review__qv-body > * > :last-child {
-  margin-bottom: 0 !important;
-}
-
-.geld-review__qv-body h1,
-.geld-review__qv-body h2 {
-  margin: 0 0 8px !important;
   padding-bottom: 0 !important;
   border-bottom: 0 !important;
   font-size: 16px !important;
 }
 
-.geld-review__qv-body h3,
-.geld-review__qv-body h4 {
-  margin: 0 0 6px !important;
+.geld-review__qv .markdown-body h3,
+.geld-review__qv .markdown-body h4 {
   font-size: 14px !important;
 }
 
-.geld-review__qv-body p,
-.geld-review__qv-body ul,
-.geld-review__qv-body ol,
-.geld-review__qv-body table,
-.geld-review__qv-body pre,
-.geld-review__qv-body blockquote,
-.geld-review__qv-body details {
-  margin-bottom: 8px !important;
-}
-
-.geld-review__qv-body hr {
-  margin: 12px 0 !important;
-}
-
-.geld-review__qv-raw {
-  padding: 4px 0;
+/* Event rows: GitHub's condensed items, without the rail. */
+.geld-review__qv .TimelineItem--condensed {
+  padding: 4px 0 !important;
   font-size: 12px;
-  color: var(--geld-review-muted);
-}
-
-.geld-review__qv-raw .TimelineItem::before,
-.geld-review__qv-raw .js-timeline-item::before {
-  display: none;
-}
-
-.geld-review__qv-raw .TimelineItem,
-.geld-review__qv-raw .js-timeline-item {
-  margin: 0;
-  padding: 2px 0;
-}
-
-.geld-review__qv-reply {
-  margin-top: 12px;
-  padding-left: 32px;
-}
-
-.geld-review__qv-reply > * {
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  background: none !important;
 }
 
 .geld-review__qv-empty {
@@ -2039,15 +1991,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review-desc:hover {
   text-decoration: underline;
-}
-
-.geld-review__qv-bot {
-  padding: 0 5px;
-  border: 1px solid var(--geld-review-border);
-  border-radius: 2em;
-  color: var(--geld-review-muted);
-  font-size: 11px;
-  line-height: 16px;
 }
 
 @media (prefers-reduced-motion: reduce) {
