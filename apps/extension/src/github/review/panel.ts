@@ -12,11 +12,11 @@
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_DOT_FILL, ICON_KEBAB_HORIZONTAL, ICON_REPLY, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, splitItems, statusBadge, verdictLabel } from './panel-model';
+import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_DOT_FILL, ICON_KEBAB_HORIZONTAL, ICON_REPLY, ICON_SKIP, ICON_SMILEY, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
-import { restoreAll } from './teleport';
+import { reclaimOrphans, restoreAll } from './teleport';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -41,17 +41,25 @@ export interface Avatar {
   readonly bot: boolean;
 }
 
-export interface HumanComment {
+export type ReviewEntryState = 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'thread' | 'comment';
+
+/** One line under the Reviews row: a review verdict, a review thread or a person's top-level comment. */
+export interface ReviewEntry {
   readonly anchor: string;
   readonly author: string;
   readonly avatarSrc: string | null;
-  readonly title: string;
+  readonly state: ReviewEntryState;
+  /** The comment's first line; empty for a bare verdict. */
+  readonly preview: string;
   readonly time: string;
-  /** A review thread: GitHub can resolve it. Top-level comments cannot. */
-  readonly resolvable: boolean;
+  /** Whether there is a comment to open under the line. */
+  readonly hasBody: boolean;
+  /** A review thread: GitHub can resolve it. */
   readonly done: boolean;
   /** Replies in the thread beyond the first comment. */
   readonly replies: number;
+  /** The emoji the signed-in user reacted with, when they did. */
+  readonly myReaction: string | null;
 }
 
 export interface PanelModel {
@@ -76,8 +84,8 @@ export interface PanelModel {
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
   readonly checksRing: SVGElement | null;
   readonly reviews: RequiredReviews | null;
-  /** People's comments on the page — threads (resolvable) and top-level comments (not) — for the Reviews row's list. */
-  readonly comments: readonly HumanComment[];
+  /** Review verdicts, threads and people's comments, in timeline order, for the Reviews row's list. */
+  readonly comments: readonly ReviewEntry[];
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
   /** A review bot is still running: the re-run control spins. */
@@ -90,6 +98,8 @@ export interface PanelModel {
   readonly aiPending: ReadonlySet<string>;
   /** The suggested fix to show for an item under the user's preference, if any. */
   readonly fixFor: (item: ReviewItem) => SuggestedFix | null;
+  /** The signed-in user's reaction on the comment at `anchor`, read from the page. */
+  readonly myReactionFor: (anchor: string) => string | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -116,6 +126,8 @@ export interface PanelHandlers {
   readonly onToggleSub: (anchor: string) => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
+  /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
+  readonly onReact: (anchor: string) => void;
 }
 
 export function itemKey(id: string): string {
@@ -307,6 +319,10 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     event.stopPropagation();
     handlers.onReply(item.id);
   });
+  if (first !== undefined) {
+    const anchor = first.anchor;
+    right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)));
+  }
   const entries: MenuEntry[] = [];
   const resolvable = model.resolvable(item);
   entries.push({
@@ -595,16 +611,15 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const content: Node[] = [];
     if (model.reviews !== null) {
       const marks = createElement('span', { class: `${PANEL_CLASS}__marks`, 'aria-hidden': 'true' });
-      for (let index = 0; index < Math.max(model.reviews.required, model.reviews.approvals); index += 1) {
+      for (let index = 0; index < Math.max(model.reviews.required ?? 0, model.reviews.approvals); index += 1) {
         marks.append(createElement('span', { class: `${PANEL_CLASS}__mark`, 'data-done': String(index < model.reviews.approvals) }, [icon(index < model.reviews.approvals ? ICON_CHECK : ICON_CIRCLE)]));
       }
-      const text = model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`;
-      content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [text]), marks);
+      content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [reviewsLabel(model.reviews)]), marks);
     }
     const open = model.openKey === REVIEWS_KEY;
     const count = model.comments.length;
     content.push(
-      createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: `${plural(count, 'comment')} from people` }, [
+      createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: `${plural(count, 'review')} and comments from people` }, [
         icon(ICON_COMMENT_DISCUSSION),
         createElement('span', {}, [String(count)]),
       ]),
@@ -614,7 +629,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     ]);
     main.addEventListener('click', () => handlers.onToggle(REVIEWS_KEY));
     const right: Node[] = [];
-    if (model.reviews !== null) right.push(healthGlyph(health, model.reviews.changesRequested ? 'changes requested' : `${model.reviews.approvals}/${model.reviews.required} approvals`));
+    if (model.reviews !== null) right.push(healthGlyph(health, reviewsLabel(model.reviews)));
     right.push(chevron(open, () => handlers.onToggle(REVIEWS_KEY)));
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]),
@@ -624,52 +639,88 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     ]);
     if (open) row.setAttribute('data-open', '');
     rows.append(row);
-    if (open) rows.append(slotRow(REVIEWS_KEY));
+    if (open) rows.append(slotRow(REVIEWS_KEY, null, 'list'));
   }
   return rows.childElementCount === 0 ? null : rows;
 }
 
+const ENTRY_GLYPH: Readonly<Record<Exclude<ReviewEntryState, 'thread'>, string>> = {
+  approved: ICON_CHECK_CIRCLE_FILL,
+  changes_requested: ICON_X_CIRCLE_FILL,
+  commented: ICON_COMMENT,
+  dismissed: ICON_COMMENT,
+  comment: ICON_COMMENT,
+};
+
+const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
+  approved: 'Approved',
+  changes_requested: 'Requested changes',
+  commented: 'Reviewed',
+  dismissed: 'Review dismissed',
+  comment: 'Commented',
+  thread: 'Review thread',
+};
+
+/** Geld's quick-reaction control: the smiley, or the emoji the reader already picked. Opens GitHub's own picker. */
+function reactionButton(myReaction: string | null, focusKey: string, onReact: () => void): HTMLElement {
+  const button = createElement(
+    'button',
+    { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__react`, 'aria-label': myReaction === null ? 'Add reaction' : `You reacted ${myReaction} · change reaction`, title: myReaction === null ? 'Add reaction' : 'Change your reaction', [ATTR_FOCUS]: `react:${focusKey}` },
+    [myReaction === null ? icon(ICON_SMILEY) : createElement('span', { class: `${PANEL_CLASS}__react-emoji` }, [myReaction])],
+  );
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onReact();
+  });
+  return button;
+}
+
 /**
- * The Reviews row's list: one line per comment from a person — threads with
- * their resolve circle, top-level comments without — and, one level down,
- * the open comment's own node. Returns the nested slot for that node.
+ * The Reviews row's list: one line per review verdict, review thread or
+ * person's comment — state glyph, avatar, name, the comment's first line —
+ * with the time, a reaction control, GitHub's own header actions (worn while
+ * open) and a chevron on the right. The open entry shows its comment body
+ * underneath. Returns that nested slot.
  */
 export function renderCommentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   let nested: HTMLElement | null = null;
-  if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No comments from people yet.']));
-  for (const comment of model.comments) {
-    const open = model.openSubKey === comment.anchor;
-    const lead = comment.resolvable
-      ? (() => {
-          const status = createElement(
-            'button',
-            { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': comment.done ? 'Unresolve' : 'Resolve', title: comment.done ? 'Unresolve conversation' : 'Resolve conversation', 'aria-pressed': String(comment.done), [ATTR_FOCUS]: `status:sub:${comment.anchor}` },
-            [icon(comment.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)],
-          );
-          status.addEventListener('click', (event) => {
-            event.stopPropagation();
-            handlers.onResolveAnchor(comment.anchor, !comment.done);
-          });
-          return status;
-        })()
-      : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--blank`, 'aria-hidden': 'true' });
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${comment.anchor}` }, [
-      createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [comment.title]),
-      createElement('span', { class: `${PANEL_CLASS}__detail` }, [[comment.author, comment.time, comment.replies > 0 ? plural(comment.replies, 'reply', 'replies') : ''].filter((part) => part !== '').join(' — ')]),
-    ]);
-    const toggle = (): void => handlers.onToggleSub(comment.anchor);
-    main.addEventListener('click', toggle);
+  if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews or comments from people yet.']));
+  for (const entry of model.comments) {
+    const open = entry.hasBody && model.openSubKey === entry.anchor;
+    const lead =
+      entry.state === 'thread'
+        ? (() => {
+            const status = createElement(
+              'button',
+              { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': entry.done ? 'Unresolve' : 'Resolve', title: entry.done ? 'Unresolve conversation' : 'Resolve conversation', 'aria-pressed': String(entry.done), [ATTR_FOCUS]: `status:sub:${entry.anchor}` },
+              [icon(entry.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)],
+            );
+            status.addEventListener('click', (event) => {
+              event.stopPropagation();
+              handlers.onResolveAnchor(entry.anchor, !entry.done);
+            });
+            return status;
+          })()
+        : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
+    const toggle = (): void => handlers.onToggleSub(entry.anchor);
+    const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.author])];
+    if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
+    else if (entry.state !== 'thread' && entry.state !== 'comment') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [ENTRY_LABEL[entry.state].toLowerCase()]));
+    if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
+    const main = entry.hasBody
+      ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, mainChildren)
+      : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
+    if (entry.hasBody) main.addEventListener('click', toggle);
+    const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+    if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
+    if (entry.hasBody) right.append(reactionButton(entry.myReaction, `sub:${entry.anchor}`, () => handlers.onReact(entry.anchor)));
+    if (open) right.append(headSlot());
+    if (entry.hasBody) right.append(chevron(open, toggle));
     const row = createElement(
       'li',
-      { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': comment.anchor, 'data-state': comment.done ? 'done' : 'open' },
-      [
-        lead,
-        avatarStack(comment.avatarSrc === null ? [] : [{ src: comment.avatarSrc, bot: false }], comment.author, false),
-        main,
-        ...(open ? [headSlot()] : []),
-        createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, toggle)]),
-      ],
+      { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
+      [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot: false }], entry.author, false), main, right],
     );
     if (open) row.setAttribute('data-open', '');
     list.append(row);
@@ -709,7 +760,7 @@ function signatureOf(model: PanelModel): string {
     checks: model.checks,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
-    comments: model.comments.map((comment) => `${comment.anchor}:${comment.done ? 'd' : 'o'}:${comment.title}:${comment.replies}:${comment.avatarSrc ?? ''}`),
+    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),
     openSubKey: model.openSubKey,
     running: model.running,
     icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
@@ -751,6 +802,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
   const focusKey = focusKeyOf(existing);
   restoreAll();
+  if (existing !== null) reclaimOrphans(existing);
   existing?.remove();
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
@@ -867,7 +919,9 @@ function railIndent(nudge: HTMLElement): number {
 
 export function unmountPanel(): void {
   restoreAll();
-  document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`)?.remove();
+  const panel = document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
+  if (panel !== null) reclaimOrphans(panel);
+  panel?.remove();
   document.querySelector(`.${NUDGE_CLASS}`)?.remove();
   for (const card of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) card.removeAttribute(ATTR_ATTACHED);
 }
