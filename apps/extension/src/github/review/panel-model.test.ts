@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, isCurrent, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, isCurrent, itemMarkdown, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -22,6 +22,25 @@ describe('panel model', () => {
     expect(verdictLabel({ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: 'aaa' })).toBe('Bugbot clean');
     expect(isCurrent(greptile, 'aaab')).toBe(true);
     expect(isCurrent(greptile, 'bbb')).toBe(false);
+  });
+
+  it('renders an item as Markdown with absolute source links and an optional fix', () => {
+    const entry: ReviewItem = {
+      ...item('x', 'open'),
+      title: 'Guard parseDiff against null',
+      path: 'src/diff.ts',
+      line: 42,
+      context: 'Throws on null input.',
+      fix: { text: 'if (input === null) return [];', source: 'ai' },
+      sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'cursor[bot]', bot: 'bugbot' }],
+    };
+    const subject = { owner: 'acme', repo: 'widgets', number: 123, origin: 'https://github.com' };
+    const md = itemMarkdown(entry, subject, true);
+    expect(md).toContain('- [ ] **Guard parseDiff against null** `src/diff.ts:42` — Bugbot');
+    expect(md).toContain('  Throws on null input.');
+    expect(md).toContain('```suggestion');
+    expect(md).toContain('[bugbot](https://github.com/acme/widgets/pull/123#discussion_r1)');
+    expect(itemMarkdown(entry, subject, false)).not.toContain('suggestion');
   });
 
   it('lists distinct authors, bots by title', () => {

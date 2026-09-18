@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { completeChat, listModels } from './ai-client';
+import { completeChat, joinUrl, listModels } from './ai-client';
 
 describe('ai-client', () => {
   it('does not call the network without a key', async () => {
@@ -16,6 +16,11 @@ describe('ai-client', () => {
         messages: [{ role: 'user', content: 'hi' }],
       }),
     ).toEqual({ ok: false, reason: 'No API key.' });
+  });
+
+  it('folds a trailing /v1 into the path (Vercel AI Gateway style base URLs)', () => {
+    expect(joinUrl('https://ai-gateway.vercel.sh/v1', '/v1/models')).toBe('https://ai-gateway.vercel.sh/v1/models');
+    expect(joinUrl('https://api.openai.com/', 'v1/chat/completions')).toBe('https://api.openai.com/v1/chat/completions');
   });
 
   it('lists model ids from /v1/models', async () => {

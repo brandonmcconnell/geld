@@ -3,8 +3,8 @@
  * Kept DOM-free so they can be unit tested.
  */
 
-import type { BotVerdictRecord, ReviewItem, ReviewItemStatus } from '@geld/review';
-import { botTitle, isOpenStatus } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewItemStatus } from '@geld/review';
+import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
 
 const ORDER: Readonly<Record<ReviewItemStatus, number>> = {
   'needs-reply': 0,
@@ -56,6 +56,40 @@ export function statusBadge(status: ReviewItemStatus): string | null {
   if (status === 'addressed') return 'addressed';
   if (status === 'outdated') return 'outdated';
   return null;
+}
+
+export interface MarkdownSubject {
+  readonly owner: string;
+  readonly repo: string;
+  readonly number: number;
+  readonly origin: string;
+}
+
+function locationOf(item: ReviewItem): string {
+  if (item.path === undefined) return '';
+  return item.line === undefined ? ` \`${item.path}\`` : ` \`${item.path}:${item.line}\``;
+}
+
+/** One item as Markdown a person can hand to an agent: title, location, context, fix, links back to every source. */
+export function itemMarkdown(item: ReviewItem, subject: MarkdownSubject | null, showFix: boolean): string {
+  const link = (anchor: string): string => (subject === null ? `#${anchor}` : `${subject.origin}/${subject.owner}/${subject.repo}/pull/${subject.number}#${anchor}`);
+  const lines = [`- [${isOpenStatus(item.status) ? ' ' : 'x'}] **${item.title}**${locationOf(item)} — ${authorLabels(item).join(', ')}`];
+  if (item.context !== undefined) lines.push(`  ${item.context}`);
+  if (showFix && item.fix !== undefined) {
+    lines.push(`  Suggested fix (${item.fix.source}):`, '  ```suggestion', ...item.fix.text.split('\n').map((row) => `  ${row}`), '  ```');
+  }
+  lines.push(`  Sources: ${item.sources.map((source) => `[${source.bot ?? source.author}](${link(source.anchor)})`).join(' · ')}`);
+  return lines.join('\n');
+}
+
+export function digestMarkdown(meta: GeldPrMeta, subject: MarkdownSubject | null, showFix: (item: ReviewItem) => boolean): string {
+  const { open, done } = splitItems(meta.items);
+  const lines = [`## Review digest — ${doneItemCount(meta.items)} of ${meta.items.length} done`];
+  if (meta.summary !== undefined) lines.push('', meta.summary.tldr);
+  if (meta.bots.length > 0) lines.push('', meta.bots.map((bot) => verdictLabel(bot)).join(' · '));
+  if (open.length > 0) lines.push('', '### Open', '', ...open.map((item) => itemMarkdown(item, subject, showFix(item))));
+  if (done.length > 0) lines.push('', '### Done', '', ...done.map((item) => itemMarkdown(item, subject, showFix(item))));
+  return lines.join('\n');
 }
 
 /** Distinct human-readable author labels for a row, bots by their product name. */

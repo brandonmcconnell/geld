@@ -13,12 +13,16 @@ inputs:
     description: Optional OpenAI-compatible API key. When set, bot-only item titles are rewritten.
     required: false
   ai-base-url:
-    description: OpenAI-compatible API base URL (no trailing slash needed).
+    description: OpenAI-compatible API base URL. Vercel AI Gateway by default; a trailing /v1 is fine.
     required: false
-    default: https://api.openai.com
+    default: https://ai-gateway.vercel.sh
   model:
-    description: Model id when AI is on.
+    description: Model id when AI is on (gateway ids look like openai/gpt-4.1-mini).
     required: false
+  suggested-fixes:
+    description: Which suggested fixes to keep on an item - all, bots (default), ai, or off.
+    required: false
+    default: bots
   extra-bots:
     description: Extra bot logins to treat as review bots, comma-separated.
     required: false

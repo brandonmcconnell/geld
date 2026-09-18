@@ -55,6 +55,9 @@ export type AddressedVerdict = (typeof ADDRESSED_VERDICTS)[number];
 export const PRODUCER_KINDS = ['action', 'app', 'crawler'] as const;
 export type ProducerKind = (typeof PRODUCER_KINDS)[number];
 
+export const FIX_SOURCES = ['bot', 'human', 'ai'] as const;
+export type FixSource = (typeof FIX_SOURCES)[number];
+
 /** GitHub permalink fragments the extension resolves with `getElementById`. */
 export const SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
 
@@ -76,6 +79,12 @@ export interface AddressedEvidence {
   readonly evidence: readonly string[];
 }
 
+/** A suggested change: the bot's ```suggestion block, a person's, or one the model proposed. */
+export interface SuggestedFix {
+  readonly text: string;
+  readonly source: FixSource;
+}
+
 export interface ReviewItem {
   readonly id: string;
   readonly title: string;
@@ -86,6 +95,17 @@ export interface ReviewItem {
   readonly line?: number;
   readonly sources: readonly ReviewSource[];
   readonly addressed?: AddressedEvidence;
+  /** Merged context from every source that reported this, when it adds something the title does not. */
+  readonly context?: string;
+  readonly fix?: SuggestedFix;
+}
+
+/** The short read of the whole review state, written by the model and kept until the open set changes. */
+export interface ReviewSummary {
+  readonly tldr: string;
+  readonly updatedAt: string;
+  /** Sorted open item ids the TL;DR was written for; a different set means it needs another pass. */
+  readonly forItems: readonly string[];
 }
 
 export interface BotVerdictRecord {
@@ -125,6 +145,7 @@ export interface GeldPrMeta {
   readonly reviewers: readonly ReviewerRecord[];
   readonly fold: FoldRecord;
   readonly truncated?: boolean;
+  readonly summary?: ReviewSummary;
 }
 
 export interface GeldDeeplink {
@@ -150,6 +171,11 @@ export const addressedSchema = z.object({
   evidence: z.array(z.string().min(1)),
 });
 
+export const suggestedFixSchema = z.object({
+  text: z.string().min(1),
+  source: z.enum(FIX_SOURCES),
+});
+
 export const reviewItemSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -160,6 +186,14 @@ export const reviewItemSchema = z.object({
   line: z.number().int().positive().optional(),
   sources: z.array(reviewSourceSchema).min(1),
   addressed: addressedSchema.optional(),
+  context: z.string().min(1).optional(),
+  fix: suggestedFixSchema.optional(),
+});
+
+export const reviewSummarySchema = z.object({
+  tldr: z.string().min(1),
+  updatedAt: isoDate,
+  forItems: z.array(z.string().min(1)),
 });
 
 export const botVerdictSchema = z.object({
@@ -199,6 +233,7 @@ export const geldPrMetaSchema = z.object({
   reviewers: z.array(reviewerSchema),
   fold: foldSchema,
   truncated: z.boolean().optional(),
+  summary: reviewSummarySchema.optional(),
 });
 
 export const deeplinkSchema = z.object({
@@ -237,8 +272,9 @@ function reviewItemFrom(value: z.infer<typeof reviewItemSchema>): ReviewItem {
   };
   const located = value.path === undefined ? item : { ...item, path: value.path };
   const numbered = value.line === undefined ? located : { ...located, line: value.line };
-  if (value.addressed === undefined) return numbered;
-  return { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
+  const judged = value.addressed === undefined ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
+  const explained = value.context === undefined ? judged : { ...judged, context: value.context };
+  return value.fix === undefined ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
 }
 
 function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictRecord {
@@ -265,7 +301,10 @@ function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events },
   };
-  return value.truncated === undefined ? meta : { ...meta, truncated: value.truncated };
+  const flagged = value.truncated === undefined ? meta : { ...meta, truncated: value.truncated };
+  return value.summary === undefined
+    ? flagged
+    : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
 }
 
 export function parseGeldPrMeta(value: unknown): ParseResult<GeldPrMeta> {

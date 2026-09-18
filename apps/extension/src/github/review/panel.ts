@@ -27,6 +27,7 @@ import {
   ICON_X,
 } from '../ui/icons';
 import { authorLabels, isCurrent, splitItems, statusBadge, verdictLabel, verdictTone } from './panel-model';
+import type { SuggestedFix } from '@geld/review';
 import { restoreAll } from './teleport';
 
 export const PANEL_CLASS = 'geld-review';
@@ -74,6 +75,10 @@ export interface PanelModel {
   readonly avatarsFor: (item: ReviewItem) => readonly Avatar[];
   /** Timeline nodes hidden by compaction (for the "show full timeline" row). */
   readonly hiddenCount: number;
+  /** Item ids (and `tldr`) the model is working on: those rows shimmer. */
+  readonly aiPending: ReadonlySet<string>;
+  /** The suggested fix to show for an item under the user's preference, if any. */
+  readonly fixFor: (item: ReviewItem) => SuggestedFix | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -85,6 +90,8 @@ export interface PanelHandlers {
   readonly onReply: (itemId: string) => void;
   readonly onCopy: () => void;
   readonly onCopyLink: (anchor: string) => void;
+  readonly onCopyItem: (itemId: string) => void;
+  readonly onCopyFix: (itemId: string) => void;
   readonly onFullTimeline: () => void;
   readonly onRequest: (botId: string) => void;
   readonly onDismissNudge: () => void;
@@ -177,13 +184,15 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   if (item.path !== undefined) detailBits.push(item.line === undefined ? item.path : `${item.path}:${item.line}`);
   detailBits.push(authorLabels(item).join(', '));
   if (item.sources.length > 1) detailBits.push(`${item.sources.length} comments`);
+  const pending = model.aiPending.has(item.id);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open) }, [
-    createElement('span', { class: `${PANEL_CLASS}__title` }, [item.title]),
+    createElement('span', { class: `${PANEL_CLASS}__title`, ...(pending ? { 'data-pending': '', title: 'Geld is consolidating this item' } : {}) }, [item.title]),
     createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' — ')]),
   ]);
   main.addEventListener('click', () => handlers.onToggle(key));
 
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  if (item.rewritten) right.append(createElement('span', { class: `${PANEL_CLASS}__ai`, title: 'Title written by Geld from the sources' }, ['AI']));
   const badge = statusBadge(item.status);
   if (badge !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__pill`, 'data-badge': item.status }, [badge]));
   const reply = iconButton(ICON_REPLY, 'Reply');
@@ -197,6 +206,8 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     label: resolvable ? (done ? 'Unresolve conversation' : 'Resolve conversation') : done ? 'Reopen' : 'Mark done',
     onSelect: () => handlers.onStatus(item.id, !done),
   });
+  entries.push({ label: 'Copy as Markdown', onSelect: () => handlers.onCopyItem(item.id) });
+  if (model.fixFor(item) !== null) entries.push({ label: 'Copy suggested fix', onSelect: () => handlers.onCopyFix(item.id) });
   if (first !== undefined) {
     entries.push({ label: 'Show in timeline', href: `#${first.anchor}` });
     entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(first.anchor) });
@@ -237,8 +248,27 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   return row;
 }
 
-function slotRow(key: string): HTMLElement {
-  return createElement('li', { class: `${PANEL_CLASS}__slot`, [ATTR_SLOT]: key }, [createElement('div', { class: `${PANEL_CLASS}__slot-body` })]);
+/** Geld's own notes for an open item — merged context and the fix — above the moved comments. */
+function notesFor(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+  const fix = model.fixFor(item);
+  if (item.context === undefined && fix === null) return null;
+  const notes = createElement('div', { class: `${PANEL_CLASS}__notes` });
+  if (item.context !== undefined) notes.append(createElement('p', { class: `${PANEL_CLASS}__context` }, [item.context]));
+  if (fix !== null) {
+    const head = createElement('div', { class: `${PANEL_CLASS}__fix-head` }, [
+      createElement('span', {}, [fix.source === 'ai' ? 'Suggested fix (Geld)' : fix.source === 'bot' ? 'Suggested fix (bot)' : 'Suggested fix']),
+    ]);
+    const copy = iconButton(ICON_COPY, 'Copy fix');
+    copy.addEventListener('click', () => handlers.onCopyFix(item.id));
+    head.append(copy);
+    notes.append(head, createElement('pre', { class: `${PANEL_CLASS}__fix` }, [createElement('code', {}, [fix.text])]));
+  }
+  return notes;
+}
+
+function slotRow(key: string, notes: HTMLElement | null = null): HTMLElement {
+  const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
+  return createElement('li', { class: `${PANEL_CLASS}__slot`, [ATTR_SLOT]: key }, notes === null ? [body] : [notes, body]);
 }
 
 function groupHeading(id: GroupId, label: string, model: PanelModel, handlers: PanelHandlers): HTMLElement {
@@ -328,8 +358,13 @@ function signatureOf(model: PanelModel): string {
     viewingAnchor: model.viewingAnchor,
     generatedAt: model.meta.generatedAt,
     headSha: model.meta.headSha,
-    items: model.meta.items.map((item) => `${item.id}:${item.status}:${item.title}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}`),
+    items: model.meta.items.map(
+      (item) =>
+        `${item.id}:${item.status}:${item.title}:${item.context ?? ''}:${model.fixFor(item)?.text ?? ''}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}:${item.rewritten ? 'ai' : ''}`,
+    ),
     hiddenCount: model.hiddenCount,
+    pending: [...model.aiPending].sort(),
+    tldr: model.meta.summary?.tldr ?? '',
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.reviewedSha}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}`),
@@ -398,13 +433,23 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
   const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, chips, tools]);
+  const tldrPending = model.aiPending.has('tldr');
+  const tldr =
+    model.meta.summary !== undefined
+      ? createElement('p', { class: `${PANEL_CLASS}__tldr`, ...(tldrPending ? { 'data-pending': '' } : {}) }, [model.meta.summary.tldr])
+      : tldrPending
+        ? createElement('p', { class: `${PANEL_CLASS}__tldr`, 'data-pending': '', 'aria-label': 'Writing the summary' }, [
+            createElement('span', { class: `${PANEL_CLASS}__skeleton`, style: 'width: 78%' }),
+            createElement('span', { class: `${PANEL_CLASS}__skeleton`, style: 'width: 52%' }),
+          ])
+        : null;
 
   /* Groups */
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows`, role: 'list' });
   const appendRows = (items: readonly ReviewItem[]): void => {
     for (const item of items) {
       rows.append(itemRow(item, model, handlers));
-      if (model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey));
+      if (model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey, notesFor(item, model, handlers)));
     }
   };
   if (open.length > 0) {
@@ -430,7 +475,11 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   }
   if (total === 0 && model.folds.length === 0) rows.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No review comments yet.']));
 
-  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, 'aria-label': 'Geld review digest' }, [head, rows]);
+  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, 'aria-label': 'Geld review digest' }, [
+    head,
+    ...(tldr === null ? [] : [tldr]),
+    rows,
+  ]);
 
   /* Footer */
   const footerBits: Node[] = [];
@@ -469,14 +518,3 @@ export function unmountPanel(): void {
   for (const card of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) card.removeAttribute(ATTR_ATTACHED);
 }
 
-export function digestText(meta: GeldPrMeta): string {
-  const loc = (item: ReviewItem): string => (item.path === undefined ? '' : item.line === undefined ? ` (${item.path})` : ` (${item.path}:${item.line})`);
-  const { open, done } = splitItems(meta.items);
-  return [
-    `Geld review: ${doneItemCount(meta.items)} of ${meta.items.length} done.`,
-    ...meta.bots.map((bot) => verdictLabel(bot)),
-    '',
-    ...open.map((item) => `- [ ] ${item.title}${loc(item)}`),
-    ...done.map((item) => `- [x] ${item.title}${loc(item)}`),
-  ].join('\n');
-}
