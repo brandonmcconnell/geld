@@ -90,13 +90,43 @@ export interface GeldSettings {
    * one-time decision per repository, made in the popup.
    */
   readonly repoConfigs: RepoConfigMode;
+  /**
+   * On pull request conversation pages, render the Geld review panel (digest,
+   * bot verdicts, timeline compaction). Off: leave the conversation tab alone.
+   */
+  readonly prOverview: boolean;
+  /**
+   * How far to fold the PR timeline. `off` only shows the panel. `compact`
+   * (default) folds bot review comments and low-signal events. `minimal` also
+   * folds human comments that belong to done items, and may collapse the
+   * description when {@link collapseDescription} is on.
+   */
+  readonly compactTimeline: CompactTimelineMode;
+  /** In `minimal` mode, collapse the PR description to its first paragraph. */
+  readonly collapseDescription: boolean;
+  /**
+   * Extra bot logins to treat as review bots (one per line). Built-in bots
+   * (Bugbot, Greptile, Copilot, …) are always recognised.
+   */
+  readonly reviewBots: readonly string[];
+  /** OpenAI-compatible gateway origin for optional in-browser rewrites. Empty means unset. */
+  readonly aiBaseUrl: string;
+  /** Model id at that gateway. Empty until the user picks one from `/v1/models`. */
+  readonly aiModel: string;
 }
 
 export const REPO_CONFIG_MODES = ['always', 'ask', 'never'] as const;
 export type RepoConfigMode = (typeof REPO_CONFIG_MODES)[number];
 
+export const COMPACT_TIMELINE_MODES = ['off', 'compact', 'minimal'] as const;
+export type CompactTimelineMode = (typeof COMPACT_TIMELINE_MODES)[number];
+
 export function isRepoConfigMode(value: unknown): value is RepoConfigMode {
   return typeof value === 'string' && REPO_CONFIG_MODES.some((mode) => mode === value);
+}
+
+export function isCompactTimelineMode(value: unknown): value is CompactTimelineMode {
+  return typeof value === 'string' && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
 
 export const DEFAULT_SETTINGS: GeldSettings = {
@@ -119,6 +149,12 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   autoUpdatePatterns: true,
   enterpriseHosts: [],
   repoConfigs: 'ask',
+  prOverview: true,
+  compactTimeline: 'compact',
+  collapseDescription: false,
+  reviewBots: [],
+  aiBaseUrl: '',
+  aiModel: '',
 };
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
@@ -317,6 +353,12 @@ export function normalizeSettings(value: unknown): GeldSettings {
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
+    prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
+    compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
+    aiBaseUrl: typeof record.aiBaseUrl === 'string' ? record.aiBaseUrl.trim() : DEFAULT_SETTINGS.aiBaseUrl,
+    aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
   };
 }
 

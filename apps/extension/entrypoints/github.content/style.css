@@ -1015,3 +1015,143 @@ tr[data-geld-line='hidden'] {
 .geld-author-note__show:hover {
   text-decoration: underline;
 }
+
+/* ------------------------------------------------------------------------ */
+/* PR conversation: review digest panel, timeline folds, hidden summary     */
+/* ------------------------------------------------------------------------ */
+
+[data-geld-summary='hidden'] {
+  display: none !important;
+}
+
+[data-geld-folded='hidden'] {
+  display: none !important;
+}
+
+html[data-geld-timeline='full'] [data-geld-folded] {
+  display: revert !important;
+}
+
+html[data-geld-timeline='full'] .geld-review-fold {
+  display: none;
+}
+
+.geld-review-panel {
+  margin: 8px 0 16px;
+  padding: 12px 16px 14px;
+  border: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.geld-review-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.geld-review-panel__title {
+  font-size: 14px;
+}
+
+.geld-review-panel__counts,
+.geld-review-panel__bots,
+.geld-review-panel__reviewers,
+.geld-review-panel__meta,
+.geld-review-panel__sources,
+.geld-review-panel__empty,
+.geld-review-panel__note,
+.geld-review-panel__nudge,
+.geld-review-panel__viewing {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  margin: 6px 0 0;
+}
+
+.geld-review-panel__fresh {
+  color: var(--fgColor-attention, var(--color-attention-fg, #9a6700));
+  font-size: 12px;
+}
+
+.geld-review-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.geld-review-panel__btn,
+.geld-review-panel__rerun,
+.geld-review-fold__btn,
+.geld-review-desc {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-review-panel__btn:hover,
+.geld-review-panel__rerun:hover,
+.geld-review-fold__btn:hover,
+.geld-review-desc:hover {
+  text-decoration: underline;
+}
+
+.geld-review-panel__group {
+  margin: 12px 0 4px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-review-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.geld-review-item[data-open] {
+  background: var(--bgColor-neutral-muted, var(--color-neutral-muted, transparent));
+}
+
+.geld-review-item__title {
+  font-weight: 600;
+}
+
+.geld-review-item__check {
+  margin-top: 3px;
+}
+
+.geld-review-item--blocking .geld-review-item__title {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review-item--bug .geld-review-item__title {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review-fold {
+  margin: 4px 0;
+  padding: 6px 12px;
+  border: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
+  font-size: 12px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+[data-geld-desc='collapsed'] > :not(:first-child) {
+  display: none;
+}
+
+.geld-review-desc {
+  display: inline-block;
+  margin: 4px 0 12px;
+}
