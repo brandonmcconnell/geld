@@ -1375,15 +1375,44 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
 }
 
-/* The row says who and when; the worn header only lends its actions (react, ⋯). */
-.geld-review__row--sub .geld-review__head-slot {
-  max-width: none;
+/* Every row says who and when itself; a worn header only lends its actions (react, ⋯), so open and closed read alike. */
+.geld-review__head-slot .timeline-comment-header-text,
+.geld-review__head-slot h3,
+.geld-review__head-slot .author,
+.geld-review__head-slot relative-time,
+.geld-review__head-slot .Label,
+.geld-review__head-slot [data-component='Label'],
+.geld-review__head-slot [data-testid='comment-header'] > :not(:last-child),
+.geld-review__head-slot [data-testid='comment-header-title'],
+.geld-review__head-slot [data-testid='author-link'] {
+  display: none !important;
 }
 
-.geld-review__row--sub .geld-review__head-slot .timeline-comment-header-text,
-.geld-review__row--sub .geld-review__head-slot h3,
-.geld-review__row--sub .geld-review__head-slot [data-testid='comment-header'] > :not(:last-child) {
-  display: none !important;
+.geld-review__head-slot > *,
+.geld-review__head-slot .timeline-comment-actions,
+.geld-review__head-slot [data-testid='comment-header'] > :last-child {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+/* Loose words in the header ("commented") vanish with the font; the controls set their own size back. */
+.geld-review__head-slot > * {
+  font-size: 0;
+}
+
+.geld-review__head-slot details,
+.geld-review__head-slot summary,
+.geld-review__head-slot button {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 !important;
+  font-size: 12px;
 }
 
 .geld-review__react {
@@ -2228,9 +2257,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   box-shadow: none !important;
 }
 
-/* Event rows: GitHub's condensed items, without the rail. The badge sits in the status column (16px) and the text
- * starts where the rows' labels do (16 + 16 + 8). */
-.geld-review__qv .TimelineItem--condensed {
+/* Event rows, without the rail. The badge sits in the status column (16px) and the text starts where the
+ * rows' labels do (16 + 16 + 10); GitHub marks events condensed or not, so every badge is treated alike. */
+.geld-review__qv .TimelineItem--condensed,
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) {
   display: flex !important;
   align-items: flex-start !important;
   gap: 10px;
@@ -2239,7 +2269,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   line-height: 20px;
 }
 
-.geld-review__qv .TimelineItem--condensed .TimelineItem-badge {
+.geld-review__qv .TimelineItem-badge,
+.geld-review__qv [class*='TimelineItem-badge'] {
   display: inline-flex !important;
   flex: 0 0 auto;
   align-items: center;
@@ -2247,13 +2278,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   width: 16px !important;
   height: 20px !important;
   margin: 0 !important;
+  padding: 0 !important;
   border: 0 !important;
   background: none !important;
   box-shadow: none !important;
   color: var(--geld-review-muted);
 }
 
-.geld-review__qv .TimelineItem--condensed .TimelineItem-body {
+.geld-review__qv .TimelineItem-badge .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body {
   margin-top: 0 !important;
 }
 
@@ -2315,11 +2352,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 /* ---- an open row wears its comment's header --------------------------------- */
 
 .geld-review__head-slot {
-  display: flex;
+  display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  max-width: 55%;
+  gap: 2px;
   min-width: 0;
   color: var(--geld-review-muted);
   font-size: 12px;
@@ -2337,49 +2373,11 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   display: none;
 }
 
-.geld-review__row[data-head] > .geld-review__main {
-  flex: 1 1 auto;
-}
-
-.geld-review__row[data-head] > .geld-review__main .geld-review__detail {
-  display: none;
-}
 
 .geld-review__head-slot > * {
   min-width: 0;
 }
 
-.geld-review__head-slot .timeline-comment-header,
-.geld-review__head-slot [data-testid='comment-header'] {
-  display: flex !important;
-  flex: 1 1 auto;
-  align-items: center;
-  min-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: none !important;
-}
-
-.geld-review__head-slot .timeline-comment-header-text,
-.geld-review__head-slot h3 {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0 !important;
-  padding: 0 !important;
-  font-size: 12px !important;
-  font-weight: 400 !important;
-  line-height: 20px !important;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.geld-review__head-slot .timeline-comment-actions {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
 
 .geld-review__head-slot summary {
   list-style: none;

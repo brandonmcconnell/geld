@@ -8,7 +8,7 @@
 
 import type { RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
-import { wornPiecesOf } from './teleport';
+import { compareHome, wornPiecesOf } from './teleport';
 
 const ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/;
 const COMMENT_SELECTOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]';
@@ -252,6 +252,14 @@ export function crawlConversation(root: ParentNode = document): {
     if (!/^event-\d+$/.test(node.id) || node.closest(THREAD_SELECTOR) !== null) continue;
     events.push({ anchor: node.id, root: timelineRootOf(node) });
   }
+  // Timeline order, not document order: a node shown in the panel is above the timeline right now.
+  const byHome = (a: string, b: string): number => {
+    const x = root.querySelector(`[id="${a}"]`);
+    const y = root.querySelector(`[id="${b}"]`);
+    return x === null || y === null ? 0 : compareHome(x, y);
+  };
+  comments.sort((a, b) => byHome(a.comment.anchor, b.comment.anchor));
+  events.sort((a, b) => byHome(a.anchor, b.anchor));
   return { comments, events };
 }
 
@@ -301,7 +309,11 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
       comment,
     });
   }
-  return reviews;
+  return reviews.sort((a, b) => {
+    const x = document.getElementById(a.anchor);
+    const y = document.getElementById(b.anchor);
+    return x === null || y === null ? 0 : compareHome(x, y);
+  });
 }
 
 function textOutside(root: Element, excluded: Element | null): string {

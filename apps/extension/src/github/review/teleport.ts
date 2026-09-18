@@ -139,6 +139,32 @@ export function wornPiecesOf(root: Element): readonly HTMLElement[] {
   return pieces;
 }
 
+/**
+ * Where `node` belongs in the timeline: itself, or — when it or an ancestor is
+ * on loan — the placeholder holding that place (through nested loans). Sorting
+ * by this keeps the crawl, the bot groups and the bot chips in timeline order
+ * while nodes sit in the panel; document order would put them first.
+ */
+export function homeOf(node: Node): Node {
+  let cursor: Node | null = node;
+  while (cursor !== null) {
+    if (cursor instanceof HTMLElement) {
+      const entry = moved.get(cursor);
+      if (entry !== undefined) return homeOf(entry.placeholder);
+    }
+    cursor = cursor.parentNode;
+  }
+  return node;
+}
+
+/** Comparator for timeline order by home position. */
+export function compareHome(a: Node, b: Node): number {
+  const x = homeOf(a);
+  const y = homeOf(b);
+  if (x === y) return 0;
+  return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+}
+
 export function teleportedNodes(): readonly HTMLElement[] {
   return [...moved.keys()];
 }

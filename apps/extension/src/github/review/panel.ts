@@ -33,6 +33,8 @@ export interface FoldRow {
   readonly count: number;
   readonly avatarSrc: string | null;
   readonly firstAnchor: string | null;
+  /** When the fold holds one comment: its time, as the page shows it. */
+  readonly time: string;
 }
 
 
@@ -100,6 +102,8 @@ export interface PanelModel {
   readonly fixFor: (item: ReviewItem) => SuggestedFix | null;
   /** The signed-in user's reaction on the comment at `anchor`, read from the page. */
   readonly myReactionFor: (anchor: string) => string | null;
+  /** The comment's time as the page shows it ("yesterday"). */
+  readonly timeFor: (anchor: string) => string;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -321,6 +325,8 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   });
   if (first !== undefined) {
     const anchor = first.anchor;
+    const time = model.timeFor(anchor);
+    if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
     right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)));
   }
   const entries: MenuEntry[] = [];
@@ -337,12 +343,13 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     entries.push({ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) });
     entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) });
   }
+  if (open) right.append(headSlot());
   right.append(reply, menu(entries, key), chevron(open, toggle));
 
   const row = createElement(
     'li',
     { class: `${PANEL_CLASS}__row`, 'data-geld-item': item.id, 'data-state': done ? 'done' : item.status, 'data-severity': item.severity },
-    [status, avatarStack(model.avatarsFor(item), first?.author ?? '', bot), main, ...(open ? [headSlot()] : []), right],
+    [status, avatarStack(model.avatarsFor(item), first?.author ?? '', bot), main, right],
   );
   if (open) row.setAttribute('data-open', '');
   if (model.viewingAnchor !== null && item.sources.some((source) => source.anchor === model.viewingAnchor)) row.setAttribute('data-viewing', '');
@@ -358,8 +365,11 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   const toggle = (): void => handlers.onToggle(key);
   main.addEventListener('click', toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [fold.time]));
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
+    if (fold.count === 1 && fold.avatarSrc !== null) right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)));
+    if (open) right.append(headSlot());
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   }
   right.append(chevron(open, toggle));
@@ -368,7 +378,6 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
     glyph,
     ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true }], fold.label, true)]),
     main,
-    ...(open ? [headSlot()] : []),
     right,
   ]);
   if (open) row.setAttribute('data-open', '');
@@ -748,14 +757,14 @@ function signatureOf(model: PanelModel): string {
     headSha: model.meta.headSha,
     items: model.meta.items.map(
       (item) =>
-        `${item.id}:${item.status}:${item.title}:${item.context ?? ''}:${model.fixFor(item)?.text ?? ''}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}:${item.rewritten ? 'ai' : ''}`,
+        `${item.id}:${item.status}:${item.title}:${item.context ?? ''}:${model.fixFor(item)?.text ?? ''}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}:${item.rewritten ? 'ai' : ''}:${item.sources[0] === undefined ? '' : `${model.timeFor(item.sources[0].anchor)}:${model.myReactionFor(item.sources[0].anchor) ?? ''}`}`,
     ),
     hiddenCount: model.hiddenCount,
     pending: [...model.aiPending].sort(),
     tldr: model.meta.summary?.tldr ?? '',
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
-    folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}`),
+    folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     ring: model.checksRing?.outerHTML.length ?? 0,
