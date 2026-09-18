@@ -37,11 +37,20 @@ function stripIds(root: Element): void {
 }
 
 /** Show `nodes` inside `slot`. Returns whether every node kept its live controls. */
-export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): boolean {
+export interface TeleportOptions {
+  /**
+   * Move React-owned nodes too instead of cloning them. Safe only for a node whose
+   * siblings never change (React patches a moved node in place; it throws when it
+   * inserts a sibling relative to one that is no longer in its parent).
+   */
+  readonly live?: boolean;
+}
+
+export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[], options: TeleportOptions = {}): boolean {
   let live = true;
   for (const node of nodes) {
     if (moved.has(node) || node.parentElement === slot) continue;
-    if (isReactManaged(node)) {
+    if (!(options.live ?? false) && isReactManaged(node)) {
       const clone = cloneOf(node);
       clones.set(clone, { source: node, snapshot: node.innerHTML });
       slot.append(clone);
@@ -103,6 +112,19 @@ export function restoreAll(): void {
   moved.clear();
   for (const clone of clones.keys()) clone.remove();
   clones.clear();
+}
+
+/**
+ * Moved nodes whose home is inside `root` — a comment's header pieces worn by
+ * a panel row while the comment itself still stands in the timeline. The
+ * crawler reads them as if they had never left.
+ */
+export function wornPiecesOf(root: Element): readonly HTMLElement[] {
+  const pieces: HTMLElement[] = [];
+  for (const entry of moved.values()) {
+    if (entry.placeholder.parentNode !== null && root.contains(entry.placeholder)) pieces.push(entry.node);
+  }
+  return pieces;
 }
 
 export function teleportedNodes(): readonly HTMLElement[] {
