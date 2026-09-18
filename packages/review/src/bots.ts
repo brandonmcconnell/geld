@@ -17,9 +17,9 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'bugbot',
     title: 'Bugbot',
-    logins: ['cursor[bot]', 'cursor-bugs[bot]', 'bugbot[bot]'],
+    logins: ['cursor[bot]', 'cursor-bugs[bot]', 'bugbot[bot]', 'cursor-com[bot]'],
     checkNames: ['Cursor Bugbot', 'Bugbot'],
-    triggers: ['bugbot run', '@cursor bugbot'],
+    triggers: ['bugbot run', 'cursor review', '@cursor review'],
     configFiles: ['.cursor/BUGBOT.md'],
   },
   {
@@ -27,7 +27,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     title: 'Greptile',
     logins: ['greptile-apps[bot]', 'greptile[bot]'],
     checkNames: ['Greptile'],
-    triggers: ['@greptile'],
+    triggers: ['@greptileai', '@greptile', '@greptileai review'],
     configFiles: ['.greptile.yml', '.greptile.yaml'],
   },
   {
@@ -35,7 +35,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     title: 'Devin',
     logins: ['devin-ai-integration[bot]', 'devin[bot]'],
     checkNames: ['Devin'],
-    triggers: ['@devin'],
+    triggers: ['/devin review', '@devin review', '@devin'],
     configFiles: [],
   },
   {
@@ -43,7 +43,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     title: 'Codex',
     logins: ['chatgpt-codex-connector[bot]', 'openai-codex[bot]', 'codex[bot]'],
     checkNames: ['Codex'],
-    triggers: ['@codex'],
+    triggers: ['@codex review', '@codex'],
     configFiles: ['.codex/', 'AGENTS.md'],
   },
   {
@@ -59,7 +59,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     title: 'CodeRabbit',
     logins: ['coderabbitai[bot]'],
     checkNames: ['CodeRabbit'],
-    triggers: ['@coderabbitai review', '@coderabbitai'],
+    triggers: ['@coderabbitai review', '@coderabbitai full review', '@coderabbitai'],
     configFiles: ['.coderabbit.yaml', '.coderabbit.yml'],
   },
   {
@@ -224,4 +224,38 @@ export function verdictsFrom(
 export function rerunTriggerFor(botId: string): string | null {
   const bot = botById(botId);
   return bot?.triggers[0] ?? null;
+}
+
+/** The `/apps/<name>` slug GitHub links a bot's avatar and name to, for each login. */
+export function botByAppSlug(slug: string): ReviewBot | null {
+  return botByLogin(`${slug.toLowerCase()}[bot]`);
+}
+
+const GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
+
+/**
+ * A comment that only asks a bot to run ("@greptileai", "bugbot run",
+ * "/devin review"). Matched whole after trimming markdown noise, against
+ * every registered trigger and the generic "@handle verb" shape.
+ */
+export function isTriggerComment(body: string, extraLogins: readonly string[] = []): boolean {
+  const text = body
+    .replace(/[`*_~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!]+$/, '')
+    .toLowerCase();
+  if (text === '' || text.length > 60) return false;
+  for (const bot of REVIEW_BOTS) {
+    if (bot.triggers.some((trigger) => trigger.toLowerCase() === text)) return true;
+  }
+  for (const login of extraLogins) {
+    const handle = `@${login.replace(/\[bot\]$/i, '').toLowerCase()}`;
+    if (text === handle || text.startsWith(`${handle} `)) return GENERIC_TRIGGER.test(text);
+  }
+  if (!GENERIC_TRIGGER.test(text)) return false;
+  // A bare "@someone" is a mention, not a trigger, unless that someone is a known bot handle.
+  const handle = /^@([\w-]+)/.exec(text)?.[1];
+  if (handle === undefined) return true;
+  return REVIEW_BOTS.some((bot) => bot.triggers.some((trigger) => trigger.toLowerCase().startsWith(`@${handle}`)) || bot.logins.some((login) => login.toLowerCase().startsWith(handle)));
 }

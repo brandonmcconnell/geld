@@ -4,7 +4,48 @@
  */
 
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewItemStatus } from '@geld/review';
-import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
+import { botByAppSlug, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor } from '@geld/review';
+
+export interface InstalledBot {
+  readonly id: string;
+  readonly label: string;
+  readonly trigger: string;
+  readonly iconSrc: string | null;
+}
+
+/**
+ * Bots present on this pull request that a comment can re-run: every
+ * registered bot the page links to as `/apps/<slug>` (comments, the checks
+ * list, the reviewers box), plus those the payload knows from verdicts or
+ * item sources. Icons come from the page's own `<img>` next to that link.
+ */
+export function installedBots(meta: GeldPrMeta, doc: ParentNode): readonly InstalledBot[] {
+  const found = new Map<string, InstalledBot>();
+  const add = (id: string, login: string, iconSrc: string | null): void => {
+    const trigger = rerunTriggerFor(id);
+    if (trigger === null) return;
+    const existing = found.get(id);
+    if (existing !== undefined) {
+      if (existing.iconSrc === null && iconSrc !== null) found.set(id, { ...existing, iconSrc });
+      return;
+    }
+    found.set(id, { id, label: botTitle(id, login), trigger, iconSrc });
+  };
+  for (const link of doc.querySelectorAll<HTMLAnchorElement>('a[href^="/apps/"], a[href*="github.com/apps/"]')) {
+    const slug = /\/apps\/([\w.-]+)/.exec(link.getAttribute('href') ?? '')?.[1];
+    if (slug === undefined) continue;
+    const bot = botByAppSlug(slug);
+    if (bot === null) continue;
+    const img = link.querySelector('img') ?? link.parentElement?.querySelector('img') ?? link.closest('.TimelineItem, .js-timeline-item, li, tr')?.querySelector('img');
+    const src = img?.currentSrc || img?.getAttribute('src') || null;
+    add(bot.id, `${slug}[bot]`, src === '' ? null : src);
+  }
+  for (const bot of meta.bots) add(bot.id, bot.login, null);
+  for (const item of meta.items) {
+    for (const source of item.sources) if (source.bot !== undefined) add(source.bot, source.author, null);
+  }
+  return [...found.values()];
+}
 
 const ORDER: Readonly<Record<ReviewItemStatus, number>> = {
   'needs-reply': 0,

@@ -8,16 +8,16 @@
 import type { GeldSettings } from '@geld/core';
 import { repoFromPathname } from '@geld/core';
 import type { GeldPrMeta, ReviewItem } from '@geld/review';
-import { botTitle, clusterComments, isOpenStatus, rerunTriggerFor, verdictsFrom } from '@geld/review';
+import { clusterComments, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
 import { reviewNudgeDismissedItem } from '../../lib/local-state';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
-import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComment, tickSummaryCheckbox } from './actions';
+import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComments, tickSummaryCheckbox } from './actions';
 import { avatarSrcFor, avatarSrcOf } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
-import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, isFoldedNode, setFullTimeline } from './fold';
+import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { foldKey, itemKey, mountPanel, unmountPanel } from './panel';
@@ -25,7 +25,8 @@ import { digestMarkdown, itemMarkdown } from './panel-model';
 import type { MarkdownSubject } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
-import type { Avatar, FoldRow, GroupId, PanelModel, RequestableBot } from './panel';
+import type { Avatar, FoldRow, GroupId, PanelModel } from './panel';
+import { installedBots } from './panel-model';
 import type { QuickViewTarget } from './quick-view';
 import { renderQuickView } from './quick-view';
 import { restoreAll } from './teleport';
@@ -98,8 +99,12 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
     bots,
     reviewers: [],
     fold: {
-      // Bot run summaries and bot review bodies fold; review threads are items, never hidden.
-      comments: unique(crawled.comments.filter((entry) => entry.author.bot && entry.comment.kind !== 'thread').map((entry) => entry.comment.anchor)),
+      // Bot run summaries, bot review bodies and "@bot review" requests fold; review threads are items, never hidden.
+      comments: unique(
+        crawled.comments
+          .filter((entry) => entry.comment.kind !== 'thread' && (entry.author.bot || isTriggerComment(entry.comment.body, settings.reviewBots)))
+          .map((entry) => entry.comment.anchor),
+      ),
       events: crawled.events.map((event) => event.anchor),
     },
   };
@@ -107,9 +112,14 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
 
 function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled): readonly FoldGroup[] {
   if (settings.compactTimeline === 'off' || visit.fullTimeline) return [];
-  const botAnchors = new Set(meta.fold.comments);
+  const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
+  const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   const commentRefs = crawled.comments.map((entry) => ({ author: entry.comment.author, anchor: entry.comment.anchor, root: entry.root }));
-  const groups = [...groupBotRuns(commentRefs, botAnchors, crawled.events)];
+  const groups = [...groupBotRuns(commentRefs, botAnchors, [])];
+  const triggers = groupTriggers(commentRefs, triggerAnchors);
+  if (triggers !== null) groups.push(triggers);
+  const eventGroup = groupBotRuns([], new Set(), crawled.events);
+  groups.push(...eventGroup);
   if (settings.compactTimeline === 'minimal') {
     const doneAnchors = new Set(meta.items.filter((item) => !isOpenStatus(item.status)).flatMap((item) => item.sources.map((source) => source.anchor)));
     const humans = groupDoneHumans(commentRefs, doneAnchors);
@@ -159,23 +169,6 @@ function firstAnchorIn(node: HTMLElement | null): string | null {
   return node.querySelector('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"], [id^="event-"]')?.id ?? null;
 }
 
-/** Bots seen on this pull request that can be re-run with a comment trigger. */
-function requestableBots(meta: GeldPrMeta): readonly RequestableBot[] {
-  const bots: RequestableBot[] = [];
-  const seen = new Set<string>();
-  const candidates = [
-    ...meta.bots.map((bot) => ({ id: bot.id, login: bot.login })),
-    ...meta.items.flatMap((item) => item.sources.flatMap((source) => (source.bot === undefined ? [] : [{ id: source.bot, login: source.author }]))),
-  ];
-  for (const candidate of candidates) {
-    if (seen.has(candidate.id)) continue;
-    const trigger = rerunTriggerFor(candidate.id);
-    if (trigger === null) continue;
-    seen.add(candidate.id);
-    bots.push({ id: candidate.id, label: botTitle(candidate.id, candidate.login), trigger });
-  }
-  return bots;
-}
 
 function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: GeldPrMeta): { readonly meta: GeldPrMeta; readonly freshness: PanelModel['freshness'] } {
   if (found === null) return { meta: withAi(crawled), freshness: 'local' };
@@ -270,7 +263,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
     nudge: found === null && visit.nudgeDismissed[repo] !== true,
     viewingAnchor,
     folds: foldRows(groups),
-    requestable: requestableBots(meta),
+    requestable: installedBots(meta, document),
+    summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
@@ -332,9 +326,9 @@ export function applyReviewOverview(settings: GeldSettings): void {
       if (visit.openKey?.startsWith('fold:') === true) visit.openKey = null;
       reapply();
     },
-    onRequest: (botId) => {
-      const trigger = rerunTriggerFor(botId);
-      if (trigger !== null) postTopLevelComment(trigger);
+    onRequest: (botIds) => {
+      const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
+      void postTopLevelComments(triggers);
     },
     onDismissNudge: () => {
       visit.nudgeDismissed = { ...visit.nudgeDismissed, [repo]: true };

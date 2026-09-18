@@ -6,7 +6,7 @@
 
 import type { FixSource, ReviewItem, ReviewSeverity, ReviewSource, SourceKind } from './model';
 import { itemIdFor } from './model';
-import { looksLikeBotLogin, resolveBotId } from './bots';
+import { isTriggerComment, looksLikeBotLogin, resolveBotId } from './bots';
 
 export interface RawComment {
   readonly anchor: string;
@@ -220,10 +220,18 @@ export function isBotSummaryComment(comment: RawComment, extraLogins: readonly s
   return comment.kind !== 'thread' && (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author));
 }
 
+/**
+ * Review items are the resolvable things: review threads. Top-level
+ * comments and review bodies cannot be resolved on GitHub, so a "done"
+ * there would come straight back on reload; they stay in the timeline
+ * (or fold, for bots and review requests).
+ */
+export function isReviewItemComment(comment: RawComment, extraLogins: readonly string[] = []): boolean {
+  return comment.kind === 'thread' && comment.body.trim() !== '' && !isTriggerComment(comment.body, extraLogins);
+}
+
 export function clusterComments(comments: readonly RawComment[], extraLogins: readonly string[] = []): readonly ReviewItem[] {
-  const atoms = comments
-    .filter((comment) => comment.body.trim() !== '' && !isBotSummaryComment(comment, extraLogins))
-    .map((comment) => atomFrom(comment, extraLogins));
+  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
   const parent = atoms.map((_, index) => index);
   const find = (index: number): number => {
     const current = parent[index] ?? index;

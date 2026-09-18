@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clusterComments, firstSentence, guessSeverity, isBotOnly, suggestionOf } from './cluster';
+import { isTriggerComment } from './bots';
 import type { RawComment } from './cluster';
 
 function comment(overrides: Partial<RawComment> & Pick<RawComment, 'anchor' | 'author' | 'body'>): RawComment {
@@ -86,6 +87,26 @@ describe('clusterComments', () => {
     ]);
     expect(items).toHaveLength(1);
     expect(items[0]?.title).toBe('Null check missing in parseDiff.');
+  });
+
+  it('lists only review threads: top-level comments and trigger comments are not items', () => {
+    const items = clusterComments([
+      comment({ anchor: 'issuecomment-1', kind: 'comment', author: 'alice', body: 'Looks good overall, one question below.' }),
+      comment({ anchor: 'pullrequestreview-2', kind: 'review', author: 'alice', body: 'Requesting changes.' }),
+      comment({ anchor: 'discussion_r3', author: 'alice', body: '@greptileai', path: 'a.ts', line: 1 }),
+      comment({ anchor: 'discussion_r4', author: 'alice', body: 'Why is this optional?', path: 'a.ts', line: 9 }),
+    ]);
+    expect(items.map((item) => item.sources[0]?.anchor)).toEqual(['discussion_r4']);
+  });
+
+  it('recognises bot trigger comments', () => {
+    for (const body of ['@greptileai', 'bugbot run', 'Bugbot run.', '/devin review', '@cursor review', '@coderabbitai full review', '`@codex review`']) {
+      expect(isTriggerComment(body), body).toBe(true);
+    }
+    for (const body of ['@alice can you look?', 'Why drop the cache on rename?', '@greptileai said this was fine but I disagree', 'run']) {
+      expect(isTriggerComment(body), body).toBe(false);
+    }
+    expect(isTriggerComment('@acme-reviewer review', ['acme-reviewer[bot]'])).toBe(true);
   });
 
   it('marks resolved threads resolved', () => {

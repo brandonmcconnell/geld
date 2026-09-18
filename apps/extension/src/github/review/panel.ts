@@ -10,7 +10,7 @@
  */
 
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord } from '@geld/review';
-import { doneItemCount, isOpenStatus } from '@geld/review';
+import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import {
   ICON_CHECK,
@@ -27,6 +27,7 @@ import {
   ICON_X,
 } from '../ui/icons';
 import { authorLabels, isCurrent, splitItems, statusBadge, verdictLabel, verdictTone } from './panel-model';
+import type { InstalledBot } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import { restoreAll } from './teleport';
 
@@ -47,11 +48,6 @@ export interface FoldRow {
   readonly firstAnchor: string | null;
 }
 
-export interface RequestableBot {
-  readonly id: string;
-  readonly label: string;
-  readonly trigger: string;
-}
 
 export interface Avatar {
   readonly src: string;
@@ -70,7 +66,9 @@ export interface PanelModel {
   readonly nudge: boolean;
   readonly viewingAnchor: string | null;
   readonly folds: readonly FoldRow[];
-  readonly requestable: readonly RequestableBot[];
+  readonly requestable: readonly InstalledBot[];
+  /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
+  readonly summaryAnchorFor: (botId: string) => string | null;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
   readonly avatarsFor: (item: ReviewItem) => readonly Avatar[];
   /** Timeline nodes hidden by compaction (for the "show full timeline" row). */
@@ -93,7 +91,8 @@ export interface PanelHandlers {
   readonly onCopyItem: (itemId: string) => void;
   readonly onCopyFix: (itemId: string) => void;
   readonly onFullTimeline: () => void;
-  readonly onRequest: (botId: string) => void;
+  /** Post the trigger comment of each bot, in order. */
+  readonly onRequest: (botIds: readonly string[]) => void;
   readonly onDismissNudge: () => void;
 }
 
@@ -111,6 +110,29 @@ function icon(markup: string): SVGElement {
 
 function iconButton(markup: string, label: string, extra: Readonly<Record<string, string>> = {}): HTMLButtonElement {
   return createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon`, 'aria-label': label, title: label, ...extra }, [icon(markup)]);
+}
+
+/**
+ * The panel is rebuilt on every change, so the control the user just used
+ * is a new element. Each focusable control carries a stable key; after a
+ * rebuild focus returns to the same key (without scrolling). Besides being
+ * right for keyboard users, the focused element is the browser's preferred
+ * scroll anchor, which keeps the row under the pointer put while the
+ * content that opened under it settles.
+ */
+const ATTR_FOCUS = 'data-geld-focus';
+
+function focusKeyOf(root: Element | null): string | null {
+  if (root === null) return null;
+  const active = document.activeElement;
+  if (!(active instanceof Element) || !root.contains(active)) return null;
+  return active.closest(`[${ATTR_FOCUS}]`)?.getAttribute(ATTR_FOCUS) ?? null;
+}
+
+function restoreFocus(root: Element, key: string | null): void {
+  if (key === null) return;
+  const target = root.querySelector<HTMLElement>(`[${ATTR_FOCUS}="${key}"]`);
+  target?.focus({ preventScroll: true });
 }
 
 function avatarImg(entry: Avatar): HTMLElement {
@@ -144,9 +166,9 @@ interface MenuEntry {
   readonly onSelect?: () => void;
 }
 
-function menu(entries: readonly MenuEntry[]): HTMLElement {
+function menu(entries: readonly MenuEntry[], focusKey: string): HTMLElement {
   const details = createElement('details', { class: `${PANEL_CLASS}__menu` });
-  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon`, 'aria-label': 'More actions', title: 'More actions', role: 'button' }, [icon(ICON_KEBAB_HORIZONTAL)]);
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon`, 'aria-label': 'More actions', title: 'More actions', role: 'button', [ATTR_FOCUS]: `menu:${focusKey}` }, [icon(ICON_KEBAB_HORIZONTAL)]);
   summary.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' });
   for (const entry of entries) {
@@ -172,9 +194,11 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   const first = item.sources[0];
   const bot = first?.bot !== undefined || /\[bot\]$/i.test(first?.author ?? '');
 
-  const status = createElement('button', { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': done ? 'Reopen' : 'Mark done', title: done ? 'Reopen' : 'Mark done', 'aria-pressed': String(done) }, [
-    statusIcon(item),
-  ]);
+  const status = createElement(
+    'button',
+    { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': done ? 'Reopen' : 'Mark done', title: done ? 'Reopen' : 'Mark done', 'aria-pressed': String(done), [ATTR_FOCUS]: `status:${key}` },
+    [statusIcon(item)],
+  );
   status.addEventListener('click', (event) => {
     event.stopPropagation();
     handlers.onStatus(item.id, !done);
@@ -185,7 +209,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   detailBits.push(authorLabels(item).join(', '));
   if (item.sources.length > 1) detailBits.push(`${item.sources.length} comments`);
   const pending = model.aiPending.has(item.id);
-  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open) }, [
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${key}` }, [
     createElement('span', { class: `${PANEL_CLASS}__title`, ...(pending ? { 'data-pending': '', title: 'Geld is consolidating this item' } : {}) }, [item.title]),
     createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' — ')]),
   ]);
@@ -195,7 +219,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   if (item.rewritten) right.append(createElement('span', { class: `${PANEL_CLASS}__ai`, title: 'Title written by Geld from the sources' }, ['AI']));
   const badge = statusBadge(item.status);
   if (badge !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__pill`, 'data-badge': item.status }, [badge]));
-  const reply = iconButton(ICON_REPLY, 'Reply');
+  const reply = iconButton(ICON_REPLY, 'Reply', { [ATTR_FOCUS]: `reply:${key}` });
   reply.addEventListener('click', (event) => {
     event.stopPropagation();
     handlers.onReply(item.id);
@@ -212,7 +236,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     entries.push({ label: 'Show in timeline', href: `#${first.anchor}` });
     entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(first.anchor) });
   }
-  right.append(reply, menu(entries), chevron(open));
+  right.append(reply, menu(entries, key), chevron(open));
 
   const row = createElement(
     'li',
@@ -227,14 +251,14 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
 function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const key = foldKey(fold.key);
   const open = model.openKey === key;
-  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open) }, [
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${key}` }, [
     createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [fold.label]),
   ]);
   main.addEventListener('click', () => handlers.onToggle(key));
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
-    right.append(menu([{ label: 'Show in timeline', href: `#${anchor}` }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }]));
+    right.append(menu([{ label: 'Show in timeline', href: `#${anchor}` }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   }
   right.append(chevron(open));
   const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]);
@@ -251,9 +275,19 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
 /** Geld's own notes for an open item — merged context and the fix — above the moved comments. */
 function notesFor(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const fix = model.fixFor(item);
-  if (item.context === undefined && fix === null) return null;
+  const hasSummary = item.sources.some((source) => source.bot !== undefined && model.summaryAnchorFor(source.bot) !== null);
+  if (item.context === undefined && fix === null && !hasSummary) return null;
   const notes = createElement('div', { class: `${PANEL_CLASS}__notes` });
   if (item.context !== undefined) notes.append(createElement('p', { class: `${PANEL_CLASS}__context` }, [item.context]));
+  const summaryLinks: Node[] = [];
+  for (const botId of new Set(item.sources.flatMap((source) => (source.bot === undefined ? [] : [source.bot])))) {
+    const anchor = model.summaryAnchorFor(botId);
+    if (anchor === null) continue;
+    const label = botTitle(botId, item.sources.find((source) => source.bot === botId)?.author ?? botId);
+    if (summaryLinks.length > 0) summaryLinks.push(document.createTextNode(' · '));
+    summaryLinks.push(createElement('a', { class: `${PANEL_CLASS}__link`, href: `#${anchor}` }, [`${label}'s review summary`]));
+  }
+  if (summaryLinks.length > 0) notes.append(createElement('p', { class: `${PANEL_CLASS}__summaries` }, summaryLinks));
   if (fix !== null) {
     const head = createElement('div', { class: `${PANEL_CLASS}__fix-head` }, [
       createElement('span', {}, [fix.source === 'ai' ? 'Suggested fix (Geld)' : fix.source === 'bot' ? 'Suggested fix (bot)' : 'Suggested fix']),
@@ -273,7 +307,7 @@ function slotRow(key: string, notes: HTMLElement | null = null): HTMLElement {
 
 function groupHeading(id: GroupId, label: string, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const collapsed = model.collapsedGroups.has(id);
-  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__group-btn`, 'aria-expanded': String(!collapsed) }, [
+  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__group-btn`, 'aria-expanded': String(!collapsed), [ATTR_FOCUS]: `group:${id}` }, [
     createElement('span', {}, [label]),
     icon(ICON_CHEVRON_DOWN),
   ]);
@@ -299,7 +333,7 @@ function verdictChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHa
   const request = model.requestable.find((entry) => entry.id === bot.id);
   if (request !== undefined) {
     const rerun = createElement('button', { type: 'button', class: `${PANEL_CLASS}__chip-link`, 'aria-label': `Re-run ${request.label}`, title: `Re-run: posts “${request.trigger}”` }, [icon(ICON_SYNC)]);
-    rerun.addEventListener('click', () => handlers.onRequest(bot.id));
+    rerun.addEventListener('click', () => handlers.onRequest([bot.id]));
     chip.append(rerun);
   }
   return chip;
@@ -316,32 +350,49 @@ function reviewerChip(reviewer: ReviewerRecord): HTMLElement {
   ]);
 }
 
+/** A bot button: its own icon (rounded square, like GitHub draws Apps) inside an outlined pill of the same corner family. */
+function requestButton(label: string, iconSrc: string | null, prompt: string, ids: readonly string[], handlers: PanelHandlers): HTMLElement {
+  const holder = createElement('span', { class: `${PANEL_CLASS}__request-bot` });
+  const ask = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot-btn`, title: prompt, [ATTR_FOCUS]: `request:${ids.join(',')}` });
+  if (iconSrc !== null) ask.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
+  ask.append(createElement('span', {}, [label]));
+  const confirm = createElement('span', { class: `${PANEL_CLASS}__confirm`, hidden: '' }, [createElement('span', {}, [prompt])]);
+  const yes = iconButton(ICON_CHECK, 'Post it');
+  const no = iconButton(ICON_X, 'Cancel');
+  confirm.append(yes, no);
+  ask.addEventListener('click', () => {
+    ask.hidden = true;
+    confirm.hidden = false;
+    yes.focus({ preventScroll: true });
+  });
+  no.addEventListener('click', () => {
+    confirm.hidden = true;
+    ask.hidden = false;
+    ask.focus({ preventScroll: true });
+  });
+  yes.addEventListener('click', () => {
+    confirm.hidden = true;
+    ask.hidden = false;
+    handlers.onRequest(ids);
+  });
+  holder.append(ask, confirm);
+  return holder;
+}
+
 function requestRow(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (model.requestable.length === 0) return null;
   const row = createElement('div', { class: `${PANEL_CLASS}__request` }, [createElement('span', { class: `${PANEL_CLASS}__request-label` }, ['Request a review'])]);
-  for (const bot of model.requestable) {
-    const holder = createElement('span', { class: `${PANEL_CLASS}__request-bot` });
-    const ask = createElement('button', { type: 'button', class: `${PANEL_CLASS}__button`, title: `Posts “${bot.trigger}” as a comment` }, [bot.label]);
-    const confirm = createElement('span', { class: `${PANEL_CLASS}__confirm`, hidden: '' }, [createElement('span', {}, [`Post “${bot.trigger}”?`])]);
-    const yes = iconButton(ICON_CHECK, 'Post it');
-    const no = iconButton(ICON_X, 'Cancel');
-    confirm.append(yes, no);
-    ask.addEventListener('click', () => {
-      ask.hidden = true;
-      confirm.hidden = false;
-      yes.focus({ preventScroll: true });
-    });
-    no.addEventListener('click', () => {
-      confirm.hidden = true;
-      ask.hidden = false;
-    });
-    yes.addEventListener('click', () => {
-      confirm.hidden = true;
-      ask.hidden = false;
-      handlers.onRequest(bot.id);
-    });
-    holder.append(ask, confirm);
-    row.append(holder);
+  for (const bot of model.requestable) row.append(requestButton(bot.label, bot.iconSrc, `Post “${bot.trigger}”?`, [bot.id], handlers));
+  if (model.requestable.length > 1) {
+    row.append(
+      requestButton(
+        'All',
+        null,
+        `Post ${model.requestable.length} comments: ${model.requestable.map((bot) => `“${bot.trigger}”`).join(', ')}?`,
+        model.requestable.map((bot) => bot.id),
+        handlers,
+      ),
+    );
   }
   return row;
 }
@@ -368,7 +419,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.reviewedSha}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}`),
-    requestable: model.requestable.map((bot) => bot.id),
+    requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
   });
 }
 
@@ -401,6 +452,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   const card = descriptionCard();
   if (card === null) return null;
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
+  const focusKey = focusKeyOf(existing);
   restoreAll();
   existing?.remove();
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
@@ -497,7 +549,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   if (footerBits.length > 0) panel.append(createElement('div', { class: `${PANEL_CLASS}__foot` }, footerBits));
   if (model.compacting && (model.hiddenCount > 0 || model.fullTimeline)) {
     // The one control for the timeline itself, shaped like GitHub's own "N hidden items · Load more" bar.
-    const toggle = createElement('button', { type: 'button', class: `${PANEL_CLASS}__timeline-btn`, 'aria-pressed': String(model.fullTimeline) }, [
+    const toggle = createElement('button', { type: 'button', class: `${PANEL_CLASS}__timeline-btn`, 'aria-pressed': String(model.fullTimeline), [ATTR_FOCUS]: 'timeline' }, [
       model.fullTimeline ? 'Compact timeline' : `Show ${plural(model.hiddenCount, 'hidden item')} in the timeline`,
     ]);
     toggle.addEventListener('click', () => handlers.onFullTimeline());
@@ -509,6 +561,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   panel.style.marginLeft = cardStyle.marginLeft;
   panel.style.marginRight = cardStyle.marginRight;
   card.insertAdjacentElement('afterend', panel);
+  restoreFocus(panel, focusKey);
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
 }
 

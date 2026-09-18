@@ -5,7 +5,7 @@
 
 import type { AddressedEvidence, GeldPrMeta, ProducerRecord, ReviewItem, ReviewSummary, ReviewerRecord, ReviewerState } from './model';
 import { META_VERSION, PAYLOAD_BUDGET, STATUS_RANK, truncateMeta } from './model';
-import { looksLikeBotLogin, resolveBotId, verdictsFrom } from './bots';
+import { isTriggerComment, looksLikeBotLogin, resolveBotId, verdictsFrom } from './bots';
 import type { RawCheckRun } from './bots';
 import type { RawComment } from './cluster';
 import { clusterComments, isBotOnly } from './cluster';
@@ -163,7 +163,7 @@ function foldOf(pr: RawPullRequest, extraLogins: readonly string[]): { comments:
   const comments: string[] = [];
   for (const comment of pr.comments) {
     if (looksLikeSummaryBody(comment.body)) continue;
-    if (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author)) {
+    if (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author) || isTriggerComment(comment.body, extraLogins)) {
       comments.push(`issuecomment-${comment.databaseId}`);
     }
   }
