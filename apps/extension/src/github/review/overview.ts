@@ -12,7 +12,7 @@ import { botTitle, clusterComments, isOpenStatus, rerunTriggerFor, verdictsFrom 
 import { reviewNudgeDismissedItem } from '../../lib/local-state';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
-import { clickResolve, copyText, focusReply, postTopLevelComment, tickSummaryCheckbox, timelineRootOf } from './actions';
+import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComment, tickSummaryCheckbox } from './actions';
 import { cachedRewrite, maybeRewriteBotTitles } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
@@ -20,8 +20,10 @@ import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, setFull
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { digestText, foldKey, itemKey, mountPanel, unmountPanel } from './panel';
-import type { FoldRow, PanelModel, RequestableBot } from './panel';
-import { restoreAll, teleportInto } from './teleport';
+import type { FoldRow, GroupId, PanelModel, RequestableBot } from './panel';
+import type { QuickViewTarget } from './quick-view';
+import { renderQuickView } from './quick-view';
+import { restoreAll } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -31,7 +33,7 @@ const MAX_LOAD_MORE = 8;
 interface VisitState {
   fullTimeline: boolean;
   openKey: string | null;
-  showDone: boolean;
+  collapsedGroups: Set<GroupId>;
   nudgeDismissed: Record<string, boolean>;
   rewriteStarted: boolean;
   pageKey: string;
@@ -42,7 +44,7 @@ interface VisitState {
 const visit: VisitState = {
   fullTimeline: false,
   openKey: null,
-  showDone: false,
+  collapsedGroups: new Set<GroupId>(['done']),
   nudgeDismissed: {},
   rewriteStarted: false,
   pageKey: '',
@@ -138,7 +140,14 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
     label: group.label,
     count: group.nodes.length,
     avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
+    firstAnchor: firstAnchorIn(group.nodes[0] ?? null),
   }));
+}
+
+function firstAnchorIn(node: HTMLElement | null): string | null {
+  if (node === null) return null;
+  if (node.id !== '') return node.id;
+  return node.querySelector('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"], [id^="event-"]')?.id ?? null;
 }
 
 /** Bots seen on this pull request that can be re-run with a comment trigger. */
@@ -184,17 +193,21 @@ function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: Geld
   return { meta: withCachedTitles(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
 }
 
-/** Timeline nodes an open row brings into its slot. */
-function nodesForKey(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
-  if (key.startsWith('fold:')) return groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
-  const item = meta.items.find((entry) => itemKey(entry.id) === key);
-  if (item === undefined) return [];
-  const roots: HTMLElement[] = [];
-  for (const source of item.sources) {
-    const root = timelineRootOf(source.anchor);
-    if (root !== null && !roots.includes(root)) roots.push(root);
+/** What an open row shows in its slot: the item's comments, or a fold's nodes. */
+function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): QuickViewTarget | null {
+  if (key.startsWith('fold:')) {
+    const nodes = groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
+    return nodes.length === 0 ? null : { kind: 'nodes', nodes };
   }
-  return roots;
+  const item = meta.items.find((entry) => itemKey(entry.id) === key);
+  if (item === undefined) return null;
+  const anchors = item.sources.map((source) => source.anchor).filter((anchor) => document.getElementById(anchor) !== null);
+  return anchors.length === 0 ? null : { kind: 'comments', anchors };
+}
+
+function itemResolvable(item: ReviewItem): boolean {
+  const thread = item.sources.find((source) => source.kind === 'thread');
+  return thread !== undefined && isResolvable(thread.anchor);
 }
 
 function firstThreadAnchor(item: ReviewItem): string | null {
@@ -212,7 +225,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.pageKey = page.stateKey;
     visit.generatedAt = new Date().toISOString();
     visit.openKey = null;
-    visit.showDone = false;
+    visit.collapsedGroups = new Set<GroupId>(['done']);
     visit.fullTimeline = false;
     visit.rewriteStarted = false;
     visit.loadMoreTries = 0;
@@ -245,7 +258,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     freshness: composed.freshness,
     truncated: meta.truncated === true,
     openKey: visit.openKey,
-    showDone: visit.showDone,
+    collapsedGroups: visit.collapsedGroups,
     fullTimeline: visit.fullTimeline,
     compacting,
     nudge: found === null && visit.nudgeDismissed[repo] !== true,
@@ -253,12 +266,24 @@ export function applyReviewOverview(settings: GeldSettings): void {
     folds: foldRows(groups),
     requestable: requestableBots(meta),
     avatarsFor,
+    resolvable: itemResolvable,
   };
   const reapply = (): void => applyReviewOverview(settings);
   const mounted = mountPanel(model, {
     onToggle: (key) => {
       visit.openKey = visit.openKey === key ? null : key;
       reapply();
+    },
+    onToggleGroup: (group) => {
+      if (visit.collapsedGroups.has(group)) visit.collapsedGroups.delete(group);
+      else visit.collapsedGroups.add(group);
+      if (visit.openKey !== null && ((group === 'hidden' && visit.openKey.startsWith('fold:')) || (group !== 'hidden' && visit.openKey.startsWith('item:')))) {
+        visit.openKey = null;
+      }
+      reapply();
+    },
+    onCopyLink: (anchor) => {
+      void copyText(`${location.origin}${location.pathname}#${anchor}`);
     },
     onStatus: (id, done) => {
       const item = meta.items.find((entry) => entry.id === id);
@@ -289,10 +314,6 @@ export function applyReviewOverview(settings: GeldSettings): void {
       if (visit.openKey?.startsWith('fold:') === true) visit.openKey = null;
       reapply();
     },
-    onToggleDone: () => {
-      visit.showDone = !visit.showDone;
-      reapply();
-    },
     onRequest: (botId) => {
       const trigger = rerunTriggerFor(botId);
       if (trigger !== null) postTopLevelComment(trigger);
@@ -305,12 +326,12 @@ export function applyReviewOverview(settings: GeldSettings): void {
   });
 
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
-    const nodes = nodesForKey(visit.openKey, meta, groups);
-    if (nodes.length === 0) {
+    const target = quickViewFor(visit.openKey, meta, groups);
+    if (target === null) {
       visit.openKey = null;
       restoreAll();
-    } else {
-      teleportInto(mounted.slot, nodes);
+    } else if (mounted.slot.childElementCount === 0) {
+      renderQuickView(mounted.slot, target);
     }
   } else {
     restoreAll();
