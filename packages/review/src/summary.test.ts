@@ -56,6 +56,20 @@ function fixturePr(): RawPullRequest {
           },
         ],
       },
+      {
+        path: 'src/util.ts',
+        line: 7,
+        isResolved: false,
+        isOutdated: false,
+        comments: [
+          {
+            databaseId: 6,
+            author: 'devin-ai-integration[bot]',
+            body: 'Unused import left behind.',
+            createdAt: '2026-09-18T10:05:00.000Z',
+          },
+        ],
+      },
     ],
     comments: [
       {

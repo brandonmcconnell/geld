@@ -32,7 +32,7 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
-import { applyReviewOverview, onReviewHashChange, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
@@ -320,6 +320,8 @@ export class GeldController {
     document.addEventListener('mousedown', this.onUserClick, true);
     document.addEventListener('keydown', this.onUserKey, true);
     window.addEventListener('hashchange', this.onHashChange);
+    // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
+    document.addEventListener('beforematch', this.onBeforeMatch, true);
     this.apply();
   }
 
@@ -331,6 +333,7 @@ export class GeldController {
     document.removeEventListener('mousedown', this.onUserClick, true);
     document.removeEventListener('keydown', this.onUserKey, true);
     window.removeEventListener('hashchange', this.onHashChange);
+    document.removeEventListener('beforematch', this.onBeforeMatch, true);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -1200,6 +1203,10 @@ export class GeldController {
 
   private readonly onHashChange = (): void => {
     onReviewHashChange(this.settings);
+  };
+
+  private readonly onBeforeMatch = (event: Event): void => {
+    onReviewBeforeMatch(event, this.settings);
   };
 
   private teardown(): void {

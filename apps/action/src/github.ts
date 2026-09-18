@@ -64,17 +64,17 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
           path
           line
           comments(first: 50) {
-            nodes { databaseId author { login } body createdAt }
+            nodes { databaseId author { login __typename } body createdAt }
           }
         }
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login } body createdAt }
+        nodes { databaseId author { login __typename } body createdAt }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login } state body submittedAt commit { oid } }
+        nodes { databaseId author { login __typename } state body submittedAt commit { oid } }
       }
       commits(last: 1) {
         nodes {
@@ -104,6 +104,7 @@ interface PageInfo {
 
 interface GqlAuthor {
   readonly login: string | null;
+  readonly __typename?: string;
 }
 
 interface GqlThread {
@@ -157,8 +158,10 @@ interface GqlPr {
   };
 }
 
+/** GraphQL names an App `cursor` with `__typename: Bot`; REST, the page and the extension know it as `cursor[bot]`. */
 function loginOf(author: GqlAuthor | null): string {
-  return author?.login ?? 'ghost';
+  const login = author?.login ?? 'ghost';
+  return author?.__typename === 'Bot' && !/\[bot\]$/i.test(login) ? `${login}[bot]` : login;
 }
 
 export async function loadPullRequest(client: GithubClient, owner: string, repo: string, number: number): Promise<RawPullRequest> {

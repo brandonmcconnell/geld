@@ -69,6 +69,25 @@ describe('clusterComments', () => {
     expect(suggestionOf(body)).toBe('const x = 1;');
   });
 
+  it('titles a bot-led thread by the bot concern, not the human reply, and skips bot run summaries', () => {
+    const items = clusterComments([
+      comment({
+        anchor: 'discussion_r30',
+        author: 'cursor[bot]',
+        body: 'Null check missing in parseDiff.',
+        path: 'src/diff.ts',
+        line: 42,
+        threadAnchors: [
+          { anchor: 'discussion_r30', kind: 'thread', author: 'cursor[bot]', body: 'Null check missing in parseDiff.' },
+          { anchor: 'discussion_r31', kind: 'thread', author: 'alice', body: 'Will fix.' },
+        ],
+      }),
+      comment({ anchor: 'issuecomment-88', kind: 'comment', author: 'greptile-apps[bot]', body: 'Greptile Summary\nScore 4/5.' }),
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe('Null check missing in parseDiff.');
+  });
+
   it('marks resolved threads resolved', () => {
     const items = clusterComments([
       comment({ anchor: 'discussion_r3', author: 'alice', body: 'Fixed.', isResolved: true }),

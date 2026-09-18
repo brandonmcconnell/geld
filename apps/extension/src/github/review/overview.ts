@@ -13,14 +13,15 @@ import { reviewNudgeDismissedItem } from '../../lib/local-state';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, postTopLevelComment, tickSummaryCheckbox } from './actions';
+import { avatarSrcFor, avatarSrcOf } from './crawler';
 import { cachedRewrite, maybeRewriteBotTitles } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
-import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, setFullTimeline } from './fold';
+import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { digestText, foldKey, itemKey, mountPanel, unmountPanel } from './panel';
-import type { FoldRow, GroupId, PanelModel, RequestableBot } from './panel';
+import type { Avatar, FoldRow, GroupId, PanelModel, RequestableBot } from './panel';
 import type { QuickViewTarget } from './quick-view';
 import { renderQuickView } from './quick-view';
 import { restoreAll } from './teleport';
@@ -39,6 +40,10 @@ interface VisitState {
   pageKey: string;
   generatedAt: string;
   loadMoreTries: number;
+  /** Folds revealed in place for this visit (find-in-page hit one of their nodes). */
+  revealedFolds: Set<string>;
+  /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
+  manualDone: Set<string>;
 }
 
 const visit: VisitState = {
@@ -50,6 +55,8 @@ const visit: VisitState = {
   pageKey: '',
   generatedAt: '',
   loadMoreTries: 0,
+  revealedFolds: new Set(),
+  manualDone: new Set(),
 };
 
 void reviewNudgeDismissedItem.getValue().then((value) => {
@@ -87,7 +94,8 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
     bots,
     reviewers: [],
     fold: {
-      comments: unique(crawled.comments.filter((entry) => entry.comment.author.endsWith('[bot]')).map((entry) => entry.comment.anchor)),
+      // Bot run summaries and bot review bodies fold; review threads are items, never hidden.
+      comments: unique(crawled.comments.filter((entry) => entry.author.bot && entry.comment.kind !== 'thread').map((entry) => entry.comment.anchor)),
       events: crawled.events.map((event) => event.anchor),
     },
   };
@@ -112,26 +120,23 @@ function groupContaining(groups: readonly FoldGroup[], anchor: string): FoldGrou
   return groups.find((group) => group.nodes.some((node) => node === target || node.contains(target))) ?? null;
 }
 
-function avatarSrcOf(root: Element | null): string | null {
-  if (root === null) return null;
-  const img = root.querySelector<HTMLImageElement>('img.avatar, img[data-testid="github-avatar"], img[class*="avatar" i], a[data-hovercard-type] img');
-  const src = img?.currentSrc || img?.getAttribute('src') || null;
-  return src === null || src === '' ? null : src;
-}
-
-function avatarsFor(item: ReviewItem): readonly string[] {
+function avatarsFor(item: ReviewItem): readonly Avatar[] {
   const seen = new Set<string>();
-  const srcs: string[] = [];
+  const avatars: Avatar[] = [];
   for (const source of item.sources) {
     if (seen.has(source.author)) continue;
-    const node = document.getElementById(source.anchor);
-    const src = avatarSrcOf(node);
+    const src = avatarSrcFor(source.anchor);
     if (src === null) continue;
     seen.add(source.author);
-    srcs.push(src);
-    if (srcs.length === 2) break;
+    avatars.push({ src, bot: source.bot !== undefined || /\[bot\]$/i.test(source.author) });
+    if (avatars.length === 2) break;
   }
-  return srcs;
+  return avatars;
+}
+
+function withManualDone(meta: GeldPrMeta): GeldPrMeta {
+  if (visit.manualDone.size === 0) return meta;
+  return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
 }
 
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
@@ -229,6 +234,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.fullTimeline = false;
     visit.rewriteStarted = false;
     visit.loadMoreTries = 0;
+    visit.revealedFolds = new Set();
+    visit.manualDone = new Set();
   }
   const crawledDom = crawlConversation();
   const found = findSummaryComment(document);
@@ -236,7 +243,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const headSha = detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA;
   const crawled = buildFromComments(crawledDom, settings, headSha, visit.generatedAt);
   const composed = composeMeta(found, crawled);
-  const meta = composed.meta;
+  const meta = withManualDone(composed.meta);
 
   const viewingAnchor = sourceAnchorFromHash(location.hash);
   if (viewingAnchor !== null && document.getElementById(viewingAnchor) === null && visit.loadMoreTries < MAX_LOAD_MORE) {
@@ -245,7 +252,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const groups = foldGroups(meta, settings, crawledDom);
   // A permalinked comment stays where the browser scrolled to: its fold is
   // revealed in place rather than pulled up into the panel.
-  const revealed = new Set<string>();
+  const revealed = new Set<string>(visit.revealedFolds);
   if (viewingAnchor !== null) {
     const group = groupContaining(groups, viewingAnchor);
     if (group !== null) revealed.add(group.key);
@@ -267,6 +274,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     requestable: requestableBots(meta),
     avatarsFor,
     resolvable: itemResolvable,
+    hiddenCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
   };
   const reapply = (): void => applyReviewOverview(settings);
   const mounted = mountPanel(model, {
@@ -288,15 +296,15 @@ export function applyReviewOverview(settings: GeldSettings): void {
     onStatus: (id, done) => {
       const item = meta.items.find((entry) => entry.id === id);
       if (item === undefined) return;
+      // GitHub's own control first (Resolve carries every side effect the site has),
+      // then the summary's task-list checkbox (the Action records done-manual), and
+      // as a last resort this visit's own memory so the row still answers.
       const thread = item.sources.find((source) => source.kind === 'thread');
-      const resolvedByGitHub = thread !== undefined && clickResolve(thread.anchor);
-      if (!resolvedByGitHub && found !== null) {
-        tickSummaryCheckbox(
-          found.root,
-          item.sources.map((source) => source.anchor),
-          done,
-        );
-      }
+      if (thread !== undefined && clickResolve(thread.anchor)) return;
+      if (found !== null && tickSummaryCheckbox(found.root, item.sources.map((source) => source.anchor), done)) return;
+      if (done) visit.manualDone.add(id);
+      else visit.manualDone.delete(id);
+      reapply();
     },
     onReply: (id) => {
       const item = meta.items.find((entry) => entry.id === id);
@@ -348,6 +356,27 @@ export function applyReviewOverview(settings: GeldSettings): void {
   }
 }
 
+/**
+ * Find-in-page matched inside a folded node (`hidden="until-found"`): the
+ * browser has already dropped the attribute; keep that fold revealed so the
+ * next pass does not hide the match again.
+ */
+export function onReviewBeforeMatch(event: Event, settings: GeldSettings): void {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const node = target.closest('[data-geld-folded]');
+  if (node === null || !isFoldedNode(node)) return;
+  const page = describePage(new URL(window.location.href));
+  if (page.kind !== 'pull-conversation') return;
+  const crawledDom = crawlConversation();
+  const headSha = detectHeadSha() ?? ZERO_SHA;
+  const meta = buildFromComments(crawledDom, settings, headSha, visit.generatedAt);
+  for (const group of foldGroups(meta, settings, crawledDom)) {
+    if (group.nodes.some((candidate) => candidate === node || candidate.contains(node))) visit.revealedFolds.add(group.key);
+  }
+  applyReviewOverview(settings);
+}
+
 export function teardownReviewOverview(): void {
   unmountPanel();
   hideSummary(null);
@@ -357,6 +386,7 @@ export function teardownReviewOverview(): void {
   visit.rewriteStarted = false;
   visit.openKey = null;
   visit.pageKey = '';
+  visit.revealedFolds = new Set();
 }
 
 export function onReviewHashChange(settings: GeldSettings): void {
