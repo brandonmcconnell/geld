@@ -1,10 +1,18 @@
 /**
  * Panel actions that talk to GitHub's own controls: tick a task-list
- * checkbox on the (hidden) summary comment, focus a reply box, click
- * Resolve, or post a re-run trigger as a top-level comment.
+ * checkbox on the (hidden) summary comment, open a thread's reply box,
+ * click Resolve, or post a review-request trigger as a top-level comment.
+ * None of these scroll the page; focus is taken with `preventScroll`.
  */
 
-import { rerunTriggerFor } from '@geld/review';
+const TIMELINE_ROOT = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], .js-comment-container';
+
+export function timelineRootOf(anchor: string): HTMLElement | null {
+  const node = document.getElementById(anchor);
+  if (node === null) return null;
+  const root = node.closest(TIMELINE_ROOT);
+  return root instanceof HTMLElement ? root : node;
+}
 
 export function tickSummaryCheckbox(commentRoot: HTMLElement, itemAnchors: readonly string[], checked: boolean): boolean {
   const items = commentRoot.querySelectorAll<HTMLInputElement>('input.task-list-item-checkbox, input[type="checkbox"]');
@@ -23,24 +31,32 @@ export function tickSummaryCheckbox(commentRoot: HTMLElement, itemAnchors: reado
   return false;
 }
 
+/** Open the reply box of the thread that holds `anchor` and focus it without scrolling. */
 export function focusReply(anchor: string): boolean {
-  const node = document.getElementById(anchor);
-  if (node === null) return false;
-  const reply =
-    node.querySelector<HTMLElement>('button.js-comment-quote-reply, button[data-testid="comment-reply"]') ??
-    node.parentElement?.querySelector<HTMLElement>('button.js-add-inline-comment-reply');
-  reply?.click();
-  const box = document.querySelector<HTMLTextAreaElement>('textarea#new_comment_field, textarea[name="comment[body]"], textarea[aria-label*="comment" i]');
-  box?.focus();
-  return true;
+  const root = timelineRootOf(anchor);
+  if (root === null) return false;
+  const opener = root.querySelector<HTMLElement>(
+    '.review-thread-reply-button, button.js-inline-comment-form-reply, button[data-testid="comment-reply"], .js-comment-quote-reply, button[aria-label^="Reply" i]',
+  );
+  opener?.click();
+  const focusBox = (): boolean => {
+    const box = root.querySelector<HTMLTextAreaElement>('textarea');
+    if (box === null) return false;
+    box.focus({ preventScroll: true });
+    return true;
+  };
+  if (focusBox()) return true;
+  window.setTimeout(focusBox, 150);
+  return opener !== null;
 }
 
 export function clickResolve(anchor: string): boolean {
-  const node = document.getElementById(anchor);
-  if (node === null) return false;
-  const thread = node.closest('.js-resolvable-timeline-thread-container, [data-testid="review-thread"]');
-  const button = thread?.querySelector<HTMLButtonElement>('button[data-resolved-text], button[aria-label*="esolve" i], form.js-resolvable-toggler button');
-  if (button === undefined || button === null) return false;
+  const root = timelineRootOf(anchor);
+  if (root === null) return false;
+  const button = root.querySelector<HTMLButtonElement>(
+    'button[data-resolved-text], form.js-resolvable-toggler button, button[aria-label*="esolve conversation" i], button[name="resolve"]',
+  );
+  if (button === null) return false;
   button.click();
   return true;
 }
@@ -64,18 +80,11 @@ export function postTopLevelComment(body: string): boolean {
     document.querySelector<HTMLTextAreaElement>('textarea[name="comment[body]"]') ??
     document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="comment" i]');
   if (field === null) return false;
-  field.focus();
+  field.focus({ preventScroll: true });
   field.value = body;
   field.dispatchEvent(new Event('input', { bubbles: true }));
   const form = field.closest('form');
   const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
   submit?.click();
   return submit !== undefined && submit !== null;
-}
-
-export function confirmRerun(botId: string): boolean {
-  const trigger = rerunTriggerFor(botId);
-  if (trigger === null) return false;
-  if (!window.confirm(`Post “${trigger}” as a comment to re-run this bot?`)) return false;
-  return postTopLevelComment(trigger);
 }
