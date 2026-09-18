@@ -100,6 +100,15 @@ describe('normalizeSettings', () => {
   it('parses textarea lists', () => {
     expect(parsePatternList(' a \n\n# c\n b ')).toEqual(['a', 'b']);
   });
+
+  it('reads review conversation settings', () => {
+    expect(normalizeSettings({ compactTimeline: 'minimal', prOverview: false, reviewBots: ['acme[bot]'] })).toEqual({
+      ...DEFAULT_SETTINGS,
+      compactTimeline: 'minimal',
+      prOverview: false,
+      reviewBots: ['acme[bot]'],
+    });
+  });
 });
 
 describe('normalizeHost', () => {

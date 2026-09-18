@@ -1,0 +1,35 @@
+name: 'Geld PR summary'
+description: 'Maintains one Geld review-summary comment on a pull request. Never checks out pull request code.'
+author: Geld
+branding:
+  icon: eye
+  color: gray-dark
+inputs:
+  github-token:
+    description: Token used to read the pull request and upsert the comment.
+    required: false
+    default: ${{ github.token }}
+  ai-key:
+    description: Optional OpenAI-compatible API key. When set, bot-only item titles are rewritten.
+    required: false
+  ai-base-url:
+    description: OpenAI-compatible API base URL (no trailing slash needed).
+    required: false
+    default: https://api.openai.com
+  model:
+    description: Model id when AI is on.
+    required: false
+  extra-bots:
+    description: Extra bot logins to treat as review bots, comma-separated.
+    required: false
+  max-items:
+    description: Soft cap on items kept in the payload (open first).
+    required: false
+    default: '80'
+  debounce-seconds:
+    description: Wait this long before running so a burst of bot comments becomes one rewrite.
+    required: false
+    default: '15'
+runs:
+  using: node20
+  main: dist/index.js

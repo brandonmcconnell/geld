@@ -1,0 +1,24 @@
+{
+  "name": "@geld/review",
+  "version": "0.1.0",
+  "description": "Framework-free PR review summary: payload contract, clustering, comment render/parse, bot registry. Shared by the Geld Action and the extension.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}

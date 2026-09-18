@@ -19,7 +19,7 @@ import { KEYBOARD_SHORTCUT } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'How it works',
-  description: 'What Geld changes on GitHub: hidden files, honest header counts, a file-tree accordion, PR list stats, categories, repository rules and custom patterns.',
+  description: 'What Geld changes on GitHub: hidden files, honest header counts, a file-tree accordion, PR list stats, a conversation-tab review digest, categories, repository rules and custom patterns.',
   alternates: { canonical: '/how-it-works' },
 };
 
@@ -42,6 +42,7 @@ const STEPS: readonly Step[] = [
   { id: 'repo-config', title: 'Repository configs', short: 'Repository configs' },
   { id: 'whitespace', title: 'Hide whitespace', short: 'Hide whitespace' },
   { id: 'shortcut', title: 'Keyboard shortcut', short: 'Keyboard shortcut' },
+  { id: 'summary', title: 'A review digest on the conversation tab', short: 'Review digest' },
   { id: 'enterprise', title: 'GitHub Enterprise Server', short: 'Enterprise Server' },
 ];
 
@@ -56,7 +57,7 @@ export default function HowItWorksPage() {
       <PageIntro
         eyebrow="How it works"
         title="Everything Geld changes on GitHub, and nothing it doesn't."
-        description="Geld only ever inspects file paths. It never reads file contents, never moves GitHub's DOM around, and can be switched off per repository or organisation."
+        description="On diffs Geld only inspects file paths, never file contents. It never moves GitHub's DOM around, and can be switched off per repository or organisation."
       />
 
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
@@ -351,7 +352,27 @@ customCategories:
             </Prose>
           </Step>
 
-          <Step id="enterprise" index={11} title={STEPS[10]?.title ?? ''}>
+          <Step id="summary" index={11} title={STEPS[10]?.title ?? ''}>
+            <Prose>
+              <p>
+                On a pull request&apos;s conversation tab Geld pins a <strong>review digest</strong> under the description: open findings, bot
+                verdicts (Bugbot, Greptile, Copilot, …) and who has approved. The digest is one comment maintained by the{' '}
+                <Link href="https://github.com/brandonmcconnell/geld/blob/main/apps/action/examples/geld.yml">Geld GitHub Action</Link> — it edits
+                that comment, never posts a second — so the numbers are ready before anyone opens the page. Copy{' '}
+                <code>apps/action/examples/geld.yml</code> into <code>.github/workflows/geld.yml</code>. The workflow uses{' '}
+                <code>pull_request_target</code> and never checks out pull request code.
+              </p>
+              <p>
+                Without the Action the extension builds the same panel from the timeline. With it, a collapsed <code>geld</code> code block in the
+                comment is the machine payload (HTML comments are stripped from GitHub&apos;s rendered page, so they cannot carry data the content
+                script can read). Compact mode folds bot reviews and noisy events into accordion rows you can reopen; Minimal also folds human
+                comments that belong to finished items. Task-list checkboxes on the digest are a feedback channel: ticking one marks that finding
+                done without the extension.
+              </p>
+            </Prose>
+          </Step>
+
+          <Step id="enterprise" index={12} title={STEPS[11]?.title ?? ''}>
             <Prose>
               <p>
                 Add your server&apos;s hostname in the options. The browser asks you to allow Geld on that host, and the content script is registered

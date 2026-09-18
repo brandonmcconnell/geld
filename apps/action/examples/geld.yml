@@ -1,0 +1,47 @@
+# Geld review summary
+#
+# Maintains one comment on each pull request. Safe for forks: this workflow
+# uses pull_request_target so it runs with the base repository's token, and
+# the action only calls the GitHub API — it never checks out the pull request
+# head. Copy this file to `.github/workflows/geld.yml`.
+#
+# Optional AI: add repository secret GELD_AI_KEY and pass it as `ai-key`.
+
+name: Geld summary
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
+  issue_comment:
+    types: [created, edited, deleted]
+  check_run:
+    types: [completed]
+
+concurrency:
+  group: geld-summary-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  summary:
+    if: >-
+      github.event.pull_request != null ||
+      github.event.issue.pull_request != null ||
+      (github.event.check_run.pull_requests[0] != null)
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+      checks: read
+      contents: read
+    steps:
+      - name: Write Geld summary
+        uses: brandonmcconnell/geld/apps/action@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ai-key: ${{ secrets.GELD_AI_KEY }}
