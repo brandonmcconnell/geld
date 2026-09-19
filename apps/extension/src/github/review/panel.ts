@@ -508,8 +508,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
   const commentCount = batch.comments.length + batch.reviews.filter((entry) => entry.hasBody).length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
   if (commentCount > 0) mainChildren.push(countChip(commentCount, `${plural(commentCount, 'comment')} in this round`));
-  // By push, the row also carries what the push produced: its previews as pills, its CI beside the progress glyph.
-  if (byPush && batch.previews.length > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploys ${PANEL_CLASS}__deploys--inline` }, batch.previews.map((entry) => previewPill(entry, model))));
+  // By push, the row also carries the push's CI beside the progress glyph; its previews' posters are in the avatar stack.
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
   main.addEventListener('click', toggle);
@@ -955,9 +954,18 @@ function previewPill(entry: Preview, model: PanelModel): HTMLElement {
 function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
   const open = model.openKey === PREVIEWS_KEY;
   const health = previewHealth(model.previews.latest);
-  const pills = model.previews.latest.map((entry) => previewPill(entry, model));
-  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${PREVIEWS_KEY}` }, [
-    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, pills),
+  // Closed, the row says who posted (one mark per app) and how many; the pills with names are in the list below.
+  const posters: Avatar[] = [];
+  for (const entry of model.previews.latest) {
+    const src = model.avatarForAnchor(entry.anchor);
+    if (src !== null && !posters.some((poster) => poster.src === src)) posters.push({ src, bot: true, login: '' });
+  }
+  const count = model.previews.latest.length;
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${PREVIEWS_KEY}`, 'aria-label': plural(count, 'preview') }, [
+    createElement('span', { class: `${PANEL_CLASS}__status-content` }, [
+      ...(posters.length === 0 ? [] : [avatarStack(posters, 'Preview', true, posters.length)]),
+      createElement('span', { class: `${PANEL_CLASS}__status-text` }, [plural(count, 'preview')]),
+    ]),
   ]);
   main.addEventListener('click', () => handlers.onToggle(PREVIEWS_KEY));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
@@ -998,6 +1006,7 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
 
 function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  list.append(createElement('li', { class: `${PANEL_CLASS}__deploy-strip` }, model.previews.latest.map((entry) => previewPill(entry, model))));
   for (const entry of model.previews.latest) list.append(previewLine(entry, model));
   if (model.previews.archived.length > 0) {
     const open = model.archivedPreviewsOpen;
