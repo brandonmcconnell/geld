@@ -56,8 +56,6 @@ interface VisitState {
   pendingAnchor: string | null;
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
-  /** Rounds whose bot comments are unfolded. */
-  openNotes: Set<string>;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
   archivedPreviewsOpen: boolean;
@@ -84,7 +82,6 @@ const visit: VisitState = {
   loadMoreTries: 0,
   pendingAnchor: null,
   openSubKey: null,
-  openNotes: new Set<string>(),
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
@@ -1034,7 +1031,6 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.loadMoreTries = 0;
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.openSubKey = null;
-    visit.openNotes = new Set<string>();
     visit.sourcesShown = new Set<string>();
     visit.archivedPreviewsOpen = false;
     visit.openCommits = new Set<string>();
@@ -1160,7 +1156,6 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     checksRing,
     comments,
     openSubKey: visit.openSubKey,
-    openNotes: visit.openNotes,
     openSources: visit.sourcesShown,
     refsVersion: refsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
@@ -1273,13 +1268,6 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     onToggleArchivedPreviews: () => {
       keepInPlace('notes:previews', () => {
         visit.archivedPreviewsOpen = !visit.archivedPreviewsOpen;
-        reapply();
-      });
-    },
-    onToggleNotes: (batchKey) => {
-      keepInPlace(`notes:${batchKey}`, () => {
-        if (visit.openNotes.has(batchKey)) visit.openNotes.delete(batchKey);
-        else visit.openNotes.add(batchKey);
         reapply();
       });
     },

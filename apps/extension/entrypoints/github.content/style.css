@@ -2028,20 +2028,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-tone-bg);
 }
 
+/* The tone colours the surface, the glyph and the meter — never the words. */
 .geld-review__row[data-tone] .geld-review__status,
-.geld-review__row[data-tone] .geld-review__status--muted,
-.geld-review__row[data-tone] .geld-review__title,
-.geld-review__row[data-tone] .geld-review__label,
-.geld-review__row[data-tone] .geld-review__progress,
-.geld-review__row[data-tone] .geld-review__status-text,
-.geld-review__row[data-tone] .geld-review__count-chip,
-.geld-review__row[data-tone] .geld-review__detail {
+.geld-review__row[data-tone] .geld-review__status--muted {
   color: var(--geld-tone-fg);
-}
-
-/* The breakdown's parts each carry their own state colour on the glyph; the words stay neutral. */
-.geld-review__row[data-tone] .geld-review__checks-breakdown {
-  color: var(--fgColor-default, var(--color-fg-default));
 }
 
 .geld-review__row[data-tone] .geld-review__meter {
@@ -2640,8 +2630,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }
 
+/* GitHub's `.octicon { fill: currentColor }` beats the SVG's fill="none" and turned the spinner's track into a solid dot. */
+.octicon-in-progress,
+.octicon-in-progress circle,
+.octicon-in-progress path {
+  fill: none !important;
+}
+
 .octicon-in-progress {
-  animation: geld-spin 1.2s linear infinite;
+  transform-origin: center;
+  animation: geld-spin 1s linear infinite;
 }
 
 /* ---- an item's threads, each in its own frame ---------------------------- */
@@ -3224,33 +3222,36 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-decoration: none;
 }
 
-.geld-review__deploy-light {
-  display: inline-block;
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--geld-review-muted);
+/* The pill's state glyph, sized and spaced like the bots' traffic light. */
+.geld-review__deploy > .geld-review__health[data-preview-status='ready'] {
+  color: var(--geld-review-done-fg);
 }
 
-.geld-review__deploy-light[data-status='ready'] {
-  background: var(--geld-review-done-fg);
+.geld-review__deploy > .geld-review__health[data-preview-status='failed'] {
+  color: var(--geld-review-danger-fg);
 }
 
-.geld-review__deploy-light[data-status='failed'] {
-  background: var(--geld-review-danger-fg);
+.geld-review__deploy > .geld-review__health[data-preview-status='building'] {
+  color: var(--geld-review-attention-fg);
 }
 
-.geld-review__deploy-light[data-status='building'] {
-  background: var(--geld-review-attention-fg);
+.geld-review__deploy > .geld-review__health[data-preview-status='skipped'],
+.geld-review__deploy > .geld-review__health[data-preview-status='unknown'] {
+  color: var(--geld-review-muted);
 }
 
-.geld-review__deploy-light[data-status='skipped'] {
-  background: var(--geld-review-border);
+/* A skipped deployment's pill: there is nothing to visit, so the pill fades and says so on hover; the line below keeps its Inspect. */
+.geld-review__deploy[data-status='skipped'] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .geld-review__row--preview .geld-review__status--verdict[data-preview-status='ready'] {
   color: var(--geld-review-done-fg);
+}
+
+.geld-review__row--preview .geld-review__status--verdict[data-preview-status='skipped'] {
+  color: var(--geld-review-muted);
 }
 
 .geld-review__row--preview .geld-review__status--verdict[data-preview-status='failed'] {
