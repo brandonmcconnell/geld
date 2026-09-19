@@ -308,9 +308,14 @@ function keepInPlace(focusKey: string, change: () => void): void {
   if (top < sticky) window.scrollBy({ top: top - sticky - 8, behavior: 'instant' });
 }
 
+/** The bottom edge of GitHub's stuck header, or 0: only a bar actually pinned to the viewport's top counts, never a wrapper that merely carries the class. */
 function stickyHeaderBottom(): number {
-  const header = document.querySelector('.gh-header-sticky.is-stuck, .js-sticky.is-stuck, [class*="StickyHeader"], [data-testid="sticky-header"]');
-  return header instanceof HTMLElement && header.getBoundingClientRect().height > 0 ? header.getBoundingClientRect().bottom : 0;
+  for (const header of document.querySelectorAll<HTMLElement>('.gh-header-sticky.is-stuck, .js-sticky.is-stuck, [class*="StickyHeader"], [data-testid="sticky-header"]')) {
+    const rect = header.getBoundingClientRect();
+    const position = getComputedStyle(header).position;
+    if ((position === 'sticky' || position === 'fixed') && rect.top <= 1 && rect.height > 0 && rect.height <= 160) return rect.bottom;
+  }
+  return 0;
 }
 
 const MAX_EAGER_FRAGMENTS = 200;
