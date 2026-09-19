@@ -3380,6 +3380,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   box-shadow: 0 0 0 2px var(--geld-review-bg);
 }
 
+/* A preview's line starts at the row edge: its state glyph stands in the header glyphs' column, so its text lines up with the header text. */
+.geld-review__rows--sub > .geld-review__row--preview {
+  gap: 10px;
+  padding-left: 16px;
+}
+
 /* A preview's line is information, not a control: no hover surface, no pointer. */
 .geld-review__row--preview,
 .geld-review__row--preview:hover {
