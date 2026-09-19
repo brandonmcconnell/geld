@@ -9,7 +9,7 @@
  */
 
 import { createElement } from '../dom';
-import { teleportInto } from './teleport';
+import { onRestore, teleportInto } from './teleport';
 
 const COMMENT_CONTAINER = '.js-comment-container, .review-comment, .timeline-comment, [data-testid="comment-container"], [id^="issuecomment-"], [id^="discussion_r"]';
 const BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
@@ -20,6 +20,14 @@ export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]
   slot.replaceChildren(list);
   teleportInto(list, nodes);
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+  // A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node.
+  for (const details of list.querySelectorAll<HTMLDetailsElement>('.minimized-comment details, details.minimized-comment')) {
+    if (details.open) continue;
+    details.open = true;
+    onRestore(() => {
+      details.open = false;
+    });
+  }
 }
 
 /**
@@ -59,5 +67,6 @@ export function wearHeader(headSlot: HTMLElement, node: HTMLElement): void {
     return;
   }
   teleportInto(headSlot, pieces);
-  headSlot.closest('.geld-review__row')?.setAttribute('data-head', '');
+  // Only a header with controls of its own (⋯, reactions) stands in for the row's; words alone are hidden.
+  if (headSlot.querySelector('button, summary, details') !== null) headSlot.closest('.geld-review__row')?.setAttribute('data-head', '');
 }
