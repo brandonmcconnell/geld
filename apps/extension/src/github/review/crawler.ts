@@ -68,6 +68,19 @@ export function authorOf(root: Element): Author | null {
  * thread is theirs, not the review's, so a bot's bare "reviewed" row is not
  * a comment (and does not vanish from the count when its thread moves).
  */
+/** Block text where each table row is one `| a | b |` line (a rendered table's cells would otherwise each be a line). */
+export function textWithTableRows(body: HTMLElement): string {
+  const clone = body.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) return blockText(body);
+  for (const row of clone.querySelectorAll('tr')) {
+    const cells = [...row.querySelectorAll('th, td')].map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim());
+    const line = document.createElement('div');
+    line.textContent = `| ${cells.join(' | ')} |`;
+    row.replaceWith(line);
+  }
+  return blockText(clone);
+}
+
 function bodyElementOf(root: Element): HTMLElement | null {
   for (const body of root.querySelectorAll(BODY_SELECTOR)) {
     if (!(body instanceof HTMLElement)) continue;
@@ -209,14 +222,19 @@ export interface CrawledComment {
   readonly previewDoc: PreviewDoc;
 }
 
-/** A `PreviewDoc` from a rendered comment body: block text plus every link and image in it. */
+/**
+ * A `PreviewDoc` from a rendered comment body: block text plus every link
+ * and image in it. Table rows are written as `| cell | cell |` lines, the
+ * shape the markdown side has, so the parser reads a status beside its
+ * project either way.
+ */
 export function previewDocOf(node: Element, author: string, anchor: string): PreviewDoc {
   const body = bodyElementOf(node);
   const time = node.querySelector('relative-time[datetime]')?.getAttribute('datetime') ?? undefined;
   const doc: PreviewDoc = {
     author,
     anchor,
-    text: body === null ? '' : blockText(body),
+    text: body === null ? '' : textWithTableRows(body),
     links: body === null ? [] : [...body.querySelectorAll<HTMLAnchorElement>('a[href]')].map((link) => ({ href: link.href, text: (link.textContent ?? '').replace(/\s+/g, ' ').trim() })),
     images: body === null ? [] : [...body.querySelectorAll<HTMLImageElement>('img')].map((image) => ({ src: image.getAttribute('src') ?? '', alt: image.alt })),
   };

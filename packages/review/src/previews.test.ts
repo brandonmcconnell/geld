@@ -65,6 +65,21 @@ describe('parsePreviews', () => {
     expect(parse('surge-action', 'github-actions[bot]')[0]).toMatchObject({ host: 'generic', status: 'ready', url: 'https://bwdrebing-Eden-preview-pr-53.surge.sh' });
   });
 
+  it('reads Mintlify from a rendered table (rows as pipe lines, links separately)', () => {
+    const found = parsePreviews({
+      author: 'mintlify[bot]',
+      anchor: 'issuecomment-622',
+      text: 'Preview deployment for your docs. Learn more about Mintlify Previews.\n| Project | Status | Preview | Updated |\n| kb | 🟢 Ready | View Preview | Sep 19, 2026, 7:42 PM |',
+      links: [
+        { href: 'https://www.mintlify.com/docs/deploy/preview-deployments', text: 'Mintlify Previews' },
+        { href: 'https://app.mintlify.com/mintlify/kb?section=previews', text: 'kb' },
+        { href: 'https://mintlify-kb-abc123.mintlify.site/', text: 'View Preview' },
+      ],
+      images: [],
+    });
+    expect(found[0]).toMatchObject({ host: 'mintlify', project: 'kb', status: 'ready', url: 'https://mintlify-kb-abc123.mintlify.site/' });
+  });
+
   it('ignores bot comments that are not about previews', () => {
     expect(parsePreviews(previewDocFromMarkdown('github-actions[bot]', 'issuecomment-9', '⚠️ getStaticProps changed? Please double check.'))).toEqual([]);
     expect(parsePreviews(previewDocFromMarkdown('cursor[bot]', 'issuecomment-9', 'Bugbot reviewed your changes and found no new issues!'))).toEqual([]);
