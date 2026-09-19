@@ -77,6 +77,16 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
       hiddenBody.removeAttribute('hidden');
       onRestore(() => hiddenBody.setAttribute('hidden', ''));
     }
+    // GitHub loads a resolved thread's replies only when its own toggle runs, by giving the placeholder inside
+    // the body its URL; revealing the body directly would leave that placeholder spinning forever.
+    const deferred = node.getAttribute('data-deferred-content-url') ?? node.querySelector('[data-deferred-content-url]')?.getAttribute('data-deferred-content-url') ?? null;
+    if (deferred !== null) {
+      for (const fragment of node.querySelectorAll('include-fragment:not([src])')) {
+        if (fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') !== null) continue;
+        fragment.setAttribute('src', deferred);
+        break;
+      }
+    }
     const comments = outermostComments(node);
     const more = Math.max(0, comments.length - 1);
     for (const comment of comments.slice(1)) comment.setAttribute(ATTR_MORE, '');

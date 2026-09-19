@@ -255,6 +255,34 @@ export function isTriggerComment(body: string, extraLogins: readonly string[] = 
   // One trigger per line is still only triggers ("/devin review\nbugbot run\n@greptileai").
   const lines = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '');
   if (lines.length > 1) return lines.length <= 6 && lines.every((line) => isTriggerComment(line, extraLogins));
+  if (isSingleTrigger(body, extraLogins)) return true;
+  // Several triggers with only whitespace between them ("bugbot run @greptileai /devin review") are still only
+  // triggers: the known ones are peeled off the front, longest first, until nothing is left.
+  return isTriggerSequence(body, extraLogins);
+}
+
+function knownTriggers(extraLogins: readonly string[]): readonly string[] {
+  const list = REVIEW_BOTS.flatMap((bot) => bot.triggers.map((trigger) => trigger.toLowerCase()));
+  for (const login of extraLogins) list.push(`@${login.replace(/\[bot\]$/i, '').toLowerCase()}`);
+  return [...new Set(list)].sort((a, b) => b.length - a.length);
+}
+
+function isTriggerSequence(body: string, extraLogins: readonly string[]): boolean {
+  let text = body.replace(/[`*_~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (text === '' || text.length > 240) return false;
+  const triggers = knownTriggers(extraLogins);
+  let count = 0;
+  while (text !== '') {
+    const match = triggers.find((trigger) => text === trigger || (text.startsWith(trigger) && /^[\s.!,;]/.test(text.slice(trigger.length))));
+    if (match === undefined) return false;
+    text = text.slice(match.length).replace(/^[\s.!,;]+/, '');
+    count += 1;
+    if (count > 8) return false;
+  }
+  return count > 1;
+}
+
+function isSingleTrigger(body: string, extraLogins: readonly string[]): boolean {
   const text = body
     .replace(/[`*_~]/g, '')
     .replace(/\s+/g, ' ')
