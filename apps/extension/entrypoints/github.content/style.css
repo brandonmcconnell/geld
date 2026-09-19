@@ -1790,6 +1790,35 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--bgColor-muted, #f6f8fa);
 }
 
+/* Identity card for a bot: what GitHub's hovercard would say, had Apps one. */
+.geld-review-hovercard--who .geld-review-hovercard__head {
+  margin-bottom: 2px;
+}
+
+.geld-review-hovercard__who {
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+}
+
+.geld-review-hovercard__login {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review-hovercard--who .geld-review-hovercard__foot {
+  justify-content: flex-start;
+  margin-top: 6px;
+}
+
+.geld-review-hovercard--who .geld-review-hovercard__open {
+  text-decoration: none;
+}
+
+.geld-review-hovercard--who .geld-review-hovercard__open:hover {
+  text-decoration: underline;
+}
+
 .geld-review-nudge a {
   color: inherit;
   text-decoration: underline;
@@ -2001,6 +2030,11 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
 }
 
+/* A click on the avatars opens the row like the title does; say so. */
+.geld-review__row .geld-review__avatars {
+  cursor: pointer;
+}
+
 .geld-review__avatar {
   display: inline-block;
   box-sizing: border-box;
@@ -2075,6 +2109,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 .geld-review__title--plain {
   max-width: none;
   font-weight: 400;
+}
+
+/* A round's row: "Round N", the meter, the comments chip — centred on the row, natural widths. */
+.geld-review__main--batch {
+  align-items: center;
+}
+
+.geld-review__main--batch > .geld-review__title {
+  flex: 0 0 auto;
+}
+
+.geld-review__main--batch > .geld-review__progress {
+  font-size: 12px;
 }
 
 .geld-review__row[data-state='done'] .geld-review__title {
@@ -2202,6 +2249,14 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 /* Gear beside the chevron, every state. */
 .geld-review__gear-slot {
   order: 0;
+}
+
+/* Stands where a row without a ⋯ would have one, so times line up down the column. */
+.geld-review__spacer {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
 }
 
 /* GitHub's own controls, worn by the row: one 28px square each, like Geld's. */
@@ -2462,9 +2517,11 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
 }
 
+/* GitHub's gear brings its own right margin from the check list; here it fills the 28px column like the ⋯ above it. */
 .geld-review__gear-slot > button {
   width: 28px !important;
   height: 28px !important;
+  margin: 0 !important;
   color: var(--geld-review-muted) !important;
 }
 
