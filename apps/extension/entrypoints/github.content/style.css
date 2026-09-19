@@ -3298,7 +3298,30 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--geld-review-muted);
 }
 
-/* The pills, with names, in an open row's list; a strip that wraps. */
+/* The Previews row's pills, like the bots' (they wrap). */
+.geld-review__deploys {
+  gap: 6px;
+  padding: 6px 0;
+}
+
+/* A push's one pill: the hosts' marks overlapping, then the count. */
+.geld-review__deploy--sum .geld-review__bot-icon + .geld-review__bot-icon {
+  margin-left: -8px;
+  box-shadow: 0 0 0 2px var(--geld-review-bg);
+}
+
+/* A preview's line is information, not a control: no hover surface, no pointer. */
+.geld-review__row--preview,
+.geld-review__row--preview:hover {
+  background: var(--geld-review-bg);
+}
+
+.geld-review__row--preview,
+.geld-review__row--preview .geld-review__main {
+  cursor: default;
+}
+
+/* The pills, with names, inside an open push; a strip that wraps. */
 .geld-review__deploy-strip {
   display: flex;
   flex-wrap: wrap;
