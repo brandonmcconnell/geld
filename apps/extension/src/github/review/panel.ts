@@ -504,7 +504,21 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
   const commentCount = batch.comments.length + batch.reviews.filter((entry) => entry.hasBody).length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
   if (commentCount > 0) mainChildren.push(countChip(commentCount, `${plural(commentCount, 'comment')} in this round`));
-  // By push, the row also carries the push's CI beside the progress glyph; its previews' posters are in the avatar stack.
+  // By push, the row also carries the push's CI beside the progress glyph and one pill counting its previews (the
+  // pills with names are in the open push; the row has no room for them). Clicks on it open the push like the rest.
+  if (byPush && batch.previews.length > 0) {
+    const hosts: string[] = [];
+    for (const entry of batch.previews) {
+      const src = model.avatarForAnchor(entry.anchor);
+      if (src !== null && !hosts.includes(src)) hosts.push(src);
+    }
+    mainChildren.push(
+      createElement('span', { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__deploy--sum`, 'aria-hidden': 'true' }, [
+        ...hosts.slice(0, 3).map((src) => createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src, alt: '', width: '16', height: '16' })),
+        createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [plural(batch.previews.length, 'preview')]),
+      ]),
+    );
+  }
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
   main.addEventListener('click', toggle);
@@ -958,18 +972,9 @@ function previewPill(entry: Preview, model: PanelModel): HTMLElement {
 function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
   const open = model.openKey === PREVIEWS_KEY;
   const health = previewHealth(model.previews.latest);
-  // Closed, the row says who posted (one mark per app) and how many; the pills with names are in the list below.
-  const posters: Avatar[] = [];
-  for (const entry of model.previews.latest) {
-    const src = model.avatarForAnchor(entry.anchor);
-    if (src !== null && !posters.some((poster) => poster.src === src)) posters.push({ src, bot: true, login: '' });
-  }
-  const count = model.previews.latest.length;
-  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${PREVIEWS_KEY}`, 'aria-label': plural(count, 'preview') }, [
-    createElement('span', { class: `${PANEL_CLASS}__status-content` }, [
-      ...(posters.length === 0 ? [] : [avatarStack(posters, 'Preview', true, posters.length)]),
-      createElement('span', { class: `${PANEL_CLASS}__status-text` }, [plural(count, 'preview')]),
-    ]),
+  // The pills sit in the row like the bots' do (wrapping when there are many); open, the list has one line each.
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${PREVIEWS_KEY}`, 'aria-label': plural(model.previews.latest.length, 'preview') }, [
+    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, model.previews.latest.map((entry) => previewPill(entry, model))),
   ]);
   main.addEventListener('click', () => handlers.onToggle(PREVIEWS_KEY));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
@@ -1008,7 +1013,6 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
 
 function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
-  list.append(createElement('li', { class: `${PANEL_CLASS}__deploy-strip` }, model.previews.latest.map((entry) => previewPill(entry, model))));
   for (const entry of model.previews.latest) list.append(previewLine(entry, model));
   if (model.previews.archived.length > 0) {
     const open = model.archivedPreviewsOpen;
