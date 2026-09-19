@@ -19,6 +19,10 @@ export interface FoldGroup {
   /** Login the group belongs to (bot runs), for the row's avatar. */
   readonly author: string | null;
   readonly nodes: readonly HTMLElement[];
+  /** Folded without a row of its own: a bot's bare "reviewed" line says nothing the bot chips do not. */
+  readonly silent?: boolean;
+  /** Which panel section lists the row: comments (default) or the activity section. */
+  readonly section?: 'activity';
 }
 
 export function clearFolds(root: ParentNode = document): void {
@@ -112,8 +116,22 @@ export function groupBotRuns(
       label: `${eventNodes.length} timeline event${eventNodes.length === 1 ? '' : 's'}`,
       author: null,
       nodes: eventNodes,
+      section: 'activity',
     });
   }
+  return groups;
+}
+
+/** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: 'commit' | 'mention' | 'review-event' | 'other'; readonly root: HTMLElement }>): readonly FoldGroup[] {
+  const by = (kind: (typeof leftovers)[number]['kind']): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
+  const groups: FoldGroup[] = [];
+  const commits = by('commit');
+  if (commits.length > 0) groups.push({ key: 'commits', label: `${commits.length} commit${commits.length === 1 ? '' : 's'}`, author: null, nodes: commits, section: 'activity' });
+  const mentions = by('mention');
+  if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
+  const silent = by('review-event');
+  if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
   return groups;
 }
 

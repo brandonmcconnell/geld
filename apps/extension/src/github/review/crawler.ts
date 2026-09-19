@@ -62,9 +62,20 @@ export function authorOf(root: Element): Author | null {
   return { login: bot && !/\[bot\]$/i.test(text) ? `${text}[bot]` : text, bot };
 }
 
+/**
+ * The comment's own body. A review row (`pullrequestreview-N`) wraps its
+ * threads, whose comments are items of their own; a body found inside a
+ * thread is theirs, not the review's, so a bot's bare "reviewed" row is not
+ * a comment (and does not vanish from the count when its thread moves).
+ */
 function bodyElementOf(root: Element): HTMLElement | null {
-  const body = root.querySelector(BODY_SELECTOR);
-  return body instanceof HTMLElement ? body : null;
+  for (const body of root.querySelectorAll(BODY_SELECTOR)) {
+    if (!(body instanceof HTMLElement)) continue;
+    const thread = body.closest(THREAD_SELECTOR);
+    if (thread !== null && root.contains(thread) && thread !== root) continue;
+    return body;
+  }
+  return null;
 }
 
 const BLOCK = /^(P|DIV|H[1-6]|LI|PRE|BLOCKQUOTE|TR|DETAILS|SUMMARY|SECTION|ARTICLE|UL|OL|TABLE|HR|BR|BUTTON)$/;
@@ -273,6 +284,41 @@ export function crawlConversation(root: ParentNode = document): {
   comments.sort((a, b) => byHome(a.comment.anchor, b.comment.anchor));
   events.sort((a, b) => byHome(a.anchor, b.anchor));
   return { comments, events };
+}
+
+export interface CrawledLeftover {
+  readonly kind: 'commit' | 'mention' | 'review-event' | 'other';
+  readonly root: HTMLElement;
+}
+
+const COMMIT_ROW = '.js-commit-group, .TimelineItem:has(.js-commits-list-item), [data-testid="commit-row"], [data-testid="timeline-commit-row"], .TimelineItem:has(> .TimelineItem-badge .octicon-git-commit), [class*="CommitRow"]';
+const MENTION_ROW = '.TimelineItem:has(.octicon-cross-reference), [data-testid="cross-referenced-event"], [class*="CrossReferencedEvent"]';
+
+/**
+ * Every timeline row not already accounted for — commits, cross-references,
+ * bots' bare "reviewed" rows, anything else — so compact mode can fold the
+ * whole timeline and offer each kind its own place in the panel.
+ */
+export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNode = document): readonly CrawledLeftover[] {
+  const list: CrawledLeftover[] = [];
+  const timeline = root.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline');
+  if (timeline === null) return list;
+  const rows = timeline.querySelectorAll<HTMLElement>('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], [class*="TimelineItem"]');
+  for (const row of rows) {
+    if (row.closest('.geld-review') !== null || row.closest('form') !== null) continue;
+    // Outermost rows only.
+    if (row.parentElement?.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') !== null && row.parentElement?.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') !== undefined) continue;
+    if ([...claimed].some((node) => node === row || node.contains(row) || row.contains(node))) continue;
+    // The description card (which hosts the panel, and through it whatever is on loan) and the new-comment form are the page's own.
+    if (row.querySelector('.geld-review, [data-geld-attached], form.js-new-comment-form, textarea[name="comment[body]"]') !== null) continue;
+    if ([...row.querySelectorAll<HTMLElement>('[id^="issue-"]')].some((node) => /^issue-\d+$/.test(node.id))) continue;
+    let kind: CrawledLeftover['kind'] = 'other';
+    if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
+    else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference') !== null) kind = 'mention';
+    else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
+    list.push({ kind, root: row });
+  }
+  return list;
 }
 
 export type CrawledReviewState = 'approved' | 'changes_requested' | 'commented' | 'dismissed';
