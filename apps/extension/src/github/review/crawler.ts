@@ -6,7 +6,7 @@
  * comments and review bodies as single comments.
  */
 
-import type { RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
+import type { PreviewDoc, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
 import { closestAtHome, compareHome, wornPiecesOf } from './teleport';
 
@@ -205,6 +205,22 @@ export interface CrawledComment {
   readonly root: HTMLElement;
   readonly author: Author;
   readonly avatarSrc: string | null;
+  /** The comment's rendered body as text, links and images — what the preview parser reads. */
+  readonly previewDoc: PreviewDoc;
+}
+
+/** A `PreviewDoc` from a rendered comment body: block text plus every link and image in it. */
+export function previewDocOf(node: Element, author: string, anchor: string): PreviewDoc {
+  const body = bodyElementOf(node);
+  const time = node.querySelector('relative-time[datetime]')?.getAttribute('datetime') ?? undefined;
+  const doc: PreviewDoc = {
+    author,
+    anchor,
+    text: body === null ? '' : blockText(body),
+    links: body === null ? [] : [...body.querySelectorAll<HTMLAnchorElement>('a[href]')].map((link) => ({ href: link.href, text: (link.textContent ?? '').replace(/\s+/g, ' ').trim() })),
+    images: body === null ? [] : [...body.querySelectorAll<HTMLImageElement>('img')].map((image) => ({ src: image.getAttribute('src') ?? '', alt: image.alt })),
+  };
+  return time === undefined ? doc : { ...doc, updatedAt: time };
 }
 
 function withLocation(base: RawComment, extra: { readonly path?: string; readonly line?: number }): RawComment {
@@ -255,6 +271,7 @@ export function crawlConversation(root: ParentNode = document): {
       root: timelineNode instanceof HTMLElement ? timelineNode : first,
       author,
       avatarSrc: avatarSrcOf(first),
+      previewDoc: previewDocOf(first, author.login, first.id),
     });
   }
 
@@ -267,7 +284,7 @@ export function crawlConversation(root: ParentNode = document): {
     const body = textOf(bodyElementOf(node));
     if (looksLikeSummaryBody(body)) continue;
     const base: RawComment = { anchor: node.id, kind: kindOf(node.id), author: author.login, body, createdAt: createdAtOf(node) };
-    comments.push({ comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node) });
+    comments.push({ comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id) });
   }
 
   const events: CrawledEvent[] = [];

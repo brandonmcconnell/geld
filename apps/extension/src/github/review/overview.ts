@@ -8,7 +8,8 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, parsePreviews, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
@@ -22,7 +23,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, renderBatchView, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
@@ -59,6 +60,7 @@ interface VisitState {
   openNotes: Set<string>;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
+  archivedPreviewsOpen: boolean;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -82,6 +84,7 @@ const visit: VisitState = {
   openSubKey: null,
   openNotes: new Set<string>(),
   sourcesShown: new Set<string>(),
+  archivedPreviewsOpen: false,
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -574,6 +577,26 @@ function requiredFailingIn(section: HTMLElement | null): boolean | null {
   return required.some((row) => row.querySelector('.octicon-x-circle-fill, .octicon-x, .octicon-stop, .octicon-alert-fill, [class*="failure" i], [class*="Failure"]') !== null);
 }
 
+/**
+ * Every preview the page's bot comments announce, in timeline order; the
+ * Action's payload fills in comments the page has not loaded. The page wins
+ * for a comment both know (hosts edit their comment in place; the page has
+ * the current text).
+ */
+function previewsOn(crawled: Crawled, meta: GeldPrMeta): readonly Preview[] {
+  const fromPage = crawled.comments.filter((entry) => entry.author.bot).flatMap((entry) => parsePreviews(entry.previewDoc));
+  const seen = new Set(fromPage.map((entry) => entry.anchor));
+  const fromPayload = (meta.previews ?? []).filter((entry) => !seen.has(entry.anchor));
+  const all = [...fromPage, ...fromPayload];
+  const home = (anchor: string): Element | null => document.getElementById(anchor);
+  return [...all].sort((a, b) => {
+    const x = home(a.anchor);
+    const y = home(b.anchor);
+    if (x === null || y === null) return x === null ? (y === null ? 0 : -1) : 1;
+    return compareHome(x, y);
+  });
+}
+
 /** GitHub's checks-settings gear (and its tooltip) move from the check list into the CI row itself. */
 function wearGear(root: HTMLElement): void {
   const target = root.querySelector<HTMLElement>(`[${ATTR_GEAR_SLOT}]`);
@@ -876,8 +899,8 @@ function subjectOf(): MarkdownSubject | null {
 
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
-  // The Reviews row renders its own list; the panel itself stands in for "something to show".
-  if (key === REVIEWS_KEY || key.startsWith('batch:')) return [document.documentElement];
+  // The Reviews and Previews rows render their own lists; the panel itself stands in for "something to show".
+  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
     if (section === null) return [];
@@ -940,6 +963,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.openSubKey = null;
     visit.openNotes = new Set<string>();
     visit.sourcesShown = new Set<string>();
+    visit.archivedPreviewsOpen = false;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -1053,6 +1077,9 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
+    previews: latestPreviews(previewsOn(crawledDom, meta)),
+    archivedPreviewsOpen: visit.archivedPreviewsOpen,
+    avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
     checksRing,
     comments,
     openSubKey: visit.openSubKey,
@@ -1156,6 +1183,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
         visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
+        reapply();
+      });
+    },
+    onToggleArchivedPreviews: () => {
+      keepInPlace('notes:previews', () => {
+        visit.archivedPreviewsOpen = !visit.archivedPreviewsOpen;
         reapply();
       });
     },
