@@ -104,7 +104,12 @@ export function originalText(element: HTMLElement): string {
 
 export function isOwnElement(node: Node | null): boolean {
   const element = node instanceof Element ? node : node?.parentElement ?? null;
-  return element?.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null && element !== null;
+  if (element === null) return false;
+  const own = element.closest(`[${OWN_UI_ATTRIBUTE}]`);
+  if (own === null) return false;
+  // A GitHub node on loan to the review panel (quick view) is still GitHub's: its commit links keep their tooltip.
+  const loaned = element.closest('[data-geld-teleported]');
+  return loaned === null || !own.contains(loaned);
 }
 
 export function createElement<K extends keyof HTMLElementTagNameMap>(
