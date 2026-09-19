@@ -9,10 +9,11 @@
  * itself is hidden — its content is this.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, Preview, ReviewItem } from '@geld/review';
+import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_BROWSER, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -117,6 +118,12 @@ export interface PanelModel {
   readonly checks: CheckCounts | null;
   /** Whether a failing check is one GitHub marks Required; null when the list does not say. */
   readonly requiredFailing: boolean | null;
+  /** Preview deployments: the latest per project, and the ones they superseded. */
+  readonly previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] };
+  /** Whether the archived previews are unfolded inside the Previews row. */
+  readonly archivedPreviewsOpen: boolean;
+  /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
+  readonly avatarForAnchor: (anchor: string) => string | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
   readonly checksRing: SVGElement | null;
   readonly reviews: RequiredReviews | null;
@@ -170,6 +177,8 @@ export interface PanelHandlers {
   readonly onToggleSub: (anchor: string) => void;
   /** Unfold or fold a round's bot comments. */
   readonly onToggleNotes: (batchKey: string) => void;
+  /** Unfold or fold the archived previews. */
+  readonly onToggleArchivedPreviews: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
@@ -188,6 +197,8 @@ export function foldKey(key: string): string {
 export const CHECKS_KEY = 'checks';
 /** Row key for the Reviews row; its slot lists people's comments. */
 export const REVIEWS_KEY = 'reviews';
+/** Row key for the Previews row; its slot lists every preview deployment. */
+export const PREVIEWS_KEY = 'previews';
 const NUDGE_CLASS = 'geld-review-nudge';
 
 function icon(markup: string): SVGElement {
@@ -840,7 +851,103 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     rows.append(row);
     if (open) rows.append(slotRow(REVIEWS_KEY, null, 'list'));
   }
+  if (model.previews.latest.length > 0) rows.append(...previewsRow(model, handlers));
   return rows.childElementCount === 0 ? null : rows;
+}
+
+const PREVIEW_STATUS_LABEL: Readonly<Record<Preview['status'], string>> = {
+  ready: 'Ready',
+  building: 'Building',
+  failed: 'Failed',
+  skipped: 'Skipped',
+  unknown: '',
+};
+
+function previewHealth(previews: readonly Preview[]): Health {
+  if (previews.some((entry) => entry.status === 'failed')) return 'bad';
+  if (previews.some((entry) => entry.status === 'building')) return 'pending';
+  if (previews.some((entry) => entry.status === 'ready')) return 'good';
+  return 'pending';
+}
+
+/** One preview as a pill: the host's mark, the project, a status light; a link to the preview (or its logs). */
+function previewPill(entry: Preview, model: PanelModel): HTMLElement {
+  const href = entry.url ?? entry.inspectUrl;
+  const host = previewHostById(entry.host);
+  const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}`;
+  const children: Node[] = [];
+  const avatar = model.avatarForAnchor(entry.anchor);
+  if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__deploy-light`, 'data-status': entry.status, 'aria-hidden': 'true' }));
+  const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': entry.status, 'aria-label': label, title: label };
+  if (href === null) return createElement('span', attrs, children);
+  return createElement('a', { ...attrs, href, target: '_blank', rel: 'noreferrer' }, children);
+}
+
+/**
+ * The Previews row: a pill per current preview (they wrap), the row's
+ * health from theirs; open, one line per preview — host, project, status,
+ * Open and Logs links, when — then the superseded ones behind "Archived".
+ */
+function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
+  const open = model.openKey === PREVIEWS_KEY;
+  const health = previewHealth(model.previews.latest);
+  const pills = model.previews.latest.map((entry) => previewPill(entry, model));
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${PREVIEWS_KEY}` }, [
+    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, pills),
+  ]);
+  main.addEventListener('click', () => handlers.onToggle(PREVIEWS_KEY));
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_BROWSER)]),
+    rowLabel('Previews', 'Previews'),
+    main,
+    createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, () => handlers.onToggle(PREVIEWS_KEY))]),
+  ]);
+  if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, () => handlers.onToggle(PREVIEWS_KEY));
+  if (!open) return [row];
+  const slot = slotRow(PREVIEWS_KEY, null, 'list');
+  const body = slot.querySelector<HTMLElement>(`.${PANEL_CLASS}__slot-body`);
+  if (body !== null) renderPreviewsList(body, model, handlers);
+  return [row, slot];
+}
+
+function previewLine(entry: Preview, model: PanelModel): HTMLElement {
+  const host = previewHostById(entry.host);
+  const avatar = model.avatarForAnchor(entry.anchor);
+  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': entry.status, role: 'img', 'aria-label': PREVIEW_STATUS_LABEL[entry.status] || 'Preview' }, [
+    icon(entry.status === 'ready' ? ICON_CHECK_CIRCLE_FILL : entry.status === 'failed' ? ICON_X_CIRCLE_FILL : entry.status === 'building' ? ICON_IN_PROGRESS : entry.status === 'skipped' ? ICON_SKIP : ICON_CIRCLE),
+  ]);
+  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.project])];
+  mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [`${host?.title ?? 'Preview'}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status].toLowerCase()}`}`]));
+  const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
+  if (entry.url !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
+  if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.status === 'failed' ? 'Logs' : 'Inspect']));
+  if (model.timeFor(entry.anchor) !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [model.timeFor(entry.anchor)]));
+  return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': entry.status }, [
+    lead,
+    avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: '' }], host?.title ?? '', true),
+    main,
+    right,
+  ]);
+}
+
+function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  for (const entry of model.previews.latest) list.append(previewLine(entry, model));
+  if (model.previews.archived.length > 0) {
+    const open = model.archivedPreviewsOpen;
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(open), [ATTR_FOCUS]: 'notes:previews' }, [
+      createElement('span', {}, [`${plural(model.previews.archived.length, 'archived preview')} from earlier pushes`]),
+      icon(ICON_CHEVRON_DOWN),
+    ]);
+    button.addEventListener('click', () => handlers.onToggleArchivedPreviews());
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead ${PANEL_CLASS}__notes`, 'data-open': String(open) }, [button]));
+    if (open) for (const entry of model.previews.archived) list.append(previewLine(entry, model));
+  }
+  slot.replaceChildren(list);
 }
 
 const ENTRY_GLYPH: Readonly<Record<Exclude<ReviewEntryState, 'thread'>, string>> = {
@@ -956,6 +1063,8 @@ function signatureOf(model: PanelModel): string {
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
+    previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
+    archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),

@@ -4,6 +4,7 @@
  */
 
 import type { AddressedEvidence, GeldPrMeta, ProducerRecord, ReviewItem, ReviewSummary, ReviewerRecord, ReviewerState } from './model';
+import { parsePreviews, previewDocFromMarkdown } from './previews';
 import { META_VERSION, PAYLOAD_BUDGET, STATUS_RANK, truncateMeta } from './model';
 import { isTriggerComment, looksLikeBotLogin, resolveBotId, verdictsFrom } from './bots';
 import type { RawCheckRun } from './bots';
@@ -241,6 +242,7 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
     ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}` })),
   ];
   const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra);
+  const previews = pr.comments.flatMap((comment) => parsePreviews(previewDocFromMarkdown(comment.author, `issuecomment-${comment.databaseId}`, comment.body, comment.createdAt)));
   const meta: GeldPrMeta = {
     v: META_VERSION,
     generatedAt: options.generatedAt,
@@ -252,6 +254,7 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
     fold: foldOf(pr, extra),
     ...(uncappedCount > items.length ? { truncated: true as const } : {}),
     ...(options.summary === undefined ? {} : { summary: options.summary }),
+    ...(previews.length === 0 ? {} : { previews }),
   };
   return truncateMeta(meta, options.budget ?? PAYLOAD_BUDGET);
 }
