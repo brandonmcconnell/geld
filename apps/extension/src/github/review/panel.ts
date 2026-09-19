@@ -17,7 +17,7 @@ import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checks
 import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import { reclaimOrphans, restoreAll } from './teleport';
-import { ATTR_WHO } from './hovercard';
+import { ATTR_WHO, rehostHoverCard } from './hovercard';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -1083,6 +1083,8 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   panel.style.marginRight = cardMargins.right;
   if (existing !== null && existing.parentNode !== null) existing.replaceWith(panel);
   else card.insertAdjacentElement('afterend', panel);
+  // A card open over the old panel points at a host that just left the document.
+  rehostHoverCard();
   // Below the box, not in it: a quiet, persistent pointer to the Action while this repository lacks it.
   const oldNudge = document.querySelector(`.${NUDGE_CLASS}`);
   if (model.nudge) {
