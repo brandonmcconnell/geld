@@ -2013,7 +2013,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__row[data-tone] {
-  --geld-tone-strong: color-mix(in srgb, var(--geld-tone-bg) 65%, var(--geld-review-bg));
+  --geld-tone-strong: color-mix(in srgb, var(--geld-tone-bg) 45%, var(--geld-review-bg));
   --geld-tone-faint: color-mix(in srgb, var(--geld-tone-bg) 10%, var(--geld-review-bg));
   /* The avatars' mask ring is a solid colour; the tone at their position is close to the strong end. */
   --geld-row-bg: var(--geld-tone-strong);
