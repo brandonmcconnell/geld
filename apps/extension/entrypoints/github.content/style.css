@@ -1333,6 +1333,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   min-height: 36px;
 }
 
+.geld-review__main.geld-review__main--entry {
+  align-items: center;
+}
+
 .geld-review__main--static {
   cursor: default;
 }
@@ -1621,7 +1625,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 /* Under the box: the one nudge, persistent while the Action is missing. Block flow, so it takes its own room. */
 .geld-review-nudge__link {
+  color: inherit;
   white-space: nowrap;
+}
+
+.geld-review-nudge__link:hover {
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
 }
 
 .geld-review-nudge {
@@ -2129,10 +2138,71 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   opacity: 1;
 }
 
-/* While GitHub's own controls are worn, Geld's duplicates step aside so the row keeps one ⋯ and one reaction control. */
-.geld-review__row[data-head] .geld-review__right > .geld-review__menu,
+/* While GitHub's own controls are worn, Geld's duplicates step aside so the row keeps one ⋯ and one reaction control.
+ * Item rows keep Geld's ⋯ (Resolve, Quote reply, Copy as Markdown …). */
+.geld-review__row[data-gh-controls~='react'] .geld-review__right > .geld-review__react,
+.geld-review__row--fold[data-gh-controls~='menu'] .geld-review__right > .geld-review__menu,
+.geld-review__row--sub[data-gh-controls~='menu'] .geld-review__right > .geld-review__menu,
 .geld-review__row[data-head] .geld-review__right > .geld-review__react {
   display: none;
+}
+
+.geld-review__row--fold[data-head] .geld-review__right > .geld-review__menu,
+.geld-review__row--sub[data-head] .geld-review__right > .geld-review__menu {
+  display: none;
+}
+
+/* GitHub's own controls, worn by the row: one 28px square each, like Geld's. */
+.geld-review__ctl-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.geld-review__ctl-slot:empty {
+  display: none;
+}
+
+.geld-review__ctl-slot > *,
+.geld-review__ctl-slot > details > summary,
+.geld-review__ctl-slot > button {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  margin: 0 !important;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__ctl-slot > details > summary,
+.geld-review__ctl-slot > button {
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+}
+
+.geld-review__ctl-slot > details > summary:hover,
+.geld-review__ctl-slot > button:hover {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328));
+}
+
+.geld-review__ctl-slot > details {
+  position: relative;
+}
+
+/* React comment cards: no card chrome inside a row's content. */
+.geld-review__qv .react-issue-comment,
+.geld-review__qv [data-testid='comment-viewer-outer-box'],
+.geld-review__qv [class*='IssueCommentViewer'],
+.geld-review__qv [class*='CommentBox-module'],
+.geld-review__qv [class*='Comment-module__container'] {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 /* A minimized comment shows its contents in the quick view; GitHub's "has been minimized" bar stays in the timeline. */

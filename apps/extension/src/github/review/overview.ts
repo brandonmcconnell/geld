@@ -5,13 +5,14 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
+import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { GeldPrMeta, ReviewItem } from '@geld/review';
 import { clusterComments, firstSentence, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcOf, blockText, crawlReviews, findIn, latestReviewers } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcOf, blockText, crawlReviews, findIn, latestReviewers, THREAD_SELECTOR } from './crawler';
 import type { CrawledReview } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
@@ -19,7 +20,7 @@ import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_GEAR_SLOT, ATTR_HEAD_SLOT, CHECKS_KEY, foldKey, itemKey, mountPanel, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_HEAD_SLOT, CHECKS_KEY, foldKey, itemKey, mountPanel, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
 import type { ReviewEntry, ReviewEntryState } from './panel';
 import { hideHoverCard, setHoverProvider } from './hovercard';
 import type { HoverPreview } from './hovercard';
@@ -30,12 +31,14 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { renderQuickView, wearHeader } from './quick-view';
-import { compareHome, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { compareHome, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
 /** "Load more" rounds we click while a deeplinked anchor is still off the page. */
 const MAX_LOAD_MORE = 8;
+/** "Load more" presses per visit in compact mode (each brings a page of hidden items). */
+const MAX_AUTO_LOADS = 40;
 
 interface VisitState {
   fullTimeline: boolean;
@@ -51,6 +54,7 @@ interface VisitState {
   openSubKey: string | null;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
+  autoLoads: number;
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
 }
@@ -66,6 +70,7 @@ const visit: VisitState = {
   pendingAnchor: null,
   openSubKey: null,
   knownRequired: null,
+  autoLoads: 0,
   manualDone: new Set(),
 };
 
@@ -180,7 +185,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
     count: group.nodes.length,
     avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
     firstAnchor: firstAnchorIn(group.nodes[0] ?? null),
-    time: group.nodes.length === 1 ? timeTextOf(group.nodes[0] ?? null) : '',
+    time: timeTextOf(group.nodes[0] ?? null),
   }));
 }
 
@@ -275,6 +280,31 @@ function mergeBoxText(): string {
   return parts.join('\n');
 }
 
+/**
+ * Toggle a row without moving it under the pointer: whatever opens or closes
+ * above it (a long comment collapsing) is compensated with an instant scroll,
+ * and a row that would end up under GitHub's sticky header is brought just
+ * below it. The one scroll Geld makes on purpose.
+ */
+function keepInPlace(focusKey: string, change: () => void): void {
+  const before = document.querySelector(`[data-geld-focus="${focusKey}"]`)?.getBoundingClientRect().top ?? null;
+  change();
+  const after = document.querySelector(`[data-geld-focus="${focusKey}"]`);
+  if (!(after instanceof HTMLElement)) return;
+  let top = after.getBoundingClientRect().top;
+  if (before !== null && Math.abs(top - before) > 1) {
+    window.scrollBy({ top: top - before, behavior: 'instant' });
+    top = after.getBoundingClientRect().top;
+  }
+  const sticky = stickyHeaderBottom();
+  if (top < sticky) window.scrollBy({ top: top - sticky - 8, behavior: 'instant' });
+}
+
+function stickyHeaderBottom(): number {
+  const header = document.querySelector('.gh-header-sticky.is-stuck, .js-sticky.is-stuck, [class*="StickyHeader"], [data-testid="sticky-header"]');
+  return header instanceof HTMLElement && header.getBoundingClientRect().height > 0 ? header.getBoundingClientRect().bottom : 0;
+}
+
 /** GitHub's checks-settings gear (and its tooltip) move from the check list into the CI row itself. */
 function wearGear(root: HTMLElement, slot: HTMLElement): void {
   const target = root.querySelector<HTMLElement>(`[${ATTR_GEAR_SLOT}]`);
@@ -297,9 +327,56 @@ function cloneRing(source: SVGElement): SVGElement {
   return ring;
 }
 
+/** The time as GitHub shows it — `relative-time` renders "yesterday" in its shadow root; the light text is the fallback date. */
 function timeTextOf(node: Element | null): string {
-  return (node === null ? '' : (findIn(node, 'relative-time, time-ago, time')?.textContent ?? '')).trim();
+  const el = node === null ? null : findIn(node, 'relative-time, time-ago, time');
+  if (el === null) return '';
+  const shown = el.shadowRoot?.textContent?.trim() ?? '';
+  return shown !== '' ? shown : (el.textContent ?? '').trim();
 }
+
+const COMMENT_MENU = 'details.js-comment-header-actions-menu, .timeline-comment-actions details, [data-testid="comment-header"] button[aria-label="Show options" i], button[aria-label="Comment actions" i]';
+const REACTION_TRIGGER = '.js-reaction-popover-container, details.js-add-reaction, summary[aria-label*="reaction" i], button[aria-label*="add reaction" i], button[aria-label*="add or remove reaction" i], [data-testid="add-reaction-button"], [data-testid="reactions-menu-button"]';
+
+/**
+ * Every row wears its comment's own reaction trigger and ⋯ menu, open or
+ * closed, so a reaction is one click without opening anything and the menu
+ * is GitHub's (Copy link, Quote reply, Edit, Hide, Delete …). A classic
+ * `details-menu` gets "Show in timeline" as its first item; Geld's own
+ * controls step aside while GitHub's are present.
+ */
+function wearControls(root: HTMLElement, handlers: PanelHandlers): void {
+  for (const slot of root.querySelectorAll<HTMLElement>(`[${ATTR_CTL_SLOT}]`)) {
+    if (slot.childElementCount > 0) continue;
+    const anchor = slot.getAttribute(ATTR_CTL_SLOT) ?? '';
+    const node = entryNodes.get(anchor) ?? document.getElementById(anchor);
+    if (node === null || node === undefined) continue;
+    const container = node.matches(COMMENT_CONTAINER_SELECTOR) ? node : (node.querySelector(COMMENT_CONTAINER_SELECTOR) ?? node);
+    const trigger = findIn(container, REACTION_TRIGGER);
+    const reaction = trigger === null ? null : (trigger.closest('details') ?? trigger);
+    const menuEl = findIn(container, COMMENT_MENU);
+    const menu = menuEl === null ? null : (menuEl.closest('details') ?? menuEl);
+    const worn: HTMLElement[] = [];
+    if (reaction instanceof HTMLElement && reaction.closest(THREAD_SELECTOR) === null) worn.push(reaction);
+    if (menu instanceof HTMLElement && menu !== reaction) worn.push(menu);
+    if (worn.length === 0) continue;
+    teleportInto(slot, worn);
+    slot.closest('.geld-review__row')?.setAttribute('data-gh-controls', [reaction === null ? '' : 'react', menu === null ? '' : 'menu'].filter((part) => part !== '').join(' '));
+    const list = menu?.querySelector('details-menu, .dropdown-menu, [role="menu"]');
+    if (list instanceof HTMLElement && list.querySelector('[data-geld-injected]') === null) {
+      const item = createElement('button', { type: 'button', role: 'menuitem', class: 'dropdown-item', 'data-geld-injected': '' }, ['Show in timeline']);
+      item.addEventListener('click', () => handlers.onShowInTimeline(anchor));
+      const divider = createElement('div', { role: 'none', class: 'dropdown-divider', 'data-geld-injected': '' });
+      list.prepend(item, divider);
+      onRestore(() => {
+        item.remove();
+        divider.remove();
+      });
+    }
+  }
+}
+
+const COMMENT_CONTAINER_SELECTOR = '.js-comment-container, .review-comment, .timeline-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="comment-viewer-outer-box"], [id^="issuecomment-"], [id^="discussion_r"]';
 
 /** Per open Reviews entry, the node its quick view shows: a review's own comment rather than its whole timeline row. */
 let entryNodes = new Map<string, HTMLElement>();
@@ -481,6 +558,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.openSubKey = null;
     visit.knownRequired = null;
+    visit.autoLoads = 0;
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
@@ -501,6 +579,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const groups = foldGroups(meta, settings, crawledDom);
   const compacting = settings.compactTimeline !== 'off';
   const hidingTimeline = compacting && !visit.fullTimeline;
+  // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more".
+  if (hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = crawlReviews();
@@ -567,8 +647,10 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const reapply = (): void => applyReviewOverview(settings);
   const panelHandlers: PanelHandlers = {
     onToggle: (key) => {
-      visit.openKey = visit.openKey === key ? null : key;
-      reapply();
+      keepInPlace(`main:${key}`, () => {
+        visit.openKey = visit.openKey === key ? null : key;
+        reapply();
+      });
     },
     onToggleGroup: (group) => {
       if (visit.collapsedGroups.has(group)) visit.collapsedGroups.delete(group);
@@ -646,8 +728,10 @@ export function applyReviewOverview(settings: GeldSettings): void {
       void postTopLevelComments(triggers);
     },
     onToggleSub: (anchor) => {
-      visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
-      reapply();
+      keepInPlace(`main:sub:${anchor}`, () => {
+        visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
+        reapply();
+      });
     },
     onResolveAnchor: (anchor) => {
       clickResolve(anchor);
@@ -722,6 +806,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   } else {
     restoreAll();
   }
+  if (mounted !== null) wearControls(mounted.root, panelHandlers);
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   applyFolds(foldTargets, new Set());
   // The browser's fragment jump went to the original's (now empty) place in
