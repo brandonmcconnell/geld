@@ -101,3 +101,49 @@ function outermostComments(thread: HTMLElement): readonly HTMLElement[] {
   const all = [...thread.querySelectorAll<HTMLElement>(THREAD_COMMENT)].filter((node) => node.closest('form') === null && node.querySelector('.comment-body, .js-comment-body, [data-testid="comment-body"], .markdown-body') !== null);
   return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
 }
+
+/**
+ * Cross-references, one line each: the issue or PR title (the only part that
+ * truncates) and its `owner/repo#N` as one link — GitHub's own hovercard
+ * attributes come along — then the state, when, and who mentioned it.
+ * Rendered from the timeline rows rather than moving them: a mention row is
+ * all chrome.
+ */
+export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[]): void {
+  const list = createElement('ul', { class: 'geld-review__mentions', role: 'list' });
+  for (const node of nodes) {
+    const links = [...node.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"], a[href*="/issues/"], a[data-hovercard-type="pull_request"], a[data-hovercard-type="issue"]')].filter((link) => (link.textContent ?? '').trim() !== '');
+    const link = links.sort((a, b) => (b.textContent ?? '').length - (a.textContent ?? '').length)[0];
+    if (link === undefined) continue;
+    const href = link.getAttribute('href') ?? '';
+    const ref = /\/([^/]+)\/([^/]+)\/(?:pull|issues)\/(\d+)/.exec(href);
+    const title = (link.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const anchor = link.cloneNode(false);
+    if (!(anchor instanceof HTMLAnchorElement)) continue;
+    anchor.className = 'geld-review__mention-link';
+    anchor.append(createElement('span', { class: 'geld-review__mention-title' }, [title]));
+    if (ref !== null) anchor.append(createElement('span', { class: 'geld-review__mention-ref' }, [`${ref[1]}/${ref[2]}#${ref[3]}`]));
+    const state = node.querySelector('.State, [data-testid="issue-state"], [class*="StateLabel"], [class*="State-"]');
+    const time = node.querySelector('relative-time, time-ago, time');
+    const avatar = node.querySelector('img.avatar, img[data-testid="github-avatar"], img[class*="avatar" i]');
+    const author = (node.querySelector('a.author, [data-testid="author-link"], a[data-hovercard-type="user"]')?.textContent ?? '').trim();
+    const row = createElement('li', { class: 'geld-review__mention' }, [anchor]);
+    if (state !== null) {
+      const badge = state.cloneNode(true);
+      if (badge instanceof HTMLElement) {
+        badge.classList.add('geld-review__mention-state');
+        row.append(badge);
+      }
+    }
+    const right = createElement('span', { class: 'geld-review__mention-right' });
+    const when = time?.shadowRoot?.textContent?.trim() || (time?.textContent ?? '').trim();
+    if (when !== '') right.append(createElement('span', { class: 'geld-review__time' }, [when]));
+    if (avatar instanceof HTMLImageElement) {
+      right.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: avatar.currentSrc || avatar.getAttribute('src') || '', alt: author, title: author, width: '20', height: '20' }));
+    }
+    row.append(right);
+    list.append(row);
+  }
+  slot.replaceChildren(list);
+  if (list.childElementCount === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+}

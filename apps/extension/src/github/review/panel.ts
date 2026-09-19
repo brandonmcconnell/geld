@@ -45,6 +45,30 @@ export interface Avatar {
   readonly bot: boolean;
 }
 
+/**
+ * A review round: everything the bots (and reviewers) posted between two
+ * pushes — their run summaries and the threads they opened. The reader
+ * works round by round; a round is done when every thread in it is.
+ */
+export interface Batch {
+  readonly key: string;
+  /** 1-based, in timeline order. */
+  readonly index: number;
+  readonly avatars: readonly Avatar[];
+  /** Who posted: bot names, then people. */
+  readonly names: readonly string[];
+  readonly items: readonly ReviewItem[];
+  /** Run summaries and other top-level comments in the round, by anchor. */
+  readonly commentAnchors: readonly string[];
+  readonly time: string;
+  readonly firstAnchor: string | null;
+}
+
+/** Row key of a round. */
+export function batchKey(index: number): string {
+  return `batch:${index}`;
+}
+
 export type ReviewEntryState = 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'thread' | 'comment';
 
 /** One line under the Reviews row: a review verdict, a review thread or a person's top-level comment. */
@@ -78,6 +102,7 @@ export interface PanelModel {
   readonly nudge: boolean;
   readonly viewingAnchor: string | null;
   readonly folds: readonly FoldRow[];
+  readonly batches: readonly Batch[];
   readonly requestable: readonly InstalledBot[];
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
   readonly summaryAnchorFor: (botId: string) => string | null;
@@ -290,9 +315,9 @@ function menu(entries: readonly MenuEntry[], focusKey: string): HTMLElement {
   return details;
 }
 
-function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): HTMLElement {
+function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, nested = false): HTMLElement {
   const key = itemKey(item.id);
-  const open = model.openKey === key;
+  const open = nested ? model.openSubKey === key : model.openKey === key;
   const done = !isOpenStatus(item.status);
   const first = item.sources[0];
   const bot = first?.bot !== undefined || /\[bot\]$/i.test(first?.author ?? '');
@@ -316,7 +341,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     createElement('span', { class: `${PANEL_CLASS}__title`, ...(pending ? { 'data-pending': '', title: 'Geld is consolidating this item' } : {}) }, [item.title]),
     createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' — ')]),
   ]);
-  const toggle = (): void => handlers.onToggle(key);
+  const toggle = (): void => (nested ? handlers.onToggleSub(key) : handlers.onToggle(key));
   main.addEventListener('click', toggle);
 
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
@@ -386,11 +411,85 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
 
 const FOLD_GLYPH: Readonly<Record<string, string>> = { events: ICON_HISTORY, commits: ICON_GIT_COMMIT, mentions: ICON_CROSS_REFERENCE };
 
+function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
+  return { done: batch.items.filter((item) => !isOpenStatus(item.status)).length, total: batch.items.length };
+}
+
+/** A round's row: progress glyph, who posted, "Round N", what it holds, when. */
+function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTMLElement {
+  const open = model.openKey === batch.key;
+  const { done, total } = batchProgress(batch);
+  const allDone = total > 0 && done === total;
+  const lead =
+    total === 0
+      ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)])
+      : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--progress`, role: 'img', 'aria-label': `${done} of ${total} threads resolved`, 'data-done': String(allDone) }, [icon(allDone ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]);
+  const bits: string[] = [];
+  if (batch.names.length > 0) bits.push(batch.names.join(', '));
+  if (total > 0) bits.push(`${plural(total, 'thread')}${total > 0 ? ` · ${done}/${total} resolved` : ''}`);
+  if (batch.commentAnchors.length > 0) bits.push(plural(batch.commentAnchors.length, 'comment'));
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}` }, [
+    createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`Round ${batch.index}`]),
+    createElement('span', { class: `${PANEL_CLASS}__detail` }, [bits.join(' — ')]),
+  ]);
+  const toggle = (): void => handlers.onToggle(batch.key);
+  main.addEventListener('click', toggle);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  if (batch.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [batch.time]));
+  if (batch.firstAnchor !== null) {
+    const anchor = batch.firstAnchor;
+    right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], batch.key));
+  }
+  right.append(chevron(open, toggle));
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open' }, [
+    lead,
+    avatarStack(batch.avatars, batch.names[0] ?? '', true),
+    main,
+    right,
+  ]);
+  if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, toggle);
+  return row;
+}
+
+/**
+ * An open round: its run summaries (quick view, filled by the caller), then
+ * its threads under two headings — unresolved first, resolved after — as
+ * item rows that open one at a time. Returns the slot for the summaries and
+ * the nested slot for the open thread.
+ */
+export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly parents: HTMLElement; readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null } {
+  const parents = createElement('div', { class: `${PANEL_CLASS}__batch-parents` });
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub ${PANEL_CLASS}__rows--threads`, role: 'list' });
+  let nested: HTMLElement | null = null;
+  let openItem: ReviewItem | null = null;
+  const section = (label: string, items: readonly ReviewItem[]): void => {
+    if (items.length === 0) return;
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [label]));
+    for (const item of items) {
+      list.append(itemRow(item, model, handlers, true));
+      if (model.openSubKey === itemKey(item.id)) {
+        const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
+        const notes = notesFor(item, model, handlers);
+        list.append(createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub` }, notes === null ? [body] : [notes, body]));
+        nested = body;
+        openItem = item;
+      }
+    }
+  };
+  const unresolved = batch.items.filter((item) => isOpenStatus(item.status));
+  const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
+  section(plural(unresolved.length, 'unresolved thread'), unresolved);
+  section(plural(resolved.length, 'resolved thread'), resolved);
+  slot.replaceChildren(parents, ...(list.childElementCount > 0 ? [list] : []));
+  return { parents, nested, openItem };
+}
+
 /** Clicking anywhere in the row that is not a control (avatars, blank space) toggles it, like the title does. */
 function rowClickToggles(row: HTMLElement, toggle: () => void): void {
   row.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
-    if (event.target.closest('button, a, details, summary, input, textarea, [contenteditable], [data-geld-ctl], [data-geld-gear-slot], .geld-review__slot') !== null) return;
+    if (event.target.closest('button, a, details, summary, input, textarea, [contenteditable], [data-geld-ctl], [data-geld-gear-slot]') !== null) return;
     toggle();
   });
 }
@@ -753,6 +852,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.commentAnchors.join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     ring: model.checksRing?.outerHTML.length ?? 0,
@@ -838,19 +938,22 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
 
   /* Groups */
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows`, role: 'list' });
-  const appendRows = (items: readonly ReviewItem[]): void => {
-    for (const item of items) {
-      rows.append(itemRow(item, model, handlers));
-      if (model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey, notesFor(item, model, handlers)));
+  const appendBatches = (batches: readonly Batch[]): void => {
+    for (const batch of batches) {
+      rows.append(batchRow(batch, model, handlers));
+      if (model.openKey === batch.key) rows.append(slotRow(batch.key, null, 'list'));
     }
   };
-  if (open.length > 0) {
-    rows.append(groupHeading('open', plural(open.length, 'open item'), model, handlers));
-    if (!model.collapsedGroups.has('open')) appendRows(open);
+  // Rounds with a thread still open come first and stay open; settled rounds fold away by default.
+  const attention = model.batches.filter((batch) => batch.items.some((item) => isOpenStatus(item.status)));
+  const settled = model.batches.filter((batch) => !attention.includes(batch));
+  if (attention.length > 0) {
+    rows.append(groupHeading('open', `${plural(attention.length, 'round')} to review · ${plural(open.length, 'open thread')}`, model, handlers));
+    if (!model.collapsedGroups.has('open')) appendBatches(attention);
   }
-  if (done.length > 0) {
-    rows.append(groupHeading('done', plural(done.length, 'done item'), model, handlers));
-    if (!model.collapsedGroups.has('done')) appendRows(done);
+  if (settled.length > 0) {
+    rows.append(groupHeading('done', `${plural(settled.length, 'settled round')}${done.length > 0 ? ` · ${plural(done.length, 'resolved thread')}` : ''}`, model, handlers));
+    if (!model.collapsedGroups.has('done')) appendBatches(settled);
   }
   if (!model.fullTimeline) {
     // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.

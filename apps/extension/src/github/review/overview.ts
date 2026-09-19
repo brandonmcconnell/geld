@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { GeldPrMeta, ReviewItem } from '@geld/review';
-import { clusterComments, firstSentence, isOpenStatus, isTriggerComment, rerunTriggerFor, verdictsFrom } from '@geld/review';
+import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
@@ -20,8 +20,8 @@ import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, CHECKS_KEY, foldKey, itemKey, mountPanel, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
-import type { ReviewEntry, ReviewEntryState } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, renderBatchView, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
+import type { Batch, ReviewEntry, ReviewEntryState } from './panel';
 import { hideHoverCard, setHoverProvider } from './hovercard';
 import type { HoverPreview } from './hovercard';
 import { checkCountsFrom, checksSummary, digestMarkdown, itemMarkdown, requiredReviewsFrom } from './panel-model';
@@ -30,7 +30,7 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { renderQuickView, renderThreadsView } from './quick-view';
+import { renderMentionsView, renderQuickView, renderThreadsView } from './quick-view';
 import { compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -312,6 +312,90 @@ function stickyHeaderBottom(): number {
   return header instanceof HTMLElement && header.getBoundingClientRect().height > 0 ? header.getBoundingClientRect().bottom : 0;
 }
 
+/** Open the row `key` names; an item opens inside its round, and the section holding either unfolds. */
+function openRow(key: string, batches: readonly Batch[]): void {
+  if (key.startsWith('item:')) {
+    const batch = batches.find((entry) => entry.items.some((item) => itemKey(item.id) === key));
+    if (batch !== undefined) {
+      visit.openKey = batch.key;
+      visit.openSubKey = key;
+      visit.collapsedGroups.delete(batch.items.some((item) => isOpenStatus(item.status)) ? 'open' : 'done');
+      return;
+    }
+  }
+  if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
+  if (key.startsWith('batch:')) {
+    const batch = batches.find((entry) => entry.key === key);
+    if (batch !== undefined) visit.collapsedGroups.delete(batch.items.some((item) => isOpenStatus(item.status)) ? 'open' : 'done');
+  }
+  visit.openKey = key;
+}
+
+/**
+ * Rounds by push: each commit row in the timeline closes a round; threads and
+ * bot run summaries fall into the round of the last commit before them. With
+ * no commits on the page there is one round.
+ */
+function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[]): readonly Batch[] {
+  const commits = [...commitRoots].sort(compareHome);
+  const roundOf = (node: Element | null): number => {
+    if (node === null) return commits.length;
+    let count = 0;
+    for (const commit of commits) if (compareHome(commit, node) < 0) count += 1;
+    return count;
+  };
+  const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
+  const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
+  const rounds = new Map<number, { items: ReviewItem[]; comments: { anchor: string; avatar: string | null; author: string; node: HTMLElement }[] }>();
+  const at = (index: number): { items: ReviewItem[]; comments: { anchor: string; avatar: string | null; author: string; node: HTMLElement }[] } => {
+    const existing = rounds.get(index);
+    if (existing !== undefined) return existing;
+    const fresh = { items: [], comments: [] };
+    rounds.set(index, fresh);
+    return fresh;
+  };
+  for (const item of meta.items) at(roundOf(itemNodes(item)[0] ?? null)).items.push(item);
+  for (const entry of crawled.comments) {
+    if (!botAnchors.has(entry.comment.anchor) || !entry.author.bot) continue;
+    at(roundOf(entry.root)).comments.push({ anchor: entry.comment.anchor, avatar: entry.avatarSrc, author: entry.author.login, node: entry.root });
+  }
+  return [...rounds.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, round], position) => {
+      const avatars: Avatar[] = [];
+      const names: string[] = [];
+      const seen = new Set<string>();
+      const add = (login: string, src: string | null, bot: boolean): void => {
+        const label = bot ? botTitleFor(login) : login;
+        if (seen.has(label)) return;
+        seen.add(label);
+        names.push(label);
+        if (src !== null && !avatars.some((avatar) => avatar.src === src)) avatars.push({ src, bot });
+      };
+      for (const comment of round.comments) add(comment.author, comment.avatar, true);
+      for (const item of round.items) {
+        for (const avatar of avatarsFor(item)) if (!avatars.some((entry) => entry.src === avatar.src)) avatars.push(avatar);
+        for (const source of item.sources) add(source.author, null, source.bot !== undefined || /\[bot\]$/i.test(source.author));
+      }
+      const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? null;
+      const firstNode = first === null ? null : document.getElementById(first);
+      return {
+        key: batchKey(position + 1),
+        index: position + 1,
+        avatars: avatars.slice(0, 3),
+        names,
+        items: round.items,
+        commentAnchors: round.comments.map((comment) => comment.anchor),
+        time: timeTextOf(firstNode ?? round.comments[0]?.node ?? null),
+        firstAnchor: first,
+      };
+    });
+}
+
+function botTitleFor(login: string): string {
+  return botTitle(resolveBotId(login) ?? `custom:${login}`, login);
+}
+
 /** GitHub's checks-settings gear (and its tooltip) move from the check list into the CI row itself. */
 function wearGear(root: HTMLElement): void {
   const target = root.querySelector<HTMLElement>(`[${ATTR_GEAR_SLOT}]`);
@@ -516,7 +600,8 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     anchor = item.sources[0]?.anchor ?? null;
     more = item.sources.length - 1;
     onReply = () => handlers.onReply(item.id);
-    onOpen = () => handlers.onToggle(itemKey(item.id));
+    const first = anchor;
+    onOpen = () => (first === null ? undefined : handlers.onOpenAnchor(first));
   } else if (foldId !== null) {
     const group = groups.find((entry) => entry.key === foldId);
     const first = group?.nodes[0] ?? null;
@@ -558,7 +643,7 @@ function subjectOf(): MarkdownSubject | null {
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
   // The Reviews row renders its own list; the panel itself stands in for "something to show".
-  if (key === REVIEWS_KEY) return [document.documentElement];
+  if (key === REVIEWS_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
     if (section === null) return [];
@@ -641,23 +726,36 @@ export function applyReviewOverview(settings: GeldSettings): void {
     if (commentRoots.length > 0) foldTargets.push({ key: `${REVIEWS_KEY}:comments`, label: 'Comments', author: null, nodes: unique(commentRoots), silent: true });
     const summaryRoot = found?.root ?? null;
     if (summaryRoot !== null) foldTargets.push({ key: 'summary', label: '', author: null, nodes: [timelineRootOf(summaryRoot.id) ?? summaryRoot], silent: true });
-    // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
-    // stands under the panel but the merge box; commits and mentions get rows in the activity section.
-    const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
-    const leftovers = groupLeftovers(crawlLeftovers(claimed));
+  }
+  // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
+  // stands under the panel but the merge box; commits and mentions get rows in the activity section.
+  const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
+  const leftoverList = crawlLeftovers(claimed);
+  if (hidingTimeline) {
+    const leftovers = groupLeftovers(leftoverList);
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
+  }
+  // Rounds: what landed between two pushes. Bot run summaries belong to their round rather than to rows of their own.
+  const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit').map((entry) => entry.root);
+  const batches = buildBatches(meta, crawledDom, settings, commitRoots);
+  const batchedAnchors = new Set(batches.flatMap((batch) => batch.commentAnchors));
+  for (const [index, group] of groups.entries()) {
+    if (!group.key.startsWith('bot:')) continue;
+    if (!group.nodes.every((node) => [...batchedAnchors].some((anchor) => node.id === anchor || node.contains(document.getElementById(anchor))))) continue;
+    const silent = { ...group, silent: true };
+    groups[index] = silent;
+    const target = foldTargets.indexOf(group);
+    if (target >= 0) foldTargets[target] = silent;
   }
   // A permalink (or a find-in-page hit) opens its row here rather than revealing the original down the page.
   if (visit.pendingAnchor !== null && hidingTimeline) {
     const key = rowKeyFor(visit.pendingAnchor, meta, groups);
-    if (key !== null) {
-      visit.openKey = key;
-      if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
-      else if (!isOpenStatus(meta.items.find((item) => itemKey(item.id) === key)?.status ?? 'open')) visit.collapsedGroups.delete('done');
-    }
+    if (key !== null) openRow(key, batches);
   }
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
+  // An item lives inside its round's row: opening it opens the round and the item within.
+  const openRowLocal = (key: string): void => openRow(key, batches);
   const subject = subjectOf();
   const boxText = mergeBoxText();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
@@ -681,6 +779,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     nudge: found === null,
     viewingAnchor,
     folds: foldRows(groups),
+    batches,
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
@@ -734,7 +833,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       const item = meta.items.find((entry) => entry.id === id);
       const anchor = item === undefined ? null : firstThreadAnchor(item);
       if (anchor === null) return;
-      visit.openKey = itemKey(id);
+      openRowLocal(itemKey(id));
       reapply();
       focusReply(anchor);
     },
@@ -742,7 +841,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       const item = meta.items.find((entry) => entry.id === id);
       const anchor = item === undefined ? null : firstThreadAnchor(item);
       if (anchor === null) return;
-      visit.openKey = itemKey(id);
+      openRowLocal(itemKey(id));
       reapply();
       quoteReply(anchor);
     },
@@ -799,8 +898,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       } else {
         const key = rowKeyFor(anchor, meta, groups);
         if (key === null) return;
-        if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
-        visit.openKey = key;
+        openRowLocal(key);
       }
       reapply();
       openReactions(anchor);
@@ -819,8 +917,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
         location.hash = anchor;
         return;
       }
-      if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
-      visit.openKey = key;
+      openRowLocal(key);
       reapply();
     },
   };
@@ -840,8 +937,31 @@ export function applyReviewOverview(settings: GeldSettings): void {
         } else if (visit.openSubKey !== null && subNode === null) {
           visit.openSubKey = null;
         }
+      } else if (visit.openKey.startsWith('batch:')) {
+        const batch = batches.find((entry) => entry.key === visit.openKey);
+        if (batch !== undefined) {
+          const view = renderBatchView(mounted.slot, batch, model, panelHandlers);
+          const parentNodes = batch.commentAnchors.map((anchor) => timelineRootOf(anchor)).filter((node): node is HTMLElement => node !== null);
+          if (parentNodes.length > 0) renderQuickView(view.parents, parentNodes);
+          else view.parents.remove();
+          if (view.nested !== null && view.openItem !== null) {
+            const item = view.openItem;
+            renderThreadsView(view.nested, itemNodes(item), {
+              pathOf: (node) => threadPathOf(node, item),
+              onCopy: (text) => void copyText(text),
+              onReply: (node) => {
+                const anchor = node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? null;
+                if (anchor !== null) focusReply(anchor);
+              },
+            });
+          } else if (visit.openSubKey !== null && visit.openSubKey.startsWith('item:') && view.openItem === null) {
+            visit.openSubKey = null;
+          }
+        }
       } else if (visit.openKey === CHECKS_KEY) {
         renderQuickView(mounted.slot, nodes);
+      } else if (visit.openKey === foldKey('mentions')) {
+        renderMentionsView(mounted.slot, nodes);
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
         // reveals the rest of the thread and the reply box.
@@ -870,8 +990,9 @@ export function applyReviewOverview(settings: GeldSettings): void {
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
   // holds it, once, instantly.
-  if (visit.pendingAnchor !== null && mounted !== null && (visit.openKey === rowKeyFor(visit.pendingAnchor, meta, groups) || visit.loadMoreTries >= MAX_LOAD_MORE)) {
-    const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${visit.openKey}"]`);
+  const pendingKey = visit.pendingAnchor === null ? null : rowKeyFor(visit.pendingAnchor, meta, groups);
+  if (visit.pendingAnchor !== null && mounted !== null && ((pendingKey !== null && (visit.openKey === pendingKey || visit.openSubKey === pendingKey)) || visit.loadMoreTries >= MAX_LOAD_MORE)) {
+    const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${visit.openSubKey ?? visit.openKey}"]`);
     if (row instanceof HTMLElement && hidingTimeline) row.scrollIntoView({ block: 'start', behavior: 'instant' });
     if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
   }
