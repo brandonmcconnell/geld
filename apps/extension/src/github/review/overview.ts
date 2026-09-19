@@ -560,6 +560,20 @@ function whoCardFor(login: string, meta: GeldPrMeta, model: PanelModel): WhoCard
   };
 }
 
+/**
+ * Whether a failing check in GitHub's list is one it marks "Required"; null
+ * when the list is not rendered or marks nothing (this repository may simply
+ * have no required checks, in which case every failure is red anyway).
+ */
+function requiredFailingIn(section: HTMLElement | null): boolean | null {
+  if (section === null) return null;
+  const scopes = [section, ...wornPiecesOf(section)];
+  const rows = scopes.flatMap((scope) => [...scope.querySelectorAll<HTMLElement>('li, [role="listitem"]')]).filter((row) => row.querySelector('a[href*="check_run_id"], a[href*="/checks"], a[href*="statuses"]') !== null);
+  const required = rows.filter((row) => /\bRequired\b/.test(row.textContent ?? ''));
+  if (required.length === 0) return null;
+  return required.some((row) => row.querySelector('.octicon-x-circle-fill, .octicon-x, .octicon-stop, .octicon-alert-fill, [class*="failure" i], [class*="Failure"]') !== null);
+}
+
 /** GitHub's checks-settings gear (and its tooltip) move from the check list into the CI row itself. */
 function wearGear(root: HTMLElement): void {
   const target = root.querySelector<HTMLElement>(`[${ATTR_GEAR_SLOT}]`);
@@ -1038,6 +1052,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
+    requiredFailing: requiredFailingIn(checksSection()),
     checksRing,
     comments,
     openSubKey: visit.openSubKey,
