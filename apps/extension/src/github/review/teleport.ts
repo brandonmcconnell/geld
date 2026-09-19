@@ -175,6 +175,28 @@ export function homeOf(node: Node): Node {
   return node;
 }
 
+/**
+ * `node.closest(selector)` that never leaves the timeline: a loaned ancestor
+ * is crossed at its placeholder, so the ancestors tested are the ones at
+ * home, never the panel's (the panel sits inside the description's own
+ * timeline row, and a plain `closest` from a loaned comment lands there).
+ */
+export function closestAtHome(node: Element, selector: string): HTMLElement | null {
+  let cursor: Node | null = node;
+  while (cursor !== null) {
+    if (cursor instanceof HTMLElement) {
+      if (cursor.matches(selector)) return cursor;
+      const entry = moved.get(cursor);
+      if (entry !== undefined) {
+        cursor = entry.placeholder.parentNode;
+        continue;
+      }
+    }
+    cursor = cursor.parentNode;
+  }
+  return null;
+}
+
 /** Comparator for timeline order by home position. */
 export function compareHome(a: Node, b: Node): number {
   const x = homeOf(a);

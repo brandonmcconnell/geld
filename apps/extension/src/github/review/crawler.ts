@@ -8,7 +8,7 @@
 
 import type { RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
-import { compareHome, wornPiecesOf } from './teleport';
+import { closestAtHome, compareHome, wornPiecesOf } from './teleport';
 
 const ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/;
 const COMMENT_SELECTOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]';
@@ -112,7 +112,7 @@ function textOf(body: HTMLElement | null): string {
 
 /** The whole timeline row (avatar column included); the comment card only when there is no row. */
 export function timelineRootOf(node: Element): HTMLElement {
-  const row = node.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') ?? node.closest('.js-comment-container');
+  const row = closestAtHome(node, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') ?? closestAtHome(node, '.js-comment-container');
   if (row instanceof HTMLElement) return row;
   if (node instanceof HTMLElement) return node;
   return node.parentElement ?? node.ownerDocument.documentElement;
@@ -122,7 +122,7 @@ export function timelineRootOf(node: Element): HTMLElement {
 export function avatarSrcOf(node: Element | null): string | null {
   if (node === null) return null;
   const scopes: Element[] = [node];
-  const row = node.closest('.TimelineItem, .js-timeline-item, [data-testid="timeline-row"]');
+  const row = closestAtHome(node, '.TimelineItem, .js-timeline-item, [data-testid="timeline-row"]');
   if (row !== null && row !== node) scopes.push(row);
   for (const scope of scopes) {
     const img = find(scope, AVATAR_SELECTOR);
@@ -249,7 +249,7 @@ export function crawlConversation(root: ParentNode = document): {
       isOutdated: isOutdatedThread(container),
       threadAnchors: peers,
     };
-    const timelineNode = container.closest('.js-timeline-item, .TimelineItem') ?? container;
+    const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
     comments.push({
       comment: withLocation(base, pathLineOf(container)),
       root: timelineNode instanceof HTMLElement ? timelineNode : first,
@@ -287,7 +287,7 @@ export function crawlConversation(root: ParentNode = document): {
 }
 
 export interface CrawledLeftover {
-  readonly kind: 'commit' | 'mention' | 'review-event' | 'other';
+  readonly kind: 'commit' | 'mention' | 'review-event' | 'noise' | 'pending' | 'other';
   readonly root: HTMLElement;
 }
 
@@ -316,8 +316,12 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     // The description card (which hosts the panel, and through it whatever is on loan) and the new-comment form are the page's own.
     if (row.querySelector('.geld-review, [data-geld-attached], form.js-new-comment-form, textarea[name="comment[body]"]') !== null) continue;
     if ([...row.querySelectorAll<HTMLElement>('[id^="issue-"]')].some((node) => /^issue-\d+$/.test(node.id))) continue;
+    // An emptied wrapper (its rows loaded elsewhere, or a spent "Load more") is nothing to list.
+    if ((row.textContent ?? '').trim() === '' && row.querySelector('img, svg') === null) continue;
     let kind: CrawledLeftover['kind'] = 'other';
-    if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
+    if (row.querySelector('a[href^="#commits-pushed-"], [id^="commits-pushed-"]') !== null || /\badded \d+ commits?\b/.test(row.textContent ?? '')) kind = 'noise';
+    else if (row.querySelector('.minimized-comment include-fragment[src], details.minimized-comment:not([open]) include-fragment') !== null) kind = 'pending';
+    else if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
     else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';
     else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
     list.push({ kind, root: row });
