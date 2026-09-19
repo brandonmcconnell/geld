@@ -492,6 +492,11 @@ async function main(): Promise<void> {
     void browser.runtime.openOptionsPage();
     window.close();
   });
+  // Straight to the Experiments card: openOptionsPage takes no fragment, so the page is opened by URL.
+  requireElement('open-experiments', HTMLButtonElement).addEventListener('click', () => {
+    void browser.tabs.create({ url: `${browser.runtime.getURL('/options.html')}#experiments` });
+    window.close();
+  });
 }
 
 polyfillCornerShape();

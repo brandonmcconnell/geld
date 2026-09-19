@@ -595,9 +595,9 @@ async function main(): Promise<void> {
     authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
   });
 
-  /* Pull request conversation: digest, timeline, extra bots, AI gateway. */
-  applySchemaCopy('review');
-  const reviewSection = sections.find((candidate) => candidate.id === 'review');
+  /* Experiments — today the pull request conversation digest: panel, timeline, extra bots, AI gateway. */
+  applySchemaCopy('experiments');
+  const reviewSection = sections.find((candidate) => candidate.id === 'experiments');
   const reviewHost = requireElement('review-rows', HTMLDivElement);
   const reviewSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
   toggleFields(reviewSection?.fields ?? []).forEach((field, index) => {
