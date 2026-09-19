@@ -1251,6 +1251,21 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border-bottom: 1px solid var(--geld-review-border-muted);
 }
 
+/* One hairline between neighbours: the head already draws the line above the first status row, and the
+ * status block draws the one above whatever follows it. */
+.geld-review__rows--status > .geld-review__row:first-child,
+.geld-review__rows--status + .geld-review__timeline,
+.geld-review__rows--status + .geld-review__rows > .geld-review__row:first-child {
+  border-top: 0;
+}
+
+/* GitHub's expanded checks draw their own top rule; the slot's is enough. */
+.geld-review__slot[data-kind='checks'] [class*='MergeBoxExpandable-module__expandableContent'],
+.geld-review__slot[data-kind='checks'] [class*='ExpandedChecks-module__checksContainer'],
+.geld-review__slot[data-kind='checks'] [class*='MergeBoxExpandable-module__expandableWrapper'] {
+  border-top: 0 !important;
+}
+
 .geld-review__rows--status .geld-review__row--status {
   min-height: 40px;
   gap: 10px;
