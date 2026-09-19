@@ -12,7 +12,7 @@ import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerCommen
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
 import type { CrawledReview } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
@@ -30,7 +30,8 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, revealThreadFor } from './quick-view';
+import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, revealThreadFor, sourceFocusKey, threadAnchorOf } from './quick-view';
+import type { ThreadSource, ThreadsViewHandlers } from './quick-view';
 import { closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -54,6 +55,8 @@ interface VisitState {
   openSubKey: string | null;
   /** Rounds whose bot comments are unfolded. */
   openNotes: Set<string>;
+  /** Threads (by first-comment anchor) showing the review comment they came from. */
+  sourcesShown: Set<string>;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -76,6 +79,7 @@ const visit: VisitState = {
   pendingAnchor: null,
   openSubKey: null,
   openNotes: new Set<string>(),
+  sourcesShown: new Set<string>(),
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -567,6 +571,57 @@ function wearGear(root: HTMLElement): void {
   teleportInto(target, nodes);
 }
 
+/**
+ * The comment a thread was posted from: the body of the review that holds
+ * it ("Bugbot reviewed … found 3 issues"), else the bot's run summary for
+ * this pull request. What the round's list used to put in front of every
+ * thread; here it is one click away inside the thread's own frame.
+ */
+function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): ThreadSource | null {
+  const source = item?.sources[0];
+  const bot = source?.bot;
+  const who = bot !== undefined ? botTitle(bot, source?.author ?? '') : source?.author ?? 'the reviewer';
+  // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
+  // copy at home and read the comment from the DOM there, not from a map keyed by that id.
+  let review = closestAtHome(thread, '[id^="pullrequestreview-"]');
+  while (review !== null && review.parentElement !== null) {
+    const outer = closestAtHome(review.parentElement, '[id^="pullrequestreview-"]');
+    if (outer === null || outer.id !== review.id) break;
+    review = outer;
+  }
+  const reviewNode = review === null ? null : reviewCommentOf(review);
+  if (reviewNode !== null && !reviewNode.contains(thread)) return { node: reviewNode, label: `${who}'s review comment` };
+  const summaryAnchor = bot === undefined ? null : (meta.bots.find((record) => record.id === bot)?.sourceId ?? null);
+  const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
+  // A bot that writes no review body has a thread comment for its "summary"; that is a thread, not a source.
+  if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
+  const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
+  if (summary !== null && !summary.contains(thread)) return { node: summary, label: `${who}'s run summary` };
+  return null;
+}
+
+/** Frame handlers shared by an item opened on its own and inside its round. */
+function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ThreadsViewHandlers {
+  return {
+    pathOf: (node) => threadPathOf(node, item),
+    onCopy: (text) => void copyText(text),
+    onReply: (node) => {
+      const anchor = node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? null;
+      if (anchor !== null) focusReply(anchor);
+    },
+    sourceOf: (node) => threadSourceOf(node, item, meta),
+    sourceOpen: (node) => visit.sourcesShown.has(threadAnchorOf(node)),
+    onToggleSource: (node) => {
+      const key = threadAnchorOf(node);
+      keepInPlace(sourceFocusKey(node), () => {
+        if (visit.sourcesShown.has(key)) visit.sourcesShown.delete(key);
+        else visit.sourcesShown.add(key);
+        reapply();
+      });
+    },
+  };
+}
+
 /** A thread's file path (with line), from the item or the thread's own file header. */
 function threadPathOf(node: HTMLElement, item: ReviewItem | undefined): string {
   const header = node.querySelector('.file-header a, .file-header, [data-testid="file-header"], summary code, [class*="FileHeader"] a');
@@ -834,6 +889,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.openSubKey = null;
     visit.openNotes = new Set<string>();
+    visit.sourcesShown = new Set<string>();
     visit.knownRequired = null;
     visit.lastReviews = null;
     visit.checksExpanded = false;
@@ -948,6 +1004,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     comments,
     openSubKey: visit.openSubKey,
     openNotes: visit.openNotes,
+    openSources: visit.sourcesShown,
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
@@ -1116,14 +1173,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
             renderQuickView(view.nested, [commentNode]);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
-            renderThreadsView(view.nested, threadNodes(item), {
-              pathOf: (node) => threadPathOf(node, item),
-              onCopy: (text) => void copyText(text),
-              onReply: (node) => {
-                const anchor = node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? null;
-                if (anchor !== null) focusReply(anchor);
-              },
-            });
+            renderThreadsView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply));
           } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
             visit.openSubKey = null;
           }
@@ -1136,14 +1186,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
         // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
         // reveals the rest of the thread and the reply box.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
-        renderThreadsView(mounted.slot, item === undefined ? nodes : threadNodes(item), {
-          pathOf: (node) => threadPathOf(node, item),
-          onCopy: (text) => void copyText(text),
-          onReply: (node) => {
-            const anchor = node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? null;
-            if (anchor !== null) focusReply(anchor);
-          },
-        });
+        renderThreadsView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
       } else {
         renderQuickView(mounted.slot, nodes);
       }

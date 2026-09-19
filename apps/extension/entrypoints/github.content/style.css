@@ -2102,8 +2102,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__title {
-  /* Equal shares: title and detail truncate at the same points in every row, whatever their lengths. */
-  flex: 1 1 0;
+  /* Natural width, shrinkable: the detail (file path) follows right after and truncates first. */
+  flex: 0 1 auto;
   max-width: 62%;
   min-width: 0;
   overflow: hidden;
@@ -2145,7 +2145,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__detail {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--geld-review-muted);
@@ -2748,52 +2748,112 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   font-weight: 500;
 }
 
-/* A round's bot comments sit behind one row: plainly a control (band, chevron, Show/Hide), plainly secondary. */
+/* The round's other bot comments: a heading that opens, after the threads, in the sections' own voice. */
 .geld-review__notes {
-  border-bottom: 1px solid var(--geld-review-border-muted);
+  padding: 0;
 }
 
 .geld-review__notes-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 36px;
-  padding: 0 14px 0 42px;
+  padding: 10px 16px 8px 42px;
   border: 0;
-  background: var(--geld-review-subtle);
-  color: var(--fgColor-default, var(--color-fg-default));
+  background: none;
+  color: var(--geld-review-muted);
   font: inherit;
   font-size: 12px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
 
 .geld-review__notes-btn:hover {
-  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
 }
 
 .geld-review__notes-btn > .octicon {
-  flex: 0 0 auto;
-  color: var(--geld-review-muted);
+  width: 12px;
+  height: 12px;
   transition: transform 120ms ease;
 }
 
-.geld-review__notes[data-open='true'] .geld-review__notes-btn > .octicon:last-child {
+.geld-review__notes[data-open='true'] .geld-review__notes-btn > .octicon {
   transform: rotate(180deg);
 }
 
-.geld-review__notes-label {
-  flex: 1 1 auto;
+/* Where a thread came from: a small toggle in the frame's head, and the comment itself above the thread. */
+.geld-review__thread-source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0 8px 0 7px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--geld-review-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.geld-review__thread-source-btn:hover,
+.geld-review__thread-source-btn[aria-pressed='true'] {
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__thread-source-btn[aria-pressed='true'] {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__thread-source-btn .octicon {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease;
+}
+
+.geld-review__thread-source-btn[aria-pressed='true'] .octicon:last-child {
+  transform: rotate(180deg);
+}
+
+.geld-review__thread-source {
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-subtle);
+}
+
+.geld-review__thread-source-label {
+  padding: 8px 16px 0;
+  color: var(--geld-review-muted);
+  font-size: 12px;
   font-weight: 500;
 }
 
-.geld-review__notes-hint {
-  color: var(--geld-review-muted);
+.geld-review__thread-source-body {
+  padding: 4px 16px 12px;
 }
 
-.geld-review__notes[data-open='true'] + .geld-review__row--sub {
-  border-top: 0;
+.geld-review__thread-source-body .timeline-comment,
+.geld-review__thread-source-body .js-comment-container,
+.geld-review__thread-source-body .review-comment {
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.geld-review__thread-source-body .comment-body {
+  padding: 0 !important;
+  font-size: 13px;
+}
+
+/* The source's own author line stays: it says who and when. Its card chrome does not. */
+.geld-review__thread-source-body .timeline-comment-header {
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
 }
 
 .geld-review__rows--threads > .geld-review__row {
