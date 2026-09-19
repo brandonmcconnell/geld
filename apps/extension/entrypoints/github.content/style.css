@@ -2545,8 +2545,14 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__thread .file-header,
-.geld-review__thread .js-resolvable-timeline-thread-container > .file-header {
+.geld-review__thread .js-resolvable-timeline-thread-container > .file-header,
+.geld-review__thread review-thread-collapsible > .js-toggle-outdated-comments,
+.geld-review__thread review-thread-collapsible > [class*='bgColor-muted']:first-child {
   display: none !important;
+}
+
+.geld-review__thread review-thread-collapsible {
+  margin: 0 !important;
 }
 
 .geld-review__thread-body .js-resolvable-timeline-thread-container,

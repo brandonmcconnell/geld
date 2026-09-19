@@ -132,6 +132,8 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: 'commit
   if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
   const silent = by('review-event');
   if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
+  const other = by('other');
+  if (other.length > 0) groups.push({ key: 'misc', label: `${other.length} other timeline item${other.length === 1 ? '' : 's'}`, author: null, nodes: other, section: 'activity' });
   return groups;
 }
 
