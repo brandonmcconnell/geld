@@ -2491,7 +2491,20 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border: 0 !important;
   background: none !important;
   box-shadow: none !important;
-  color: var(--geld-review-muted);
+  /* GitHub's emphasis badges (merged, closed) paint the glyph white on a filled disc; the disc is gone, so the glyph takes a colour. */
+  color: var(--geld-review-muted) !important;
+}
+
+.geld-review__qv .TimelineItem-badge.color-bg-done-emphasis {
+  color: var(--fgColor-done, var(--color-done-fg, #8250df)) !important;
+}
+
+.geld-review__qv .TimelineItem-badge.color-bg-danger-emphasis {
+  color: var(--geld-review-danger-fg) !important;
+}
+
+.geld-review__qv .TimelineItem-badge.color-bg-success-emphasis {
+  color: var(--geld-review-done-fg) !important;
 }
 
 .geld-review__qv .TimelineItem-badge .octicon {
@@ -2576,14 +2589,28 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   overflow: hidden;
 }
 
+/* The 28px icons in a 32px head leave 2px above and below; the same 2px on the right keeps the margin square. */
 .geld-review__thread-head {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  padding: 0 4px 0 12px;
+  padding: 0 2px 0 12px;
   border-bottom: 1px solid var(--geld-review-border-muted);
   background: var(--geld-review-subtle);
+}
+
+.geld-review__thread-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.geld-review__thread-actions > .geld-review__icon .octicon {
+  width: 14px;
+  height: 14px;
 }
 
 .geld-review__thread-path {
@@ -2799,10 +2826,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 /* A worn ⋯ menu drops over the rows below, whichever row holds it. */
-.geld-review__row[data-open],
-.geld-review__row:has(details[open]) {
+.geld-review__row[data-open] {
   position: relative;
   z-index: 3;
+}
+
+/* The row with an open menu is above every other row, the open one included — otherwise a menu dropped from a
+ * row above the open row painted under it (equal z-index, later in the DOM wins). */
+.geld-review__row:has(details[open]) {
+  position: relative;
+  z-index: 4;
 }
 
 .geld-review__head-slot:empty {
