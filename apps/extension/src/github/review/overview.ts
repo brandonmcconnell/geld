@@ -61,6 +61,8 @@ interface VisitState {
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
   archivedPreviewsOpen: boolean;
+  /** Rounds whose commit rows are unfolded (batch grouping). */
+  openCommits: Set<string>;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -85,6 +87,7 @@ const visit: VisitState = {
   openNotes: new Set<string>(),
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
+  openCommits: new Set<string>(),
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -427,8 +430,15 @@ function reapplySoon(): void {
 let lastSettings: GeldSettings | null = null;
 
 /** Open the row `key` names; an item opens inside its round, and the section holding either unfolds. */
-function openRow(key: string, batches: readonly Batch[]): void {
+function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings['reviewGrouping']): void {
   if (key.startsWith('item:')) {
+    // By push, an open thread has its own row under "Needs attention"; by type it lives inside its round.
+    if (grouping === 'batch' && batches.some((entry) => entry.items.some((item) => itemKey(item.id) === key && isOpenStatus(item.status)))) {
+      visit.openKey = key;
+      visit.openSubKey = null;
+      visit.collapsedGroups.delete('open');
+      return;
+    }
     const batch = batches.find((entry) => entry.items.some((item) => itemKey(item.id) === key));
     if (batch !== undefined) {
       visit.openKey = batch.key;
@@ -446,18 +456,13 @@ function openRow(key: string, batches: readonly Batch[]): void {
 }
 
 /**
- * Rounds by push: each commit row in the timeline closes a round; threads and
- * bot run summaries fall into the round of the last commit before them. With
- * no commits on the page there is one round.
+ * Rounds by push. The timeline is walked in home order: a run of commit rows
+ * with nothing between them opens a round (they are its pushes, merged), and
+ * everything until the next commit — threads, bot run summaries, previews,
+ * people's reviews — is what landed for that push. Content before any commit
+ * is round 1 with no commits. With no commits on the page there is one round.
  */
-function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[]): readonly Batch[] {
-  const commits = [...commitRoots].sort(compareHome);
-  const roundOf = (node: Element | null): number => {
-    if (node === null) return commits.length;
-    let count = 0;
-    for (const commit of commits) if (compareHome(commit, node) < 0) count += 1;
-    return count;
-  };
+function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[], reviewEntriesAll: readonly ReviewEntry[], previewsAll: readonly Preview[]): readonly Batch[] {
   const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   interface RoundComment {
@@ -467,67 +472,135 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     readonly node: HTMLElement;
     readonly body: string;
   }
-  const rounds = new Map<number, { items: ReviewItem[]; comments: RoundComment[] }>();
-  const at = (index: number): { items: ReviewItem[]; comments: RoundComment[] } => {
-    const existing = rounds.get(index);
-    if (existing !== undefined) return existing;
-    const fresh = { items: [], comments: [] };
-    rounds.set(index, fresh);
-    return fresh;
+  interface Round {
+    readonly commits: HTMLElement[];
+    readonly items: ReviewItem[];
+    readonly comments: RoundComment[];
+    readonly reviews: ReviewEntry[];
+  }
+  type Entry = { readonly node: Element; readonly kind: 'commit' } | { readonly node: Element; readonly kind: 'item'; readonly item: ReviewItem } | { readonly node: Element; readonly kind: 'comment'; readonly comment: RoundComment } | { readonly node: Element; readonly kind: 'review'; readonly review: ReviewEntry };
+  const entries: Entry[] = commitRoots.map((node) => ({ node, kind: 'commit' as const }));
+  const unplaced: Entry[] = [];
+  const place = (entry: Entry, node: Element | null): void => {
+    if (node === null) unplaced.push(entry);
+    else entries.push({ ...entry, node });
   };
-  for (const item of meta.items) at(roundOf(itemNodes(item)[0] ?? null)).items.push(item);
+  for (const item of meta.items) place({ node: document.documentElement, kind: 'item', item }, itemNodes(item)[0] ?? null);
   for (const entry of crawled.comments) {
     if (!botAnchors.has(entry.comment.anchor) || !entry.author.bot) continue;
-    at(roundOf(entry.root)).comments.push({ anchor: entry.comment.anchor, avatar: entry.avatarSrc ?? avatarSrcForLogin(entry.author.login), author: entry.author.login, node: entry.root, body: entry.comment.body });
+    const comment: RoundComment = { anchor: entry.comment.anchor, avatar: entry.avatarSrc ?? avatarSrcForLogin(entry.author.login), author: entry.author.login, node: entry.root, body: entry.comment.body };
+    place({ node: entry.root, kind: 'comment', comment }, entry.root);
   }
-  return [...rounds.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, round], position) => {
-      const avatars: Avatar[] = [];
-      const names: string[] = [];
-      const seen = new Set<string>();
-      // One avatar per account: the page serves the same picture at several sizes, so the login is the key.
-      const addAvatar = (avatar: Avatar): void => {
-        const key = avatar.login === '' ? avatar.src : avatar.login.toLowerCase();
-        if (avatars.some((entry) => (entry.login === '' ? entry.src : entry.login.toLowerCase()) === key)) return;
-        avatars.push(avatar);
-      };
-      const add = (login: string, src: string | null, bot: boolean): void => {
-        const label = bot ? botTitleFor(login) : login;
-        if (seen.has(label)) return;
-        seen.add(label);
-        names.push(label);
-        if (src !== null) addAvatar({ src, bot, login });
-      };
-      for (const comment of round.comments) add(comment.author, comment.avatar, true);
-      for (const item of round.items) {
-        for (const avatar of avatarsFor(item)) addAvatar(avatar);
-        for (const source of item.sources) add(source.author, avatarSrcForLogin(source.author), source.bot !== undefined || /\[bot\]$/i.test(source.author));
+  const itemAnchors = new Set(meta.items.flatMap((item) => item.sources.map((source) => source.anchor)));
+  for (const review of reviewEntriesAll) {
+    // Threads are items already; a person's verdict or top-level comment is the round's review.
+    if (review.state === 'thread' || itemAnchors.has(review.anchor)) continue;
+    place({ node: document.documentElement, kind: 'review', review }, entryNodes.get(review.anchor) ?? timelineRootOf(review.anchor));
+  }
+  entries.sort((a, b) => compareHome(a.node, b.node));
+  const rounds: Round[] = [];
+  let current: Round | null = null;
+  const fresh = (): Round => ({ commits: [], items: [], comments: [], reviews: [] });
+  const hasContent = (round: Round): boolean => round.items.length + round.comments.length + round.reviews.length > 0;
+  for (const entry of entries) {
+    if (entry.kind === 'commit') {
+      // A commit after content closes that round and opens the next; consecutive commits share one round.
+      if (current === null || hasContent(current)) {
+        current = fresh();
+        rounds.push(current);
       }
-      const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? null;
-      const firstNode = first === null ? null : document.getElementById(first);
-      return {
-        key: batchKey(position + 1),
-        index: position + 1,
-        avatars,
-        names,
-        items: round.items,
-        comments: round.comments.map((comment) => ({
-          anchor: comment.anchor,
-          author: comment.author,
-          avatarSrc: comment.avatar,
-          state: 'comment',
-          preview: firstSentence(comment.body),
-          time: timeTextOf(comment.node),
-          hasBody: true,
-          done: false,
-          replies: 0,
-          myReaction: null,
-        })),
-        time: timeTextOf(firstNode ?? round.comments[0]?.node ?? null),
-        firstAnchor: first,
-      };
-    });
+      if (entry.node instanceof HTMLElement) current.commits.push(entry.node);
+      continue;
+    }
+    if (current === null) {
+      current = fresh();
+      rounds.push(current);
+    }
+    if (entry.kind === 'item') current.items.push(entry.item);
+    else if (entry.kind === 'comment') current.comments.push(entry.comment);
+    else current.reviews.push(entry.review);
+  }
+  // Whatever the page could not place (not loaded yet) goes with the latest round.
+  if (unplaced.length > 0) {
+    const last = rounds[rounds.length - 1] ?? fresh();
+    if (rounds.length === 0) rounds.push(last);
+    for (const entry of unplaced) {
+      if (entry.kind === 'item') last.items.push(entry.item);
+      else if (entry.kind === 'comment') last.comments.push(entry.comment);
+      else if (entry.kind === 'review') last.reviews.push(entry.review);
+    }
+  }
+  return rounds.map((round, position) => {
+    const avatars: Avatar[] = [];
+    const names: string[] = [];
+    const seen = new Set<string>();
+    // One avatar per account: the page serves the same picture at several sizes, so the login is the key.
+    const addAvatar = (avatar: Avatar): void => {
+      const key = avatar.login === '' ? avatar.src : avatar.login.toLowerCase();
+      if (avatars.some((entry) => (entry.login === '' ? entry.src : entry.login.toLowerCase()) === key)) return;
+      avatars.push(avatar);
+    };
+    const add = (login: string, src: string | null, bot: boolean): void => {
+      const label = bot ? botTitleFor(login) : login;
+      if (seen.has(label)) return;
+      seen.add(label);
+      names.push(label);
+      if (src !== null) addAvatar({ src, bot, login });
+    };
+    for (const comment of round.comments) add(comment.author, comment.avatar, true);
+    for (const item of round.items) {
+      for (const avatar of avatarsFor(item)) addAvatar(avatar);
+      for (const source of item.sources) add(source.author, avatarSrcForLogin(source.author), source.bot !== undefined || /\[bot\]$/i.test(source.author));
+    }
+    for (const review of round.reviews) add(review.author, review.avatarSrc ?? avatarSrcForLogin(review.author), false);
+    const commentAnchors = new Set(round.comments.map((comment) => comment.anchor));
+    const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? null;
+    const firstNode = first === null ? null : document.getElementById(first);
+    const lastCommit = round.commits[round.commits.length - 1] ?? null;
+    return {
+      key: batchKey(position + 1),
+      index: position + 1,
+      avatars,
+      names,
+      items: round.items,
+      comments: round.comments.map((comment) => ({
+        anchor: comment.anchor,
+        author: comment.author,
+        avatarSrc: comment.avatar,
+        state: 'comment',
+        preview: firstSentence(comment.body),
+        time: timeTextOf(comment.node),
+        hasBody: true,
+        done: false,
+        replies: 0,
+        myReaction: null,
+      })),
+      reviews: round.reviews,
+      commits: round.commits,
+      ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
+      previews: previewsAll.filter((entry) => commentAnchors.has(entry.anchor)),
+      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? lastCommit),
+      firstAnchor: first,
+    };
+  });
+}
+
+/** The CI state GitHub draws next to a commit row: its status octicon (classic) or the status link's label (React). */
+function commitCiGlyph(row: HTMLElement): Batch['ciGlyph'] {
+  const scope = [row, ...wornPiecesOf(row)];
+  // GitHub's own status control first ("57 / 67 checks OK" behind a coloured glyph); the row at large only when it has none.
+  const controls = scope.flatMap((node) => [...node.querySelectorAll<HTMLElement>('.commit-build-statuses > summary, [class*="CommitStatus" i], a[href*="/checks"][aria-label]')]);
+  for (const control of controls) {
+    if (control.querySelector('.octicon-check, .octicon-check-circle-fill') !== null || control.classList.contains('color-fg-success')) return 'success';
+    if (control.querySelector('.octicon-x, .octicon-x-circle-fill') !== null || control.classList.contains('color-fg-danger')) return 'failure';
+    if (control.querySelector('.octicon-dot-fill, .octicon-dot') !== null || control.classList.contains('color-fg-attention')) return 'pending';
+  }
+  for (const node of scope) {
+    if (node.querySelector('.octicon-check, .octicon-check-circle-fill, .color-fg-success .octicon, [aria-label*="success" i], [class*="success" i] .octicon') !== null) return 'success';
+    if (node.querySelector('.octicon-x, .octicon-x-circle-fill, .color-fg-danger .octicon, [aria-label*="fail" i], [aria-label*="error" i]') !== null) return 'failure';
+    if (node.querySelector('.octicon-dot-fill, .octicon-dot, .color-fg-attention .octicon, [aria-label*="pending" i], [aria-label*="progress" i], [aria-label*="queued" i]') !== null) return 'pending';
+  }
+  return null;
 }
 
 function botTitleFor(login: string): string {
@@ -964,6 +1037,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.openNotes = new Set<string>();
     visit.sourcesShown = new Set<string>();
     visit.archivedPreviewsOpen = false;
+    visit.openCommits = new Set<string>();
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -1001,7 +1075,9 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = crawlReviews();
+  entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
   const comments = reviewEntries(crawledDom, reviews, meta, settings);
+  const allPreviews = previewsOn(crawledDom, meta);
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
     for (const item of meta.items) foldTargets.push({ key: itemKey(item.id), label: item.title, author: null, nodes: itemNodes(item) });
@@ -1027,7 +1103,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   }
   // Rounds: what landed between two pushes. Bot run summaries belong to their round rather than to rows of their own.
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit').map((entry) => entry.root);
-  const batches = buildBatches(meta, crawledDom, settings, commitRoots);
+  const batches = buildBatches(meta, crawledDom, settings, commitRoots, comments, allPreviews);
   const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
   // By node, not by looking the anchor up: GitHub repeats an id (a review inside its minimized wrapper), and
   // getElementById would answer with whichever copy comes first in the document.
@@ -1043,16 +1119,15 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // A permalink (or a find-in-page hit) opens its row here rather than revealing the original down the page.
   if (visit.pendingAnchor !== null && hidingTimeline) {
     const key = rowKeyFor(visit.pendingAnchor, meta, groups);
-    if (key !== null) openRow(key, batches);
+    if (key !== null) openRow(key, batches, settings.reviewGrouping);
   }
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
   // An item lives inside its round's row: opening it opens the round and the item within.
-  const openRowLocal = (key: string): void => openRow(key, batches);
+  const openRowLocal = (key: string): void => openRow(key, batches, settings.reviewGrouping);
   const subject = subjectOf();
   const boxText = mergeBoxText();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
-  entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
   const stated = /at least\s+(\d+)\s+approving review/i.exec(boxText)?.[1];
   if (stated !== undefined) visit.knownRequired = Number.parseInt(stated, 10);
   const reviewers = [...latestReviewers(reviews)];
@@ -1077,7 +1152,9 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
-    previews: latestPreviews(previewsOn(crawledDom, meta)),
+    previews: latestPreviews(allPreviews),
+    grouping: settings.reviewGrouping,
+    openCommits: visit.openCommits,
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
     checksRing,
@@ -1186,6 +1263,13 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         reapply();
       });
     },
+    onToggleCommits: (batchKey) => {
+      keepInPlace(`commits:${batchKey}`, () => {
+        if (visit.openCommits.has(batchKey)) visit.openCommits.delete(batchKey);
+        else visit.openCommits.add(batchKey);
+        reapply();
+      });
+    },
     onToggleArchivedPreviews: () => {
       keepInPlace('notes:previews', () => {
         visit.archivedPreviewsOpen = !visit.archivedPreviewsOpen;
@@ -1254,6 +1338,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         const batch = batches.find((entry) => entry.key === visit.openKey);
         if (batch !== undefined) {
           const view = renderBatchView(mounted.slot, batch, model, panelHandlers);
+          // By push: the round's commit rows, unfolded under their heading (they keep the commit-hover breakdown).
+          if (view.commitsSlot !== null) renderQuickView(view.commitsSlot, batch.commits);
           // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here).
           const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? timelineRootOf(view.openComment));
           if (view.nested !== null && commentNode !== null) {
