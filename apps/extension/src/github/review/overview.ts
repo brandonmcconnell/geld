@@ -414,8 +414,15 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   };
   const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
-  const rounds = new Map<number, { items: ReviewItem[]; comments: { anchor: string; avatar: string | null; author: string; node: HTMLElement }[] }>();
-  const at = (index: number): { items: ReviewItem[]; comments: { anchor: string; avatar: string | null; author: string; node: HTMLElement }[] } => {
+  interface RoundComment {
+    readonly anchor: string;
+    readonly avatar: string | null;
+    readonly author: string;
+    readonly node: HTMLElement;
+    readonly body: string;
+  }
+  const rounds = new Map<number, { items: ReviewItem[]; comments: RoundComment[] }>();
+  const at = (index: number): { items: ReviewItem[]; comments: RoundComment[] } => {
     const existing = rounds.get(index);
     if (existing !== undefined) return existing;
     const fresh = { items: [], comments: [] };
@@ -425,7 +432,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   for (const item of meta.items) at(roundOf(itemNodes(item)[0] ?? null)).items.push(item);
   for (const entry of crawled.comments) {
     if (!botAnchors.has(entry.comment.anchor) || !entry.author.bot) continue;
-    at(roundOf(entry.root)).comments.push({ anchor: entry.comment.anchor, avatar: entry.avatarSrc, author: entry.author.login, node: entry.root });
+    at(roundOf(entry.root)).comments.push({ anchor: entry.comment.anchor, avatar: entry.avatarSrc ?? avatarSrcForLogin(entry.author.login), author: entry.author.login, node: entry.root, body: entry.comment.body });
   }
   return [...rounds.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -446,7 +453,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
         names.push(label);
         if (src !== null) addAvatar({ src, bot, login });
       };
-      for (const comment of round.comments) add(comment.author, comment.avatar ?? avatarSrcForLogin(comment.author), true);
+      for (const comment of round.comments) add(comment.author, comment.avatar, true);
       for (const item of round.items) {
         for (const avatar of avatarsFor(item)) addAvatar(avatar);
         for (const source of item.sources) add(source.author, avatarSrcForLogin(source.author), source.bot !== undefined || /\[bot\]$/i.test(source.author));
@@ -459,7 +466,18 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
         avatars,
         names,
         items: round.items,
-        commentAnchors: round.comments.map((comment) => comment.anchor),
+        comments: round.comments.map((comment) => ({
+          anchor: comment.anchor,
+          author: comment.author,
+          avatarSrc: comment.avatar,
+          state: 'comment',
+          preview: firstSentence(comment.body),
+          time: timeTextOf(comment.node),
+          hasBody: true,
+          done: false,
+          replies: 0,
+          myReaction: null,
+        })),
         time: timeTextOf(firstNode ?? round.comments[0]?.node ?? null),
         firstAnchor: first,
       };
@@ -848,7 +866,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   // Rounds: what landed between two pushes. Bot run summaries belong to their round rather than to rows of their own.
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit').map((entry) => entry.root);
   const batches = buildBatches(meta, crawledDom, settings, commitRoots);
-  const batchedAnchors = new Set(batches.flatMap((batch) => batch.commentAnchors));
+  const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
   for (const [index, group] of groups.entries()) {
     if (!group.key.startsWith('bot:')) continue;
     if (!group.nodes.every((node) => [...batchedAnchors].some((anchor) => node.id === anchor || node.contains(document.getElementById(anchor))))) continue;
@@ -1051,10 +1069,10 @@ export function applyReviewOverview(settings: GeldSettings): void {
         const batch = batches.find((entry) => entry.key === visit.openKey);
         if (batch !== undefined) {
           const view = renderBatchView(mounted.slot, batch, model, panelHandlers);
-          const parentNodes = batch.commentAnchors.map((anchor) => timelineRootOf(anchor)).filter((node): node is HTMLElement => node !== null);
-          if (parentNodes.length > 0) renderQuickView(view.parents, parentNodes);
-          else view.parents.remove();
-          if (view.nested !== null && view.openItem !== null) {
+          const commentNode = view.openComment === null ? null : timelineRootOf(view.openComment);
+          if (view.nested !== null && commentNode !== null) {
+            renderQuickView(view.nested, [commentNode]);
+          } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
             renderThreadsView(view.nested, itemNodes(item), {
               pathOf: (node) => threadPathOf(node, item),
@@ -1064,7 +1082,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
                 if (anchor !== null) focusReply(anchor);
               },
             });
-          } else if (visit.openSubKey !== null && visit.openSubKey.startsWith('item:') && view.openItem === null) {
+          } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
             visit.openSubKey = null;
           }
         }
