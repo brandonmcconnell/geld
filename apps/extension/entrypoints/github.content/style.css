@@ -3209,6 +3209,97 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   }
 }
 
+/* ---- previews ----------------------------------------------------------------
+ * A pill per current preview in the row (the bots' pill, with a status light instead of a traffic-light glyph);
+ * they wrap when there are many. Open, one line each with Open / Inspect links. */
+.geld-review__deploys {
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.geld-review__deploy {
+  gap: 6px;
+}
+
+.geld-review__deploy:is(a):hover {
+  border-color: var(--geld-review-muted);
+  background: var(--geld-review-subtle);
+  text-decoration: none;
+}
+
+.geld-review__deploy-light {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--geld-review-muted);
+}
+
+.geld-review__deploy-light[data-status='ready'] {
+  background: var(--geld-review-done-fg);
+}
+
+.geld-review__deploy-light[data-status='failed'] {
+  background: var(--geld-review-danger-fg);
+}
+
+.geld-review__deploy-light[data-status='building'] {
+  background: var(--geld-review-attention-fg);
+}
+
+.geld-review__deploy-light[data-status='skipped'] {
+  background: var(--geld-review-border);
+}
+
+.geld-review__row--preview .geld-review__status--verdict[data-preview-status='ready'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__row--preview .geld-review__status--verdict[data-preview-status='failed'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__row--preview .geld-review__status--verdict[data-preview-status='building'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__row--preview .geld-review__main--static .geld-review__deploy {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  font-weight: 400;
+}
+
+.geld-review__right--links {
+  gap: 10px;
+  padding-right: 6px;
+}
+
+.geld-review__deploy-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.geld-review__deploy-link:hover {
+  text-decoration: underline;
+}
+
+.geld-review__deploy-link .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__deploy-link--muted {
+  color: var(--geld-review-muted);
+}
+
 /* ---- narrow layouts ----------------------------------------------------------
  * Below ~640px of panel width the rows keep what says something and drop what only repeats it: the round's
  * name (its avatars and meter say it), timestamps, the word "resolved", the check labels (their glyphs
@@ -3222,7 +3313,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__row--batch .geld-review__title,
   .geld-review__progress-word,
   .geld-review__check-label,
-  .geld-review__bot-name,
+  .geld-review__bot-name:not(.geld-review__deploy-name),
   .geld-review__bot-detail,
   .geld-review__label-long,
   .geld-review__row .geld-review__time {

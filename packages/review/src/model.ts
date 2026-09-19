@@ -149,6 +149,21 @@ export interface GeldPrMeta {
   readonly fold: FoldRecord;
   readonly truncated?: boolean;
   readonly summary?: ReviewSummary;
+  /** Preview deployments the hosting bots posted, every comment's, in timeline order (the reader keeps the latest per project). */
+  readonly previews?: readonly PreviewRecord[];
+}
+
+export const PREVIEW_STATUSES = ['ready', 'building', 'failed', 'skipped', 'unknown'] as const;
+export type PreviewStatusRecord = (typeof PREVIEW_STATUSES)[number];
+
+export interface PreviewRecord {
+  readonly host: string;
+  readonly project: string;
+  readonly status: PreviewStatusRecord;
+  readonly url: string | null;
+  readonly inspectUrl: string | null;
+  readonly anchor: string;
+  readonly updatedAt?: string;
 }
 
 export interface GeldDeeplink {
@@ -227,6 +242,16 @@ export const foldSchema = z.object({
   events: z.array(sourceAnchorSchema),
 });
 
+export const previewRecordSchema = z.object({
+  host: z.string().min(1),
+  project: z.string().min(1),
+  status: z.enum(PREVIEW_STATUSES),
+  url: z.string().url().nullable(),
+  inspectUrl: z.string().url().nullable(),
+  anchor: sourceAnchorSchema,
+  updatedAt: isoDate.optional(),
+});
+
 export const geldPrMetaSchema = z.object({
   v: z.literal(META_VERSION),
   generatedAt: isoDate,
@@ -238,6 +263,7 @@ export const geldPrMetaSchema = z.object({
   fold: foldSchema,
   truncated: z.boolean().optional(),
   summary: reviewSummarySchema.optional(),
+  previews: z.array(previewRecordSchema).optional(),
 });
 
 export const deeplinkSchema = z.object({
@@ -307,9 +333,19 @@ function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
     fold: { comments: value.fold.comments, events: value.fold.events },
   };
   const flagged = value.truncated === undefined ? meta : { ...meta, truncated: value.truncated };
-  return value.summary === undefined
-    ? flagged
-    : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
+  const summarised =
+    value.summary === undefined
+      ? flagged
+      : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
+  return value.previews === undefined
+    ? summarised
+    : {
+        ...summarised,
+        previews: value.previews.map((entry) => {
+          const record: PreviewRecord = { host: entry.host, project: entry.project, status: entry.status, url: entry.url, inspectUrl: entry.inspectUrl, anchor: entry.anchor };
+          return entry.updatedAt === undefined ? record : { ...record, updatedAt: entry.updatedAt };
+        }),
+      };
 }
 
 export function parseGeldPrMeta(value: unknown): ParseResult<GeldPrMeta> {
