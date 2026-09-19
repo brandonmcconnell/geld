@@ -311,16 +311,23 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     if (row.closest('form') !== null) continue;
     // Leaf rows: a `.js-timeline-item` wrapper may hold several `.TimelineItem`s (a force-push next to a mention),
     // each of which stands or folds on its own. A wrapper whose rows are on loan to the panel is still a wrapper.
-    if (row.querySelector(ROW) !== null || wornPiecesOf(row).length > 0) continue;
-    if ([...claimed].some((node) => node === row || node.contains(row) || row.contains(node))) continue;
+    // Except a minimized comment ("This comment was marked as resolved · Show comment"): its rows sit inside a
+    // closed <details>, invisible whatever we do to them; the visible thing is the wrapper, so that is the leaf.
+    const innerRows = [...row.querySelectorAll<HTMLElement>(ROW)];
+    const minimized = innerRows.length > 0 && innerRows.every((inner) => inner.closest('.minimized-comment') !== null && row.contains(inner.closest('.minimized-comment')));
+    if (!minimized && (innerRows.length > 0 || wornPiecesOf(row).length > 0)) continue;
+    if ([...claimed].some((node) => node === row || node.contains(row) || (!minimized && row.contains(node)))) continue;
     // The description card (which hosts the panel, and through it whatever is on loan) and the new-comment form are the page's own.
-    if (row.querySelector('.geld-review, [data-geld-attached], form.js-new-comment-form, textarea[name="comment[body]"]') !== null) continue;
+    // (A thread's own reply box is a `comment[body]` textarea too; only the page's new-comment form counts.)
+    if (row.querySelector('.geld-review, [data-geld-attached], form.js-new-comment-form, textarea[name="comment[body]"]:not(.js-inline-comment-form textarea, .review-thread-component textarea, .js-resolvable-timeline-thread-container textarea, .minimized-comment textarea)') !== null) continue;
     if ([...row.querySelectorAll<HTMLElement>('[id^="issue-"]')].some((node) => /^issue-\d+$/.test(node.id))) continue;
     // An emptied wrapper (its rows loaded elsewhere, or a spent "Load more") is nothing to list.
     if ((row.textContent ?? '').trim() === '' && row.querySelector('img, svg') === null) continue;
     let kind: CrawledLeftover['kind'] = 'other';
     if (row.querySelector('a[href^="#commits-pushed-"], [id^="commits-pushed-"]') !== null || /\badded \d+ commits?\b/.test(row.textContent ?? '')) kind = 'noise';
-    else if (row.querySelector('.minimized-comment include-fragment[src], details.minimized-comment:not([open]) include-fragment') !== null) kind = 'pending';
+    else if (row.querySelector('.minimized-comment include-fragment[src]') !== null) kind = 'pending';
+    // What someone minimized (resolved, outdated, off-topic) is noise here; its comment, once loaded, is crawled on its own.
+    else if (minimized || row.querySelector('.minimized-comment') !== null) kind = 'noise';
     else if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
     else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';
     else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
