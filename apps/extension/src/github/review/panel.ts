@@ -756,6 +756,15 @@ function toneAttr(tone: Tone | null): Readonly<Record<string, string>> {
   return tone === null ? {} : { 'data-tone': tone };
 }
 
+/**
+ * Status rows tint only for what needs the reader: three adjacent rows in
+ * three hues read as a traffic light, and green or amber there repeats what
+ * the glyph already says. Settled rows in the list below keep their green.
+ */
+function alarmTone(health: Health): Tone | null {
+  return toneOf(health) === 'bad' ? 'bad' : null;
+}
+
 function statusRow(label: [string, string], lead: Node, content: Node[], right: Node[], extra: Readonly<Record<string, string>> = {}): HTMLElement {
   return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, ...extra }, [
     createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [lead]),
@@ -777,7 +786,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
         chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet'])] : chips,
         menu === null ? [] : [menu],
-        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(model.meta.bots.length === 0 ? null : toneOf(worst)) },
+        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(alarmTone(model.meta.bots.length === 0 ? 'pending' : worst)) },
       ),
     );
   }
@@ -787,7 +796,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
     main.addEventListener('click', () => handlers.onToggle(CHECKS_KEY));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing)) }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
       rowLabel('CI checks', 'CI'),
       main,
@@ -821,7 +830,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const right: Node[] = [];
     if (model.reviews !== null) right.push(healthGlyph(health, reviewsLabel(model.reviews)));
     right.push(chevron(open, () => handlers.onToggle(REVIEWS_KEY)));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(toneOf(health)) }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]),
       rowLabel('Reviews', 'Reviews'),
       main,
