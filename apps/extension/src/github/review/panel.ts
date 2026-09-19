@@ -17,6 +17,7 @@ import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checks
 import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import { reclaimOrphans, restoreAll } from './teleport';
+import { ATTR_WHO } from './hovercard';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -34,6 +35,8 @@ export interface FoldRow {
   readonly section: 'comments' | 'activity';
   readonly count: number;
   readonly avatarSrc: string | null;
+  /** Login of the one account whose comments the fold holds, when it is one account's. */
+  readonly author: string | null;
   readonly firstAnchor: string | null;
   /** When the fold holds one comment: its time, as the page shows it. */
   readonly time: string;
@@ -43,6 +46,8 @@ export interface FoldRow {
 export interface Avatar {
   readonly src: string;
   readonly bot: boolean;
+  /** The account's login (`cursor[bot]` for an App); '' when the page did not say. */
+  readonly login: string;
 }
 
 /**
@@ -217,18 +222,30 @@ function restoreFocus(root: Element, key: string | null): void {
   target?.focus({ preventScroll: true });
 }
 
+/**
+ * A person's avatar carries GitHub's own hovercard attributes (its script
+ * picks them up on any element, `img` included); a bot's carries Geld's
+ * identity-card hook, since GitHub has no hovercard for Apps.
+ */
+function whoAttributes(login: string, bot: boolean): Readonly<Record<string, string>> {
+  if (login === '') return {};
+  // Only an App (`…[bot]`) lacks GitHub's card; a bot-like person's account has one.
+  if (bot && /\[bot\]$/i.test(login)) return { [ATTR_WHO]: login };
+  return { 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(login)}/hovercard` };
+}
+
 function avatarImg(entry: Avatar): HTMLElement {
-  return createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy' });
+  return createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy', ...whoAttributes(entry.login, entry.bot) });
 }
 
 /** Bots and Apps are rounded squares on GitHub, people are circles; the same pictures the page shows. */
-function avatarStack(avatars: readonly Avatar[], fallback: string, bot: boolean): HTMLElement {
+function avatarStack(avatars: readonly Avatar[], fallback: string, bot: boolean, max = 2): HTMLElement {
   const stack = createElement('span', { class: `${PANEL_CLASS}__avatars`, 'aria-hidden': 'true' });
   if (avatars.length === 0) {
     stack.append(createElement('span', { class: `${PANEL_CLASS}__avatar ${PANEL_CLASS}__avatar--letter`, 'data-kind': bot ? 'bot' : 'user' }, [fallback.charAt(0).toUpperCase() || '?']));
     return stack;
   }
-  for (const entry of avatars.slice(0, 2)) stack.append(avatarImg(entry));
+  for (const entry of avatars.slice(0, max)) stack.append(avatarImg(entry));
   return stack;
 }
 
@@ -395,12 +412,15 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
     // Geld's small menu stands in until it arrives, and for groups.
     if (fold.count === 1 && fold.avatarSrc !== null) right.append(controlSlot(anchor));
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
+  } else {
+    // Keeps the times of rows without a menu in line with those that have one.
+    right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
   }
   right.append(chevron(open, toggle));
   const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(FOLD_GLYPH[fold.key] ?? ICON_COMMENT_DISCUSSION)]);
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold`, 'data-geld-fold': fold.key, 'data-section': fold.section }, [
     glyph,
-    ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true }], fold.label, true)]),
+    ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true, login: fold.author ?? '' }], fold.label, true)]),
     main,
     right,
   ]);
@@ -415,7 +435,25 @@ function batchProgress(batch: Batch): { readonly done: number; readonly total: n
   return { done: batch.items.filter((item) => !isOpenStatus(item.status)).length, total: batch.items.length };
 }
 
-/** A round's row: progress glyph, who posted, "Round N", what it holds, when. */
+/** The meter from the Geld row — a bar that fills as threads resolve, then "d/t resolved" — shown only once there is something to measure. */
+function progressMeter(done: number, total: number, noun: string): HTMLElement {
+  const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+  const progress = createElement('span', { class: `${PANEL_CLASS}__progress`, title: total === 0 ? `No ${noun}s yet` : `${done} of ${total} ${total === 1 ? noun : `${noun}s`} resolved` });
+  if (total > 0) progress.append(createElement('span', { class: `${PANEL_CLASS}__meter`, 'aria-hidden': 'true' }, [createElement('i', { style: `width:${percent}%` })]));
+  progress.append(createElement('span', {}, [total === 0 ? `No ${noun}s` : `${done}/${total} resolved`]));
+  return progress;
+}
+
+/** A small pill with the comment glyph and a count, as the Reviews row wears. */
+function countChip(count: number, label: string): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: label }, [icon(ICON_COMMENT_DISCUSSION), createElement('span', {}, [String(count)])]);
+}
+
+/**
+ * A round's row: progress glyph, who posted (their avatars say it — no
+ * names), "Round N", the meter for its threads, a chip with how many run
+ * summaries it holds, when.
+ */
 function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const open = model.openKey === batch.key;
   const { done, total } = batchProgress(batch);
@@ -424,14 +462,10 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     total === 0
       ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)])
       : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--progress`, role: 'img', 'aria-label': `${done} of ${total} threads resolved`, 'data-done': String(allDone) }, [icon(allDone ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]);
-  const bits: string[] = [];
-  if (batch.names.length > 0) bits.push(batch.names.join(', '));
-  if (total > 0) bits.push(`${plural(total, 'thread')}${total > 0 ? ` · ${done}/${total} resolved` : ''}`);
-  if (batch.commentAnchors.length > 0) bits.push(plural(batch.commentAnchors.length, 'comment'));
-  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}` }, [
-    createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`Round ${batch.index}`]),
-    createElement('span', { class: `${PANEL_CLASS}__detail` }, [bits.join(' — ')]),
-  ]);
+  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`Round ${batch.index}`])];
+  if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
+  if (batch.commentAnchors.length > 0) mainChildren.push(countChip(batch.commentAnchors.length, plural(batch.commentAnchors.length, 'comment')));
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
   main.addEventListener('click', toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
@@ -443,7 +477,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   right.append(chevron(open, toggle));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open' }, [
     lead,
-    avatarStack(batch.avatars, batch.names[0] ?? '', true),
+    avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length),
     main,
     right,
   ]);
@@ -550,8 +584,8 @@ function healthGlyph(health: Health, label: string): HTMLElement {
   return createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(HEALTH_ICON[health])]);
 }
 
-function anchorLink(anchor: string, label: string, handlers: PanelHandlers, children: Node[]): HTMLElement {
-  const link = createElement('a', { class: `${PANEL_CLASS}__bot`, href: `#${anchor}`, title: label }, children);
+function anchorLink(anchor: string, label: string, handlers: PanelHandlers, children: Node[], extra: Readonly<Record<string, string>>): HTMLElement {
+  const link = createElement('a', { class: `${PANEL_CLASS}__bot`, href: `#${anchor}`, 'aria-label': label, ...extra }, children);
   link.addEventListener('click', (event) => {
     event.preventDefault();
     handlers.onOpenAnchor(anchor);
@@ -559,7 +593,11 @@ function anchorLink(anchor: string, label: string, handlers: PanelHandlers, chil
   return link;
 }
 
-/** One bot: its icon, name, detail and a traffic-light glyph; clicking opens its run summary where the reader is. */
+/**
+ * One bot: its icon, name, detail and a traffic-light glyph; clicking opens
+ * its run summary where the reader is. Resting on it shows the identity
+ * card (the verdict is in there too, so no native tooltip competes with it).
+ */
 function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const health = botHealth(bot);
   const current = isCurrent(bot, model.meta.headSha);
@@ -569,9 +607,12 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   if (iconSrc !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [botTitle(bot.id, bot.login)]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [botDetail(bot)]));
-  children.push(healthGlyph(health, label));
-  if (bot.sourceId !== undefined) return anchorLink(bot.sourceId, label, handlers, children);
-  return createElement('span', { class: `${PANEL_CLASS}__bot`, title: label, ...(current ? {} : { 'data-current': 'false' }) }, children);
+  const glyph = healthGlyph(health, label);
+  glyph.removeAttribute('title');
+  children.push(glyph);
+  const who = whoAttributes(bot.login, true);
+  if (bot.sourceId !== undefined) return anchorLink(bot.sourceId, label, handlers, children, who);
+  return createElement('span', { class: `${PANEL_CLASS}__bot`, ...who, ...(current ? {} : { 'data-current': 'false' }) }, children);
 }
 
 /** Re-run menu: one entry per installed bot plus All; choosing one turns the menu into a confirm. */
@@ -726,14 +767,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const open = model.openKey === REVIEWS_KEY;
     // Only comments count here; a bare verdict is already in the approvals.
     const count = model.comments.filter((entry) => entry.hasBody).length;
-    if (count > 0) {
-      content.push(
-        createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: `${plural(count, 'review comment')} from people` }, [
-          icon(ICON_COMMENT_DISCUSSION),
-          createElement('span', {}, [String(count)]),
-        ]),
-      );
-    }
+    if (count > 0) content.push(countChip(count, `${plural(count, 'review comment')} from people`));
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
       createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
     ]);
@@ -815,7 +849,7 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
     const row = createElement(
       'li',
       { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
-      [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot: false }], entry.author, false), main, right],
+      [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot: false, login: entry.author }], entry.author, false), main, right],
     );
     if (open) row.setAttribute('data-open', '');
     if (entry.hasBody) rowClickToggles(row, toggle);
@@ -909,14 +943,10 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   const { open, done } = splitItems(model.meta.items);
   const total = model.meta.items.length;
   const doneCount = doneItemCount(model.meta.items);
-  const percent = total === 0 ? 0 : Math.round((doneCount / total) * 100);
   const waiting = model.meta.items.filter((item) => item.status === 'needs-reply').length;
 
   /* Summary strip: the meter only once there is something to measure. */
-  const progress = createElement('span', { class: `${PANEL_CLASS}__progress`, title: total === 0 ? 'No review items yet' : `${doneCount} of ${total} review items resolved` });
-  if (total > 0) progress.append(createElement('span', { class: `${PANEL_CLASS}__meter`, 'aria-hidden': 'true' }, [createElement('i', { style: `width:${percent}%` })]));
-  progress.append(createElement('span', {}, [total === 0 ? 'No review items' : `${doneCount}/${total} resolved`]));
-  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']), progress]);
+  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']), progressMeter(doneCount, total, 'review item')]);
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });

@@ -7,12 +7,12 @@
 
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { GeldPrMeta, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, THREAD_SELECTOR } from './crawler';
 import type { CrawledReview } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
@@ -22,15 +22,15 @@ import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, renderBatchView, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState } from './panel';
-import { hideHoverCard, setHoverProvider } from './hovercard';
-import type { HoverPreview } from './hovercard';
-import { checkCountsFrom, checksSummary, digestMarkdown, itemMarkdown, requiredReviewsFrom } from './panel-model';
+import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
+import type { HoverPreview, WhoCard } from './hovercard';
+import { checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { renderMentionsView, renderQuickView, renderThreadsView } from './quick-view';
+import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, revealThreadFor } from './quick-view';
 import { compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -173,7 +173,7 @@ function avatarsFor(item: ReviewItem): readonly Avatar[] {
     const src = avatarSrcFor(source.anchor);
     if (src === null) continue;
     seen.add(source.author);
-    avatars.push({ src, bot: source.bot !== undefined || /\[bot\]$/i.test(source.author) });
+    avatars.push({ src, bot: source.bot !== undefined || /\[bot\]$/i.test(source.author), login: source.author });
     if (avatars.length === 2) break;
   }
   return avatars;
@@ -191,6 +191,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
     section: group.section ?? 'comments',
     count: group.nodes.length,
     avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
+    author: group.author,
     firstAnchor: firstAnchorIn(group.nodes[0] ?? null),
     time: timeTextOf(group.nodes[0] ?? null),
   }));
@@ -432,24 +433,30 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       const avatars: Avatar[] = [];
       const names: string[] = [];
       const seen = new Set<string>();
+      // One avatar per account: the page serves the same picture at several sizes, so the login is the key.
+      const addAvatar = (avatar: Avatar): void => {
+        const key = avatar.login === '' ? avatar.src : avatar.login.toLowerCase();
+        if (avatars.some((entry) => (entry.login === '' ? entry.src : entry.login.toLowerCase()) === key)) return;
+        avatars.push(avatar);
+      };
       const add = (login: string, src: string | null, bot: boolean): void => {
         const label = bot ? botTitleFor(login) : login;
         if (seen.has(label)) return;
         seen.add(label);
         names.push(label);
-        if (src !== null && !avatars.some((avatar) => avatar.src === src)) avatars.push({ src, bot });
+        if (src !== null) addAvatar({ src, bot, login });
       };
-      for (const comment of round.comments) add(comment.author, comment.avatar, true);
+      for (const comment of round.comments) add(comment.author, comment.avatar ?? avatarSrcForLogin(comment.author), true);
       for (const item of round.items) {
-        for (const avatar of avatarsFor(item)) if (!avatars.some((entry) => entry.src === avatar.src)) avatars.push(avatar);
-        for (const source of item.sources) add(source.author, null, source.bot !== undefined || /\[bot\]$/i.test(source.author));
+        for (const avatar of avatarsFor(item)) addAvatar(avatar);
+        for (const source of item.sources) add(source.author, avatarSrcForLogin(source.author), source.bot !== undefined || /\[bot\]$/i.test(source.author));
       }
       const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? null;
       const firstNode = first === null ? null : document.getElementById(first);
       return {
         key: batchKey(position + 1),
         index: position + 1,
-        avatars: avatars.slice(0, 3),
+        avatars,
         names,
         items: round.items,
         commentAnchors: round.comments.map((comment) => comment.anchor),
@@ -461,6 +468,35 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
 
 function botTitleFor(login: string): string {
   return botTitle(resolveBotId(login) ?? `custom:${login}`, login);
+}
+
+/** The bot's verdict as a sentence for its card. */
+function botCardLine(record: BotVerdictRecord): string {
+  if (record.verdict === 'running') return 'Reviewing this pull request now';
+  if (record.verdict === 'failed') return 'Its review of this pull request failed';
+  if (record.verdict === 'clean') return 'Found nothing on this pull request';
+  if (record.score !== undefined) return `Scored this pull request ${record.score}/5`;
+  if (record.count !== undefined) return `Reported ${record.count} issue${record.count === 1 ? '' : 's'} on this pull request`;
+  return 'Reported findings on this pull request';
+}
+
+/**
+ * What a bot's hovercard would say if GitHub had one: its icon, name, login,
+ * its verdict on this pull request when it gave one, and the App's page
+ * (GitHub links a `<name>[bot]` login to `/apps/<name>`).
+ */
+function whoCardFor(login: string, meta: GeldPrMeta, model: PanelModel): WhoCard | null {
+  const record = meta.bots.find((bot) => bot.login.toLowerCase() === login.toLowerCase()) ?? null;
+  const slug = login.replace(/\[bot\]$/i, '');
+  const detail = record === null ? 'GitHub App' : `${botCardLine(record)}${isCurrent(record, meta.headSha) ? '' : ' (an earlier commit)'}`;
+  return {
+    avatarSrc: (record === null ? null : model.botIconFor(record.id)) ?? avatarSrcForLogin(login),
+    name: record === null ? botTitleFor(login) : botTitle(record.id, record.login),
+    login,
+    bot: true,
+    detail,
+    href: /\[bot\]$/i.test(login) ? `/apps/${slug}` : `/${login}`,
+  };
 }
 
 /** GitHub's checks-settings gear (and its tooltip) move from the check list into the CI row itself. */
@@ -908,6 +944,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       if (anchor === null) return;
       openRowLocal(itemKey(id));
       reapply();
+      revealThreadFor(anchor);
       focusReply(anchor);
     },
     onQuoteReply: (id) => {
@@ -1034,7 +1071,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       } else if (visit.openKey === CHECKS_KEY) {
         renderQuickView(mounted.slot, nodes);
       } else if (visit.openKey === foldKey('mentions')) {
-        renderMentionsView(mounted.slot, nodes);
+        renderMentionsView(mounted.slot, nodes, outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]')));
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
         // reveals the rest of the thread and the reply box.
@@ -1059,6 +1096,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     wearGear(mounted.root);
   }
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
+  setWhoProvider((login) => whoCardFor(login, meta, model));
   applyFolds(foldTargets, new Set());
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
@@ -1105,6 +1143,7 @@ export function onReviewBeforeMatch(event: Event, settings: GeldSettings): void 
 export function teardownReviewOverview(): void {
   hideHoverCard();
   setHoverProvider(null);
+  setWhoProvider(null);
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());
