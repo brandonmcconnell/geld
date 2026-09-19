@@ -67,7 +67,7 @@ function bodyElementOf(root: Element): HTMLElement | null {
   return body instanceof HTMLElement ? body : null;
 }
 
-const BLOCK = /^(P|DIV|H[1-6]|LI|PRE|BLOCKQUOTE|TR|DETAILS|SUMMARY|SECTION|ARTICLE|UL|OL|TABLE|HR|BR)$/;
+const BLOCK = /^(P|DIV|H[1-6]|LI|PRE|BLOCKQUOTE|TR|DETAILS|SUMMARY|SECTION|ARTICLE|UL|OL|TABLE|HR|BR|BUTTON)$/;
 
 /**
  * Text with the line breaks the markup implies. `textContent` glues a

@@ -2117,17 +2117,29 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   transform: rotate(180deg);
 }
 
-@media (hover: hover) {
-  .geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__icon,
-  .geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__menu:not([open]) {
-    opacity: 0;
-  }
+/* Controls stay put: a row must read the same collapsed, hovered and open. Muted until hovered. */
+.geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__icon,
+.geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__menu:not([open]) {
+  opacity: 0.6;
+}
 
-  .geld-review__row:hover .geld-review__right > *,
-  .geld-review__row:focus-within .geld-review__right > *,
-  .geld-review__row[data-open] .geld-review__right > * {
-    opacity: 1;
-  }
+.geld-review__row:hover .geld-review__right > *,
+.geld-review__row:focus-within .geld-review__right > *,
+.geld-review__row[data-open] .geld-review__right > * {
+  opacity: 1;
+}
+
+/* While GitHub's own controls are worn, Geld's duplicates step aside so the row keeps one ⋯ and one reaction control. */
+.geld-review__row[data-head] .geld-review__right > .geld-review__menu,
+.geld-review__row[data-head] .geld-review__right > .geld-review__react {
+  display: none;
+}
+
+/* A minimized comment shows its contents in the quick view; GitHub's "has been minimized" bar stays in the timeline. */
+.geld-review__qv .minimized-comment > details > summary,
+.geld-review__qv details.minimized-comment > summary,
+.geld-review__qv .minimized-comment .minimized-comment-summary {
+  display: none !important;
 }
 
 .geld-review__empty {
