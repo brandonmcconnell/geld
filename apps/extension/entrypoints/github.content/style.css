@@ -2605,6 +2605,107 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-hover);
 }
 
+/* ---- rounds --------------------------------------------------------------- */
+
+.geld-review__status--progress {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__status--progress[data-done='true'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__row--batch[data-state='done'] .geld-review__title {
+  color: var(--geld-review-muted);
+  font-weight: 500;
+}
+
+.geld-review__batch-parents:empty {
+  display: none;
+}
+
+.geld-review__batch-parents .geld-review__qv {
+  padding: 8px 16px 4px;
+}
+
+/* Run summaries in a round keep their card and header (several bots may speak); the card loses its chrome. */
+.geld-review__batch-parents .geld-review__qv .timeline-comment {
+  border: 0 !important;
+}
+
+.geld-review__subhead {
+  padding: 8px 16px 4px 42px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__rows--threads > .geld-review__row {
+  padding-left: 42px;
+}
+
+.geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body {
+  padding: 4px 16px 12px 42px;
+}
+
+/* ---- mentions ------------------------------------------------------------- */
+
+.geld-review__mentions {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.geld-review__mention {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 16px 0 42px;
+}
+
+.geld-review__mention-link {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fgColor-default, var(--color-fg-default));
+  text-decoration: none;
+}
+
+.geld-review__mention-link:hover .geld-review__mention-title {
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  text-decoration: underline;
+}
+
+.geld-review__mention-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__mention-ref {
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+  white-space: nowrap;
+}
+
+.geld-review__mention-state {
+  flex: 0 0 auto;
+}
+
+.geld-review__mention-right {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 /* ---- activity rows: commits and mentions, compact ------------------------- */
 
 .geld-review__row--fold[data-section='activity'] .geld-review__title {
