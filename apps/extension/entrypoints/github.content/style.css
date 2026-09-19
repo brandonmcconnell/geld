@@ -3212,13 +3212,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 /* ---- previews ----------------------------------------------------------------
- * A pill per current preview in the row (the bots' pill, with a status light instead of a traffic-light glyph);
- * they wrap when there are many. Open, one line each with Open / Inspect links. */
-.geld-review__deploys {
-  gap: 6px;
-  padding: 6px 0;
-}
-
+ * Pills live only in an open row's list (a strip that wraps); a header shows the posters' avatars. Each pill is
+ * the bots' pill with a status light instead of a traffic-light glyph. */
 .geld-review__deploy {
   gap: 6px;
 }
