@@ -567,12 +567,12 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   let commitsSlot: HTMLElement | null = null;
   const byPush = model.grouping === 'batch';
   if (byPush && batch.previews.length > 0) {
-    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.previews.length, 'preview')]));
+    list.append(subhead(plural(batch.previews.length, 'preview'), ICON_ROCKET));
     list.append(createElement('li', { class: `${PANEL_CLASS}__deploy-strip` }, batch.previews.map((entry) => previewPill(entry, model))));
   }
   const section = (label: string, items: readonly ReviewItem[]): void => {
     if (items.length === 0) return;
-    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [label]));
+    list.append(subhead(label, items.some((item) => isOpenStatus(item.status)) ? ICON_CIRCLE : ICON_CHECK_CIRCLE_FILL));
     for (const item of items) {
       list.append(itemRow(item, model, handlers, true));
       if (model.openSubKey === itemKey(item.id)) {
@@ -589,7 +589,7 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   section(plural(unresolved.length, 'unresolved thread'), unresolved);
   section(plural(resolved.length, 'resolved thread'), resolved);
   if (byPush && batch.reviews.length > 0) {
-    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.reviews.length, 'review')]));
+    list.append(subhead(plural(batch.reviews.length, 'review'), ICON_COMMENT_DISCUSSION));
     for (const entry of batch.reviews) {
       const { row, open } = entryRow(entry, model, handlers);
       list.append(row);
@@ -604,7 +604,7 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   if (batch.comments.length > 0) {
     // The round's other bot comments (run summaries, deploy notes), after the work, as lines that open one at a
     // time — right there, not behind another toggle: a round is already two clicks in.
-    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.comments.length, 'bot comment')]));
+    list.append(subhead(plural(batch.comments.length, 'bot comment'), ICON_COMMENT));
     for (const entry of batch.comments) {
       const { row, open } = entryRow(entry, model, handlers);
       list.append(row);
@@ -633,6 +633,11 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   }
   slot.replaceChildren(list);
   return { nested, openItem, openComment, commitsSlot };
+}
+
+/** A sub-list heading on the header grid: a glyph in the glyph column, the words where the headers' words start. */
+function subhead(label: string, glyph: string): HTMLElement {
+  return createElement('li', { class: `${PANEL_CLASS}__subhead` }, [createElement('span', { class: `${PANEL_CLASS}__subhead-glyph`, 'aria-hidden': 'true' }, [icon(glyph)]), createElement('span', {}, [label])]);
 }
 
 /** The slot under an open comment line: one comment, its header worn by the line above. */
@@ -1058,7 +1063,8 @@ function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: Pane
   for (const entry of model.previews.latest) list.append(previewLine(entry, model));
   if (model.previews.archived.length > 0) {
     const open = model.archivedPreviewsOpen;
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(open), [ATTR_FOCUS]: 'notes:previews' }, [
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn ${PANEL_CLASS}__notes-btn--commits`, 'aria-expanded': String(open), [ATTR_FOCUS]: 'notes:previews' }, [
+      icon(ICON_HISTORY),
       createElement('span', {}, [`${plural(model.previews.archived.length, 'archived preview')} from earlier pushes`]),
       icon(ICON_CHEVRON_DOWN),
     ]);
