@@ -964,11 +964,16 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   const focusKey = focusKeyOf(existing);
   restoreAll();
   if (existing !== null) reclaimOrphans(existing);
-  existing?.remove();
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
   card.setAttribute(ATTR_ATTACHED, '');
+  // Read before anything moves: this forces a layout, and a layout with the old panel gone and the new one not
+  // yet in makes the browser's scroll anchoring shift the page up by the panel's height — and it does not shift
+  // it back when the new panel lands. The old panel is replaced in one mutation below, never removed first.
+  // The description card may hang past the timeline rail (`ml-n3`); share its horizontal geometry.
+  const cardStyle = getComputedStyle(card);
+  const cardMargins = { left: cardStyle.marginLeft, right: cardStyle.marginRight };
 
   const { open, done } = splitItems(model.meta.items);
   const total = model.meta.items.length;
@@ -1055,20 +1060,28 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     panel.append(createElement('div', { class: `${PANEL_CLASS}__timeline` }, [toggle]));
   }
 
-  // The description card may hang past the timeline rail (`ml-n3`); share its horizontal geometry.
-  const cardStyle = getComputedStyle(card);
-  panel.style.marginLeft = cardStyle.marginLeft;
-  panel.style.marginRight = cardStyle.marginRight;
-  card.insertAdjacentElement('afterend', panel);
+  panel.style.marginLeft = cardMargins.left;
+  panel.style.marginRight = cardMargins.right;
+  if (existing !== null && existing.parentNode !== null) existing.replaceWith(panel);
+  else card.insertAdjacentElement('afterend', panel);
   // Below the box, not in it: a quiet, persistent pointer to the Action while this repository lacks it.
-  document.querySelector(`.${NUDGE_CLASS}`)?.remove();
+  const oldNudge = document.querySelector(`.${NUDGE_CLASS}`);
   if (model.nudge) {
     const nudge = createElement('p', { class: NUDGE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Built from this page. Add the Geld Action to this repository and the digest is ready before the page opens. ']);
     nudge.append(createElement('a', { class: `${NUDGE_CLASS}__link`, href: 'https://www.geld.sh/how-it-works#summary', target: '_blank', rel: 'noreferrer' }, ['See how']), document.createTextNode('.'));
     // The card hangs over the timeline rail (ml-n3) and covers it; plain text cannot, so start it past the rail.
-    nudge.style.marginRight = cardStyle.marginRight;
-    panel.insertAdjacentElement('afterend', nudge);
-    nudge.style.paddingLeft = `${railIndent(nudge)}px`;
+    nudge.style.marginRight = cardMargins.right;
+    if (oldNudge !== null) {
+      // Same reason as the panel: swapped in place, and its indent carried over so no layout is forced here.
+      nudge.style.paddingLeft = oldNudge instanceof HTMLElement ? oldNudge.style.paddingLeft : '';
+      oldNudge.replaceWith(nudge);
+      if (nudge.style.paddingLeft === '') nudge.style.paddingLeft = `${railIndent(nudge)}px`;
+    } else {
+      panel.insertAdjacentElement('afterend', nudge);
+      nudge.style.paddingLeft = `${railIndent(nudge)}px`;
+    }
+  } else {
+    oldNudge?.remove();
   }
   restoreFocus(panel, focusKey);
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
