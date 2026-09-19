@@ -3302,34 +3302,16 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--geld-review-muted);
 }
 
-/* Pills inside a push's row and its strip. */
-/* One line, clipped with a fade rather than wrapped: the row's height is the row's. */
-.geld-review__deploys--inline {
-  display: flex;
-  flex: 0 1 auto;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  min-width: 0;
-  overflow: hidden;
-  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
-}
-
-.geld-review__deploys--inline > .geld-review__deploy {
-  flex: 0 0 auto;
-}
-
-.geld-review__deploys--inline .geld-review__deploy {
-  --geld-bot-pad: 3px;
-  font-size: 11px;
-}
-
+/* The pills, with names, in an open row's list; a strip that wraps. */
 .geld-review__deploy-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 2px 16px 10px 42px;
+  padding: 10px 16px 6px 42px;
+}
+
+.geld-review__deploy-strip + .geld-review__row--sub {
+  border-top: 0;
 }
 
 /* The push's CI, beside the round's progress glyph. */
