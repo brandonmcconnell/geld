@@ -1064,6 +1064,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review {
+  container-type: inline-size;
+  container-name: geld-review;
   --geld-review-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
   --geld-review-border-muted: var(--borderColor-muted, var(--color-border-muted, #d8dee4));
   --geld-review-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
@@ -1993,13 +1995,67 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-subtle);
 }
 
-.geld-review__row[data-state='done'] {
-  background: color-mix(in srgb, var(--geld-review-done) 45%, var(--geld-review-bg));
+/* ---- tones: a row that has settled wears its colour ------------------------
+ * GitHub's own muted success/attention/danger surfaces and their foreground colours. The background is a
+ * gradient from the tone at the left to a faint wash at the right, so the row reads as coloured without
+ * flooding the line; the text that belongs to the row (title, meter, counts, glyph) takes the tone's
+ * foreground, while the metadata and controls on the right (time, ⋯, chevron) stay grey. Hovered or open,
+ * the row is the plain muted surface. */
+.geld-review__row[data-tone='good'] {
+  --geld-tone-bg: var(--geld-review-done);
+  --geld-tone-fg: var(--geld-review-done-fg);
 }
 
-.geld-review__row[data-state='done']:hover,
-.geld-review__row[data-state='done'][data-open] {
-  background: var(--geld-review-done);
+.geld-review__row[data-tone='warn'] {
+  --geld-tone-bg: var(--geld-review-attention-bg);
+  --geld-tone-fg: var(--geld-review-attention-fg);
+}
+
+.geld-review__row[data-tone='bad'] {
+  --geld-tone-bg: var(--geld-review-danger-bg);
+  --geld-tone-fg: var(--geld-review-danger-fg);
+}
+
+.geld-review__row[data-tone] {
+  --geld-tone-strong: color-mix(in srgb, var(--geld-tone-bg) 65%, var(--geld-review-bg));
+  --geld-tone-faint: color-mix(in srgb, var(--geld-tone-bg) 10%, var(--geld-review-bg));
+  /* The avatars' mask ring is a solid colour; the tone at their position is close to the strong end. */
+  --geld-row-bg: var(--geld-tone-strong);
+  background: linear-gradient(90deg, var(--geld-tone-strong), var(--geld-tone-faint));
+}
+
+.geld-review__row[data-tone]:hover,
+.geld-review__row[data-tone][data-open] {
+  --geld-row-bg: var(--geld-tone-bg);
+  background: var(--geld-tone-bg);
+}
+
+.geld-review__row[data-tone] .geld-review__status,
+.geld-review__row[data-tone] .geld-review__status--muted,
+.geld-review__row[data-tone] .geld-review__title,
+.geld-review__row[data-tone] .geld-review__label,
+.geld-review__row[data-tone] .geld-review__progress,
+.geld-review__row[data-tone] .geld-review__status-text,
+.geld-review__row[data-tone] .geld-review__count-chip,
+.geld-review__row[data-tone] .geld-review__detail {
+  color: var(--geld-tone-fg);
+}
+
+/* The breakdown's parts each carry their own state colour on the glyph; the words stay neutral. */
+.geld-review__row[data-tone] .geld-review__checks-breakdown {
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__row[data-tone] .geld-review__meter {
+  background: color-mix(in srgb, var(--geld-tone-fg) 18%, transparent);
+}
+
+.geld-review__row[data-tone] .geld-review__meter > i {
+  background: var(--geld-tone-fg);
+}
+
+.geld-review__row[data-tone] .geld-review__count-chip {
+  background: color-mix(in srgb, var(--geld-tone-fg) 12%, transparent);
 }
 
 .geld-review__row[data-viewing] {
@@ -2738,7 +2794,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__row--batch[data-state='done'] .geld-review__title {
-  color: var(--geld-review-muted);
   font-weight: 500;
 }
 
@@ -3155,5 +3210,46 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__skeleton,
   .geld-review__icon--spin .octicon {
     animation: none;
+  }
+}
+
+/* ---- narrow layouts ----------------------------------------------------------
+ * Below ~640px of panel width the rows keep what says something and drop what only repeats it: the round's
+ * name (its avatars and meter say it), timestamps, the word "resolved", the check labels (their glyphs
+ * say it), the bots' names and details (their icons and lights say it), and the long labels. A settled
+ * round drops its meter too — the check in front of it already says it is done. */
+.geld-review__label-short {
+  display: none;
+}
+
+@container geld-review (max-width: 640px) {
+  .geld-review__row--batch .geld-review__title,
+  .geld-review__progress-word,
+  .geld-review__check-label,
+  .geld-review__bot-name,
+  .geld-review__bot-detail,
+  .geld-review__label-long,
+  .geld-review__row .geld-review__time {
+    display: none;
+  }
+
+  .geld-review__label-short {
+    display: inline;
+  }
+
+  .geld-review__meter {
+    width: 22px;
+  }
+
+  .geld-review__row--batch[data-state='done'] .geld-review__meter {
+    display: none;
+  }
+
+  .geld-review__label {
+    min-width: 0;
+  }
+
+  .geld-review__bot {
+    gap: 4px;
   }
 }
