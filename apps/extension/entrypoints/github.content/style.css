@@ -2032,9 +2032,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border-radius: 4px;
 }
 
+.geld-review__row {
+  --geld-row-bg: var(--geld-review-bg);
+}
+
+.geld-review__row:hover,
+.geld-review__row[data-open] {
+  --geld-row-bg: var(--geld-review-subtle);
+}
+
+/* The mask between stacked avatars is the row's own surface, whatever state it is in. */
 .geld-review__avatar + .geld-review__avatar {
   margin-left: -6px;
-  box-shadow: 0 0 0 2px var(--geld-review-bg);
+  box-shadow: 0 0 0 2px var(--geld-row-bg);
 }
 
 .geld-review__main {
@@ -2054,7 +2064,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__title {
-  flex: 0 1 auto;
+  /* Equal shares: title and detail truncate at the same points in every row, whatever their lengths. */
+  flex: 1 1 0;
   max-width: 62%;
   min-width: 0;
   overflow: hidden;
@@ -2074,8 +2085,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   font-weight: 500;
 }
 
+/* Status rows and short plain titles keep their natural width; only item rows share the space. */
+.geld-review__row--status .geld-review__title,
+.geld-review__row--fold .geld-review__title,
+.geld-review__checks-breakdown {
+  flex: 0 0 auto;
+  max-width: none;
+}
+
 .geld-review__detail {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   color: var(--geld-review-muted);
@@ -2153,18 +2172,40 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   opacity: 1;
 }
 
-/* While GitHub's own controls are worn, Geld's duplicates step aside so the row keeps one ⋯ and one reaction control.
- * Item rows keep Geld's ⋯ (Resolve, Quote reply, Copy as Markdown …). */
-.geld-review__row[data-gh-controls~='react'] .geld-review__right > .geld-review__react,
-.geld-review__row--fold[data-gh-controls~='menu'] .geld-review__right > .geld-review__menu,
-.geld-review__row--sub[data-gh-controls~='menu'] .geld-review__right > .geld-review__menu,
-.geld-review__row[data-head] .geld-review__right > .geld-review__react {
+/* One ⋯ per row: when GitHub's own menu is worn and took Geld's items, Geld's steps aside. */
+.geld-review__row[data-gh-controls~='merged'] .geld-review__right > .geld-review__menu {
   display: none;
 }
 
-.geld-review__row--fold[data-head] .geld-review__right > .geld-review__menu,
-.geld-review__row--sub[data-head] .geld-review__right > .geld-review__menu {
-  display: none;
+/* Geld's items inside GitHub's menu, in its own style. */
+.geld-review__gh-item {
+  display: block;
+  width: 100%;
+  padding: 4px 8px 4px 16px;
+  border: 0;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review__gh-item:hover {
+  background: var(--bgColor-accent-emphasis, var(--color-accent-emphasis, #0969da));
+  color: var(--fgColor-onEmphasis, #fff);
+}
+
+.geld-review__gh-divider {
+  height: 0;
+  margin: 8px 0;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted, #d8dee4));
+}
+
+/* Gear beside the chevron, every state. */
+.geld-review__gear-slot {
+  order: 0;
 }
 
 /* GitHub's own controls, worn by the row: one 28px square each, like Geld's. */
@@ -2206,6 +2247,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__ctl-slot > details {
   position: relative;
+}
+
+/* A single comment's row is its header: the card's own author line goes. */
+.geld-review__slot[data-solo] .geld-review__qv .timeline-comment-header,
+.geld-review__slot[data-solo] .geld-review__qv [data-testid='comment-header'],
+.geld-review__slot[data-solo] .geld-review__qv .react-issue-comment > header,
+.geld-review__slot[data-solo] .geld-review__qv [class*='CommentHeader'],
+.geld-review__slot[data-solo] .geld-review__qv .TimelineItem-avatar,
+.geld-review__slot[data-solo] .geld-review__qv .avatar-parent-child {
+  display: none !important;
 }
 
 /* React comment cards: no card chrome inside a row's content. */
@@ -2452,6 +2503,123 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }
 
+.octicon-in-progress {
+  animation: geld-spin 1.2s linear infinite;
+}
+
+/* ---- an item's threads, each in its own frame ---------------------------- */
+
+.geld-review__qv--threads > .geld-review__thread + .geld-review__thread {
+  margin-top: 8px;
+}
+
+.geld-review__thread {
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.geld-review__thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-subtle);
+}
+
+.geld-review__thread-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__thread-copy {
+  flex: 0 0 auto;
+}
+
+/* Collapsed: the first comment only; GitHub's later comments and its reply area wait behind the bar. */
+.geld-review__thread[data-geld-thread='collapsed'] [data-geld-thread-more],
+.geld-review__thread[data-geld-thread='collapsed'] [data-geld-thread-reply] {
+  display: none !important;
+}
+
+.geld-review__thread .file-header,
+.geld-review__thread .js-resolvable-timeline-thread-container > .file-header {
+  display: none !important;
+}
+
+.geld-review__thread-body .js-resolvable-timeline-thread-container,
+.geld-review__thread-body .review-thread-component,
+.geld-review__thread-body .review-comment {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.geld-review__thread-body .review-comment + .review-comment {
+  border-top: 1px solid var(--geld-review-border-muted) !important;
+}
+
+.geld-review__thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px 0 12px;
+  border-top: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-subtle);
+}
+
+.geld-review__thread-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review__thread-more:hover {
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+}
+
+.geld-review__thread-reply {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review__thread-reply:hover {
+  background: var(--geld-review-hover);
+}
+
+/* ---- activity rows: commits and mentions, compact ------------------------- */
+
+.geld-review__row--fold[data-section='activity'] .geld-review__title {
+  font-weight: 500;
+}
+
+.geld-review__qv .js-commit-group .TimelineItem,
+.geld-review__qv .TimelineItem:has(.js-commits-list-item) {
+  padding: 2px 0 !important;
+}
+
 /* ---- an open row wears its comment's header --------------------------------- */
 
 .geld-review__head-slot {
@@ -2466,10 +2634,11 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   white-space: nowrap;
 }
 
-/* The worn ⋯ menu drops over the content below the row. */
-.geld-review__row[data-open] {
+/* A worn ⋯ menu drops over the rows below, whichever row holds it. */
+.geld-review__row[data-open],
+.geld-review__row:has(details[open]) {
   position: relative;
-  z-index: 2;
+  z-index: 3;
 }
 
 .geld-review__head-slot:empty {
