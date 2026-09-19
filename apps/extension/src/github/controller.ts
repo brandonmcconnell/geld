@@ -551,6 +551,20 @@ export class GeldController {
     return items;
   }
 
+  /**
+   * Every file path in this pull request's diff, once the diff is here (the
+   * source re-runs apply when it lands). The conversation tab shows review
+   * threads under paths GitHub has ellipsized ("...dashboard/…/Format.ts"),
+   * and this is where the whole path is.
+   */
+  private pageDiffPaths(): readonly string[] | null {
+    const url = new URL(window.location.href);
+    const page = describePage(url);
+    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
+    const state = this.diffSource.request(page.diffUrl, detectHeadSha());
+    return state.status === 'ready' ? state.files.map((file) => file.path) : null;
+  }
+
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
@@ -652,7 +666,7 @@ export class GeldController {
     this.applyListChips(surfaces);
     this.applyCommitTooltips();
     applyAuthorHiding(this.authorRules, surfaces);
-    applyReviewOverview(this.settings);
+    applyReviewOverview(this.settings, this.pageDiffPaths());
     applyDiffstatSurfaces({
       catalog: this.catalog,
       matcherFor: (repo) => this.matcherFor(repo),

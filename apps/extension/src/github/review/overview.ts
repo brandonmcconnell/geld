@@ -16,7 +16,9 @@ import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, craw
 import type { CrawledReview } from './crawler';
 import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
 import { crawlConversation } from './crawler';
-import { clickLoadMore, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
+import { refDetails, refsVersion, resetRefs } from './refs';
+import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
@@ -198,6 +200,19 @@ function avatarsFor(item: ReviewItem): readonly Avatar[] {
     if (avatars.length === 2) break;
   }
   return avatars;
+}
+
+/** Items carry the path as the page wrote it (trimmed for long ones); made whole where the page lets us. */
+function withWholePaths(meta: GeldPrMeta): GeldPrMeta {
+  if (!meta.items.some((item) => item.path !== undefined && isTrimmedPath(item.path))) return meta;
+  return {
+    ...meta,
+    items: meta.items.map((item) => {
+      if (item.path === undefined || !isTrimmedPath(item.path)) return item;
+      const anchor = item.sources[0]?.anchor;
+      return { ...item, path: completePath(item.path, diffHashOf(anchor === undefined ? null : threadRootOf(anchor)), meta) };
+    }),
+  };
 }
 
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
@@ -386,7 +401,7 @@ function loadMinimizedReviews(): void {
 
 async function fetchFragment(fragment: Element, src: string): Promise<void> {
   try {
-    const response = await fetch(new URL(src, location.href), { headers: { Accept: 'text/html; fragment', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+    const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
     if (!response.ok) return;
     const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
     if (!fragment.isConnected) return;
@@ -603,7 +618,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
 /** Frame handlers shared by an item opened on its own and inside its round. */
 function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ThreadsViewHandlers {
   return {
-    pathOf: (node) => threadPathOf(node, item),
+    pathOf: (node) => threadPathOf(node, item, meta),
     onCopy: (text) => void copyText(text),
     onReply: (node) => {
       const anchor = node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? null;
@@ -622,17 +637,17 @@ function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply:
   };
 }
 
-/** A thread's file path (with line), from the item or the thread's own file header. */
-function threadPathOf(node: HTMLElement, item: ReviewItem | undefined): string {
-  const header = node.querySelector('.file-header a, .file-header, [data-testid="file-header"], summary code, [class*="FileHeader"] a');
-  const fromNode = (header?.textContent ?? '').replace(/\s+/g, ' ').trim();
-  if (fromNode !== '') return fromNode;
-  // A thread container carries no header; its diff snippet's last line is the one commented on.
-  const path = item?.path ?? (closestAtHome(node, '.TimelineItem, .js-timeline-item')?.querySelector('.file-header a, .file-header')?.textContent ?? '').replace(/\s+/g, ' ').trim();
-  if (path === '') return '';
-  const lines = [...node.querySelectorAll<HTMLElement>('td[data-line-number]')].map((cell) => cell.getAttribute('data-line-number') ?? '').filter((value) => /^\d+$/.test(value));
-  const line = lines.length > 0 ? lines[lines.length - 1] : item?.line === undefined ? null : String(item.line);
-  return line === null ? path : `${path}:${line}`;
+/**
+ * A thread's full file path, no line: the item's, else the file header's
+ * `data-path`/`title` (its visible text is already ellipsized by GitHub).
+ */
+function threadPathOf(node: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): string {
+  const hash = diffHashOf(node) ?? diffHashOf(closestAtHome(node, '.TimelineItem, .js-timeline-item'));
+  if (item?.path !== undefined) return completePath(item.path, hash, meta);
+  const header = node.querySelector('.file-header, [data-testid="file-header"]') ?? closestAtHome(node, '.TimelineItem, .js-timeline-item')?.querySelector('.file-header, [data-testid="file-header"]') ?? null;
+  const fromAttributes = header?.getAttribute('data-path') ?? header?.querySelector('a[title]')?.getAttribute('title') ?? header?.querySelector('[title]')?.getAttribute('title') ?? null;
+  if (fromAttributes !== null && fromAttributes.trim() !== '') return completePath(fromAttributes.trim(), hash, meta);
+  return completePath((header?.textContent ?? '').replace(/\s+/g, ' ').trim(), hash, meta);
 }
 
 /** GitHub's 32px status ring, shrunk to the row's 16px lead. */
@@ -871,7 +886,28 @@ function firstThreadAnchor(item: ReviewItem): string | null {
   return item.sources.find((source) => source.kind === 'thread')?.anchor ?? item.sources[0]?.anchor ?? null;
 }
 
-export function applyReviewOverview(settings: GeldSettings): void {
+/** Every path in the PR's diff, when the controller has it; with the page's own untrimmed paths, the pool `wholePath` guesses from. */
+let diffPaths: readonly string[] | null = null;
+
+/** Paths known whole: the diff's, and every untrimmed one the page shows (other threads' headers, items). */
+function knownPaths(meta: GeldPrMeta): readonly string[] {
+  const known = new Set<string>(diffPaths ?? []);
+  for (const item of meta.items) if (item.path !== undefined && !isTrimmedPath(item.path)) known.add(item.path);
+  for (const link of document.querySelectorAll('.file-header a, a.text-mono.Link--primary')) {
+    const text = (link.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (text !== '' && text.includes('/') && !text.includes(' ') && !isTrimmedPath(text)) known.add(text);
+  }
+  return [...known];
+}
+
+/** A trimmed path made whole when it can be (see whole-path.ts), else as it was. */
+function completePath(path: string, hash: string | null, meta: GeldPrMeta): string {
+  if (!isTrimmedPath(path)) return path;
+  return wholePath(path, hash, knownPaths(meta), reapplySoon);
+}
+
+export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null): void {
+  if (paths !== undefined) diffPaths = paths;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     teardownReviewOverview();
@@ -891,6 +927,8 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.openNotes = new Set<string>();
     visit.sourcesShown = new Set<string>();
     visit.knownRequired = null;
+    resetRefs();
+    resetWholePaths();
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
@@ -908,7 +946,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const headSha = detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA;
   const crawled = buildFromComments(crawledDom, settings, headSha, visit.generatedAt);
   const composed = composeMeta(found, crawled);
-  const meta = withManualDone(composed.meta);
+  const meta = withWholePaths(withManualDone(composed.meta));
 
   const viewingAnchor = sourceAnchorFromHash(location.hash);
   if (viewingAnchor !== null && document.getElementById(viewingAnchor) === null && visit.loadMoreTries < MAX_LOAD_MORE) {
@@ -1005,6 +1043,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     openSubKey: visit.openSubKey,
     openNotes: visit.openNotes,
     openSources: visit.sourcesShown,
+    refsVersion: refsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
@@ -1181,7 +1220,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
       } else if (visit.openKey === CHECKS_KEY) {
         renderQuickView(mounted.slot, nodes);
       } else if (visit.openKey === foldKey('mentions')) {
-        renderMentionsView(mounted.slot, nodes, outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]')));
+        renderMentionsView(mounted.slot, nodes, outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]')), (href) => refDetails(href, reapplySoon));
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
         // reveals the rest of the thread and the reply box.

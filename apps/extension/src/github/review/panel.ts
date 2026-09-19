@@ -126,6 +126,8 @@ export interface PanelModel {
   readonly openNotes: ReadonlySet<string>;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
   readonly openSources: ReadonlySet<string>;
+  /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
+  readonly refsVersion: number;
   /** A review bot is still running: the re-run control spins. */
   readonly running: boolean;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
@@ -925,7 +927,7 @@ function signatureOf(model: PanelModel): string {
     headSha: model.meta.headSha,
     items: model.meta.items.map(
       (item) =>
-        `${item.id}:${item.status}:${item.title}:${item.context ?? ''}:${model.fixFor(item)?.text ?? ''}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}:${item.rewritten ? 'ai' : ''}:${item.sources[0] === undefined ? '' : `${model.timeFor(item.sources[0].anchor)}:${model.myReactionFor(item.sources[0].anchor) ?? ''}`}`,
+        `${item.id}:${item.status}:${item.title}:${item.path ?? ''}:${item.context ?? ''}:${model.fixFor(item)?.text ?? ''}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}:${item.rewritten ? 'ai' : ''}:${item.sources[0] === undefined ? '' : `${model.timeFor(item.sources[0].anchor)}:${model.myReactionFor(item.sources[0].anchor) ?? ''}`}`,
     ),
     hiddenCount: model.hiddenCount,
     pending: [...model.aiPending].sort(),
@@ -942,6 +944,7 @@ function signatureOf(model: PanelModel): string {
     openSubKey: model.openSubKey,
     openNotes: [...model.openNotes].sort(),
     openSources: [...model.openSources].sort(),
+    refs: model.refsVersion,
     running: model.running,
     icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
   });

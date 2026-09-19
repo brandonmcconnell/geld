@@ -2626,12 +2626,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   height: 14px;
 }
 
+/* Takes the space the actions leave, whatever its text — the fit is computed against that space (path-fit.ts). */
 .geld-review__thread-path {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2668,9 +2668,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border-top: 1px solid var(--geld-review-border-muted) !important;
 }
 
-/* GitHub gives a review comment 16px above and beside, 8px below; the frame closes it evenly. */
+/* GitHub gives a review comment 16px above and beside, 8px below; the frame closes it evenly. Its header row
+ * pulls itself 4px left (`ml-n1`); here the avatar starts where the bar's text does, and the body keeps the
+ * name's edge. */
 .geld-review__thread-body .review-comment {
   padding: 16px !important;
+}
+
+.geld-review__thread-body .review-comment > .ml-n1 {
+  margin-left: 0 !important;
+}
+
+.geld-review__thread-body .review-comment > .tmp-ml-5 {
+  margin-left: 36px !important;
 }
 
 .geld-review__thread-bar {
@@ -2872,16 +2882,57 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__mentions {
   margin: 0;
-  padding: 4px 0;
+  padding: 0;
   list-style: none;
 }
 
+/* On the commits list's grid: glyph at the row's edge, a 20px avatar column 10px on, text 16px after that; 29px rows, 12px type. */
 .geld-review__mention {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 16px 0 42px;
+  min-height: 29px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.geld-review__mention-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  margin-right: 10px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__mention-state .octicon {
+  width: 16px;
+  height: 16px;
+}
+
+.geld-review__mention[data-state='open'] .geld-review__mention-state,
+.geld-review__mention[data-state='issue-open'] .geld-review__mention-state {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__mention[data-state='merged'] .geld-review__mention-state {
+  color: var(--fgColor-done, var(--color-done-fg, #8250df));
+}
+
+.geld-review__mention[data-state='closed'] .geld-review__mention-state {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__mention[data-state='issue-closed'] .geld-review__mention-state {
+  color: var(--fgColor-done, var(--color-done-fg, #8250df));
+}
+
+.geld-review__mention-who {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-right: 16px;
 }
 
 .geld-review__mention-link {
@@ -2903,7 +2954,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2914,16 +2965,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   white-space: nowrap;
 }
 
-.geld-review__mention-state {
+.geld-review__mention > .geld-review__time {
   flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 12px;
 }
 
-.geld-review__mention-right {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+/* The two headings inside the mentions slot start at the slot's edge, like the rows. */
+.geld-review__mentions-wrap > .geld-review__subhead--flush {
+  padding: 6px 0 4px;
+}
+
+.geld-review__mentions + .geld-review__subhead--flush {
+  padding-top: 10px;
 }
 
 /* ---- activity rows: commits and mentions, compact ------------------------- */
