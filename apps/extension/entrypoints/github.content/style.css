@@ -1246,8 +1246,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   height: 12px;
 }
 
-.geld-review__grouping-muted {
-  opacity: 0.8;
+.geld-review__grouping-btn > .octicon:first-child {
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
 }
 
 .geld-review__menu-list > .geld-review__menu-item--choice {
@@ -1260,17 +1262,18 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   text-align: left;
 }
 
+/* A radio drawn with the panel's own glyphs: an outlined circle, a filled check once chosen — grey, not a verdict. */
 .geld-review__menu-check {
   display: inline-flex;
   flex: 0 0 auto;
   width: 16px;
   height: 18px;
   align-items: center;
-  visibility: hidden;
+  color: var(--geld-review-muted);
 }
 
 .geld-review__menu-item--choice[aria-checked='true'] .geld-review__menu-check {
-  visibility: visible;
+  color: var(--fgColor-default, var(--color-fg-default));
 }
 
 .geld-review__menu-text {
@@ -1409,7 +1412,9 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__rows--sub > .geld-review__row--sub + .geld-review__row--sub,
-.geld-review__rows--sub > .geld-review__slot--sub + .geld-review__row--sub {
+.geld-review__rows--sub > .geld-review__slot--sub + .geld-review__row--sub,
+.geld-review__rows--sub > .geld-review__row + .geld-review__subhead,
+.geld-review__rows--sub > .geld-review__slot + .geld-review__subhead {
   border-top: 1px solid var(--geld-review-border-muted);
 }
 
@@ -2684,8 +2689,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__check-part .octicon {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
 }
 
 .geld-review__check-part[data-state='failure'] .octicon {
@@ -3410,24 +3415,44 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 /* The push's CI, beside the round's progress glyph. */
-.geld-review__status--ci[data-ci='success'] {
+.geld-review__health[data-ci='success'] {
   color: var(--geld-review-done-fg);
 }
 
-.geld-review__status--ci[data-ci='failure'] {
+.geld-review__health[data-ci='failure'] {
   color: var(--geld-review-danger-fg);
 }
 
-.geld-review__status--ci[data-ci='pending'] {
+.geld-review__health[data-ci='pending'] {
   color: var(--geld-review-attention-fg);
 }
 
-.geld-review__row--batch .geld-review__status--ci {
-  margin-left: -4px;
+/* By push the row's avatars sit inside the main button, after the label; push numbers line up as figures. */
+.geld-review__main--batch > .geld-review__avatars {
+  flex: 0 0 auto;
+}
+
+.geld-review__main--batch > .geld-review__title {
+  font-variant-numeric: tabular-nums;
 }
 
 .geld-review__slot--sub[data-kind='commits'] .geld-review__commits-body {
-  padding: 4px 16px 8px 42px;
+  padding: 4px 16px 8px 16px;
+}
+
+.geld-review__notes-btn--commits {
+  gap: 10px;
+  padding-left: 16px;
+}
+
+.geld-review__notes-btn--commits > .octicon:first-child {
+  width: 16px;
+  height: 16px;
+  transition: none;
+}
+
+.geld-review__notes[data-open='true'] .geld-review__notes-btn--commits > .octicon:first-child {
+  transform: none;
 }
 
 /* ---- narrow layouts ----------------------------------------------------------

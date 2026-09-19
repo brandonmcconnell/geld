@@ -577,11 +577,30 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       reviews: round.reviews,
       commits: round.commits,
       ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
+      committers: committersOf(round.commits),
       previews: previewsAll.filter((entry) => commentAnchors.has(entry.anchor)),
       time: timeTextOf(firstNode ?? round.comments[0]?.node ?? lastCommit),
       firstAnchor: first,
     };
   });
+}
+
+/**
+ * Who committed, as GitHub draws them beside the commits: one avatar per
+ * login, shaped as GitHub shapes it — `avatar-user` is a circle (a person,
+ * or an agent committing as one, like @claude), anything else a square.
+ */
+function committersOf(commits: readonly HTMLElement[]): readonly Avatar[] {
+  const out: Avatar[] = [];
+  for (const row of commits) {
+    for (const image of [row, ...wornPiecesOf(row)].flatMap((node) => [...node.querySelectorAll<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"]')])) {
+      const login = image.alt.replace(/^@/, '');
+      const src = image.currentSrc || image.getAttribute('src') || '';
+      if (src === '' || out.some((entry) => (login !== '' ? entry.login.toLowerCase() === login.toLowerCase() : entry.src === src))) continue;
+      out.push({ src, login, bot: !image.classList.contains('avatar-user') && !(image.closest('a')?.classList.contains('avatar-user') ?? false) });
+    }
+  }
+  return out;
 }
 
 /** The CI state GitHub draws next to a commit row: its status octicon (classic) or the status link's label (React). */
