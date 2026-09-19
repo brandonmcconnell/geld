@@ -89,6 +89,16 @@ export function onRestore(hook: () => void): void {
   restoreHooks.push(hook);
 }
 
+/** Stop tracking a loaned node React has already discarded (its parent re-rendered without it). */
+export function forgetLoan(node: HTMLElement): void {
+  const entry = moved.get(node);
+  if (entry === undefined) return;
+  moved.delete(node);
+  entry.placeholder.remove();
+  node.remove();
+  if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
+}
+
 /** Put every quick-viewed node back where it came from. */
 export function restoreAll(): void {
   for (const hook of restoreHooks.splice(0)) hook();

@@ -10,6 +10,9 @@ import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_REPLY } from '../ui/icons';
 
 export const HOVER_DELAY_MS = 300;
+/** Leaving the row toward the card: the card waits this long for the pointer to arrive. */
+export const LEAVE_GRACE_MS = 350;
+let leaveTimer: number | null = null;
 const CARD_CLASS = 'geld-review-hovercard';
 
 export interface HoverPreview {
@@ -48,9 +51,22 @@ function rowOf(target: EventTarget | null): HTMLElement | null {
 function hide(): void {
   if (timer !== null) window.clearTimeout(timer);
   timer = null;
+  if (leaveTimer !== null) window.clearTimeout(leaveTimer);
+  leaveTimer = null;
   currentRow = null;
   card?.remove();
   card = null;
+}
+
+/** Hide after a grace period unless the pointer reaches the card (or comes back to the row) first. */
+function hideSoon(): void {
+  if (leaveTimer !== null) window.clearTimeout(leaveTimer);
+  leaveTimer = window.setTimeout(hide, LEAVE_GRACE_MS);
+}
+
+function stay(): void {
+  if (leaveTimer !== null) window.clearTimeout(leaveTimer);
+  leaveTimer = null;
 }
 
 function show(row: HTMLElement): void {
@@ -86,8 +102,9 @@ function show(row: HTMLElement): void {
     foot.append(reply);
   }
   card = createElement('div', { class: CARD_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, [head, body, foot]);
+  card.addEventListener('mouseenter', stay);
   card.addEventListener('mouseleave', (event) => {
-    if (rowOf(event.relatedTarget) !== currentRow) hide();
+    if (rowOf(event.relatedTarget) !== currentRow) hideSoon();
   });
   document.body.append(card);
   // Fade only what is actually cut off.
@@ -113,12 +130,18 @@ function install(): void {
     (event) => {
       const row = rowOf(event.target);
       if (row === null) {
-        if (card !== null && event.target instanceof Node && card.contains(event.target)) return;
+        if (card !== null && event.target instanceof Node && card.contains(event.target)) {
+          stay();
+          return;
+        }
         if (timer !== null) window.clearTimeout(timer);
         timer = null;
         return;
       }
-      if (row === currentRow) return;
+      if (row === currentRow) {
+        stay();
+        return;
+      }
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(() => show(row), HOVER_DELAY_MS);
     },
@@ -133,7 +156,7 @@ function install(): void {
       if (to instanceof Node && (row.contains(to) || (card?.contains(to) ?? false))) return;
       if (timer !== null) window.clearTimeout(timer);
       timer = null;
-      if (currentRow === row) hide();
+      if (currentRow === row) hideSoon();
     },
     true,
   );

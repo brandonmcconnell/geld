@@ -12,7 +12,7 @@
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_DOT_FILL, ICON_HISTORY, ICON_KEBAB_HORIZONTAL, ICON_REPLY, ICON_SKIP, ICON_SMILEY, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -25,11 +25,13 @@ export const ATTR_ATTACHED = 'data-geld-attached';
 const ATTR_SIG = 'data-geld-review-sig';
 const ATTR_SLOT = 'data-geld-slot';
 
-export type GroupId = 'open' | 'done' | 'hidden';
+export type GroupId = 'open' | 'done' | 'hidden' | 'activity';
 
 export interface FoldRow {
   readonly key: string;
   readonly label: string;
+  /** Comments section (bot comments, review requests) or the activity section (commits, mentions, events). */
+  readonly section: 'comments' | 'activity';
   readonly count: number;
   readonly avatarSrc: string | null;
   readonly firstAnchor: string | null;
@@ -215,16 +217,12 @@ function chevron(open: boolean, onToggle: () => void): HTMLElement {
   return button;
 }
 
-/** Where an open row shows the first comment's own header (author, time, labels, ⋯ menu), moved in from the timeline. */
-function headSlot(): HTMLElement {
-  return createElement('span', { class: `${PANEL_CLASS}__head-slot`, [ATTR_HEAD_SLOT]: '' });
-}
 
 /** The check counts with their own state glyphs: "✕ 1 failing · ✓ 8 successful · ⊘ 3 skipped". */
 function checksBreakdown(counts: CheckCounts): HTMLElement {
   const parts: ReadonlyArray<{ readonly count: number; readonly label: string; readonly state: string; readonly glyph: string }> = [
     { count: counts.failure, label: 'failing', state: 'failure', glyph: ICON_X_CIRCLE_FILL },
-    { count: counts.pending, label: 'in progress', state: 'pending', glyph: ICON_DOT_FILL },
+    { count: counts.pending, label: 'in progress', state: 'pending', glyph: ICON_IN_PROGRESS },
     { count: counts.success, label: 'successful', state: 'success', glyph: ICON_CHECK_CIRCLE_FILL },
     { count: counts.skipped, label: 'skipped', state: 'skipped', glyph: ICON_SKIP },
     { count: counts.neutral, label: 'neutral', state: 'neutral', glyph: ICON_CIRCLE },
@@ -325,16 +323,9 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
   if (item.rewritten) right.append(createElement('span', { class: `${PANEL_CLASS}__ai`, title: 'Title written by Geld from the sources' }, ['AI']));
   const badge = statusBadge(item.status);
   if (badge !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__pill`, 'data-badge': item.status }, [badge]));
-  const reply = iconButton(ICON_REPLY, 'Reply', { [ATTR_FOCUS]: `reply:${key}` });
-  reply.addEventListener('click', (event) => {
-    event.stopPropagation();
-    handlers.onReply(item.id);
-  });
   if (first !== undefined) {
-    const anchor = first.anchor;
-    const time = model.timeFor(anchor);
+    const time = model.timeFor(first.anchor);
     if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
-    right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)), controlSlot(anchor));
   }
   const entries: MenuEntry[] = [];
   const resolvable = model.resolvable(item);
@@ -350,14 +341,14 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     entries.push({ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) });
     entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) });
   }
-  if (open) right.append(headSlot());
-  right.append(reply, menu(entries, key), chevron(open, toggle));
+  right.append(menu(entries, key), chevron(open, toggle));
 
   const row = createElement(
     'li',
     { class: `${PANEL_CLASS}__row`, 'data-geld-item': item.id, 'data-state': done ? 'done' : item.status, 'data-severity': item.severity },
     [status, avatarStack(model.avatarsFor(item), first?.author ?? '', bot), main, right],
   );
+  rowClickToggles(row, toggle);
   if (open) row.setAttribute('data-open', '');
   if (model.viewingAnchor !== null && item.sources.some((source) => source.anchor === model.viewingAnchor)) row.setAttribute('data-viewing', '');
   return row;
@@ -375,44 +366,41 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [fold.time]));
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
-    if (fold.count === 1 && fold.avatarSrc !== null) right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)), controlSlot(anchor));
-    if (open) right.append(headSlot());
+    // A single comment wears GitHub's own ⋯ (Copy link, Quote reply, Edit, Hide, Delete) with Show in timeline added;
+    // Geld's small menu stands in until it arrives, and for groups.
+    if (fold.count === 1 && fold.avatarSrc !== null) right.append(controlSlot(anchor));
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   }
   right.append(chevron(open, toggle));
-  // Events are not comments; the clock says so.
-  const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(fold.key === 'events' ? ICON_HISTORY : ICON_COMMENT_DISCUSSION)]);
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold`, 'data-geld-fold': fold.key }, [
+  const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(FOLD_GLYPH[fold.key] ?? ICON_COMMENT_DISCUSSION)]);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold`, 'data-geld-fold': fold.key, 'data-section': fold.section }, [
     glyph,
     ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true }], fold.label, true)]),
     main,
     right,
   ]);
   if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, toggle);
   return row;
+}
+
+const FOLD_GLYPH: Readonly<Record<string, string>> = { events: ICON_HISTORY, commits: ICON_GIT_COMMIT, mentions: ICON_CROSS_REFERENCE };
+
+/** Clicking anywhere in the row that is not a control (avatars, blank space) toggles it, like the title does. */
+function rowClickToggles(row: HTMLElement, toggle: () => void): void {
+  row.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest('button, a, details, summary, input, textarea, [contenteditable], [data-geld-ctl], [data-geld-gear-slot], .geld-review__slot') !== null) return;
+    toggle();
+  });
 }
 
 /** Geld's own notes for an open item — merged context and the fix — above the moved comments. */
 function notesFor(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const fix = model.fixFor(item);
-  const hasSummary = item.sources.some((source) => source.bot !== undefined && model.summaryAnchorFor(source.bot) !== null);
-  if (item.context === undefined && fix === null && !hasSummary) return null;
+  if (item.context === undefined && fix === null) return null;
   const notes = createElement('div', { class: `${PANEL_CLASS}__notes` });
   if (item.context !== undefined) notes.append(createElement('p', { class: `${PANEL_CLASS}__context` }, [item.context]));
-  const summaryLinks: Node[] = [];
-  for (const botId of new Set(item.sources.flatMap((source) => (source.bot === undefined ? [] : [source.bot])))) {
-    const anchor = model.summaryAnchorFor(botId);
-    if (anchor === null) continue;
-    const label = botTitle(botId, item.sources.find((source) => source.bot === botId)?.author ?? botId);
-    if (summaryLinks.length > 0) summaryLinks.push(document.createTextNode(' · '));
-    const link = createElement('a', { class: `${PANEL_CLASS}__link`, href: `#${anchor}` }, [`${label}'s review summary`]);
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      handlers.onOpenAnchor(anchor);
-    });
-    summaryLinks.push(link);
-  }
-  if (summaryLinks.length > 0) notes.append(createElement('p', { class: `${PANEL_CLASS}__summaries` }, summaryLinks));
   if (fix !== null) {
     const head = createElement('div', { class: `${PANEL_CLASS}__fix-head` }, [
       createElement('span', {}, [fix.source === 'ai' ? 'Suggested fix (Geld)' : fix.source === 'bot' ? 'Suggested fix (bot)' : 'Suggested fix']),
@@ -427,7 +415,10 @@ function notesFor(item: ReviewItem, model: PanelModel, handlers: PanelHandlers):
 
 function slotRow(key: string, notes: HTMLElement | null = null, kind: string | null = null): HTMLElement {
   const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
-  return createElement('li', { class: `${PANEL_CLASS}__slot`, [ATTR_SLOT]: key, ...(kind === null ? {} : { 'data-kind': kind }) }, notes === null ? [body] : [notes, body]);
+  const attrs: Record<string, string> = { class: `${PANEL_CLASS}__slot`, [ATTR_SLOT]: key };
+  if (kind === 'solo') attrs['data-solo'] = '';
+  else if (kind !== null) attrs['data-kind'] = kind;
+  return createElement('li', attrs, notes === null ? [body] : [notes, body]);
 }
 
 function groupHeading(id: GroupId, label: string, model: PanelModel, handlers: PanelHandlers): HTMLElement {
@@ -614,8 +605,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       createElement('span', { class: `${PANEL_CLASS}__label` }, ['CI checks']),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [
-        ...(open ? [createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' })] : []),
         healthGlyph(health, checksSummary(model.checks)),
+        createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
         chevron(open, () => handlers.onToggle(CHECKS_KEY)),
       ]),
     ]);
@@ -681,19 +672,6 @@ const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
   thread: 'Review thread',
 };
 
-/** Geld's quick-reaction control: the smiley, or the emoji the reader already picked. Opens GitHub's own picker. */
-function reactionButton(myReaction: string | null, focusKey: string, onReact: () => void): HTMLElement {
-  const button = createElement(
-    'button',
-    { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__react`, 'aria-label': myReaction === null ? 'Add reaction' : `You reacted ${myReaction} · change reaction`, title: myReaction === null ? 'Add reaction' : 'Change your reaction', [ATTR_FOCUS]: `react:${focusKey}` },
-    [myReaction === null ? icon(ICON_SMILEY) : createElement('span', { class: `${PANEL_CLASS}__react-emoji` }, [myReaction])],
-  );
-  button.addEventListener('click', (event) => {
-    event.stopPropagation();
-    onReact();
-  });
-  return button;
-}
 
 /**
  * The Reviews row's list: one line per review verdict, review thread or
@@ -734,19 +712,18 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
     if (entry.hasBody) main.addEventListener('click', toggle);
     const right = createElement('span', { class: `${PANEL_CLASS}__right` });
     if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
-    if (entry.hasBody) right.append(reactionButton(entry.myReaction, `sub:${entry.anchor}`, () => handlers.onReact(entry.anchor)), controlSlot(entry.anchor));
-    if (open) right.append(headSlot());
-    if (entry.hasBody) right.append(chevron(open, toggle));
+    if (entry.hasBody) right.append(controlSlot(entry.anchor), chevron(open, toggle));
     const row = createElement(
       'li',
       { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
       [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot: false }], entry.author, false), main, right],
     );
     if (open) row.setAttribute('data-open', '');
+    if (entry.hasBody) rowClickToggles(row, toggle);
     list.append(row);
     if (open) {
       const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
-      list.append(createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub` }, [body]));
+      list.append(createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub`, 'data-solo': '' }, [body]));
       nested = body;
     }
   }
@@ -775,7 +752,7 @@ function signatureOf(model: PanelModel): string {
     tldr: model.meta.summary?.tldr ?? '',
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
-    folds: model.folds.map((fold) => `${fold.key}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
+    folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     ring: model.checksRing?.outerHTML.length ?? 0,
@@ -875,17 +852,23 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     rows.append(groupHeading('done', plural(done.length, 'done item'), model, handlers));
     if (!model.collapsedGroups.has('done')) appendRows(done);
   }
-  if (model.folds.length > 0 && !model.fullTimeline) {
-    // One fold is its own row; a heading over a single row would just repeat it.
-    if (model.folds.length > 1) {
-      const hiddenCount = model.folds.reduce((sum, fold) => sum + fold.count, 0);
-      rows.append(groupHeading('hidden', plural(hiddenCount, 'hidden item'), model, handlers));
-    }
-    if (model.folds.length === 1 || !model.collapsedGroups.has('hidden')) {
-      for (const fold of model.folds) {
+  if (!model.fullTimeline) {
+    // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.
+    const other = model.folds.filter((fold) => fold.section === 'comments');
+    const activity = model.folds.filter((fold) => fold.section === 'activity');
+    const appendFolds = (folds: readonly FoldRow[]): void => {
+      for (const fold of folds) {
         rows.append(foldRowEl(fold, model, handlers));
-        if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey));
+        if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 ? 'solo' : null));
       }
+    };
+    if (other.length > 0) {
+      rows.append(groupHeading('hidden', plural(other.reduce((sum, fold) => sum + fold.count, 0), 'other item'), model, handlers));
+      if (!model.collapsedGroups.has('hidden')) appendFolds(other);
+    }
+    if (activity.length > 0) {
+      rows.append(groupHeading('activity', 'Activity', model, handlers));
+      if (!model.collapsedGroups.has('activity')) appendFolds(activity);
     }
   }
 
