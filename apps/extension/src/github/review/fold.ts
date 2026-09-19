@@ -58,6 +58,8 @@ export function applyFolds(groups: readonly FoldGroup[], revealed: ReadonlySet<s
   for (const group of groups) {
     const hidden = !revealed.has(group.key);
     for (const node of group.nodes) {
+      // The description's row hosts the panel; folding it would fold the panel. Whatever claims it is wrong.
+      if (node.querySelector('[data-geld-review-panel], [data-geld-attached]') !== null) continue;
       keep.add(node);
       setFolded(node, hidden && !isTeleported(node));
     }
@@ -123,7 +125,7 @@ export function groupBotRuns(
 }
 
 /** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
-export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: 'commit' | 'mention' | 'review-event' | 'other'; readonly root: HTMLElement }>): readonly FoldGroup[] {
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: 'commit' | 'mention' | 'review-event' | 'noise' | 'pending' | 'other'; readonly root: HTMLElement }>): readonly FoldGroup[] {
   const by = (kind: (typeof leftovers)[number]['kind']): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
   const commits = by('commit');
@@ -132,19 +134,26 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: 'commit
   if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
   const silent = by('review-event');
   if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
+  // "X added 2 commits" headers say nothing the commits row does not; a minimized comment still fetching its
+  // content is not yet anything — listing it would only have it change kind (and the counts) a moment later.
+  const noise = [...by('noise'), ...by('pending')];
+  if (noise.length > 0) groups.push({ key: 'noise', label: '', author: null, nodes: noise, silent: true });
   const other = by('other');
   if (other.length > 0) groups.push({ key: 'misc', label: `${other.length} other timeline item${other.length === 1 ? '' : 's'}`, author: null, nodes: other, section: 'activity' });
   return groups;
 }
 
-/** Comments that only ask a bot to run ("@greptileai", "bugbot run"): one row, whoever wrote them. */
+/**
+ * Comments that only ask a bot to run ("@greptileai", "bugbot run", or several of those): folded without a row.
+ * They carry nothing a reader needs — the bots' answers are in their rounds, and the re-run control posts new ones.
+ */
 export function groupTriggers(
   comments: readonly { readonly anchor: string; readonly root: HTMLElement }[],
   triggerAnchors: ReadonlySet<string>,
 ): FoldGroup | null {
   const nodes = [...new Set(comments.filter((comment) => triggerAnchors.has(comment.anchor)).map((comment) => comment.root))];
   if (nodes.length === 0) return null;
-  return { key: 'triggers', label: `${nodes.length} review request${nodes.length === 1 ? '' : 's'}`, author: null, nodes };
+  return { key: 'triggers', label: '', author: null, nodes, silent: true };
 }
 
 export function groupDoneHumans(
