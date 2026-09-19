@@ -263,6 +263,26 @@ export function checksHealth(counts: CheckCounts): Health {
   return 'warn';
 }
 
+/** The colour a row wears: none while the page is still deciding. */
+export type Tone = 'good' | 'warn' | 'bad';
+
+export function toneOf(health: Health): Tone | null {
+  return health === 'pending' ? null : health;
+}
+
+/**
+ * The CI row's tint: red when a required check failed, amber when only
+ * optional ones did (`requiredFailing` is null when the list does not say
+ * which are required — then every failure counts), none while anything is
+ * still running, green once everything passed.
+ */
+export function checksTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
+  if (counts.failure > 0) return requiredFailing === false ? 'warn' : 'bad';
+  if (counts.pending > 0) return null;
+  if (counts.success > 0) return 'good';
+  return null;
+}
+
 export function checksSummary(counts: CheckCounts): string {
   const parts: string[] = [];
   if (counts.failure > 0) parts.push(`${counts.failure} failing`);

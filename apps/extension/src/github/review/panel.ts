@@ -13,8 +13,8 @@ import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
-import type { CheckCounts, Health, InstalledBot, RequiredReviews } from './panel-model';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
+import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import { reclaimOrphans, restoreAll } from './teleport';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
@@ -115,6 +115,8 @@ export interface PanelModel {
   readonly botIconFor: (botId: string) => string | null;
   /** CI checks as the merge box reports them; null when the page has no checks section. */
   readonly checks: CheckCounts | null;
+  /** Whether a failing check is one GitHub marks Required; null when the list does not say. */
+  readonly requiredFailing: boolean | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
   readonly checksRing: SVGElement | null;
   readonly reviews: RequiredReviews | null;
@@ -280,7 +282,7 @@ function checksBreakdown(counts: CheckCounts): HTMLElement {
   const detail = createElement('span', { class: `${PANEL_CLASS}__detail ${PANEL_CLASS}__checks-breakdown` });
   for (const part of parts) {
     if (part.count === 0) continue;
-    detail.append(createElement('span', { class: `${PANEL_CLASS}__check-part`, 'data-state': part.state }, [icon(part.glyph), `${part.count} ${part.label}`]));
+    detail.append(createElement('span', { class: `${PANEL_CLASS}__check-part`, 'data-state': part.state }, [icon(part.glyph), String(part.count), createElement('span', { class: `${PANEL_CLASS}__check-label` }, [` ${part.label}`])]));
   }
   return detail;
 }
@@ -395,7 +397,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
 
   const row = createElement(
     'li',
-    { class: `${PANEL_CLASS}__row`, 'data-geld-item': item.id, 'data-state': done ? 'done' : item.status, 'data-severity': item.severity },
+    { class: `${PANEL_CLASS}__row`, 'data-geld-item': item.id, 'data-state': done ? 'done' : item.status, 'data-severity': item.severity, ...(done ? { 'data-tone': 'good' } : {}) },
     [status, avatarStack(model.avatarsFor(item), first?.author ?? '', bot), main, right],
   );
   rowClickToggles(row, toggle);
@@ -448,7 +450,7 @@ function progressMeter(done: number, total: number, noun: string): HTMLElement {
   const percent = total === 0 ? 0 : Math.round((done / total) * 100);
   const progress = createElement('span', { class: `${PANEL_CLASS}__progress`, title: total === 0 ? `No ${noun}s yet` : `${done} of ${total} ${total === 1 ? noun : `${noun}s`} resolved` });
   if (total > 0) progress.append(createElement('span', { class: `${PANEL_CLASS}__meter`, 'aria-hidden': 'true' }, [createElement('i', { style: `width:${percent}%` })]));
-  progress.append(createElement('span', {}, [total === 0 ? `No ${noun}s` : `${done}/${total} resolved`]));
+  progress.append(total === 0 ? createElement('span', {}, [`No ${noun}s`]) : createElement('span', {}, [`${done}/${total} `, createElement('span', { class: `${PANEL_CLASS}__progress-word` }, ['resolved'])]));
   return progress;
 }
 
@@ -484,7 +486,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], batch.key));
   }
   right.append(chevron(open, toggle));
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open' }, [
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open', ...(allDone ? { 'data-tone': 'good' } : {}) }, [
     lead,
     avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length),
     main,
@@ -745,10 +747,19 @@ function checksRing(counts: CheckCounts): SVGElement {
   return svg;
 }
 
-function statusRow(label: string, lead: Node, content: Node[], right: Node[], extra: Readonly<Record<string, string>> = {}): HTMLElement {
+/** A status row's label with the short form narrow layouts show instead ("Review bots" / "Bots"). */
+function rowLabel(long: string, short: string): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__label` }, [createElement('span', { class: `${PANEL_CLASS}__label-long` }, [long]), createElement('span', { class: `${PANEL_CLASS}__label-short`, 'aria-hidden': 'true' }, [short])]);
+}
+
+function toneAttr(tone: Tone | null): Readonly<Record<string, string>> {
+  return tone === null ? {} : { 'data-tone': tone };
+}
+
+function statusRow(label: [string, string], lead: Node, content: Node[], right: Node[], extra: Readonly<Record<string, string>> = {}): HTMLElement {
   return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, ...extra }, [
     createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [lead]),
-    createElement('span', { class: `${PANEL_CLASS}__label` }, [label]),
+    rowLabel(label[0], label[1]),
     createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
     createElement('span', { class: `${PANEL_CLASS}__right` }, right),
   ]);
@@ -762,28 +773,25 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const menu = rerunMenu(model, handlers);
     rows.append(
       statusRow(
-        'Review bots',
+        ['Review bots', 'Bots'],
         icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
         chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet'])] : chips,
         menu === null ? [] : [menu],
-        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst },
+        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(model.meta.bots.length === 0 ? null : toneOf(worst)) },
       ),
     );
   }
   if (model.checks !== null) {
     const health = checksHealth(model.checks);
     const open = model.openKey === CHECKS_KEY;
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}` }, [
-      createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`${checksTotal(model.checks)} checks`]),
-      checksBreakdown(model.checks),
-    ]);
+    // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
     main.addEventListener('click', () => handlers.onToggle(CHECKS_KEY));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing)) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
-      createElement('span', { class: `${PANEL_CLASS}__label` }, ['CI checks']),
+      rowLabel('CI checks', 'CI'),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [
-        healthGlyph(health, checksSummary(model.checks)),
         createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
         chevron(open, () => handlers.onToggle(CHECKS_KEY)),
       ]),
@@ -813,9 +821,9 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const right: Node[] = [];
     if (model.reviews !== null) right.push(healthGlyph(health, reviewsLabel(model.reviews)));
     right.push(chevron(open, () => handlers.onToggle(REVIEWS_KEY)));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(toneOf(health)) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]),
-      createElement('span', { class: `${PANEL_CLASS}__label` }, ['Reviews']),
+      rowLabel('Reviews', 'Reviews'),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, right),
     ]);
@@ -938,6 +946,7 @@ function signatureOf(model: PanelModel): string {
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
+    requiredFailing: model.requiredFailing,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),
@@ -1039,7 +1048,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     if (!model.collapsedGroups.has('open')) appendBatches(attention);
   }
   if (settled.length > 0) {
-    rows.append(groupHeading('done', `${plural(settled.length, 'settled round')}${done.length > 0 ? ` · ${plural(done.length, 'resolved thread')}` : ''}`, model, handlers));
+    rows.append(groupHeading('done', done.length > 0 ? plural(done.length, 'resolved thread') : plural(settled.length, 'settled round'), model, handlers));
     if (!model.collapsedGroups.has('done')) appendBatches(settled);
   }
   if (!model.fullTimeline) {
