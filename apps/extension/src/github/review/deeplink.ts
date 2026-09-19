@@ -13,6 +13,25 @@ export function sourceAnchorFromHash(hash: string): string | null {
 }
 
 const GUARDED = new WeakSet<HTMLFormElement>();
+
+/**
+ * The headers GitHub's own fragment loader sends. The page carries a fetch
+ * nonce (`meta[name="fetch-nonce"]`); markup GitHub renders for a request
+ * that names it embeds the same nonce on its `include-fragment`s, and every
+ * later load from that markup (a comment's ⋯ menu, a thread's replies) is
+ * validated against the page's. Markup fetched *without* the nonce carries
+ * a foreign one, and those later loads answer 403 — "Uh oh! There was an
+ * error while loading" inside the menu.
+ */
+export function fragmentHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' };
+  const nonce = document.querySelector<HTMLMetaElement>('meta[name="fetch-nonce"]')?.content ?? '';
+  if (nonce !== '') {
+    headers['X-Fetch-Nonce'] = nonce;
+    headers['X-Fetch-Nonce-To-Validate'] = nonce;
+  }
+  return headers;
+}
 /** The form last pressed and when: GitHub replaces it with the rows once they arrive, so while it is still on the page a load is in flight. */
 let pressed: { readonly form: HTMLFormElement; readonly at: number } | null = null;
 const PRESS_TIMEOUT_MS = 15_000;
@@ -51,7 +70,7 @@ export function clickLoadMore(root: ParentNode = document): boolean {
 async function loadMoreOurselves(form: HTMLFormElement): Promise<void> {
   const url = new URL(form.action, location.href);
   for (const [key, value] of new FormData(form)) if (typeof value === 'string') url.searchParams.set(key, value);
-  const response = await fetch(url, { headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+  const response = await fetch(url, { headers: fragmentHeaders(), credentials: 'same-origin' });
   if (!response.ok) return;
   const html = await response.text();
   const parsed = new DOMParser().parseFromString(html, 'text/html');

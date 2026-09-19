@@ -9,6 +9,8 @@
  */
 
 import { createElement, svgFromString } from '../dom';
+import type { RefDetails, RefState } from './refs';
+import { fitPathInto } from './path-fit';
 import { ICON_CHEVRON_DOWN, ICON_COMMENT, ICON_COPY, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_LINK_EXTERNAL, ICON_REPLY } from '../ui/icons';
 import { onRestore, teleportInto } from './teleport';
 
@@ -76,6 +78,7 @@ export function threadAnchorOf(node: HTMLElement): string {
 export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement[], handlers: ThreadsViewHandlers): void {
   const list = createElement('div', { class: 'geld-review__qv geld-review__qv--threads' });
   slot.replaceChildren(list);
+  const pathEls: [HTMLElement, string][] = [];
   for (const node of nodes) {
     const frame = createElement('div', { class: 'geld-review__thread', 'data-geld-thread': 'collapsed' });
     const path = handlers.pathOf(node);
@@ -94,14 +97,16 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
         actions.append(toggle);
       }
       const copy = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__thread-copy', 'aria-label': 'Copy path', title: 'Copy path' }, [svgFromString(ICON_COPY)]);
-      copy.addEventListener('click', () => handlers.onCopy(path.replace(/:\d+$/, '')));
+      copy.addEventListener('click', () => handlers.onCopy(path));
       actions.append(copy);
       // GitHub's own file link goes to the diff in Files changed; the path text here stays text.
       const fileHref = node.querySelector<HTMLAnchorElement>('.file-header a[href], review-thread-collapsible a[href*="/files"], a[href*="/files#diff-"], a[href*="/files/"][href*="#diff"]')?.getAttribute('href') ?? null;
       if (fileHref !== null) {
         actions.append(createElement('a', { class: 'geld-review__icon geld-review__thread-open', href: fileHref, 'aria-label': 'Open in Files changed', title: 'Open in Files changed' }, [svgFromString(ICON_LINK_EXTERNAL)]));
       }
-      frame.append(createElement('div', { class: 'geld-review__thread-head' }, [createElement('code', { class: 'geld-review__thread-path' }, [path]), actions]));
+      const pathEl = createElement('code', { class: 'geld-review__thread-path' });
+      frame.append(createElement('div', { class: 'geld-review__thread-head' }, [pathEl, actions]));
+      pathEls.push([pathEl, path]);
     }
     if (source !== null && handlers.sourceOpen(node)) {
       const sourceBody = createElement('div', { class: 'geld-review__thread-source-body geld-review__qv' });
@@ -157,6 +162,8 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
     list.append(frame);
   }
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+  // Fitted once the frames have their width: file name whole, the start first, "…" for what does not fit.
+  for (const [element, path] of pathEls) fitPathInto(element, path);
 }
 
 /** Open the frame holding `anchor` (the rest of the thread and GitHub's reply control), as its bar would. */
@@ -172,8 +179,6 @@ function outermostComments(thread: HTMLElement): readonly HTMLElement[] {
   const all = [...thread.querySelectorAll<HTMLElement>(THREAD_COMMENT)].filter((node) => node.closest('form') === null && node.querySelector('.comment-body, .js-comment-body, [data-testid="comment-body"], .markdown-body') !== null);
   return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
 }
-
-type RefState = 'open' | 'closed' | 'merged' | 'draft' | 'issue-open' | 'issue-closed' | 'unknown';
 
 function refStateOf(href: string, badgeText: string): RefState {
   const text = badgeText.toLowerCase();
@@ -242,19 +247,40 @@ export function mentionLinesOf(node: HTMLElement): readonly MentionLine[] {
   return lines;
 }
 
+const STATE_LABEL: Readonly<Record<RefState, string>> = {
+  open: 'Open pull request',
+  closed: 'Closed pull request',
+  merged: 'Merged pull request',
+  draft: 'Draft pull request',
+  'issue-open': 'Open issue',
+  'issue-closed': 'Closed issue',
+  unknown: 'Issue or pull request',
+};
+
+/** The line as the page gave it, completed from GitHub's hovercard when that has landed: its real title, its state. */
+function completeLine(line: MentionLine, lookup: RefLookup): MentionLine {
+  const found = lookup(line.href);
+  if (found === null) return line;
+  return { ...line, title: found.title, state: line.state === 'unknown' || found.state !== 'unknown' ? found.state : line.state };
+}
+
+/** On the commits list's grid: state glyph, avatar (or its space), `owner/repo#N` and the title as one link, time. */
 function mentionRow(line: MentionLine): HTMLElement {
-  const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': line.href.includes('/pull/') ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
+  const isPull = line.state === 'unknown' ? line.href.includes('/pull/') : !line.state.startsWith('issue');
+  const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': isPull ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
     ...(line.ref === '' ? [] : [createElement('span', { class: 'geld-review__mention-ref' }, [line.ref])]),
     createElement('span', { class: 'geld-review__mention-title' }, [line.title]),
   ]);
   const row = createElement('li', { class: 'geld-review__mention', 'data-state': line.state }, [
-    line.avatar ?? createElement('span', { class: 'geld-review__mention-who' }),
-    createElement('span', { class: 'geld-review__mention-state', 'aria-label': line.state, title: line.state }, [svgFromString(REF_ICON[line.state])]),
+    createElement('span', { class: 'geld-review__mention-state', role: 'img', 'aria-label': STATE_LABEL[line.state], title: STATE_LABEL[line.state] }, [svgFromString(REF_ICON[line.state])]),
+    line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }),
     anchor,
   ]);
   if (line.time !== '') row.append(createElement('span', { class: 'geld-review__time' }, [line.time]));
   return row;
 }
+
+export type RefLookup = (href: string) => RefDetails | null;
 
 /**
  * Cross-references as lines — who, the state icon, `owner/repo#N` and the
@@ -263,18 +289,18 @@ function mentionRow(line: MentionLine): HTMLElement {
  * description mentions. Rendered from the rows rather than moving them: a
  * mention row is all chrome.
  */
-export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[], outgoing: readonly MentionLine[] = []): void {
+export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[], outgoing: readonly MentionLine[] = [], lookup: RefLookup = () => null): void {
   const incoming = nodes.flatMap((node) => mentionLinesOf(node));
   const wrap = createElement('div', { class: 'geld-review__mentions-wrap' });
   const section = (label: string, lines: readonly MentionLine[]): void => {
     if (lines.length === 0) return;
-    if (incoming.length > 0 && outgoing.length > 0) wrap.append(createElement('div', { class: 'geld-review__subhead geld-review__subhead--flush' }, [label]));
+    wrap.append(createElement('div', { class: 'geld-review__subhead geld-review__subhead--flush' }, [label]));
     const list = createElement('ul', { class: 'geld-review__mentions', role: 'list' });
-    for (const line of lines) list.append(mentionRow(line));
+    for (const line of lines) list.append(mentionRow(completeLine(line, lookup)));
     wrap.append(list);
   };
-  section('Mentioned in', incoming);
-  section('Mentions', outgoing);
+  section('Where this PR is mentioned', incoming);
+  section('What this PR mentions', outgoing);
   slot.replaceChildren(wrap);
   if (wrap.childElementCount === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
 }
