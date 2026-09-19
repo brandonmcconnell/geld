@@ -102,6 +102,12 @@ export interface GeldSettings {
    * description when {@link collapseDescription} is on.
    */
   readonly compactTimeline: CompactTimelineMode;
+  /**
+   * How the digest's main list is arranged: by `type` (bots, CI, reviews,
+   * rounds, activity — the default) or by `batch` (every push as one row
+   * holding what landed since the previous one).
+   */
+  readonly reviewGrouping: ReviewGrouping;
   /** In `minimal` mode, collapse the PR description to its first paragraph. */
   readonly collapseDescription: boolean;
   /**
@@ -130,6 +136,13 @@ export function isSuggestedFixMode(value: unknown): value is SuggestedFixMode {
 
 export const REPO_CONFIG_MODES = ['always', 'ask', 'never'] as const;
 export type RepoConfigMode = (typeof REPO_CONFIG_MODES)[number];
+
+export const REVIEW_GROUPINGS = ['type', 'batch'] as const;
+export type ReviewGrouping = (typeof REVIEW_GROUPINGS)[number];
+
+export function isReviewGrouping(value: unknown): value is ReviewGrouping {
+  return typeof value === 'string' && REVIEW_GROUPINGS.some((mode) => mode === value);
+}
 
 export const COMPACT_TIMELINE_MODES = ['off', 'compact', 'minimal'] as const;
 export type CompactTimelineMode = (typeof COMPACT_TIMELINE_MODES)[number];
@@ -164,6 +177,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   repoConfigs: 'ask',
   prOverview: true,
   compactTimeline: 'compact',
+  reviewGrouping: 'type',
   collapseDescription: false,
   reviewBots: [],
   aiBaseUrl: '',
@@ -369,6 +383,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? record.aiBaseUrl.trim() : DEFAULT_SETTINGS.aiBaseUrl,

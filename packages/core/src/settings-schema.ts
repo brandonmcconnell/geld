@@ -20,7 +20,7 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'suggestedFixes';
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
 export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
@@ -405,6 +405,17 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'off', label: 'Off', description: 'Leave the timeline as GitHub shows it; still render the digest panel.' },
           { value: 'compact', label: 'Compact', description: 'Fold bot review comments and low-signal events. Human discussion stays.' },
           { value: 'minimal', label: 'Minimal', description: 'Also fold human comments on done items. Powerful, easy to miss a remark.' },
+        ],
+      },
+      {
+        kind: 'choice',
+        key: 'reviewGrouping',
+        label: 'Group the digest by',
+        description: '`Type` lists bots, CI, reviews, review rounds and activity as their own sections. `Push` lists every push as one row holding what landed since the previous one: its threads, reviews, previews and commits.',
+        popup: false,
+        options: [
+          { value: 'type', label: 'Type', description: 'Bots, CI, reviews, rounds and activity, each in its own section.' },
+          { value: 'batch', label: 'Push', description: 'One row per push with everything that landed between it and the last.' },
         ],
       },
       {

@@ -1112,10 +1112,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__progress {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   color: var(--geld-review-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .geld-review__meter {
@@ -2158,8 +2160,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__title {
-  /* Natural width, shrinkable: the detail (file path) follows right after and truncates first. */
-  flex: 0 1 auto;
+  /* Natural width; shrinks a third as readily as the path after it, so the path gives way first. */
+  flex: 0 0.3 auto;
   max-width: 62%;
   min-width: 0;
   overflow: hidden;
@@ -3298,6 +3300,57 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 .geld-review__deploy-link--muted {
   color: var(--geld-review-muted);
+}
+
+/* Pills inside a push's row and its strip. */
+/* One line, clipped with a fade rather than wrapped: the row's height is the row's. */
+.geld-review__deploys--inline {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
+
+.geld-review__deploys--inline > .geld-review__deploy {
+  flex: 0 0 auto;
+}
+
+.geld-review__deploys--inline .geld-review__deploy {
+  --geld-bot-pad: 3px;
+  font-size: 11px;
+}
+
+.geld-review__deploy-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 16px 10px 42px;
+}
+
+/* The push's CI, beside the round's progress glyph. */
+.geld-review__status--ci[data-ci='success'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__status--ci[data-ci='failure'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__status--ci[data-ci='pending'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__row--batch .geld-review__status--ci {
+  margin-left: -4px;
+}
+
+.geld-review__slot--sub[data-kind='commits'] .geld-review__commits-body {
+  padding: 4px 16px 8px 42px;
 }
 
 /* ---- narrow layouts ----------------------------------------------------------
