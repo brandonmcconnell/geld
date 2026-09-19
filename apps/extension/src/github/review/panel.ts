@@ -124,6 +124,8 @@ export interface PanelModel {
   readonly openSubKey: string | null;
   /** Rounds whose bot comments (run summaries) are unfolded; folded by default. */
   readonly openNotes: ReadonlySet<string>;
+  /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
+  readonly openSources: ReadonlySet<string>;
   /** A review bot is still running: the re-run control spins. */
   readonly running: boolean;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
@@ -502,33 +504,6 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   let nested: HTMLElement | null = null;
   let openItem: ReviewItem | null = null;
   let openComment: string | null = null;
-  if (batch.comments.length > 0) {
-    // The bots' run summaries and other top-level comments: context most readers never need, kept behind one
-    // plain row that says what is there. Folded by default; the threads below are the work.
-    const notesOpen = model.openNotes.has(batch.key);
-    const bots = new Set(batch.comments.map((entry) => entry.author));
-    const label = `${plural(batch.comments.length, 'bot comment')} from ${plural(bots.size, 'bot')}`;
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(notesOpen), [ATTR_FOCUS]: `notes:${batch.key}` }, [
-      icon(ICON_COMMENT_DISCUSSION),
-      createElement('span', { class: `${PANEL_CLASS}__notes-label` }, [label]),
-      createElement('span', { class: `${PANEL_CLASS}__notes-hint` }, [notesOpen ? 'Hide' : 'Show']),
-      icon(ICON_CHEVRON_DOWN),
-    ]);
-    button.addEventListener('click', () => handlers.onToggleNotes(batch.key));
-    list.append(createElement('li', { class: `${PANEL_CLASS}__notes`, 'data-open': String(notesOpen) }, [button]));
-    if (notesOpen) {
-      for (const entry of batch.comments) {
-        const { row, open } = entryRow(entry, model, handlers);
-        list.append(row);
-        if (open) {
-          const sub = nestedSlot();
-          list.append(sub.item);
-          nested = sub.body;
-          openComment = entry.anchor;
-        }
-      }
-    }
-  }
   const section = (label: string, items: readonly ReviewItem[]): void => {
     if (items.length === 0) return;
     list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [label]));
@@ -547,6 +522,29 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
   section(plural(unresolved.length, 'unresolved thread'), unresolved);
   section(plural(resolved.length, 'resolved thread'), resolved);
+  if (batch.comments.length > 0) {
+    // The round's other bot comments (run summaries, deploy notes): each thread's frame links to its own
+    // source; the rest wait here, after the work, behind a heading that opens like the sections above.
+    const notesOpen = model.openNotes.has(batch.key);
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(notesOpen), [ATTR_FOCUS]: `notes:${batch.key}` }, [
+      createElement('span', {}, [`${plural(batch.comments.length, 'other bot comment')} in this round`]),
+      icon(ICON_CHEVRON_DOWN),
+    ]);
+    button.addEventListener('click', () => handlers.onToggleNotes(batch.key));
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead ${PANEL_CLASS}__notes`, 'data-open': String(notesOpen) }, [button]));
+    if (notesOpen) {
+      for (const entry of batch.comments) {
+        const { row, open } = entryRow(entry, model, handlers);
+        list.append(row);
+        if (open) {
+          const sub = nestedSlot();
+          list.append(sub.item);
+          nested = sub.body;
+          openComment = entry.anchor;
+        }
+      }
+    }
+  }
   slot.replaceChildren(list);
   return { nested, openItem, openComment };
 }
@@ -943,6 +941,7 @@ function signatureOf(model: PanelModel): string {
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),
     openSubKey: model.openSubKey,
     openNotes: [...model.openNotes].sort(),
+    openSources: [...model.openSources].sort(),
     running: model.running,
     icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
   });
