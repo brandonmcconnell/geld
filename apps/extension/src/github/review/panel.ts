@@ -13,7 +13,7 @@ import type { BotVerdictRecord, GeldPrMeta, Preview, ReviewItem } from '@geld/re
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_ROCKET, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -72,6 +72,8 @@ export interface Batch {
   readonly commits: readonly HTMLElement[];
   /** CI as GitHub draws it beside the round's last commit; null when the page shows none. */
   readonly ciGlyph: 'success' | 'failure' | 'pending' | null;
+  /** Who committed in the push, as GitHub draws them beside the commits (its `avatar-user` class decides the shape). */
+  readonly committers: readonly Avatar[];
   /** Preview deployments announced in the round. */
   readonly previews: readonly Preview[];
   readonly time: string;
@@ -464,10 +466,10 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
 
 const FOLD_GLYPH: Readonly<Record<string, string>> = { events: ICON_HISTORY, commits: ICON_GIT_COMMIT, mentions: ICON_CROSS_REFERENCE };
 
-/** "Push 3 · 2 commits" — the round named by what opened it. */
-function pushLabel(batch: Batch): string {
+/** "Push 03 · 2 commits" — the round named by what opened it; numbers padded to the widest so the column lines up. */
+function pushLabel(batch: Batch, total: number): string {
   if (batch.commits.length === 0) return 'Earlier';
-  return batch.commits.length === 1 ? `Push ${batch.index}` : `Push ${batch.index} · ${batch.commits.length} commits`;
+  return `Push ${String(batch.index).padStart(String(total).length, '0')} · ${plural(batch.commits.length, 'commit')}`;
 }
 
 function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
@@ -502,12 +504,19 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
       ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)])
       : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--progress`, role: 'img', 'aria-label': `${done} of ${total} threads resolved`, 'data-done': String(allDone) }, [icon(allDone ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]);
   const byPush = model.grouping === 'batch';
-  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [byPush ? pushLabel(batch) : `Round ${batch.index}`])];
-  if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
+  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [byPush ? pushLabel(batch, model.batches.length) : `Round ${batch.index}`])];
+  // By push the row reads left to right: who pushed, how CI ended, how the threads stand, how many comments, previews.
+  if (byPush && batch.committers.length > 0) mainChildren.push(avatarStack(batch.committers, '', false, batch.committers.length));
+  if (byPush && batch.ciGlyph !== null) {
+    const ci: Readonly<Record<'success' | 'failure' | 'pending', readonly [string, string]>> = { success: [ICON_CHECK_CIRCLE_FILL, 'CI passed'], failure: [ICON_X_CIRCLE_FILL, 'CI failed'], pending: [ICON_IN_PROGRESS, 'CI running'] };
+    const [glyph, label] = ci[batch.ciGlyph];
+    mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-ci': batch.ciGlyph, role: 'img', 'aria-label': label, title: label }, [icon(glyph)]));
+  }
+  if (total > 0 && byPush && allDone) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': 'good', role: 'img', 'aria-label': `${total} of ${total} threads resolved`, title: 'All threads resolved' }, [icon(ICON_CHECK_CIRCLE_FILL)]));
+  else if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
   const commentCount = batch.comments.length + batch.reviews.filter((entry) => entry.hasBody).length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
   if (commentCount > 0) mainChildren.push(countChip(commentCount, `${plural(commentCount, 'comment')} in this round`));
-  // By push, the row also carries the push's CI beside the progress glyph and one pill counting its previews (the
-  // pills with names are in the open push; the row has no room for them). Clicks on it open the push like the rest.
+  // One pill counts the push's previews (the pills with names are in the open push). Clicks on it open the push like the rest.
   if (byPush && batch.previews.length > 0) {
     const hosts: string[] = [];
     for (const entry of batch.previews) {
@@ -531,15 +540,11 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], batch.key));
   }
   right.append(chevron(open, toggle));
-  const leads: Node[] = [lead];
-  if (byPush && batch.ciGlyph !== null) {
-    const ci: Readonly<Record<'success' | 'failure' | 'pending', readonly [string, string]>> = { success: [ICON_CHECK_CIRCLE_FILL, 'CI passed'], failure: [ICON_X_CIRCLE_FILL, 'CI failed'], pending: [ICON_IN_PROGRESS, 'CI running'] };
-    const [glyph, label] = ci[batch.ciGlyph];
-    leads.push(createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--ci`, 'data-ci': batch.ciGlyph, role: 'img', 'aria-label': label, title: label }, [icon(glyph)]));
-  }
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open', ...(allDone ? { 'data-tone': 'good' } : {}) }, [
-    ...leads,
-    avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length),
+  // By push, one solid mark says "a push" and the row's facts follow; by type the round's progress glyph and posters lead.
+  // A push whose CI failed is red whatever its threads say; a settled one is green.
+  const tone: Tone | null = byPush && batch.ciGlyph === 'failure' ? 'bad' : allDone ? 'good' : null;
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open', ...toneAttr(tone) }, [
+    ...(byPush ? [createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_REPO_PUSH)])] : [lead, avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length)]),
     main,
     right,
   ]);
@@ -614,7 +619,8 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   if (byPush && batch.commits.length > 0) {
     // The push itself, last: its commit rows unfold under a heading like the bot comments do.
     const open = model.openCommits.has(batch.key);
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(open), [ATTR_FOCUS]: `commits:${batch.key}` }, [
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn ${PANEL_CLASS}__notes-btn--commits`, 'aria-expanded': String(open), [ATTR_FOCUS]: `commits:${batch.key}` }, [
+      icon(ICON_GIT_COMMIT),
       createElement('span', {}, [plural(batch.commits.length, 'commit')]),
       icon(ICON_CHEVRON_DOWN),
     ]);
@@ -650,8 +656,8 @@ const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type:
 function groupingMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
   installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__grouping` });
-  const summary = createElement('summary', { class: `${PANEL_CLASS}__grouping-btn`, role: 'button', 'aria-label': `Grouped by ${GROUPING_LABEL[model.grouping]}. Change grouping`, [ATTR_FOCUS]: 'grouping' }, [
-    createElement('span', { class: `${PANEL_CLASS}__grouping-muted` }, ['Grouped by ']),
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__grouping-btn`, role: 'button', 'aria-label': `Grouped by ${GROUPING_LABEL[model.grouping]}. Change grouping`, title: 'Group the digest by', [ATTR_FOCUS]: 'grouping' }, [
+    icon(ICON_ROWS),
     createElement('span', {}, [GROUPING_LABEL[model.grouping]]),
     icon(ICON_CHEVRON_DOWN),
   ]);
@@ -662,8 +668,9 @@ function groupingMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
     { value: 'batch', label: 'Push', hint: 'What landed between two pushes' },
   ];
   for (const option of options) {
-    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitemradio', 'aria-checked': String(option.value === model.grouping) }, [
-      createElement('span', { class: `${PANEL_CLASS}__menu-check`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]),
+    const chosen = option.value === model.grouping;
+    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitemradio', 'aria-checked': String(chosen) }, [
+      createElement('span', { class: `${PANEL_CLASS}__menu-check`, 'aria-hidden': 'true' }, [icon(chosen ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]),
       createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [createElement('span', {}, [option.label]), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [option.hint])]),
     ]);
     item.addEventListener('click', (event) => {
