@@ -1405,12 +1405,15 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border-top: 0;
 }
 
+/* Sub-lists sit on the header grid: glyph at the row edge, 10px, then the words where the headers' words start. */
 .geld-review__rows--sub > .geld-review__row--sub {
   min-height: 36px;
-  /* The nested glyph starts where the parent row's label does (16 padding + 16 glyph + 10 gap). */
-  padding-left: 42px;
+  gap: 10px;
+  padding-left: 16px;
 }
 
+/* Every line in a sub-list is closed by the border-top of what follows it (the next line, a heading, or the next
+   top-level row), so a hovered line always ends in a border and a heading never reads as part of the list above. */
 .geld-review__rows--sub > .geld-review__row--sub + .geld-review__row--sub,
 .geld-review__rows--sub > .geld-review__slot--sub + .geld-review__row--sub,
 .geld-review__rows--sub > .geld-review__row + .geld-review__subhead,
@@ -1520,7 +1523,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__slot--sub .geld-review__slot-body {
-  padding: 12px 16px 12px 66px;
+  padding: 12px 16px 12px 42px;
 }
 
 /* The reactions row under a comment: a breath above it, flush with the text (GitHub indents a review's by 16px),
@@ -2882,7 +2885,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__subhead {
-  padding: 8px 16px 4px 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 4px 16px;
   color: var(--geld-review-muted);
   font-size: 12px;
   font-weight: 500;
@@ -2898,7 +2904,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 10px 16px 8px 42px;
+  padding: 10px 16px 8px 16px;
   border: 0;
   background: none;
   color: var(--geld-review-muted);
@@ -2997,7 +3003,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 .geld-review__rows--threads > .geld-review__row {
-  padding-left: 42px;
+  gap: 10px;
+  padding-left: 16px;
 }
 
 .geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body {
@@ -3443,6 +3450,20 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-review__notes-btn--commits {
   gap: 10px;
   padding-left: 16px;
+}
+
+.geld-review__subhead-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__subhead-glyph .octicon {
+  width: 16px;
+  height: 16px;
 }
 
 .geld-review__notes-btn--commits > .octicon:first-child {
