@@ -100,7 +100,7 @@ describe('clusterComments', () => {
   });
 
   it('recognises bot trigger comments', () => {
-    for (const body of ['@greptileai', 'bugbot run', 'Bugbot run.', '/devin review', '@cursor review', '@coderabbitai full review', '`@codex review`']) {
+    for (const body of ['@greptileai', 'bugbot run', 'Bugbot run.', '/devin review', '@cursor review', '@coderabbitai full review', '`@codex review`', '/devin review\nbugbot run\n@greptileai']) {
       expect(isTriggerComment(body), body).toBe(true);
     }
     for (const body of ['@alice can you look?', 'Why drop the cache on rename?', '@greptileai said this was fine but I disagree', 'run']) {

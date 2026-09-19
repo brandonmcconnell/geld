@@ -252,6 +252,9 @@ const GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|re
  * every registered trigger and the generic "@handle verb" shape.
  */
 export function isTriggerComment(body: string, extraLogins: readonly string[] = []): boolean {
+  // One trigger per line is still only triggers ("/devin review\nbugbot run\n@greptileai").
+  const lines = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '');
+  if (lines.length > 1) return lines.length <= 6 && lines.every((line) => isTriggerComment(line, extraLogins));
   const text = body
     .replace(/[`*_~]/g, '')
     .replace(/\s+/g, ' ')

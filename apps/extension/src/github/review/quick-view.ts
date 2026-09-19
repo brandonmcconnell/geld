@@ -23,7 +23,8 @@ export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
 function openMinimized(list: HTMLElement): void {
-  for (const details of list.querySelectorAll<HTMLDetailsElement>('.minimized-comment details, details.minimized-comment')) {
+  // Only the minimizing <details> itself — a comment's ⋯ menu and reaction picker are <details> too.
+  for (const details of list.querySelectorAll<HTMLDetailsElement>('.minimized-comment > details, details.minimized-comment')) {
     if (details.open) continue;
     details.open = true;
     onRestore(() => {
@@ -64,6 +65,11 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
     const body = createElement('div', { class: 'geld-review__thread-body' });
     frame.append(body);
     teleportInto(body, [node]);
+    // A resolved thread arrives collapsed (GitHub's own header + a hidden body); the frame is the header here.
+    for (const hiddenBody of node.querySelectorAll<HTMLElement>('[data-target="review-thread-collapsible.body"][hidden], .js-resolvable-timeline-thread-container > [hidden]')) {
+      hiddenBody.removeAttribute('hidden');
+      onRestore(() => hiddenBody.setAttribute('hidden', ''));
+    }
     const comments = outermostComments(node);
     const more = Math.max(0, comments.length - 1);
     for (const comment of comments.slice(1)) comment.setAttribute(ATTR_MORE, '');
@@ -111,8 +117,13 @@ function outermostComments(thread: HTMLElement): readonly HTMLElement[] {
  */
 export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[]): void {
   const list = createElement('ul', { class: 'geld-review__mentions', role: 'list' });
-  for (const node of nodes) {
-    const links = [...node.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"], a[href*="/issues/"], a[data-hovercard-type="pull_request"], a[data-hovercard-type="issue"]')].filter((link) => (link.textContent ?? '').trim() !== '');
+  // "This was referenced" rows hold several references; each gets a line.
+  const blocks = nodes.flatMap((node) => {
+    const refs = [...node.querySelectorAll<HTMLElement>('[id^="ref-pullrequest-"], [id^="ref-issue-"]')];
+    return refs.length > 0 ? refs.map((block) => ({ node, block })) : [{ node, block: node }];
+  });
+  for (const { node, block } of blocks) {
+    const links = [...block.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"], a[href*="/issues/"], a[data-hovercard-type="pull_request"], a[data-hovercard-type="issue"]')].filter((link) => (link.textContent ?? '').trim() !== '' && !/^#\d+$/.test((link.textContent ?? '').trim()));
     const link = links.sort((a, b) => (b.textContent ?? '').length - (a.textContent ?? '').length)[0];
     if (link === undefined) continue;
     const href = link.getAttribute('href') ?? '';
@@ -123,7 +134,7 @@ export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElemen
     anchor.className = 'geld-review__mention-link';
     anchor.append(createElement('span', { class: 'geld-review__mention-title' }, [title]));
     if (ref !== null) anchor.append(createElement('span', { class: 'geld-review__mention-ref' }, [`${ref[1]}/${ref[2]}#${ref[3]}`]));
-    const state = node.querySelector('.State, [data-testid="issue-state"], [class*="StateLabel"], [class*="State-"]');
+    const state = block.querySelector('.State, [data-testid="issue-state"], [class*="StateLabel"], [class*="State-"]');
     const time = node.querySelector('relative-time, time-ago, time');
     const avatar = node.querySelector('img.avatar, img[data-testid="github-avatar"], img[class*="avatar" i]');
     const author = (node.querySelector('a.author, [data-testid="author-link"], a[data-hovercard-type="user"]')?.textContent ?? '').trim();

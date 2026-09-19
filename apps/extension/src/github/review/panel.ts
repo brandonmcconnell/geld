@@ -970,7 +970,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
       if (!model.collapsedGroups.has('hidden')) appendFolds(other);
     }
     if (activity.length > 0) {
-      rows.append(groupHeading('activity', 'Activity', model, handlers));
+      rows.append(groupHeading('activity', 'Other activity', model, handlers));
       if (!model.collapsedGroups.has('activity')) appendFolds(activity);
     }
   }
