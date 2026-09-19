@@ -143,8 +143,6 @@ export interface PanelModel {
   readonly comments: readonly ReviewEntry[];
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
-  /** Rounds whose bot comments (run summaries) are unfolded; folded by default. */
-  readonly openNotes: ReadonlySet<string>;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
   readonly openSources: ReadonlySet<string>;
   /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
@@ -187,8 +185,6 @@ export interface PanelHandlers {
   readonly onShowInTimeline: (anchor: string) => void;
   /** Open or close a comment inside the Reviews row's list. */
   readonly onToggleSub: (anchor: string) => void;
-  /** Unfold or fold a round's bot comments. */
-  readonly onToggleNotes: (batchKey: string) => void;
   /** Unfold or fold the archived previews. */
   readonly onToggleArchivedPreviews: () => void;
   /** Unfold or fold a round's commit rows (batch grouping). */
@@ -585,25 +581,17 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     }
   }
   if (batch.comments.length > 0) {
-    // The round's other bot comments (run summaries, deploy notes): each thread's frame links to its own
-    // source; the rest wait here, after the work, behind a heading that opens like the sections above.
-    const notesOpen = model.openNotes.has(batch.key);
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(notesOpen), [ATTR_FOCUS]: `notes:${batch.key}` }, [
-      createElement('span', {}, [`${plural(batch.comments.length, 'other bot comment')} in this round`]),
-      icon(ICON_CHEVRON_DOWN),
-    ]);
-    button.addEventListener('click', () => handlers.onToggleNotes(batch.key));
-    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead ${PANEL_CLASS}__notes`, 'data-open': String(notesOpen) }, [button]));
-    if (notesOpen) {
-      for (const entry of batch.comments) {
-        const { row, open } = entryRow(entry, model, handlers);
-        list.append(row);
-        if (open) {
-          const sub = nestedSlot();
-          list.append(sub.item);
-          nested = sub.body;
-          openComment = entry.anchor;
-        }
+    // The round's other bot comments (run summaries, deploy notes), after the work, as lines that open one at a
+    // time — right there, not behind another toggle: a round is already two clicks in.
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.comments.length, 'bot comment')]));
+    for (const entry of batch.comments) {
+      const { row, open } = entryRow(entry, model, handlers);
+      list.append(row);
+      if (open) {
+        const sub = nestedSlot();
+        list.append(sub.item);
+        nested = sub.body;
+        openComment = entry.anchor;
       }
     }
   }
@@ -931,19 +919,35 @@ function previewHealth(previews: readonly Preview[]): Health {
   return 'pending';
 }
 
-/** One preview as a pill: the host's mark, the project, a status light; a link to the preview (or its logs). */
+/** The glyph a preview's state wears, the same one the CI breakdown and the per-preview line use. */
+const PREVIEW_GLYPH: Readonly<Record<Preview['status'], string>> = {
+  ready: ICON_CHECK_CIRCLE_FILL,
+  failed: ICON_X_CIRCLE_FILL,
+  building: ICON_IN_PROGRESS,
+  skipped: ICON_SKIP,
+  unknown: ICON_CIRCLE,
+};
+
+function previewGlyph(status: Preview['status']): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__health`, 'data-preview-status': status, role: 'img', 'aria-label': PREVIEW_STATUS_LABEL[status] || 'Preview' }, [icon(PREVIEW_GLYPH[status])]);
+}
+
+/**
+ * One preview as a pill: the host's mark, the project, its state glyph (as the bots' pills wear their light); a
+ * link to the preview. A skipped deployment has nowhere to go: its pill is faded, says so on hover, and is not
+ * a link — the line below keeps the Inspect link.
+ */
 function previewPill(entry: Preview, model: PanelModel): HTMLElement {
-  const href = entry.url ?? entry.inspectUrl;
   const host = previewHostById(entry.host);
   const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}`;
   const children: Node[] = [];
   const avatar = model.avatarForAnchor(entry.anchor);
   if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
-  children.push(createElement('span', { class: `${PANEL_CLASS}__deploy-light`, 'data-status': entry.status, 'aria-hidden': 'true' }));
+  children.push(previewGlyph(entry.status));
   const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': entry.status, 'aria-label': label, title: label };
-  if (href === null) return createElement('span', attrs, children);
-  return createElement('a', { ...attrs, href, target: '_blank', rel: 'noreferrer' }, children);
+  if (entry.url === null) return createElement('span', attrs, children);
+  return createElement('a', { ...attrs, href: entry.url, target: '_blank', rel: 'noreferrer' }, children);
 }
 
 /**
@@ -986,9 +990,7 @@ function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLE
 function previewLine(entry: Preview, model: PanelModel): HTMLElement {
   const host = previewHostById(entry.host);
   const avatar = model.avatarForAnchor(entry.anchor);
-  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': entry.status, role: 'img', 'aria-label': PREVIEW_STATUS_LABEL[entry.status] || 'Preview' }, [
-    icon(entry.status === 'ready' ? ICON_CHECK_CIRCLE_FILL : entry.status === 'failed' ? ICON_X_CIRCLE_FILL : entry.status === 'building' ? ICON_IN_PROGRESS : entry.status === 'skipped' ? ICON_SKIP : ICON_CIRCLE),
-  ]);
+  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': entry.status, role: 'img', 'aria-label': PREVIEW_STATUS_LABEL[entry.status] || 'Preview' }, [icon(PREVIEW_GLYPH[entry.status])]);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.project])];
   mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [`${host?.title ?? 'Preview'}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status].toLowerCase()}`}`]));
   const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
@@ -1142,7 +1144,6 @@ function signatureOf(model: PanelModel): string {
     reviews: model.reviews,
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),
     openSubKey: model.openSubKey,
-    openNotes: [...model.openNotes].sort(),
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,
     running: model.running,
