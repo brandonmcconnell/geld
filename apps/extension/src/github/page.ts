@@ -20,7 +20,8 @@ export function describePage(url: URL): PageInfo {
     const [, owner, repo, number, tab] = pull;
     const base = `/${owner}/${repo}/pull/${number}`;
     // `/files` is the classic tab; `/changes` is the newer React experience.
-    const kind: PageKind = tab === 'files' || tab === 'changes' ? 'pull-files' : tab === undefined ? 'pull-conversation' : 'pull-other';
+    const kind: PageKind =
+      tab === 'files' || tab === 'changes' ? 'pull-files' : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
     return { kind, diffUrl: `${url.origin}${base}.diff`, stateKey: base };
   }
 

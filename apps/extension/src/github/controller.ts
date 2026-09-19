@@ -32,6 +32,7 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
+import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
@@ -95,6 +96,20 @@ function headerNodesAdded(records: readonly MutationRecord[]): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Geld's own review panel, folds and description toggle are stamped
+ * `data-geld-ui`. Inserting them must not schedule another apply, or the
+ * conversation tab would remount the panel on every pass.
+ */
+function isIgnorableMutation(records: readonly MutationRecord[]): boolean {
+  return records.every((record) => {
+    if (isOwnElement(record.target)) return true;
+    if (record.type !== 'childList') return false;
+    const nodes = [...record.addedNodes, ...record.removedNodes];
+    return nodes.length > 0 && nodes.every((node) => isOwnElement(node));
+  });
 }
 
 /**
@@ -257,7 +272,7 @@ export class GeldController {
   start(): void {
     this.stopped = false;
     this.observer = new MutationObserver((records) => {
-      if (records.every((record) => isOwnElement(record.target))) return;
+      if (isIgnorableMutation(records)) return;
       // Header first, synchronously: this callback runs before the browser
       // paints, so a (re-)rendered header never shows GitHub's number when the
       // filtered one is already known or cached.
@@ -292,6 +307,9 @@ export class GeldController {
     // mousedown and re-renders the row before mouseup, so no click ever fires.
     document.addEventListener('mousedown', this.onUserClick, true);
     document.addEventListener('keydown', this.onUserKey, true);
+    window.addEventListener('hashchange', this.onHashChange);
+    // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
+    document.addEventListener('beforematch', this.onBeforeMatch, true);
     this.apply();
   }
 
@@ -302,6 +320,8 @@ export class GeldController {
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('mousedown', this.onUserClick, true);
     document.removeEventListener('keydown', this.onUserKey, true);
+    window.removeEventListener('hashchange', this.onHashChange);
+    document.removeEventListener('beforematch', this.onBeforeMatch, true);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -531,6 +551,20 @@ export class GeldController {
     return items;
   }
 
+  /**
+   * Every file path in this pull request's diff, once the diff is here (the
+   * source re-runs apply when it lands). The conversation tab shows review
+   * threads under paths GitHub has ellipsized ("...dashboard/…/Format.ts"),
+   * and this is where the whole path is.
+   */
+  private pageDiffPaths(): readonly string[] | null {
+    const url = new URL(window.location.href);
+    const page = describePage(url);
+    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
+    const state = this.diffSource.request(page.diffUrl, detectHeadSha());
+    return state.status === 'ready' ? state.files.map((file) => file.path) : null;
+  }
+
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
@@ -632,6 +666,7 @@ export class GeldController {
     this.applyListChips(surfaces);
     this.applyCommitTooltips();
     applyAuthorHiding(this.authorRules, surfaces);
+    applyReviewOverview(this.settings, this.pageDiffPaths());
     applyDiffstatSurfaces({
       catalog: this.catalog,
       matcherFor: (repo) => this.matcherFor(repo),
@@ -1142,10 +1177,19 @@ export class GeldController {
     this.currentView = null;
   }
 
+  private readonly onHashChange = (): void => {
+    onReviewHashChange(this.settings);
+  };
+
+  private readonly onBeforeMatch = (event: Event): void => {
+    onReviewBeforeMatch(event, this.settings);
+  };
+
   private teardown(): void {
     this.settledHeader = null;
     this.headerGroups = [];
     this.teardownView();
+    teardownReviewOverview();
     removePrListStats();
     removeCommitHover();
     removeAuthorHiding();

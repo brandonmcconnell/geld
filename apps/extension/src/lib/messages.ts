@@ -251,3 +251,67 @@ export function isAccountActionResponse(value: unknown): value is AccountActionR
   if (!isRecord(value)) return false;
   return value.ok === true || (value.ok === false && typeof value.message === 'string');
 }
+
+/** Background → OpenAI-compatible gateway. Never sent without a user key. */
+export interface AiChatMessage {
+  readonly role: 'system' | 'user' | 'assistant';
+  readonly content: string;
+}
+
+export interface AiModelsRequest {
+  readonly type: 'geld:ai-models';
+  readonly baseUrl: string;
+  readonly apiKey: string;
+}
+
+export type AiModelsResponse =
+  | { readonly ok: true; readonly models: readonly { readonly id: string }[] }
+  | { readonly ok: false; readonly reason: string };
+
+export interface AiCompleteRequest {
+  readonly type: 'geld:ai-complete';
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly model: string;
+  readonly messages: readonly AiChatMessage[];
+  readonly jsonSchema?: unknown;
+  readonly schemaName?: string;
+}
+
+export type AiCompleteResponse =
+  | { readonly ok: true; readonly text: string; readonly model: string }
+  | { readonly ok: false; readonly reason: string };
+
+export function isAiModelsRequest(value: unknown): value is AiModelsRequest {
+  return (
+    isRecord(value) &&
+    value.type === 'geld:ai-models' &&
+    typeof value.baseUrl === 'string' &&
+    typeof value.apiKey === 'string'
+  );
+}
+
+export function isAiModelsResponse(value: unknown): value is AiModelsResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) {
+    return Array.isArray(value.models) && value.models.every((entry) => isRecord(entry) && typeof entry.id === 'string');
+  }
+  return value.ok === false && typeof value.reason === 'string';
+}
+
+export function isAiCompleteRequest(value: unknown): value is AiCompleteRequest {
+  return (
+    isRecord(value) &&
+    value.type === 'geld:ai-complete' &&
+    typeof value.baseUrl === 'string' &&
+    typeof value.apiKey === 'string' &&
+    typeof value.model === 'string' &&
+    Array.isArray(value.messages)
+  );
+}
+
+export function isAiCompleteResponse(value: unknown): value is AiCompleteResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.text === 'string' && typeof value.model === 'string';
+  return value.ok === false && typeof value.reason === 'string';
+}

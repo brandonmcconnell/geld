@@ -95,6 +95,34 @@ big-corp
         </div>
       </section>
 
+      <section class="options__card" data-section="experiments" id="experiments">
+        <h2 class="options__title">Experiments</h2>
+        <p class="geld-help options__intro"></p>
+        <div class="options__rows" id="review-rows"></div>
+        <hr class="options__divider options__divider--spaced" />
+        <div id="review-choices"></div>
+        <textarea
+          id="review-bots"
+          class="geld-textarea geld-code options__textarea"
+          rows="3"
+          spellcheck="false"
+          aria-label="Extra review bots"
+        ></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="review-bots-status" aria-live="polite"></span>
+          <button id="save-review-bots" class="geld-button geld-button--primary" type="button">Save bots</button>
+        </div>
+        <hr class="options__divider options__divider--spaced" />
+        <div id="review-ai"></div>
+        <label class="geld-label" for="ai-key">AI gateway key</label>
+        <p class="geld-help">Stored only on this device. Geld never sends it to geld.sh. Requests go to the gateway URL above, and only when you ask.</p>
+        <input id="ai-key" class="geld-input geld-code options__input options__input--grow" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…" aria-label="AI gateway key" />
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="ai-key-status" aria-live="polite"></span>
+          <button id="save-ai-key" class="geld-button" type="button">Save key</button>
+        </div>
+      </section>
+
       <section class="options__card" data-section="enterprise">
         <h2 class="options__title">GitHub Enterprise Server</h2>
         <p class="geld-help options__intro">

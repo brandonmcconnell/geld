@@ -18,6 +18,7 @@ import {
   isGroupEnabled,
   choiceFields,
   listFields,
+  textFields,
   normalizeHost,
   parsePatternList,
   actionsFor,
@@ -35,8 +36,12 @@ import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, T
 import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
 import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
+import { requestGatewayPermission } from '../../src/lib/ai-gateway';
+import type { AiModelsRequest } from '../../src/lib/messages';
+import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
+import { aiKeyItem } from '../../src/lib/local-state';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
@@ -590,6 +595,153 @@ async function main(): Promise<void> {
     authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
   });
 
+  /* Experiments — today the pull request conversation digest: panel, timeline, extra bots, AI gateway. */
+  applySchemaCopy('experiments');
+  const reviewSection = sections.find((candidate) => candidate.id === 'experiments');
+  const reviewHost = requireElement('review-rows', HTMLDivElement);
+  const reviewSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
+  toggleFields(reviewSection?.fields ?? []).forEach((field, index) => {
+    if (index > 0) reviewHost.append(el('hr', 'options__divider'));
+    const label = el('span', 'geld-label', [field.label]);
+    label.id = `${field.key}-label`;
+    const help = el('p', 'geld-help', richText(field.description));
+    help.id = `${field.key}-help`;
+    const button = switchButton(field.key, settings[field.key], label.id, help.id);
+    reviewHost.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
+    const bound = bindSwitch(button, settings[field.key], async (value) => {
+      settings = await settingsItem.patch({ [field.key]: value });
+      generalStatus('Saved', 'success');
+    });
+    reviewSwitches.push({ field, set: bound.set });
+  });
+  const reviewChoiceHost = requireElement('review-choices', HTMLDivElement);
+  for (const field of choiceFields(reviewSection?.fields ?? [])) {
+    const label = el('span', 'geld-label', [field.label]);
+    label.id = `${field.key}-label`;
+    const help = el('p', 'geld-help', richText(field.description));
+    help.id = `${field.key}-help`;
+    const note = el('p', 'options__choice-note');
+    const group = el('div', 'options__segments');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-labelledby', label.id);
+    const buttons = new Map<string, HTMLButtonElement>();
+    const show = (value: GeldSettings): void => {
+      const current = value[field.key];
+      for (const [option, button] of buttons) {
+        button.setAttribute('aria-checked', String(option === current));
+        button.setAttribute('aria-pressed', String(option === current));
+      }
+      note.textContent = field.options.find((option) => option.value === current)?.description ?? '';
+    };
+    for (const option of field.options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'geld-button geld-button--small';
+      button.setAttribute('role', 'radio');
+      button.textContent = option.label;
+      button.title = option.description;
+      button.addEventListener('click', async () => {
+        settings = await settingsItem.patch({ [field.key]: option.value });
+        show(settings);
+      });
+      buttons.set(option.value, button);
+      group.append(button);
+    }
+    show(settings);
+    choiceSetters.push(show);
+    reviewChoiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
+  }
+  const reviewBotsStatus = statusReporter(requireElement('review-bots-status', HTMLSpanElement));
+  const reviewBotsArea = requireElement('review-bots', HTMLTextAreaElement);
+  reviewBotsArea.value = settings.reviewBots.join('\n');
+  reviewBotsArea.addEventListener('input', () => {
+    reviewBotsStatus(reviewBotsArea.value.trim() !== settings.reviewBots.join('\n') ? 'Unsaved changes' : '', 'neutral');
+  });
+  requireElement('save-review-bots', HTMLButtonElement).addEventListener('click', async () => {
+    const reviewBots = parsePatternList(reviewBotsArea.value);
+    const problem = reviewBots.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+    if (problem !== null) {
+      reviewBotsStatus(problem, 'error');
+      return;
+    }
+    settings = await settingsItem.patch({ reviewBots });
+    reviewBotsArea.value = reviewBots.join('\n');
+    reviewBotsStatus(`Saved ${pluralize(reviewBots.length, 'bot', 'bots')}`, 'success');
+  });
+  const reviewAiHost = requireElement('review-ai', HTMLDivElement);
+  const aiKeyStatus = statusReporter(requireElement('ai-key-status', HTMLSpanElement));
+  const aiKeyInput = requireElement('ai-key', HTMLInputElement);
+  aiKeyInput.value = await aiKeyItem.getValue();
+  requireElement('save-ai-key', HTMLButtonElement).addEventListener('click', async () => {
+    await aiKeyItem.setValue(aiKeyInput.value.trim());
+    aiKeyStatus(aiKeyInput.value.trim() === '' ? 'Cleared. No AI calls will be made.' : 'Saved on this device.', 'success');
+  });
+  let aiModelInput: HTMLInputElement | null = null;
+  for (const field of textFields(reviewSection?.fields ?? [])) {
+    const label = el('label', 'geld-label', [field.label]);
+    label.htmlFor = field.key;
+    const help = el('p', 'geld-help', richText(field.description));
+    const input = el('input', 'geld-input geld-code options__input options__input--grow');
+    input.id = field.key;
+    input.type = 'url';
+    if (field.key === 'aiModel') input.type = 'text';
+    input.spellcheck = false;
+    input.placeholder = field.placeholder;
+    input.value = settings[field.key];
+    if (field.autocomplete !== undefined) input.setAttribute('autocomplete', field.autocomplete);
+    const statusEl = el('span', 'geld-status');
+    const status = statusReporter(statusEl);
+    const save = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
+    save.type = 'button';
+    save.addEventListener('click', async () => {
+      const value = input.value.trim();
+      if (field.key === 'aiBaseUrl' && value !== '') {
+        const denied = await requestGatewayPermission(value);
+        if (denied !== null) {
+          status(denied, 'error');
+          return;
+        }
+      }
+      settings = await settingsItem.patch({ [field.key]: value });
+      input.value = settings[field.key];
+      status('Saved', 'success');
+    });
+    reviewAiHost.append(el('div', 'options__text', [label, help, input, el('div', 'geld-row options__actions', [statusEl, save])]));
+    if (field.key === 'aiModel') aiModelInput = input;
+  }
+  const loadModels = el('button', 'geld-button geld-button--small', ['Load models']);
+  loadModels.type = 'button';
+  const modelsStatusEl = el('span', 'geld-status');
+  const modelsStatus = statusReporter(modelsStatusEl);
+  loadModels.addEventListener('click', async () => {
+    const baseUrl = settings.aiBaseUrl;
+    const apiKey = aiKeyInput.value.trim() || (await aiKeyItem.getValue());
+    if (baseUrl === '' || apiKey === '') {
+      modelsStatus('Set a gateway URL and key first.', 'error');
+      return;
+    }
+    const denied = await requestGatewayPermission(baseUrl);
+    if (denied !== null) {
+      modelsStatus(denied, 'error');
+      return;
+    }
+    const message: AiModelsRequest = { type: 'geld:ai-models', baseUrl, apiKey };
+    modelsStatus('Loading…', 'neutral');
+    const response: unknown = await browser.runtime.sendMessage(message);
+    if (!isAiModelsResponse(response) || !response.ok) {
+      modelsStatus(!isAiModelsResponse(response) || response.ok ? 'Could not list models.' : response.reason, 'error');
+      return;
+    }
+    const list = el('datalist');
+    list.id = 'ai-model-list';
+    for (const model of response.models) list.append(el('option', '', [model.id]));
+    document.getElementById('ai-model-list')?.remove();
+    reviewAiHost.append(list);
+    if (aiModelInput !== null) aiModelInput.setAttribute('list', list.id);
+    modelsStatus(`${response.models.length} models`, 'success');
+  });
+  reviewAiHost.append(el('div', 'geld-row options__actions', [loadModels, modelsStatusEl]));
+
   /* GitHub Enterprise Server hosts */
   applySchemaCopy('enterprise');
   const hostsStatus = statusReporter(requireElement('hosts-status', HTMLSpanElement));
@@ -794,6 +946,7 @@ async function main(): Promise<void> {
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of generalSwitches) set(next[field.key]);
+    for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
     // Rebuilding while someone types in a pattern box would eat their input.
@@ -802,6 +955,8 @@ async function main(): Promise<void> {
       renderAll();
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
+    if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
+    if (document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
   });

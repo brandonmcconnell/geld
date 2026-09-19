@@ -14,3 +14,6 @@ export const whitespacePersistedItem = storage.defineItem<boolean>('local:whites
 export type RepoConfigChoice = 'use' | 'ignore';
 export type RepoConfigChoices = Readonly<Record<string, RepoConfigChoice>>;
 export const repoConfigChoicesItem = storage.defineItem<RepoConfigChoices>('local:repoConfigChoices', { fallback: {} });
+
+/** OpenAI-compatible gateway key. Never synced; never written to the gist. */
+export const aiKeyItem = storage.defineItem<string>('local:aiKey', { fallback: '' });

@@ -20,9 +20,10 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = {
-  [K in keyof GeldSettings]: GeldSettings[K] extends string ? K : never;
-}[keyof GeldSettings];
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'suggestedFixes';
+
+/** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
+export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
 
 export type SettingsSurface = 'extension' | 'site';
 
@@ -109,6 +110,13 @@ export interface ListField extends FieldBase {
   readonly saveLabel: string;
 }
 
+export interface TextField extends FieldBase {
+  readonly kind: 'text';
+  readonly key: TextSettingKey;
+  readonly placeholder: string;
+  readonly autocomplete?: string;
+}
+
 export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'reset';
 
 /** A one-off operation on the whole settings document. */
@@ -130,9 +138,9 @@ export interface ActionsField extends FieldBase {
   readonly actions: readonly MaintenanceAction[];
 }
 
-export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
+export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'lists' | 'enterprise' | 'maintenance';
+export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -358,6 +366,89 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     ],
   },
   {
+    id: 'experiments',
+    title: 'Experiments',
+    intro:
+      'Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations — a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.',
+    fields: [
+      {
+        kind: 'toggle',
+        key: 'prOverview',
+        label: 'Review digest on pull requests',
+        description: 'Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.',
+        popup: false,
+      },
+      {
+        kind: 'choice',
+        key: 'compactTimeline',
+        label: 'Timeline',
+        description:
+          '`Compact` folds bot reviews and noisy events into accordions. `Minimal` also folds human comments that belong to finished items. `Off` leaves GitHub’s timeline and only shows the panel.',
+        popup: false,
+        options: [
+          { value: 'off', label: 'Off', description: 'Leave the timeline as GitHub shows it; still render the digest panel.' },
+          { value: 'compact', label: 'Compact', description: 'Fold bot review comments and low-signal events. Human discussion stays.' },
+          { value: 'minimal', label: 'Minimal', description: 'Also fold human comments on done items. Powerful, easy to miss a remark.' },
+        ],
+      },
+      {
+        kind: 'toggle',
+        key: 'collapseDescription',
+        label: 'Collapse the description',
+        description: 'In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.',
+        popup: false,
+      },
+      {
+        kind: 'list',
+        key: 'reviewBots',
+        label: 'Extra review bots',
+        description: 'Logins to treat as review bots on top of the built-in list (Bugbot, Greptile, Copilot, CodeRabbit, Codex, Devin, Gemini).',
+        popup: false,
+        rows: 3,
+        placeholder: 'my-reviewer[bot]',
+        syntax: [
+          'A login as GitHub shows it: `my-bot[bot]`. Built-in bots do not need to be listed.',
+          '`*` is allowed the same way as hidden authors. Lines starting with `#` are comments.',
+        ],
+        saveLabel: 'Save bots',
+      },
+      {
+        kind: 'choice',
+        key: 'suggestedFixes',
+        label: 'Suggested fixes',
+        description: 'Review bots often attach a fix; with AI on, Geld can propose one too. Choose which appear on an item.',
+        popup: false,
+        options: [
+          { value: 'bots', label: 'From bots', description: 'Show the fix a review bot attached to its comment.' },
+          { value: 'ai', label: 'From AI', description: 'Only fixes the consolidation model proposes (needs a gateway key).' },
+          { value: 'all', label: 'Both', description: 'Bot fixes and, with AI on, proposed ones.' },
+          { value: 'off', label: 'Off', description: 'Never show a suggested fix; the finding alone.' },
+        ],
+      },
+      {
+        kind: 'text',
+        key: 'aiBaseUrl',
+        label: 'AI gateway URL',
+        description:
+          'Optional OpenAI-compatible origin (Vercel AI Gateway, OpenAI, or your own) used to consolidate bot findings and write the TL;DR when the Action did not. The key never leaves this device (`storage.local`, never the gist) and no request is made until you set one.',
+        popup: false,
+        placeholder: 'https://ai-gateway.vercel.sh',
+        autocomplete: 'off',
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'text',
+        key: 'aiModel',
+        label: 'AI model',
+        description: 'Model id from the gateway’s `/v1/models` list. Empty until you pick one.',
+        popup: false,
+        placeholder: 'openai/gpt-4.1-mini',
+        autocomplete: 'off',
+        surfaces: ['extension'],
+      },
+    ],
+  },
+  {
     id: 'enterprise',
     title: 'GitHub Enterprise Server',
     intro:
@@ -457,6 +548,10 @@ export function choiceFields(fields: readonly SettingsField[]): readonly ChoiceF
 
 export function listFields(fields: readonly SettingsField[]): readonly ListField[] {
   return fields.filter((field): field is ListField => field.kind === 'list');
+}
+
+export function textFields(fields: readonly SettingsField[]): readonly TextField[] {
+  return fields.filter((field): field is TextField => field.kind === 'text');
 }
 
 export type InlineRun =

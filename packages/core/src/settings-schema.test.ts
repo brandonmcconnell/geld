@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from './settings';
-import { SETTINGS_SCHEMA, fieldsFor, listFields, plainText, sectionsFor, splitInlineCode, toggleFields } from './settings-schema';
+import { SETTINGS_SCHEMA, fieldsFor, listFields, plainText, sectionsFor, splitInlineCode, toggleFields, choiceFields, textFields } from './settings-schema';
 
 const allFields = SETTINGS_SCHEMA.flatMap((section) => section.fields);
 
@@ -32,6 +32,13 @@ describe('SETTINGS_SCHEMA', () => {
     expect(siteKeys.has('enabled')).toBe(true);
     expect(sectionsFor('site').map((section) => section.id)).not.toContain('enterprise');
     expect(sectionsFor('extension').map((section) => section.id)).toContain('enterprise');
+  });
+
+  it('covers choice and text keys too', () => {
+    expect(choiceFields(allFields).map((field) => field.key).sort()).toEqual(['compactTimeline', 'repoConfigs', 'suggestedFixes']);
+    expect(textFields(allFields).map((field) => field.key).sort()).toEqual(['aiBaseUrl', 'aiModel']);
+    expect(sectionsFor('site').some((section) => section.id === 'experiments')).toBe(true);
+    expect(textFields(fieldsFor('site'))).toEqual([]);
   });
 
   it('exposes the toolbar popup as a small subset', () => {
