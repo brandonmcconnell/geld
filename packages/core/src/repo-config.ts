@@ -61,6 +61,7 @@ const PERSONAL_KEYS = [
   'customPatterns',
   'prOverview',
   'compactTimeline',
+  'reviewGrouping',
   'collapseDescription',
   'reviewBots',
   'aiBaseUrl',

@@ -27,7 +27,7 @@ export const ATTR_ATTACHED = 'data-geld-attached';
 const ATTR_SIG = 'data-geld-review-sig';
 const ATTR_SLOT = 'data-geld-slot';
 
-export type GroupId = 'open' | 'done' | 'hidden' | 'activity';
+export type GroupId = 'open' | 'done' | 'hidden' | 'activity' | 'pushes';
 
 export interface FoldRow {
   readonly key: string;
@@ -66,6 +66,14 @@ export interface Batch {
   readonly items: readonly ReviewItem[];
   /** Run summaries and other top-level comments in the round, as lines for its list. */
   readonly comments: readonly ReviewEntry[];
+  /** People's verdicts and top-level comments that landed in the round. */
+  readonly reviews: readonly ReviewEntry[];
+  /** The commit rows of the push(es) that opened the round, in timeline order; empty for content before any commit. */
+  readonly commits: readonly HTMLElement[];
+  /** CI as GitHub draws it beside the round's last commit; null when the page shows none. */
+  readonly ciGlyph: 'success' | 'failure' | 'pending' | null;
+  /** Preview deployments announced in the round. */
+  readonly previews: readonly Preview[];
   readonly time: string;
   readonly firstAnchor: string | null;
 }
@@ -122,6 +130,10 @@ export interface PanelModel {
   readonly previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] };
   /** Whether the archived previews are unfolded inside the Previews row. */
   readonly archivedPreviewsOpen: boolean;
+  /** How the main list is arranged (`reviewGrouping`). */
+  readonly grouping: 'type' | 'batch';
+  /** Rounds whose commit rows are unfolded (batch grouping). */
+  readonly openCommits: ReadonlySet<string>;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
   readonly avatarForAnchor: (anchor: string) => string | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
@@ -179,6 +191,8 @@ export interface PanelHandlers {
   readonly onToggleNotes: (batchKey: string) => void;
   /** Unfold or fold the archived previews. */
   readonly onToggleArchivedPreviews: () => void;
+  /** Unfold or fold a round's commit rows (batch grouping). */
+  readonly onToggleCommits: (batchKey: string) => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
@@ -452,6 +466,12 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
 
 const FOLD_GLYPH: Readonly<Record<string, string>> = { events: ICON_HISTORY, commits: ICON_GIT_COMMIT, mentions: ICON_CROSS_REFERENCE };
 
+/** "Push 3 · 2 commits" — the round named by what opened it. */
+function pushLabel(batch: Batch): string {
+  if (batch.commits.length === 0) return 'Earlier';
+  return batch.commits.length === 1 ? `Push ${batch.index}` : `Push ${batch.index} · ${batch.commits.length} commits`;
+}
+
 function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
   return { done: batch.items.filter((item) => !isOpenStatus(item.status)).length, total: batch.items.length };
 }
@@ -483,10 +503,13 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     total === 0
       ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)])
       : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--progress`, role: 'img', 'aria-label': `${done} of ${total} threads resolved`, 'data-done': String(allDone) }, [icon(allDone ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]);
-  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`Round ${batch.index}`])];
+  const byPush = model.grouping === 'batch';
+  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [byPush ? pushLabel(batch) : `Round ${batch.index}`])];
   if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
-  const commentCount = batch.comments.length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
+  const commentCount = batch.comments.length + batch.reviews.filter((entry) => entry.hasBody).length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
   if (commentCount > 0) mainChildren.push(countChip(commentCount, `${plural(commentCount, 'comment')} in this round`));
+  // By push, the row also carries what the push produced: its previews as pills, its CI beside the progress glyph.
+  if (byPush && batch.previews.length > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploys ${PANEL_CLASS}__deploys--inline` }, batch.previews.map((entry) => previewPill(entry, model))));
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
   main.addEventListener('click', toggle);
@@ -497,8 +520,14 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], batch.key));
   }
   right.append(chevron(open, toggle));
+  const leads: Node[] = [lead];
+  if (byPush && batch.ciGlyph !== null) {
+    const ci: Readonly<Record<'success' | 'failure' | 'pending', readonly [string, string]>> = { success: [ICON_CHECK_CIRCLE_FILL, 'CI passed'], failure: [ICON_X_CIRCLE_FILL, 'CI failed'], pending: [ICON_IN_PROGRESS, 'CI running'] };
+    const [glyph, label] = ci[batch.ciGlyph];
+    leads.push(createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--ci`, 'data-ci': batch.ciGlyph, role: 'img', 'aria-label': label, title: label }, [icon(glyph)]));
+  }
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open', ...(allDone ? { 'data-tone': 'good' } : {}) }, [
-    lead,
+    ...leads,
     avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length),
     main,
     right,
@@ -514,11 +543,17 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
  * rows that open one at a time (`openSubKey`: a comment's anchor or an
  * item key). Returns the nested slot and what is open in it.
  */
-export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null; readonly openComment: string | null } {
+export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null; readonly openComment: string | null; readonly commitsSlot: HTMLElement | null } {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub ${PANEL_CLASS}__rows--threads`, role: 'list' });
   let nested: HTMLElement | null = null;
   let openItem: ReviewItem | null = null;
   let openComment: string | null = null;
+  let commitsSlot: HTMLElement | null = null;
+  const byPush = model.grouping === 'batch';
+  if (byPush && batch.previews.length > 0) {
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.previews.length, 'preview')]));
+    list.append(createElement('li', { class: `${PANEL_CLASS}__deploy-strip` }, batch.previews.map((entry) => previewPill(entry, model))));
+  }
   const section = (label: string, items: readonly ReviewItem[]): void => {
     if (items.length === 0) return;
     list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [label]));
@@ -537,6 +572,19 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
   section(plural(unresolved.length, 'unresolved thread'), unresolved);
   section(plural(resolved.length, 'resolved thread'), resolved);
+  if (byPush && batch.reviews.length > 0) {
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.reviews.length, 'review')]));
+    for (const entry of batch.reviews) {
+      const { row, open } = entryRow(entry, model, handlers);
+      list.append(row);
+      if (open) {
+        const sub = nestedSlot();
+        list.append(sub.item);
+        nested = sub.body;
+        openComment = entry.anchor;
+      }
+    }
+  }
   if (batch.comments.length > 0) {
     // The round's other bot comments (run summaries, deploy notes): each thread's frame links to its own
     // source; the rest wait here, after the work, behind a heading that opens like the sections above.
@@ -560,8 +608,22 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
       }
     }
   }
+  if (byPush && batch.commits.length > 0) {
+    // The push itself, last: its commit rows unfold under a heading like the bot comments do.
+    const open = model.openCommits.has(batch.key);
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(open), [ATTR_FOCUS]: `commits:${batch.key}` }, [
+      createElement('span', {}, [plural(batch.commits.length, 'commit')]),
+      icon(ICON_CHEVRON_DOWN),
+    ]);
+    button.addEventListener('click', () => handlers.onToggleCommits(batch.key));
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead ${PANEL_CLASS}__notes`, 'data-open': String(open) }, [button]));
+    if (open) {
+      commitsSlot = createElement('div', { class: `${PANEL_CLASS}__slot-body ${PANEL_CLASS}__commits-body` });
+      list.append(createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub`, 'data-kind': 'commits' }, [commitsSlot]));
+    }
+  }
   slot.replaceChildren(list);
-  return { nested, openItem, openComment };
+  return { nested, openItem, openComment, commitsSlot };
 }
 
 /** The slot under an open comment line: one comment, its header worn by the line above. */
@@ -1059,7 +1121,9 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}`).join(',')}:${batch.commits.length}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    grouping: model.grouping,
+    openCommits: [...model.openCommits].sort(),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
@@ -1158,9 +1222,24 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
       if (model.openKey === batch.key) rows.append(slotRow(batch.key, null, 'list'));
     }
   };
+  if (model.grouping === 'batch') {
+    // By push: the open threads first, wherever they landed, then every round newest first.
+    const openItems = model.meta.items.filter((item) => isOpenStatus(item.status));
+    if (openItems.length > 0) {
+      rows.append(groupHeading('open', `Needs attention · ${plural(openItems.length, 'open thread')}`, model, handlers));
+      if (!model.collapsedGroups.has('open')) {
+        for (const item of openItems) {
+          rows.append(itemRow(item, model, handlers));
+          if (model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey));
+        }
+      }
+    }
+    rows.append(groupHeading('pushes', plural(model.batches.length, 'push', 'pushes'), model, handlers));
+    if (!model.collapsedGroups.has('pushes')) appendBatches([...model.batches].reverse());
+  }
   // Rounds with a thread still open come first and stay open; settled rounds fold away by default.
-  const attention = model.batches.filter((batch) => batch.items.some((item) => isOpenStatus(item.status)));
-  const settled = model.batches.filter((batch) => !attention.includes(batch));
+  const attention = model.grouping === 'batch' ? [] : model.batches.filter((batch) => batch.items.some((item) => isOpenStatus(item.status)));
+  const settled = model.grouping === 'batch' ? [] : model.batches.filter((batch) => !attention.includes(batch));
   if (attention.length > 0) {
     rows.append(groupHeading('open', `${plural(attention.length, 'round')} to review · ${plural(open.length, 'open thread')}`, model, handlers));
     if (!model.collapsedGroups.has('open')) appendBatches(attention);
@@ -1169,7 +1248,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     rows.append(groupHeading('done', done.length > 0 ? plural(done.length, 'resolved thread') : plural(settled.length, 'settled round'), model, handlers));
     if (!model.collapsedGroups.has('done')) appendBatches(settled);
   }
-  if (!model.fullTimeline) {
+  if (!model.fullTimeline && model.grouping !== 'batch') {
     // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.
     const other = model.folds.filter((fold) => fold.section === 'comments');
     const activity = model.folds.filter((fold) => fold.section === 'activity');

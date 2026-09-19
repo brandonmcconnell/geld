@@ -3,7 +3,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustom
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
-import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isSuggestedFixMode, SUGGESTED_FIX_MODES } from './settings';
+import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
 import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 
@@ -247,6 +247,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   }
   if (value.compactTimeline !== undefined && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
+  }
+  if (value.reviewGrouping !== undefined && !isReviewGrouping(value.reviewGrouping)) {
+    issues.push({ path: `${path}.reviewGrouping`, message: `Expected one of ${list(REVIEW_GROUPINGS)}, got ${describeValue(value.reviewGrouping)}.` });
   }
   if (value.suggestedFixes !== undefined && !isSuggestedFixMode(value.suggestedFixes)) {
     issues.push({ path: `${path}.suggestedFixes`, message: `Expected one of ${list(SUGGESTED_FIX_MODES)}, got ${describeValue(value.suggestedFixes)}.` });
