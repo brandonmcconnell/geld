@@ -12,6 +12,8 @@ import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerCommen
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
+import { persist } from '../../lib/context';
+import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
 import type { CrawledReview } from './crawler';
@@ -1257,6 +1259,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
         reapply();
       });
+    },
+    onGrouping: (grouping) => {
+      // Persisted like any setting; the controller's settings watch re-applies with the new value, in place.
+      persist(settingsItem.patch({ reviewGrouping: grouping }));
     },
     onToggleCommits: (batchKey) => {
       keepInPlace(`commits:${batchKey}`, () => {

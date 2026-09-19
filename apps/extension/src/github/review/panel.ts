@@ -189,6 +189,8 @@ export interface PanelHandlers {
   readonly onToggleArchivedPreviews: () => void;
   /** Unfold or fold a round's commit rows (batch grouping). */
   readonly onToggleCommits: (batchKey: string) => void;
+  /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
+  readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
@@ -640,6 +642,39 @@ function rowClickToggles(row: HTMLElement, toggle: () => void): void {
     if (event.target.closest('button, a, details, summary, input, textarea, [contenteditable], [data-geld-ctl], [data-geld-gear-slot]') !== null) return;
     toggle();
   });
+}
+
+const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'type', batch: 'push' };
+
+/** A quiet "Grouped by type ▾" in the Geld row; choosing the other arrangement rebuilds the list and keeps the choice. */
+function groupingMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
+  installMenuDismissal();
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__grouping` });
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__grouping-btn`, role: 'button', 'aria-label': `Grouped by ${GROUPING_LABEL[model.grouping]}. Change grouping`, [ATTR_FOCUS]: 'grouping' }, [
+    createElement('span', { class: `${PANEL_CLASS}__grouping-muted` }, ['Grouped by ']),
+    createElement('span', {}, [GROUPING_LABEL[model.grouping]]),
+    icon(ICON_CHEVRON_DOWN),
+  ]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' }, [createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Group the digest by'])]);
+  const options: ReadonlyArray<{ readonly value: PanelModel['grouping']; readonly label: string; readonly hint: string }> = [
+    { value: 'type', label: 'Type', hint: 'Bots, CI, reviews, rounds, activity' },
+    { value: 'batch', label: 'Push', hint: 'What landed between two pushes' },
+  ];
+  for (const option of options) {
+    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitemradio', 'aria-checked': String(option.value === model.grouping) }, [
+      createElement('span', { class: `${PANEL_CLASS}__menu-check`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]),
+      createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [createElement('span', {}, [option.label]), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [option.hint])]),
+    ]);
+    item.addEventListener('click', (event) => {
+      event.stopPropagation();
+      details.removeAttribute('open');
+      if (option.value !== model.grouping) handlers.onGrouping(option.value);
+    });
+    list.append(item);
+  }
+  details.append(summary, list);
+  return details;
 }
 
 /** Geld's own notes for an open item — merged context and the fix — above the moved comments. */
@@ -1212,6 +1247,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
+  tools.append(groupingMenu(model, handlers));
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
