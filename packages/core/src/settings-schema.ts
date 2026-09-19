@@ -140,7 +140,7 @@ export interface ActionsField extends FieldBase {
 
 export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'review' | 'enterprise' | 'maintenance';
+export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -382,18 +382,17 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     ],
   },
   {
-    id: 'review',
-    title: 'Pull request conversation',
+    id: 'experiments',
+    title: 'Experiments',
     intro:
-      'On a pull request’s conversation tab Geld can pin a review digest at the top and fold bot comments out of the timeline. The digest is written by the Geld GitHub Action as one comment; without it the extension builds the same panel from the page.',
+      'Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations — a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.',
     fields: [
       {
         kind: 'toggle',
         key: 'prOverview',
         label: 'Review digest on pull requests',
         description: 'Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.',
-        popup: true,
-        popupDescription: 'Panel and timeline compaction on the conversation tab.',
+        popup: false,
       },
       {
         kind: 'choice',
