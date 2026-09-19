@@ -82,8 +82,16 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
   }
 }
 
+const restoreHooks: (() => void)[] = [];
+
+/** Run `hook` the next time everything goes home (state a quick view changed on GitHub's nodes). */
+export function onRestore(hook: () => void): void {
+  restoreHooks.push(hook);
+}
+
 /** Put every quick-viewed node back where it came from. */
 export function restoreAll(): void {
+  for (const hook of restoreHooks.splice(0)) hook();
   for (const entry of moved.values()) {
     // A placeholder that is gone means another party already sent the node home (a newer Geld
     // instance reclaiming it) or React removed it; either way it is not ours to touch any more.

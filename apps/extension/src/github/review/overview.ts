@@ -30,7 +30,7 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { renderQuickView, wearHeader } from './quick-view';
-import { compareHome, restoreAll, teleportInto } from './teleport';
+import { compareHome, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -257,12 +257,21 @@ function checksSection(): HTMLElement | null {
 }
 
 /** Merge box text plus the checks section's, wherever quick view has put it. */
+/** The checks section's text with its loaned content included, so counts read the same open or closed. */
+function checksSectionText(): string | null {
+  const section = checksSection();
+  if (section === null) return null;
+  return [blockText(section), ...wornPiecesOf(section).map((piece) => blockText(piece))].join('\n');
+}
+
 function mergeBoxText(): string {
   const section = checksSection();
   // No recognisable container: the checks section's original parent is the merge box in every markup seen so far.
   const home = mergeBox() ?? mergeHomeEl;
-  const parts = [home?.textContent ?? ''];
-  if (section !== null && (home === null || !home.contains(section))) parts.push(section.textContent ?? '');
+  // Block boundaries as line breaks: textContent glues "…59 successful checks" to the next button's
+  // "Collapse checks", and the word boundary the count parser needs is gone.
+  const parts = [home === null ? '' : blockText(home)];
+  if (section !== null && (home === null || !home.contains(section))) parts.push(blockText(section));
   return parts.join('\n');
 }
 
@@ -541,7 +550,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
-    checks: checkCountsFrom(checksSection()?.textContent ?? boxText),
+    checks: checkCountsFrom(checksSectionText() ?? boxText),
     checksRing,
     comments,
     openSubKey: visit.openSubKey,
@@ -700,10 +709,11 @@ export function applyReviewOverview(settings: GeldSettings): void {
         wearGear(mounted.root, mounted.slot);
       } else {
         renderQuickView(mounted.slot, nodes);
-        // One comment (a thread's first, a bot's) wears its own header on the row; groups of many keep theirs.
+        // A single comment (a bot's run summary) lends its controls to the row; threads keep every comment's
+        // own header in the card, since the row's ⋯ carries the thread actions (Resolve, Quote reply, …).
         const head = mounted.root.querySelector<HTMLElement>(`.geld-review__row[data-open] [${ATTR_HEAD_SLOT}]`);
         const first = nodes[0];
-        if (head !== null && first !== undefined && (nodes.length === 1 || visit.openKey.startsWith('item:'))) wearHeader(head, first);
+        if (head !== null && first !== undefined && nodes.length === 1 && visit.openKey.startsWith('fold:')) wearHeader(head, first);
         else head?.remove();
       }
     } else if (visit.openKey === CHECKS_KEY) {
