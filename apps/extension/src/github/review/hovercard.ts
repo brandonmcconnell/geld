@@ -58,6 +58,8 @@ let card: HTMLElement | null = null;
 let timer: number | null = null;
 let current: HTMLElement | null = null;
 let installed = false;
+/** Where the pointer last was, to find the host's replacement after the panel is rebuilt under an open card. */
+let pointer: { readonly x: number; readonly y: number } | null = null;
 
 export function setHoverProvider(next: HoverProvider | null): void {
   provider = next;
@@ -182,7 +184,34 @@ function showRow(row: HTMLElement): void {
   if (body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
 }
 
+/**
+ * The panel is rebuilt while GitHub streams the page in; a card open over
+ * it then points at a host that is no longer in the document, and measuring
+ * that gives (0, 0) — the card would land in the corner of the viewport.
+ * Find the host's replacement under the pointer (same login, or the row
+ * with the same key); failing that, the card goes.
+ */
+export function rehostHoverCard(): void {
+  if (card === null || current === null || current.isConnected) return;
+  const under = pointer === null ? null : hostOf(document.elementFromPoint(pointer.x, pointer.y));
+  const same =
+    under !== null &&
+    (current.hasAttribute(ATTR_WHO)
+      ? under.getAttribute(ATTR_WHO) === current.getAttribute(ATTR_WHO)
+      : (under.getAttribute('data-geld-item') ?? under.getAttribute('data-geld-fold')) === (current.getAttribute('data-geld-item') ?? current.getAttribute('data-geld-fold')));
+  if (!same || under === null) {
+    hide();
+    return;
+  }
+  current = under;
+  place(under, card, card.getBoundingClientRect().width);
+}
+
 function place(host: HTMLElement, node: HTMLElement, width: number): void {
+  if (!host.isConnected) {
+    rehostHoverCard();
+    return;
+  }
   const rect = host.getBoundingClientRect();
   node.style.width = `${width}px`;
   // Under a row the card starts past the row's leading glyph; under an avatar or chip it starts at the host.
@@ -199,6 +228,7 @@ function install(): void {
   document.addEventListener(
     'mouseover',
     (event) => {
+      pointer = { x: event.clientX, y: event.clientY };
       const host = hostOf(event.target);
       if (host === null) {
         if (card !== null && event.target instanceof Node && card.contains(event.target)) {
@@ -238,6 +268,10 @@ function install(): void {
     'scroll',
     () => {
       if (card === null || current === null) return;
+      if (!current.isConnected) {
+        rehostHoverCard();
+        return;
+      }
       const rect = current.getBoundingClientRect();
       if (rect.bottom < 0 || rect.top > window.innerHeight) hide();
       else place(current, card, card.getBoundingClientRect().width);
