@@ -169,6 +169,13 @@ const ATTR_FOCUS = 'data-geld-focus';
 export const ATTR_HEAD_SLOT = 'data-geld-head-slot';
 /** Marks the span in the open CI row that receives GitHub's checks-settings gear. */
 export const ATTR_GEAR_SLOT = 'data-geld-gear-slot';
+/** Marks the span in a row that receives the comment's own reaction trigger and ⋯ menu, open or closed. */
+export const ATTR_CTL_SLOT = 'data-geld-ctl';
+
+/** Where GitHub's own per-comment controls (reaction trigger, ⋯) sit in a row, whether it is open or not. */
+function controlSlot(anchor: string): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__ctl-slot`, [ATTR_CTL_SLOT]: anchor });
+}
 
 function focusKeyOf(root: Element | null): string | null {
   if (root === null) return null;
@@ -327,7 +334,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers): 
     const anchor = first.anchor;
     const time = model.timeFor(anchor);
     if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
-    right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)));
+    right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)), controlSlot(anchor));
   }
   const entries: MenuEntry[] = [];
   const resolvable = model.resolvable(item);
@@ -368,7 +375,7 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [fold.time]));
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
-    if (fold.count === 1 && fold.avatarSrc !== null) right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)));
+    if (fold.count === 1 && fold.avatarSrc !== null) right.append(reactionButton(model.myReactionFor(anchor), key, () => handlers.onReact(anchor)), controlSlot(anchor));
     if (open) right.append(headSlot());
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   }
@@ -727,7 +734,7 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
     if (entry.hasBody) main.addEventListener('click', toggle);
     const right = createElement('span', { class: `${PANEL_CLASS}__right` });
     if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
-    if (entry.hasBody) right.append(reactionButton(entry.myReaction, `sub:${entry.anchor}`, () => handlers.onReact(entry.anchor)));
+    if (entry.hasBody) right.append(reactionButton(entry.myReaction, `sub:${entry.anchor}`, () => handlers.onReact(entry.anchor)), controlSlot(entry.anchor));
     if (open) right.append(headSlot());
     if (entry.hasBody) right.append(chevron(open, toggle));
     const row = createElement(
