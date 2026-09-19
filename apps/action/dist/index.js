@@ -19287,6 +19287,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
 }
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body, extraLogins = []) {
+  const lines = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
+  if (lines.length > 1) return lines.length <= 6 && lines.every((line) => isTriggerComment(line, extraLogins));
   const text = body.replace(/[`*_~]/g, "").replace(/\s+/g, " ").trim().replace(/[.!]+$/, "").toLowerCase();
   if (text === "" || text.length > 60) return false;
   for (const bot of REVIEW_BOTS) {

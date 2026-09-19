@@ -303,18 +303,22 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
   const list: CrawledLeftover[] = [];
   const timeline = root.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline');
   if (timeline === null) return list;
-  const rows = timeline.querySelectorAll<HTMLElement>('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], [class*="TimelineItem"]');
+  const ROW = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
+  const rows = timeline.querySelectorAll<HTMLElement>(ROW);
   for (const row of rows) {
-    if (row.closest('.geld-review') !== null || row.closest('form') !== null) continue;
-    // Outermost rows only.
-    if (row.parentElement?.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') !== null && row.parentElement?.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') !== undefined) continue;
+    // Rows on loan sit inside the panel right now; they still belong to the timeline. Panel-made rows do not.
+    if (row.closest('.geld-review') !== null && row.closest('[data-geld-teleported]') === null) continue;
+    if (row.closest('form') !== null) continue;
+    // Leaf rows: a `.js-timeline-item` wrapper may hold several `.TimelineItem`s (a force-push next to a mention),
+    // each of which stands or folds on its own.
+    if (row.querySelector(ROW) !== null) continue;
     if ([...claimed].some((node) => node === row || node.contains(row) || row.contains(node))) continue;
     // The description card (which hosts the panel, and through it whatever is on loan) and the new-comment form are the page's own.
     if (row.querySelector('.geld-review, [data-geld-attached], form.js-new-comment-form, textarea[name="comment[body]"]') !== null) continue;
     if ([...row.querySelectorAll<HTMLElement>('[id^="issue-"]')].some((node) => /^issue-\d+$/.test(node.id))) continue;
     let kind: CrawledLeftover['kind'] = 'other';
     if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
-    else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference') !== null) kind = 'mention';
+    else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';
     else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
     list.push({ kind, root: row });
   }

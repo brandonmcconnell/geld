@@ -312,6 +312,73 @@ function stickyHeaderBottom(): number {
   return header instanceof HTMLElement && header.getBoundingClientRect().height > 0 ? header.getBoundingClientRect().bottom : 0;
 }
 
+const MAX_EAGER_FRAGMENTS = 200;
+const FRAGMENT_CONCURRENCY = 4;
+const requestedFragments = new WeakSet<Element>();
+/** Each URL once per visit: a fetched fragment can carry a fragment of its own. */
+let requestedUrls = new Set<string>();
+let fragmentsInFlight = 0;
+let eagerFragments = 0;
+
+/**
+ * GitHub minimizes reviews it marked as resolved and leaves their contents —
+ * the review's own threads included — behind a lazy `include-fragment` that
+ * loads only when scrolled into view, which a folded row never is. Fetch them
+ * the way the element would (a few at a time; asking the element itself to
+ * go eager made it error out) and put the markup in its place, so the
+ * crawler sees every thread.
+ */
+function loadMinimizedReviews(): void {
+  const pending: { readonly fragment: Element; readonly src: string }[] = [];
+  const timeline = document.querySelector('.js-discussion, .pull-discussion-timeline') ?? document;
+  // Threads first (they are the items), then minimized reviews and comments.
+  for (const thread of timeline.querySelectorAll('review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container')) {
+    const fragment = thread.querySelector('include-fragment');
+    const src = thread.getAttribute('data-deferred-content-url');
+    if (fragment !== null && src !== null && fragment.getAttribute('src') === null && thread.querySelector('[id^="discussion_r"]') === null) pending.push({ fragment, src });
+  }
+  for (const fragment of timeline.querySelectorAll('.minimized-comment include-fragment[src]')) {
+    const src = fragment.getAttribute('src');
+    if (src !== null) pending.push({ fragment, src });
+  }
+  for (const { fragment, src } of pending) {
+    if (eagerFragments >= MAX_EAGER_FRAGMENTS || fragmentsInFlight >= FRAGMENT_CONCURRENCY) break;
+    if (requestedFragments.has(fragment) || requestedUrls.has(src) || fragment.closest('.geld-review') !== null) continue;
+    requestedFragments.add(fragment);
+    requestedUrls.add(src);
+    eagerFragments += 1;
+    fragmentsInFlight += 1;
+    void fetchFragment(fragment, src).finally(() => {
+      fragmentsInFlight -= 1;
+      reapplySoon();
+    });
+  }
+}
+
+async function fetchFragment(fragment: Element, src: string): Promise<void> {
+  try {
+    const response = await fetch(new URL(src, location.href), { headers: { Accept: 'text/html; fragment', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' });
+    if (!response.ok) return;
+    const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+    if (!fragment.isConnected) return;
+    fragment.replaceWith(...[...parsed.body.childNodes].map((node) => document.adoptNode(node)));
+  } catch {
+    // Left as GitHub's own lazy fragment; it still loads when the reader scrolls to it in the full timeline.
+  }
+}
+
+let reapplyTimer: number | null = null;
+/** Another pass shortly (fetched markup arrived), coalesced. */
+function reapplySoon(): void {
+  if (reapplyTimer !== null) return;
+  reapplyTimer = window.setTimeout(() => {
+    reapplyTimer = null;
+    if (lastSettings !== null) applyReviewOverview(lastSettings);
+  }, 150);
+}
+
+let lastSettings: GeldSettings | null = null;
+
 /** Open the row `key` names; an item opens inside its round, and the section holding either unfolds. */
 function openRow(key: string, batches: readonly Batch[]): void {
   if (key.startsWith('item:')) {
@@ -687,11 +754,14 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
+    eagerFragments = 0;
+    requestedUrls = new Set();
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
     resetAiForVisit();
   }
+  lastSettings = settings;
   const crawledDom = crawlConversation();
   const found = findSummaryComment(document);
   hideSummary(found?.root ?? null);
@@ -707,8 +777,11 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const groups = [...foldGroups(meta, settings, crawledDom)];
   const compacting = settings.compactTimeline !== 'off';
   const hidingTimeline = compacting && !visit.fullTimeline;
-  // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more".
+  // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
+  // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
+  // would only load when scrolled into view, which a folded row never is.
   if (hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = crawlReviews();
