@@ -10,7 +10,7 @@
  */
 
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botTitle, doneItemCount, isOpenStatus } from '@geld/review';
+import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
@@ -63,8 +63,8 @@ export interface Batch {
   /** Who posted: bot names, then people. */
   readonly names: readonly string[];
   readonly items: readonly ReviewItem[];
-  /** Run summaries and other top-level comments in the round, by anchor. */
-  readonly commentAnchors: readonly string[];
+  /** Run summaries and other top-level comments in the round, as lines for its list. */
+  readonly comments: readonly ReviewEntry[];
   readonly time: string;
   readonly firstAnchor: string | null;
 }
@@ -464,7 +464,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
       : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--progress`, role: 'img', 'aria-label': `${done} of ${total} threads resolved`, 'data-done': String(allDone) }, [icon(allDone ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`Round ${batch.index}`])];
   if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
-  if (batch.commentAnchors.length > 0) mainChildren.push(countChip(batch.commentAnchors.length, plural(batch.commentAnchors.length, 'comment')));
+  if (batch.comments.length > 0) mainChildren.push(countChip(batch.comments.length, plural(batch.comments.length, 'comment')));
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
   main.addEventListener('click', toggle);
@@ -487,16 +487,29 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
 }
 
 /**
- * An open round: its run summaries (quick view, filled by the caller), then
- * its threads under two headings — unresolved first, resolved after — as
- * item rows that open one at a time. Returns the slot for the summaries and
- * the nested slot for the open thread.
+ * An open round: its run summaries and other comments as lines, then its
+ * threads under two headings — unresolved first, resolved after — all as
+ * rows that open one at a time (`openSubKey`: a comment's anchor or an
+ * item key). Returns the nested slot and what is open in it.
  */
-export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly parents: HTMLElement; readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null } {
-  const parents = createElement('div', { class: `${PANEL_CLASS}__batch-parents` });
+export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null; readonly openComment: string | null } {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub ${PANEL_CLASS}__rows--threads`, role: 'list' });
   let nested: HTMLElement | null = null;
   let openItem: ReviewItem | null = null;
+  let openComment: string | null = null;
+  if (batch.comments.length > 0) {
+    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.comments.length, 'comment')]));
+    for (const entry of batch.comments) {
+      const { row, open } = entryRow(entry, model, handlers);
+      list.append(row);
+      if (open) {
+        const sub = nestedSlot();
+        list.append(sub.item);
+        nested = sub.body;
+        openComment = entry.anchor;
+      }
+    }
+  }
   const section = (label: string, items: readonly ReviewItem[]): void => {
     if (items.length === 0) return;
     list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [label]));
@@ -515,8 +528,14 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
   section(plural(unresolved.length, 'unresolved thread'), unresolved);
   section(plural(resolved.length, 'resolved thread'), resolved);
-  slot.replaceChildren(parents, ...(list.childElementCount > 0 ? [list] : []));
-  return { parents, nested, openItem };
+  slot.replaceChildren(list);
+  return { nested, openItem, openComment };
+}
+
+/** The slot under an open comment line: one comment, its header worn by the line above. */
+function nestedSlot(): { readonly item: HTMLElement; readonly body: HTMLElement } {
+  const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
+  return { item: createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub`, 'data-solo': '' }, [body]), body };
 }
 
 /** Clicking anywhere in the row that is not a control (avatars, blank space) toggles it, like the title does. */
@@ -818,50 +837,61 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
   let nested: HTMLElement | null = null;
   if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews yet.']));
   for (const entry of model.comments) {
-    const open = entry.hasBody && model.openSubKey === entry.anchor;
-    const lead =
-      entry.state === 'thread'
-        ? (() => {
-            const status = createElement(
-              'button',
-              { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': entry.done ? 'Unresolve' : 'Resolve', title: entry.done ? 'Unresolve conversation' : 'Resolve conversation', 'aria-pressed': String(entry.done), [ATTR_FOCUS]: `status:sub:${entry.anchor}` },
-              [icon(entry.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)],
-            );
-            status.addEventListener('click', (event) => {
-              event.stopPropagation();
-              handlers.onResolveAnchor(entry.anchor, !entry.done);
-            });
-            return status;
-          })()
-        : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
-    const toggle = (): void => handlers.onToggleSub(entry.anchor);
-    const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.author])];
-    if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
-    else if (entry.state !== 'thread' && entry.state !== 'comment') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [ENTRY_LABEL[entry.state].toLowerCase()]));
-    if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
-    const main = entry.hasBody
-      ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, mainChildren)
-      : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
-    if (entry.hasBody) main.addEventListener('click', toggle);
-    const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-    if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
-    if (entry.hasBody) right.append(controlSlot(entry.anchor), chevron(open, toggle));
-    const row = createElement(
-      'li',
-      { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
-      [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot: false, login: entry.author }], entry.author, false), main, right],
-    );
-    if (open) row.setAttribute('data-open', '');
-    if (entry.hasBody) rowClickToggles(row, toggle);
+    const { row, open } = entryRow(entry, model, handlers);
     list.append(row);
     if (open) {
-      const body = createElement('div', { class: `${PANEL_CLASS}__slot-body` });
-      list.append(createElement('li', { class: `${PANEL_CLASS}__slot ${PANEL_CLASS}__slot--sub`, 'data-solo': '' }, [body]));
-      nested = body;
+      const sub = nestedSlot();
+      list.append(sub.item);
+      nested = sub.body;
     }
   }
   slot.replaceChildren(list);
   return nested;
+}
+
+/**
+ * One line for a comment, review verdict or review thread: state glyph,
+ * avatar, name, the first line, then the time, GitHub's own header controls
+ * (worn while open) and a chevron. Open when `openSubKey` is its anchor.
+ */
+function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
+  const open = entry.hasBody && model.openSubKey === entry.anchor;
+  const bot = /\[bot\]$/i.test(entry.author);
+  const lead =
+    entry.state === 'thread'
+      ? (() => {
+          const status = createElement(
+            'button',
+            { type: 'button', class: `${PANEL_CLASS}__status`, 'aria-label': entry.done ? 'Unresolve' : 'Resolve', title: entry.done ? 'Unresolve conversation' : 'Resolve conversation', 'aria-pressed': String(entry.done), [ATTR_FOCUS]: `status:sub:${entry.anchor}` },
+            [icon(entry.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)],
+          );
+          status.addEventListener('click', (event) => {
+            event.stopPropagation();
+            handlers.onResolveAnchor(entry.anchor, !entry.done);
+          });
+          return status;
+        })()
+      : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
+  const toggle = (): void => handlers.onToggleSub(entry.anchor);
+  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
+  if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
+  else if (entry.state !== 'thread' && entry.state !== 'comment') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [ENTRY_LABEL[entry.state].toLowerCase()]));
+  if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
+  const main = entry.hasBody
+    ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, mainChildren)
+    : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
+  if (entry.hasBody) main.addEventListener('click', toggle);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
+  if (entry.hasBody) right.append(controlSlot(entry.anchor), chevron(open, toggle));
+  const row = createElement(
+    'li',
+    { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
+    [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot, login: entry.author }], entry.author, bot), main, right],
+  );
+  if (open) row.setAttribute('data-open', '');
+  if (entry.hasBody) rowClickToggles(row, toggle);
+  return { row, open };
 }
 
 function signatureOf(model: PanelModel): string {
@@ -886,7 +916,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.commentAnchors.join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     ring: model.checksRing?.outerHTML.length ?? 0,
