@@ -11,7 +11,7 @@
 import { createElement } from '../dom';
 import { onRestore, teleportInto } from './teleport';
 
-const COMMENT_CONTAINER = '.js-comment-container, .review-comment, .timeline-comment, [data-testid="comment-container"], [id^="issuecomment-"], [id^="discussion_r"]';
+const COMMENT_CONTAINER = '.js-comment-container, .review-comment, .timeline-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="comment-viewer-outer-box"], [id^="issuecomment-"], [id^="discussion_r"]';
 const BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
 
 /** Fill `slot` with `nodes`. */
