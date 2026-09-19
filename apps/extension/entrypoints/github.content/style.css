@@ -1213,6 +1213,76 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   margin-left: auto;
 }
 
+/* "Grouped by type ▾": as quiet as the copy button beside it, a menu like the rows' ⋯. */
+.geld-review__grouping {
+  position: relative;
+}
+
+.geld-review__grouping-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border-radius: 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.geld-review__grouping-btn::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__grouping-btn:hover,
+.geld-review__grouping[open] > .geld-review__grouping-btn {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__grouping-btn .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__grouping-muted {
+  opacity: 0.8;
+}
+
+.geld-review__menu-list > .geld-review__menu-item--choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.geld-review__menu-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 18px;
+  align-items: center;
+  visibility: hidden;
+}
+
+.geld-review__menu-item--choice[aria-checked='true'] .geld-review__menu-check {
+  visibility: visible;
+}
+
+.geld-review__menu-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.geld-review__menu-hint {
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
 /* ---- icon buttons -------------------------------------------------------- */
 
 .geld-review__icon {
