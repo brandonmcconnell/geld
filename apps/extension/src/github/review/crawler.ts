@@ -310,8 +310,8 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     if (row.closest('.geld-review') !== null && row.closest('[data-geld-teleported]') === null) continue;
     if (row.closest('form') !== null) continue;
     // Leaf rows: a `.js-timeline-item` wrapper may hold several `.TimelineItem`s (a force-push next to a mention),
-    // each of which stands or folds on its own.
-    if (row.querySelector(ROW) !== null) continue;
+    // each of which stands or folds on its own. A wrapper whose rows are on loan to the panel is still a wrapper.
+    if (row.querySelector(ROW) !== null || wornPiecesOf(row).length > 0) continue;
     if ([...claimed].some((node) => node === row || node.contains(row) || row.contains(node))) continue;
     // The description card (which hosts the panel, and through it whatever is on loan) and the new-comment form are the page's own.
     if (row.querySelector('.geld-review, [data-geld-attached], form.js-new-comment-form, textarea[name="comment[body]"]') !== null) continue;
