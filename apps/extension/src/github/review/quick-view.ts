@@ -9,7 +9,7 @@
  */
 
 import { createElement, svgFromString } from '../dom';
-import { ICON_COPY, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_LINK_EXTERNAL, ICON_REPLY } from '../ui/icons';
+import { ICON_CHEVRON_DOWN, ICON_COMMENT, ICON_COPY, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_LINK_EXTERNAL, ICON_REPLY } from '../ui/icons';
 import { onRestore, teleportInto } from './teleport';
 
 /** Fill `slot` with `nodes`. */
@@ -38,11 +38,33 @@ const REPLY_AREA = '.review-thread-reply, .js-inline-comment-form-container, .js
 const ATTR_MORE = 'data-geld-thread-more';
 const ATTR_REPLY = 'data-geld-thread-reply';
 
+export interface ThreadSource {
+  /** The review comment (or bot run summary) the thread came from, on the page. */
+  readonly node: HTMLElement;
+  /** "Bugbot's review comment". */
+  readonly label: string;
+}
+
 export interface ThreadsViewHandlers {
   readonly pathOf: (node: HTMLElement) => string;
   readonly onCopy: (text: string) => void;
   /** Reveal the thread and open GitHub's reply box for it. */
   readonly onReply: (node: HTMLElement) => void;
+  /** The comment this thread was posted from, when the page has one. */
+  readonly sourceOf: (node: HTMLElement) => ThreadSource | null;
+  /** Whether that source is unfolded inside the frame. */
+  readonly sourceOpen: (node: HTMLElement) => boolean;
+  readonly onToggleSource: (node: HTMLElement) => void;
+}
+
+/** Focus key of a frame's source toggle, so a rebuild returns focus to it. */
+export function sourceFocusKey(node: HTMLElement): string {
+  return `source:${threadAnchorOf(node)}`;
+}
+
+/** The thread's first comment anchor (its identity across rebuilds). */
+export function threadAnchorOf(node: HTMLElement): string {
+  return node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? node.id;
 }
 
 /**
@@ -57,8 +79,20 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
   for (const node of nodes) {
     const frame = createElement('div', { class: 'geld-review__thread', 'data-geld-thread': 'collapsed' });
     const path = handlers.pathOf(node);
-    if (path !== '') {
+    const source = handlers.sourceOf(node);
+    if (path !== '' || source !== null) {
       const actions = createElement('span', { class: 'geld-review__thread-actions' });
+      if (source !== null) {
+        // Where this thread came from: the bot's review comment, unfolded inside the frame on demand.
+        const open = handlers.sourceOpen(node);
+        const toggle = createElement('button', { type: 'button', class: 'geld-review__thread-source-btn', 'aria-pressed': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(node) }, [
+          svgFromString(ICON_COMMENT),
+          createElement('span', {}, ['Source']),
+          svgFromString(ICON_CHEVRON_DOWN),
+        ]);
+        toggle.addEventListener('click', () => handlers.onToggleSource(node));
+        actions.append(toggle);
+      }
       const copy = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__thread-copy', 'aria-label': 'Copy path', title: 'Copy path' }, [svgFromString(ICON_COPY)]);
       copy.addEventListener('click', () => handlers.onCopy(path.replace(/:\d+$/, '')));
       actions.append(copy);
@@ -68,6 +102,11 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
         actions.append(createElement('a', { class: 'geld-review__icon geld-review__thread-open', href: fileHref, 'aria-label': 'Open in Files changed', title: 'Open in Files changed' }, [svgFromString(ICON_LINK_EXTERNAL)]));
       }
       frame.append(createElement('div', { class: 'geld-review__thread-head' }, [createElement('code', { class: 'geld-review__thread-path' }, [path]), actions]));
+    }
+    if (source !== null && handlers.sourceOpen(node)) {
+      const sourceBody = createElement('div', { class: 'geld-review__thread-source-body geld-review__qv' });
+      frame.append(createElement('div', { class: 'geld-review__thread-source' }, [createElement('div', { class: 'geld-review__thread-source-label' }, [source.label]), sourceBody]));
+      teleportInto(sourceBody, [source.node]);
     }
     const body = createElement('div', { class: 'geld-review__thread-body' });
     frame.append(body);

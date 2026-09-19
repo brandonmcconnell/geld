@@ -359,6 +359,13 @@ function reviewStateOf(text: string): CrawledReviewState {
   return 'commented';
 }
 
+/** A review's own comment ("left a comment"), wherever quick view has put it; never one of its threads' comments. */
+export function reviewCommentOf(review: Element): HTMLElement | null {
+  // The comment may be on loan to a panel row right now; its placeholder still sits here.
+  const candidates = [...review.querySelectorAll<HTMLElement>(REVIEW_COMMENT), ...wornPiecesOf(review).flatMap((piece) => (piece.matches(REVIEW_COMMENT) ? [piece] : [...piece.querySelectorAll<HTMLElement>(REVIEW_COMMENT)]))];
+  return candidates.find((candidate) => candidate.closest(THREAD_SELECTOR) === null && bodyElementOf(candidate) !== null) ?? null;
+}
+
 /** Every review verdict in the timeline (`pullrequestreview-N`), with its comment when it has one. */
 export function crawlReviews(root: ParentNode = document): readonly CrawledReview[] {
   const reviews: CrawledReview[] = [];
@@ -368,9 +375,7 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
     seen.add(node.id);
     const author = authorOf(node);
     if (author === null) continue;
-    // The comment may be on loan to a panel row right now; its placeholder still sits here.
-    const candidates = [...node.querySelectorAll<HTMLElement>(REVIEW_COMMENT), ...wornPiecesOf(node).flatMap((piece) => (piece.matches(REVIEW_COMMENT) ? [piece] : [...piece.querySelectorAll<HTMLElement>(REVIEW_COMMENT)]))];
-    const comment = candidates.find((candidate) => candidate.closest(THREAD_SELECTOR) === null && bodyElementOf(candidate) !== null) ?? null;
+    const comment = reviewCommentOf(node);
     reviews.push({
       anchor: node.id,
       author,
