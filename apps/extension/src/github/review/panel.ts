@@ -122,6 +122,8 @@ export interface PanelModel {
   readonly comments: readonly ReviewEntry[];
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
+  /** Rounds whose bot comments (run summaries) are unfolded; folded by default. */
+  readonly openNotes: ReadonlySet<string>;
   /** A review bot is still running: the re-run control spins. */
   readonly running: boolean;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
@@ -160,6 +162,8 @@ export interface PanelHandlers {
   readonly onShowInTimeline: (anchor: string) => void;
   /** Open or close a comment inside the Reviews row's list. */
   readonly onToggleSub: (anchor: string) => void;
+  /** Unfold or fold a round's bot comments. */
+  readonly onToggleNotes: (batchKey: string) => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
@@ -464,7 +468,8 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
       : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--progress`, role: 'img', 'aria-label': `${done} of ${total} threads resolved`, 'data-done': String(allDone) }, [icon(allDone ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [`Round ${batch.index}`])];
   if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
-  if (batch.comments.length > 0) mainChildren.push(countChip(batch.comments.length, plural(batch.comments.length, 'comment')));
+  const commentCount = batch.comments.length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
+  if (commentCount > 0) mainChildren.push(countChip(commentCount, `${plural(commentCount, 'comment')} in this round`));
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
   main.addEventListener('click', toggle);
@@ -498,15 +503,29 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   let openItem: ReviewItem | null = null;
   let openComment: string | null = null;
   if (batch.comments.length > 0) {
-    list.append(createElement('li', { class: `${PANEL_CLASS}__subhead` }, [plural(batch.comments.length, 'comment')]));
-    for (const entry of batch.comments) {
-      const { row, open } = entryRow(entry, model, handlers);
-      list.append(row);
-      if (open) {
-        const sub = nestedSlot();
-        list.append(sub.item);
-        nested = sub.body;
-        openComment = entry.anchor;
+    // The bots' run summaries and other top-level comments: context most readers never need, kept behind one
+    // plain row that says what is there. Folded by default; the threads below are the work.
+    const notesOpen = model.openNotes.has(batch.key);
+    const bots = new Set(batch.comments.map((entry) => entry.author));
+    const label = `${plural(batch.comments.length, 'bot comment')} from ${plural(bots.size, 'bot')}`;
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn`, 'aria-expanded': String(notesOpen), [ATTR_FOCUS]: `notes:${batch.key}` }, [
+      icon(ICON_COMMENT_DISCUSSION),
+      createElement('span', { class: `${PANEL_CLASS}__notes-label` }, [label]),
+      createElement('span', { class: `${PANEL_CLASS}__notes-hint` }, [notesOpen ? 'Hide' : 'Show']),
+      icon(ICON_CHEVRON_DOWN),
+    ]);
+    button.addEventListener('click', () => handlers.onToggleNotes(batch.key));
+    list.append(createElement('li', { class: `${PANEL_CLASS}__notes`, 'data-open': String(notesOpen) }, [button]));
+    if (notesOpen) {
+      for (const entry of batch.comments) {
+        const { row, open } = entryRow(entry, model, handlers);
+        list.append(row);
+        if (open) {
+          const sub = nestedSlot();
+          list.append(sub.item);
+          nested = sub.body;
+          openComment = entry.anchor;
+        }
       }
     }
   }
@@ -923,6 +942,7 @@ function signatureOf(model: PanelModel): string {
     reviews: model.reviews,
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),
     openSubKey: model.openSubKey,
+    openNotes: [...model.openNotes].sort(),
     running: model.running,
     icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
   });

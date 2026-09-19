@@ -7,7 +7,7 @@
  */
 
 import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
-import { wornPiecesOf } from './teleport';
+import { closestAtHome, wornPiecesOf } from './teleport';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
@@ -18,7 +18,7 @@ export function timelineRootOf(anchor: string): HTMLElement | null {
 export function threadRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
   if (node === null) return null;
-  const thread = node.closest(THREAD_SELECTOR) ?? node.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]');
+  const thread = closestAtHome(node, THREAD_SELECTOR) ?? closestAtHome(node, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]');
   return thread instanceof HTMLElement ? thread : node;
 }
 

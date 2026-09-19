@@ -31,7 +31,7 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, revealThreadFor } from './quick-view';
-import { compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -52,6 +52,8 @@ interface VisitState {
   pendingAnchor: string | null;
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
+  /** Rounds whose bot comments are unfolded. */
+  openNotes: Set<string>;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -73,6 +75,7 @@ const visit: VisitState = {
   loadMoreTries: 0,
   pendingAnchor: null,
   openSubKey: null,
+  openNotes: new Set<string>(),
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -159,8 +162,22 @@ function itemNodes(item: ReviewItem): readonly HTMLElement[] {
   const roots: HTMLElement[] = [];
   for (const source of item.sources) {
     const thread = threadRootOf(source.anchor);
-    const row = thread?.closest('.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') ?? thread;
+    const row = (thread === null ? null : closestAtHome(thread, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]')) ?? thread;
     if (row instanceof HTMLElement && !roots.includes(row)) roots.push(row);
+  }
+  return roots;
+}
+
+/**
+ * The thread containers of an item, one per source thread. GitHub groups a
+ * review's threads on one file under one timeline row; each thread still
+ * gets its own frame.
+ */
+function threadNodes(item: ReviewItem): readonly HTMLElement[] {
+  const roots: HTMLElement[] = [];
+  for (const source of item.sources) {
+    const thread = threadRootOf(source.anchor);
+    if (thread instanceof HTMLElement && !roots.some((root) => root === thread || root.contains(thread) || thread.contains(root))) roots.push(thread);
   }
   return roots;
 }
@@ -341,7 +358,8 @@ function loadMinimizedReviews(): void {
   for (const thread of timeline.querySelectorAll('review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container')) {
     const fragment = thread.querySelector('include-fragment');
     const src = thread.getAttribute('data-deferred-content-url');
-    if (fragment !== null && src !== null && fragment.getAttribute('src') === null && thread.querySelector('[id^="discussion_r"]') === null) pending.push({ fragment, src });
+    // A thread whose first comment shows still defers its replies behind the same fragment.
+    if (fragment !== null && src !== null && fragment.getAttribute('src') === null && fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') === null) pending.push({ fragment, src });
   }
   for (const fragment of timeline.querySelectorAll('.minimized-comment include-fragment[src]')) {
     const src = fragment.getAttribute('src');
@@ -349,7 +367,8 @@ function loadMinimizedReviews(): void {
   }
   for (const { fragment, src } of pending) {
     if (eagerFragments >= MAX_EAGER_FRAGMENTS || fragmentsInFlight >= FRAGMENT_CONCURRENCY) break;
-    if (requestedFragments.has(fragment) || requestedUrls.has(src) || fragment.closest('.geld-review') !== null) continue;
+    // Panel-made nodes never hold GitHub fragments; a thread on loan to the panel still does.
+    if (requestedFragments.has(fragment) || requestedUrls.has(src) || (fragment.closest('.geld-review') !== null && fragment.closest('[data-geld-teleported]') === null)) continue;
     requestedFragments.add(fragment);
     requestedUrls.add(src);
     eagerFragments += 1;
@@ -553,7 +572,12 @@ function threadPathOf(node: HTMLElement, item: ReviewItem | undefined): string {
   const header = node.querySelector('.file-header a, .file-header, [data-testid="file-header"], summary code, [class*="FileHeader"] a');
   const fromNode = (header?.textContent ?? '').replace(/\s+/g, ' ').trim();
   if (fromNode !== '') return fromNode;
-  return item?.path === undefined ? '' : item.line === undefined ? item.path : `${item.path}:${item.line}`;
+  // A thread container carries no header; its diff snippet's last line is the one commented on.
+  const path = item?.path ?? (closestAtHome(node, '.TimelineItem, .js-timeline-item')?.querySelector('.file-header a, .file-header')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  if (path === '') return '';
+  const lines = [...node.querySelectorAll<HTMLElement>('td[data-line-number]')].map((cell) => cell.getAttribute('data-line-number') ?? '').filter((value) => /^\d+$/.test(value));
+  const line = lines.length > 0 ? lines[lines.length - 1] : item?.line === undefined ? null : String(item.line);
+  return line === null ? path : `${path}:${line}`;
 }
 
 /** GitHub's 32px status ring, shrunk to the row's 16px lead. */
@@ -809,6 +833,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     visit.loadMoreTries = 0;
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.openSubKey = null;
+    visit.openNotes = new Set<string>();
     visit.knownRequired = null;
     visit.lastReviews = null;
     visit.checksExpanded = false;
@@ -872,9 +897,12 @@ export function applyReviewOverview(settings: GeldSettings): void {
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit').map((entry) => entry.root);
   const batches = buildBatches(meta, crawledDom, settings, commitRoots);
   const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
+  // By node, not by looking the anchor up: GitHub repeats an id (a review inside its minimized wrapper), and
+  // getElementById would answer with whichever copy comes first in the document.
+  const batchedRoots = new Set(crawledDom.comments.filter((entry) => batchedAnchors.has(entry.comment.anchor)).map((entry) => entry.root));
   for (const [index, group] of groups.entries()) {
     if (!group.key.startsWith('bot:')) continue;
-    if (!group.nodes.every((node) => [...batchedAnchors].some((anchor) => node.id === anchor || node.contains(document.getElementById(anchor))))) continue;
+    if (!group.nodes.every((node) => batchedRoots.has(node) || [...batchedAnchors].some((anchor) => node.id === anchor || node.querySelector(`#${CSS.escape(anchor)}`) !== null))) continue;
     const silent = { ...group, silent: true };
     groups[index] = silent;
     const target = foldTargets.indexOf(group);
@@ -919,6 +947,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
     checksRing,
     comments,
     openSubKey: visit.openSubKey,
+    openNotes: visit.openNotes,
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
@@ -1019,6 +1048,13 @@ export function applyReviewOverview(settings: GeldSettings): void {
         reapply();
       });
     },
+    onToggleNotes: (batchKey) => {
+      keepInPlace(`notes:${batchKey}`, () => {
+        if (visit.openNotes.has(batchKey)) visit.openNotes.delete(batchKey);
+        else visit.openNotes.add(batchKey);
+        reapply();
+      });
+    },
     onResolveAnchor: (anchor) => {
       clickResolve(anchor);
     },
@@ -1074,12 +1110,13 @@ export function applyReviewOverview(settings: GeldSettings): void {
         const batch = batches.find((entry) => entry.key === visit.openKey);
         if (batch !== undefined) {
           const view = renderBatchView(mounted.slot, batch, model, panelHandlers);
-          const commentNode = view.openComment === null ? null : timelineRootOf(view.openComment);
+          // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here).
+          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? timelineRootOf(view.openComment));
           if (view.nested !== null && commentNode !== null) {
             renderQuickView(view.nested, [commentNode]);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
-            renderThreadsView(view.nested, itemNodes(item), {
+            renderThreadsView(view.nested, threadNodes(item), {
               pathOf: (node) => threadPathOf(node, item),
               onCopy: (text) => void copyText(text),
               onReply: (node) => {
@@ -1099,7 +1136,7 @@ export function applyReviewOverview(settings: GeldSettings): void {
         // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
         // reveals the rest of the thread and the reply box.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
-        renderThreadsView(mounted.slot, nodes, {
+        renderThreadsView(mounted.slot, item === undefined ? nodes : threadNodes(item), {
           pathOf: (node) => threadPathOf(node, item),
           onCopy: (text) => void copyText(text),
           onReply: (node) => {
