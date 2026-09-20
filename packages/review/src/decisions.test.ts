@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
+import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, previewStatusesFrom, previewStatusKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
 import { isEvaluationModel, jevEndpoint, jevModelFor, jevModelIn, parseJevResponse } from './jev';
 import type { ConsolidateInputItem } from './prompts';
 
@@ -104,5 +104,20 @@ describe('classification decisions', () => {
     expect(done.get('t1')?.verdict).toBe('yes');
     expect(done.get('t2')?.verdict).toBe('no');
     expect(done.get('t3')?.verdict).toBe('unclear');
+  });
+});
+
+describe('preview status decisions', () => {
+  it('asks a choice with every preview state plus unknown, and takes the answer as given', () => {
+    const [request] = classificationRequests('typesafe-ai/jev', [], [], [{ id: 'p1', host: 'vercel', project: 'dashboard', text: '| dashboard | Visit Preview | Sep 17 |' }]);
+    const question = request?.questions[previewStatusKey('p1')];
+    expect(question?.type).toBe('choice');
+    expect(question?.type === 'choice' ? Object.keys(question.criteria).sort() : []).toEqual(['building', 'failed', 'ready', 'skipped', 'unknown']);
+    const statuses = previewStatusesFrom({
+      [previewStatusKey('p1')]: { type: 'choice', choice: 'ready', confidence: 0.55, probabilities: { ready: 0.55 } },
+      [previewStatusKey('p2')]: { type: 'choice', choice: 'unknown', confidence: 0.9, probabilities: { unknown: 0.9 } },
+      [previewStatusKey('p3')]: { type: 'choice', choice: 'nonsense', confidence: 0.9, probabilities: {} },
+    });
+    expect([...statuses.entries()]).toEqual([['p1', 'ready'], ['p2', 'unknown']]);
   });
 });

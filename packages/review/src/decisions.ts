@@ -1,4 +1,6 @@
 import type { JevAnswer, JevQuestion, JevRequest } from './jev';
+import type { PreviewStatusRecord } from './model';
+import { PREVIEW_STATUSES } from './model';
 import type { ConsolidateInputItem } from './prompts';
 
 /**
@@ -169,6 +171,27 @@ export function laneKey(id: string): string {
   return `lane:${id}`;
 }
 
+/** A preview deployment whose status the parser could not read from the comment: Jev reads it instead. */
+export interface PreviewStatusInput {
+  readonly id: string;
+  readonly host: string;
+  readonly project: string;
+  /** The comment's text (table rows as `| a | b |` lines). */
+  readonly text: string;
+}
+
+export function previewStatusKey(id: string): string {
+  return `preview:${id}`;
+}
+
+const PREVIEW_CRITERIA: Readonly<Record<PreviewStatusRecord, string>> = {
+  ready: 'The deployment succeeded and the preview is up: "Ready", "Deployed", "Visit Preview", a green check.',
+  building: 'The deployment is still in progress: "Building", "Queued", "Pending", "Initializing", a yellow or spinning mark.',
+  failed: 'The deployment failed: "Error", "Failed", a red cross, a link to logs because something broke.',
+  skipped: 'The deployment was not attempted for this commit: "Skipped", "Ignored", "Canceled", a grey or crossed-out mark.',
+  unknown: 'The comment does not say, or says something that fits none of the others.',
+};
+
 export function doneKey(id: string): string {
   return `done:${id}`;
 }
@@ -188,9 +211,9 @@ function clip(text: string, max: number): string {
  * lane question per comment and a done question per thread, all answered in
  * one parallel pass. Empty when there is nothing to ask.
  */
-export function classificationRequests(model: string, comments: readonly LaneInput[], threads: readonly ThreadInput[]): readonly JevRequest[] {
+export function classificationRequests(model: string, comments: readonly LaneInput[], threads: readonly ThreadInput[], previews: readonly PreviewStatusInput[] = []): readonly JevRequest[] {
   const requests: JevRequest[] = [];
-  const queue: Array<{ readonly comment?: LaneInput; readonly thread?: ThreadInput }> = [...comments.map((comment) => ({ comment })), ...threads.map((thread) => ({ thread }))];
+  const queue: Array<{ readonly comment?: LaneInput; readonly thread?: ThreadInput; readonly preview?: PreviewStatusInput }> = [...comments.map((comment) => ({ comment })), ...threads.map((thread) => ({ thread })), ...previews.map((preview) => ({ preview }))];
   for (let start = 0; start < queue.length; start += PER_REQUEST) {
     const slice = queue.slice(start, start + PER_REQUEST);
     const stateComments = slice.flatMap((entry) => (entry.comment === undefined ? [] : [{ id: entry.comment.id, author: entry.comment.author, bot: entry.comment.bot, text: clip(entry.comment.text, LANE_TEXT_CHARS) }]));
@@ -206,7 +229,15 @@ export function classificationRequests(model: string, comments: readonly LaneInp
             },
           ],
     );
+    const statePreviews = slice.flatMap((entry) => (entry.preview === undefined ? [] : [{ id: entry.preview.id, host: entry.preview.host, project: entry.preview.project, comment: clip(entry.preview.text, LANE_TEXT_CHARS * 3) }]));
     const questions: Record<string, JevQuestion> = {};
+    for (const preview of statePreviews) {
+      questions[previewStatusKey(preview.id)] = {
+        type: 'choice',
+        instructions: `In \`previews\`, for the entry with id "${preview.id}": what is the state of the "${preview.project}" deployment according to \`comment\`?`,
+        criteria: PREVIEW_CRITERIA,
+      };
+    }
     for (const comment of stateComments) {
       questions[laneKey(comment.id)] = {
         type: 'choice',
@@ -225,7 +256,7 @@ export function classificationRequests(model: string, comments: readonly LaneInp
       };
     }
     if (Object.keys(questions).length === 0) continue;
-    requests.push({ model, state: { comments: stateComments, threads: stateThreads }, questions });
+    requests.push({ model, state: { comments: stateComments, threads: stateThreads, previews: statePreviews }, questions });
   }
   return requests;
 }
@@ -242,6 +273,17 @@ export function lanesFrom(answers: Readonly<Record<string, JevAnswer>>, minConfi
     lanes.set(key.slice('lane:'.length), answer.choice);
   }
   return lanes;
+}
+
+/** Jev's word on each preview's state, taken as given: it was offered "unknown" and could have said so. */
+export function previewStatusesFrom(answers: Readonly<Record<string, JevAnswer>>): ReadonlyMap<string, PreviewStatusRecord> {
+  const out = new Map<string, PreviewStatusRecord>();
+  for (const [key, answer] of Object.entries(answers)) {
+    if (!key.startsWith('preview:') || answer.type !== 'choice') continue;
+    const status = PREVIEW_STATUSES.find((candidate) => candidate === answer.choice);
+    if (status !== undefined) out.set(key.slice('preview:'.length), status);
+  }
+  return out;
 }
 
 export type DoneVerdict = 'yes' | 'no' | 'unclear';
