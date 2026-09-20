@@ -219,6 +219,19 @@ function icon(markup: string): SVGElement {
   return svgFromString(markup);
 }
 
+/**
+ * The panel is rebuilt as the page streams in, and a freshly mounted spinner
+ * would start its turn from the top - the reader sees the CI spinner jump
+ * back. Pinning every spin animation's start to the document timeline's
+ * origin puts each mount at the phase one continuous spinner would be at,
+ * whenever the browser gets to its first frame.
+ */
+export function syncSpinners(root: Element): void {
+  for (const spinner of root.querySelectorAll(`.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon`)) {
+    for (const animation of spinner.getAnimations()) animation.startTime = 0;
+  }
+}
+
 function iconButton(markup: string, label: string, extra: Readonly<Record<string, string>> = {}): HTMLButtonElement {
   return createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon`, 'aria-label': label, title: label, ...extra }, [icon(markup)]);
 }
@@ -1355,6 +1368,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   panel.style.marginRight = cardMargins.right;
   if (existing !== null && existing.parentNode !== null) existing.replaceWith(panel);
   else card.insertAdjacentElement('afterend', panel);
+  syncSpinners(panel);
   // A card open over the old panel points at a host that just left the document.
   rehostHoverCard();
   // Below the box, not in it: a quiet, persistent pointer to the Action while this repository lacks it.

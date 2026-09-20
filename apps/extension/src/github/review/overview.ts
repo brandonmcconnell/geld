@@ -25,7 +25,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
@@ -160,12 +160,28 @@ function groupContaining(groups: readonly FoldGroup[], anchor: string): FoldGrou
   return groups.find((group) => group.nodes.some((node) => node === target || node.contains(target))) ?? null;
 }
 
-/** The panel row that holds `anchor`: an item's row, a fold's, or null when it is not on the page. */
-function rowKeyFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): string | null {
+/** Where the panel holds `anchor`: the row to open and, for a line inside a round, the line within it. */
+interface AnchorSeat {
+  readonly key: string;
+  readonly sub: string | null;
+}
+
+/**
+ * The panel row that holds `anchor`: an item's row, a round's (a bot's run
+ * summary or a person's review is a line inside its round, and its fold group
+ * went silent for that), a fold's, or null when it is not on the page.
+ */
+function seatFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[], batches: readonly Batch[]): AnchorSeat | null {
   const item = meta.items.find((entry) => entry.sources.some((source) => source.anchor === anchor));
-  if (item !== undefined) return itemKey(item.id);
+  if (item !== undefined) return { key: itemKey(item.id), sub: null };
+  const batch = batches.find((entry) => [...entry.comments, ...entry.reviews].some((line) => line.anchor === anchor));
+  if (batch !== undefined) return { key: batch.key, sub: anchor };
   const group = groupContaining(groups, anchor);
-  return group === null ? null : foldKey(group.key);
+  return group === null || group.silent === true ? null : { key: foldKey(group.key), sub: null };
+}
+
+function rowKeyFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[], batches: readonly Batch[]): string | null {
+  return seatFor(anchor, meta, groups, batches)?.key ?? null;
 }
 
 /** The timeline rows of an item: each source thread's row (all its comments, reply box and Resolve), once. */
@@ -428,8 +444,8 @@ function reapplySoon(): void {
 
 let lastSettings: GeldSettings | null = null;
 
-/** Open the row `key` names; an item opens inside its round, and the section holding either unfolds. */
-function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings['reviewGrouping']): void {
+/** Open the row `key` names; an item opens inside its round, `sub` names a line inside a round, and the section holding either unfolds. */
+function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings['reviewGrouping'], sub: string | null = null): void {
   if (key.startsWith('item:')) {
     // By push, an open thread has its own row under "Needs attention"; by type it lives inside its round.
     if (grouping === 'batch' && batches.some((entry) => entry.items.some((item) => itemKey(item.id) === key && isOpenStatus(item.status)))) {
@@ -449,9 +465,28 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
   if (key.startsWith('fold:')) visit.collapsedGroups.delete('hidden');
   if (key.startsWith('batch:')) {
     const batch = batches.find((entry) => entry.key === key);
-    if (batch !== undefined) visit.collapsedGroups.delete(batch.items.some((item) => isOpenStatus(item.status)) ? 'open' : 'done');
+    if (batch !== undefined) {
+      visit.collapsedGroups.delete(batch.items.some((item) => isOpenStatus(item.status)) ? 'open' : 'done');
+      visit.collapsedGroups.delete('pushes');
+    }
+    visit.openSubKey = sub;
   }
   visit.openKey = key;
+}
+
+/**
+ * After a click that opens a row elsewhere in the panel (a bot chip, a
+ * source link), bring that row into view if it is not already there: the
+ * reader asked to go somewhere, and nothing else tells them where it opened.
+ * Instant, and only when needed; a row already on screen stays put.
+ */
+function revealRow(focusKey: string): void {
+  const row = document.querySelector(`[data-geld-focus="${focusKey}"]`);
+  if (!(row instanceof HTMLElement)) return;
+  const rect = row.getBoundingClientRect();
+  const sticky = stickyHeaderBottom();
+  if (rect.top >= sticky && rect.bottom <= window.innerHeight) return;
+  window.scrollBy({ top: rect.top - sticky - 8, behavior: 'instant' });
 }
 
 /**
@@ -1135,12 +1170,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   }
   // A permalink (or a find-in-page hit) opens its row here rather than revealing the original down the page.
   if (visit.pendingAnchor !== null && hidingTimeline) {
-    const key = rowKeyFor(visit.pendingAnchor, meta, groups);
-    if (key !== null) openRow(key, batches, settings.reviewGrouping);
+    const seat = seatFor(visit.pendingAnchor, meta, groups, batches);
+    if (seat !== null) openRow(seat.key, batches, settings.reviewGrouping, seat.sub);
   }
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
   // An item lives inside its round's row: opening it opens the round and the item within.
-  const openRowLocal = (key: string): void => openRow(key, batches, settings.reviewGrouping);
+  const openRowLocal = (key: string, sub: string | null = null): void => openRow(key, batches, settings.reviewGrouping, sub);
   const subject = subjectOf();
   const boxText = mergeBoxText();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
@@ -1302,13 +1337,13 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     onReact: (anchor) => {
       // Open whatever row holds the comment, then GitHub's own picker inside it.
       const sub = comments.find((entry) => entry.anchor === anchor && entry.hasBody);
-      if (sub !== undefined && (visit.openKey === REVIEWS_KEY || rowKeyFor(anchor, meta, groups) === null)) {
+      const seat = seatFor(anchor, meta, groups, batches);
+      if (sub !== undefined && (visit.openKey === REVIEWS_KEY || seat === null)) {
         visit.openKey = REVIEWS_KEY;
         visit.openSubKey = anchor;
       } else {
-        const key = rowKeyFor(anchor, meta, groups);
-        if (key === null) return;
-        openRowLocal(key);
+        if (seat === null) return;
+        openRowLocal(seat.key, seat.sub);
       }
       reapply();
       openReactions(anchor);
@@ -1321,14 +1356,15 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       location.hash = anchor;
     },
     onOpenAnchor: (anchor) => {
-      // Held by a row here? Open it. Otherwise let the browser take the reader to it in the timeline.
-      const key = hidingTimeline ? rowKeyFor(anchor, meta, groups) : null;
-      if (key === null) {
+      // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
+      const seat = hidingTimeline ? seatFor(anchor, meta, groups, batches) : null;
+      if (seat === null) {
         location.hash = anchor;
         return;
       }
-      openRowLocal(key);
+      openRowLocal(seat.key, seat.sub);
       reapply();
+      revealRow(`main:${seat.sub === null ? (visit.openSubKey ?? visit.openKey) : `sub:${seat.sub}`}`);
     },
   };
   const mounted = mountPanel(model, panelHandlers);
@@ -1383,6 +1419,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (mounted !== null) {
     wearControls(mounted.root, panelHandlers);
     wearGear(mounted.root);
+    // Spinners rendered into the slot after the mount (preview lines, a round's CI glyph) join the same phase.
+    syncSpinners(mounted.root);
   }
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
@@ -1390,9 +1428,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
   // holds it, once, instantly.
-  const pendingKey = visit.pendingAnchor === null ? null : rowKeyFor(visit.pendingAnchor, meta, groups);
+  const pendingKey = visit.pendingAnchor === null ? null : rowKeyFor(visit.pendingAnchor, meta, groups, batches);
   if (visit.pendingAnchor !== null && mounted !== null && ((pendingKey !== null && (visit.openKey === pendingKey || visit.openSubKey === pendingKey)) || visit.loadMoreTries >= MAX_LOAD_MORE)) {
-    const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${visit.openSubKey ?? visit.openKey}"]`);
+    const subFocus = visit.openSubKey === null ? null : visit.openSubKey.startsWith('item:') ? visit.openSubKey : `sub:${visit.openSubKey}`;
+    const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${subFocus ?? visit.openKey}"]`);
     if (row instanceof HTMLElement && hidingTimeline) row.scrollIntoView({ block: 'start', behavior: 'instant' });
     if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
   }
