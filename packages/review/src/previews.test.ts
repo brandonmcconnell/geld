@@ -96,3 +96,35 @@ describe('latestPreviews', () => {
     expect(archived.map((entry) => entry.anchor)).toEqual(['issuecomment-1']);
   });
 });
+
+describe('Vercel rendered table, as the page shows it', () => {
+  it('reads Ignored and any inspector text, and falls back to the row when the inspector says nothing', () => {
+    const doc = {
+      author: 'vercel[bot]',
+      anchor: 'issuecomment-9',
+      text: [
+        'The latest updates on your projects.',
+        '| Project | Deployment | Actions | Updated |',
+        '| ui | Ignored | Preview | Sep 17, 2026 |',
+        '| dashboard | Visit Preview | Sep 17, 2026 |',
+        '| api | ✅ Ready (Inspect) | Sep 17, 2026 |',
+      ].join('\n'),
+      links: [
+        { href: 'https://vercel.com/team/ui', text: 'ui' },
+        { href: 'https://vercel.com/team/ui/dep1', text: 'Ignored' },
+        { href: 'https://ui-git-x.vercel.app', text: 'Preview' },
+        { href: 'https://vercel.com/team/dashboard', text: 'dashboard' },
+        { href: 'https://vercel.com/team/dashboard/dep2', text: 'Inspect' },
+        { href: 'https://dashboard-git-x.vercel.app', text: 'Visit Preview' },
+        { href: 'https://vercel.com/team/api', text: 'api' },
+        { href: 'https://vercel.com/team/api/dep3', text: 'Inspect' },
+      ],
+      images: [{ src: 'https://camo.githubusercontent.com/abc', alt: 'Ignored' }],
+    };
+    const found = parsePreviews(doc);
+    expect(found.find((entry) => entry.project === 'ui')?.status).toBe('skipped');
+    expect(found.find((entry) => entry.project === 'dashboard')?.status).toBe('ready');
+    expect(found.find((entry) => entry.project === 'api')?.status).toBe('ready');
+    expect(found.find((entry) => entry.project === 'api')?.inspectUrl).toBe('https://vercel.com/team/api/dep3');
+  });
+});

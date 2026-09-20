@@ -1627,6 +1627,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   text-decoration: none;
 }
 
+/* A pill that ends in words ("2 previews") needs more room on the right than one ending in a round glyph, whose own
+   whitespace reads as padding; the same 5px looked tight against text. */
+.geld-review__bot:has(> .geld-review__bot-name:last-child) {
+  padding-right: calc(var(--geld-bot-pad) + 4px);
+}
+
 .geld-review__bot[data-current='false'] {
   opacity: 0.7;
 }
