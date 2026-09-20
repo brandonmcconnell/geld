@@ -42,6 +42,8 @@ export const aiGatewayItem = storage.defineItem<AiGatewayInfo | null>('local:aiG
 export interface JevDecision {
   readonly lane?: string;
   readonly done?: { readonly verdict: 'yes' | 'no' | 'unclear'; readonly probability: number };
+  /** A preview deployment's state, read by Jev where the parser could not. */
+  readonly preview?: string;
   readonly at: number;
 }
 export const jevDecisionsItem = storage.defineItem<Readonly<Record<string, JevDecision>>>('local:jevDecisions', { fallback: {} });
