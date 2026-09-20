@@ -27,8 +27,30 @@ export type ChatCompletionResult =
   | { readonly ok: true; readonly text: string; readonly model: string }
   | { readonly ok: false; readonly reason: string };
 
+/** What a gateway's `/v1/models` says about a model, beyond its id, when it says anything (Vercel and OpenRouter both do). */
 export interface ModelInfo {
   readonly id: string;
+  readonly name?: string;
+  /** Who makes it (`owned_by`, or the id's prefix). */
+  readonly provider?: string;
+  /** Context window in tokens (`context_window` on Vercel, `context_length` on OpenRouter). */
+  readonly context?: number;
+  /** `language`, `evaluation`, `embedding`… as the gateway types it. */
+  readonly type?: string;
+  readonly tags?: readonly string[];
+}
+
+function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
+  if (typeof entry.id !== 'string' || entry.id === '') return null;
+  const info: { -readonly [K in keyof ModelInfo]: ModelInfo[K] } = { id: entry.id };
+  if (typeof entry.name === 'string' && entry.name !== '') info.name = entry.name;
+  const provider = typeof entry.owned_by === 'string' ? entry.owned_by : entry.id.includes('/') ? entry.id.slice(0, entry.id.indexOf('/')) : undefined;
+  if (provider !== undefined && provider !== '') info.provider = provider;
+  const context = typeof entry.context_window === 'number' ? entry.context_window : typeof entry.context_length === 'number' ? entry.context_length : undefined;
+  if (context !== undefined) info.context = context;
+  if (typeof entry.type === 'string') info.type = entry.type;
+  if (Array.isArray(entry.tags)) info.tags = entry.tags.filter((tag): tag is string => typeof tag === 'string');
+  return info;
 }
 
 /** `https://ai-gateway.vercel.sh/v1` and `https://api.openai.com` both work: a trailing `/v1` is folded into the path. */
@@ -64,7 +86,8 @@ export async function listModels(fetchImpl: FetchLike, baseUrl: string, apiKey: 
     const data = isRecord(body) && Array.isArray(body.data) ? body.data : [];
     const models: ModelInfo[] = [];
     for (const entry of data) {
-      if (isRecord(entry) && typeof entry.id === 'string' && entry.id !== '') models.push({ id: entry.id });
+      const info = isRecord(entry) ? modelInfoOf(entry) : null;
+      if (info !== null) models.push(info);
     }
     return { ok: true, models };
   } catch (error) {

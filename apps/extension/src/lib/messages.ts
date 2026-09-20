@@ -1,5 +1,5 @@
 import type { AnyCategoryId, ChangeTotals, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
-import type { JevRequest, JevResult } from '@geld/review';
+import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
 
 /** Messages exchanged between the content script, popup and background. */
 
@@ -266,7 +266,7 @@ export interface AiModelsRequest {
 }
 
 export type AiModelsResponse =
-  | { readonly ok: true; readonly models: readonly { readonly id: string }[] }
+  | { readonly ok: true; readonly models: readonly ModelInfo[] }
   | { readonly ok: false; readonly reason: string };
 
 export interface AiCompleteRequest {
