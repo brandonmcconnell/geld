@@ -79,7 +79,7 @@ interface VisitState {
    * see the change, so the settled item - and its round, once nothing in it
    * is open - can be closed for the reader.
    */
-  settling: { readonly itemKey: string | null; readonly until: number } | null;
+  settling: { readonly itemKey: string | null; readonly until: number; readonly wasOpen: boolean } | null;
 }
 
 const visit: VisitState = {
@@ -163,7 +163,11 @@ function watchLoans(root: Element): void {
   loanWatched = root;
   loanWatcher ??= new MutationObserver((records) => {
     if (!records.some(touchesThreadState)) return;
-    visit.settling = { itemKey: visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null, until: Date.now() + 15_000 };
+    // Only a thread that was open a moment ago can settle: opening an already-resolved thread also mutates its
+    // loaned node (GitHub finishes rendering it), and that must not close the row the reader just opened.
+    const key = visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null;
+    const row = key === null ? null : document.querySelector(`.geld-review__row[data-geld-item="${CSS.escape(key.slice('item:'.length))}"]`);
+    visit.settling = { itemKey: key, until: Date.now() + 15_000, wasOpen: row !== null && row.getAttribute('data-state') !== 'done' };
     reapplySoon();
   });
   loanWatcher.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-resolved', 'aria-pressed', 'aria-label', 'hidden'] });
@@ -181,8 +185,8 @@ function unwatchLoans(): void {
  * few times over the next seconds; each pass is cheap and settles once the
  * crawl sees the new state.
  */
-function reapplyAfterResolve(itemKeyHint: string | null): void {
-  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000 };
+function reapplyAfterResolve(itemKeyHint: string | null, resolving: boolean): void {
+  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000, wasOpen: resolving };
   for (const delay of [300, 900, 2000, 4000]) {
     window.setTimeout(() => {
       if (lastSettings !== null && visit.settling !== null) applyReviewOverview(lastSettings);
@@ -194,7 +198,7 @@ function reapplyAfterResolve(itemKeyHint: string | null): void {
 function settleAfterResolve(meta: GeldPrMeta, batches: readonly Batch[]): void {
   const settling = visit.settling;
   if (settling === null) return;
-  if (Date.now() > settling.until || settling.itemKey === null) {
+  if (Date.now() > settling.until || settling.itemKey === null || !settling.wasOpen) {
     visit.settling = null;
     return;
   }
@@ -1454,7 +1458,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       // as a last resort this visit's own memory so the row still answers.
       const thread = item.sources.find((source) => source.kind === 'thread');
       if (thread !== undefined && clickResolve(thread.anchor)) {
-        reapplyAfterResolve(itemKey(item.id));
+        reapplyAfterResolve(itemKey(item.id), done);
         return;
       }
       if (found !== null && tickSummaryCheckbox(found.root, item.sources.map((source) => source.anchor), done)) return;
@@ -1537,8 +1541,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         reapply();
       });
     },
-    onResolveAnchor: (anchor) => {
-      if (clickResolve(anchor)) reapplyAfterResolve(meta.items.find((item) => item.sources.some((source) => source.anchor === anchor))?.id === undefined ? null : itemKey(meta.items.find((item) => item.sources.some((source) => source.anchor === anchor))?.id ?? ''));
+    onResolveAnchor: (anchor, done) => {
+      if (!clickResolve(anchor)) return;
+      const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
+      reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
     },
     onReact: (anchor) => {
       // Open whatever row holds the comment, then GitHub's own picker inside it.
