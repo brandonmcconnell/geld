@@ -1,3 +1,4 @@
+import type { ModelInfo } from '@geld/review';
 import { storage } from 'wxt/utils/storage';
 
 /**
@@ -29,9 +30,19 @@ export const jevKeyItem = storage.defineItem<string>('local:jevKey', { fallback:
 export interface AiGatewayInfo {
   readonly baseUrl: string;
   readonly models: readonly string[];
+  /** What the gateway said about each model, by id, when it said anything. */
+  readonly details?: Readonly<Record<string, ModelInfo>>;
   readonly jevModel: string | null;
   readonly checkedAt: string;
 }
+
+/**
+ * Where Jev's questions go when the gateway offers Jev *and* the user has a
+ * TypeSafe key: the gateway (default) or their own key ("Use one anyway").
+ * When the gateway lacks Jev the key is the only route and this is moot.
+ */
+export type JevSource = 'gateway' | 'own';
+export const jevSourceItem = storage.defineItem<JevSource>('local:jevSource', { fallback: 'gateway' });
 export const aiGatewayItem = storage.defineItem<AiGatewayInfo | null>('local:aiGateway', { fallback: null });
 
 /**

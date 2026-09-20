@@ -217,9 +217,90 @@ body {
   display: none;
 }
 
-select.geld-input {
-  appearance: auto;
-  padding-right: 8px;
+/* Model combobox: the input with a toggle at its right edge, and a listbox dropped under it. */
+.options__combo {
+  position: relative;
+}
+
+.options__combo > .geld-input {
+  padding-right: 32px;
+}
+
+.options__combo-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 32px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.options__combo-toggle:disabled {
+  cursor: not-allowed;
+}
+
+.options__combo-list {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% - 1px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--input);
+  background: var(--background);
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+.options__combo-list[hidden] {
+  display: none;
+}
+
+.options__combo-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.options__combo-option:hover,
+.options__combo-option[data-active] {
+  background: color-mix(in oklch, var(--muted) 70%, transparent);
+}
+
+.options__combo-option[aria-selected='true'] .options__combo-id {
+  font-weight: 600;
+}
+
+.options__combo-id {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.options__combo-meta {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.options__combo-empty {
+  padding: 6px 10px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
 }
 
 .options__actions {
