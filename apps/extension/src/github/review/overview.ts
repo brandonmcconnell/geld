@@ -72,6 +72,13 @@ interface VisitState {
   autoLoads: number;
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
+  /**
+   * A thread on loan to the panel just changed state (Resolve was pressed in
+   * it): the item row that was open, and until when to wait for the crawl to
+   * see the change, so the settled item - and its round, once nothing in it
+   * is open - can be closed for the reader.
+   */
+  settling: { readonly itemKey: string | null; readonly until: number } | null;
 }
 
 const visit: VisitState = {
@@ -92,7 +99,88 @@ const visit: VisitState = {
   checksExpanded: false,
   autoLoads: 0,
   manualDone: new Set(),
+  settling: null,
 };
+
+/**
+ * The reviewers GitHub is still waiting on, from the sidebar's "Awaiting
+ * requested review from X" controls (the merge box only says "2 pending
+ * reviews" behind a collapsed group). Lines with nothing to open.
+ */
+function awaitingReviewers(): ReviewEntry[] {
+  const out: ReviewEntry[] = [];
+  for (const control of document.querySelectorAll<HTMLElement>('[aria-label^="Awaiting requested review from" i]')) {
+    const login = /from\s+(\S+)/i.exec(control.getAttribute('aria-label') ?? '')?.[1] ?? '';
+    if (login === '' || out.some((entry) => entry.author === login)) continue;
+    const item = control.closest('.d-flex, li, [data-testid]') ?? control.parentElement;
+    const image = item?.querySelector<HTMLImageElement>('img.avatar, img[class*="avatar"]') ?? null;
+    out.push({ anchor: `awaiting:${login}`, author: login, avatarSrc: image === null ? avatarSrcForLogin(login) : image.currentSrc || image.getAttribute('src'), state: 'awaiting', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null });
+  }
+  return out;
+}
+
+/**
+ * Threads live in the panel while their rows are open, and GitHub rewrites a
+ * thread in place when it is resolved or unresolved (`data-resolved`, or the
+ * whole container swapped for its collapsed form). The page-wide observer
+ * treats mutations inside the panel as the panel's own, so this one watches
+ * the panel for exactly that and re-applies: the crawl then reads the new
+ * state, the row turns, and the settled item closes.
+ */
+let loanWatcher: MutationObserver | null = null;
+let loanWatched: Element | null = null;
+const THREAD_STATE = '[data-resolved], .js-resolvable-timeline-thread-container, .js-resolvable-thread-contents, .review-thread-component, [data-testid*="thread" i]';
+
+function touchesThreadState(record: MutationRecord): boolean {
+  if (record.type === 'attributes') return record.target instanceof Element && record.target.matches('[data-resolved]');
+  // Nodes the panel moves in and out carry the loan token; what GitHub swaps in for a resolved thread does not.
+  for (const node of [...record.addedNodes, ...record.removedNodes]) {
+    if (!(node instanceof Element) || node.closest('[data-geld-teleported]') !== null) continue;
+    if (node.matches(THREAD_STATE)) return true;
+    if ([...node.querySelectorAll(THREAD_STATE)].some((inner) => inner.closest('[data-geld-teleported]') === null)) return true;
+  }
+  return false;
+}
+
+function watchLoans(root: Element): void {
+  if (loanWatched === root) return;
+  loanWatcher?.disconnect();
+  loanWatched = root;
+  loanWatcher ??= new MutationObserver((records) => {
+    if (!records.some(touchesThreadState)) return;
+    visit.settling = { itemKey: visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null, until: Date.now() + 15_000 };
+    reapplySoon();
+  });
+  loanWatcher.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-resolved'] });
+}
+
+function unwatchLoans(): void {
+  loanWatcher?.disconnect();
+  loanWatched = null;
+}
+
+/** After a thread changed state under the reader: close the item once it is done, and its round once nothing in it is open. */
+function settleAfterResolve(meta: GeldPrMeta, batches: readonly Batch[]): void {
+  const settling = visit.settling;
+  if (settling === null) return;
+  if (Date.now() > settling.until || settling.itemKey === null) {
+    visit.settling = null;
+    return;
+  }
+  const item = meta.items.find((entry) => itemKey(entry.id) === settling.itemKey);
+  if (item === undefined || isOpenStatus(item.status)) return;
+  visit.settling = null;
+  const batch = batches.find((entry) => entry.items.includes(item));
+  if (batch === undefined || batch.items.every((entry) => !isOpenStatus(entry.status))) {
+    // The round is settled: it closes, and by type it joins the settled rounds.
+    visit.openKey = null;
+    visit.openSubKey = null;
+  } else if (visit.openSubKey === settling.itemKey) {
+    visit.openSubKey = null;
+  } else if (visit.openKey === settling.itemKey) {
+    visit.openKey = null;
+  }
+}
 
 function hideSummary(root: HTMLElement | null): void {
   for (const node of document.querySelectorAll(`[${ATTR_SUMMARY}]`)) {
@@ -496,7 +584,7 @@ function revealRow(focusKey: string): void {
  * people's reviews — is what landed for that push. Content before any commit
  * is round 1 with no commits. With no commits on the page there is one round.
  */
-function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[], reviewEntriesAll: readonly ReviewEntry[], previewsAll: readonly Preview[]): readonly Batch[] {
+function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[], pushRoots: ReadonlySet<HTMLElement>, reviewEntriesAll: readonly ReviewEntry[], previewsAll: readonly Preview[]): readonly Batch[] {
   const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   interface RoundComment {
@@ -527,8 +615,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   }
   const itemAnchors = new Set(meta.items.flatMap((item) => item.sources.map((source) => source.anchor)));
   for (const review of reviewEntriesAll) {
-    // Threads are items already; a person's verdict or top-level comment is the round's review.
-    if (review.state === 'thread' || itemAnchors.has(review.anchor)) continue;
+    // Threads are items already; a person's verdict or top-level comment is the round's review. A pending request is nothing that landed.
+    if (review.state === 'thread' || review.state === 'awaiting' || itemAnchors.has(review.anchor)) continue;
     place({ node: document.documentElement, kind: 'review', review }, entryNodes.get(review.anchor) ?? timelineRootOf(review.anchor));
   }
   entries.sort((a, b) => compareHome(a.node, b.node));
@@ -590,7 +678,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const commentAnchors = new Set(round.comments.map((comment) => comment.anchor));
     const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? null;
     const firstNode = first === null ? null : document.getElementById(first);
-    const lastCommit = round.commits[round.commits.length - 1] ?? null;
+    // CI is read from the last commit row; a force-push event carries none.
+    const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
     return {
       key: batchKey(position + 1),
       index: position + 1,
@@ -611,10 +700,11 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       })),
       reviews: round.reviews,
       commits: round.commits,
+      commitCount: round.commits.filter((row) => !pushRoots.has(row)).length,
       ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
       committers: committersOf(round.commits),
       previews: previewsAll.filter((entry) => commentAnchors.has(entry.anchor)),
-      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? lastCommit),
+      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? round.commits[round.commits.length - 1] ?? null),
       firstAnchor: first,
     };
   });
@@ -1128,7 +1218,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = crawlReviews();
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
-  const comments = reviewEntries(crawledDom, reviews, meta, settings);
+  const comments = [...awaitingReviewers(), ...reviewEntries(crawledDom, reviews, meta, settings)];
   const allPreviews = previewsOn(crawledDom, meta);
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
@@ -1153,9 +1243,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
-  // Rounds: what landed between two pushes. Bot run summaries belong to their round rather than to rows of their own.
-  const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit').map((entry) => entry.root);
-  const batches = buildBatches(meta, crawledDom, settings, commitRoots, comments, allPreviews);
+  // Rounds: what landed between two pushes. A push is a run of commit rows or a force-push event (after a force-push
+  // GitHub lists no commits, only "force-pushed from a to b"). Bot run summaries belong to their round rather than to rows of their own.
+  const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
+  const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
+  const batches = buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, comments, allPreviews);
+  settleAfterResolve(meta, batches);
   const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
   // By node, not by looking the anchor up: GitHub repeats an id (a review inside its minimized wrapper), and
   // getElementById would answer with whichever copy comes first in the document.
@@ -1368,6 +1461,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     },
   };
   const mounted = mountPanel(model, panelHandlers);
+  if (mounted !== null) watchLoans(mounted.root);
+  else unwatchLoans();
 
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
@@ -1472,6 +1567,8 @@ export function teardownReviewOverview(): void {
   hideHoverCard();
   setHoverProvider(null);
   setWhoProvider(null);
+  unwatchLoans();
+  visit.settling = null;
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());

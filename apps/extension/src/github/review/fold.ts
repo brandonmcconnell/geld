@@ -1,3 +1,4 @@
+import type { LeftoverKind } from './crawler';
 /**
  * Hide bot comments / low-signal events (and, in minimal mode, human
  * comments on done items) without removing them. Nothing is inserted into
@@ -125,11 +126,16 @@ export function groupBotRuns(
 }
 
 /** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
-export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: 'commit' | 'mention' | 'review-event' | 'noise' | 'pending' | 'other'; readonly root: HTMLElement }>): readonly FoldGroup[] {
-  const by = (kind: (typeof leftovers)[number]['kind']): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement }>): readonly FoldGroup[] {
+  const by = (kind: LeftoverKind): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
+  // Force-push events sit with the commits: both are pushes, and the row reads "from a to b" like a commit line.
   const commits = by('commit');
-  if (commits.length > 0) groups.push({ key: 'commits', label: `${commits.length} commit${commits.length === 1 ? '' : 's'}`, author: null, nodes: commits, section: 'activity' });
+  const pushes = by('push');
+  if (commits.length + pushes.length > 0) {
+    const parts = [commits.length > 0 ? `${commits.length} commit${commits.length === 1 ? '' : 's'}` : '', pushes.length > 0 ? `${pushes.length} force-push${pushes.length === 1 ? '' : 'es'}` : ''].filter((part) => part !== '');
+    groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: [...commits, ...pushes], section: 'activity' });
+  }
   const mentions = by('mention');
   if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
   const silent = by('review-event');
