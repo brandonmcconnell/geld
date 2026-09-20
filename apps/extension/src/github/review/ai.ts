@@ -8,7 +8,7 @@
  */
 
 import type { GeldSettings } from '@geld/core';
-import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
+import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, Preview, PreviewStatusInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
 import {
   applyAddressed,
   applyConsolidation,
@@ -23,6 +23,8 @@ import {
   JEV_DIRECT_MODEL,
   jevModelFor,
   parseConsolidateOutput,
+  PREVIEW_STATUSES,
+  previewStatusesFrom,
   sameProblemGroups,
   sameProblemRequest,
   TYPESAFE_API,
@@ -301,20 +303,35 @@ function threadHash(thread: ThreadToClassify): string {
   return `t:${textHash(thread.comments.map((comment) => `${comment.author}\n${comment.body}`).join('\n\u0000'))}`;
 }
 
-/** Jev's decisions as the current pass can use them: lanes by anchor, thread state by item id. */
+/** A preview whose status the parser left `unknown`, with the comment text it came from. */
+export interface PreviewToClassify {
+  readonly preview: Preview;
+  readonly text: string;
+}
+
+function previewHash(entry: PreviewToClassify): string {
+  return `p:${textHash(`${entry.preview.host}\n${entry.preview.project}\n${entry.text}`)}`;
+}
+
+/** Jev's decisions as the current pass can use them: lanes by anchor, thread state by item id, preview states by `host:project@anchor`. */
 export interface JevDecisions {
   readonly lanes: ReadonlyMap<string, CommentLane>;
   readonly done: ReadonlyMap<string, AddressedEvidence>;
+  readonly previewStatus: ReadonlyMap<string, Preview['status']>;
 }
 
-const NO_DECISIONS: JevDecisions = { lanes: new Map(), done: new Map() };
+export function previewDecisionKey(preview: Preview): string {
+  return `${preview.host}:${preview.project}@${preview.anchor}`;
+}
+
+const NO_DECISIONS: JevDecisions = { lanes: new Map(), done: new Map(), previewStatus: new Map() };
 
 /**
  * What Jev has already said about these comments and threads (from the cache,
  * synchronously when it is loaded), and a request for whatever it has not.
  * `onProgress` runs when new answers land, so the pass re-applies with them.
  */
-export function jevDecisionsFor(settings: GeldSettings, comments: readonly CommentToClassify[], threads: readonly ThreadToClassify[], onProgress: () => void): JevDecisions {
+export function jevDecisionsFor(settings: GeldSettings, comments: readonly CommentToClassify[], threads: readonly ThreadToClassify[], onProgress: () => void, previews: readonly PreviewToClassify[] = []): JevDecisions {
   if (!settings.aiEnabled || !settings.aiJev) return NO_DECISIONS;
   const cache = decisions;
   if (cache === null) {
@@ -323,8 +340,10 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
   }
   const lanes = new Map<string, CommentLane>();
   const done = new Map<string, AddressedEvidence>();
+  const previewStatus = new Map<string, Preview['status']>();
   const missingComments: Array<{ readonly hash: string; readonly comment: CommentToClassify }> = [];
   const missingThreads: Array<{ readonly hash: string; readonly thread: ThreadToClassify }> = [];
+  const missingPreviews: Array<{ readonly hash: string; readonly entry: PreviewToClassify }> = [];
   for (const comment of comments) {
     const hash = commentHash(comment);
     const known = cache.get(hash);
@@ -338,18 +357,27 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
     if (known?.done !== undefined) done.set(thread.itemId, { verdict: known.done.verdict, evidence: [`Jev: ${Math.round(known.done.probability * 100)}% addressed`] });
     else if (known === undefined && !asked.has(hash)) missingThreads.push({ hash, thread });
   }
-  if (missingComments.length + missingThreads.length > 0) void classify(settings, missingComments, missingThreads, onProgress);
-  return { lanes, done };
+  for (const entry of previews) {
+    const hash = previewHash(entry);
+    const known = cache.get(hash);
+    const status = known?.preview === undefined ? undefined : PREVIEW_STATUSES.find((candidate) => candidate === known.preview);
+    if (status !== undefined) previewStatus.set(previewDecisionKey(entry.preview), status);
+    else if (known === undefined && !asked.has(hash)) missingPreviews.push({ hash, entry });
+  }
+  if (missingComments.length + missingThreads.length + missingPreviews.length > 0) void classify(settings, missingComments, missingThreads, missingPreviews, onProgress);
+  return { lanes, done, previewStatus };
 }
 
 async function classify(
   settings: GeldSettings,
   comments: ReadonlyArray<{ readonly hash: string; readonly comment: CommentToClassify }>,
   threads: ReadonlyArray<{ readonly hash: string; readonly thread: ThreadToClassify }>,
+  previews: ReadonlyArray<{ readonly hash: string; readonly entry: PreviewToClassify }>,
   onProgress: () => void,
 ): Promise<void> {
   for (const entry of comments) asked.add(entry.hash);
   for (const entry of threads) asked.add(entry.hash);
+  for (const entry of previews) asked.add(entry.hash);
   const route = await jevRoute(settings);
   if (route === null) return;
   const laneInputs: LaneInput[] = comments.map((entry) => ({ id: entry.hash, author: entry.comment.author, bot: entry.comment.bot, text: entry.comment.body }));
@@ -357,17 +385,19 @@ async function classify(
     const [first, ...replies] = entry.thread.comments;
     return { id: entry.hash, ...(entry.thread.path === undefined ? {} : { path: entry.thread.path }), first: { author: first?.author ?? '', text: first?.body ?? '' }, replies: replies.map((reply) => ({ author: reply.author, text: reply.body })) };
   });
+  const previewInputs: PreviewStatusInput[] = previews.map((entry) => ({ id: entry.hash, host: entry.entry.preview.host, project: entry.entry.preview.project, text: entry.entry.text }));
   const cache = await loadDecisions();
   let landed = false;
-  for (const request of classificationRequests(route.model, laneInputs, threadInputs)) {
+  for (const request of classificationRequests(route.model, laneInputs, threadInputs, previewInputs)) {
     const answers = await evaluate(route, request);
     if (answers === null) continue;
     const at = Date.now();
     for (const [hash, lane] of lanesFrom(answers)) cache.set(hash, { lane, at });
     for (const [hash, state] of doneFrom(answers)) cache.set(hash, { done: state, at });
+    for (const [hash, status] of previewStatusesFrom(answers)) cache.set(hash, { preview: status, at });
     // A lane Jev was unsure about is remembered as asked (no lane), so the deterministic answer stands without re-asking.
     for (const key of Object.keys(request.questions)) {
-      const hash = key.replace(/^(lane|done):/, '');
+      const hash = key.replace(/^(lane|done|preview):/, '');
       if (!cache.has(hash)) cache.set(hash, { at });
     }
     landed = true;

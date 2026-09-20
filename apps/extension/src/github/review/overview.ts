@@ -17,8 +17,8 @@ import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview } from './crawler';
-import type { CommentToClassify, JevDecisions, ThreadToClassify } from './ai';
-import { aiPending, consolidateInBrowser, jevDecisionsFor, resetAiForVisit, withAi, withJevDone } from './ai';
+import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
+import { aiPending, consolidateInBrowser, jevDecisionsFor, previewDecisionKey, resetAiForVisit, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
 import { refDetails, refsVersion, resetRefs } from './refs';
@@ -332,7 +332,7 @@ function withWholePaths(meta: GeldPrMeta): GeldPrMeta {
  * a trigger when Jev says so (else when it matches a known trigger phrase), a
  * bot's run-status line folds silently, a finding is marked as one.
  */
-let jevNow: JevDecisions = { lanes: new Map(), done: new Map() };
+let jevNow: JevDecisions = { lanes: new Map(), done: new Map(), previewStatus: new Map() };
 
 function isTrigger(entry: CrawledComment, settings: GeldSettings): boolean {
   // A comment made only of known trigger phrases is one, whatever Jev says; Jev adds the ones the list does not know.
@@ -834,7 +834,12 @@ function previewsOn(crawled: Crawled, meta: GeldPrMeta): readonly Preview[] {
   const fromPage = crawled.comments.filter((entry) => entry.author.bot).flatMap((entry) => parsePreviews(entry.previewDoc));
   const seen = new Set(fromPage.map((entry) => entry.anchor));
   const fromPayload = (meta.previews ?? []).filter((entry) => !seen.has(entry.anchor));
-  const all = [...fromPage, ...fromPayload];
+  // Where the parser could not read a status, Jev's reading of the comment stands in (its word is final; it could say "unknown").
+  const all = [...fromPage, ...fromPayload].map((entry) => {
+    if (entry.status !== 'unknown') return entry;
+    const decided = jevNow.previewStatus.get(previewDecisionKey(entry));
+    return decided === undefined ? entry : { ...entry, status: decided };
+  });
   const home = (anchor: string): Element | null => document.getElementById(anchor);
   return [...all].sort((a, b) => {
     const x = home(a.anchor);
@@ -1267,7 +1272,14 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const threads: ThreadToClassify[] = composed.meta.items
     .filter((item) => isOpenStatus(item.status) && item.sources.length > 1)
     .map((item) => ({ itemId: item.id, ...(item.path === undefined ? {} : { path: item.path }), comments: item.sources.map((source) => bodies.get(source.anchor) ?? { author: source.author, body: '' }) }));
-  jevNow = jevDecisionsFor(settings, topLevel, threads, reapplySoon);
+  // Previews whose status the parser left unknown are asked about with the same request.
+  const docText = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, entry.previewDoc.text] as const));
+  const unknownPreviews: PreviewToClassify[] = crawledDom.comments
+    .filter((entry) => entry.author.bot)
+    .flatMap((entry) => parsePreviews(entry.previewDoc))
+    .filter((entry) => entry.status === 'unknown')
+    .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' }));
+  jevNow = jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews);
   const meta = withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done)));
 
   const viewingAnchor = sourceAnchorFromHash(location.hash);
