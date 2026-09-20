@@ -65,6 +65,8 @@ const BOOLEAN_KEYS = [
   'autoUpdatePatterns',
   'prOverview',
   'collapseDescription',
+  'aiEnabled',
+  'aiJev',
 ] as const;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

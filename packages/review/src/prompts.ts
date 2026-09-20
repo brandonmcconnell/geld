@@ -15,6 +15,7 @@ Rules:
 - When "previousTitle" is given, the item was already summarised; change the title and context only as much as the new sources require. Prefer keeping them.
 - "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. Omit otherwise.
 - "severity": one of the allowed values when you can tell; omit otherwise.
+- When "sameProblemAs" lists other ids, those items were judged to report the same underlying problem: give them one and the same title, and let each context say which other reporters raised it.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
 
 export const SUMMARY_SYSTEM = `You write the TL;DR of a pull request's review state for its digest.
@@ -39,6 +40,8 @@ export interface ConsolidateInputItem {
   readonly previousTitle?: string;
   readonly previousContext?: string;
   readonly wantFix: boolean;
+  /** Ids of other items in this request that Jev judged to report the same problem. */
+  readonly sameProblemAs?: readonly string[];
 }
 
 export interface SummaryInputItem {

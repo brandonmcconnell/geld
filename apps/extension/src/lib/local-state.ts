@@ -17,3 +17,19 @@ export const repoConfigChoicesItem = storage.defineItem<RepoConfigChoices>('loca
 
 /** OpenAI-compatible gateway key. Never synced; never written to the gist. */
 export const aiKeyItem = storage.defineItem<string>('local:aiKey', { fallback: '' });
+
+/** The user's own TypeSafe key for Jev, for a gateway that does not offer it. Same rules as the gateway key. */
+export const jevKeyItem = storage.defineItem<string>('local:jevKey', { fallback: '' });
+
+/**
+ * What the gateway last said it offers: the model list and, from it, the id
+ * of its Jev model (null when it has none). Written by the options page when
+ * models load; read by the content script to pick where a decision goes.
+ */
+export interface AiGatewayInfo {
+  readonly baseUrl: string;
+  readonly models: readonly string[];
+  readonly jevModel: string | null;
+  readonly checkedAt: string;
+}
+export const aiGatewayItem = storage.defineItem<AiGatewayInfo | null>('local:aiGateway', { fallback: null });
