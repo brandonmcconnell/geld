@@ -266,11 +266,71 @@ body {
 
 .options__combo-option {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.options__combo-head {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 10px;
-  cursor: pointer;
+}
+
+.options__combo-option[data-recommended] .options__combo-id {
+  font-weight: 600;
+}
+
+.options__combo-option[data-variant] .options__combo-id {
+  color: var(--muted-foreground);
+}
+
+.options__combo-note {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.options__combo-heading {
+  padding: 8px 10px 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.options__combo-heading + .options__combo-heading,
+.options__combo-option + .options__combo-heading {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.options__combo-tiers {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+.options__combo-tier-name {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.options__combo-tier {
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.options__combo-foot {
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11.5px;
 }
 
 .options__combo-option:hover,

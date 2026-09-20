@@ -11,3 +11,4 @@ export * from './build';
 export * from './previews';
 export * from './jev';
 export * from './decisions';
+export * from './model-guide';
