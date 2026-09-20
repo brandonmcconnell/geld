@@ -132,13 +132,27 @@ let loanWatcher: MutationObserver | null = null;
 let loanWatched: Element | null = null;
 const THREAD_STATE = '[data-resolved], .js-resolvable-timeline-thread-container, .js-resolvable-thread-contents, .review-thread-component, [data-testid*="thread" i]';
 
+/**
+ * Did GitHub change something inside a loaned thread? Resolving rewrites the
+ * thread differently per view - `data-resolved` flips, the container is
+ * swapped, or only the button's text turns to "Unresolve conversation" - so
+ * any mutation inside a loaned thread counts, except the panel's own loans
+ * and moves, and edits inside a form (typing a reply is not a state change).
+ */
 function touchesThreadState(record: MutationRecord): boolean {
-  if (record.type === 'attributes') return record.target instanceof Element && record.target.matches('[data-resolved]');
-  // Nodes the panel moves in and out carry the loan token; what GitHub swaps in for a resolved thread does not.
+  const target = record.target instanceof Element ? record.target : record.target.parentElement;
+  if (target === null) return false;
+  if (target.closest('form, textarea, [contenteditable]') !== null) return false;
+  if (record.type === 'attributes') {
+    if (record.attributeName === 'data-resolved') return true;
+    return target.closest(`${THREAD_SELECTOR}, ${THREAD_STATE}`) !== null && (record.attributeName === 'aria-pressed' || record.attributeName === 'aria-label' || record.attributeName === 'hidden');
+  }
+  if (record.type === 'characterData') return target.closest(`${THREAD_SELECTOR}, ${THREAD_STATE}`) !== null;
+  // Nodes the panel moves in and out carry the loan token; what GitHub writes does not.
   for (const node of [...record.addedNodes, ...record.removedNodes]) {
-    if (!(node instanceof Element) || node.closest('[data-geld-teleported]') !== null) continue;
-    if (node.matches(THREAD_STATE)) return true;
-    if ([...node.querySelectorAll(THREAD_STATE)].some((inner) => inner.closest('[data-geld-teleported]') === null)) return true;
+    if (node instanceof Element && (node.hasAttribute('data-geld-teleported') || node.closest('.geld-review__qv, .geld-review__thread') === null)) continue;
+    if (node instanceof Element && node.hasAttribute('data-geld-ui')) continue;
+    return true;
   }
   return false;
 }
@@ -152,12 +166,28 @@ function watchLoans(root: Element): void {
     visit.settling = { itemKey: visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null, until: Date.now() + 15_000 };
     reapplySoon();
   });
-  loanWatcher.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-resolved'] });
+  loanWatcher.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-resolved', 'aria-pressed', 'aria-label', 'hidden'] });
 }
 
 function unwatchLoans(): void {
   loanWatcher?.disconnect();
   loanWatched = null;
+}
+
+/**
+ * A Resolve was pressed through the panel: GitHub answers with a round trip
+ * (classic) or an optimistic rewrite (React), in the timeline when the
+ * thread is folded there, where no observer of the panel sees it. Re-read a
+ * few times over the next seconds; each pass is cheap and settles once the
+ * crawl sees the new state.
+ */
+function reapplyAfterResolve(itemKeyHint: string | null): void {
+  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000 };
+  for (const delay of [300, 900, 2000, 4000]) {
+    window.setTimeout(() => {
+      if (lastSettings !== null && visit.settling !== null) applyReviewOverview(lastSettings);
+    }, delay);
+  }
 }
 
 /** After a thread changed state under the reader: close the item once it is done, and its round once nothing in it is open. */
@@ -1423,7 +1453,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       // then the summary's task-list checkbox (the Action records done-manual), and
       // as a last resort this visit's own memory so the row still answers.
       const thread = item.sources.find((source) => source.kind === 'thread');
-      if (thread !== undefined && clickResolve(thread.anchor)) return;
+      if (thread !== undefined && clickResolve(thread.anchor)) {
+        reapplyAfterResolve(itemKey(item.id));
+        return;
+      }
       if (found !== null && tickSummaryCheckbox(found.root, item.sources.map((source) => source.anchor), done)) return;
       if (done) visit.manualDone.add(id);
       else visit.manualDone.delete(id);
@@ -1505,7 +1538,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       });
     },
     onResolveAnchor: (anchor) => {
-      clickResolve(anchor);
+      if (clickResolve(anchor)) reapplyAfterResolve(meta.items.find((item) => item.sources.some((source) => source.anchor === anchor))?.id === undefined ? null : itemKey(meta.items.find((item) => item.sources.some((source) => source.anchor === anchor))?.id ?? ''));
     },
     onReact: (anchor) => {
       // Open whatever row holds the comment, then GitHub's own picker inside it.
