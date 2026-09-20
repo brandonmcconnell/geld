@@ -497,6 +497,8 @@ function pushContents(batch: Batch): string {
   return parts.filter((part) => part !== '').join(' · ');
 }
 
+const CI_WORDS: Readonly<Record<'success' | 'failure' | 'pending', string>> = { success: 'checks passed', failure: 'checks failed', pending: 'checks running' };
+
 function pushTone(batch: Batch, allDone: boolean): Tone | null {
   const open = batch.items.some((item) => isOpenStatus(item.status));
   if (batch.ciGlyph === 'failure' || open) return 'bad';
@@ -542,7 +544,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   if (byPush && batch.ciGlyph !== null) {
     const ci: Readonly<Record<'success' | 'failure' | 'pending', readonly [string, string]>> = { success: [ICON_CHECK_CIRCLE_FILL, 'CI passed'], failure: [ICON_X_CIRCLE_FILL, 'CI failed'], pending: [ICON_IN_PROGRESS, 'CI running'] };
     const [glyph, label] = ci[batch.ciGlyph];
-    mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-ci': batch.ciGlyph, role: 'img', 'aria-label': label, title: label }, [icon(glyph)]));
+    mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-ci': batch.ciGlyph, role: 'img', 'aria-label': `${label} on this push's last commit`, title: `${label} on this push's last commit` }, [icon(glyph)]));
   }
   if (total > 0 && byPush && allDone) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': 'good', role: 'img', 'aria-label': `${total} of ${total} threads resolved`, title: 'All threads resolved' }, [icon(ICON_CHECK_CIRCLE_FILL)]));
   else if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
@@ -659,7 +661,8 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     const open = model.openCommits.has(batch.key);
     const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn ${PANEL_CLASS}__notes-btn--commits`, 'aria-expanded': String(open), [ATTR_FOCUS]: `commits:${batch.key}` }, [
       icon(batch.commitCount > 0 ? ICON_GIT_COMMIT : ICON_REPO_PUSH),
-      createElement('span', {}, [pushContents(batch)]),
+      // The push's CI state in words, next to what it applies to: the reason a push is red when nothing inside it says so.
+      createElement('span', {}, [`${pushContents(batch)}${batch.ciGlyph === null ? '' : ` · ${CI_WORDS[batch.ciGlyph]}`}`]),
       icon(ICON_CHEVRON_DOWN),
     ]);
     button.addEventListener('click', () => handlers.onToggleCommits(batch.key));

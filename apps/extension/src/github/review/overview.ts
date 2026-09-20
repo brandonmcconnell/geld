@@ -753,21 +753,27 @@ function committersOf(commits: readonly HTMLElement[]): readonly Avatar[] {
   return out;
 }
 
-/** The CI state GitHub draws next to a commit row: its status octicon (classic) or the status link's label (React). */
+/**
+ * The CI state GitHub draws next to the *last* commit of a commit row: its
+ * status control (classic: `.commit-build-statuses`, "N / M checks OK" behind
+ * a coloured glyph; React: the checks link). A row holds a whole group of
+ * commits ("X added 13 commits"), and the push's state is the latest one's -
+ * the first control used to be read, so a group whose first commit passed
+ * read as green whatever came after. Only GitHub's status controls are read;
+ * a commit message that says "error" is not a failed check.
+ */
 function commitCiGlyph(row: HTMLElement): Batch['ciGlyph'] {
   const scope = [row, ...wornPiecesOf(row)];
-  // GitHub's own status control first ("57 / 67 checks OK" behind a coloured glyph); the row at large only when it has none.
-  const controls = scope.flatMap((node) => [...node.querySelectorAll<HTMLElement>('.commit-build-statuses > summary, [class*="CommitStatus" i], a[href*="/checks"][aria-label]')]);
-  for (const control of controls) {
-    if (control.querySelector('.octicon-check, .octicon-check-circle-fill') !== null || control.classList.contains('color-fg-success')) return 'success';
-    if (control.querySelector('.octicon-x, .octicon-x-circle-fill') !== null || control.classList.contains('color-fg-danger')) return 'failure';
-    if (control.querySelector('.octicon-dot-fill, .octicon-dot') !== null || control.classList.contains('color-fg-attention')) return 'pending';
-  }
-  for (const node of scope) {
-    if (node.querySelector('.octicon-check, .octicon-check-circle-fill, .color-fg-success .octicon, [aria-label*="success" i], [class*="success" i] .octicon') !== null) return 'success';
-    if (node.querySelector('.octicon-x, .octicon-x-circle-fill, .color-fg-danger .octicon, [aria-label*="fail" i], [aria-label*="error" i]') !== null) return 'failure';
-    if (node.querySelector('.octicon-dot-fill, .octicon-dot, .color-fg-attention .octicon, [aria-label*="pending" i], [aria-label*="progress" i], [aria-label*="queued" i]') !== null) return 'pending';
-  }
+  const controls = scope.flatMap((node) => [...node.querySelectorAll<HTMLElement>('.commit-build-statuses > summary, [class*="CommitStatus" i], a[href*="/checks"]:has(.octicon)')]);
+  const control = controls[controls.length - 1];
+  if (control === undefined) return null;
+  return ciStateOf(control);
+}
+
+function ciStateOf(control: HTMLElement): Batch['ciGlyph'] {
+  if (control.querySelector('.octicon-check, .octicon-check-circle-fill') !== null || control.classList.contains('color-fg-success')) return 'success';
+  if (control.querySelector('.octicon-x, .octicon-x-circle-fill') !== null || control.classList.contains('color-fg-danger')) return 'failure';
+  if (control.querySelector('.octicon-dot-fill, .octicon-dot, .octicon-in-progress') !== null || control.classList.contains('color-fg-attention')) return 'pending';
   return null;
 }
 
@@ -940,11 +946,39 @@ function cloneRing(source: SVGElement): SVGElement {
 }
 
 /** The time as GitHub shows it — `relative-time` renders "yesterday" in its shadow root; the light text is the fallback date. */
+/**
+ * GitHub's wording for each datetime, as it was last seen rendered. A
+ * `relative-time` inside a closed minimized comment renders nothing; reading
+ * '' there and 'last month' once the comment is opened changed the panel's
+ * signature with every toggle, and an open comment line toggled with it.
+ */
+const shownTimes = new Map<string, string>();
+
 function timeTextOf(node: Element | null): string {
   const el = node === null ? null : findIn(node, 'relative-time, time-ago, time');
   if (el === null) return '';
-  const shown = el.shadowRoot?.textContent?.trim() ?? '';
-  return shown !== '' ? shown : (el.textContent ?? '').trim();
+  const datetime = el.getAttribute('datetime') ?? '';
+  const shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
+  if (shown !== '') {
+    if (datetime !== '') shownTimes.set(datetime, shown);
+    return shown;
+  }
+  if (datetime === '') return '';
+  return shownTimes.get(datetime) ?? fallbackTime(datetime);
+}
+
+/** Close to GitHub's relative wording for a time it has not rendered yet. */
+function fallbackTime(datetime: string): string {
+  const then = Date.parse(datetime);
+  if (Number.isNaN(then)) return '';
+  const days = Math.floor((Date.now() - then) / 86_400_000);
+  if (days < 1) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return 'last week';
+  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 60) return 'last month';
+  return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(new Date(then).getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
 }
 
 /** The comment's ⋯ menu, most specific first; the reaction trigger is a `details` too and must not be taken for it. */
