@@ -43,7 +43,7 @@ import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
 import { aiGatewayItem, aiKeyItem, jevKeyItem } from '../../src/lib/local-state';
-import { isEvaluationModel, jevModelIn, TYPESAFE_API } from '@geld/review';
+import { isEvaluationModel, jevModelFor, TYPESAFE_API } from '@geld/review';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
@@ -950,7 +950,7 @@ async function main(): Promise<void> {
         return;
       }
       const ids = response.models.map((model) => model.id);
-      gatewayJev = jevModelIn(response.models);
+      gatewayJev = jevModelFor(baseUrl, response.models);
       await aiGatewayItem.setValue({ baseUrl, models: ids, jevModel: gatewayJev, checkedAt: new Date().toISOString() });
       fillModels(ids);
       setModelsEnabled(true, '');
@@ -959,7 +959,7 @@ async function main(): Promise<void> {
     };
     const cached = await aiGatewayItem.getValue();
     if (cached !== null && cached.baseUrl === settings.aiBaseUrl && settings.aiBaseUrl !== '') {
-      gatewayJev = cached.jevModel;
+      gatewayJev = cached.jevModel ?? jevModelFor(settings.aiBaseUrl);
       fillModels(cached.models);
       setModelsEnabled(true, '');
     } else {

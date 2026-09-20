@@ -21,6 +21,7 @@ import {
   consolidateUserPrompt,
   isEvaluationModel,
   JEV_DIRECT_MODEL,
+  jevModelFor,
   parseConsolidateOutput,
   sameProblemGroups,
   sameProblemRequest,
@@ -78,10 +79,13 @@ aiKeyItem.watch(() => {
 /** Where a Jev question goes: the gateway when it offers Jev, else TypeSafe with the user's own key; null when neither is set up. */
 async function jevRoute(settings: GeldSettings): Promise<{ readonly baseUrl: string; readonly apiKey: string; readonly model: string } | null> {
   if (!settings.aiJev) return null;
+  // The gateway's Jev: the id its model list named when models were loaded, else what is known about the host
+  // (OpenRouter serves Jev without listing it), so a gateway checked before this was known still routes.
   const gateway = await aiGatewayItem.getValue();
-  if (gateway !== null && gateway.baseUrl === settings.aiBaseUrl && gateway.jevModel !== null) {
+  const gatewayJev = (gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.jevModel : null) ?? jevModelFor(settings.aiBaseUrl);
+  if (settings.aiBaseUrl !== '' && gatewayJev !== null) {
     const apiKey = (await aiKeyItem.getValue()).trim();
-    return apiKey === '' ? null : { baseUrl: settings.aiBaseUrl, apiKey, model: gateway.jevModel };
+    return apiKey === '' ? null : { baseUrl: settings.aiBaseUrl, apiKey, model: gatewayJev };
   }
   const jevKey = (await jevKeyItem.getValue()).trim();
   return jevKey === '' ? null : { baseUrl: TYPESAFE_API, apiKey: jevKey, model: JEV_DIRECT_MODEL };

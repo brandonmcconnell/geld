@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
-import { isEvaluationModel, jevEndpoint, jevModelIn, parseJevResponse } from './jev';
+import { isEvaluationModel, jevEndpoint, jevModelFor, jevModelIn, parseJevResponse } from './jev';
 import type { ConsolidateInputItem } from './prompts';
 
 const item = (id: string, path: string, title = `Finding ${id}`): ConsolidateInputItem => ({ id, title, path, sources: [`c-${id}`], excerpts: [`${title} said at length`], wantFix: false });
@@ -16,9 +16,16 @@ describe('jev', () => {
     expect(jevModelIn([{ id: 'openai/gpt-4.1' }])).toBeNull();
   });
 
-  it('posts to the compatibility prefix on a gateway and to the plain path at TypeSafe', () => {
+  it('posts to the compatibility prefix on a gateway, the Decisions API on OpenRouter and the plain path at TypeSafe', () => {
     expect(jevEndpoint('https://ai-gateway.vercel.sh')).toBe('https://ai-gateway.vercel.sh/typesafe/v1/systemone');
+    expect(jevEndpoint('https://openrouter.ai/api')).toBe('https://openrouter.ai/api/alpha/decisions');
     expect(jevEndpoint('https://api.typesafe.ai')).toBe('https://api.typesafe.ai/v1/systemone');
+  });
+
+  it('knows the Jev model of gateways that do not list it', () => {
+    expect(jevModelFor('https://openrouter.ai/api', [{ id: 'openai/gpt-4.1' }])).toBe('typesafe/jev-latest');
+    expect(jevModelFor('https://ai-gateway.vercel.sh', [{ id: 'openai/gpt-4.1' }, { id: 'typesafe-ai/jev' }])).toBe('typesafe-ai/jev');
+    expect(jevModelFor('https://gw.example.com', [{ id: 'openai/gpt-4.1' }])).toBeNull();
   });
 
   it('parses the three answer kinds and rejects anything else', () => {
