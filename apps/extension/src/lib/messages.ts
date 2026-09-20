@@ -1,4 +1,5 @@
 import type { AnyCategoryId, ChangeTotals, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
+import type { JevRequest, JevResult } from '@geld/review';
 
 /** Messages exchanged between the content script, popup and background. */
 
@@ -281,6 +282,35 @@ export interface AiCompleteRequest {
 export type AiCompleteResponse =
   | { readonly ok: true; readonly text: string; readonly model: string }
   | { readonly ok: false; readonly reason: string };
+
+/** Background → Jev (through the gateway's TypeSafe-compatible API, or TypeSafe directly). */
+export interface AiEvaluateRequest {
+  readonly type: 'geld:ai-evaluate';
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly request: JevRequest;
+}
+
+export type AiEvaluateResponse = JevResult;
+
+export function isAiEvaluateRequest(value: unknown): value is AiEvaluateRequest {
+  return (
+    isRecord(value) &&
+    value.type === 'geld:ai-evaluate' &&
+    typeof value.baseUrl === 'string' &&
+    typeof value.apiKey === 'string' &&
+    isRecord(value.request) &&
+    typeof value.request.model === 'string' &&
+    typeof value.request.state === 'string' &&
+    isRecord(value.request.questions)
+  );
+}
+
+export function isAiEvaluateResponse(value: unknown): value is AiEvaluateResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.model === 'string' && isRecord(value.answers);
+  return value.ok === false && typeof value.reason === 'string';
+}
 
 export function isAiModelsRequest(value: unknown): value is AiModelsRequest {
   return (

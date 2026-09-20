@@ -98,6 +98,130 @@ body {
   margin-top: 2px;
 }
 
+/* A card whose fields stack: every field is one block, every seam the same rule with the same air on both sides. */
+.options__stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.options__stack > .options__block {
+  padding: 16px 0;
+}
+
+.options__stack > .options__block:first-child {
+  padding-top: 4px;
+}
+
+.options__stack > .options__block:last-child {
+  padding-bottom: 0;
+}
+
+.options__stack > .options__block + .options__block {
+  border-top: 1px solid var(--border);
+}
+
+.options__field-head {
+  min-width: 0;
+}
+
+.options__field-head + .geld-input,
+.options__field-head + .geld-textarea,
+.options__gate + .options__gated {
+  margin-top: 10px;
+}
+
+.options__field-row {
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.options__field-row > .geld-switch {
+  margin-top: 2px;
+}
+
+.options__block > .options__choice-note {
+  margin-top: 8px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+/* Ready-made gateway URLs under the field: quiet text buttons, the saved one marked. */
+.options__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+
+.options__preset,
+.options__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.options__preset:hover,
+.options__link:hover {
+  color: var(--foreground);
+}
+
+.options__preset[aria-pressed='true'] {
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+/* A control that cannot be used yet says why above it and sits faded, with the cursor saying no. */
+.options__gate {
+  margin-top: 10px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+.options__gate[hidden] {
+  display: none;
+}
+
+.options__gated[data-disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.options__gated[data-disabled] .geld-input,
+.options__gated[data-disabled] .geld-button {
+  pointer-events: none;
+}
+
+.options__jev-note {
+  margin-top: 10px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+.options__jev-note[data-tone='error'] {
+  color: var(--destructive);
+}
+
+.options__jev-key {
+  margin-top: 12px;
+}
+
+.options__jev-key[hidden] {
+  display: none;
+}
+
+select.geld-input {
+  appearance: auto;
+  padding-right: 8px;
+}
+
 .options__actions {
   margin-top: 12px;
 }
