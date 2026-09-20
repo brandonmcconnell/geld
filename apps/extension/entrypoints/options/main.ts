@@ -42,8 +42,11 @@ import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
-import { aiGatewayItem, aiKeyItem, jevKeyItem } from '../../src/lib/local-state';
+import type { JevSource } from '../../src/lib/local-state';
+import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
+import type { ModelInfo } from '@geld/review';
 import { isEvaluationModel, jevModelFor, TYPESAFE_API } from '@geld/review';
+import { modelCombobox } from '../../src/ui/model-combobox';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
@@ -802,11 +805,8 @@ async function main(): Promise<void> {
     });
     block([el('div', 'options__field-head', [keyLabel, keyHelp]), keyInput, el('div', 'geld-row options__actions', [keyStatusEl, keySave])]);
 
-    /* Writing model: a list from the gateway, disabled with a reason until URL and key are both there. */
+    /* Writing model: a combobox over the gateway's list, disabled with a reason until URL and key are both there. */
     const modelHead = fieldHead(modelField);
-    const modelSelect = el('select', 'geld-input geld-code options__input options__input--grow');
-    modelSelect.id = 'aiModel';
-    modelSelect.setAttribute('aria-labelledby', modelHead.label.id);
     const modelStatusEl = el('span', 'geld-status');
     modelStatusEl.setAttribute('aria-live', 'polite');
     const modelStatus = statusReporter(modelStatusEl);
@@ -814,40 +814,40 @@ async function main(): Promise<void> {
     modelSave.type = 'button';
     const modelGate = el('p', 'options__gate', ['Save a gateway URL and key first; the models it offers are listed here.']);
     modelGate.setAttribute('role', 'status');
-    const modelControls = el('div', 'options__gated', [modelSelect, el('div', 'geld-row options__actions', [modelStatusEl, modelSave])]);
+    const combo = modelCombobox({ id: 'aiModel', labelledBy: modelHead.label.id, placeholder: modelField.placeholder, initial: settings.aiModel });
+    const modelControls = el('div', 'options__gated', [combo.root, el('div', 'geld-row options__actions', [modelStatusEl, modelSave])]);
     const setModelsEnabled = (enabled: boolean, reason: string): void => {
-      modelSelect.disabled = !enabled;
+      combo.setDisabled(!enabled);
       modelSave.disabled = !enabled;
       modelControls.toggleAttribute('data-disabled', !enabled);
       modelGate.textContent = reason;
       modelGate.hidden = enabled;
     };
-    const fillModels = (ids: readonly string[]): void => {
-      modelSelect.replaceChildren();
-      const writers = ids.filter((id) => !isEvaluationModel(id));
-      const placeholder = el('option', '', [writers.length === 0 ? 'No models listed' : 'Choose a model…']);
-      placeholder.value = '';
-      modelSelect.append(placeholder);
-      if (settings.aiModel !== '' && !writers.includes(settings.aiModel) && !isEvaluationModel(settings.aiModel)) writers.unshift(settings.aiModel);
-      for (const id of writers) modelSelect.append(el('option', '', [id]));
-      modelSelect.value = writers.includes(settings.aiModel) ? settings.aiModel : '';
+    const fillModels = (models: readonly ModelInfo[]): void => {
+      // The writing model is a language model; evaluation models (Jev) answer questions, they do not write.
+      combo.setOptions(models.filter((model) => !isEvaluationModel(model.id, model.type) && !isEvaluationModel(model.id)));
     };
     modelSave.addEventListener('click', async () => {
-      const value = modelSelect.value;
+      const value = combo.value();
       if (value === '') {
         modelStatus('Choose a model.', 'error');
         return;
       }
+      if (isEvaluationModel(value)) {
+        modelStatus('That is an evaluation model; it answers questions but writes nothing. Pick a language model.', 'error');
+        return;
+      }
       settings = await settingsItem.patch({ aiModel: value });
-      modelStatus('Saved', 'success');
+      modelStatus(combo.has(value) ? 'Saved' : 'Saved (not in the gateway’s list; requests will say if it does not exist)', 'success');
     });
     block([modelHead.head, modelGate, modelControls]);
 
-    /* Jev: through the gateway when it offers it, else with a TypeSafe key of the user's own. */
+    /* Jev: through the gateway when it offers it, else (or on request) with a TypeSafe key of the user's own. Nothing of this shows while Jev is off. */
     const jevNote = el('p', 'options__jev-note');
     jevNote.setAttribute('role', 'status');
     const jevKeyLabel = el('label', 'geld-label', ['TypeSafe API key']);
     jevKeyLabel.htmlFor = 'jev-key';
+    const jevKeyHelp = el('p', 'geld-help', ['From console.typesafe.ai. Stored only on this device, like the gateway key.']);
     const jevKeyInput = el('input', 'geld-input geld-code options__input options__input--grow');
     jevKeyInput.id = 'jev-key';
     jevKeyInput.type = 'password';
@@ -860,6 +860,7 @@ async function main(): Promise<void> {
     const jevStatus = statusReporter(jevStatusEl);
     const jevSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save key']);
     jevSave.type = 'button';
+    let jevSource: JevSource = await jevSourceItem.getValue();
     jevSave.addEventListener('click', async () => {
       const value = jevKeyInput.value.trim();
       if (value !== '') {
@@ -870,15 +871,27 @@ async function main(): Promise<void> {
         }
       }
       await jevKeyItem.setValue(value);
-      jevStatus(value === '' ? 'Cleared' : 'Saved on this device.', 'success');
+      // A key saved on purpose is a key meant to be used; clearing it hands Jev back to the gateway.
+      jevSource = value === '' ? 'gateway' : 'own';
+      await jevSourceItem.setValue(jevSource);
+      jevStatus(value === '' ? 'Cleared; Jev goes through the gateway.' : 'Saved on this device; Jev uses your key.', 'success');
+      renderJevState();
     });
-    const jevKeyBlock = el('div', 'options__gated options__jev-key', [el('div', 'options__field-head', [jevKeyLabel]), jevKeyInput, el('div', 'geld-row options__actions', [jevStatusEl, jevSave])]);
-    let ownKeyAnyway = jevKeyInput.value !== '';
+    const useGateway = el('button', 'geld-button geld-button--small', ['Use the gateway’s Jev']);
+    useGateway.type = 'button';
+    useGateway.addEventListener('click', async () => {
+      jevSource = 'gateway';
+      await jevSourceItem.setValue(jevSource);
+      renderJevState();
+    });
+    const jevKeyBlock = el('div', 'options__gated options__jev-key', [el('div', 'options__field-head', [jevKeyLabel, jevKeyHelp]), jevKeyInput, el('div', 'geld-row options__actions', [jevStatusEl, useGateway, jevSave])]);
     const useOwnKey = el('button', 'options__link', ['Use one anyway']);
     useOwnKey.type = 'button';
-    useOwnKey.addEventListener('click', () => {
-      ownKeyAnyway = true;
+    useOwnKey.addEventListener('click', async () => {
+      jevSource = 'own';
+      await jevSourceItem.setValue(jevSource);
       renderJevState();
+      jevKeyInput.focus({ preventScroll: true });
     });
     /** What the gateway offers is only known once its models loaded; until then the note only explains. */
     let gatewayJev: string | null | undefined;
@@ -886,24 +899,29 @@ async function main(): Promise<void> {
       const on = settings.aiJev;
       jevNote.replaceChildren();
       delete jevNote.dataset.tone;
-      // The key field: open when the gateway lacks Jev and Jev is on (it is the only route), or on request;
-      // shown but closed as a hint when the gateway lacks Jev and Jev is off; hidden otherwise.
-      let show = ownKeyAnyway;
-      let open = ownKeyAnyway;
+      // Off: nothing about routes or keys; the switch's description is all there is to read.
+      jevNote.hidden = !on;
+      jevKeyBlock.hidden = true;
+      if (!on) return;
       if (gatewayJev === undefined) {
         jevNote.append('Whether your gateway offers Jev is checked when its models load.');
-      } else if (gatewayJev !== null) {
-        jevNote.append(`Jev is offered by your AI gateway (${gatewayJev}); no TypeSafe key is needed. `, useOwnKey);
-      } else {
-        jevNote.append(on ? 'Your AI gateway does not offer Jev. Add a TypeSafe API key to use it directly.' : 'Your AI gateway does not offer Jev; with Jev on, a TypeSafe API key is needed.');
-        if (on) jevNote.dataset.tone = 'error';
-        show = true;
-        open = open || on;
+        return;
       }
-      jevKeyBlock.hidden = !show;
-      jevKeyBlock.toggleAttribute('data-disabled', !open);
-      jevKeyInput.disabled = !open;
-      jevSave.disabled = !open;
+      if (gatewayJev !== null) {
+        if (jevSource === 'own') {
+          jevNote.append(`Jev uses your TypeSafe key rather than your gateway’s ${gatewayJev}.`);
+          jevKeyBlock.hidden = false;
+          useGateway.hidden = false;
+        } else {
+          jevNote.append(`Jev is offered by your AI gateway (${gatewayJev}); no TypeSafe key is needed. `, useOwnKey);
+        }
+        return;
+      }
+      // The gateway lacks Jev: the key is the only route, so the field is open and the way back does not apply.
+      jevNote.append('Your AI gateway does not offer Jev. Add a TypeSafe API key to use it directly.');
+      if (jevKeyInput.value.trim() === '') jevNote.dataset.tone = 'error';
+      jevKeyBlock.hidden = false;
+      useGateway.hidden = true;
     };
     toggleBlock(jevField, [jevNote, jevKeyBlock]);
     reviewSwitches.push({ field: jevField, set: () => renderJevState() });
@@ -923,7 +941,7 @@ async function main(): Promise<void> {
       // Contacting the gateway needs the browser's permission for its origin, which only a click here can ask for.
       if ((await hasGatewayPermission(baseUrl)) !== null) {
         // A cached list stays usable; the note only says the next refresh needs a click.
-        if (modelSelect.options.length <= 1) setModelsEnabled(false, '');
+        if (combo.size() === 0) setModelsEnabled(false, '');
         const allow = el('button', 'options__link', ['Allow Geld to contact the gateway']);
         allow.type = 'button';
         allow.addEventListener('click', async () => {
@@ -951,16 +969,16 @@ async function main(): Promise<void> {
       }
       const ids = response.models.map((model) => model.id);
       gatewayJev = jevModelFor(baseUrl, response.models);
-      await aiGatewayItem.setValue({ baseUrl, models: ids, jevModel: gatewayJev, checkedAt: new Date().toISOString() });
-      fillModels(ids);
+      await aiGatewayItem.setValue({ baseUrl, models: ids, details: Object.fromEntries(response.models.map((model) => [model.id, model])), jevModel: gatewayJev, checkedAt: new Date().toISOString() });
+      fillModels(response.models);
       setModelsEnabled(true, '');
-      modelStatus(`${ids.filter((id) => !isEvaluationModel(id)).length} models`, 'success');
+      modelStatus(`${response.models.filter((model) => !isEvaluationModel(model.id, model.type) && !isEvaluationModel(model.id)).length} models`, 'success');
       renderJevState();
     };
     const cached = await aiGatewayItem.getValue();
     if (cached !== null && cached.baseUrl === settings.aiBaseUrl && settings.aiBaseUrl !== '') {
       gatewayJev = cached.jevModel ?? jevModelFor(settings.aiBaseUrl);
-      fillModels(cached.models);
+      fillModels(cached.models.map((id) => cached.details?.[id] ?? { id }));
       setModelsEnabled(true, '');
     } else {
       fillModels([]);

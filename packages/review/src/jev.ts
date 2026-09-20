@@ -42,13 +42,14 @@ export type JevResult =
   | { readonly ok: false; readonly reason: string };
 
 /** Does a model id name an evaluation model (Jev)? Such a model must never be offered as the prose model. */
-export function isEvaluationModel(id: string): boolean {
+export function isEvaluationModel(id: string, type?: string): boolean {
+  if (type !== undefined) return type === 'evaluation';
   return /(^|[/:@-])jev(\b|[-.])/i.test(id) || /typesafe/i.test(id);
 }
 
 /** The Jev model id a gateway's model list offers, if any. */
-export function jevModelIn(models: ReadonlyArray<{ readonly id: string }>): string | null {
-  return models.find((model) => isEvaluationModel(model.id))?.id ?? null;
+export function jevModelIn(models: ReadonlyArray<{ readonly id: string; readonly type?: string }>): string | null {
+  return models.find((model) => isEvaluationModel(model.id, model.type) || isEvaluationModel(model.id))?.id ?? null;
 }
 
 /**

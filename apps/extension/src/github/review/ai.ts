@@ -41,7 +41,7 @@ import {
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
 import type { JevDecision } from '../../lib/local-state';
-import { aiGatewayItem, aiKeyItem, jevDecisionsItem, jevKeyItem } from '../../lib/local-state';
+import { aiGatewayItem, aiKeyItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
 
@@ -85,12 +85,15 @@ async function jevRoute(settings: GeldSettings): Promise<{ readonly baseUrl: str
   // (OpenRouter serves Jev without listing it), so a gateway checked before this was known still routes.
   const gateway = await aiGatewayItem.getValue();
   const gatewayJev = (gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.jevModel : null) ?? jevModelFor(settings.aiBaseUrl);
+  const jevKey = (await jevKeyItem.getValue()).trim();
+  const own = { baseUrl: TYPESAFE_API, apiKey: jevKey, model: JEV_DIRECT_MODEL };
+  // The user's own key wins only when they chose it ("Use one anyway"); the gateway is the default whenever it offers Jev.
+  if (jevKey !== '' && (await jevSourceItem.getValue()) === 'own') return own;
   if (settings.aiBaseUrl !== '' && gatewayJev !== null) {
     const apiKey = (await aiKeyItem.getValue()).trim();
     return apiKey === '' ? null : { baseUrl: settings.aiBaseUrl, apiKey, model: gatewayJev };
   }
-  const jevKey = (await jevKeyItem.getValue()).trim();
-  return jevKey === '' ? null : { baseUrl: TYPESAFE_API, apiKey: jevKey, model: JEV_DIRECT_MODEL };
+  return jevKey === '' ? null : own;
 }
 
 async function evaluate(route: { readonly baseUrl: string; readonly apiKey: string }, request: JevRequest): Promise<Readonly<Record<string, JevAnswer>> | null> {
