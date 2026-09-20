@@ -236,7 +236,8 @@ export function previewDocOf(node: Element, author: string, anchor: string): Pre
     anchor,
     text: body === null ? '' : textWithTableRows(body),
     links: body === null ? [] : [...body.querySelectorAll<HTMLAnchorElement>('a[href]')].map((link) => ({ href: link.href, text: (link.textContent ?? '').replace(/\s+/g, ' ').trim() })),
-    images: body === null ? [] : [...body.querySelectorAll<HTMLImageElement>('img')].map((image) => ({ src: image.getAttribute('src') ?? '', alt: image.alt })),
+    // GitHub proxies comment images through camo; the original URL (what the parsers recognise) is in data-canonical-src.
+    images: body === null ? [] : [...body.querySelectorAll<HTMLImageElement>('img')].map((image) => ({ src: image.getAttribute('data-canonical-src') ?? image.getAttribute('src') ?? '', alt: image.alt })),
   };
   return time === undefined ? doc : { ...doc, updatedAt: time };
 }
