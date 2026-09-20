@@ -308,6 +308,8 @@ export function crawlConversation(root: ParentNode = document): {
   const events: CrawledEvent[] = [];
   for (const node of root.querySelectorAll(EVENT_SELECTOR)) {
     if (!/^event-\d+$/.test(node.id) || node.closest(THREAD_SELECTOR) !== null) continue;
+    // A force-push is a push, not an event: it opens a round like a run of commits does (crawlLeftovers lists it).
+    if (isForcePushRow(node)) continue;
     events.push({ anchor: node.id, root: timelineRootOf(node) });
   }
   // Timeline order, not document order: a node shown in the panel is above the timeline right now.
@@ -322,8 +324,18 @@ export function crawlConversation(root: ParentNode = document): {
 }
 
 export interface CrawledLeftover {
-  readonly kind: 'commit' | 'mention' | 'review-event' | 'noise' | 'pending' | 'other';
+  readonly kind: LeftoverKind;
   readonly root: HTMLElement;
+}
+
+/** `push` is a force-push event ("X force-pushed the branch from a to b"): a push with no commit rows of its own. */
+export type LeftoverKind = 'commit' | 'push' | 'mention' | 'review-event' | 'noise' | 'pending' | 'other';
+
+const FORCE_PUSH_ROW = '.TimelineItem:has(.octicon-repo-push), [data-testid="force-pushed-event"], [class*="ForcePush"]';
+
+/** "X force-pushed the branch from a to b": GitHub's row for a push that replaced the branch's commits. */
+export function isForcePushRow(row: Element): boolean {
+  return (row.matches(FORCE_PUSH_ROW) || row.querySelector('.octicon-repo-push') !== null) && /\bforce-pushed\b/i.test(row.textContent ?? '');
 }
 
 const COMMIT_ROW = '.js-commit-group, .TimelineItem:has(.js-commits-list-item), [data-testid="commit-row"], [data-testid="timeline-commit-row"], .TimelineItem:has(> .TimelineItem-badge .octicon-git-commit), [class*="CommitRow"]';
@@ -364,6 +376,7 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     // What someone minimized (resolved, outdated, off-topic) is noise here; its comment, once loaded, is crawled on its own.
     else if (minimized || row.querySelector('.minimized-comment') !== null) kind = 'noise';
     else if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
+    else if (isForcePushRow(row)) kind = 'push';
     else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';
     else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
     list.push({ kind, root: row });
