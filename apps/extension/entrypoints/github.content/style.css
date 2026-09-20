@@ -1473,6 +1473,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
 }
 
+.geld-review__status--verdict[data-verdict='finding'] {
+  color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
+}
+
 .geld-review__status--verdict[data-verdict='awaiting'] {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }

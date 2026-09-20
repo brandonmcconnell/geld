@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { candidatePairs, pairKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
+import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
 import { isEvaluationModel, jevEndpoint, jevModelIn, parseJevResponse } from './jev';
 import type { ConsolidateInputItem } from './prompts';
 
@@ -68,5 +68,34 @@ describe('same-problem decisions', () => {
     const narrowed = withSameProblem(items, groups);
     expect(narrowed.map((entry) => entry.id)).toEqual(['a', 'b', 'c']);
     expect(narrowed[0]?.sameProblemAs).toEqual(['b', 'c']);
+  });
+});
+
+describe('classification decisions', () => {
+  it('puts comments and threads into one structured state with a question each, in batches', () => {
+    const comments = Array.from({ length: 30 }, (_, index) => ({ id: `c${index}`, author: index % 2 ? 'devin-ai-integration[bot]' : 'alice', bot: index % 2 === 1, text: `Comment ${index}` }));
+    const threads = [{ id: 't1', path: 'a.ts', first: { author: 'bugbot[bot]', text: 'Null check missing' }, replies: [{ author: 'alice', text: 'Fixed in abc123' }] }];
+    const requests = classificationRequests('typesafe-ai/jev', comments, threads);
+    expect(requests).toHaveLength(2);
+    const first = requests[0];
+    expect(typeof first?.state).toBe('object');
+    expect(Object.keys(first?.questions ?? {})).toHaveLength(24);
+    expect(first?.questions[laneKey('c0')]?.type).toBe('choice');
+    const second = requests[1];
+    expect(second?.questions[doneKey('t1')]?.type).toBe('noul');
+    expect(classificationRequests('typesafe-ai/jev', [], [])).toEqual([]);
+  });
+
+  it('keeps only confident lanes and thresholds thread state at 0.9', () => {
+    const lanes = lanesFrom({
+      [laneKey('a')]: { type: 'choice', choice: 'status', confidence: 0.9, probabilities: {} },
+      [laneKey('b')]: { type: 'choice', choice: 'finding', confidence: 0.4, probabilities: {} },
+      [laneKey('c')]: { type: 'choice', choice: 'nonsense', confidence: 0.99, probabilities: {} },
+    });
+    expect([...lanes.entries()]).toEqual([['a', 'status']]);
+    const done = doneFrom({ [doneKey('t1')]: { type: 'noul', noul: 0.95 }, [doneKey('t2')]: { type: 'noul', noul: 0.05 }, [doneKey('t3')]: { type: 'noul', noul: 0.6 } });
+    expect(done.get('t1')?.verdict).toBe('yes');
+    expect(done.get('t2')?.verdict).toBe('no');
+    expect(done.get('t3')?.verdict).toBe('unclear');
   });
 });

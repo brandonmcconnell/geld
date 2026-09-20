@@ -7,7 +7,7 @@
 
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
 import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, parsePreviews, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
@@ -16,8 +16,9 @@ import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
-import type { CrawledReview } from './crawler';
-import { aiPending, consolidateInBrowser, resetAiForVisit, withAi } from './ai';
+import type { CrawledComment, CrawledReview } from './crawler';
+import type { CommentToClassify, JevDecisions, ThreadToClassify } from './ai';
+import { aiPending, consolidateInBrowser, jevDecisionsFor, resetAiForVisit, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
 import { refDetails, refsVersion, resetRefs } from './refs';
@@ -216,7 +217,7 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
       // Bot run summaries, bot review bodies and "@bot review" requests fold; review threads are items, never hidden.
       comments: unique(
         crawled.comments
-          .filter((entry) => entry.comment.kind !== 'thread' && (entry.author.bot || isTriggerComment(entry.comment.body, settings.reviewBots)))
+          .filter((entry) => entry.comment.kind !== 'thread' && (entry.author.bot || isTrigger(entry, settings)))
           .map((entry) => entry.comment.anchor),
       ),
       events: crawled.events.map((event) => event.anchor),
@@ -226,7 +227,8 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
 
 function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled): readonly FoldGroup[] {
   if (settings.compactTimeline === 'off' || visit.fullTimeline) return [];
-  const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
+  // Triggers and bots' run-status lines fold without a row; the rest of the bot comments get their rounds.
+  const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   const commentRefs = crawled.comments.map((entry) => ({ author: entry.comment.author, anchor: entry.comment.anchor, root: entry.root }));
   const groups = [...groupBotRuns(commentRefs, botAnchors, [])];
@@ -322,6 +324,24 @@ function withWholePaths(meta: GeldPrMeta): GeldPrMeta {
       return { ...item, path: completePath(item.path, diffHashOf(anchor === undefined ? null : threadRootOf(anchor)), meta) };
     }),
   };
+}
+
+/**
+ * Jev's decisions for the pass in progress (empty when Jev is off). With Jev
+ * on, these stand in for the deterministic classification below: a comment is
+ * a trigger when Jev says so (else when it matches a known trigger phrase), a
+ * bot's run-status line folds silently, a finding is marked as one.
+ */
+let jevNow: JevDecisions = { lanes: new Map(), done: new Map() };
+
+function isTrigger(entry: CrawledComment, settings: GeldSettings): boolean {
+  // A comment made only of known trigger phrases is one, whatever Jev says; Jev adds the ones the list does not know.
+  return isTriggerComment(entry.comment.body, settings.reviewBots) || jevNow.lanes.get(entry.comment.anchor) === 'trigger';
+}
+
+/** Bot comments that say only that a run started or ended: nothing to read, so they fold without a row. */
+function isStatusLine(entry: CrawledComment): boolean {
+  return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status';
 }
 
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
@@ -585,7 +605,7 @@ function revealRow(focusKey: string): void {
  * is round 1 with no commits. With no commits on the page there is one round.
  */
 function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[], pushRoots: ReadonlySet<HTMLElement>, reviewEntriesAll: readonly ReviewEntry[], previewsAll: readonly Preview[]): readonly Batch[] {
-  const triggerAnchors = new Set(crawled.comments.filter((entry) => !entry.author.bot && isTriggerComment(entry.comment.body, settings.reviewBots)).map((entry) => entry.comment.anchor));
+  const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   interface RoundComment {
     readonly anchor: string;
@@ -593,6 +613,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     readonly author: string;
     readonly node: HTMLElement;
     readonly body: string;
+    readonly lane: CommentLane | null;
   }
   interface Round {
     readonly commits: HTMLElement[];
@@ -610,7 +631,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   for (const item of meta.items) place({ node: document.documentElement, kind: 'item', item }, itemNodes(item)[0] ?? null);
   for (const entry of crawled.comments) {
     if (!botAnchors.has(entry.comment.anchor) || !entry.author.bot) continue;
-    const comment: RoundComment = { anchor: entry.comment.anchor, avatar: entry.avatarSrc ?? avatarSrcForLogin(entry.author.login), author: entry.author.login, node: entry.root, body: entry.comment.body };
+    const comment: RoundComment = { anchor: entry.comment.anchor, avatar: entry.avatarSrc ?? avatarSrcForLogin(entry.author.login), author: entry.author.login, node: entry.root, body: entry.comment.body, lane: jevNow.lanes.get(entry.comment.anchor) ?? null };
     place({ node: entry.root, kind: 'comment', comment }, entry.root);
   }
   const itemAnchors = new Set(meta.items.flatMap((item) => item.sources.map((source) => source.anchor)));
@@ -686,18 +707,22 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       avatars,
       names,
       items: round.items,
-      comments: round.comments.map((comment) => ({
-        anchor: comment.anchor,
-        author: comment.author,
-        avatarSrc: comment.avatar,
-        state: 'comment',
-        preview: firstSentence(comment.body),
-        time: timeTextOf(comment.node),
-        hasBody: true,
-        done: false,
-        replies: 0,
-        myReaction: null,
-      })),
+      // Findings first: what the author must act on, before verdicts and reports.
+      comments: [...round.comments]
+        .sort((a, b) => Number(b.lane === 'finding') - Number(a.lane === 'finding'))
+        .map((comment) => ({
+          anchor: comment.anchor,
+          author: comment.author,
+          avatarSrc: comment.avatar,
+          state: 'comment',
+          preview: firstSentence(comment.body),
+          time: timeTextOf(comment.node),
+          hasBody: true,
+          done: false,
+          replies: 0,
+          myReaction: null,
+          ...(comment.lane === null ? {} : { lane: comment.lane }),
+        })),
       reviews: round.reviews,
       commits: round.commits,
       commitCount: round.commits.filter((row) => !pushRoots.has(row)).length,
@@ -1024,7 +1049,7 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
     });
   }
   for (const entry of crawled.comments) {
-    if (entry.author.bot || isTriggerComment(entry.comment.body, settings.reviewBots)) continue;
+    if (entry.author.bot || isTrigger(entry, settings)) continue;
     const anchor = entry.comment.anchor;
     if (reviewedComments.has(anchor) || entry.root.querySelector('[id^="pullrequestreview-"]') !== null) continue;
     const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
@@ -1198,9 +1223,18 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const found = findSummaryComment(document);
   hideSummary(found?.root ?? null);
   const headSha = detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA;
+  // Jev first, from its cache: what it has said about the top-level comments decides what is a trigger below.
+  const topLevel: CommentToClassify[] = crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => ({ anchor: entry.comment.anchor, author: entry.author.login, bot: entry.author.bot, body: entry.comment.body }));
+  jevNow = jevDecisionsFor(settings, topLevel, [], reapplySoon);
   const crawled = buildFromComments(crawledDom, settings, headSha, visit.generatedAt);
   const composed = composeMeta(found, crawled);
-  const meta = withWholePaths(withManualDone(composed.meta));
+  // Then the threads, now that items exist: whether the replies say a thread is done.
+  const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
+  const threads: ThreadToClassify[] = composed.meta.items
+    .filter((item) => isOpenStatus(item.status) && item.sources.length > 1)
+    .map((item) => ({ itemId: item.id, ...(item.path === undefined ? {} : { path: item.path }), comments: item.sources.map((source) => bodies.get(source.anchor) ?? { author: source.author, body: '' }) }));
+  jevNow = jevDecisionsFor(settings, topLevel, threads, reapplySoon);
+  const meta = withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done)));
 
   const viewingAnchor = sourceAnchorFromHash(location.hash);
   if (viewingAnchor !== null && document.getElementById(viewingAnchor) === null && visit.loadMoreTries < MAX_LOAD_MORE) {

@@ -125,3 +125,133 @@ export function withSameProblem(items: readonly ConsolidateInputItem[], groups: 
   for (const group of groups) for (const id of group) partners.set(id, group.filter((other) => other !== id));
   return items.filter((item) => partners.has(item.id)).map((item) => ({ ...item, sameProblemAs: partners.get(item.id) ?? [] }));
 }
+
+/* ------------------------------------------------------------------------- */
+/* Lanes and thread state: the classification Jev stands in for               */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Where a top-level comment belongs. Deterministic code decides this from
+ * trigger phrases and bot logins; with Jev on, Jev decides it from the text,
+ * and only a confident answer replaces the deterministic one.
+ */
+export const COMMENT_LANES = ['trigger', 'status', 'verdict', 'report', 'finding', 'discussion'] as const;
+export type CommentLane = (typeof COMMENT_LANES)[number];
+
+export function isCommentLane(value: unknown): value is CommentLane {
+  return typeof value === 'string' && (COMMENT_LANES as readonly string[]).includes(value);
+}
+
+const LANE_CRITERIA: Readonly<Record<CommentLane, string>> = {
+  trigger: 'Only asks an automated review bot to run - a trigger phrase such as "@greptileai", "bugbot run", "/devin review" - with no other content.',
+  status: 'A bot saying its run started, is in progress, was superseded, or finished with nothing to read ("Starting review", "Stale comment from a previous run").',
+  verdict: 'A bot\'s review result: a score or confidence, "no issues found", or "found N issues" with a summary of them.',
+  report: 'An informational report from a bot - coverage, bundle size, build output, a preview deployment, a benchmark - with nothing the author must act on.',
+  finding: 'A concrete problem or requested change the author should act on: failing tests, a bug, a security issue, a blocking question.',
+  discussion: 'A person\'s remark, question or answer that is none of the above.',
+};
+
+export interface LaneInput {
+  readonly id: string;
+  readonly author: string;
+  readonly bot: boolean;
+  readonly text: string;
+}
+
+export interface ThreadInput {
+  readonly id: string;
+  readonly path?: string;
+  readonly first: { readonly author: string; readonly text: string };
+  readonly replies: readonly { readonly author: string; readonly text: string }[];
+}
+
+export function laneKey(id: string): string {
+  return `lane:${id}`;
+}
+
+export function doneKey(id: string): string {
+  return `done:${id}`;
+}
+
+const LANE_TEXT_CHARS = 400;
+const REPLY_TEXT_CHARS = 300;
+/** Comments and threads per request: the state has to fit with its questions in Jev's 32k-token budget. */
+const PER_REQUEST = 24;
+
+function clip(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * One request per batch: the comments and threads as structured state, a
+ * lane question per comment and a done question per thread, all answered in
+ * one parallel pass. Empty when there is nothing to ask.
+ */
+export function classificationRequests(model: string, comments: readonly LaneInput[], threads: readonly ThreadInput[]): readonly JevRequest[] {
+  const requests: JevRequest[] = [];
+  const queue: Array<{ readonly comment?: LaneInput; readonly thread?: ThreadInput }> = [...comments.map((comment) => ({ comment })), ...threads.map((thread) => ({ thread }))];
+  for (let start = 0; start < queue.length; start += PER_REQUEST) {
+    const slice = queue.slice(start, start + PER_REQUEST);
+    const stateComments = slice.flatMap((entry) => (entry.comment === undefined ? [] : [{ id: entry.comment.id, author: entry.comment.author, bot: entry.comment.bot, text: clip(entry.comment.text, LANE_TEXT_CHARS) }]));
+    const stateThreads = slice.flatMap((entry) =>
+      entry.thread === undefined
+        ? []
+        : [
+            {
+              id: entry.thread.id,
+              ...(entry.thread.path === undefined ? {} : { path: entry.thread.path }),
+              first: { author: entry.thread.first.author, text: clip(entry.thread.first.text, LANE_TEXT_CHARS) },
+              replies: entry.thread.replies.map((reply) => ({ author: reply.author, text: clip(reply.text, REPLY_TEXT_CHARS) })),
+            },
+          ],
+    );
+    const questions: Record<string, JevQuestion> = {};
+    for (const comment of stateComments) {
+      questions[laneKey(comment.id)] = {
+        type: 'choice',
+        instructions: `Which kind of comment is the one in \`comments\` with id "${comment.id}"?`,
+        criteria: LANE_CRITERIA,
+      };
+    }
+    for (const thread of stateThreads) {
+      questions[doneKey(thread.id)] = {
+        type: 'noul',
+        instructions: `In \`threads\`, for the thread with id "${thread.id}": do the replies say the concern raised in \`first\` has been fixed, resolved, or no longer applies?`,
+        criteria: {
+          true: 'A reply states the change was made, points at a fixing commit, or explains why the concern does not apply, and no later reply disputes it.',
+          false: 'The concern is still being discussed, was pushed back on without agreement, or no reply speaks to it.',
+        },
+      };
+    }
+    if (Object.keys(questions).length === 0) continue;
+    requests.push({ model, state: { comments: stateComments, threads: stateThreads }, questions });
+  }
+  return requests;
+}
+
+/** Below this confidence a lane answer is not trusted and the deterministic classification stands. */
+export const LANE_CONFIDENCE = 0.6;
+/** A thread counts as addressed at or above this, and as still open at or below its complement. */
+export const DONE_THRESHOLD = 0.9;
+
+export function lanesFrom(answers: Readonly<Record<string, JevAnswer>>, minConfidence = LANE_CONFIDENCE): ReadonlyMap<string, CommentLane> {
+  const lanes = new Map<string, CommentLane>();
+  for (const [key, answer] of Object.entries(answers)) {
+    if (!key.startsWith('lane:') || answer.type !== 'choice' || answer.confidence < minConfidence || !isCommentLane(answer.choice)) continue;
+    lanes.set(key.slice('lane:'.length), answer.choice);
+  }
+  return lanes;
+}
+
+export type DoneVerdict = 'yes' | 'no' | 'unclear';
+
+export function doneFrom(answers: Readonly<Record<string, JevAnswer>>, threshold = DONE_THRESHOLD): ReadonlyMap<string, { readonly verdict: DoneVerdict; readonly probability: number }> {
+  const done = new Map<string, { readonly verdict: DoneVerdict; readonly probability: number }>();
+  for (const [key, answer] of Object.entries(answers)) {
+    if (!key.startsWith('done:') || answer.type !== 'noul') continue;
+    const verdict: DoneVerdict = answer.noul >= threshold ? 'yes' : answer.noul <= 1 - threshold ? 'no' : 'unclear';
+    done.set(key.slice('done:'.length), { verdict, probability: answer.noul });
+  }
+  return done;
+}

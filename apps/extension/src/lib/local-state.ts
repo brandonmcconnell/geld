@@ -33,3 +33,15 @@ export interface AiGatewayInfo {
   readonly checkedAt: string;
 }
 export const aiGatewayItem = storage.defineItem<AiGatewayInfo | null>('local:aiGateway', { fallback: null });
+
+/**
+ * Jev's answers about comments and threads, by a hash of the text they were
+ * asked about, so a page revisited asks only about what changed. Capped; the
+ * oldest entries go first.
+ */
+export interface JevDecision {
+  readonly lane?: string;
+  readonly done?: { readonly verdict: 'yes' | 'no' | 'unclear'; readonly probability: number };
+  readonly at: number;
+}
+export const jevDecisionsItem = storage.defineItem<Readonly<Record<string, JevDecision>>>('local:jevDecisions', { fallback: {} });
