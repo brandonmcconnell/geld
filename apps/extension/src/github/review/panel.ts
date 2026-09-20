@@ -68,8 +68,10 @@ export interface Batch {
   readonly comments: readonly ReviewEntry[];
   /** People's verdicts and top-level comments that landed in the round. */
   readonly reviews: readonly ReviewEntry[];
-  /** The commit rows of the push(es) that opened the round, in timeline order; empty for content before any commit. */
+  /** The commit rows and force-push events of the push(es) that opened the round, in timeline order; empty for content before any push. */
   readonly commits: readonly HTMLElement[];
+  /** How many of `commits` are commit rows (the rest are force-push events). */
+  readonly commitCount: number;
   /** CI as GitHub draws it beside the round's last commit; null when the page shows none. */
   readonly ciGlyph: 'success' | 'failure' | 'pending' | null;
   /** Who committed in the push, as GitHub draws them beside the commits (its `avatar-user` class decides the shape). */
@@ -85,9 +87,10 @@ export function batchKey(index: number): string {
   return `batch:${index}`;
 }
 
-export type ReviewEntryState = 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'thread' | 'comment';
+/** `awaiting`: a reviewer GitHub is still waiting on (the sidebar's "Awaiting requested review from X"); a line with nothing to open. */
+export type ReviewEntryState = 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'thread' | 'comment' | 'awaiting';
 
-/** One line under the Reviews row: a review verdict, a review thread or a person's top-level comment. */
+/** One line under the Reviews row: a review verdict, a review thread, a person's top-level comment or a pending request. */
 export interface ReviewEntry {
   readonly anchor: string;
   readonly author: string;
@@ -482,7 +485,21 @@ const FOLD_GLYPH: Readonly<Record<string, string>> = { events: ICON_HISTORY, com
 /** "Push 03 · 2 commits" — the round named by what opened it; numbers padded to the widest so the column lines up. */
 function pushLabel(batch: Batch, total: number): string {
   if (batch.commits.length === 0) return 'Earlier';
-  return `Push ${String(batch.index).padStart(String(total).length, '0')} · ${plural(batch.commits.length, 'commit')}`;
+  return `Push ${String(batch.index).padStart(String(total).length, '0')} · ${pushContents(batch)}`;
+}
+
+/** "2 commits", "force-push", or "2 commits · force-push" for a round that had both. */
+function pushContents(batch: Batch): string {
+  const forced = batch.commits.length - batch.commitCount;
+  const parts = [batch.commitCount > 0 ? plural(batch.commitCount, 'commit') : '', forced > 0 ? (forced === 1 ? 'force-push' : `${forced} force-pushes`) : ''];
+  return parts.filter((part) => part !== '').join(' · ');
+}
+
+function pushTone(batch: Batch, allDone: boolean): Tone | null {
+  const open = batch.items.some((item) => isOpenStatus(item.status));
+  if (batch.ciGlyph === 'failure' || open) return 'bad';
+  if (batch.ciGlyph === 'success') return 'good';
+  return allDone ? 'good' : null;
 }
 
 function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
@@ -554,8 +571,10 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   }
   right.append(chevron(open, toggle));
   // By push, one solid mark says "a push" and the row's facts follow; by type the round's progress glyph and posters lead.
-  // A push whose CI failed is red whatever its threads say; a settled one is green.
-  const tone: Tone | null = byPush && batch.ciGlyph === 'failure' ? 'bad' : allDone ? 'good' : null;
+  // A push is red while CI failed or a thread is open, green once CI passed (or, with no CI to read, once its threads
+  // are all resolved) and nothing is open, and plain while CI is still running with nothing to resolve. A comment
+  // that lands later and opens a thread turns a green push red again.
+  const tone: Tone | null = byPush ? pushTone(batch, allDone) : allDone ? 'good' : null;
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open', ...toneAttr(tone) }, [
     ...(byPush ? [createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_REPO_PUSH)])] : [lead, avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length)]),
     main,
@@ -602,7 +621,11 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   section(plural(unresolved.length, 'unresolved thread'), unresolved);
   section(plural(resolved.length, 'resolved thread'), resolved);
   if (byPush && batch.reviews.length > 0) {
-    list.append(subhead(plural(batch.reviews.length, 'review'), ICON_COMMENT_DISCUSSION));
+    // A person's verdict is a review; their top-level comment is a comment, and the heading says which it lists.
+    const verdicts = batch.reviews.filter((entry) => entry.state !== 'comment').length;
+    const remarks = batch.reviews.length - verdicts;
+    const label = [verdicts > 0 ? plural(verdicts, 'review') : '', remarks > 0 ? plural(remarks, 'comment') : ''].filter((part) => part !== '').join(' · ');
+    list.append(subhead(label, verdicts > 0 ? ICON_COMMENT_DISCUSSION : ICON_COMMENT));
     for (const entry of batch.reviews) {
       const { row, open } = entryRow(entry, model, handlers);
       list.append(row);
@@ -633,8 +656,8 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     // The push itself, last: its commit rows unfold under a heading like the bot comments do.
     const open = model.openCommits.has(batch.key);
     const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn ${PANEL_CLASS}__notes-btn--commits`, 'aria-expanded': String(open), [ATTR_FOCUS]: `commits:${batch.key}` }, [
-      icon(ICON_GIT_COMMIT),
-      createElement('span', {}, [plural(batch.commits.length, 'commit')]),
+      icon(batch.commitCount > 0 ? ICON_GIT_COMMIT : ICON_REPO_PUSH),
+      createElement('span', {}, [pushContents(batch)]),
       icon(ICON_CHEVRON_DOWN),
     ]);
     button.addEventListener('click', () => handlers.onToggleCommits(batch.key));
@@ -953,6 +976,16 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       }
       content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [reviewsLabel(model.reviews)]), marks);
     }
+    // Who GitHub is still waiting on, as the sidebar lists them.
+    const awaiting = model.comments.filter((entry) => entry.state === 'awaiting');
+    if (awaiting.length > 0) {
+      content.push(
+        createElement('span', { class: `${PANEL_CLASS}__awaiting`, title: `Awaiting review from ${awaiting.map((entry) => entry.author).join(', ')}` }, [
+          avatarStack(awaiting.filter((entry) => entry.avatarSrc !== null).map((entry) => ({ src: entry.avatarSrc ?? '', bot: false, login: entry.author })), awaiting[0]?.author ?? '', false, awaiting.length),
+          createElement('span', { class: `${PANEL_CLASS}__status-text` }, [`${awaiting.length} awaiting`]),
+        ]),
+      );
+    }
     const open = model.openKey === REVIEWS_KEY;
     // Only comments count here; a bare verdict is already in the approvals.
     const count = model.comments.filter((entry) => entry.hasBody).length;
@@ -1094,6 +1127,7 @@ const ENTRY_GLYPH: Readonly<Record<Exclude<ReviewEntryState, 'thread'>, string>>
   commented: ICON_COMMENT,
   dismissed: ICON_COMMENT,
   comment: ICON_COMMENT,
+  awaiting: ICON_DOT_FILL,
 };
 
 const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
@@ -1103,6 +1137,7 @@ const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
   dismissed: 'Review dismissed',
   comment: 'Commented',
   thread: 'Review thread',
+  awaiting: 'Awaiting review',
 };
 
 
@@ -1197,7 +1232,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}`).join(',')}:${batch.commits.length}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
