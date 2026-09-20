@@ -3022,7 +3022,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding-left: 16px;
 }
 
-.geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body {
+/* A thread's frame carries its own top margin, so its slot starts tight; a plain comment gets the full 12px above like below. */
+.geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body:has(> .geld-review__qv--threads) {
   padding: 4px 16px 12px 42px;
 }
 
