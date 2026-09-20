@@ -8,9 +8,14 @@
  */
 
 import type { GeldSettings } from '@geld/core';
-import type { ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, RawComment, ReviewItem, ReviewSummary } from '@geld/review';
+import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
 import {
+  applyAddressed,
   applyConsolidation,
+  classificationRequests,
+  doneFrom,
+  isCommentLane,
+  lanesFrom,
   CONSOLIDATE_JSON_SCHEMA,
   CONSOLIDATE_SYSTEM,
   consolidateUserPrompt,
@@ -32,7 +37,8 @@ import {
 } from '@geld/review';
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
-import { aiGatewayItem, aiKeyItem, jevKeyItem } from '../../lib/local-state';
+import type { JevDecision } from '../../lib/local-state';
+import { aiGatewayItem, aiKeyItem, jevDecisionsItem, jevKeyItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
 
@@ -220,4 +226,156 @@ export function rewrittenIds(): ReadonlySet<string> {
 
 export function itemsWithRewrite(items: readonly ReviewItem[]): readonly ReviewItem[] {
   return applyConsolidation(items, new Map<string, Carried>(), [...rewrites.values()]);
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Jev as the stand-in for deterministic classification                       */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * With Jev on, the deterministic checks - "is this comment only a trigger
+ * phrase", "is this bot comment a run-status line, a verdict, a report or a
+ * finding", "do the replies say this thread is done" - are answered by Jev
+ * from the text, in one request per batch, and only a confident answer
+ * replaces the deterministic one. Answers are cached by a hash of the text
+ * (`local:jevDecisions`), so a revisited page asks only about what changed,
+ * and every answer is remembered for the visit so nothing is asked twice.
+ */
+
+/** FNV-1a over the text, as a short key. Collisions would only swap one cached lane for another; the text decides, not the anchor. */
+function textHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${text.length.toString(36)}-${hash.toString(36)}`;
+}
+
+const DECISIONS_CAP = 3000;
+let decisions: Map<string, JevDecision> | null = null;
+let decisionsLoading: Promise<Map<string, JevDecision>> | null = null;
+/** Hashes a request is in flight for, or that this visit already asked about without a usable answer. */
+const asked = new Set<string>();
+
+async function loadDecisions(): Promise<Map<string, JevDecision>> {
+  if (decisions !== null) return decisions;
+  decisionsLoading ??= jevDecisionsItem.getValue().then((stored) => {
+    decisions ??= new Map(Object.entries(stored));
+    return decisions;
+  });
+  return decisionsLoading;
+}
+
+async function storeDecisions(map: Map<string, JevDecision>): Promise<void> {
+  if (map.size > DECISIONS_CAP) {
+    const oldest = [...map.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, map.size - DECISIONS_CAP);
+    for (const [key] of oldest) map.delete(key);
+  }
+  await jevDecisionsItem.setValue(Object.fromEntries(map));
+}
+
+export interface CommentToClassify {
+  readonly anchor: string;
+  readonly author: string;
+  readonly bot: boolean;
+  readonly body: string;
+}
+
+export interface ThreadToClassify {
+  readonly itemId: string;
+  readonly path?: string;
+  readonly comments: readonly { readonly author: string; readonly body: string }[];
+}
+
+function commentHash(comment: CommentToClassify): string {
+  return `c:${textHash(`${comment.author}\n${comment.bot ? 1 : 0}\n${comment.body}`)}`;
+}
+
+function threadHash(thread: ThreadToClassify): string {
+  return `t:${textHash(thread.comments.map((comment) => `${comment.author}\n${comment.body}`).join('\n\u0000'))}`;
+}
+
+/** Jev's decisions as the current pass can use them: lanes by anchor, thread state by item id. */
+export interface JevDecisions {
+  readonly lanes: ReadonlyMap<string, CommentLane>;
+  readonly done: ReadonlyMap<string, AddressedEvidence>;
+}
+
+const NO_DECISIONS: JevDecisions = { lanes: new Map(), done: new Map() };
+
+/**
+ * What Jev has already said about these comments and threads (from the cache,
+ * synchronously when it is loaded), and a request for whatever it has not.
+ * `onProgress` runs when new answers land, so the pass re-applies with them.
+ */
+export function jevDecisionsFor(settings: GeldSettings, comments: readonly CommentToClassify[], threads: readonly ThreadToClassify[], onProgress: () => void): JevDecisions {
+  if (!settings.aiEnabled || !settings.aiJev) return NO_DECISIONS;
+  const cache = decisions;
+  if (cache === null) {
+    void loadDecisions().then(onProgress);
+    return NO_DECISIONS;
+  }
+  const lanes = new Map<string, CommentLane>();
+  const done = new Map<string, AddressedEvidence>();
+  const missingComments: Array<{ readonly hash: string; readonly comment: CommentToClassify }> = [];
+  const missingThreads: Array<{ readonly hash: string; readonly thread: ThreadToClassify }> = [];
+  for (const comment of comments) {
+    const hash = commentHash(comment);
+    const known = cache.get(hash);
+    if (known?.lane !== undefined && isCommentLane(known.lane)) lanes.set(comment.anchor, known.lane);
+    else if (known === undefined && !asked.has(hash)) missingComments.push({ hash, comment });
+  }
+  for (const thread of threads) {
+    if (thread.comments.length < 2) continue;
+    const hash = threadHash(thread);
+    const known = cache.get(hash);
+    if (known?.done !== undefined) done.set(thread.itemId, { verdict: known.done.verdict, evidence: [`Jev: ${Math.round(known.done.probability * 100)}% addressed`] });
+    else if (known === undefined && !asked.has(hash)) missingThreads.push({ hash, thread });
+  }
+  if (missingComments.length + missingThreads.length > 0) void classify(settings, missingComments, missingThreads, onProgress);
+  return { lanes, done };
+}
+
+async function classify(
+  settings: GeldSettings,
+  comments: ReadonlyArray<{ readonly hash: string; readonly comment: CommentToClassify }>,
+  threads: ReadonlyArray<{ readonly hash: string; readonly thread: ThreadToClassify }>,
+  onProgress: () => void,
+): Promise<void> {
+  for (const entry of comments) asked.add(entry.hash);
+  for (const entry of threads) asked.add(entry.hash);
+  const route = await jevRoute(settings);
+  if (route === null) return;
+  const laneInputs: LaneInput[] = comments.map((entry) => ({ id: entry.hash, author: entry.comment.author, bot: entry.comment.bot, text: entry.comment.body }));
+  const threadInputs: ThreadInput[] = threads.map((entry) => {
+    const [first, ...replies] = entry.thread.comments;
+    return { id: entry.hash, ...(entry.thread.path === undefined ? {} : { path: entry.thread.path }), first: { author: first?.author ?? '', text: first?.body ?? '' }, replies: replies.map((reply) => ({ author: reply.author, text: reply.body })) };
+  });
+  const cache = await loadDecisions();
+  let landed = false;
+  for (const request of classificationRequests(route.model, laneInputs, threadInputs)) {
+    const answers = await evaluate(route, request);
+    if (answers === null) continue;
+    const at = Date.now();
+    for (const [hash, lane] of lanesFrom(answers)) cache.set(hash, { lane, at });
+    for (const [hash, state] of doneFrom(answers)) cache.set(hash, { done: state, at });
+    // A lane Jev was unsure about is remembered as asked (no lane), so the deterministic answer stands without re-asking.
+    for (const key of Object.keys(request.questions)) {
+      const hash = key.replace(/^(lane|done):/, '');
+      if (!cache.has(hash)) cache.set(hash, { at });
+    }
+    landed = true;
+  }
+  if (!landed) return;
+  await storeDecisions(cache);
+  onProgress();
+}
+
+/** Items whose threads Jev judged addressed (or not) get that verdict, the way an LLM verdict would. */
+export function withJevDone(meta: GeldPrMeta, done: ReadonlyMap<string, AddressedEvidence>): GeldPrMeta {
+  if (done.size === 0) return meta;
+  const neutral = { changedPaths: [], manualDoneIds: new Set<string>(), humanReplied: false };
+  return { ...meta, items: meta.items.map((item) => (done.has(item.id) ? applyAddressed(item, neutral, done.get(item.id)) : item)) };
 }

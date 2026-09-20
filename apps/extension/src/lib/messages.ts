@@ -301,7 +301,7 @@ export function isAiEvaluateRequest(value: unknown): value is AiEvaluateRequest 
     typeof value.apiKey === 'string' &&
     isRecord(value.request) &&
     typeof value.request.model === 'string' &&
-    typeof value.request.state === 'string' &&
+    (typeof value.request.state === 'string' || isRecord(value.request.state) || Array.isArray(value.request.state)) &&
     isRecord(value.request.questions)
   );
 }

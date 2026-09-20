@@ -28,9 +28,12 @@ export type JevAnswer =
   | { readonly type: 'choice'; readonly choice: string; readonly confidence: number; readonly probabilities: Readonly<Record<string, number>> }
   | { readonly type: 'score'; readonly score: number; readonly confidence: number; readonly probabilities: Readonly<Record<string, number>> };
 
+/** The state Jev evaluates: a string, or (preferred) a structured object whose fields the questions name in backticks. */
+export type JevState = string | Readonly<Record<string, unknown>> | readonly unknown[];
+
 export interface JevRequest {
   readonly model: string;
-  readonly state: string;
+  readonly state: JevState;
   readonly questions: Readonly<Record<string, JevQuestion>>;
 }
 

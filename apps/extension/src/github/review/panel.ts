@@ -9,11 +9,11 @@
  * itself is hidden — its content is this.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, Preview, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } from '@geld/review';
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -107,6 +107,8 @@ export interface ReviewEntry {
   readonly replies: number;
   /** The emoji the signed-in user reacted with, when they did. */
   readonly myReaction: string | null;
+  /** What kind of comment Jev judged this to be, when it was asked. */
+  readonly lane?: CommentLane;
 }
 
 export interface PanelModel {
@@ -1187,7 +1189,9 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
           });
           return status;
         })()
-      : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
+      : entry.lane === 'finding'
+        ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': 'finding', title: 'A finding to act on', role: 'img', 'aria-label': 'A finding to act on' }, [icon(ICON_ALERT)])
+        : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
   const toggle = (): void => handlers.onToggleSub(entry.anchor);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
   if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
