@@ -2047,18 +2047,31 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   border-top: 1px solid var(--geld-review-border-muted);
 }
 
+/*
+ * Three levels, told apart by surface and type rather than by indent (every level keeps the same glyph column):
+ *  - a section heading ("2 rounds to review", "Other activity") is a muted band with semibold text - a divider that
+ *    happens to fold, not a row;
+ *  - a row is white at 14px;
+ *  - what opens under a row is held to it by a 2px accent rail along the left edge of the row and everything
+ *    beneath it, and its own headings ("1 unresolved thread", "3 bot comments") are small-caps labels.
+ */
+.geld-review__group {
+  background: var(--geld-review-subtle);
+}
+
 .geld-review__group-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 16px;
   border: 0;
   background: none;
   color: var(--fgColor-default, var(--color-fg-default));
   font: inherit;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
@@ -2090,6 +2103,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 .geld-review__row:hover,
 .geld-review__row[data-open] {
   background: var(--geld-review-subtle);
+}
+
+/* The rail: the open row and what it opened share one left edge, so the nested list reads as the row's. */
+.geld-review__rows > .geld-review__row[data-open],
+.geld-review__rows > .geld-review__slot {
+  box-shadow: inset 2px 0 0 var(--geld-review-accent);
 }
 
 /* ---- tones: a row that has settled wears its colour ------------------------
@@ -2911,9 +2930,18 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   gap: 10px;
   padding: 8px 16px 4px 16px;
   color: var(--geld-review-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
+
+/* The glyph keeps its size while the words shrink; a heading that opens (commits, archived previews) speaks the same way. */
+.geld-review__subhead-glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
 
 /* The round's other bot comments: a heading that opens, after the threads, in the sections' own voice. */
 .geld-review__notes {
@@ -2930,9 +2958,11 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: none;
   color: var(--geld-review-muted);
   font: inherit;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-align: left;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
