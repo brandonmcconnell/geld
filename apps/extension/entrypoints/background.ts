@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
-import { completeChat, listModels } from '@geld/review';
+import { completeChat, evaluateJev, listModels, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
@@ -14,6 +14,7 @@ import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
   isAiCompleteRequest,
+  isAiEvaluateRequest,
   isAiModelsRequest,
   isCatalogCheckMessage,
   isColorSchemeMessage,
@@ -375,6 +376,15 @@ export default defineBackground(() => {
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
         return listModels(fetch, message.baseUrl, message.apiKey);
+      })().then(sendResponse);
+      return true;
+    }
+    if (isAiEvaluateRequest(message)) {
+      void (async () => {
+        const denied = await hasGatewayPermission(message.baseUrl);
+        if (denied !== null) return { ok: false as const, reason: denied };
+        if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
+        return evaluateJev({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
       })().then(sendResponse);
       return true;
     }

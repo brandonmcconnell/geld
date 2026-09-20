@@ -1,0 +1,127 @@
+import type { JevAnswer, JevQuestion, JevRequest } from './jev';
+import type { ConsolidateInputItem } from './prompts';
+
+/**
+ * The decisions Jev takes in front of the prose model. Each builder turns
+ * what we know into one System One request - shared state plus typed
+ * questions - and a reader turns the answers back into something the
+ * pipeline can branch on. Nothing here writes text.
+ */
+
+/** A pair of items Jev is asked about, keyed the way the question is. */
+export interface ItemPair {
+  readonly a: string;
+  readonly b: string;
+}
+
+export function pairKey(a: string, b: string): string {
+  return `same:${a}:${b}`;
+}
+
+const EXCERPT_CHARS = 480;
+/** Jev reads 32k tokens; keep well under it so a busy round still fits in one call. */
+const STATE_CHARS = 60_000;
+/** Above this many pending items only same-file pairs are asked; below it, every pair. */
+const ALL_PAIRS_UP_TO = 6;
+const MAX_PAIRS = 60;
+
+function excerptOf(item: ConsolidateInputItem): string {
+  const text = item.excerpts.join(' / ').replace(/\s+/g, ' ').trim();
+  return text.length > EXCERPT_CHARS ? `${text.slice(0, EXCERPT_CHARS - 1)}…` : text;
+}
+
+/**
+ * Which pending items might be reporting the same problem? Two bots often
+ * flag one bug from two lines of the same file, or two files of one change.
+ * Every pair is asked when the round is small; larger rounds ask about pairs
+ * that share a file (a cross-file duplicate is rare enough to leave to the
+ * prose model's own judgement).
+ */
+export function candidatePairs(items: readonly ConsolidateInputItem[]): readonly ItemPair[] {
+  const pairs: ItemPair[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    for (let other = index + 1; other < items.length; other += 1) {
+      const a = items[index];
+      const b = items[other];
+      if (a === undefined || b === undefined) continue;
+      if (items.length > ALL_PAIRS_UP_TO && (a.path === undefined || a.path !== b.path)) continue;
+      pairs.push({ a: a.id, b: b.id });
+      if (pairs.length >= MAX_PAIRS) return pairs;
+    }
+  }
+  return pairs;
+}
+
+/**
+ * One request: the items as numbered state, one yes/no question per
+ * candidate pair. Null when there is nothing to ask.
+ */
+export function sameProblemRequest(model: string, items: readonly ConsolidateInputItem[]): JevRequest | null {
+  const pairs = candidatePairs(items);
+  if (pairs.length === 0) return null;
+  const lines: string[] = ['Code-review findings on one pull request, one per line, each with its id, file and what the reporters said.'];
+  for (const item of items) {
+    const where = item.path === undefined ? '' : ` (${item.path}${item.line === undefined ? '' : `:${item.line}`})`;
+    lines.push(`[${item.id}]${where} ${item.title} — ${excerptOf(item)}`);
+  }
+  let state = lines.join('\n');
+  if (state.length > STATE_CHARS) state = `${state.slice(0, STATE_CHARS - 1)}…`;
+  const questions: Record<string, JevQuestion> = {};
+  for (const pair of pairs) {
+    questions[pairKey(pair.a, pair.b)] = {
+      type: 'noul',
+      instructions: `Do findings [${pair.a}] and [${pair.b}] report the same underlying problem, such that a reader would want to see them as one item?`,
+      criteria: {
+        true: 'Same root cause or the same requested change, even if worded differently or pointing at neighbouring lines.',
+        false: 'Different problems, or the same file but unrelated concerns.',
+      },
+    };
+  }
+  return { model, state, questions };
+}
+
+/** The probability above which a pair counts as the same problem. */
+export const SAME_PROBLEM_THRESHOLD = 0.7;
+
+/**
+ * Items joined by Jev's "yes" answers, as groups of ids (size ≥ 2). Items in
+ * no group are singletons: they report their own problem and need no
+ * consolidation with anything.
+ */
+export function sameProblemGroups(items: readonly ConsolidateInputItem[], answers: Readonly<Record<string, JevAnswer>>, threshold = SAME_PROBLEM_THRESHOLD): readonly (readonly string[])[] {
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    let current = id;
+    while ((parent.get(current) ?? current) !== current) current = parent.get(current) ?? current;
+    return current;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (const item of items) parent.set(item.id, item.id);
+  for (const pair of candidatePairs(items)) {
+    const answer = answers[pairKey(pair.a, pair.b)];
+    if (answer?.type === 'noul' && answer.noul >= threshold) union(pair.a, pair.b);
+  }
+  const groups = new Map<string, string[]>();
+  for (const item of items) {
+    const root = find(item.id);
+    const group = groups.get(root) ?? [];
+    group.push(item.id);
+    groups.set(root, group);
+  }
+  return [...groups.values()].filter((group) => group.length >= 2);
+}
+
+/**
+ * The pending items narrowed by Jev's answers: only items with a partner go
+ * to the prose model, each told which items report its problem, so it can
+ * give them one title and say so. Singletons keep the reporter's wording.
+ */
+export function withSameProblem(items: readonly ConsolidateInputItem[], groups: readonly (readonly string[])[]): readonly ConsolidateInputItem[] {
+  const partners = new Map<string, readonly string[]>();
+  for (const group of groups) for (const id of group) partners.set(id, group.filter((other) => other !== id));
+  return items.filter((item) => partners.has(item.id)).map((item) => ({ ...item, sameProblemAs: partners.get(item.id) ?? [] }));
+}

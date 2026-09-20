@@ -115,10 +115,23 @@ export interface GeldSettings {
    * (Bugbot, Greptile, Copilot, …) are always recognised.
    */
   readonly reviewBots: readonly string[];
+  /**
+   * The master switch for every AI feature. Off, the gateway settings below
+   * stay as they are and nothing is ever requested; on, they take effect once
+   * a gateway URL, key and model are all set (otherwise it behaves as off).
+   */
+  readonly aiEnabled: boolean;
   /** OpenAI-compatible gateway origin for optional in-browser rewrites. Empty means unset. */
   readonly aiBaseUrl: string;
-  /** Model id at that gateway. Empty until the user picks one from `/v1/models`. */
+  /** Model id at that gateway for the prose work (consolidation, TL;DR, fixes). Never an evaluation model. */
   readonly aiModel: string;
+  /**
+   * Use TypeSafe's Jev (a System One evaluation model: typed, probabilistic
+   * answers, no prose) for the decisions in front of the prose model - which
+   * items report the same problem, what a folded comment is. Through the
+   * gateway when it offers Jev, else with the user's own TypeSafe key.
+   */
+  readonly aiJev: boolean;
   /**
    * Suggested fixes on review items. `bots`: show the fix a review bot
    * attached (a ```suggestion block). `ai`: only fixes the consolidation
@@ -180,10 +193,27 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   reviewGrouping: 'type',
   collapseDescription: false,
   reviewBots: [],
+  aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
+  aiJev: false,
   suggestedFixes: 'bots',
 };
+
+/**
+ * A gateway URL as the user pasted it, reduced to its origin-plus-path base:
+ * trailing slashes and a versioned tail (`/v1`, `/v2`, or the `/typesafe`
+ * compatibility prefix) come off, since every request adds its own
+ * `/v1/...` path. `https://ai-gateway.vercel.sh/v1/` and
+ * `https://openrouter.ai/api/v1` both become usable bases.
+ */
+export function normalizeAiBaseUrl(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/(?:v\d+|typesafe)$/i, '')
+    .replace(/\/+$/, '');
+}
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
 
@@ -386,8 +416,10 @@ export function normalizeSettings(value: unknown): GeldSettings {
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
-    aiBaseUrl: typeof record.aiBaseUrl === 'string' ? record.aiBaseUrl.trim() : DEFAULT_SETTINGS.aiBaseUrl,
+    aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
+    aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
+    aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
   };
 }

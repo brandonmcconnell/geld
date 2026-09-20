@@ -115,6 +115,13 @@ export interface TextField extends FieldBase {
   readonly key: TextSettingKey;
   readonly placeholder: string;
   readonly autocomplete?: string;
+  /** Ready-made values offered under the field, applied with one click. */
+  readonly presets?: readonly TextPreset[];
+}
+
+export interface TextPreset {
+  readonly label: string;
+  readonly value: string;
 }
 
 export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'reset';
@@ -453,24 +460,47 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         ],
       },
       {
+        kind: 'toggle',
+        key: 'aiEnabled',
+        label: 'AI features',
+        description:
+          'Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, nothing below is used and no request is made; on, it takes effect once a gateway URL, key and model are set.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
         kind: 'text',
         key: 'aiBaseUrl',
         label: 'AI gateway URL',
         description:
-          'Optional OpenAI-compatible origin (Vercel AI Gateway, OpenAI, or your own) used to consolidate bot findings and write the TL;DR when the Action did not. The key never leaves this device (`storage.local`, never the gist) and no request is made until you set one.',
+          'An OpenAI-compatible base URL: Vercel AI Gateway, OpenRouter, OpenAI, or your own. Paste it with or without the `/v1`; requests add their own path. The key stays on this device (`storage.local`, never the gist).',
         popup: false,
         placeholder: 'https://ai-gateway.vercel.sh',
         autocomplete: 'off',
         surfaces: ['extension'],
+        presets: [
+          { label: 'Vercel AI Gateway', value: 'https://ai-gateway.vercel.sh' },
+          { label: 'OpenRouter', value: 'https://openrouter.ai/api' },
+          { label: 'OpenAI', value: 'https://api.openai.com' },
+        ],
       },
       {
         kind: 'text',
         key: 'aiModel',
         label: 'AI model',
-        description: 'Model id from the gateway’s `/v1/models` list. Empty until you pick one.',
+        description: 'The model that writes: consolidated findings, the TL;DR, proposed fixes. Listed from the gateway once a URL and key are saved; evaluation models such as Jev are not offered here.',
         popup: false,
-        placeholder: 'openai/gpt-4.1-mini',
+        placeholder: 'anthropic/claude-sonnet-4.5',
         autocomplete: 'off',
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
+        key: 'aiJev',
+        label: 'Use Jev for decisions',
+        description:
+          'TypeSafe’s Jev answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks Jev which findings report the same problem before the AI model rewrites them; off, the AI model decides that itself.',
+        popup: false,
         surfaces: ['extension'],
       },
     ],

@@ -19,7 +19,7 @@ import {
   isGroupEnabled,
   choiceFields,
   listFields,
-  textFields,
+  normalizeAiBaseUrl,
   normalizeHost,
   parsePatternList,
   actionsFor,
@@ -33,16 +33,17 @@ import {
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
-import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, ToggleField } from '@geld/core';
+import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, TextField, ToggleField } from '@geld/core';
 import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
 import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
-import { requestGatewayPermission } from '../../src/lib/ai-gateway';
+import { hasGatewayPermission, requestGatewayPermission } from '../../src/lib/ai-gateway';
 import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
-import { aiKeyItem } from '../../src/lib/local-state';
+import { aiGatewayItem, aiKeyItem, jevKeyItem } from '../../src/lib/local-state';
+import { isEvaluationModel, jevModelIn, TYPESAFE_API } from '@geld/review';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
@@ -601,152 +602,373 @@ async function main(): Promise<void> {
     authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
   });
 
-  /* Experiments — today the pull request conversation digest: panel, timeline, extra bots, AI gateway. */
+  /* Experiments — the pull request conversation digest: panel, timeline, extra bots, and the AI that can write for it. */
   applySchemaCopy('experiments');
   const reviewSection = sections.find((candidate) => candidate.id === 'experiments');
-  const reviewHost = requireElement('review-rows', HTMLDivElement);
+  const reviewStack = requireElement('review-stack', HTMLDivElement);
   const reviewSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
-  toggleFields(reviewSection?.fields ?? []).forEach((field, index) => {
-    if (index > 0) reviewHost.append(el('hr', 'options__divider'));
+  /** One block per field, in the schema's order, so every separator and every gap is the same one. */
+  const block = (children: ReadonlyArray<Node>, modifier = ''): HTMLDivElement => {
+    const node = el('div', `options__block${modifier === '' ? '' : ` options__block--${modifier}`}`, children);
+    reviewStack.append(node);
+    return node;
+  };
+  const fieldHead = (field: { readonly key: string; readonly label: string; readonly description: string }): { readonly head: HTMLDivElement; readonly label: HTMLSpanElement; readonly help: HTMLParagraphElement } => {
     const label = el('span', 'geld-label', [field.label]);
     label.id = `${field.key}-label`;
     const help = el('p', 'geld-help', richText(field.description));
     help.id = `${field.key}-help`;
+    return { head: el('div', 'options__field-head', [label, help]), label, help };
+  };
+  const toggleBlock = (field: ToggleField, extra: ReadonlyArray<Node> = []): HTMLDivElement => {
+    const { head, label, help } = fieldHead(field);
     const button = switchButton(field.key, settings[field.key], label.id, help.id);
-    reviewHost.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
     const bound = bindSwitch(button, settings[field.key], async (value) => {
       settings = await settingsItem.patch({ [field.key]: value });
       generalStatus('Saved', 'success');
     });
     reviewSwitches.push({ field, set: bound.set });
-  });
-  const reviewChoiceHost = requireElement('review-choices', HTMLDivElement);
-  for (const field of choiceFields(reviewSection?.fields ?? [])) {
-    const label = el('span', 'geld-label', [field.label]);
-    label.id = `${field.key}-label`;
-    const help = el('p', 'geld-help', richText(field.description));
-    help.id = `${field.key}-help`;
-    const note = el('p', 'options__choice-note');
-    const group = el('div', 'options__segments');
-    group.setAttribute('role', 'radiogroup');
-    group.setAttribute('aria-labelledby', label.id);
-    const buttons = new Map<string, HTMLButtonElement>();
-    const show = (value: GeldSettings): void => {
-      const current = value[field.key];
-      for (const [option, button] of buttons) {
-        button.setAttribute('aria-checked', String(option === current));
-        button.setAttribute('aria-pressed', String(option === current));
+    return block([el('div', 'geld-row options__field-row', [head, button]), ...extra]);
+  };
+  let reviewBotsArea: HTMLTextAreaElement | null = null;
+  const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev']);
+  let aiRendered = false;
+  for (const field of reviewSection?.fields ?? []) {
+    if ('key' in field && aiFieldKeys.has(field.key)) {
+      if (!aiRendered) {
+        aiRendered = true;
+        await renderAiFields();
       }
-      note.textContent = field.options.find((option) => option.value === current)?.description ?? '';
-    };
-    for (const option of field.options) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'geld-button geld-button--small';
-      button.setAttribute('role', 'radio');
-      button.textContent = option.label;
-      button.title = option.description;
-      button.addEventListener('click', async () => {
-        settings = await settingsItem.patch({ [field.key]: option.value });
-        show(settings);
+      continue;
+    }
+    if (field.kind === 'toggle') {
+      toggleBlock(field);
+    } else if (field.kind === 'choice') {
+      const { head, label } = fieldHead(field);
+      const note = el('p', 'options__choice-note');
+      const group = el('div', 'options__segments');
+      group.setAttribute('role', 'radiogroup');
+      group.setAttribute('aria-labelledby', label.id);
+      const buttons = new Map<string, HTMLButtonElement>();
+      const show = (value: GeldSettings): void => {
+        const current = value[field.key];
+        for (const [option, button] of buttons) {
+          button.setAttribute('aria-checked', String(option === current));
+          button.setAttribute('aria-pressed', String(option === current));
+        }
+        note.textContent = field.options.find((option) => option.value === current)?.description ?? '';
+      };
+      for (const option of field.options) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'geld-button geld-button--small';
+        button.setAttribute('role', 'radio');
+        button.textContent = option.label;
+        button.title = option.description;
+        button.addEventListener('click', async () => {
+          settings = await settingsItem.patch({ [field.key]: option.value });
+          show(settings);
+        });
+        buttons.set(option.value, button);
+        group.append(button);
+      }
+      show(settings);
+      choiceSetters.push(show);
+      block([el('div', 'geld-row options__field-row', [head, group]), note]);
+    } else if (field.kind === 'list' && field.key === 'reviewBots') {
+      const { head } = fieldHead(field);
+      const area = el('textarea', 'geld-textarea geld-code options__textarea');
+      area.id = 'review-bots';
+      area.rows = field.rows;
+      area.spellcheck = false;
+      area.placeholder = field.placeholder;
+      area.setAttribute('aria-label', field.label);
+      area.value = settings.reviewBots.join('\n');
+      const statusEl = el('span', 'geld-status');
+      statusEl.setAttribute('aria-live', 'polite');
+      const status = statusReporter(statusEl);
+      const save = el('button', 'geld-button geld-button--primary', [field.saveLabel]);
+      save.type = 'button';
+      area.addEventListener('input', () => {
+        status(area.value.trim() !== settings.reviewBots.join('\n') ? 'Unsaved changes' : '', 'neutral');
       });
-      buttons.set(option.value, button);
-      group.append(button);
+      save.addEventListener('click', async () => {
+        const reviewBots = parsePatternList(area.value);
+        const problem = reviewBots.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+        if (problem !== null) {
+          status(problem, 'error');
+          return;
+        }
+        settings = await settingsItem.patch({ reviewBots });
+        area.value = reviewBots.join('\n');
+        status(`Saved ${pluralize(reviewBots.length, 'bot', 'bots')}`, 'success');
+      });
+      reviewBotsArea = area;
+      block([head, area, el('div', 'geld-row options__actions', [statusEl, save])]);
     }
-    show(settings);
-    choiceSetters.push(show);
-    reviewChoiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
   }
-  const reviewBotsStatus = statusReporter(requireElement('review-bots-status', HTMLSpanElement));
-  const reviewBotsArea = requireElement('review-bots', HTMLTextAreaElement);
-  reviewBotsArea.value = settings.reviewBots.join('\n');
-  reviewBotsArea.addEventListener('input', () => {
-    reviewBotsStatus(reviewBotsArea.value.trim() !== settings.reviewBots.join('\n') ? 'Unsaved changes' : '', 'neutral');
-  });
-  requireElement('save-review-bots', HTMLButtonElement).addEventListener('click', async () => {
-    const reviewBots = parsePatternList(reviewBotsArea.value);
-    const problem = reviewBots.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
-    if (problem !== null) {
-      reviewBotsStatus(problem, 'error');
-      return;
-    }
-    settings = await settingsItem.patch({ reviewBots });
-    reviewBotsArea.value = reviewBots.join('\n');
-    reviewBotsStatus(`Saved ${pluralize(reviewBots.length, 'bot', 'bots')}`, 'success');
-  });
-  const reviewAiHost = requireElement('review-ai', HTMLDivElement);
-  const aiKeyStatus = statusReporter(requireElement('ai-key-status', HTMLSpanElement));
-  const aiKeyInput = requireElement('ai-key', HTMLInputElement);
-  aiKeyInput.value = await aiKeyItem.getValue();
-  requireElement('save-ai-key', HTMLButtonElement).addEventListener('click', async () => {
-    await aiKeyItem.setValue(aiKeyInput.value.trim());
-    aiKeyStatus(aiKeyInput.value.trim() === '' ? 'Cleared. No AI calls will be made.' : 'Saved on this device.', 'success');
-  });
-  let aiModelInput: HTMLInputElement | null = null;
-  for (const field of textFields(reviewSection?.fields ?? [])) {
-    const label = el('label', 'geld-label', [field.label]);
-    label.htmlFor = field.key;
-    const help = el('p', 'geld-help', richText(field.description));
-    const input = el('input', 'geld-input geld-code options__input options__input--grow');
-    input.id = field.key;
-    input.type = 'url';
-    if (field.key === 'aiModel') input.type = 'text';
-    input.spellcheck = false;
-    input.placeholder = field.placeholder;
-    input.value = settings[field.key];
-    if (field.autocomplete !== undefined) input.setAttribute('autocomplete', field.autocomplete);
-    const statusEl = el('span', 'geld-status');
-    const status = statusReporter(statusEl);
-    const save = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
-    save.type = 'button';
-    save.addEventListener('click', async () => {
-      const value = input.value.trim();
-      if (field.key === 'aiBaseUrl' && value !== '') {
+
+  /**
+   * The AI fields, in the order they are needed: the switch, the gateway (URL
+   * with one-click presets, then its key), the writing model (listed from the
+   * gateway as soon as URL and key are there, never an evaluation model), and
+   * Jev with its own key only when the gateway does not offer it.
+   */
+  async function renderAiFields(): Promise<void> {
+    const fields = reviewSection?.fields ?? [];
+    const enabledField = fields.find((field): field is ToggleField => field.kind === 'toggle' && field.key === 'aiEnabled');
+    const urlField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiBaseUrl');
+    const modelField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiModel');
+    const jevField = fields.find((field): field is ToggleField => field.kind === 'toggle' && field.key === 'aiJev');
+    if (enabledField === undefined || urlField === undefined || modelField === undefined || jevField === undefined) return;
+
+    toggleBlock(enabledField);
+
+    /* Gateway URL: saved on Save or on choosing a preset; the model list follows after a pause. */
+    const urlHead = fieldHead(urlField);
+    const urlInput = el('input', 'geld-input geld-code options__input options__input--grow');
+    urlInput.id = 'aiBaseUrl';
+    urlInput.type = 'url';
+    urlInput.spellcheck = false;
+    urlInput.placeholder = urlField.placeholder;
+    urlInput.value = settings.aiBaseUrl;
+    urlInput.setAttribute('autocomplete', urlField.autocomplete ?? 'off');
+    const urlStatusEl = el('span', 'geld-status');
+    const urlStatus = statusReporter(urlStatusEl);
+    const urlSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
+    urlSave.type = 'button';
+    const presets = el('div', 'options__presets');
+    presets.setAttribute('aria-label', 'Gateway presets');
+    const saveUrl = async (raw: string): Promise<boolean> => {
+      const value = normalizeAiBaseUrl(raw);
+      if (value !== '') {
         const denied = await requestGatewayPermission(value);
         if (denied !== null) {
-          status(denied, 'error');
+          urlStatus(denied, 'error');
+          return false;
+        }
+      }
+      settings = await settingsItem.patch({ aiBaseUrl: value });
+      urlInput.value = settings.aiBaseUrl;
+      urlStatus(value === '' ? 'Cleared' : 'Saved', 'success');
+      markPreset();
+      void refreshModels();
+      return true;
+    };
+    const markPreset = (): void => {
+      for (const button of presets.querySelectorAll<HTMLButtonElement>('button')) button.setAttribute('aria-pressed', String(button.dataset.value === settings.aiBaseUrl));
+    };
+    for (const preset of urlField.presets ?? []) {
+      const button = el('button', 'options__preset', [preset.label]);
+      button.type = 'button';
+      button.dataset.value = preset.value;
+      button.title = preset.value;
+      button.addEventListener('click', () => void saveUrl(preset.value));
+      presets.append(button);
+    }
+    markPreset();
+    urlSave.addEventListener('click', () => void saveUrl(urlInput.value));
+    let urlTimer: ReturnType<typeof setTimeout> | null = null;
+    urlInput.addEventListener('input', () => {
+      // A pasted URL is saved by itself once it is a URL and typing has paused; no need to reach for Save.
+      if (urlTimer !== null) clearTimeout(urlTimer);
+      const value = normalizeAiBaseUrl(urlInput.value);
+      if (value === settings.aiBaseUrl || (value !== '' && !/^https:\/\/[^\s/]+/i.test(value))) return;
+      urlTimer = setTimeout(() => void saveUrl(urlInput.value), 900);
+    });
+    block([urlHead.head, urlInput, presets, el('div', 'geld-row options__actions', [urlStatusEl, urlSave])]);
+
+    /* Gateway key: local only; saving it loads the models. */
+    const keyLabel = el('label', 'geld-label', ['AI gateway key']);
+    keyLabel.htmlFor = 'ai-key';
+    const keyHelp = el('p', 'geld-help', ['Stored only on this device; never sent to geld.sh or written to the gist. Used for the gateway above, and only when AI features are on.']);
+    const keyInput = el('input', 'geld-input geld-code options__input options__input--grow');
+    keyInput.id = 'ai-key';
+    keyInput.type = 'password';
+    keyInput.spellcheck = false;
+    keyInput.placeholder = 'sk-…';
+    keyInput.setAttribute('autocomplete', 'off');
+    keyInput.setAttribute('aria-label', 'AI gateway key');
+    keyInput.value = await aiKeyItem.getValue();
+    const keyStatusEl = el('span', 'geld-status');
+    keyStatusEl.setAttribute('aria-live', 'polite');
+    const keyStatus = statusReporter(keyStatusEl);
+    const keySave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save key']);
+    keySave.type = 'button';
+    keySave.addEventListener('click', async () => {
+      await aiKeyItem.setValue(keyInput.value.trim());
+      keyStatus(keyInput.value.trim() === '' ? 'Cleared. No AI calls will be made.' : 'Saved on this device.', 'success');
+      void refreshModels();
+    });
+    block([el('div', 'options__field-head', [keyLabel, keyHelp]), keyInput, el('div', 'geld-row options__actions', [keyStatusEl, keySave])]);
+
+    /* Writing model: a list from the gateway, disabled with a reason until URL and key are both there. */
+    const modelHead = fieldHead(modelField);
+    const modelSelect = el('select', 'geld-input geld-code options__input options__input--grow');
+    modelSelect.id = 'aiModel';
+    modelSelect.setAttribute('aria-labelledby', modelHead.label.id);
+    const modelStatusEl = el('span', 'geld-status');
+    modelStatusEl.setAttribute('aria-live', 'polite');
+    const modelStatus = statusReporter(modelStatusEl);
+    const modelSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
+    modelSave.type = 'button';
+    const modelGate = el('p', 'options__gate', ['Save a gateway URL and key first; the models it offers are listed here.']);
+    modelGate.setAttribute('role', 'status');
+    const modelControls = el('div', 'options__gated', [modelSelect, el('div', 'geld-row options__actions', [modelStatusEl, modelSave])]);
+    const setModelsEnabled = (enabled: boolean, reason: string): void => {
+      modelSelect.disabled = !enabled;
+      modelSave.disabled = !enabled;
+      modelControls.toggleAttribute('data-disabled', !enabled);
+      modelGate.textContent = reason;
+      modelGate.hidden = enabled;
+    };
+    const fillModels = (ids: readonly string[]): void => {
+      modelSelect.replaceChildren();
+      const writers = ids.filter((id) => !isEvaluationModel(id));
+      const placeholder = el('option', '', [writers.length === 0 ? 'No models listed' : 'Choose a model…']);
+      placeholder.value = '';
+      modelSelect.append(placeholder);
+      if (settings.aiModel !== '' && !writers.includes(settings.aiModel) && !isEvaluationModel(settings.aiModel)) writers.unshift(settings.aiModel);
+      for (const id of writers) modelSelect.append(el('option', '', [id]));
+      modelSelect.value = writers.includes(settings.aiModel) ? settings.aiModel : '';
+    };
+    modelSave.addEventListener('click', async () => {
+      const value = modelSelect.value;
+      if (value === '') {
+        modelStatus('Choose a model.', 'error');
+        return;
+      }
+      settings = await settingsItem.patch({ aiModel: value });
+      modelStatus('Saved', 'success');
+    });
+    block([modelHead.head, modelGate, modelControls]);
+
+    /* Jev: through the gateway when it offers it, else with a TypeSafe key of the user's own. */
+    const jevNote = el('p', 'options__jev-note');
+    jevNote.setAttribute('role', 'status');
+    const jevKeyLabel = el('label', 'geld-label', ['TypeSafe API key']);
+    jevKeyLabel.htmlFor = 'jev-key';
+    const jevKeyInput = el('input', 'geld-input geld-code options__input options__input--grow');
+    jevKeyInput.id = 'jev-key';
+    jevKeyInput.type = 'password';
+    jevKeyInput.spellcheck = false;
+    jevKeyInput.placeholder = 'ts-…';
+    jevKeyInput.setAttribute('autocomplete', 'off');
+    jevKeyInput.value = await jevKeyItem.getValue();
+    const jevStatusEl = el('span', 'geld-status');
+    jevStatusEl.setAttribute('aria-live', 'polite');
+    const jevStatus = statusReporter(jevStatusEl);
+    const jevSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save key']);
+    jevSave.type = 'button';
+    jevSave.addEventListener('click', async () => {
+      const value = jevKeyInput.value.trim();
+      if (value !== '') {
+        const denied = await requestGatewayPermission(TYPESAFE_API);
+        if (denied !== null) {
+          jevStatus('Allow Geld to contact api.typesafe.ai to use your own key.', 'error');
           return;
         }
       }
-      settings = await settingsItem.patch({ [field.key]: value });
-      input.value = settings[field.key];
-      status('Saved', 'success');
+      await jevKeyItem.setValue(value);
+      jevStatus(value === '' ? 'Cleared' : 'Saved on this device.', 'success');
     });
-    reviewAiHost.append(el('div', 'options__text', [label, help, input, el('div', 'geld-row options__actions', [statusEl, save])]));
-    if (field.key === 'aiModel') aiModelInput = input;
+    const jevKeyBlock = el('div', 'options__gated options__jev-key', [el('div', 'options__field-head', [jevKeyLabel]), jevKeyInput, el('div', 'geld-row options__actions', [jevStatusEl, jevSave])]);
+    let ownKeyAnyway = jevKeyInput.value !== '';
+    const useOwnKey = el('button', 'options__link', ['Use one anyway']);
+    useOwnKey.type = 'button';
+    useOwnKey.addEventListener('click', () => {
+      ownKeyAnyway = true;
+      renderJevState();
+    });
+    /** What the gateway offers is only known once its models loaded; until then the note only explains. */
+    let gatewayJev: string | null | undefined;
+    const renderJevState = (): void => {
+      const on = settings.aiJev;
+      jevNote.replaceChildren();
+      delete jevNote.dataset.tone;
+      // The key field: open when the gateway lacks Jev and Jev is on (it is the only route), or on request;
+      // shown but closed as a hint when the gateway lacks Jev and Jev is off; hidden otherwise.
+      let show = ownKeyAnyway;
+      let open = ownKeyAnyway;
+      if (gatewayJev === undefined) {
+        jevNote.append('Whether your gateway offers Jev is checked when its models load.');
+      } else if (gatewayJev !== null) {
+        jevNote.append(`Jev is offered by your AI gateway (${gatewayJev}); no TypeSafe key is needed. `, useOwnKey);
+      } else {
+        jevNote.append(on ? 'Your AI gateway does not offer Jev. Add a TypeSafe API key to use it directly.' : 'Your AI gateway does not offer Jev; with Jev on, a TypeSafe API key is needed.');
+        if (on) jevNote.dataset.tone = 'error';
+        show = true;
+        open = open || on;
+      }
+      jevKeyBlock.hidden = !show;
+      jevKeyBlock.toggleAttribute('data-disabled', !open);
+      jevKeyInput.disabled = !open;
+      jevSave.disabled = !open;
+    };
+    toggleBlock(jevField, [jevNote, jevKeyBlock]);
+    reviewSwitches.push({ field: jevField, set: () => renderJevState() });
+
+    /** Fetch the gateway's models when URL and key are both there; gate the model field otherwise. */
+    let modelsRun = 0;
+    const refreshModels = async (): Promise<void> => {
+      const run = (modelsRun += 1);
+      const baseUrl = settings.aiBaseUrl;
+      const apiKey = (await aiKeyItem.getValue()).trim();
+      if (baseUrl === '' || apiKey === '') {
+        setModelsEnabled(false, baseUrl === '' ? 'Save a gateway URL and key first; the models it offers are listed here.' : 'Save the gateway key; the models it offers are listed here.');
+        gatewayJev = undefined;
+        renderJevState();
+        return;
+      }
+      // Contacting the gateway needs the browser's permission for its origin, which only a click here can ask for.
+      if ((await hasGatewayPermission(baseUrl)) !== null) {
+        // A cached list stays usable; the note only says the next refresh needs a click.
+        if (modelSelect.options.length <= 1) setModelsEnabled(false, '');
+        const allow = el('button', 'options__link', ['Allow Geld to contact the gateway']);
+        allow.type = 'button';
+        allow.addEventListener('click', async () => {
+          const denied = await requestGatewayPermission(baseUrl);
+          if (denied !== null) {
+            setModelsEnabled(false, denied);
+            return;
+          }
+          void refreshModels();
+        });
+        modelGate.replaceChildren(`Chrome has not yet allowed Geld to reach ${new URL(baseUrl).host}. `, allow);
+        modelGate.hidden = false;
+        renderJevState();
+        return;
+      }
+      setModelsEnabled(false, 'Loading models from the gateway…');
+      const message: AiModelsRequest = { type: 'geld:ai-models', baseUrl, apiKey };
+      const response: unknown = await browser.runtime.sendMessage(message);
+      if (run !== modelsRun) return;
+      if (!isAiModelsResponse(response) || !response.ok) {
+        setModelsEnabled(false, !isAiModelsResponse(response) || response.ok ? 'The gateway did not list its models.' : `The gateway did not list its models: ${response.reason}`);
+        gatewayJev = undefined;
+        renderJevState();
+        return;
+      }
+      const ids = response.models.map((model) => model.id);
+      gatewayJev = jevModelIn(response.models);
+      await aiGatewayItem.setValue({ baseUrl, models: ids, jevModel: gatewayJev, checkedAt: new Date().toISOString() });
+      fillModels(ids);
+      setModelsEnabled(true, '');
+      modelStatus(`${ids.filter((id) => !isEvaluationModel(id)).length} models`, 'success');
+      renderJevState();
+    };
+    const cached = await aiGatewayItem.getValue();
+    if (cached !== null && cached.baseUrl === settings.aiBaseUrl && settings.aiBaseUrl !== '') {
+      gatewayJev = cached.jevModel;
+      fillModels(cached.models);
+      setModelsEnabled(true, '');
+    } else {
+      fillModels([]);
+      setModelsEnabled(false, 'Save a gateway URL and key first; the models it offers are listed here.');
+    }
+    renderJevState();
+    void refreshModels();
   }
-  const loadModels = el('button', 'geld-button geld-button--small', ['Load models']);
-  loadModels.type = 'button';
-  const modelsStatusEl = el('span', 'geld-status');
-  const modelsStatus = statusReporter(modelsStatusEl);
-  loadModels.addEventListener('click', async () => {
-    const baseUrl = settings.aiBaseUrl;
-    const apiKey = aiKeyInput.value.trim() || (await aiKeyItem.getValue());
-    if (baseUrl === '' || apiKey === '') {
-      modelsStatus('Set a gateway URL and key first.', 'error');
-      return;
-    }
-    const denied = await requestGatewayPermission(baseUrl);
-    if (denied !== null) {
-      modelsStatus(denied, 'error');
-      return;
-    }
-    const message: AiModelsRequest = { type: 'geld:ai-models', baseUrl, apiKey };
-    modelsStatus('Loading…', 'neutral');
-    const response: unknown = await browser.runtime.sendMessage(message);
-    if (!isAiModelsResponse(response) || !response.ok) {
-      modelsStatus(!isAiModelsResponse(response) || response.ok ? 'Could not list models.' : response.reason, 'error');
-      return;
-    }
-    const list = el('datalist');
-    list.id = 'ai-model-list';
-    for (const model of response.models) list.append(el('option', '', [model.id]));
-    document.getElementById('ai-model-list')?.remove();
-    reviewAiHost.append(list);
-    if (aiModelInput !== null) aiModelInput.setAttribute('list', list.id);
-    modelsStatus(`${response.models.length} models`, 'success');
-  });
-  reviewAiHost.append(el('div', 'geld-row options__actions', [loadModels, modelsStatusEl]));
 
   /* GitHub Enterprise Server hosts */
   applySchemaCopy('enterprise');
@@ -962,7 +1184,7 @@ async function main(): Promise<void> {
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
-    if (document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
+    if (reviewBotsArea !== null && document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
   });
