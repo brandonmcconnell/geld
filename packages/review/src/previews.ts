@@ -151,13 +151,19 @@ export function vercelHeader(text: string): readonly VercelProject[] | null {
   }
 }
 
+/** Vercel's status words: `nextCommitStatus` in the header, the inspector link's text and the status image's alt in the table. */
 function vercelStatus(word: string): PreviewStatus {
-  const upper = word.toUpperCase();
+  const upper = word.trim().toUpperCase();
   if (upper === 'READY') return 'ready';
   if (upper === 'ERROR' || upper === 'FAILED') return 'failed';
-  if (upper === 'SKIPPED' || upper === 'CANCELED') return 'skipped';
-  if (upper === 'BUILDING' || upper === 'QUEUED' || upper === 'PENDING') return 'building';
+  if (upper === 'SKIPPED' || upper === 'CANCELED' || upper === 'CANCELLED' || upper === 'IGNORED') return 'skipped';
+  if (upper === 'BUILDING' || upper === 'QUEUED' || upper === 'PENDING' || upper === 'INITIALIZING') return 'building';
   return statusFromText(word);
+}
+
+/** The table row (as `| a | b | c |` text) naming `project`, when the comment has one. */
+function tableRowFor(doc: PreviewDoc, project: string): string | null {
+  return lines(doc).find((line) => line.startsWith('|') && line.includes(`| ${project} |`)) ?? null;
 }
 
 function parseVercel(doc: PreviewDoc): readonly Preview[] {
@@ -172,12 +178,23 @@ function parseVercel(doc: PreviewDoc): readonly Preview[] {
   for (const link of projectLinks) {
     const name = link.text.trim();
     if (out.some((entry) => entry.project === name)) continue;
-    const inspector = doc.links.find((candidate) => candidate.href.startsWith(`${link.href.replace(/\/$/, '')}/`) && /^(ready|building|error|failed|skipped|canceled|queued)$/i.test(candidate.text.trim()));
-    const statusWord = inspector?.text.trim() ?? doc.images.find((image) => /vercel\.com\/static\/status\//.test(image.src))?.alt ?? '';
+    // The inspector is the deployment's page under the project's: `vercel.com/<team>/<project>/<deployment>`, whatever its text says.
+    const inspector = doc.links.find((candidate) => candidate.href.startsWith(`${link.href.replace(/\/$/, '')}/`) && candidate !== link);
+    // The status: the inspector's text ("Ready", "Ignored", "Error"), else the status image's alt, else the words of the
+    // project's own table row. On the rendered page the image's src is a camo proxy, so its alt is what carries the word.
+    const row = tableRowFor(doc, name);
+    let status = inspector === undefined ? 'unknown' : vercelStatus(inspector.text);
+    if (status === 'unknown') {
+      const image = doc.images.find((candidate) => /vercel\.com\/static\/status\//.test(candidate.src) && candidate.alt.trim() !== '');
+      if (image !== undefined && projectLinks.length === 1) status = vercelStatus(image.alt);
+    }
+    if (status === 'unknown' && row !== null) status = statusFromText(row.replace(`| ${name} |`, '|'));
     // The preview link follows the project's row; the nearest "Preview"/"Visit Preview" after the inspector in link order.
     const at = inspector === undefined ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
     const visit = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
-    out.push(preview('vercel', doc, name, vercelStatus(statusWord), visit?.href ?? null, inspector?.href ?? null));
+    // A row that offers a preview to visit but states no status is a deployment that is up.
+    if (status === 'unknown' && visit !== undefined) status = 'ready';
+    out.push(preview('vercel', doc, name, status, visit?.href ?? null, inspector?.href ?? null));
   }
   if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
     const team = /to the \*{0,2}([^*\n]+?)\*{0,2} Team/i.exec(doc.text)?.[1] ?? 'Vercel';
