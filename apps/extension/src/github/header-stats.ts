@@ -23,6 +23,33 @@ export interface HeaderStatGroup {
 
 const FILE_COUNT_TEXT = /^\s*\(?\d[\d,]*\)?\s*$|\bfiles?\b/i;
 
+const HEADER_HOST_SELECTOR = '#diffstat, .toc-diff-stats';
+const SR_ONLY_SELECTOR = 'span.sr-only, span[class*="VisuallyHidden"]';
+const LINES_CHANGED = /^\s*Lines changed:/i;
+
+/**
+ * Does `node`, just inserted, hold a header stat group? Decided as tightly as
+ * `findHeaderStatGroups` would: a diffstat host, or a "Lines changed:" reader
+ * sentence outside any diff entry. A streamed diff file is full of screen-
+ * reader spans, and a looser test used to send every such batch through a
+ * page-wide header scan, synchronously, before paint.
+ */
+export function holdsHeaderStats(node: Element): boolean {
+  if (isInsideDiffEntry(node)) return false;
+  if (node.matches(HEADER_HOST_SELECTOR) || node.querySelector(HEADER_HOST_SELECTOR) !== null) return true;
+  if (node instanceof HTMLElement && node.matches(SR_ONLY_SELECTOR)) return LINES_CHANGED.test(originalText(node));
+  for (const span of node.querySelectorAll<HTMLElement>(SR_ONLY_SELECTOR)) {
+    if (LINES_CHANGED.test(originalText(span)) && !isInsideDiffEntry(span)) return true;
+  }
+  return false;
+}
+
+/** A text change inside a screen-reader span: GitHub may fill "Lines changed: …" into a span it inserted empty. */
+export function isSrOnlyText(node: Node): boolean {
+  const parent = node.parentElement;
+  return parent !== null && parent.matches(SR_ONLY_SELECTOR) && !isInsideDiffEntry(parent);
+}
+
 function isInsideDiffEntry(element: Element): boolean {
   return (
     element.closest('[data-geld-ui]') !== null ||
@@ -105,8 +132,8 @@ function findCompareGroup(): HeaderStatGroup | null {
  */
 function findReactGroups(): HeaderStatGroup[] {
   const groups: HeaderStatGroup[] = [];
-  for (const srOnly of queryAll<HTMLElement>('span.sr-only, span[class*="VisuallyHidden"]')) {
-    if (!/^\s*Lines changed:/i.test(originalText(srOnly))) continue;
+  for (const srOnly of queryAll<HTMLElement>(SR_ONLY_SELECTOR)) {
+    if (!LINES_CHANGED.test(originalText(srOnly))) continue;
     if (isInsideDiffEntry(srOnly)) continue;
     const host = srOnly.parentElement;
     if (host === null) continue;
@@ -222,8 +249,11 @@ function renderTestsLabel(group: HeaderStatGroup, text: string, count: number): 
       group.host.prepend(label);
     }
   }
-  if (neighbour !== null) {
+  if (neighbour !== null && label.style.font === '') {
     // Match the neighbouring count exactly (GitHub styles those spans directly).
+    // Once, when the label is made: reading a computed style forces a style
+    // recalculation of whatever the page has dirtied, and this runs on every
+    // pass while a diff streams in.
     const reference = getComputedStyle(neighbour);
     label.style.font = reference.font;
     label.style.letterSpacing = reference.letterSpacing;

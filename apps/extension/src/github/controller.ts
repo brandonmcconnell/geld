@@ -21,7 +21,7 @@ import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString } from './dom';
 import { detectHeadSha, shaFromCommitUrl } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
-import { applyHeaderStats, findHeaderStatGroups, restoreHeaderStats } from './header-stats';
+import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText, restoreHeaderStats } from './header-stats';
 import type { DiffEntry, DiffView } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
@@ -83,15 +83,16 @@ export interface ControllerHooks {
   readonly onTabState: (state: TabState) => void;
 }
 
-const HEADER_NODE_SELECTOR = '#diffstat, .toc-diff-stats, span.sr-only, span[class*="VisuallyHidden"]';
-
-/** Did this batch insert something that could be (or contain) a header stat group? */
+/** Did this batch insert a header stat group (or something holding one), or write the text of one? */
 function headerNodesAdded(records: readonly MutationRecord[]): boolean {
   for (const record of records) {
+    if (record.type === 'characterData') {
+      if (isSrOnlyText(record.target)) return true;
+      continue;
+    }
     if (record.type !== 'childList') continue;
     for (const node of record.addedNodes) {
-      if (!(node instanceof Element)) continue;
-      if (node.matches(HEADER_NODE_SELECTOR) || node.querySelector(HEADER_NODE_SELECTOR) !== null) return true;
+      if (node instanceof Element && holdsHeaderStats(node)) return true;
     }
   }
   return false;
@@ -239,6 +240,16 @@ export class GeldController {
     readonly categories: readonly HiddenCategory[];
   } | null = null;
   private headerGroups: Array<{ readonly group: HeaderStatGroup; readonly additionsText: string | null }> = [];
+  /**
+   * The header stat groups found by the last page-wide scan, reused while every
+   * one of them is still in the document and no batch has inserted a new one.
+   * The scan reads every screen-reader span on the page — thousands on a large
+   * diff — and used to run on every pass.
+   */
+  private headerScan: { readonly stateKey: string; readonly groups: readonly HeaderStatGroup[] } | null = null;
+  private headerDirty = true;
+  /** The head SHA read from the page, per page state; the read parses GitHub's embedded JSON payload. */
+  private headShaCache: { readonly stateKey: string; readonly sha: string | null } | null = null;
 
   constructor(
     settings: GeldSettings,
@@ -261,8 +272,9 @@ export class GeldController {
       // Header first, synchronously: this callback runs before the browser
       // paints, so a (re-)rendered header never shows GitHub's number when the
       // filtered one is already known or cached.
+      if (headerNodesAdded(records)) this.headerDirty = true;
       if (this.settledHeader === null) {
-        if (headerNodesAdded(records)) this.applyHeaderNow();
+        if (this.headerDirty) this.applyHeaderNow();
       } else {
         this.reassertHeader();
       }
@@ -535,7 +547,7 @@ export class GeldController {
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
     if ((!matcher.usesChangeKinds && !this.settings.hideCommentLines) || page.diffUrl === null) return;
-    const sha = page.kind.startsWith('pull') ? detectHeadSha() : page.kind === 'commit' ? shaFromCommitUrl(url.pathname) : null;
+    const sha = this.headShaFor(page, url);
     const state = this.diffSource.request(page.diffUrl, sha);
     if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
   }
@@ -1042,11 +1054,11 @@ export class GeldController {
     renderedEntryCount: number,
     hidden: HiddenBreakdown | null,
   ): { readonly hidden: HiddenBreakdown | null; readonly all: ChangeTotals | null; readonly hasGroups: boolean } {
-    const groups = findHeaderStatGroups();
+    const groups = this.headerGroupsFor(page);
     const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
     const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
     const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
-    const sha = page.kind.startsWith('pull') ? detectHeadSha() : page.kind === 'commit' ? shaFromCommitUrl(url.pathname) : null;
+    const sha = this.headShaFor(page, url);
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
@@ -1095,6 +1107,32 @@ export class GeldController {
     this.observer?.takeRecords();
   }
 
+  /** The page's header stat groups: the last scan while it still holds, else a fresh one. */
+  private headerGroupsFor(page: PageInfo): readonly HeaderStatGroup[] {
+    const cached = this.headerScan;
+    const holds =
+      cached !== null &&
+      cached.stateKey === page.stateKey &&
+      !this.headerDirty &&
+      cached.groups.every((group) => group.host.isConnected && group.additions?.isConnected !== false && group.deletions?.isConnected !== false);
+    if (holds) return cached.groups;
+    const groups = findHeaderStatGroups();
+    this.headerScan = { stateKey: page.stateKey, groups };
+    this.headerDirty = false;
+    return groups;
+  }
+
+  /** The page's head SHA, read once per page state (the read scans attributes and the embedded JSON payload). */
+  private headShaFor(page: PageInfo, url: URL): string | null {
+    if (page.kind === 'commit') return shaFromCommitUrl(url.pathname);
+    if (!page.kind.startsWith('pull')) return null;
+    const cached = this.headShaCache;
+    if (cached !== null && cached.stateKey === page.stateKey && cached.sha !== null) return cached.sha;
+    const sha = detectHeadSha();
+    this.headShaCache = { stateKey: page.stateKey, sha };
+    return sha;
+  }
+
   private applyHeader(groups: readonly HeaderStatGroup[], hidden: HiddenBreakdown, categories: readonly HiddenCategory[]): void {
     for (const group of groups) applyHeaderStats(group, hidden, categories);
     this.headerGroups = groups.map((group) => ({ group, additionsText: group.additions?.textContent ?? null }));
@@ -1113,7 +1151,7 @@ export class GeldController {
       ({ group, additionsText }) => !group.host.isConnected || (group.additions !== null && group.additions.textContent !== additionsText),
     );
     if (!stale) return;
-    const groups = findHeaderStatGroups();
+    const groups = this.currentPage === null ? findHeaderStatGroups() : this.headerGroupsFor(this.currentPage);
     if (groups.length === 0) return;
     this.applyHeader(groups, settled.hidden, settled.categories);
   }
@@ -1145,6 +1183,8 @@ export class GeldController {
   private teardown(): void {
     this.settledHeader = null;
     this.headerGroups = [];
+    this.headerScan = null;
+    this.headerDirty = true;
     this.teardownView();
     removePrListStats();
     removeCommitHover();

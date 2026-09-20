@@ -68,12 +68,18 @@ export async function ensureContentScript(tabId: number): Promise<boolean> {
   }
 }
 
-/** Every open tab on the given hosts, for install/update time. */
+/**
+ * Every *loaded* tab on the given hosts, for install/update time. Tabs the
+ * browser has discarded to save memory are left alone: they have no page to
+ * inject into, and they get a fresh content script when they reload on
+ * activation. Someone with many GitHub tabs parked should not have an
+ * extension update touch each of them.
+ */
 export async function tabsOnHosts(hosts: readonly string[]): Promise<number[]> {
   if (hosts.length === 0) return [];
   try {
-    const tabs = await browser.tabs.query({ url: hosts.map((host) => `https://${host}/*`) });
-    return tabs.map((tab) => tab.id).filter((id): id is number => id !== undefined);
+    const tabs = await browser.tabs.query({ url: hosts.map((host) => `https://${host}/*`), discarded: false });
+    return tabs.filter((tab) => tab.status !== 'unloaded').map((tab) => tab.id).filter((id): id is number => id !== undefined);
   } catch {
     return [];
   }
