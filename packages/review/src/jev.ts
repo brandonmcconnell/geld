@@ -52,12 +52,43 @@ export function jevModelIn(models: ReadonlyArray<{ readonly id: string }>): stri
 }
 
 /**
+ * Gateways known to serve Jev without listing it among their chat models.
+ * OpenRouter runs it on its Decisions API, outside `/api/v1`, and its
+ * `/api/v1/models` does not name it; `typesafe/jev-latest` follows TypeSafe's
+ * latest release (a pinned `typesafe/jev-1.13` also exists).
+ */
+const KNOWN_JEV: ReadonlyArray<{ readonly host: RegExp; readonly model: string }> = [
+  { host: /(^|\.)openrouter\.ai$/i, model: 'typesafe/jev-latest' },
+  { host: /(^|\.)ai-gateway\.vercel\.sh$/i, model: 'typesafe-ai/jev' },
+  { host: /^api\.typesafe\.ai$/i, model: JEV_DIRECT_MODEL },
+];
+
+function hostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return '';
+  }
+}
+
+/** The Jev model a gateway serves: from its model list when it names one, else from what is known about the host. */
+export function jevModelFor(baseUrl: string, models: ReadonlyArray<{ readonly id: string }> = []): string | null {
+  const listed = jevModelIn(models);
+  if (listed !== null) return listed;
+  const host = hostOf(baseUrl);
+  return KNOWN_JEV.find((entry) => entry.host.test(host))?.model ?? null;
+}
+
+/**
  * Where to POST for `baseUrl`: TypeSafe's own API takes `/v1/systemone`;
- * a gateway takes the TypeSafe-compatible prefix in front of it.
+ * OpenRouter takes its Decisions API; any other gateway takes the
+ * TypeSafe-compatible prefix in front of `/v1/systemone`.
  */
 export function jevEndpoint(baseUrl: string): string {
   const base = baseUrl.replace(/\/+$/, '');
-  if (/^https:\/\/api\.typesafe\.ai$/i.test(base)) return joinUrl(base, '/v1/systemone');
+  const host = hostOf(base);
+  if (/^api\.typesafe\.ai$/i.test(host)) return joinUrl(base, '/v1/systemone');
+  if (/(^|\.)openrouter\.ai$/i.test(host)) return `https://${host}/api/alpha/decisions`;
   return joinUrl(base, '/typesafe/v1/systemone');
 }
 
