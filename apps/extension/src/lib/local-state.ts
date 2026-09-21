@@ -1,4 +1,4 @@
-import type { ModelInfo } from '@geld/review';
+import type { ConsolidateOutputItem, ModelInfo, ReviewSummary } from '@geld/review';
 import { storage } from 'wxt/utils/storage';
 
 /**
@@ -58,3 +58,19 @@ export interface JevDecision {
   readonly at: number;
 }
 export const jevDecisionsItem = storage.defineItem<Readonly<Record<string, JevDecision>>>('local:jevDecisions', { fallback: {} });
+
+/**
+ * What the model wrote for one pull request when the reader asked (the AI
+ * button on the digest), on this device only: nothing is posted to GitHub,
+ * so nobody else sees it. Keyed `github[@host]:{owner}:{repo}:{pull}`, capped
+ * at the most recent runs. A run that failed keeps its reason so the panel can
+ * say why, instead of quietly showing the reporters' wording.
+ */
+export interface AiRunRecord {
+  readonly ranAt: string;
+  readonly rewrites: readonly ConsolidateOutputItem[];
+  readonly summary?: ReviewSummary;
+  readonly error?: string;
+}
+export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
+export const AI_RUNS_CAP = 40;

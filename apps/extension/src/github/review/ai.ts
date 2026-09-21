@@ -1,10 +1,12 @@
 /**
- * Optional in-browser consolidation when the Action did not run with AI.
- * The user's gateway key stays in `storage.local` (never the gist); the
- * background worker talks to the gateway. Nothing is sent without a key,
- * URL and model. Results are cached for the visit and layered onto every
- * later pass, so a title never flickers back to the verbatim one; only
- * items whose sources changed are asked again (`planConsolidation`).
+ * In-browser AI for a pull request whose digest the Action did not write with
+ * AI: run when the reader asks (the AI control on the digest), never on its
+ * own. The user's gateway key stays in `storage.local` (never the gist); the
+ * background worker talks to the gateway. Nothing is sent without a key, URL
+ * and model. What the model writes is stored on this device per pull request
+ * (`local:aiRuns`) and layered onto every later pass, so a title never goes
+ * back to the verbatim one across reloads; only items whose sources the last
+ * run did not see are asked again (`planConsolidation`).
  */
 
 import type { GeldSettings } from '@geld/core';
@@ -40,23 +42,24 @@ import {
 } from '@geld/review';
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
-import type { JevDecision } from '../../lib/local-state';
-import { aiGatewayItem, aiKeyItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
+import type { AiRunRecord, JevDecision } from '../../lib/local-state';
+import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
 
-/** What the model said about an item, kept for the visit. */
+/* ------------------------------------------------------------------------- */
+/* On-demand runs, kept on this device per pull request                        */
+/* ------------------------------------------------------------------------- */
+
+/** What the model said about each item on this pull request, hydrated from the run store (`local:aiRuns`). */
 const rewrites = new Map<string, ConsolidateOutputItem>();
 let summary: ReviewSummary | undefined;
+/** The pull request the module state belongs to, and its record as last stored. */
+let runKey: string | null = null;
+let lastRun: AiRunRecord | null = null;
+let hydrating: Promise<void> | null = null;
 /** Item ids (and `tldr`) a request is in flight for — the rows that shimmer. */
 const inFlight = new Set<string>();
-/**
- * Item ids this visit has already asked about, whatever the model answered.
- * Without this a model that cannot answer (an evaluation model picked as the
- * writer, a gateway that rejects the schema) was asked again on the very next
- * pass: rows shimmered on, off, on, and the page jumped with them.
- */
-const attempted = new Set<string>();
 let configured: boolean | null = null;
 
 export function aiPending(): ReadonlySet<string> {
@@ -74,9 +77,102 @@ export async function aiConfigured(settings: GeldSettings): Promise<boolean> {
   return configured;
 }
 
+/** The same test without the key lookup, for a pass that cannot wait: the key is checked when the run starts. */
+export function aiSwitchedOn(settings: GeldSettings): boolean {
+  return settings.aiEnabled && settings.aiBaseUrl !== '' && settings.aiModel !== '' && !isEvaluationModel(settings.aiModel);
+}
+
 aiKeyItem.watch(() => {
   configured = null;
 });
+
+/**
+ * Point the module at a pull request and load what the model last wrote for
+ * it on this device. Resolves once the store has answered (`onLoaded` runs
+ * then, so the pass can re-apply with the words); synchronous callers see the
+ * previous page's words cleared at once.
+ */
+export function loadAiForPage(key: string, onLoaded: () => void): void {
+  if (runKey === key) return;
+  runKey = key;
+  rewrites.clear();
+  summary = undefined;
+  lastRun = null;
+  inFlight.clear();
+  const loading = aiRunsItem.getValue().then((runs) => {
+    if (runKey !== key) return;
+    const record = runs[key];
+    if (record !== undefined) adopt(record);
+    onLoaded();
+  });
+  hydrating = loading;
+  void loading.finally(() => {
+    if (hydrating === loading) hydrating = null;
+  });
+}
+
+function adopt(record: AiRunRecord): void {
+  lastRun = record;
+  rewrites.clear();
+  for (const entry of record.rewrites) rewrites.set(entry.id, entry);
+  summary = record.summary;
+}
+
+async function store(record: AiRunRecord | null): Promise<void> {
+  if (runKey === null) return;
+  const key = runKey;
+  const runs = { ...(await aiRunsItem.getValue()) };
+  if (record === null) delete runs[key];
+  else runs[key] = record;
+  const keys = Object.keys(runs);
+  if (keys.length > AI_RUNS_CAP) {
+    const oldest = keys.sort((a, b) => Date.parse(runs[a]?.ranAt ?? '') - Date.parse(runs[b]?.ranAt ?? '')).slice(0, keys.length - AI_RUNS_CAP);
+    for (const stale of oldest) delete runs[stale];
+  }
+  await aiRunsItem.setValue(runs);
+}
+
+/** Forget this device's run for the pull request (the repository's Action now writes the digest). */
+export async function clearAiForPage(): Promise<void> {
+  rewrites.clear();
+  summary = undefined;
+  lastRun = null;
+  await store(null);
+}
+
+/**
+ * Where AI stands for this pull request, for the panel's control and its
+ * notices. `app`: the digest comment was written with AI by the repository's
+ * Action, which wins over anything local. `stale`: the model ran here, and
+ * comments or threads have arrived since. `failed`: the last run here could
+ * not get an answer, with the reason.
+ */
+export type AiState =
+  | { readonly kind: 'off' }
+  | { readonly kind: 'app'; readonly hasLocal: boolean }
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'running' }
+  | { readonly kind: 'current'; readonly ranAt: string }
+  | { readonly kind: 'stale'; readonly ranAt: string }
+  | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string };
+
+export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): AiState {
+  if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
+  if (!aiSwitchedOn(settings)) return { kind: 'off' };
+  if (inFlight.size > 0) return { kind: 'running' };
+  if (lastRun === null) return { kind: 'ready' };
+  if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error };
+  return hasWork(meta, comments, settings) ? { kind: 'stale', ranAt: lastRun.ranAt } : { kind: 'current', ranAt: lastRun.ranAt };
+}
+
+/** Whether a run now would ask the model anything: items whose sources the last run did not see, or a TL;DR behind the items. */
+function hasWork(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): boolean {
+  const known = withAi(meta);
+  const plan = planConsolidation(known, meta.items, { comments, wantFix: settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai' });
+  if (plan.pending.length > 0) return true;
+  const input = summaryInput(known.items);
+  return input.length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
+}
 
 /** Where a Jev question goes: the gateway when it offers Jev, else TypeSafe with the user's own key; null when neither is set up. */
 async function jevRoute(settings: GeldSettings): Promise<{ readonly baseUrl: string; readonly apiKey: string; readonly model: string } | null> {
@@ -124,7 +220,7 @@ async function decideScope(settings: GeldSettings, pending: readonly Consolidate
   return withSameProblem(pending, sameProblemGroups(pending, answers));
 }
 
-/** Layer this visit's model output onto a meta built without it. */
+/** Layer this device's model output onto a meta built without it. */
 export function withAi(meta: GeldPrMeta): GeldPrMeta {
   const previous: GeldPrMeta = { ...meta, items: meta.items.map((item) => (rewrites.has(item.id) ? { ...item, rewritten: true } : item)) };
   const items = applyConsolidation(previous.items, new Map<string, Carried>(), [...rewrites.values()]);
@@ -133,7 +229,9 @@ export function withAi(meta: GeldPrMeta): GeldPrMeta {
   return withItems;
 }
 
-async function complete(settings: GeldSettings, apiKey: string, system: string, user: string, jsonSchema: unknown, schemaName: string): Promise<string | null> {
+type Completion = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly reason: string };
+
+async function complete(settings: GeldSettings, apiKey: string, system: string, user: string, jsonSchema: unknown, schemaName: string): Promise<Completion> {
   const message: AiCompleteRequest = {
     type: 'geld:ai-complete',
     baseUrl: settings.aiBaseUrl,
@@ -149,11 +247,11 @@ async function complete(settings: GeldSettings, apiKey: string, system: string, 
   let response: unknown;
   try {
     response = await browser.runtime.sendMessage(message);
-  } catch {
-    return null;
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : 'The extension did not answer.' };
   }
-  if (!isAiCompleteResponse(response) || !response.ok) return null;
-  return response.text;
+  if (!isAiCompleteResponse(response)) return { ok: false, reason: 'The extension did not answer.' };
+  return response.ok ? { ok: true, text: response.text } : { ok: false, reason: response.reason };
 }
 
 export interface ConsolidateRun {
@@ -162,73 +260,66 @@ export interface ConsolidateRun {
 }
 
 /**
- * Consolidate bot-only items whose sources are new to this visit and write
- * (or refresh) the TL;DR. `onProgress` fires as soon as requests start, so
- * the rows can shimmer, and again when results land.
+ * Run the model for this pull request, on the reader's request: consolidate
+ * the open bot-only items whose sources the last run did not see and write
+ * (or refresh) the TL;DR, then store the result on this device. `onProgress`
+ * fires as soon as requests start, so the rows can shimmer, and again when
+ * results land. A run that gets no usable answer is stored with its reason.
  */
-export async function consolidateInBrowser(
-  meta: GeldPrMeta,
-  comments: readonly RawComment[],
-  settings: GeldSettings,
-  onProgress: () => void,
-): Promise<ConsolidateRun> {
-  if (meta.producer.ai || !(await aiConfigured(settings))) return { changed: false };
+export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void): Promise<ConsolidateRun> {
+  if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0) return { changed: false };
+  await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
   if (apiKey === '') return { changed: false };
   const known: GeldPrMeta = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai' });
-  const pending = plan.pending.filter((item) => !inFlight.has(item.id) && !attempted.has(item.id));
-  // A TL;DR the model could not write is not asked for again until the items it would describe change.
-  const tldrKey = `tldr:${summaryInput(known.items)
-    .map((item) => `${item.id}${item.status}`)
-    .join(',')}`;
-  const needsTldr = !inFlight.has('tldr') && !attempted.has(tldrKey) && summaryInput(known.items).length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
-  if (pending.length === 0 && !needsTldr) return { changed: false };
+  const pending = plan.pending;
+  const needsTldr = summaryInput(known.items).length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
+  const ranAt = new Date().toISOString();
+  if (pending.length === 0 && !needsTldr) {
+    // Nothing new to ask about: the run still counts, so the control says when the reader last looked.
+    lastRun = { ranAt, rewrites: [...rewrites.values()], ...(summary === undefined ? {} : { summary }) };
+    await store(lastRun);
+    return { changed: true };
+  }
 
   for (const item of pending) inFlight.add(item.id);
   if (needsTldr) inFlight.add('tldr');
   onProgress();
 
-  let changed = false;
+  let failure: string | null = null;
   if (pending.length > 0) {
     const scope = await decideScope(settings, pending);
     if (scope.length > 0) {
-      const text = await complete(settings, apiKey, CONSOLIDATE_SYSTEM, consolidateUserPrompt(scope), CONSOLIDATE_JSON_SCHEMA, 'geld_consolidate');
-      const parsed = text === null ? null : parseConsolidateOutput(text, new Set(scope.map((item) => item.id)));
-      if (parsed !== null && parsed.ok) {
-        for (const entry of parsed.value) rewrites.set(entry.id, entry);
-        changed = parsed.value.length > 0;
+      const result = await complete(settings, apiKey, CONSOLIDATE_SYSTEM, consolidateUserPrompt(scope), CONSOLIDATE_JSON_SCHEMA, 'geld_consolidate');
+      if (!result.ok) failure = result.reason;
+      else {
+        const parsed = parseConsolidateOutput(result.text, new Set(scope.map((item) => item.id)));
+        if (parsed !== null && parsed.ok) for (const entry of parsed.value) rewrites.set(entry.id, entry);
+        else failure = 'The model answered in a shape Geld could not read.';
       }
     }
-    for (const item of pending) {
-      inFlight.delete(item.id);
-      attempted.add(item.id);
-    }
-    // The rows stop shimmering either way; only a changed title is worth another pass.
+    for (const item of pending) inFlight.delete(item.id);
     onProgress();
   }
-  if (needsTldr) {
+  if (needsTldr && failure === null) {
     const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
-    const text = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
-    const parsed = text === null ? null : parseSummaryOutput(text);
-    if (parsed !== null && parsed.ok) {
-      summary = summaryRecord(parsed.value, items, new Date().toISOString());
-      changed = true;
-    } else {
-      attempted.add(tldrKey);
+    const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
+    if (!result.ok) failure = result.reason;
+    else {
+      const parsed = parseSummaryOutput(result.text);
+      if (parsed !== null && parsed.ok) summary = summaryRecord(parsed.value, items, ranAt);
+      else failure = 'The model answered in a shape Geld could not read.';
     }
-    inFlight.delete('tldr');
-    onProgress();
   }
-  return { changed };
+  inFlight.delete('tldr');
+  lastRun = { ranAt, rewrites: [...rewrites.values()], ...(summary === undefined ? {} : { summary }), ...(failure === null ? {} : { error: failure }) };
+  await store(lastRun);
+  onProgress();
+  return { changed: true };
 }
 
-export function resetAiForVisit(): void {
-  inFlight.clear();
-  attempted.clear();
-}
-
-/** Titles the model has already rewritten for this visit (kept across page keys: ids are anchor hashes). */
+/** Titles the model has already rewritten for this pull request. */
 export function rewrittenIds(): ReadonlySet<string> {
   return new Set(rewrites.keys());
 }
@@ -236,7 +327,6 @@ export function rewrittenIds(): ReadonlySet<string> {
 export function itemsWithRewrite(items: readonly ReviewItem[]): readonly ReviewItem[] {
   return applyConsolidation(items, new Map<string, Carried>(), [...rewrites.values()]);
 }
-
 
 /* ------------------------------------------------------------------------- */
 /* Jev as the stand-in for deterministic classification                       */

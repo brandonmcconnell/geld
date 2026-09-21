@@ -13,10 +13,12 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } f
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
+import type { AiState } from './ai';
+import { formatSyncAge } from '../../ui/sync-age';
 import { reclaimOrphans, restoreAll } from './teleport';
 import { renderQuickView } from './quick-view';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
@@ -198,6 +200,8 @@ export interface PanelModel {
   readonly grouping: 'type' | 'batch';
   /** Rounds whose commit rows are unfolded (batch grouping). */
   readonly openCommits: ReadonlySet<string>;
+  /** Where the in-browser AI stands for this pull request: the control in the Geld row and its notices. */
+  readonly ai: AiState;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
   readonly avatarForAnchor: (anchor: string) => string | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
@@ -259,6 +263,10 @@ export interface PanelHandlers {
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
   readonly onReact: (anchor: string) => void;
+  /** Run the model for this pull request now (the AI control). */
+  readonly onRunAi: () => void;
+  /** Forget this device's run: the repository's Action writes the digest with AI now. */
+  readonly onClearAi: () => void;
 }
 
 export function itemKey(id: string): string {
@@ -466,7 +474,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
   const pending = model.aiPending.has(item.id);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${key}` }, [
     createElement('span', { class: `${PANEL_CLASS}__title`, ...(pending ? { 'data-pending': '', title: 'Geld is consolidating this item' } : {}) }, [item.title]),
-    createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' — ')]),
+    createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' · ')]),
   ]);
   const toggle = (): void => (nested ? handlers.onToggleSub(key) : handlers.onToggle(key));
   mainClickToggles(main, toggle);
@@ -773,6 +781,65 @@ function rowClickToggles(row: HTMLElement, toggle: () => void): void {
     if (event.target.closest('button, a, details, summary, input, textarea, [contenteditable], [data-geld-ctl], [data-geld-gear-slot]') !== null) return;
     toggle();
   });
+}
+
+/** "2 hours ago", from the sync-age wording, for when the model last ran here. */
+function ranAgo(iso: string): string {
+  const age = formatSyncAge(Date.parse(iso));
+  return age.compact === 'now' ? 'just now' : `${age.compact} ago`;
+}
+
+/**
+ * The AI control in the Geld row: the sparkle beside where the model stands
+ * for this pull request. "Triage with AI" before a run, "AI · 2 hrs ago" after
+ * one (stale or failed runs say so in the notice below), the sparkle alone
+ * while it runs and on narrow panels. Nothing when AI is switched off in the
+ * settings, and nothing when the repository's Action already writes the digest
+ * with AI: there is nothing for this device to add.
+ */
+function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
+  if (state.kind === 'off' || state.kind === 'app') return null;
+  const label = state.kind === 'ready' ? 'Triage with AI' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
+  const title =
+    state.kind === 'ready'
+      ? 'Ask the model to title the open bot threads and write a summary. Kept on this device only.'
+      : state.kind === 'running'
+        ? 'The model is reading the open threads'
+        : state.kind === 'stale'
+          ? 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
+          : state.kind === 'failed'
+            ? `The last run could not get an answer: ${state.error}`
+            : 'Run the model again';
+  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${title}`, title, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : {}) }, [
+    icon(ICON_SPARKLE_FILL),
+    createElement('span', { class: `${PANEL_CLASS}__ai-label` }, [label]),
+  ]);
+  button.addEventListener('click', () => handlers.onRunAi());
+  return button;
+}
+
+/**
+ * A notice under the Geld row when the reader should decide something about
+ * AI: new comments since it last ran here, a run that failed, or a repository
+ * whose Action now writes the digest with AI while this device still holds its
+ * own run. Copy uses no dashes or semicolons.
+ */
+function aiNotice(state: AiState, handlers: PanelHandlers): HTMLElement | null {
+  const notice = (text: string, action: string, onAction: () => void, tone: 'attention' | 'danger' | 'accent'): HTMLElement => {
+    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__ai-notice-btn` }, [action]);
+    button.addEventListener('click', onAction);
+    return createElement('div', { class: `${PANEL_CLASS}__ai-notice`, 'data-tone': tone, role: 'status' }, [
+      createElement('span', { class: `${PANEL_CLASS}__ai-notice-glyph`, 'aria-hidden': 'true' }, [icon(ICON_SPARKLE_FILL)]),
+      createElement('span', { class: `${PANEL_CLASS}__ai-notice-text` }, [text]),
+      button,
+    ]);
+  };
+  if (state.kind === 'stale') return notice(`New comments or threads have arrived since Geld AI last ran here ${ranAgo(state.ranAt)}.`, 'Triage the new changes', () => handlers.onRunAi(), 'attention');
+  if (state.kind === 'failed') return notice(`Geld AI could not get an answer ${ranAgo(state.ranAt)}: ${state.error}`, 'Try again', () => handlers.onRunAi(), 'danger');
+  if (state.kind === 'app' && state.hasLocal) {
+    return notice('This repository now writes its digest with Geld AI through its GitHub Action. The digest you see is that one. Clear the run kept on this device to keep it that way.', 'Clear my local run', () => handlers.onClearAi(), 'accent');
+  }
+  return null;
 }
 
 const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'Type', batch: 'Push' };
@@ -1418,6 +1485,7 @@ function signatureOf(model: PanelModel): string {
     ),
     hiddenCount: model.hiddenCount,
     pending: [...model.aiPending].sort(),
+    ai: model.ai,
     tldr: model.meta.summary?.tldr ?? '',
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
@@ -1498,11 +1566,14 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
+  const aiControl = aiButton(model.ai, handlers);
+  if (aiControl !== null) tools.append(aiControl);
   tools.append(groupingMenu(model, handlers));
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
   const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, tools]);
+  const aiNote = aiNotice(model.ai, handlers);
   const status = statusRows(model, handlers);
   const tldrPending = model.aiPending.has('tldr');
   const tldr =
@@ -1574,6 +1645,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
 
   const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, 'aria-label': 'Geld review digest' }, [
     head,
+    ...(aiNote === null ? [] : [aiNote]),
     ...(status === null ? [] : [status]),
     ...(tldr === null ? [] : [tldr]),
     rows,
@@ -1581,7 +1653,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
 
   /* Footer */
   if (model.truncated) {
-    panel.append(createElement('div', { class: `${PANEL_CLASS}__foot` }, [createElement('p', { class: `${PANEL_CLASS}__note` }, ['The summary was truncated; the rest of the discussion is still in the timeline.'])]));
+    panel.append(createElement('div', { class: `${PANEL_CLASS}__foot` }, [createElement('p', { class: `${PANEL_CLASS}__note` }, ['The summary was truncated. The rest of the discussion is still in the timeline.'])]));
   }
   if (model.compacting && (model.hiddenCount > 0 || model.fullTimeline)) {
     // The one control for the timeline itself, shaped like GitHub's own "N hidden items · Load more" bar.
