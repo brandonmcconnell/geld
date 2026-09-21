@@ -5,7 +5,7 @@ import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabSt
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, fieldsFor, isCategoryEnabled, plainText } from '@geld/core';
+import { allHosts, fieldsFor, isCategoryEnabled, isCategoryInPicker, plainText } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
 import type { TabRepoConfig, TabRepoConfigFile } from '../../src/lib/messages';
 import { loadCatalog } from '../../src/lib/catalog';
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     const grid = document.createElement('div');
     grid.className = 'popup__categories-grid';
     // Built-in and user-defined categories alike; a new custom category appears here after a reload of the popup.
-    for (const category of allCategories(settings, catalog)) {
+    for (const category of allCategories(settings, catalog).filter(isCategoryInPicker)) {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.className = 'geld-checkbox';
@@ -481,7 +481,7 @@ async function main(): Promise<void> {
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggles) set(next[field.key]);
-    for (const category of allCategories(next, catalog)) {
+    for (const category of allCategories(next, catalog).filter(isCategoryInPicker)) {
       const input = categoryInputs.get(category.id);
       if (input !== undefined) input.checked = isCategoryEnabled(next, category.id);
     }

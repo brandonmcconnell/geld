@@ -1,7 +1,7 @@
 'use client';
 
 import type { AnyCategoryId, BuiltInCategory, CategoriesField, CategoryId, GeldSettings, PatternGroup } from '@geld/core';
-import { CATEGORIES, categoryPatternLines, describeAdvancedSettings, hasAdvancedSettings, isCategoryEnabled, isGroupEnabled } from '@geld/core';
+import { CATEGORIES, categoryPatternLines, describeAdvancedSettings, hasAdvancedSettings, isCategoryEnabled, isCategoryInPicker, isGroupEnabled } from '@geld/core';
 import { ChevronRightIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 
@@ -36,7 +36,7 @@ export function CategoriesRows({ field, settings, disabled, onCategory, onGroup,
         <RichText copy={field.description} />
       </p>
       <ul className="divide-y border">
-        {CATEGORIES.map((category) => (
+        {CATEGORIES.filter(isCategoryInPicker).map((category) => (
           <CategoryRow key={category.id} category={category} field={field} settings={settings} disabled={disabled} onCategory={onCategory} onGroup={onGroup} onPatterns={onPatterns} />
         ))}
       </ul>

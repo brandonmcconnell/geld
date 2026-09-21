@@ -48,6 +48,7 @@ const PERSONAL_KEYS = [
   'groupHidden',
   'expandedByDefault',
   'hideCommentLines',
+  'hideLargeDiffs',
   'showListStats',
   'hideWhitespace',
   'shortcutEnabled',

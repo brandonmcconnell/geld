@@ -132,7 +132,7 @@ export interface ActionsField extends FieldBase {
 
 export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'custom-categories' | 'repositories' | 'lists' | 'enterprise' | 'maintenance';
+export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -260,6 +260,22 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           ],
           saveLabel: 'Save patterns',
         },
+      },
+    ],
+  },
+  {
+    id: 'large-diffs',
+    title: 'Large diffs',
+    intro: 'Large diffs are often the real work. Hiding them is a separate, deliberate opt-in rather than another routine filter.',
+    fields: [
+      {
+        kind: 'toggle',
+        key: 'hideLargeDiffs',
+        label: 'Hide large diffs ⚠️',
+        description:
+          'Move files with 1000+ changed lines out of the initial review and exclude them from the visible counts. Enable this carefully: size alone does not make a change unimportant.',
+        popup: true,
+        popupDescription: 'Move 1000+ line diffs out of review. Enable carefully.',
       },
     ],
   },

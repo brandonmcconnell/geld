@@ -53,6 +53,11 @@ export interface GeldSettings {
    */
   readonly hideCommentLines: boolean;
   /**
+   * Hide files with 1000+ changed lines. Deliberately separate from the normal
+   * category picker: large diffs are often the work that most needs review.
+   */
+  readonly hideLargeDiffs: boolean;
+  /**
    * Load the diffs GitHub collapses for being large (1000+ changed lines) as
    * soon as the page renders, for files Geld leaves visible.
    */
@@ -104,6 +109,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   groupHidden: true,
   expandedByDefault: false,
   hideCommentLines: false,
+  hideLargeDiffs: false,
   expandLargeDiffs: true,
   showListStats: true,
   hiddenAuthors: [],
@@ -135,6 +141,9 @@ function readCategories(value: unknown, legacyHideTests: unknown, customIds: Rea
   if (isRecord(value)) {
     for (const [key, enabled] of Object.entries(value)) {
       if (typeof enabled !== 'boolean') continue;
+      // `large` moved from the generic category picker to `hideLargeDiffs`.
+      // Its old value is intentionally discarded so this risky option resets.
+      if (key === 'large') continue;
       // Flags for custom categories that no longer exist are dropped.
       if (isCategoryId(key) || (isCustomCategoryId(key) && customIds.has(key))) result[key] = enabled;
     }
@@ -153,6 +162,7 @@ function readGroups(value: unknown, legacyTestGroups: unknown): Partial<Record<G
       // dropped: they may belong to a newer pattern catalog (or have been
       // written by a newer extension into the shared gist), and losing them
       // would silently turn those groups back on there.
+      if (key.startsWith('large/')) continue;
       if (isWellFormedGroupKey(key) && typeof enabled === 'boolean') result[key] = enabled;
     }
   }
@@ -171,7 +181,7 @@ function readCategoryPatterns(value: unknown, legacyCustomPatterns: unknown): Pa
   const result: Partial<Record<CategoryId, readonly string[]>> = {};
   if (isRecord(value)) {
     for (const [key, lines] of Object.entries(value)) {
-      if (isCategoryId(key) && isStringArray(lines) && lines.length > 0) result[key] = lines;
+      if (key !== 'large' && isCategoryId(key) && isStringArray(lines) && lines.length > 0) result[key] = lines;
     }
   }
   // Settings saved when custom patterns were a single list "treated as tests".
@@ -215,6 +225,7 @@ function readCustomCategories(value: unknown): readonly CustomCategory[] {
  * switch a category on for everyone.
  */
 export function isCategoryEnabled(settings: GeldSettings, id: AnyCategoryId): boolean {
+  if (id === 'large') return settings.hideLargeDiffs;
   const stored = settings.categories[id];
   if (stored !== undefined) return stored;
   return isCategoryId(id) ? categoryById(id, BUNDLED_CATALOG).defaultEnabled : true;
@@ -294,6 +305,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
     hideCommentLines: bool(record, 'hideCommentLines', DEFAULT_SETTINGS.hideCommentLines),
+    hideLargeDiffs: bool(record, 'hideLargeDiffs', DEFAULT_SETTINGS.hideLargeDiffs),
     expandLargeDiffs: bool(record, 'expandLargeDiffs', DEFAULT_SETTINGS.expandLargeDiffs),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),
     hiddenAuthors: isStringArray(record.hiddenAuthors) ? record.hiddenAuthors : DEFAULT_SETTINGS.hiddenAuthors,
@@ -342,6 +354,11 @@ export function parsePatternList(text: string): readonly string[] {
 
 /** Keys of {@link CategoryId} in display order, for UIs. */
 export const CATEGORY_ORDER: readonly CategoryId[] = CATEGORY_IDS;
+
+/** Categories shown in the normal filter picker; risky large-diff hiding has its own setting. */
+export function isCategoryInPicker(category: HiddenCategory): boolean {
+  return category.id !== 'large';
+}
 
 /** Remove a custom category and every setting that referred to it. */
 export function withoutCustomCategory(settings: GeldSettings, id: AnyCategoryId): GeldSettings {

@@ -15,6 +15,7 @@ import {
   hasAdvancedSettings,
   hiddenCategoryFromCustom,
   isCategoryEnabled,
+  isCategoryInPicker,
   isGroupEnabled,
   choiceFields,
   listFields,
@@ -161,34 +162,39 @@ async function main(): Promise<void> {
   let cachedCatalog = await catalogItem.getValue();
   let catalog: Catalog = catalogFromCache(cachedCatalog);
 
-  /* General: one switch per boolean setting the extension surface exposes. */
-  applySchemaCopy('general');
-  const generalSection = sections.find((section) => section.id === 'general');
+  /* Standalone toggle sections (general preferences and the large-diff warning). */
   const shortcutHint = import.meta.env.FIREFOX
     ? 'Change it under Add-ons → Manage Extension Shortcuts.'
     : 'Change it at chrome://extensions/shortcuts (edge://extensions/shortcuts on Edge).';
   // Copy that only makes sense inside a browser is appended here, not kept in core.
   const surfaceNotes: Partial<Record<ToggleField['key'], string>> = { shortcutEnabled: shortcutHint };
+  const toggleSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
 
-  const generalStatus = statusReporter(el('span'));
-  const generalHost = requireElement('general-rows', HTMLDivElement);
-  const generalSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
-  toggleFields(generalSection?.fields ?? []).forEach((field, index) => {
-    if (index > 0) generalHost.append(el('hr', 'options__divider'));
-    const label = el('span', 'geld-label', [field.label]);
-    label.id = `${field.key}-label`;
-    const note = surfaceNotes[field.key];
-    const help = el('p', 'geld-help', richText(note === undefined ? field.description : `${field.description} ${note}`));
-    help.id = `${field.key}-help`;
-    const button = switchButton(field.key, settings[field.key], label.id, help.id);
-    generalHost.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
-    const bound = bindSwitch(button, settings[field.key], async (value) => {
-      settings = await settingsItem.patch({ [field.key]: value });
-      generalStatus('Saved', 'success');
+  function renderToggleSection(sectionId: SettingsSectionId, hostId: string): void {
+    applySchemaCopy(sectionId);
+    const section = sections.find((candidate) => candidate.id === sectionId);
+    const host = requireElement(hostId, HTMLDivElement);
+    const saved = statusReporter(el('span'));
+    toggleFields(section?.fields ?? []).forEach((field, index) => {
+      if (index > 0) host.append(el('hr', 'options__divider'));
+      const label = el('span', 'geld-label', [field.label]);
+      label.id = `${field.key}-label`;
+      const note = surfaceNotes[field.key];
+      const help = el('p', 'geld-help', richText(note === undefined ? field.description : `${field.description} ${note}`));
+      help.id = `${field.key}-help`;
+      const button = switchButton(field.key, settings[field.key], label.id, help.id);
+      host.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
+      const bound = bindSwitch(button, settings[field.key], async (value) => {
+        settings = await settingsItem.patch({ [field.key]: value });
+        saved('Saved', 'success');
+      });
+      toggleSwitches.push({ field, set: bound.set });
     });
-    generalSwitches.push({ field, set: bound.set });
-  });
+  }
+
+  renderToggleSection('general', 'general-rows');
   applySchemaCopy('hide');
+  renderToggleSection('large-diffs', 'large-diffs-rows');
 
   /* Categories: built-ins with an "advanced" disclosure, then the user's own. */
   const { categoriesField, customField } = requireCategoryFields();
@@ -458,7 +464,7 @@ async function main(): Promise<void> {
     const wasOpen = new Set(
       Array.from(document.querySelectorAll<HTMLDetailsElement>('details.options__category[open]')).map((card) => card.dataset.categoryId ?? ''),
     );
-    categoriesHost.replaceChildren(...catalog.categories.map(renderBuiltIn));
+    categoriesHost.replaceChildren(...catalog.categories.filter(isCategoryInPicker).map(renderBuiltIn));
     // Re-rendering drops an unsaved draft; the Add button starts a fresh one.
     const customCards = settings.customCategories.map((custom) => renderCustom(custom));
     if (customCards.length === 0) customHost.replaceChildren(el('p', 'geld-help options__empty', [customField.emptyLabel]));
@@ -793,7 +799,7 @@ async function main(): Promise<void> {
   let lastSignature = categorySignature(settings);
   settingsItem.watch((next) => {
     settings = next;
-    for (const { field, set } of generalSwitches) set(next[field.key]);
+    for (const { field, set } of toggleSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
     // Rebuilding while someone types in a pattern box would eat their input.

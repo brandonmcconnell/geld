@@ -41,6 +41,7 @@ describe('SETTINGS_SCHEMA', () => {
       'groupHidden',
       'expandedByDefault',
       'categories',
+      'hideLargeDiffs',
     ]);
   });
 });

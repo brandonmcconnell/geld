@@ -53,6 +53,24 @@ describe('normalizeSettings', () => {
     expect(describeAdvancedSettings(migrated, 'docs')).toBeNull();
   });
 
+  it('drops the retired large category settings and requires the new explicit opt-in', () => {
+    const migrated = normalizeSettings({
+      categories: { tests: false, large: true },
+      groups: { 'large/large': false, 'tests/e2e': false },
+      categoryPatterns: { large: ['vendor/**'], tests: ['*.golden'] },
+    });
+    expect(migrated.categories).toEqual({ tests: false });
+    expect(migrated.groups).toEqual({ 'tests/e2e': false });
+    expect(migrated.categoryPatterns).toEqual({ tests: ['*.golden'] });
+    expect(migrated.hideLargeDiffs).toBe(false);
+    expect(isCategoryEnabled(migrated, 'large')).toBe(false);
+
+    const optedIn = normalizeSettings({ hideLargeDiffs: true, categories: { large: false } });
+    expect(optedIn.categories).toEqual({});
+    expect(optedIn.hideLargeDiffs).toBe(true);
+    expect(isCategoryEnabled(optedIn, 'large')).toBe(true);
+  });
+
   it('reads custom categories, dropping broken or duplicate ones', () => {
     const settings = normalizeSettings({
       customCategories: [

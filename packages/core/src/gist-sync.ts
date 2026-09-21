@@ -62,7 +62,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function serializeSettingsPayload(settings: GeldSettings, now: Date = new Date()): string {
-  const payload: SettingsPayload = { geld: 1, savedAt: now.toISOString(), settings };
+  // Normalize on every outbound write/export too. This strips settings retired
+  // by a newer version (notably the old `categories.large` flag) even when a
+  // caller still holds a pre-migration object in memory.
+  const payload: SettingsPayload = { geld: 1, savedAt: now.toISOString(), settings: normalizeSettings(settings) };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
@@ -190,16 +193,17 @@ export async function readRemote(token: string, gistId: string): Promise<RemoteS
 }
 
 export async function writeRemote(token: string, gistId: string | null, settings: GeldSettings): Promise<RemoteSettings> {
+  const normalized = normalizeSettings(settings);
   const body = JSON.stringify({
     description: GIST_DESCRIPTION,
     public: false,
-    files: { [GIST_FILE]: { content: serializeSettingsPayload(settings) } },
+    files: { [GIST_FILE]: { content: serializeSettingsPayload(normalized) } },
   });
   const gist: unknown =
     gistId === null ? await api(token, '/gists', { method: 'POST', body }) : await api(token, `/gists/${gistId}`, { method: 'PATCH', body });
   const summary = readGist(gist);
   if (summary === null) throw new Error('GitHub did not return the saved gist.');
-  return { gistId: summary.id, settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl };
+  return { gistId: summary.id, settings: normalized, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl };
 }
 
 /** Structural comparison; key order in stored JSON is irrelevant. */
