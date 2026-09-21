@@ -289,8 +289,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'Hide large diffs ⚠️',
         description:
           'Move files with 1000+ changed lines out of the initial review and exclude them from the visible counts. Enable this carefully: size alone does not make a change unimportant.',
-        popup: true,
-        popupDescription: 'Move 1000+ line diffs out of review. Enable carefully.',
+        // A deliberate opt-in with a warning to read: the options page and geld.sh only, not the toolbar popup.
+        popup: false,
       },
     ],
   },
