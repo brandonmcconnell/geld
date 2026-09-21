@@ -448,6 +448,9 @@ export function reviewCommentOf(review: Element): HTMLElement | null {
 }
 
 /** Every review verdict in the timeline (`pullrequestreview-N`), with its comment when it has one. */
+/** Each review's verdict as last read with its header sentence in reach (see `crawlReviews`). */
+const stateByReview = new Map<string, CrawledReviewState>();
+
 export function crawlReviews(root: ParentNode = document): readonly CrawledReview[] {
   const reviews: CrawledReview[] = [];
   const seen = new Set<string>();
@@ -457,12 +460,18 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
     const author = authorOf(node);
     if (author === null) continue;
     const comment = reviewCommentOf(node);
+    // The verdict sentence sits in the row's own header; the comment's words must not vote. Read from the row at
+    // home *and* whatever of it is on loan, and remembered: a review's verdict does not change while the page is
+    // open, and a read that finds no sentence (the header is worn by a panel row) must not demote it to "commented".
+    const read = reviewStateOf([node, ...wornPiecesOf(node)].map((scope) => textOutside(scope, comment)).join(' '));
+    const remembered = stateByReview.get(node.id);
+    const state = read === 'commented' && remembered !== undefined ? remembered : read;
+    stateByReview.set(node.id, state);
     reviews.push({
       anchor: node.id,
       author,
       avatarSrc: avatarSrcOf(node) ?? avatarSrcForLogin(author.login),
-      // The verdict sentence sits in the row's own header; the comment's words must not vote.
-      state: reviewStateOf(textOutside(node, comment)),
+      state,
       createdAt: createdAtOf(node),
       root: timelineRootOf(node),
       comment,
