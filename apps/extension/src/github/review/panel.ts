@@ -412,7 +412,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
     createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' — ')]),
   ]);
   const toggle = (): void => (nested ? handlers.onToggleSub(key) : handlers.onToggle(key));
-  main.addEventListener('click', toggle);
+  mainClickToggles(main, toggle);
 
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (item.rewritten) right.append(createElement('span', { class: `${PANEL_CLASS}__ai`, title: 'Title written by Geld from the sources' }, ['AI']));
@@ -456,7 +456,7 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
     createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [fold.label]),
   ]);
   const toggle = (): void => handlers.onToggle(key);
-  main.addEventListener('click', toggle);
+  mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [fold.time]));
   if (fold.firstAnchor !== null) {
@@ -566,7 +566,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   }
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--batch`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${batch.key}`, title: batch.names.join(', ') }, mainChildren);
   const toggle = (): void => handlers.onToggle(batch.key);
-  main.addEventListener('click', toggle);
+  mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (batch.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [batch.time]));
   if (batch.firstAnchor !== null) {
@@ -688,6 +688,19 @@ function nestedSlot(): { readonly item: HTMLElement; readonly body: HTMLElement 
 }
 
 /** Clicking anywhere in the row that is not a control (avatars, blank space) toggles it, like the title does. */
+/**
+ * A row's main button toggles it - except when the click was on a link it
+ * holds (a preview pill, a bot chip): that click opens the link, and only
+ * the link. Without this a preview pill opened the preview *and* flipped
+ * the row, since the pill sits inside the button and its click bubbled up.
+ */
+function mainClickToggles(main: HTMLElement, toggle: () => void): void {
+  main.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('a[href]') !== null) return;
+    toggle();
+  });
+}
+
 function rowClickToggles(row: HTMLElement, toggle: () => void): void {
   row.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
@@ -957,7 +970,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const open = model.openKey === CHECKS_KEY;
     // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
-    main.addEventListener('click', () => handlers.onToggle(CHECKS_KEY));
+    mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
       rowLabel('CI checks', 'CI'),
@@ -998,7 +1011,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
       createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
     ]);
-    main.addEventListener('click', () => handlers.onToggle(REVIEWS_KEY));
+    mainClickToggles(main, () => handlers.onToggle(REVIEWS_KEY));
     const right: Node[] = [];
     if (model.reviews !== null) right.push(healthGlyph(health, reviewsLabel(model.reviews)));
     right.push(chevron(open, () => handlers.onToggle(REVIEWS_KEY)));
@@ -1074,7 +1087,7 @@ function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLE
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${PREVIEWS_KEY}`, 'aria-label': plural(model.previews.latest.length, 'preview') }, [
     createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, model.previews.latest.map((entry) => previewPill(entry, model))),
   ]);
-  main.addEventListener('click', () => handlers.onToggle(PREVIEWS_KEY));
+  mainClickToggles(main, () => handlers.onToggle(PREVIEWS_KEY));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
     createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
     rowLabel('Previews', 'Previews'),
@@ -1203,7 +1216,7 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   const main = entry.hasBody
     ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, mainChildren)
     : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
-  if (entry.hasBody) main.addEventListener('click', toggle);
+  if (entry.hasBody) mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
   if (entry.hasBody) right.append(controlSlot(entry.anchor), chevron(open, toggle));
