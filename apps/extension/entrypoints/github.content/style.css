@@ -2156,9 +2156,14 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   --geld-tone-fg: var(--geld-review-danger-fg);
 }
 
+/* Light: GitHub's muted tone surface, thinned onto the canvas. Dark: those surfaces are translucent washes that
+ * all but vanish once thinned, so the tint is mixed from the tone's foreground - vivid in both schemes - at a
+ * share that reads on the dark canvas without shouting. `light-dark()` follows the page's `color-scheme`, which
+ * Primer sets per theme. */
 .geld-review__row[data-tone] {
-  --geld-tone-strong: color-mix(in srgb, var(--geld-tone-bg) 45%, var(--geld-review-bg));
-  --geld-tone-faint: color-mix(in srgb, var(--geld-tone-bg) 10%, var(--geld-review-bg));
+  --geld-tone-strong: light-dark(color-mix(in srgb, var(--geld-tone-bg) 45%, var(--geld-review-bg)), color-mix(in srgb, var(--geld-tone-fg) 22%, var(--geld-review-bg)));
+  --geld-tone-faint: light-dark(color-mix(in srgb, var(--geld-tone-bg) 10%, var(--geld-review-bg)), color-mix(in srgb, var(--geld-tone-fg) 6%, var(--geld-review-bg)));
+  --geld-tone-flat: light-dark(var(--geld-tone-bg), color-mix(in srgb, var(--geld-tone-fg) 28%, var(--geld-review-bg)));
   /* The avatars' mask ring is a solid colour; the tone at their position is close to the strong end. */
   --geld-row-bg: var(--geld-tone-strong);
   background: linear-gradient(90deg, var(--geld-tone-strong), var(--geld-tone-faint));
@@ -2166,8 +2171,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__row[data-tone]:hover,
 .geld-review__row[data-tone][data-open] {
-  --geld-row-bg: var(--geld-tone-bg);
-  background: var(--geld-tone-bg);
+  --geld-row-bg: var(--geld-tone-flat);
+  background: var(--geld-tone-flat);
 }
 
 /* The tone colours the surface, the glyph and the meter — never the words. */
