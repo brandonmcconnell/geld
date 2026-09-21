@@ -81,12 +81,25 @@ export function textWithTableRows(body: HTMLElement): string {
   return blockText(clone);
 }
 
+/**
+ * The comment's own body - never one of its threads' - wherever quick view
+ * has put it. A review's comment is loaned to the panel while its line is
+ * open, and the id-bearing node at home then holds only a placeholder; read
+ * from the home alone, the review looked bodiless, was dropped from the
+ * crawl, and with it went the open line (and the bot's verdict source), so
+ * the panel re-rendered without it, the loan came home, the next crawl found
+ * it again, and so on: content and times blinking for as long as it was open.
+ */
 function bodyElementOf(root: Element): HTMLElement | null {
-  for (const body of root.querySelectorAll(BODY_SELECTOR)) {
-    if (!(body instanceof HTMLElement)) continue;
-    const thread = body.closest(THREAD_SELECTOR);
-    if (thread !== null && root.contains(thread) && thread !== root) continue;
-    return body;
+  const scopes: Element[] = [root, ...wornPiecesOf(root)];
+  for (const scope of scopes) {
+    const candidates = scope.matches(BODY_SELECTOR) ? [scope, ...scope.querySelectorAll(BODY_SELECTOR)] : [...scope.querySelectorAll(BODY_SELECTOR)];
+    for (const body of candidates) {
+      if (!(body instanceof HTMLElement)) continue;
+      const thread = closestAtHome(body, THREAD_SELECTOR);
+      if (thread !== null && thread !== root && (root.contains(thread) || scopes.some((piece) => piece.contains(thread)))) continue;
+      return body;
+    }
   }
   return null;
 }
@@ -132,6 +145,25 @@ export function timelineRootOf(node: Element): HTMLElement {
 }
 
 /** Avatar for a comment: inside the node, else in its timeline row (issue comments keep it in a sibling column). */
+/**
+ * One URL per picture: GitHub serves the same avatar at several sizes
+ * (`s=40`, `s=48`, `s=60`, `s=80`…) and which copy is found depends on where
+ * the node is at the moment - a loaned comment's header shows one size, its
+ * row at home another. The size is pinned so the same account always reads
+ * as the same string; nothing in the panel draws an avatar above 40px.
+ */
+export function normalizeAvatarSrc(src: string): string {
+  if (src === '') return src;
+  try {
+    const url = new URL(src, location.href);
+    if (!/(^|\.)avatars\.githubusercontent\.com$/i.test(url.hostname)) return src;
+    if (url.searchParams.has('s')) url.searchParams.set('s', '80');
+    return url.toString();
+  } catch {
+    return src;
+  }
+}
+
 export function avatarSrcOf(node: Element | null): string | null {
   if (node === null) return null;
   const scopes: Element[] = [node];
@@ -140,7 +172,7 @@ export function avatarSrcOf(node: Element | null): string | null {
   for (const scope of scopes) {
     const img = find(scope, AVATAR_SELECTOR);
     const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
-    if (src !== '') return src;
+    if (src !== '') return normalizeAvatarSrc(src);
   }
   return null;
 }
@@ -156,7 +188,7 @@ export function avatarSrcForLogin(login: string): string | null {
   for (const selector of selectors) {
     const img = document.querySelector(selector);
     const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
-    if (src !== '') return src;
+    if (src !== '') return normalizeAvatarSrc(src);
   }
   return null;
 }

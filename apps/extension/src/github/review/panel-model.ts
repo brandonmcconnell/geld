@@ -4,6 +4,7 @@
  */
 
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
+import { normalizeAvatarSrc } from './crawler';
 import { botByAppSlug, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor } from '@geld/review';
 
 export interface InstalledBot {
@@ -38,7 +39,8 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode): readonly Insta
     if (bot === null) continue;
     const img = link.querySelector('img') ?? link.parentElement?.querySelector('img') ?? link.closest('.TimelineItem, .js-timeline-item, li, tr')?.querySelector('img');
     const src = img?.currentSrc || img?.getAttribute('src') || null;
-    add(bot.id, `${slug}[bot]`, src === '' ? null : src);
+    // One URL per picture whatever size the link near the app happens to show (see `normalizeAvatarSrc`).
+    add(bot.id, `${slug}[bot]`, src === null || src === '' ? null : normalizeAvatarSrc(src));
   }
   for (const bot of meta.bots) add(bot.id, bot.login, null);
   for (const item of meta.items) {
