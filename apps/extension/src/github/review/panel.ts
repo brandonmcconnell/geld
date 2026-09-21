@@ -382,6 +382,7 @@ function chevron(open: boolean, onToggle: () => void): HTMLElement {
 function checksBreakdown(counts: CheckCounts): HTMLElement {
   const parts: ReadonlyArray<{ readonly count: number; readonly label: string; readonly state: string; readonly glyph: string }> = [
     { count: counts.failure, label: 'failing', state: 'failure', glyph: ICON_X_CIRCLE_FILL },
+    { count: counts.queued, label: 'pending', state: 'queued', glyph: ICON_DOT_FILL },
     { count: counts.pending, label: 'in progress', state: 'pending', glyph: ICON_IN_PROGRESS },
     { count: counts.success, label: 'successful', state: 'success', glyph: ICON_CHECK_CIRCLE_FILL },
     { count: counts.skipped, label: 'skipped', state: 'skipped', glyph: ICON_SKIP },
@@ -1036,6 +1037,7 @@ function checksRing(counts: CheckCounts): SVGElement {
   const segments: ReadonlyArray<readonly [keyof CheckCounts, number]> = [
     ['success', counts.success],
     ['failure', counts.failure],
+    ['queued', counts.queued],
     ['pending', counts.pending],
     ['skipped', counts.skipped],
     ['neutral', counts.neutral],

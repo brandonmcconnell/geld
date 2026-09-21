@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -82,17 +82,26 @@ describe('digestMarkdown', () => {
 describe('status rows', () => {
   it('reads check counts from the merge box headings', () => {
     const counts = checkCountsFrom('1 in progress check\nUnit Tests / test\n3 skipped checks\n8 successful checks\n1 failing check');
-    expect(counts).toEqual({ success: 8, failure: 1, pending: 1, skipped: 3, neutral: 0 });
+    expect(counts).toEqual({ success: 8, failure: 1, queued: 0, pending: 1, skipped: 3, neutral: 0 });
     expect(checksHealth(counts ?? EMPTY_CHECKS)).toBe('bad');
     expect(checkCountsFrom('No checks here')).toBeNull();
-    expect(checkCountsFrom('Some checks were not successful\n1 failing, 7 skipped, 59 successful checks')).toEqual({ success: 59, failure: 1, pending: 0, skipped: 7, neutral: 0 });
+    expect(checkCountsFrom('Some checks were not successful\n1 failing, 7 skipped, 59 successful checks')).toEqual({ success: 59, failure: 1, queued: 0, pending: 0, skipped: 7, neutral: 0 });
     // Expanded: the summary sentence and the per-group headings both appear; the sentence alone counts.
-    expect(checkCountsFrom('1 failing, 7 skipped, 59 successful checks\n1 failing check\n7 skipped checks\n59 successful checks')).toEqual({ success: 59, failure: 1, pending: 0, skipped: 7, neutral: 0 });
-    expect(checkCountsFrom('All checks have passed\n3 successful checks')).toEqual({ success: 3, failure: 0, pending: 0, skipped: 0, neutral: 0 });
+    expect(checkCountsFrom('1 failing, 7 skipped, 59 successful checks\n1 failing check\n7 skipped checks\n59 successful checks')).toEqual({ success: 59, failure: 1, queued: 0, pending: 0, skipped: 7, neutral: 0 });
+    expect(checkCountsFrom('All checks have passed\n3 successful checks')).toEqual({ success: 3, failure: 0, queued: 0, pending: 0, skipped: 0, neutral: 0 });
     // Block text keeps the sentence apart from the next control ("…checks\nCollapse checks").
-    expect(checkCountsFrom('Some checks were not successful\n1 failing, 7 skipped, 59 successful checks\nCollapse checks\n1 failing check\nChecks settings\n7 skipped checks\nSkipped Sep 18, 2026 — not active\n59 successful checks')).toEqual({ success: 59, failure: 1, pending: 0, skipped: 7, neutral: 0 });
+    expect(checkCountsFrom('Some checks were not successful\n1 failing, 7 skipped, 59 successful checks\nCollapse checks\n1 failing check\nChecks settings\n7 skipped checks\nSkipped Sep 18, 2026 — not active\n59 successful checks')).toEqual({ success: 59, failure: 1, queued: 0, pending: 0, skipped: 7, neutral: 0 });
     // Expanded with a single state: the heading and the group repeat "3 successful checks".
-    expect(checkCountsFrom('All checks have passed\n3 successful checks\n3 successful checks')).toEqual({ success: 3, failure: 0, pending: 0, skipped: 0, neutral: 0 });
+    expect(checkCountsFrom('All checks have passed\n3 successful checks\n3 successful checks')).toEqual({ success: 3, failure: 0, queued: 0, pending: 0, skipped: 0, neutral: 0 });
+  });
+
+  it('keeps pending (not started) apart from in progress, as GitHub counts them', () => {
+    // The screenshot case: the section sentence and both group headings, one bucket each.
+    const counts = checkCountsFrom("Some checks haven't completed yet\n4 pending, 8 in progress, 7 skipped, 52 successful checks\n4 pending checks\nVercel – dashboard\nWaiting for status to be reported\n8 in progress checks\n7 skipped checks\n52 successful checks");
+    expect(counts).toEqual({ success: 52, failure: 0, queued: 4, pending: 8, skipped: 7, neutral: 0 });
+    expect(checksTotal(counts ?? EMPTY_CHECKS)).toBe(71);
+    expect(checksHealth(counts ?? EMPTY_CHECKS)).toBe('pending');
+    expect(checksSummary(counts ?? EMPTY_CHECKS)).toBe('4 pending · 8 in progress · 52 successful · 7 skipped');
   });
 
   it('reads required reviews', () => {

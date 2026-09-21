@@ -203,32 +203,40 @@ export function botDetail(bot: BotVerdictRecord): string {
   return 'findings';
 }
 
-export type CheckState = 'success' | 'failure' | 'pending' | 'skipped' | 'neutral';
+export type CheckState = 'success' | 'failure' | 'queued' | 'pending' | 'skipped' | 'neutral';
 
 export interface CheckCounts {
   readonly success: number;
   readonly failure: number;
+  /** Not started: GitHub's "pending" (waiting for a status to be reported, queued, expected). */
+  readonly queued: number;
+  /** Started and running: GitHub's "in progress". */
   readonly pending: number;
   readonly skipped: number;
   readonly neutral: number;
 }
 
-export const EMPTY_CHECKS: CheckCounts = { success: 0, failure: 0, pending: 0, skipped: 0, neutral: 0 };
+export const EMPTY_CHECKS: CheckCounts = { success: 0, failure: 0, queued: 0, pending: 0, skipped: 0, neutral: 0 };
 
 export function checksTotal(counts: CheckCounts): number {
-  return counts.success + counts.failure + counts.pending + counts.skipped + counts.neutral;
+  return counts.success + counts.failure + counts.queued + counts.pending + counts.skipped + counts.neutral;
 }
 
+/** The whole word between the number and "checks", so "1 pending review" on the same line never counts as a check. */
 const CHECK_WORDS: ReadonlyArray<readonly [RegExp, CheckState]> = [
-  [/successful|passed|passing/i, 'success'],
-  [/failing|failed|failure|error(?:ed)?|cancell?ed|timed out|action required/i, 'failure'],
-  [/in progress|pending|queued|waiting|expected|running/i, 'pending'],
-  [/skipped/i, 'skipped'],
-  [/neutral|stale/i, 'neutral'],
+  [/^(?:successful|passed|passing)$/i, 'success'],
+  [/^(?:failing|failed|failure|error(?:ed)?|cancell?ed|timed out|action required)$/i, 'failure'],
+  // GitHub counts the two apart ("4 pending, 8 in progress checks"): a check that has not started is not a running one,
+  // and one bucket taking the larger of the two numbers lost the smaller group.
+  [/^(?:in progress|running)$/i, 'pending'],
+  [/^(?:pending|queued|waiting|expected)$/i, 'queued'],
+  [/^skipped$/i, 'skipped'],
+  [/^(?:neutral|stale)$/i, 'neutral'],
 ];
 
 function stateOfWord(word: string): CheckState | null {
-  return CHECK_WORDS.find(([pattern]) => pattern.test(word))?.[1] ?? null;
+  const trimmed = word.trim();
+  return CHECK_WORDS.find(([pattern]) => pattern.test(trimmed))?.[1] ?? null;
 }
 
 /**
@@ -260,7 +268,7 @@ export function checkCountsFrom(text: string): CheckCounts | null {
 
 export function checksHealth(counts: CheckCounts): Health {
   if (counts.failure > 0) return 'bad';
-  if (counts.pending > 0) return 'pending';
+  if (counts.pending > 0 || counts.queued > 0) return 'pending';
   if (counts.success > 0) return 'good';
   return 'warn';
 }
@@ -280,7 +288,7 @@ export function toneOf(health: Health): Tone | null {
  */
 export function checksTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
   if (counts.failure > 0) return requiredFailing === false ? 'warn' : 'bad';
-  if (counts.pending > 0) return null;
+  if (counts.pending > 0 || counts.queued > 0) return null;
   if (counts.success > 0) return 'good';
   return null;
 }
@@ -288,6 +296,7 @@ export function checksTone(counts: CheckCounts, requiredFailing: boolean | null)
 export function checksSummary(counts: CheckCounts): string {
   const parts: string[] = [];
   if (counts.failure > 0) parts.push(`${counts.failure} failing`);
+  if (counts.queued > 0) parts.push(`${counts.queued} pending`);
   if (counts.pending > 0) parts.push(`${counts.pending} in progress`);
   if (counts.success > 0) parts.push(`${counts.success} successful`);
   if (counts.skipped > 0) parts.push(`${counts.skipped} skipped`);
