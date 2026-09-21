@@ -509,6 +509,12 @@ function checksSectionText(): string | null {
   return [blockText(section), ...wornPiecesOf(section).map((piece) => blockText(piece))].join('\n');
 }
 
+/** The sidebar's Reviewers block (the Rails form, or the React pane's reviewers section), as text. */
+function reviewersSidebarText(): string {
+  const block = document.querySelector('form[id^="pull-request-reviewers-form"], [data-testid="sidebar-reviewers"], [data-testid="reviewers-section"]');
+  return block instanceof HTMLElement ? blockText(block) : '';
+}
+
 function mergeBoxText(): string {
   const section = checksSection();
   // No recognisable container: the checks section's original parent is the merge box in every markup seen so far.
@@ -1187,25 +1193,31 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
       myReaction: null,
     });
   }
+  const personReviews = new Set(list.map((entry) => entry.anchor));
   for (const entry of crawled.comments) {
     if (entry.author.bot || isTrigger(entry, settings)) continue;
     const anchor = entry.comment.anchor;
     // A review's own comment is the review's line, wherever quick view has put the comment right now.
+    if (reviewedComments.has(anchor) || findIn(entry.root, '[id^="pullrequestreview-"]') !== null) continue;
     const node = document.getElementById(anchor);
-    if (reviewedComments.has(anchor) || findIn(entry.root, '[id^="pullrequestreview-"]') !== null || (node !== null && closestAtHome(node, '[id^="pullrequestreview-"]') !== null)) continue;
-    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
     const thread = entry.comment.kind === 'thread';
+    // A thread a person posted as part of a review is listed under that review; one inside a bot's review is the
+    // bot's (a round lists it), and a review's own comment was skipped above.
+    const parent = node === null ? undefined : reviewContainerOf(node)?.id;
+    if (parent !== undefined && !(thread && personReviews.has(parent))) continue;
+    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
     list.push({
       anchor,
       author: entry.author.login,
       avatarSrc: entry.avatarSrc,
       state: thread ? 'thread' : 'comment',
       preview: firstSentence(entry.comment.body),
-      time: timeTextOf(document.getElementById(anchor), anchor),
+      time: timeTextOf(node, anchor),
       hasBody: true,
       done: thread && (item !== undefined ? !isOpenStatus(item.status) : entry.comment.isResolved === true),
       replies: Math.max(0, (entry.comment.threadAnchors?.length ?? 1) - 1),
       myReaction: null,
+      ...(parent === undefined ? {} : { parent }),
     });
   }
   const nodes = new Map(list.map((entry) => [entry.anchor, document.getElementById(entry.anchor)]));
@@ -1216,6 +1228,17 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
     return compareHome(x, y);
   };
   return list.map((entry) => ({ ...entry, myReaction: entry.hasBody ? myReactionOn(entry.anchor) : null })).sort((a, b) => before(a.anchor, b.anchor));
+}
+
+/** The review timeline item (`pullrequestreview-N`, nothing longer) holding `node`, across a loan to the panel. */
+function reviewContainerOf(node: Element): HTMLElement | null {
+  let cursor: Element | null = node;
+  while (cursor !== null) {
+    const hit = closestAtHome(cursor, '[id^="pullrequestreview-"]');
+    if (hit === null || /^pullrequestreview-\d+$/.test(hit.id)) return hit;
+    cursor = hit.parentElement;
+  }
+  return null;
 }
 
 function blockTextOf(node: HTMLElement): string {
@@ -1466,7 +1489,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const boxText = mergeBoxText();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
-  const stated = /at least\s+(\d+)\s+approving review/i.exec(boxText)?.[1];
+  // The merge box states the requirement only while unmet; the sidebar's Reviewers block ("At least 1 approving
+  // review is required to merge this pull request") keeps stating it while the PR is open. A merged or closed PR
+  // states it nowhere, so the row there says "N approved" rather than a fraction.
+  const stated = /at least\s+(\d+)\s+approving review/i.exec(`${boxText}\n${reviewersSidebarText()}`)?.[1];
   if (stated !== undefined) visit.knownRequired = Number.parseInt(stated, 10);
   const reviewers = [...latestReviewers(reviews)];
   for (const record of meta.reviewers) if (!reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
