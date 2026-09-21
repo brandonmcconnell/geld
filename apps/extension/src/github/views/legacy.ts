@@ -71,7 +71,8 @@ export const legacyAdapter: DiffViewAdapter = {
         if (path === '') continue;
         // The classic tree's trailing `diff-*` squares are not the file icons GitHub's
         // current tree leads with; ours come from the diff (tree-section.ts fileVisual).
-        treeFiles.push({ path, element: item, statusIcon: null });
+        const href = item.querySelector('a[href^="#diff-"]')?.getAttribute('href') ?? null;
+        treeFiles.push({ path, element: item, statusIcon: null, anchor: href === null ? null : href.slice(1) });
       }
       treeDirectories.push(...queryAll('li[data-tree-entry-type="directory"]', treeRoot));
     }
@@ -86,6 +87,7 @@ export const legacyAdapter: DiffViewAdapter = {
     return {
       kind: 'legacy',
       container,
+      virtualized: false,
       entries,
       treeRoot,
       treeFiles,

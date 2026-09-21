@@ -15,6 +15,12 @@ export interface HiddenSectionState {
   readonly unviewedCount: number;
   /** Hidden files whose "Viewed" control is on. Both zero → the page has no such controls. */
   readonly viewedCount: number;
+  /**
+   * Where the row sits relative to the hidden files: `below` (default) has
+   * them gathered after it, `lead` puts it first in the list because shown
+   * files stay where they are (the virtualised view).
+   */
+  readonly placement?: 'below' | 'lead';
 }
 
 export interface HiddenSectionHandlers {
@@ -101,10 +107,16 @@ export function renderHiddenSection(
     existing.remove();
     existing = undefined;
   }
+  const placement = state.placement ?? 'below';
   if (section === undefined) {
     section = build(handlers);
     parts.set(section.root, section);
-    container.append(section.root);
+  }
+  // Placed once (the stylesheet's `order` keeps it last as GitHub appends files); moved only when the placement changes.
+  if (section.root.dataset.placement !== placement) {
+    if (placement === 'lead') container.prepend(section.root);
+    else container.append(section.root);
+    section.root.dataset.placement = placement;
   }
   section.handlers = handlers;
 
@@ -122,7 +134,7 @@ export function renderHiddenSection(
     section.icon.replaceChildren(svgFromString(iconMarkup));
   }
 
-  section.summary.textContent = expanded ? `${count} shown below` : `${count} hidden`;
+  section.summary.textContent = expanded ? (placement === 'lead' ? `${count} shown` : `${count} shown below`) : `${count} hidden`;
   const chips = categoryChips(breakdown);
   section.chips.textContent = chips;
   section.chips.hidden = chips === '';

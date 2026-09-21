@@ -22,7 +22,7 @@ import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManaged
 import { detectHeadSha, shaFromCommitUrl } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText, restoreHeaderStats } from './header-stats';
-import type { DiffEntry, DiffView } from './model';
+import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
@@ -35,6 +35,7 @@ import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
+import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import { categoryIconFor } from './ui/icons';
 import { expandLargeDiffs } from './large-diffs';
@@ -49,7 +50,7 @@ import {
   renderTreeSection,
 } from './ui/tree-section';
 import { legacyAdapter } from './views/legacy';
-import { ATTR_WRAP, reactAdapter } from './views/react';
+import { activateTreeItem, ATTR_WRAP, isSelectedTreeItem, liveEntryRoot, reactAdapter } from './views/react';
 import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
 
 const ATTR_CONTAINER = 'data-geld-container';
@@ -73,10 +74,32 @@ interface PendingReveal {
   attempts: number;
   /** Binary-search bounds over the page's scroll position while hunting a virtualised entry, and the last position we set. */
   seek: { lo: number; hi: number; last: number | null } | null;
+  /** Virtualised view: the attempt at which GitHub's own tree item was last asked to go there (the row mounts on its own). */
+  navigatedAt: number | null;
+  /** Virtualised view: the target was already the selected file, so a neighbour was selected first (see `seekEntry`). */
+  detoured: boolean;
 }
+
+/** Virtualised view: passes to wait for GitHub's navigation to mount the row before asking again. */
+const VIRTUAL_NAVIGATION_PASSES = 4;
 
 interface ClassifiedEntry extends Classified {
   readonly entry: DiffEntry;
+}
+
+/** A file of the tree with its category; the tree is the whole diff even where the page is not. */
+interface ClassifiedTreeFile extends Classified {
+  readonly file: TreeFileNode;
+}
+
+/**
+ * What the virtualised view's "N files hidden" row needs once the header's
+ * breakdown — the whole diff, not the mounted rows — is known later in the pass.
+ */
+interface VirtualSection {
+  /** The list element around the container; the row leads it. */
+  readonly host: HTMLElement;
+  readonly everythingHidden: boolean;
 }
 
 export interface ControllerHooks {
@@ -242,6 +265,8 @@ export class GeldController {
   private currentView: DiffView | null = null;
   private currentPage: PageInfo | null = null;
   private pendingReveal: PendingReveal | null = null;
+  /** Set by the pass's `applyVirtualView` for the "N files hidden" row rendered after the header totals. */
+  private virtualSection: VirtualSection | null = null;
   /** Stops the previous reveal's re-align loop so two of them never fight over the scroll position. */
   private cancelAlign: (() => void) | null = null;
   private lastState: TabState = IDLE_STATE;
@@ -654,6 +679,7 @@ export class GeldController {
     let renderedEntryCount = 0;
     let expanded = false;
 
+    this.virtualSection = null;
     if (view !== null) {
       renderedEntryCount = view.entries.length;
       const result = this.applyView(view, page.stateKey, matcher);
@@ -668,6 +694,7 @@ export class GeldController {
     const header = this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden);
     const headerHidden = header.hidden;
     const allTotals = header.all;
+    if (this.virtualSection !== null) this.renderVirtualSection(page.stateKey, matcher, this.virtualSection, headerHidden ?? hidden ?? EMPTY_BREAKDOWN, expanded);
 
     this.applyWhitespace(page, view, url);
     if (view !== null && this.settings.expandLargeDiffs) {
@@ -765,6 +792,8 @@ export class GeldController {
     matcher: PathMatcher,
   ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
     if (!this.settings.groupHidden) return this.applyInlineView(view, stateKey, matcher);
+    if (view.virtualized) return this.applyVirtualView(view, stateKey, matcher);
+    this.clearVirtualChrome(view);
     const classified = this.classifyEntries(view, matcher);
     const hiddenEntries = classified.filter((item) => item.category !== null);
     const hiddenAnchors = new Set<string>();
@@ -810,6 +839,76 @@ export class GeldController {
   }
 
   /**
+   * Grouped layout in the virtualised files view (see `DiffView.virtualized`).
+   * Rows cannot be gathered at the bottom, so hidden files vanish where they
+   * are and the rows below close up over them. What is hidden is decided from
+   * the tree, which lists the whole diff, and declared in a stylesheet keyed
+   * on each hidden file's anchor (`ui/virtual-hidden.ts`), so a row mounting
+   * between two passes is never painted first. The "N files hidden" row leads
+   * the list instead of closing it — nothing is gathered below it — and is
+   * rendered later in the pass, once the header's breakdown (the whole diff,
+   * with line counts) is known; the mounted rows alone would count wrong.
+   */
+  private applyVirtualView(
+    view: DiffView,
+    stateKey: string,
+    matcher: PathMatcher,
+  ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
+    const classified = this.classifyEntries(view, matcher);
+    for (const item of classified) item.entry.root.setAttribute(ATTR_ENTRY, item.category === null ? 'visible' : 'hidden');
+    for (const item of view.tocItems.values()) item.removeAttribute(ATTR_TOC);
+    // The container's own children are never the section's host here.
+    removeHiddenSection(view.container);
+
+    const tree = this.classifyTree(view, matcher);
+    const hiddenFiles = tree.filter((item) => item.category !== null);
+    const host = view.container.parentElement ?? view.container;
+    if (hiddenFiles.length === 0) {
+      view.container.removeAttribute(ATTR_CONTAINER);
+      view.container.removeAttribute(ATTR_EXPANDED);
+      view.container.removeAttribute(ATTR_VIRTUAL);
+      removeVirtualHiddenStyles();
+      removeHiddenSection(host);
+      for (const item of classified) item.entry.root.removeAttribute(ATTR_ENTRY);
+      this.applyTree(view, stateKey, matcher, tree);
+      return { breakdown: buildBreakdown(classified), expanded: false };
+    }
+
+    const everythingHidden = hiddenFiles.length === tree.filter((item) => item.filtered !== true).length;
+    const expanded = this.isDiffExpanded(stateKey, everythingHidden);
+    view.container.setAttribute(ATTR_CONTAINER, view.kind);
+    view.container.setAttribute(ATTR_VIRTUAL, '');
+    view.container.toggleAttribute(ATTR_EXPANDED, expanded);
+    applyVirtualHiddenStyles(hiddenFiles.flatMap((item) => (item.file.anchor === null ? [] : [item.file.anchor])));
+    this.virtualSection = { host, everythingHidden };
+
+    this.applyTree(view, stateKey, matcher, tree);
+    // The tree's breakdown stands in for the header's until the diff is here: every file, counts where the diff knows them.
+    return { breakdown: buildBreakdown(tree), expanded };
+  }
+
+  /** The virtualised view's "N files hidden" row, from the pass's final breakdown. */
+  private renderVirtualSection(stateKey: string, matcher: PathMatcher, section: VirtualSection, breakdown: HiddenBreakdown, expanded: boolean): void {
+    renderHiddenSection(
+      section.host,
+      // "Viewed" can only be pressed on mounted rows, so the shortcut is not offered here.
+      { breakdown, activeCategories: matcher.activeCategories, expanded, unviewedCount: 0, viewedCount: 0, placement: 'lead' },
+      {
+        onToggle: () => this.setDiffExpanded(stateKey, !this.isDiffExpanded(stateKey, section.everythingHidden)),
+        onMarkViewed: () => this.markHiddenViewed(),
+      },
+    );
+  }
+
+  /** Undo the virtualised view's chrome when another layout takes over (a setting flip on the same page). */
+  private clearVirtualChrome(view: DiffView): void {
+    if (!view.container.hasAttribute(ATTR_VIRTUAL)) return;
+    view.container.removeAttribute(ATTR_VIRTUAL);
+    removeVirtualHiddenStyles();
+    for (const element of view.container.parentElement?.querySelectorAll('.geld-hidden-section[data-placement="lead"]') ?? []) element.remove();
+  }
+
+  /**
    * Inline layout: nothing moves. Hidden diffs stay in place but start
    * collapsed (using GitHub's own control, so the user can open them); the
    * file tree keeps GitHub's list and only fades the hidden files, swapping
@@ -820,6 +919,7 @@ export class GeldController {
     stateKey: string,
     matcher: PathMatcher,
   ): { readonly breakdown: HiddenBreakdown; readonly expanded: boolean } {
+    this.clearVirtualChrome(view);
     const classified = this.classifyEntries(view, matcher);
     for (const item of classified) item.entry.root.setAttribute(ATTR_ENTRY, item.category === null ? 'visible' : 'hidden');
     // None of the grouped chrome applies here.
@@ -858,7 +958,16 @@ export class GeldController {
     markHiddenDirectories(view.treeDirectories);
   }
 
-  private applyTree(view: DiffView, stateKey: string, matcher: PathMatcher): void {
+  /** Every file of the tree with its category; counts from the diff where it knows the file (the tree shows none). */
+  private classifyTree(view: DiffView, matcher: PathMatcher): ClassifiedTreeFile[] {
+    return view.treeFiles.map((file) => {
+      const stats = this.diffFacts?.get(file.path) ?? null;
+      if (view.filteredPaths.has(file.path)) return { file, path: file.path, category: null, stats, filtered: true };
+      return { file, path: file.path, category: this.classify(matcher, file.path, null), stats };
+    });
+  }
+
+  private applyTree(view: DiffView, stateKey: string, matcher: PathMatcher, tree: readonly ClassifiedTreeFile[] = this.classifyTree(view, matcher)): void {
     if (view.treeRoot === null) return;
     view.treeRoot.setAttribute(ATTR_TREE_MODE, 'grouped');
     for (const element of view.treeRoot.querySelectorAll<HTMLElement>(`.${INLINE_ICON_CLASS}`)) element.remove();
@@ -867,16 +976,15 @@ export class GeldController {
     const entryPaths = new Set(view.entries.map((entry) => entry.path));
     const byCategory = new Map<HiddenCategory, TreeSectionFile[]>();
     let visibleFiles = 0;
-    for (const file of view.treeFiles) {
-      const filtered = view.filteredPaths.has(file.path);
-      const category = filtered ? null : this.classify(matcher, file.path, null);
+    for (const { file, category, filtered } of tree) {
       file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
       if (category === null) {
-        if (!filtered) visibleFiles += 1;
+        if (filtered !== true) visibleFiles += 1;
         continue;
       }
       const list = byCategory.get(category) ?? [];
-      list.push({ path: file.path, available: entryPaths.has(file.path), statusIcon: file.statusIcon, status: this.diffFacts?.get(file.path)?.status ?? null });
+      // The virtualised list mounts any file on request (GitHub's tree item takes the page there), so none is pending.
+      list.push({ path: file.path, available: view.virtualized || entryPaths.has(file.path), statusIcon: file.statusIcon, status: this.diffFacts?.get(file.path)?.status ?? null });
       byCategory.set(category, list);
     }
 
@@ -947,7 +1055,7 @@ export class GeldController {
     if (entry === undefined) {
       // Not in the DOM: GitHub's React view virtualises the list and the legacy
       // view loads big diffs progressively. Remember the request and go looking.
-      this.pendingReveal = { path, stateKey, attempts: 0, seek: null };
+      this.pendingReveal = { path, stateKey, attempts: 0, seek: null, navigatedAt: null, detoured: false };
       this.seekEntry(view, this.pendingReveal);
       return;
     }
@@ -958,9 +1066,36 @@ export class GeldController {
    * Move the page so the target's diff gets rendered. Legacy pages load
    * everything once the end is reached, so scroll there. The React view only
    * renders what is on screen, so binary-search the scroll position using the
-   * file tree's order (the diff list follows it) until the entry appears.
+   * file tree's order (the diff list follows it) until the entry appears. Its
+   * virtualised mode knows where every file is: GitHub's own tree item takes
+   * the page there and mounts the row. The rows it measures on the way (a
+   * large diff loading, comment rows folding) move everything below without
+   * the list re-anchoring, so the row can slip away again before the next
+   * pass sees it; after a few passes without it the item is asked again, and
+   * every ask lands nearer as more rows are measured.
    */
   private seekEntry(view: DiffView, pending: PendingReveal): void {
+    if (view.virtualized) {
+      if (pending.navigatedAt !== null && pending.attempts - pending.navigatedAt < VIRTUAL_NAVIGATION_PASSES) return;
+      const index = view.treeFiles.findIndex((candidate) => candidate.path === pending.path);
+      const file = view.treeFiles[index];
+      if (file === undefined) {
+        this.pendingReveal = null;
+        return;
+      }
+      // Selecting the file that is already selected does nothing (the page scrolled away from it since): select a
+      // neighbour first, and the target on the pass GitHub's re-render brings.
+      const neighbour = view.treeFiles[index + 1] ?? view.treeFiles[index - 1];
+      if (!pending.detoured && neighbour !== undefined && isSelectedTreeItem(file.element)) {
+        pending.detoured = true;
+        activateTreeItem(neighbour.element);
+        return;
+      }
+      pending.navigatedAt = pending.attempts;
+      pending.detoured = false;
+      activateTreeItem(file.element);
+      return;
+    }
     const order = new Map(view.treeFiles.map((file, index) => [file.path, index] as const));
     const target = order.get(pending.path);
     if (view.kind === 'legacy' || target === undefined) {
@@ -1003,22 +1138,29 @@ export class GeldController {
     view.expandEntry(entry);
     // Inline layout: opening it on request counts as the user's choice.
     if (!this.settings.groupHidden) this.markTouched(stateKey, entry.path);
+    // The virtualiser replaces a row's element freely (re-measuring remounts it): the row that is there now is the one to mark.
+    const live = (): HTMLElement | null => (entry.root.isConnected ? entry.root : liveEntryRoot(entry));
     requestAnimationFrame(() => {
-      if (scroll) entry.root.scrollIntoView({ block: 'start', behavior: 'instant' });
-      entry.root.setAttribute(ATTR_FLASH, '');
-      setTimeout(() => entry.root.removeAttribute(ATTR_FLASH), 1600);
+      const root = live();
+      if (root === null) return;
+      if (scroll) root.scrollIntoView({ block: 'start', behavior: 'instant' });
+      root.setAttribute(ATTR_FLASH, '');
+      setTimeout(() => live()?.removeAttribute(ATTR_FLASH), 1600);
       if (entry.anchor !== null) history.replaceState(history.state, '', `#${entry.anchor}`);
-      if (scroll) this.keepAligned(entry.root);
+      if (scroll) this.keepAligned(live);
     });
   }
 
   /**
    * Diff bodies above the target load lazily as we scroll past them, pushing
    * the target down after we aligned it. Re-align a few times while that
-   * settles, but stop as soon as the user scrolls on their own.
+   * settles, but stop as soon as the user scrolls on their own. `live` names
+   * the target's current element (a virtualised row can be remounted meanwhile).
    */
-  private keepAligned(target: HTMLElement): void {
-    const scrollMargin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+  private keepAligned(live: () => HTMLElement | null): void {
+    const first = live();
+    if (first === null) return;
+    const scrollMargin = Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0;
     const deadline = performance.now() + 1500;
     let stableChecks = 0;
     let userScrolled = false;
@@ -1032,7 +1174,8 @@ export class GeldController {
     window.addEventListener('keydown', stop, options);
 
     const check = (): void => {
-      if (userScrolled || performance.now() > deadline || !target.isConnected) {
+      const target = live();
+      if (userScrolled || performance.now() > deadline || target === null) {
         window.removeEventListener('wheel', stop);
         window.removeEventListener('touchstart', stop);
         window.removeEventListener('keydown', stop);
@@ -1204,7 +1347,10 @@ export class GeldController {
     for (const element of queryAll(`[${ATTR_CONTAINER}]`)) {
       element.removeAttribute(ATTR_CONTAINER);
       element.removeAttribute(ATTR_EXPANDED);
+      element.removeAttribute(ATTR_VIRTUAL);
     }
+    removeVirtualHiddenStyles();
+    this.virtualSection = null;
     for (const attribute of [ATTR_ENTRY, ATTR_TREE, ATTR_TREE_MODE, ATTR_TOC, ATTR_FLASH, ATTR_SWAPPED_ICON, ATTR_WRAP]) {
       for (const element of queryAll(`[${attribute}]`)) element.removeAttribute(attribute);
     }
