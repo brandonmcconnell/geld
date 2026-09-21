@@ -197,11 +197,11 @@ describe('change kinds (Trivial changes and Large diffs categories)', () => {
     expect(matcher.categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })?.id).toBe('trivial');
     // Very large diffs are their own opt-in category, not trivial.
     expect(matcher.categorizeFile({ path: 'src/big.ts', additions: 900, deletions: 200 })).toBeNull();
-    const large = createMatcher({ ...DEFAULT_SETTINGS, categories: { large: true } });
+    const large = createMatcher({ ...DEFAULT_SETTINGS, hideLargeDiffs: true });
     expect(large.usesChangeKinds).toBe(true);
     expect(large.categorizeFile({ path: 'src/big.ts', additions: 900, deletions: 200 })?.id).toBe('large');
     expect(large.categorizeFile({ path: 'src/moved.ts', kinds: ['renames'] })).toBeNull();
-    const both = createMatcher({ ...DEFAULT_SETTINGS, categories: { trivial: true, large: true } });
+    const both = createMatcher({ ...DEFAULT_SETTINGS, categories: { trivial: true }, hideLargeDiffs: true });
     // A huge binary is trivial first (trivial is matched before large).
     expect(both.categorizeFile({ path: 'blob.bin', additions: 2000, deletions: 0, kinds: ['binary'] })?.id).toBe('trivial');
     expect(matcher.categorizeFile({ path: 'src/plain.ts', additions: 3, deletions: 1 })).toBeNull();
