@@ -2717,6 +2717,14 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
 }
 
+/* The checks gear is worn by the row's gear slot. Changing its mode makes GitHub re-create the group header, gear
+ * and tooltip included, inside the list; that copy is on its way to the slot on the next pass (`wearGear`) and is
+ * never painted here, so the list does not jump while it waits. The merge box outside compact mode is untouched. */
+.geld-review__slot[data-kind='checks'] button[data-action='open_checks_settings'],
+.geld-review__slot[data-kind='checks'] button[data-action='open_checks_settings'] + [data-component='Tooltip'] {
+  display: none !important;
+}
+
 /* GitHub's gear brings its own right margin from the check list; here it fills the 28px column like the ⋯ above it. */
 .geld-review__gear-slot > button {
   width: 28px !important;
