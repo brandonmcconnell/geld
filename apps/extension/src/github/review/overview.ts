@@ -18,7 +18,7 @@ import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTo
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import { aiPending, consolidateInBrowser, jevDecisionsFor, previewDecisionKey, resetAiForVisit, withAi, withJevDone } from './ai';
+import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
 import { refDetails, refsVersion, resetRefs } from './refs';
@@ -51,7 +51,6 @@ interface VisitState {
   fullTimeline: boolean;
   openKey: string | null;
   collapsedGroups: Set<GroupId>;
-  rewriteStarted: boolean;
   pageKey: string;
   generatedAt: string;
   loadMoreTries: number;
@@ -97,7 +96,6 @@ const visit: VisitState = {
   fullTimeline: false,
   openKey: null,
   collapsedGroups: new Set<GroupId>(['done']),
-  rewriteStarted: false,
   pageKey: '',
   generatedAt: '',
   loadMoreTries: 0,
@@ -439,10 +437,17 @@ function firstAnchorIn(node: HTMLElement | null): string | null {
 function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: GeldPrMeta): { readonly meta: GeldPrMeta; readonly freshness: PanelModel['freshness'] } {
   if (found === null) return { meta: withAi(crawled), freshness: 'local' };
   const usable = usableMeta(found);
+  // A digest the Action wrote with AI is the repository's; nothing this device wrote is layered over it.
+  const layer = usable.producer.ai ? (meta: GeldPrMeta): GeldPrMeta => meta : withAi;
   if (found.freshness === 'fresh' && usable.truncated !== true) {
-    return { meta: withAi(usable), freshness: 'fresh' };
+    return { meta: layer(usable), freshness: 'fresh' };
   }
-  return { meta: withAi(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
+  return { meta: layer(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
+}
+
+/** The run store's key for a pull request: the page key, prefixed with the host off github.com. */
+function aiRunKey(stateKey: string): string {
+  return location.host === 'github.com' ? `github:${stateKey}` : `github@${location.host}:${stateKey}`;
 }
 
 /**
@@ -1392,7 +1397,6 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.openKey = null;
     visit.collapsedGroups = new Set<GroupId>(['done']);
     visit.fullTimeline = false;
-    visit.rewriteStarted = false;
     visit.loadMoreTries = 0;
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.openSubKey = null;
@@ -1411,10 +1415,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
-    resetAiForVisit();
+    // This device's AI run for the pull request, if any; the pass re-applies once it is read.
+    loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
   lastSettings = settings;
   const crawledDom = crawlConversation();
+  const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   const found = findSummaryComment(document);
   hideSummary(found?.root ?? null);
   const headSha = detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA;
@@ -1542,6 +1548,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     previews: latestPreviews(allPreviews),
     grouping: settings.reviewGrouping,
     openCommits: visit.openCommits,
+    ai: aiStateFor(meta, rawComments, settings),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
     checksRing,
@@ -1674,6 +1681,14 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
       reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
     },
+    onRunAi: () => {
+      void runAi(meta, rawComments, settings, reapply).then((run) => {
+        if (run.changed) reapply();
+      });
+    },
+    onClearAi: () => {
+      void clearAiForPage().then(reapply);
+    },
     onReact: (anchor) => {
       // Open whatever row holds the comment, then GitHub's own picker inside it.
       const sub = comments.find((entry) => entry.anchor === anchor && entry.hasBody);
@@ -1788,14 +1803,6 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
 
-  if (!visit.rewriteStarted && !meta.producer.ai) {
-    visit.rewriteStarted = true;
-    const comments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
-    void consolidateInBrowser(meta, comments, settings, reapply).then(() => {
-      // Sources arrive in pages; another pass may find new items to ask about.
-      visit.rewriteStarted = false;
-    });
-  }
 }
 
 /**
@@ -1828,7 +1835,6 @@ export function teardownReviewOverview(): void {
   applyFolds([], new Set());
   collapseDescription(false);
   setFullTimeline(false);
-  visit.rewriteStarted = false;
   visit.openKey = null;
   visit.pageKey = '';
   visit.pendingAnchor = null;
