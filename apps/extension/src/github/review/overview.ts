@@ -1037,9 +1037,9 @@ function anchorOf(node: Element): string | null {
   return inner === null ? null : inner.id;
 }
 
-function timeTextOf(node: Element | null): string {
-  if (node === null) return '';
-  const anchor = anchorOf(node);
+function timeTextOf(node: Element | null, knownAnchor: string | null = null): string {
+  if (node === null) return knownAnchor === null ? '' : (timeByAnchor.get(knownAnchor) ?? '');
+  const anchor = knownAnchor ?? anchorOf(node);
   const read = timeTextRead(node);
   if (read !== '') {
     if (anchor !== null) timeByAnchor.set(anchor, read);
@@ -1173,7 +1173,7 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
       avatarSrc: review.avatarSrc,
       state: ENTRY_STATE[review.state],
       preview: body === '' ? '' : firstSentence(body),
-      time: timeTextOf(review.root),
+      time: timeTextOf(review.root, review.anchor),
       hasBody: review.comment !== null,
       done: false,
       replies: 0,
