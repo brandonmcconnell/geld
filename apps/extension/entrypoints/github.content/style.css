@@ -1230,43 +1230,22 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   margin-left: auto;
 }
 
-/* "Grouped by type ▾": as quiet as the copy button beside it, a menu like the rows' ⋯. */
+/* The grouping control: an icon button like the copy button beside it, widened by the current choice's name. */
 .geld-review__grouping {
   position: relative;
 }
 
-.geld-review__grouping-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 28px;
-  padding: 0 6px 0 8px;
-  border-radius: 6px;
-  color: var(--geld-review-muted);
+.geld-review__icon.geld-review__grouping-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px 0 7px;
   font-size: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.geld-review__grouping-btn::-webkit-details-marker {
-  display: none;
-}
-
-.geld-review__grouping-btn:hover,
-.geld-review__grouping[open] > .geld-review__grouping-btn {
-  background: var(--geld-review-hover);
-  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 500;
 }
 
 .geld-review__grouping-btn .octicon {
-  width: 12px;
-  height: 12px;
-}
-
-.geld-review__grouping-btn > .octicon:first-child {
-  width: 14px;
-  height: 14px;
-  margin-right: 4px;
+  width: 16px;
+  height: 16px;
 }
 
 .geld-review__menu-list > .geld-review__menu-item--choice {
@@ -3826,5 +3805,15 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   /* Compare keeps its icon only, square. */
   .geld-review__push-compare {
     padding: 0 4px;
+  }
+
+  /* The grouping control is its mark alone, the copy button's square. */
+  .geld-review__grouping-label {
+    display: none;
+  }
+
+  .geld-review__icon.geld-review__grouping-btn {
+    width: 28px;
+    padding: 0;
   }
 }

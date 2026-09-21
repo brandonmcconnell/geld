@@ -13,7 +13,7 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } f
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -775,16 +775,20 @@ function rowClickToggles(row: HTMLElement, toggle: () => void): void {
   });
 }
 
-const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'type', batch: 'push' };
+const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'Type', batch: 'Push' };
 
-/** A quiet "Grouped by type ▾" in the Geld row; choosing the other arrangement rebuilds the list and keeps the choice. */
+/**
+ * The grouping control in the Geld row: the list-filter mark (the one sign
+ * for filter, sort and group) beside the current choice, "Type" or "Push";
+ * on narrow panels the mark alone, as an icon button like the copy button
+ * beside it. Choosing the other arrangement rebuilds the list and keeps the choice.
+ */
 function groupingMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
   installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__grouping` });
-  const summary = createElement('summary', { class: `${PANEL_CLASS}__grouping-btn`, role: 'button', 'aria-label': `Grouped by ${GROUPING_LABEL[model.grouping]}. Change grouping`, title: 'Group the digest by', [ATTR_FOCUS]: 'grouping' }, [
-    icon(ICON_ROWS),
-    createElement('span', {}, [GROUPING_LABEL[model.grouping]]),
-    icon(ICON_CHEVRON_DOWN),
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__grouping-btn`, role: 'button', 'aria-label': `Grouped by ${GROUPING_LABEL[model.grouping].toLowerCase()}. Change grouping`, title: 'Group the digest by', [ATTR_FOCUS]: 'grouping' }, [
+    icon(ICON_LIST_FILTER),
+    createElement('span', { class: `${PANEL_CLASS}__grouping-label` }, [GROUPING_LABEL[model.grouping]]),
   ]);
   summary.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' }, [createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Group the digest by'])]);
