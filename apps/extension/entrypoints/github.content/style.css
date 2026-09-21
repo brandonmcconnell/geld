@@ -3205,6 +3205,98 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding: 2px 0 !important;
 }
 
+/* ---- force-push events, set like the commit rows (quick-view.ts: compactForcePushes) ---- */
+
+.geld-review__qv [data-geld-push-hidden] {
+  display: none !important;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-body .geld-review__push) {
+  padding: 2px 0 !important;
+}
+
+.geld-review__push {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review__push-avatar {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.geld-review__push-verb {
+  color: var(--geld-review-muted) !important;
+}
+
+.geld-review__push-verb:hover {
+  color: var(--fgColor-default, var(--color-fg-default)) !important;
+  text-decoration: underline;
+}
+
+/* The Compare button: GitHub's small secondary button shape, with its icon. */
+.geld-review__push-compare {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 7px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--geld-review-muted) !important;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none !important;
+}
+
+.geld-review__push-compare:hover {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default)) !important;
+}
+
+.geld-review__push-compare .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The two heads at the right edge, as the commit rows place their SHA (GitHub's `.text-right.ml-1` there is a
+ * code block with 4px inner padding, so the later SHA ends where theirs end). */
+.geld-review__push-shas {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--geld-review-muted);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 12px;
+}
+
+.geld-review__push-sha {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+}
+
+.geld-review__push-sha > a {
+  font-weight: 400;
+}
+
+.geld-review__push-arrow {
+  color: var(--geld-review-muted);
+}
+
 /* ---- an open row wears its comment's header --------------------------------- */
 
 .geld-review__head-slot {
@@ -3703,6 +3795,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__check-label,
   .geld-review__bot-name:not(.geld-review__deploy-name),
   .geld-review__deploy-sum-text,
+  .geld-review__push-compare > span,
   .geld-review__bot-detail,
   .geld-review__label-long,
   .geld-review__reviewers-text,
@@ -3728,5 +3821,10 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
   .geld-review__bot {
     gap: 4px;
+  }
+
+  /* Compare keeps its icon only, square. */
+  .geld-review__push-compare {
+    padding: 0 4px;
   }
 }

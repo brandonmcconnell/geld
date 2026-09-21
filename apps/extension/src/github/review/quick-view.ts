@@ -11,7 +11,7 @@
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
 import { fitPathInto } from './path-fit';
-import { ICON_CHEVRON_DOWN, ICON_COMMENT, ICON_COPY, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_LINK_EXTERNAL, ICON_REPLY } from '../ui/icons';
+import { ICON_CHEVRON_DOWN, ICON_COMMENT, ICON_COPY, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_LINK_EXTERNAL, ICON_REPLY } from '../ui/icons';
 import { onRestore, teleportInto } from './teleport';
 
 /** Fill `slot` with `nodes`. */
@@ -21,6 +21,48 @@ export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]
   teleportInto(list, nodes);
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
   openMinimized(list);
+  compactForcePushes(list);
+}
+
+const ATTR_PUSH_HIDDEN = 'data-geld-push-hidden';
+
+/**
+ * A force-push event, set like the commit rows around it. GitHub's sentence —
+ * "brandonmcconnell force-pushed the brandon/feature branch from b1a5c29 to
+ * 4010a15 · Compare · 2 days ago" — repeats what every row here shares (the
+ * actor's name beside their avatar, the branch, the time) around the three
+ * links that matter. Those links are lifted into one line: the avatar,
+ * "force-pushed" (GitHub's link), a Compare button, and on the right the two
+ * SHAs, the later one standing where the commit rows put theirs. The sentence
+ * is hidden, not removed, and everything is undone when the node goes home.
+ */
+function compactForcePushes(list: HTMLElement): void {
+  for (const body of list.querySelectorAll<HTMLElement>('.TimelineItem-body')) {
+    if (body.querySelector('.geld-review__push') !== null) continue;
+    const links = [...body.querySelectorAll<HTMLAnchorElement>('a')];
+    const verb = links.find((link) => /^force-pushed$/i.test(link.textContent?.trim() ?? ''));
+    if (verb === undefined) continue;
+    const shas = links.filter((link) => link.querySelector('code') !== null && /^[0-9a-f]{7,}$/i.test(link.textContent?.trim() ?? ''));
+    const compare = links.find((link) => /^compare$/i.test(link.textContent?.trim() ?? ''));
+    const avatar = body.querySelector<HTMLImageElement>('img.avatar, img[class*="avatar"]');
+    const line = body.querySelector<HTMLElement>('.d-flex') ?? body;
+    const hidden = [...line.children].filter((child): child is HTMLElement => child instanceof HTMLElement);
+    for (const child of hidden) child.setAttribute(ATTR_PUSH_HIDDEN, '');
+    const sha = (link: HTMLAnchorElement): HTMLElement => createElement('code', { class: 'geld-review__push-sha' }, [createElement('a', { href: link.href, class: 'Link--secondary' }, [link.textContent?.trim() ?? ''])]);
+    const row = createElement('div', { class: 'geld-review__push' }, [
+      ...(avatar === null ? [] : [createElement('img', { class: 'geld-review__push-avatar', src: avatar.currentSrc || avatar.src, alt: avatar.alt, width: '20', height: '20' })]),
+      createElement('a', { class: 'geld-review__push-verb Link--secondary', href: verb.href }, ['force-pushed']),
+      ...(compare === undefined
+        ? []
+        : [createElement('a', { class: 'geld-review__push-compare', href: compare.href, 'aria-label': 'Compare the two heads', title: 'Compare' }, [svgFromString(ICON_GIT_COMPARE), createElement('span', {}, ['Compare'])])]),
+      createElement('span', { class: 'geld-review__push-shas' }, shas.length === 2 && shas[0] !== undefined && shas[1] !== undefined ? [sha(shas[0]), createElement('span', { class: 'geld-review__push-arrow', 'aria-hidden': 'true' }, ['→']), sha(shas[1])] : shas.map(sha)),
+    ]);
+    line.append(row);
+    onRestore(() => {
+      row.remove();
+      for (const child of hidden) child.removeAttribute(ATTR_PUSH_HIDDEN);
+    });
+  }
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
