@@ -1048,11 +1048,15 @@ function timeTextOf(node: Element | null): string {
   return anchor === null ? '' : (timeByAnchor.get(anchor) ?? '');
 }
 
+/** GitHub's absolute renderings ("on Sep 20, 2026, 10:18 AM", commit rows): the panel speaks in relative time throughout. */
+const ABSOLUTE_TIME = /^on\s|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}, \d{4}\b/i;
+
 function timeTextRead(node: Element): string {
   const el = findIn(node, 'relative-time, time-ago, time');
   if (el === null) return '';
   const datetime = el.getAttribute('datetime') ?? '';
-  const shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
+  let shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
+  if (shown !== '' && datetime !== '' && ABSOLUTE_TIME.test(shown)) shown = fallbackTime(datetime) || shown;
   if (shown !== '') {
     if (datetime !== '') shownTimes.set(datetime, shown);
     return shown;
