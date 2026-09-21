@@ -1,10 +1,14 @@
 body {
   width: 336px;
+  overflow: hidden;
 }
 
 .popup {
   display: flex;
   flex-direction: column;
+  max-height: var(--geld-popup-max-height, 600px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .popup__header {
