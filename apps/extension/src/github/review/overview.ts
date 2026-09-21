@@ -1023,8 +1023,33 @@ function cloneRing(source: SVGElement): SVGElement {
  */
 const shownTimes = new Map<string, string>();
 
+/**
+ * The time text last read for a node, by the id it carries (or contains).
+ * A node on loan to the panel can have its header worn by a row and its
+ * `relative-time` out of reach of any lookup from its home; the words it
+ * showed before it moved are the words it still shows.
+ */
+const timeByAnchor = new Map<string, string>();
+
+function anchorOf(node: Element): string | null {
+  if (/^(issuecomment|pullrequestreview|discussion_r|event|commits-pushed)-/.test(node.id)) return node.id;
+  const inner = node.querySelector('[id^="issuecomment-"], [id^="pullrequestreview-"], [id^="discussion_r"], [id^="event-"]');
+  return inner === null ? null : inner.id;
+}
+
 function timeTextOf(node: Element | null): string {
-  const el = node === null ? null : findIn(node, 'relative-time, time-ago, time');
+  if (node === null) return '';
+  const anchor = anchorOf(node);
+  const read = timeTextRead(node);
+  if (read !== '') {
+    if (anchor !== null) timeByAnchor.set(anchor, read);
+    return read;
+  }
+  return anchor === null ? '' : (timeByAnchor.get(anchor) ?? '');
+}
+
+function timeTextRead(node: Element): string {
+  const el = findIn(node, 'relative-time, time-ago, time');
   if (el === null) return '';
   const datetime = el.getAttribute('datetime') ?? '';
   const shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
@@ -1311,6 +1336,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
+    timeByAnchor.clear();
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
