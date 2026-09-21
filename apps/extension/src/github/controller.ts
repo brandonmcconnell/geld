@@ -49,7 +49,7 @@ import {
   renderTreeSection,
 } from './ui/tree-section';
 import { legacyAdapter } from './views/legacy';
-import { reactAdapter } from './views/react';
+import { ATTR_WRAP, reactAdapter } from './views/react';
 import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
 
 const ATTR_CONTAINER = 'data-geld-container';
@@ -1205,7 +1205,7 @@ export class GeldController {
       element.removeAttribute(ATTR_CONTAINER);
       element.removeAttribute(ATTR_EXPANDED);
     }
-    for (const attribute of [ATTR_ENTRY, ATTR_TREE, ATTR_TREE_MODE, ATTR_TOC, ATTR_FLASH, ATTR_SWAPPED_ICON]) {
+    for (const attribute of [ATTR_ENTRY, ATTR_TREE, ATTR_TREE_MODE, ATTR_TOC, ATTR_FLASH, ATTR_SWAPPED_ICON, ATTR_WRAP]) {
       for (const element of queryAll(`[${attribute}]`)) element.removeAttribute(attribute);
     }
     for (const element of queryAll(`.${INLINE_ICON_CLASS}`)) element.remove();

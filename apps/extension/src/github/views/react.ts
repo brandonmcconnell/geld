@@ -1,4 +1,4 @@
-import { cleanText, directChildOf, isHTMLElement, mostCommon, parseLineStats, query, queryAll } from '../dom';
+import { cleanText, parseLineStats, query, queryAll } from '../dom';
 import type { DiffEntry, DiffView, DiffViewAdapter, TreeFileNode } from '../model';
 import { filteredPathsOf } from '../model';
 
@@ -78,6 +78,21 @@ function headingPath(text: string | null | undefined): string {
   return clean.slice(arrow + 1).trim().split(/\s+/)[0] ?? '';
 }
 
+/** Marks a wrapper between an entry root and the container (a render chunk); the stylesheet flattens it. */
+export const ATTR_WRAP = 'data-geld-wrap';
+
+/** The lowest element containing every one of `nodes`, or null when there is none inside the document. */
+function commonAncestor(nodes: readonly HTMLElement[]): HTMLElement | null {
+  const [first, ...rest] = nodes;
+  if (first === undefined) return null;
+  let candidate: HTMLElement | null = first.parentElement;
+  while (candidate !== null && candidate !== document.documentElement) {
+    if (rest.every((node) => candidate?.contains(node) === true)) return candidate;
+    candidate = candidate.parentElement;
+  }
+  return null;
+}
+
 export const reactAdapter: DiffViewAdapter = {
   kind: 'react',
   read(): DiffView | null {
@@ -91,14 +106,27 @@ export const reactAdapter: DiffViewAdapter = {
     }
     if (regions.size === 0) return null;
 
-    const container = mostCommon(
-      Array.from(regions, (region) => region.parentElement?.parentElement ?? null).filter(isHTMLElement),
-    );
+    // An entry's root is the element wrapping just its region (GitHub's `diffEntry`), or the region itself. The
+    // container is the lowest ancestor holding every root. Large diffs render the list in chunks - several entry
+    // wrappers under one intermediate div - and the old "most common grandparent" then took a whole chunk as one
+    // entry's root, so hiding one file hid (or failed to hide) its neighbours. Chunk wrappers between a root and
+    // the container are marked so the stylesheet flattens them (`display: contents`) and every root is a flex
+    // child of the container, as the ordering needs.
+    const roots = new Map<HTMLElement, HTMLElement>();
+    for (const region of regions) {
+      const parent = region.parentElement;
+      const root = parent !== null && parent.querySelectorAll('[role="region"]').length === 1 ? parent : region;
+      roots.set(region, root);
+    }
+    const container = commonAncestor([...roots.values()]);
     if (container === null) return null;
+    for (const root of roots.values()) {
+      for (let wrap = root.parentElement; wrap !== null && wrap !== container; wrap = wrap.parentElement) wrap.setAttribute(ATTR_WRAP, '');
+    }
 
     const entries: DiffEntry[] = [];
     for (const region of regions) {
-      const root = directChildOf(container, region);
+      const root = roots.get(region) ?? null;
       if (root === null) continue;
       const path = cleanText(
         region.querySelector('button[data-file-path]')?.getAttribute('data-file-path') ??
