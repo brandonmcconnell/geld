@@ -287,3 +287,8 @@ export const ICON_GIT_COMPARE = octicon(
 /** Lucide's list-filter: lines narrowing downward, the one mark for filtering, sorting and grouping alike (24-unit grid). */
 export const ICON_LIST_FILTER =
   '<svg aria-hidden="true" focusable="false" class="octicon geld-lucide" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:text-bottom;overflow:visible"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>';
+
+export const ICON_SPARKLE_FILL = octicon(
+  '<path d="M7.53 1.282a.5.5 0 0 1 .94 0l.478 1.306a7.492 7.492 0 0 0 4.464 4.464l1.305.478a.5.5 0 0 1 0 .94l-1.305.478a7.492 7.492 0 0 0-4.464 4.464l-.478 1.305a.5.5 0 0 1-.94 0l-.478-1.305a7.492 7.492 0 0 0-4.464-4.464L1.282 8.47a.5.5 0 0 1 0-.94l1.306-.478a7.492 7.492 0 0 0 4.464-4.464Z"></path>',
+  'octicon-sparkle-fill',
+);

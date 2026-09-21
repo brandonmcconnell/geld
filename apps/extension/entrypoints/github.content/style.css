@@ -1230,6 +1230,112 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   margin-left: auto;
 }
 
+/* The AI control: the sparkle, widened by where the model stands ("Triage with AI", "AI · 2 hrs ago"). */
+.geld-review__icon.geld-review__ai-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__ai-btn[data-state='ready'] {
+  color: var(--geld-review-accent);
+}
+
+.geld-review__ai-btn[data-state='stale'],
+.geld-review__ai-btn[data-state='failed'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__ai-btn[data-state='failed'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__ai-btn[disabled] {
+  cursor: progress;
+}
+
+.geld-review__ai-btn[data-state='running'] .octicon {
+  animation: geld-ai-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes geld-ai-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-review__ai-btn[data-state='running'] .octicon {
+    animation: none;
+  }
+}
+
+/* A notice under the Geld row: what the reader should decide about AI here, and the one button that does it. */
+.geld-review__ai-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 16px;
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-subtle);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-review__ai-notice[data-tone='attention'] {
+  background: light-dark(var(--geld-review-attention-bg), color-mix(in srgb, var(--geld-review-attention-fg) 14%, var(--geld-review-bg)));
+}
+
+.geld-review__ai-notice[data-tone='danger'] {
+  background: light-dark(var(--geld-review-danger-bg), color-mix(in srgb, var(--geld-review-danger-fg) 14%, var(--geld-review-bg)));
+}
+
+.geld-review__ai-notice-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__ai-notice[data-tone='attention'] .geld-review__ai-notice-glyph {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__ai-notice[data-tone='danger'] .geld-review__ai-notice-glyph {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__ai-notice-glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__ai-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.geld-review__ai-notice-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-review__ai-notice-btn:hover {
+  background: var(--geld-review-hover);
+}
+
 /* The grouping control: an icon button like the copy button beside it, widened by the current choice's name. */
 .geld-review__grouping {
   position: relative;
@@ -3815,13 +3921,19 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     padding: 0 4px;
   }
 
-  /* The grouping control is its mark alone, the copy button's square. */
-  .geld-review__grouping-label {
+  /* The grouping and AI controls are their marks alone, the copy button's square. */
+  .geld-review__grouping-label,
+  .geld-review__ai-label {
     display: none;
   }
 
-  .geld-review__icon.geld-review__grouping-btn {
+  .geld-review__icon.geld-review__grouping-btn,
+  .geld-review__icon.geld-review__ai-btn {
     width: 28px;
     padding: 0;
+  }
+
+  .geld-review__ai-notice {
+    flex-wrap: wrap;
   }
 }
