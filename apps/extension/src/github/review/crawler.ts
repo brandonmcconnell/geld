@@ -450,6 +450,14 @@ export function reviewCommentOf(review: Element): HTMLElement | null {
 /** Every review verdict in the timeline (`pullrequestreview-N`), with its comment when it has one. */
 /** Each review's verdict as last read with its header sentence in reach (see `crawlReviews`). */
 const stateByReview = new Map<string, CrawledReviewState>();
+/**
+ * Each review's own comment as last found. For one pass while a loan is on
+ * its way home the comment is neither at home nor worn by anything, and a
+ * read then said "no comment": the line lost its words, its time and its
+ * chevron for a frame. A comment once found is the review's until it leaves
+ * the document.
+ */
+const commentByReview = new Map<string, HTMLElement>();
 
 export function crawlReviews(root: ParentNode = document): readonly CrawledReview[] {
   const reviews: CrawledReview[] = [];
@@ -459,7 +467,9 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
     seen.add(node.id);
     const author = authorOf(node);
     if (author === null) continue;
-    const comment = reviewCommentOf(node);
+    const knownComment = commentByReview.get(node.id);
+    const comment = reviewCommentOf(node) ?? (knownComment !== undefined && knownComment.isConnected ? knownComment : null);
+    if (comment !== null) commentByReview.set(node.id, comment);
     // The verdict sentence sits in the row's own header; the comment's words must not vote. Read from the row at
     // home *and* whatever of it is on loan, and remembered: a review's verdict does not change while the page is
     // open, and a read that finds no sentence (the header is worn by a panel row) must not demote it to "commented".
