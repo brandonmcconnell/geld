@@ -26,8 +26,8 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
-import type { Batch, ReviewEntry, ReviewEntryState } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReviewBody, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
 import { checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, requiredReviewsFrom } from './panel-model';
@@ -1227,7 +1227,30 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
     if (x === null || y === null) return x === null ? (y === null ? 0 : 1) : -1;
     return compareHome(x, y);
   };
-  return list.map((entry) => ({ ...entry, myReaction: entry.hasBody ? myReactionOn(entry.anchor) : null })).sort((a, b) => before(a.anchor, b.anchor));
+  // Every thread posted with a review (a person's or a bot's), for the review's open body; the crawl knows each
+  // thread's first comment, its state and its home, which names the review.
+  const threadsByReview = new Map<string, ReviewThreadRef[]>();
+  for (const entry of crawled.comments) {
+    if (entry.comment.kind !== 'thread') continue;
+    const node = document.getElementById(entry.comment.anchor);
+    const review = node === null ? null : reviewContainerOf(node);
+    if (review === null) continue;
+    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === entry.comment.anchor));
+    const refs = threadsByReview.get(review.id) ?? [];
+    refs.push({
+      anchor: entry.comment.anchor,
+      path: threadPathOf(entry.root, item, meta),
+      preview: firstSentence(entry.comment.body),
+      done: item !== undefined ? !isOpenStatus(item.status) : entry.comment.isResolved === true,
+    });
+    threadsByReview.set(review.id, refs);
+  }
+  return list
+    .map((entry) => {
+      const threads = threadsByReview.get(entry.anchor);
+      return { ...entry, myReaction: entry.hasBody ? myReactionOn(entry.anchor) : null, ...(threads === undefined ? {} : { threads }) };
+    })
+    .sort((a, b) => before(a.anchor, b.anchor));
 }
 
 /** The review timeline item (`pullrequestreview-N`, nothing longer) holding `node`, across a loan to the panel. */
@@ -1696,8 +1719,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     } else if (mounted.slot.childElementCount === 0) {
       if (visit.openKey === REVIEWS_KEY) {
         const nested = renderCommentsList(mounted.slot, model, panelHandlers);
-        const subNode = visit.openSubKey === null ? null : (entryNodes.get(visit.openSubKey) ?? timelineRootOf(visit.openSubKey));
-        if (nested !== null && subNode !== null) {
+        const verdict = model.comments.find((entry) => entry.anchor === visit.openSubKey && isVerdict(entry)) ?? null;
+        // A verdict's body is its own comment (never its whole row) plus its threads, or a note that it has neither.
+        const subNode = visit.openSubKey === null ? null : (entryNodes.get(visit.openSubKey) ?? (verdict === null ? timelineRootOf(visit.openSubKey) : null));
+        if (nested !== null && verdict !== null) {
+          renderReviewBody(nested, verdict, subNode, panelHandlers);
+        } else if (nested !== null && subNode !== null) {
           renderQuickView(nested, [subNode]);
         } else if (visit.openSubKey !== null && subNode === null) {
           visit.openSubKey = null;
@@ -1709,8 +1736,11 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
           // By push: the round's commit rows, unfolded under their heading (they keep the commit-hover breakdown).
           if (view.commitsSlot !== null) renderQuickView(view.commitsSlot, batch.commits);
           // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here).
-          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? timelineRootOf(view.openComment));
-          if (view.nested !== null && commentNode !== null) {
+          const verdict = view.openComment === null ? null : (batch.reviews.find((entry) => entry.anchor === view.openComment && isVerdict(entry)) ?? null);
+          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (verdict === null ? timelineRootOf(view.openComment) : null));
+          if (view.nested !== null && verdict !== null) {
+            renderReviewBody(view.nested, verdict, commentNode, panelHandlers);
+          } else if (view.nested !== null && commentNode !== null) {
             renderQuickView(view.nested, [commentNode]);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
