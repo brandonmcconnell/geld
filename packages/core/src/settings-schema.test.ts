@@ -49,6 +49,8 @@ describe('SETTINGS_SCHEMA', () => {
       'expandedByDefault',
       'categories',
       'hideLargeDiffs',
+      // The one experiment in the popup, under an "Experiments" heading the popup draws for that section.
+      'prOverview',
     ]);
   });
 });
