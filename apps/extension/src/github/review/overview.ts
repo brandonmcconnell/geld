@@ -548,7 +548,39 @@ function keepInPlace(focusKey: string, change: () => void): void {
     top = after.getBoundingClientRect().top;
   }
   const sticky = stickyHeaderBottomAt(window.scrollY);
-  if (top < sticky) scrollRowTo(top + window.scrollY);
+  if (top < sticky) {
+    scrollRowTo(top + window.scrollY);
+    return;
+  }
+  revealOpened(after);
+}
+
+/**
+ * After a toggle held its row still: when the row opened and what it opened
+ * runs past the bottom of the viewport, scroll just far enough to show it,
+ * and never so far that the row itself leaves the top. A row whose content
+ * fits does not move at all, so opening and closing stays where the pointer
+ * is; a row opened low on the page (one that another row's collapse left
+ * there) comes up only by what is missing. The same rule native tree views
+ * follow: reveal if needed, by the least amount.
+ */
+function revealOpened(control: HTMLElement): void {
+  const row = control.closest<HTMLElement>('li');
+  if (row === null) return;
+  const open = control.getAttribute('aria-expanded') === 'true' || row.hasAttribute('data-open') || row.getAttribute('data-open') === 'true';
+  if (!open) return;
+  const slot = row.nextElementSibling instanceof HTMLElement && row.nextElementSibling.matches('.geld-review__slot') ? row.nextElementSibling : null;
+  const rowTop = row.getBoundingClientRect().top;
+  const blockBottom = (slot ?? row).getBoundingClientRect().bottom;
+  const gap = 8;
+  const overflow = blockBottom + gap - window.innerHeight;
+  if (overflow <= 0) return;
+  // How far up the row may go: to just under the header as it will stand after the scroll. The header's presence
+  // depends on the destination, so the room is settled against the destination it allows.
+  const roomAt = (delta: number): number => rowTop - stickyHeaderBottomAt(window.scrollY + delta) - gap;
+  let delta = Math.min(overflow, roomAt(overflow));
+  if (delta < overflow) delta = Math.min(overflow, roomAt(delta));
+  if (delta > 0) window.scrollBy({ top: delta, behavior: 'instant' });
 }
 
 /**

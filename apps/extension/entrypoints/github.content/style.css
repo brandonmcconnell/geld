@@ -2284,8 +2284,36 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: color-mix(in srgb, var(--geld-tone-fg) 12%, transparent);
 }
 
+/*
+ * The row the URL points at wears GitHub's target ring, drawn around the whole container: the row alone when
+ * closed, the row and its slot as one box when open (top and sides on the row, sides and bottom on the slot).
+ * Inset shadows, so nothing outside the rows moves.
+ */
 .geld-review__row[data-viewing] {
-  box-shadow: inset 3px 0 0 var(--geld-review-accent);
+  box-shadow: inset 0 0 0 2px var(--geld-review-accent);
+}
+
+.geld-review__rows > .geld-review__row[data-viewing][data-open],
+.geld-review__rows--sub > .geld-review__row[data-viewing][data-open] {
+  box-shadow:
+    inset 0 2px 0 0 var(--geld-review-accent),
+    inset 2px 0 0 0 var(--geld-review-accent),
+    inset -2px 0 0 0 var(--geld-review-accent);
+}
+
+.geld-review__row[data-viewing][data-open] + .geld-review__slot {
+  box-shadow:
+    inset 2px 0 0 0 var(--geld-review-accent),
+    inset -2px 0 0 0 var(--geld-review-accent),
+    inset 0 -2px 0 0 var(--geld-review-accent);
+}
+
+/* GitHub's own ring on the targeted comment, once it is inside the slot: the container's ring says it now. */
+.geld-review__row[data-viewing] + .geld-review__slot .js-targetable-element:target .timeline-comment,
+.geld-review__row[data-viewing] + .geld-review__slot .timeline-comment:target,
+.geld-review__row[data-viewing] + .geld-review__slot [data-targeted='true'] {
+  border-color: var(--geld-review-border) !important;
+  box-shadow: none !important;
 }
 
 .geld-review__status {

@@ -1408,6 +1408,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   );
   if (entry.parent !== undefined) row.setAttribute('data-nested', '');
   if (open) row.setAttribute('data-open', '');
+  // The line holding the comment the URL points at wears the target ring with its slot, as the item rows do.
+  if (model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
   if (opens) rowClickToggles(row, toggle);
   return { row, open };
 }
