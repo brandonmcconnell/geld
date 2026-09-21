@@ -43,6 +43,16 @@
   display: none !important;
 }
 
+/*
+ * Virtualised files view: the container is a spacer with absolutely positioned
+ * rows, which flex cannot order (and a hidden row measures 0 in place, so the
+ * rows below close up). GitHub's layout is left alone; the rows GitHub mounts
+ * later are hidden by the anchor stylesheet (ui/virtual-hidden.ts).
+ */
+[data-geld-container][data-geld-virtual] {
+  display: block;
+}
+
 [data-geld] {
   scroll-margin-top: 72px;
 }
@@ -75,6 +85,12 @@
   color: var(--fgColor-muted, #59636e);
   font-size: 12px;
   line-height: 20px;
+}
+
+/* Leading the virtualised list (its host is a flex column with GitHub's own gap): first, with no margin of its own. */
+.geld-hidden-section[data-placement='lead'] {
+  order: -1;
+  margin: 0;
 }
 
 .geld-hidden-section__row {
