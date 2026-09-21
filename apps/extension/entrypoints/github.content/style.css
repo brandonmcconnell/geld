@@ -29,8 +29,9 @@
   flex-direction: column;
 }
 
-/* Progressive-loading wrappers become transparent so all entries are siblings. */
-[data-geld-container] .js-diff-progressive-container {
+/* Progressive-loading wrappers (classic) and render chunks (React, large diffs) become transparent so all entries are siblings. */
+[data-geld-container] .js-diff-progressive-container,
+[data-geld-container] [data-geld-wrap] {
   display: contents;
 }
 
