@@ -632,8 +632,10 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     const remarks = batch.reviews.length - verdicts;
     const label = [verdicts > 0 ? plural(verdicts, 'review') : '', remarks > 0 ? plural(remarks, 'comment') : ''].filter((part) => part !== '').join(' · ');
     list.append(subhead(label, verdicts > 0 ? ICON_COMMENT_DISCUSSION : ICON_COMMENT));
-    for (const entry of batch.reviews) {
-      const { row, open } = entryRow(entry, model, handlers);
+    const entries = orderEntries(batch.reviews);
+    const reserve = entries.some((entry) => entry.hasBody);
+    for (const entry of entries) {
+      const { row, open } = entryRow(entry, model, handlers, reserve);
       list.append(row);
       if (open) {
         const sub = nestedSlot();
@@ -1172,8 +1174,10 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   let nested: HTMLElement | null = null;
   if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews yet.']));
-  for (const entry of model.comments) {
-    const { row, open } = entryRow(entry, model, handlers);
+  const entries = orderEntries(model.comments);
+  const reserve = entries.some((entry) => entry.hasBody);
+  for (const entry of entries) {
+    const { row, open } = entryRow(entry, model, handlers, reserve);
     list.append(row);
     if (open) {
       const sub = nestedSlot();
@@ -1190,7 +1194,11 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
  * avatar, name, the first line, then the time, GitHub's own header controls
  * (worn while open) and a chevron. Open when `openSubKey` is its anchor.
  */
-function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
+/**
+ * `reserveChevron`: some sibling line has a chevron, so a line without one
+ * leaves that square blank and its ⋯ and time stay in the column.
+ */
+function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers, reserveChevron = false): { readonly row: HTMLElement; readonly open: boolean } {
   const open = entry.hasBody && model.openSubKey === entry.anchor;
   const bot = /\[bot\]$/i.test(entry.author);
   const lead =
@@ -1212,8 +1220,9 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
         : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
   const toggle = (): void => handlers.onToggleSub(entry.anchor);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
+  // A verdict without words shows only the name: the glyph already says approved / requested changes.
   if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
-  else if (entry.state !== 'thread' && entry.state !== 'comment') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [ENTRY_LABEL[entry.state].toLowerCase()]));
+  else if (entry.state === 'awaiting') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, ['awaiting review']));
   if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
   const main = entry.hasBody
     ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, mainChildren)
@@ -1221,7 +1230,14 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (entry.hasBody) mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
-  if (entry.hasBody) right.append(controlSlot(entry.anchor), chevron(open, toggle));
+  if (entry.hasBody) {
+    right.append(controlSlot(entry.anchor), chevron(open, toggle));
+  } else if (entry.state !== 'awaiting') {
+    // A verdict without a comment has no GitHub menu to wear; it gets Geld's own, with what applies to a bare
+    // review row: the way to it in the timeline, and its link. The chevron's square stays blank when a sibling has one.
+    right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(entry.anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(entry.anchor) }], `sub:${entry.anchor}`));
+    if (reserveChevron) right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
+  }
   const row = createElement(
     'li',
     { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
@@ -1230,6 +1246,11 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (open) row.setAttribute('data-open', '');
   if (entry.hasBody) rowClickToggles(row, toggle);
   return { row, open };
+}
+
+/** Lines with something to open first, then the bare verdicts; each run keeps its timeline order. */
+function orderEntries(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
+  return [...entries.filter((entry) => entry.hasBody), ...entries.filter((entry) => !entry.hasBody)];
 }
 
 function signatureOf(model: PanelModel): string {

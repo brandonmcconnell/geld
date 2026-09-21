@@ -1163,7 +1163,7 @@ const ENTRY_STATE: Readonly<Record<CrawledReview['state'], ReviewEntryState>> = 
  */
 function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta: GeldPrMeta, settings: GeldSettings): readonly ReviewEntry[] {
   const list: ReviewEntry[] = [];
-  const reviewedComments = new Set(reviews.map((review) => review.comment?.id ?? review.comment?.querySelector('[id]')?.id ?? ''));
+  const reviewedComments = new Set(reviews.flatMap((review) => (review.comment === null ? [] : [review.comment.id, ...[...review.comment.querySelectorAll('[id]')].map((node) => node.id)])).filter((id) => id !== ''));
   for (const review of reviews) {
     if (review.author.bot) continue;
     const body = review.comment === null ? '' : blockTextOf(review.comment);
@@ -1183,7 +1183,9 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
   for (const entry of crawled.comments) {
     if (entry.author.bot || isTrigger(entry, settings)) continue;
     const anchor = entry.comment.anchor;
-    if (reviewedComments.has(anchor) || entry.root.querySelector('[id^="pullrequestreview-"]') !== null) continue;
+    // A review's own comment is the review's line, wherever quick view has put the comment right now.
+    const node = document.getElementById(anchor);
+    if (reviewedComments.has(anchor) || findIn(entry.root, '[id^="pullrequestreview-"]') !== null || (node !== null && closestAtHome(node, '[id^="pullrequestreview-"]') !== null)) continue;
     const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
     const thread = entry.comment.kind === 'thread';
     list.push({
