@@ -5,7 +5,7 @@ import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabSt
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, fieldsFor, isCategoryEnabled, isCategoryInPicker, plainText } from '@geld/core';
+import { allHosts, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
 import type { TabRepoConfig, TabRepoConfigFile } from '../../src/lib/messages';
 import { loadCatalog } from '../../src/lib/catalog';
@@ -153,10 +153,21 @@ async function main(): Promise<void> {
     return section;
   }
 
-  for (const field of fieldsFor('extension', true)) {
-    if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
-    else if (field.kind === 'categories') settingsHost.append(renderCategories(field));
-    // Test groups and list fields are never flagged for the popup; the options page renders them.
+  // Sections whose popup fields are experiments get a heading, so an experiment is never taken for a settled setting.
+  for (const section of sectionsFor('extension')) {
+    const fields = section.fields.filter((field) => field.popup);
+    if (fields.length === 0) continue;
+    if (section.id === 'experiments') {
+      const heading = document.createElement('p');
+      heading.className = 'geld-eyebrow popup__section-title';
+      heading.textContent = section.title;
+      settingsHost.append(heading);
+    }
+    for (const field of fields) {
+      if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
+      else if (field.kind === 'categories') settingsHost.append(renderCategories(field));
+      // Test groups and list fields are never flagged for the popup; the options page renders them.
+    }
   }
 
   /* Tab context */

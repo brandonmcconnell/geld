@@ -399,7 +399,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'prOverview',
         label: 'Review digest on pull requests',
         description: 'Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.',
-        popup: false,
+        // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
+        popup: true,
       },
       {
         kind: 'choice',
