@@ -15,7 +15,7 @@ import { describePage } from '../page';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, consolidateInBrowser, jevDecisionsFor, previewDecisionKey, resetAiForVisit, withAi, withJevDone } from './ai';
@@ -80,6 +80,17 @@ interface VisitState {
    * is open - can be closed for the reader.
    */
   settling: { readonly itemKey: string | null; readonly until: number; readonly wasOpen: boolean } | null;
+  /**
+   * The open comment line's words, as they read when it opened. Its node is on
+   * loan to the panel while open, and some of what the crawl reads from it -
+   * the first sentence, the time, the avatar - reads differently there (a
+   * worn header, a fragment that loads, a body the quick view holds). Any
+   * such difference changed the panel's signature, which swapped the panel,
+   * returned the loan, re-made it, and read the old words again: content and
+   * timestamps blinking for as long as the line stayed open. The line keeps
+   * the words it opened with until it closes.
+   */
+  pinnedEntry: { readonly anchor: string; readonly preview: string; readonly time: string; readonly avatarSrc: string | null } | null;
 }
 
 const visit: VisitState = {
@@ -101,7 +112,26 @@ const visit: VisitState = {
   autoLoads: 0,
   manualDone: new Set(),
   settling: null,
+  pinnedEntry: null,
 };
+
+/** The open comment line wears the words it opened with (see `VisitState.pinnedEntry`). */
+function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
+  const open = visit.openSubKey;
+  if (open === null || open.startsWith('item:')) {
+    visit.pinnedEntry = null;
+    return entries;
+  }
+  const current = entries.find((entry) => entry.anchor === open);
+  if (current === undefined) return entries;
+  if (visit.pinnedEntry === null || visit.pinnedEntry.anchor !== open) {
+    visit.pinnedEntry = { anchor: open, preview: current.preview, time: current.time, avatarSrc: current.avatarSrc };
+    return entries;
+  }
+  const pinned = visit.pinnedEntry;
+  if (current.preview === pinned.preview && current.time === pinned.time && current.avatarSrc === pinned.avatarSrc) return entries;
+  return entries.map((entry) => (entry.anchor === open ? { ...entry, preview: pinned.preview, time: pinned.time, avatarSrc: pinned.avatarSrc } : entry));
+}
 
 /**
  * The reviewers GitHub is still waiting on, from the sidebar's "Awaiting
@@ -115,7 +145,7 @@ function awaitingReviewers(): ReviewEntry[] {
     if (login === '' || out.some((entry) => entry.author === login)) continue;
     const item = control.closest('.d-flex, li, [data-testid]') ?? control.parentElement;
     const image = item?.querySelector<HTMLImageElement>('img.avatar, img[class*="avatar"]') ?? null;
-    out.push({ anchor: `awaiting:${login}`, author: login, avatarSrc: image === null ? avatarSrcForLogin(login) : image.currentSrc || image.getAttribute('src'), state: 'awaiting', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null });
+    out.push({ anchor: `awaiting:${login}`, author: login, avatarSrc: image === null ? avatarSrcForLogin(login) : normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || ''), state: 'awaiting', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null });
   }
   return out;
 }
@@ -779,7 +809,7 @@ function committersOf(commits: readonly HTMLElement[]): readonly Avatar[] {
   for (const row of commits) {
     for (const image of [row, ...wornPiecesOf(row)].flatMap((node) => [...node.querySelectorAll<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"]')])) {
       const login = image.alt.replace(/^@/, '');
-      const src = image.currentSrc || image.getAttribute('src') || '';
+      const src = normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || '');
       if (src === '' || out.some((entry) => (login !== '' ? entry.login.toLowerCase() === login.toLowerCase() : entry.src === src))) continue;
       out.push({ src, login, bot: !image.classList.contains('avatar-user') && !(image.closest('a')?.classList.contains('avatar-user') ?? false) });
     }
@@ -1332,7 +1362,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = crawlReviews();
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
-  const comments = [...awaitingReviewers(), ...reviewEntries(crawledDom, reviews, meta, settings)];
+  const comments = pinOpenEntry([...awaitingReviewers(), ...reviewEntries(crawledDom, reviews, meta, settings)]);
   const allPreviews = previewsOn(crawledDom, meta);
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
@@ -1361,7 +1391,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // GitHub lists no commits, only "force-pushed from a to b"). Bot run summaries belong to their round rather than to rows of their own.
   const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
-  const batches = buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, comments, allPreviews);
+  const batches = buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, comments, allPreviews).map((batch) => {
+    const pinnedComments = pinOpenEntry(batch.comments);
+    return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
+  });
   settleAfterResolve(meta, batches);
   const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
   // By node, not by looking the anchor up: GitHub repeats an id (a review inside its minimized wrapper), and

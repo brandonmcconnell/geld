@@ -201,7 +201,10 @@ export function closestAtHome(node: Element, selector: string): HTMLElement | nu
 export function compareHome(a: Node, b: Node): number {
   const x = homeOf(a);
   const y = homeOf(b);
-  if (x === y) return 0;
+  // Both inside one loaned subtree (a review row on loan with its threads): their order there is their order
+  // at home, so compare them where they are. A comparator that answered 0 here let the sort put them either
+  // way round, and the last bot comment - the verdict's source - changed with every pass.
+  if (x === y) return a === b ? 0 : (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
   return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
 }
 
