@@ -498,7 +498,9 @@ async function main(): Promise<void> {
 document.documentElement.style.setProperty('--geld-popup-max-height', `${popupMaxHeight(window.screen.availHeight)}px`);
 const popup = document.querySelector<HTMLElement>('.popup');
 if (popup !== null) {
-  const updateScrollState = (): void => popup.toggleAttribute('data-scrollable', popupNeedsScroll(popup.scrollHeight, popup.clientHeight));
+  const updateScrollState = (): void => {
+    popup.toggleAttribute('data-scrollable', popupNeedsScroll(popup.scrollHeight, popup.clientHeight));
+  };
   new ResizeObserver(updateScrollState).observe(popup);
   requestAnimationFrame(updateScrollState);
 }
