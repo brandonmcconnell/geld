@@ -20,7 +20,7 @@ export interface TreeFileNode {
   readonly path: string;
   /** The `li[role=treeitem]` for the file. */
   readonly element: HTMLElement;
-  /** GitHub's trailing status icon (modified/added/deleted), when the view shows one. */
+  /** GitHub's status icon for the file (file-added / file-removed / file-moved / file-diff; the React tree's leading visual, the classic tree's trailing one), when the view shows one. */
   readonly statusIcon: SVGElement | null;
 }
 

@@ -130,8 +130,9 @@ export const reactAdapter: DiffViewAdapter = {
         }
         const path = cleanText(item.id);
         if (path === '') continue;
-        // This view shows no per-file status icon in the tree.
-        treeFiles.push({ path, element: item, statusIcon: null });
+        // The item's leading visual is GitHub's status icon (file-added, file-removed, file-moved, file-diff).
+        const statusIcon = item.querySelector(':scope > [class*="item-container"] [class*="item-visual"] svg');
+        treeFiles.push({ path, element: item, statusIcon: statusIcon instanceof SVGElement ? statusIcon : null });
       }
     }
 

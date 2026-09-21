@@ -1,7 +1,7 @@
-import type { HiddenCategory } from '@geld/core';
+import type { FileStatus, HiddenCategory } from '@geld/core';
 import { formatCount } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { categoryIconFor, ICON_CHEVRON_RIGHT, ICON_FILE, ICON_FILE_DIRECTORY, ICON_FILE_DIFF } from './icons';
+import { categoryIconFor, ICON_CHEVRON_RIGHT, ICON_FILE_ADDED, ICON_FILE_DIFF, ICON_FILE_DIRECTORY, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED } from './icons';
 
 export const TREE_SECTION_CLASS = 'geld-tree-section';
 
@@ -11,6 +11,8 @@ export interface TreeSectionFile {
   readonly available: boolean;
   /** GitHub's own status icon for the file, cloned into our tree when present. */
   readonly statusIcon: SVGElement | null;
+  /** What the diff says happened to the file, for the icon when GitHub's tree shows none. */
+  readonly status: FileStatus | null;
 }
 
 export interface TreeSectionState {
@@ -126,22 +128,44 @@ function renderDir(dir: DirNode, level: number, collapsed: ReadonlySet<string>):
   return createElement('li', { class: 'geld-tree__item geld-tree__item--dir' }, [button, group]);
 }
 
-function renderFile(node: FileNode, level: number): HTMLLIElement {
-  const trailing: Node[] = [];
-  if (node.file.statusIcon !== null) {
-    const icon = node.file.statusIcon.cloneNode(true);
+/** GitHub's icon for what happened to the file; an edit is `file-diff`, never the plain file. */
+function statusIcon(status: FileStatus | null): string {
+  switch (status) {
+    case 'added':
+      return ICON_FILE_ADDED;
+    case 'deleted':
+      return ICON_FILE_REMOVED;
+    case 'renamed':
+      return ICON_FILE_MOVED;
+    case 'modified':
+    case null:
+      return ICON_FILE_MODIFIED;
+  }
+}
+
+/**
+ * The file's leading icon is the one GitHub's own tree shows for it — cloned
+ * from the tree item when the view renders one, else drawn from the diff's
+ * account of the file — so the same file reads the same in every panel.
+ */
+function fileVisual(file: TreeSectionFile): SVGElement {
+  if (file.statusIcon !== null) {
+    const icon = file.statusIcon.cloneNode(true);
     if (icon instanceof SVGElement) {
       icon.removeAttribute('id');
-      trailing.push(createElement('span', { class: 'geld-tree__visual geld-tree__visual--trailing' }, [icon]));
+      return icon;
     }
   }
+  return svgFromString(statusIcon(file.status));
+}
+
+function renderFile(node: FileNode, level: number): HTMLLIElement {
   const button = row(
     level,
     [
       createElement('span', { class: 'geld-tree__toggle geld-tree__toggle--spacer' }),
-      createElement('span', { class: 'geld-tree__visual' }, [svgFromString(ICON_FILE)]),
+      createElement('span', { class: 'geld-tree__visual geld-tree__visual--status' }, [fileVisual(node.file)]),
       createElement('span', { class: 'geld-tree__label' }, [node.name]),
-      ...trailing,
     ],
     { 'data-path': node.file.path, title: node.file.path },
   );
@@ -306,7 +330,7 @@ export function renderTreeSection(
   section.root.toggleAttribute('data-active', state.active);
 
   const signature = `${state.stateKey}#${state.category.id}\n${state.files
-    .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('title') ?? ''}`)
+    .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('class') ?? file.status ?? ''}`)
     .join('\n')}`;
   if (section.group.dataset.signature !== signature) {
     const selected = section.group.querySelector<HTMLElement>('[aria-current]')?.dataset.path;

@@ -543,10 +543,6 @@
   opacity: 0.85;
 }
 
-.geld-tree__visual--trailing {
-  margin-left: auto;
-}
-
 .geld-tree__label {
   flex: 1 1 auto;
   min-width: 0;

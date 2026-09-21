@@ -70,25 +70,25 @@ describe('parseUnifiedDiff', () => {
   });
 
   it('counts additions and deletions across multiple hunks', () => {
-    expect(files[0]).toEqual({ path: 'src/a.ts', additions: 3, deletions: 2 });
+    expect(files[0]).toEqual({ path: 'src/a.ts', additions: 3, deletions: 2, status: 'modified' });
   });
 
   it('does not mistake in-hunk lines for file headers', () => {
-    expect(files[1]).toEqual({ path: 'src/a.test.ts', additions: 2, deletions: 0 });
+    expect(files[1]).toEqual({ path: 'src/a.test.ts', additions: 2, deletions: 0, status: 'added' });
   });
 
   it('reports zero lines for pure renames and binary files, and says which kind they are', () => {
-    expect(files[2]).toEqual({ path: 'docs/new.md', additions: 0, deletions: 0, kinds: ['renames'] });
-    expect(files[3]).toEqual({ path: 'img.png', additions: 0, deletions: 0, kinds: ['binary'] });
+    expect(files[2]).toEqual({ path: 'docs/new.md', additions: 0, deletions: 0, status: 'renamed', kinds: ['renames'] });
+    expect(files[3]).toEqual({ path: 'img.png', additions: 0, deletions: 0, status: 'added', kinds: ['binary'] });
   });
 
   it('handles quoted paths and deletions', () => {
-    expect(files[4]).toEqual({ path: 'with space.ts', additions: 0, deletions: 2, kinds: ['deleted'] });
+    expect(files[4]).toEqual({ path: 'with space.ts', additions: 0, deletions: 2, status: 'deleted', kinds: ['deleted'] });
   });
 
   it('spots mode-only and whitespace-only changes', () => {
-    expect(files[5]).toEqual({ path: 'scripts/run.sh', additions: 0, deletions: 0, kinds: ['modes'] });
-    expect(files[6]).toEqual({ path: 'src/indent.ts', additions: 2, deletions: 2, kinds: ['whitespace'] });
+    expect(files[5]).toEqual({ path: 'scripts/run.sh', additions: 0, deletions: 0, status: 'modified', kinds: ['modes'] });
+    expect(files[6]).toEqual({ path: 'src/indent.ts', additions: 2, deletions: 2, status: 'modified', kinds: ['whitespace'] });
   });
 
   it('leaves ordinary edits without kinds', () => {

@@ -2,11 +2,16 @@ import type { ChangeKindId } from './change-kinds';
 import type { CommentLines, CommentScanState, CommentSyntax } from './comment-lines';
 import { commentSyntaxFor, isCommentOnlyLine, newCommentScanState } from './comment-lines';
 
+/** What happened to the file as a whole — the icon GitHub's file tree shows for it. */
+export type FileStatus = 'added' | 'deleted' | 'renamed' | 'modified';
+
 /** Per-file line statistics. */
 export interface FileStats {
   readonly path: string;
   readonly additions: number;
   readonly deletions: number;
+  /** Absent in cache entries written before this existed (treat as `modified`). */
+  readonly status?: FileStatus;
   /**
    * What the diff revealed about the change besides its size: a rename or a
    * mode change with no edited lines, a binary or deleted file, edits that
@@ -70,6 +75,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     renamed: boolean;
     modeChanged: boolean;
     deleted: boolean;
+    created: boolean;
     binary: boolean;
     hunks: number;
     /** Removed and added text of every hunk with whitespace stripped, to spot whitespace-only edits. */
@@ -97,7 +103,8 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       if (current.hunks > 0 && !current.binary && current.removed.join('') === current.added.join('')) kinds.push('whitespace');
       const commentCount = current.commentAdded.length + current.commentRemoved.length;
       if (commentCount > 0 && commentCount === current.additions + current.deletions) kinds.push('comments');
-      let stats: FileStats = { path: current.path, additions: current.additions, deletions: current.deletions };
+      const status: FileStatus = current.deleted ? 'deleted' : current.created ? 'added' : current.renamed ? 'renamed' : 'modified';
+      let stats: FileStats = { path: current.path, additions: current.additions, deletions: current.deletions, status };
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
       files.push(stats);
@@ -119,6 +126,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
               renamed: false,
               modeChanged: false,
               deleted: false,
+              created: false,
               binary: false,
               hunks: 0,
               removed: [],
@@ -157,6 +165,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       } else if (line.startsWith('rename from ')) current.renamed = true;
       else if (line.startsWith('old mode ') || line.startsWith('new mode ')) current.modeChanged = true;
       else if (line.startsWith('deleted file mode ')) current.deleted = true;
+      else if (line.startsWith('new file mode ')) current.created = true;
       else if (line.startsWith('Binary files ') || line === 'GIT binary patch') current.binary = true;
       continue;
     }

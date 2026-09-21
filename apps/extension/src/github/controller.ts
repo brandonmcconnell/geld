@@ -840,7 +840,7 @@ export class GeldController {
         continue;
       }
       const list = byCategory.get(category) ?? [];
-      list.push({ path: file.path, available: entryPaths.has(file.path), statusIcon: file.statusIcon });
+      list.push({ path: file.path, available: entryPaths.has(file.path), statusIcon: file.statusIcon, status: this.diffFacts?.get(file.path)?.status ?? null });
       byCategory.set(category, list);
     }
 
