@@ -18,6 +18,10 @@ import { ICON_REPLY } from '../ui/icons';
 export const HOVER_DELAY_MS = 300;
 /** Leaving the host toward the card: the card waits this long for the pointer to arrive. */
 export const LEAVE_GRACE_MS = 350;
+/** How long the pointer may rest inside the safe triangle, off both host and card, before the card lets go. */
+export const TRIANGLE_GRACE_MS = 600;
+/** The gap between the pointer and a row card's near edge. */
+const CARD_OFFSET = 14;
 /** On an element whose hover shows an identity card; the value is the login. */
 export const ATTR_WHO = 'data-geld-who';
 let leaveTimer: number | null = null;
@@ -60,6 +64,40 @@ let current: HTMLElement | null = null;
 let installed = false;
 /** Where the pointer last was, to find the host's replacement after the panel is rebuilt under an open card. */
 let pointer: { readonly x: number; readonly y: number } | null = null;
+/** Where the pointer was when it last left the current host: the apex of the safe triangle. */
+let leavePoint: { readonly x: number; readonly y: number } | null = null;
+let triangleTimer: number | null = null;
+/** The host the pointer is over while it crosses the triangle; shown if the pointer settles there. */
+let pendingHost: HTMLElement | null = null;
+
+/**
+ * Is `p` inside the triangle from the leave point to the card's near edge?
+ * Moving from a row toward its card crosses the rows between; as long as the
+ * pointer keeps heading for the card it is not a new hover.
+ */
+function inSafeTriangle(p: { readonly x: number; readonly y: number }): boolean {
+  if (card === null || leavePoint === null) return false;
+  const rect = card.getBoundingClientRect();
+  // The near edge is whichever vertical edge faces the leave point; a small margin forgives a shaky hand.
+  const edgeX = leavePoint.x <= rect.left ? rect.left : leavePoint.x >= rect.right ? rect.right : null;
+  if (edgeX === null) return false;
+  const a = leavePoint;
+  const b = { x: edgeX, y: rect.top - 6 };
+  const c = { x: edgeX, y: rect.bottom + 6 };
+  const sign = (p1: typeof a, p2: typeof a, p3: typeof a): number => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+  const d1 = sign(p, a, b);
+  const d2 = sign(p, b, c);
+  const d3 = sign(p, c, a);
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(hasNeg && hasPos);
+}
+
+function clearTriangle(): void {
+  if (triangleTimer !== null) window.clearTimeout(triangleTimer);
+  triangleTimer = null;
+  pendingHost = null;
+}
 
 export function setHoverProvider(next: HoverProvider | null): void {
   provider = next;
@@ -98,6 +136,8 @@ function hide(): void {
   timer = null;
   if (leaveTimer !== null) window.clearTimeout(leaveTimer);
   leaveTimer = null;
+  clearTriangle();
+  leavePoint = null;
   current = null;
   card?.remove();
   card = null;
@@ -112,6 +152,7 @@ function hideSoon(): void {
 function stay(): void {
   if (leaveTimer !== null) window.clearTimeout(leaveTimer);
   leaveTimer = null;
+  clearTriangle();
 }
 
 function show(host: HTMLElement): void {
@@ -220,12 +261,22 @@ function place(host: HTMLElement, node: HTMLElement, width: number): void {
   }
   const rect = host.getBoundingClientRect();
   node.style.width = `${width}px`;
-  // Under a row the card starts past the row's leading glyph; under an avatar or chip it starts at the host.
-  const lead = host.hasAttribute(ATTR_WHO) ? -8 : 40;
-  node.style.left = `${Math.max(8, Math.min(rect.left + lead, window.innerWidth - width - 8))}px`;
+  if (host.hasAttribute(ATTR_WHO) || pointer === null) {
+    // Under an avatar or chip the card hangs from the host.
+    node.style.left = `${Math.max(8, Math.min(rect.left - 8, window.innerWidth - width - 8))}px`;
+    const height = node.getBoundingClientRect().height;
+    const below = rect.bottom + 6;
+    node.style.top = below + height <= window.innerHeight - 8 ? `${below}px` : `${Math.max(8, rect.top - height - 6)}px`;
+    return;
+  }
+  // A row's card sits beside the pointer, not under the row: the rows are a column, and a card hanging below
+  // covered the next rows so the pointer could not travel down the list. Right of the pointer, or left of it
+  // when the right edge is near; its top on the row's top, kept inside the viewport.
+  const rightOf = pointer.x + CARD_OFFSET;
+  const fitsRight = rightOf + width <= window.innerWidth - 8;
+  node.style.left = `${fitsRight ? rightOf : Math.max(8, pointer.x - CARD_OFFSET - width)}px`;
   const height = node.getBoundingClientRect().height;
-  const below = rect.bottom + 6;
-  node.style.top = below + height <= window.innerHeight - 8 ? `${below}px` : `${Math.max(8, rect.top - height - 6)}px`;
+  node.style.top = `${Math.max(8, Math.min(rect.top, window.innerHeight - height - 8))}px`;
 }
 
 function install(): void {
@@ -251,10 +302,38 @@ function install(): void {
         stay();
         return;
       }
+      // Crossing another row on the way to the open card: the card stays and this row waits; it is shown only if
+      // the pointer settles on it (or leaves the triangle).
+      if (card !== null && leavePoint !== null && inSafeTriangle(pointer)) {
+        pendingHost = host;
+        return;
+      }
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(() => show(host), HOVER_DELAY_MS);
     },
     true,
+  );
+  // While a card is open, every move decides: inside the card or the triangle it stays; elsewhere it lets go.
+  document.addEventListener(
+    'mousemove',
+    (event) => {
+      pointer = { x: event.clientX, y: event.clientY };
+      if (card === null || current === null || leavePoint === null) return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (target !== null && (card.contains(target) || current.contains(target))) {
+        leavePoint = null;
+        stay();
+        return;
+      }
+      if (inSafeTriangle(pointer)) return;
+      // Off the path: the row under the pointer takes over now, or the card goes.
+      const under = hostOf(target);
+      leavePoint = null;
+      clearTriangle();
+      if (under !== null && under !== current) show(under);
+      else hideSoon();
+    },
+    { capture: true, passive: true },
   );
   document.addEventListener(
     'mouseout',
@@ -265,7 +344,24 @@ function install(): void {
       if (to instanceof Node && (host.contains(to) || (card?.contains(to) ?? false))) return;
       if (timer !== null) window.clearTimeout(timer);
       timer = null;
-      if (current === host) hideSoon();
+      if (current === host) {
+        if (card !== null && !host.hasAttribute(ATTR_WHO)) {
+          // A row's card sits beside the pointer: leaving the row toward it crosses other rows. The triangle from
+          // here to the card's near edge keeps the card; the pointer resting off the path this long lets it go.
+          leavePoint = { x: event.clientX, y: event.clientY };
+          if (triangleTimer !== null) window.clearTimeout(triangleTimer);
+          triangleTimer = window.setTimeout(() => {
+            const settled = pendingHost;
+            leavePoint = null;
+            clearTriangle();
+            if (card !== null && pointer !== null && card.contains(document.elementFromPoint(pointer.x, pointer.y))) return;
+            if (settled !== null && settled.isConnected && pointer !== null && hostOf(document.elementFromPoint(pointer.x, pointer.y)) === settled) show(settled);
+            else hideSoon();
+          }, TRIANGLE_GRACE_MS);
+          return;
+        }
+        hideSoon();
+      }
     },
     true,
   );
