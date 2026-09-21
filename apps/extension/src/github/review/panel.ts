@@ -607,17 +607,22 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   else if (total > 0) mainChildren.push(progressMeter(done, total, 'thread'));
   const commentCount = batch.comments.length + batch.reviews.filter((entry) => entry.hasBody).length + batch.items.reduce((sum, item) => sum + item.sources.length, 0);
   if (commentCount > 0) mainChildren.push(countChip(commentCount, `${plural(commentCount, 'comment')} in this round`));
-  // One pill counts the push's previews (the pills with names are in the open push). Clicks on it open the push like the rest.
-  if (byPush && batch.previews.length > 0) {
+  // The push's one preview is its pill - a link to it, as on the Previews row. Several are counted instead, as the
+  // hosts' marks and "N previews" set inline like the committers' avatars beside them: not a pill, since it is not
+  // a link, and a click on it opens the push like the rest of the row.
+  const [onlyPreview] = batch.previews;
+  if (byPush && onlyPreview !== undefined && batch.previews.length === 1) {
+    mainChildren.push(previewPill(onlyPreview, model));
+  } else if (byPush && batch.previews.length > 1) {
     const hosts: string[] = [];
     for (const entry of batch.previews) {
       const src = model.avatarForAnchor(entry.anchor);
       if (src !== null && !hosts.includes(src)) hosts.push(src);
     }
     mainChildren.push(
-      createElement('span', { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__deploy--sum`, 'aria-hidden': 'true' }, [
-        ...hosts.slice(0, 3).map((src) => createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src, alt: '', width: '16', height: '16' })),
-        createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [plural(batch.previews.length, 'preview')]),
+      createElement('span', { class: `${PANEL_CLASS}__deploy-sum`, 'aria-hidden': 'true' }, [
+        createElement('span', { class: `${PANEL_CLASS}__deploy-sum-hosts` }, hosts.slice(0, 3).map((src) => createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src, alt: '', width: '16', height: '16' }))),
+        createElement('span', { class: `${PANEL_CLASS}__deploy-sum-text` }, [plural(batch.previews.length, 'preview')]),
       ]),
     );
   }
