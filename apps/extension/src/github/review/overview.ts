@@ -547,18 +547,78 @@ function keepInPlace(focusKey: string, change: () => void): void {
     window.scrollBy({ top: top - before, behavior: 'instant' });
     top = after.getBoundingClientRect().top;
   }
-  const sticky = stickyHeaderBottom();
-  if (top < sticky) window.scrollBy({ top: top - sticky - 8, behavior: 'instant' });
+  const sticky = stickyHeaderBottomAt(window.scrollY);
+  if (top < sticky) scrollRowTo(top + window.scrollY);
 }
 
-/** The bottom edge of GitHub's stuck header, or 0: only a bar actually pinned to the viewport's top counts, never a wrapper that merely carries the class. */
-function stickyHeaderBottom(): number {
-  for (const header of document.querySelectorAll<HTMLElement>('.gh-header-sticky.is-stuck, .js-sticky.is-stuck, [class*="StickyHeader"], [data-testid="sticky-header"]')) {
+/**
+ * Scroll so the row whose document top is `rowTop` sits just under GitHub's
+ * sticky header, as it will be once the page is there. The header is not on
+ * screen while the reader is near the top, so its height cannot be read from
+ * the current state, and a scroll that puts the row at the viewport's top edge
+ * ends with the header sliding over it. `stickyHeaderBottomAt` says what the
+ * header will do at a destination, so the two candidate destinations - under
+ * the header, or at the top with no header - are tried where they hold.
+ */
+function scrollRowTo(rowTop: number): void {
+  const gap = 8;
+  const withHeader = rowTop - stickyHeaderBottomAt(rowTop) - gap;
+  if (stickyHeaderBottomAt(withHeader) > 0) {
+    window.scrollTo({ top: withHeader, behavior: 'instant' });
+    return;
+  }
+  const bare = rowTop - gap;
+  // No header at either destination: the row goes to the top edge. The header would appear only at the bare
+  // destination: stop short of it, where the row sits a header's height down and nothing covers it.
+  window.scrollTo({ top: stickyHeaderBottomAt(bare) > 0 ? withHeader : bare, behavior: 'instant' });
+}
+
+/**
+ * The bottom edge GitHub's sticky pull request header will have once the page
+ * is scrolled to `scrollY`, or 0 when it will not be showing. The React header
+ * (`use-sticky-header-module__stickyHeader`) is `display: none` until a 1px
+ * sentinel (`StickyPullRequestHeader-module__stickyHeaderActivationThreshold`)
+ * leaves the viewport above, then a fixed bar; its height is read with the
+ * display forced for one synchronous layout, which never paints. The classic
+ * header (`.gh-header-sticky`) sticks at its own document position and shows
+ * its content with `is-stuck`, measured the same way.
+ */
+function stickyHeaderBottomAt(scrollY: number): number {
+  const react = document.querySelector<HTMLElement>('[class*="use-sticky-header-module__stickyHeader"], [class*="stickyHeader"][class*="PageHeader"]');
+  const sentinel = document.querySelector<HTMLElement>('[class*="stickyHeaderActivationThreshold"]');
+  if (react !== null && sentinel !== null) {
+    const activation = sentinel.getBoundingClientRect().bottom + window.scrollY;
+    if (scrollY < activation) return 0;
+    return measureHidden(react, () => react.offsetHeight, 'display', 'flex');
+  }
+  const classic = document.querySelector<HTMLElement>('.gh-header-sticky, .js-sticky');
+  if (classic !== null) {
+    const activation = classic.getBoundingClientRect().top + window.scrollY;
+    if (scrollY < activation) return 0;
+    if (classic.classList.contains('is-stuck')) return classic.offsetHeight;
+    classic.classList.add('is-stuck');
+    const height = classic.offsetHeight;
+    classic.classList.remove('is-stuck');
+    return height;
+  }
+  // No sticky header known: whatever is pinned at the top now.
+  for (const header of document.querySelectorAll<HTMLElement>('[data-testid="sticky-header"], [class*="StickyHeader"]')) {
     const rect = header.getBoundingClientRect();
     const position = getComputedStyle(header).position;
     if ((position === 'sticky' || position === 'fixed') && rect.top <= 1 && rect.height > 0 && rect.height <= 160) return rect.bottom;
   }
   return 0;
+}
+
+/** Read a measurement of `element` with one inline style forced for the read; the style is restored in the same task, so nothing paints. */
+function measureHidden(element: HTMLElement, read: () => number, property: 'display', value: string): number {
+  if (element.offsetHeight > 0) return read();
+  const previous = element.style.getPropertyValue(property);
+  element.style.setProperty(property, value);
+  const measured = read();
+  if (previous === '') element.style.removeProperty(property);
+  else element.style.setProperty(property, previous);
+  return measured;
 }
 
 const MAX_EAGER_FRAGMENTS = 200;
@@ -670,9 +730,9 @@ function revealRow(focusKey: string): void {
   const row = document.querySelector(`[data-geld-focus="${focusKey}"]`);
   if (!(row instanceof HTMLElement)) return;
   const rect = row.getBoundingClientRect();
-  const sticky = stickyHeaderBottom();
+  const sticky = stickyHeaderBottomAt(window.scrollY);
   if (rect.top >= sticky && rect.bottom <= window.innerHeight) return;
-  window.scrollBy({ top: rect.top - sticky - 8, behavior: 'instant' });
+  scrollRowTo(rect.top + window.scrollY);
 }
 
 /**
