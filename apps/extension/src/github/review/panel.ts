@@ -13,11 +13,12 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } f
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import { reclaimOrphans, restoreAll } from './teleport';
+import { renderQuickView } from './quick-view';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
 
 export const PANEL_CLASS = 'geld-review';
@@ -111,6 +112,30 @@ export interface ReviewEntry {
   readonly lane?: CommentLane;
   /** A review thread posted as part of a person's review: that review's anchor. The line is listed under it. */
   readonly parent?: string;
+  /** A review verdict: the threads it was posted with, listed in its open body so each is one click away. */
+  readonly threads?: readonly ReviewThreadRef[];
+}
+
+/** One of a review's threads, as its open body lists them. */
+export interface ReviewThreadRef {
+  readonly anchor: string;
+  readonly path: string;
+  readonly preview: string;
+  readonly done: boolean;
+}
+
+/** A person's verdict on the changes (not a thread, a plain comment or a pending request). */
+export function isVerdict(entry: ReviewEntry): boolean {
+  return entry.state === 'approved' || entry.state === 'changes_requested' || entry.state === 'commented' || entry.state === 'dismissed';
+}
+
+/**
+ * Whether the line opens. A comment opens on its body; a verdict always
+ * opens — on its comment, on the list of its threads, or on a note that it
+ * came with no comments — so a review never reads as a dead line.
+ */
+export function entryOpens(entry: ReviewEntry): boolean {
+  return entry.hasBody || isVerdict(entry);
 }
 
 /** The reviewers on the Reviews row's heading, one group per state, in the order the groups are shown. */
@@ -665,7 +690,7 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     const label = [verdicts > 0 ? plural(verdicts, 'review') : '', remarks > 0 ? plural(remarks, 'comment') : ''].filter((part) => part !== '').join(' · ');
     list.append(subhead(label, verdicts > 0 ? ICON_COMMENT_DISCUSSION : ICON_COMMENT));
     const entries = orderEntries(batch.reviews);
-    const reserve = entries.some((entry) => entry.hasBody);
+    const reserve = entries.some(entryOpens);
     for (const entry of entries) {
       const { row, open } = entryRow(entry, model, handlers, reserve);
       list.append(row);
@@ -1231,7 +1256,7 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
   let nested: HTMLElement | null = null;
   if (model.comments.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews yet.']));
   const entries = orderEntries(model.comments);
-  const reserve = entries.some((entry) => entry.hasBody);
+  const reserve = entries.some(entryOpens);
   for (const entry of entries) {
     const { row, open } = entryRow(entry, model, handlers, reserve);
     list.append(row);
@@ -1255,7 +1280,8 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
  * leaves that square blank and its ⋯ and time stay in the column.
  */
 function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers, reserveChevron = false): { readonly row: HTMLElement; readonly open: boolean } {
-  const open = entry.hasBody && model.openSubKey === entry.anchor;
+  const opens = entryOpens(entry);
+  const open = opens && model.openSubKey === entry.anchor;
   const bot = /\[bot\]$/i.test(entry.author);
   const lead =
     entry.state === 'thread'
@@ -1280,19 +1306,22 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
   else if (entry.state === 'awaiting') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, ['awaiting review']));
   if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
-  const main = entry.hasBody
+  // A verdict without words: how many threads it came with, so the line says what opening it shows.
+  if (entry.preview === '' && isVerdict(entry) && (entry.threads?.length ?? 0) > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.threads?.length ?? 0, 'thread')]));
+  const main = opens
     ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, mainChildren)
     : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
-  if (entry.hasBody) mainClickToggles(main, toggle);
+  if (opens) mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
   if (entry.hasBody) {
     right.append(controlSlot(entry.anchor), chevron(open, toggle));
-  } else if (entry.state !== 'awaiting') {
+  } else if (opens) {
     // A verdict without a comment has no GitHub menu to wear; it gets Geld's own, with what applies to a bare
-    // review row: the way to it in the timeline, and its link. The chevron's square stays blank when a sibling has one.
-    right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(entry.anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(entry.anchor) }], `sub:${entry.anchor}`));
-    if (reserveChevron) right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
+    // review row: the way to it in the timeline, and its link.
+    right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(entry.anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(entry.anchor) }], `sub:${entry.anchor}`), chevron(open, toggle));
+  } else if (reserveChevron) {
+    right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
   }
   const row = createElement(
     'li',
@@ -1301,8 +1330,43 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   );
   if (entry.parent !== undefined) row.setAttribute('data-nested', '');
   if (open) row.setAttribute('data-open', '');
-  if (entry.hasBody) rowClickToggles(row, toggle);
+  if (opens) rowClickToggles(row, toggle);
   return { row, open };
+}
+
+/**
+ * The open body of a person's review: its comment (the real node, on loan),
+ * then the threads it was posted with as one line each — path, first words —
+ * opening that thread where it lives; a verdict with neither gets a note
+ * that says so, drawn as a well with a glyph so it cannot be mistaken for
+ * words someone typed (a comment can be italic; it cannot be this box).
+ */
+export function renderReviewBody(slot: HTMLElement, entry: ReviewEntry, commentNode: HTMLElement | null, handlers: PanelHandlers): void {
+  const parts: Node[] = [];
+  if (commentNode !== null) {
+    const comment = createElement('div');
+    renderQuickView(comment, [commentNode]);
+    parts.push(...comment.childNodes);
+  }
+  const threads = entry.threads ?? [];
+  if (threads.length > 0) {
+    const list = createElement('ul', { class: `${PANEL_CLASS}__review-threads`, role: 'list', 'aria-label': `${plural(threads.length, 'thread')} in this review` });
+    for (const thread of threads) {
+      const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__review-thread`, 'data-state': thread.done ? 'done' : 'open' }, [
+        createElement('span', { class: `${PANEL_CLASS}__review-thread-glyph`, role: 'img', 'aria-label': thread.done ? 'Resolved' : 'Unresolved' }, [icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]),
+        ...(thread.path === '' ? [] : [createElement('code', { class: `${PANEL_CLASS}__review-thread-path` }, [thread.path])]),
+        ...(thread.preview === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__review-thread-preview` }, [thread.preview])]),
+        icon(ICON_CHEVRON_RIGHT),
+      ]);
+      button.addEventListener('click', () => handlers.onOpenAnchor(thread.anchor));
+      list.append(createElement('li', {}, [button]));
+    }
+    parts.push(createElement('div', { class: `${PANEL_CLASS}__review-threads-wrap`, 'data-with-comment': String(commentNode !== null) }, [createElement('div', { class: `${PANEL_CLASS}__review-threads-label` }, [`${plural(threads.length, 'thread')} in this review`]), list]));
+  }
+  if (parts.length === 0) {
+    parts.push(createElement('div', { class: `${PANEL_CLASS}__callout`, role: 'note' }, [createElement('span', { class: `${PANEL_CLASS}__callout-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT)]), createElement('span', {}, ['No comments for this review'])]));
+  }
+  slot.replaceChildren(...parts);
 }
 
 /** Lines with something to open first, then the bare verdicts; each run keeps its timeline order. */
@@ -1323,7 +1387,7 @@ function orderEntries(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
       children.set(entry.parent, list);
     } else top.push(entry);
   }
-  const holds = (entry: ReviewEntry): boolean => entry.hasBody || children.has(entry.anchor);
+  const holds = (entry: ReviewEntry): boolean => entry.hasBody || children.has(entry.anchor) || (entry.threads?.length ?? 0) > 0;
   return [...top.filter(holds), ...top.filter((entry) => !holds(entry))].flatMap((entry) => [entry, ...(children.get(entry.anchor) ?? [])]);
 }
 
@@ -1349,7 +1413,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
@@ -1359,7 +1423,7 @@ function signatureOf(model: PanelModel): string {
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
-    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}`),
+    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}${thread.path}${thread.preview}`).join('|')}`),
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,
