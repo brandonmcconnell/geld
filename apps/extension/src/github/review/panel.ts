@@ -13,7 +13,7 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } f
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_REPO_PUSH, ICON_ROCKET, ICON_ROWS, ICON_SKIP, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -109,6 +109,38 @@ export interface ReviewEntry {
   readonly myReaction: string | null;
   /** What kind of comment Jev judged this to be, when it was asked. */
   readonly lane?: CommentLane;
+  /** A review thread posted as part of a person's review: that review's anchor. The line is listed under it. */
+  readonly parent?: string;
+}
+
+/** The reviewers on the Reviews row's heading, one group per state, in the order the groups are shown. */
+export type ReviewerGroupState = 'approved' | 'changes_requested' | 'commented' | 'awaiting';
+
+export interface ReviewerGroup {
+  readonly state: ReviewerGroupState;
+  readonly reviewers: readonly Avatar[];
+}
+
+/**
+ * Each reviewer once, by their latest verdict: a later comment-only review
+ * does not withdraw an approval or a request for changes (as GitHub counts
+ * them), a re-request puts them back among the awaited. People's top-level
+ * comments are not reviews and stay off the heading.
+ */
+export function reviewerGroups(entries: readonly ReviewEntry[]): readonly ReviewerGroup[] {
+  const latest = new Map<string, { state: ReviewerGroupState; avatar: Avatar }>();
+  for (const entry of entries) {
+    if (entry.state === 'thread' || entry.state === 'comment' || entry.state === 'dismissed') continue;
+    const key = entry.author.toLowerCase();
+    const current = latest.get(key);
+    if (entry.state === 'commented' && current !== undefined && current.state !== 'commented') continue;
+    latest.set(key, { state: entry.state, avatar: { src: entry.avatarSrc ?? '', bot: false, login: entry.author } });
+  }
+  const order: readonly ReviewerGroupState[] = ['approved', 'changes_requested', 'commented', 'awaiting'];
+  return order.flatMap((state) => {
+    const reviewers = [...latest.values()].filter((entry) => entry.state === state).map((entry) => entry.avatar);
+    return reviewers.length === 0 ? [] : [{ state, reviewers }];
+  });
 }
 
 export interface PanelModel {
@@ -991,24 +1023,33 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   if (model.reviews !== null || model.comments.length > 0) {
     const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
     const content: Node[] = [];
-    if (model.reviews !== null) {
-      const marks = createElement('span', { class: `${PANEL_CLASS}__marks`, 'aria-hidden': 'true' });
-      for (let index = 0; index < Math.max(model.reviews.required ?? 0, model.reviews.approvals); index += 1) {
-        marks.append(createElement('span', { class: `${PANEL_CLASS}__mark`, 'data-done': String(index < model.reviews.approvals) }, [icon(index < model.reviews.approvals ? ICON_CHECK : ICON_CIRCLE)]));
-      }
-      content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [reviewsLabel(model.reviews)]), marks);
-    }
-    // Who GitHub is still waiting on, as the sidebar lists them.
-    const awaiting = model.comments.filter((entry) => entry.state === 'awaiting');
-    if (awaiting.length > 0) {
+    // The words carry only what the reviewer groups cannot: how many approvals the repository asks for. Without
+    // a stated requirement (merged and closed PRs never state one) the groups alone say who did what. Narrow
+    // screens keep just the fraction.
+    if (model.reviews !== null && model.reviews.required !== null) {
+      const fraction = `${model.reviews.approvals}/${model.reviews.required}`;
       content.push(
-        createElement('span', { class: `${PANEL_CLASS}__awaiting`, title: `Awaiting review from ${awaiting.map((entry) => entry.author).join(', ')}` }, [
-          avatarStack(awaiting.filter((entry) => entry.avatarSrc !== null).map((entry) => ({ src: entry.avatarSrc ?? '', bot: false, login: entry.author })), awaiting[0]?.author ?? '', false, awaiting.length),
-          createElement('span', { class: `${PANEL_CLASS}__status-text` }, [`${awaiting.length} awaiting`]),
+        createElement('span', { class: `${PANEL_CLASS}__status-text` }, [
+          createElement('span', { class: `${PANEL_CLASS}__label-long` }, [`${fraction} approvals`]),
+          createElement('span', { class: `${PANEL_CLASS}__label-short`, 'aria-hidden': 'true' }, [fraction]),
+        ]),
+      );
+    }
+    // Every reviewer, grouped by their latest verdict: the state's glyph, their avatars, how many (the words go on
+    // narrow screens; the glyph says it).
+    for (const group of reviewerGroups(model.comments)) {
+      const names = group.reviewers.map((reviewer) => reviewer.login).join(', ');
+      const label = `${group.reviewers.length} ${REVIEWER_GROUP_WORD[group.state]}`;
+      content.push(
+        createElement('span', { class: `${PANEL_CLASS}__reviewers`, 'data-state': group.state, title: `${REVIEWER_GROUP_TITLE[group.state]}: ${names}`, role: 'img', 'aria-label': `${label}: ${names}` }, [
+          createElement('span', { class: `${PANEL_CLASS}__reviewers-glyph`, 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[group.state])]),
+          avatarStack(group.reviewers.filter((reviewer) => reviewer.src !== ''), group.reviewers[0]?.login ?? '', false, group.reviewers.length),
+          createElement('span', { class: `${PANEL_CLASS}__status-text ${PANEL_CLASS}__reviewers-text`, 'aria-hidden': 'true' }, [label]),
         ]),
       );
     }
     const open = model.openKey === REVIEWS_KEY;
+    if (content.length === 0) content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet']));
     // Only comments count here; a bare verdict is already in the approvals.
     const count = model.comments.filter((entry) => entry.hasBody).length;
     if (count > 0) content.push(countChip(count, `${plural(count, 'review comment')} from people`));
@@ -1152,6 +1193,21 @@ const ENTRY_GLYPH: Readonly<Record<Exclude<ReviewEntryState, 'thread'>, string>>
   awaiting: ICON_DOT_FILL,
 };
 
+/** "2 approved", "1 requested changes" — GitHub's own words; nothing is "rejected". */
+const REVIEWER_GROUP_WORD: Readonly<Record<ReviewerGroupState, string>> = {
+  approved: 'approved',
+  changes_requested: 'requested changes',
+  commented: 'commented',
+  awaiting: 'awaiting',
+};
+
+const REVIEWER_GROUP_TITLE: Readonly<Record<ReviewerGroupState, string>> = {
+  approved: 'Approved',
+  changes_requested: 'Changes requested',
+  commented: 'Reviewed with comments',
+  awaiting: 'Awaiting review',
+};
+
 const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
   approved: 'Approved',
   changes_requested: 'Requested changes',
@@ -1243,14 +1299,32 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
     { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state },
     [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot, login: entry.author }], entry.author, bot), main, right],
   );
+  if (entry.parent !== undefined) row.setAttribute('data-nested', '');
   if (open) row.setAttribute('data-open', '');
   if (entry.hasBody) rowClickToggles(row, toggle);
   return { row, open };
 }
 
 /** Lines with something to open first, then the bare verdicts; each run keeps its timeline order. */
+/**
+ * Lines with something to open first, bare verdicts and pending requests
+ * after; a review's threads follow their review wherever it lands (a bare
+ * "reviewed" with threads is the review's line, and the threads are what it
+ * holds), each nested under it.
+ */
 function orderEntries(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
-  return [...entries.filter((entry) => entry.hasBody), ...entries.filter((entry) => !entry.hasBody)];
+  const children = new Map<string, ReviewEntry[]>();
+  const parents = new Set(entries.map((entry) => entry.anchor));
+  const top: ReviewEntry[] = [];
+  for (const entry of entries) {
+    if (entry.parent !== undefined && parents.has(entry.parent)) {
+      const list = children.get(entry.parent) ?? [];
+      list.push(entry);
+      children.set(entry.parent, list);
+    } else top.push(entry);
+  }
+  const holds = (entry: ReviewEntry): boolean => entry.hasBody || children.has(entry.anchor);
+  return [...top.filter(holds), ...top.filter((entry) => !holds(entry))].flatMap((entry) => [entry, ...(children.get(entry.anchor) ?? [])]);
 }
 
 function signatureOf(model: PanelModel): string {
@@ -1285,7 +1359,7 @@ function signatureOf(model: PanelModel): string {
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
-    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}`),
+    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}`),
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,

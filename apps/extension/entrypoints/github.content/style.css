@@ -1498,11 +1498,42 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }
 
-/* Requested reviewers on the Reviews row: their avatars, then how many are still awaited. */
-.geld-review__awaiting {
+/*
+ * The reviewers on the Reviews row, one group per verdict: the verdict's glyph
+ * (the same one their lines wear below), their avatars, "2 approved". The
+ * words go on narrow screens; the glyph carries the meaning.
+ */
+.geld-review__reviewers {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+}
+
+.geld-review__reviewers-glyph {
+  display: inline-flex;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__reviewers-glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__reviewers[data-state='approved'] .geld-review__reviewers-glyph {
+  color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+}
+
+.geld-review__reviewers[data-state='changes_requested'] .geld-review__reviewers-glyph {
+  color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+}
+
+.geld-review__reviewers[data-state='awaiting'] .geld-review__reviewers-glyph {
+  color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
+}
+
+/* A person's review threads sit under their review's line, stepped in one glyph-and-gap (16 + 10). */
+.geld-review__rows--sub > .geld-review__row--sub[data-nested] {
+  padding-left: 42px;
 }
 
 /* Every row says who and when itself; a worn header only lends its actions (react, ⋯), so open and closed read alike. */
@@ -1712,30 +1743,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 .geld-review__ring circle[data-state='skipped'],
 .geld-review__ring circle[data-state='neutral'] {
   stroke: var(--geld-review-muted);
-}
-
-.geld-review__marks {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.geld-review__mark {
-  display: inline-flex;
-  color: var(--geld-review-muted);
-}
-
-.geld-review__mark[data-done='true'] {
-  color: var(--geld-review-done-fg);
-}
-
-/* Several approvals read as one run of checks; other marks keep their spacing. */
-.geld-review__mark[data-done='true'] + .geld-review__mark[data-done='true'] {
-  margin-left: -7px;
-}
-
-.geld-review__mark .octicon {
-  width: 14px;
-  height: 14px;
 }
 
 .geld-review__menu-title {
@@ -3561,6 +3568,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__bot-name:not(.geld-review__deploy-name),
   .geld-review__bot-detail,
   .geld-review__label-long,
+  .geld-review__reviewers-text,
   .geld-review__row .geld-review__time {
     display: none;
   }
