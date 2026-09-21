@@ -1736,14 +1736,14 @@ function toDotPath(_path) {
   return segs.join("");
 }
 function prettifyError(error61) {
-  const lines = [];
+  const lines2 = [];
   const issues = [...error61.issues].sort((a, b) => (a.path ?? []).length - (b.path ?? []).length);
   for (const issue2 of issues) {
-    lines.push(`\u2716 ${issue2.message}`);
+    lines2.push(`\u2716 ${issue2.message}`);
     if (issue2.path?.length)
-      lines.push(`  \u2192 at ${toDotPath(issue2.path)}`);
+      lines2.push(`  \u2192 at ${toDotPath(issue2.path)}`);
   }
-  return lines.join("\n");
+  return lines2.join("\n");
 }
 
 // ../../node_modules/.pnpm/zod@4.5.4/node_modules/zod/v4/core/parse.js
@@ -2619,9 +2619,9 @@ var Doc = class {
       return;
     }
     const content = arg;
-    const lines = content.split("\n").filter((x) => x);
-    const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
-    const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
+    const lines2 = content.split("\n").filter((x) => x);
+    const minIndent = Math.min(...lines2.map((x) => x.length - x.trimStart().length));
+    const dedented = lines2.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
     for (const line of dedented) {
       this.content.push(line);
     }
@@ -18919,6 +18919,7 @@ var FIX_SOURCES = ["bot", "human", "ai"];
 var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
 var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN);
 var FINDING_SEVERITIES = ["low", "medium", "high"];
+var PREVIEW_STATUSES = ["ready", "building", "failed", "skipped", "unknown"];
 var isoDate = external_exports.string().refine((value) => !Number.isNaN(Date.parse(value)), { error: "Expected an ISO date string." });
 var sha = external_exports.string().regex(/^[0-9a-f]{7,40}$/i, { error: "Expected a git SHA." });
 var reviewSourceSchema = external_exports.object({
@@ -18977,6 +18978,15 @@ var foldSchema = external_exports.object({
   comments: external_exports.array(sourceAnchorSchema),
   events: external_exports.array(sourceAnchorSchema)
 });
+var previewRecordSchema = external_exports.object({
+  host: external_exports.string().min(1),
+  project: external_exports.string().min(1),
+  status: external_exports.enum(PREVIEW_STATUSES),
+  url: external_exports.string().url().nullable(),
+  inspectUrl: external_exports.string().url().nullable(),
+  anchor: sourceAnchorSchema,
+  updatedAt: isoDate.optional()
+});
 var geldPrMetaSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
   generatedAt: isoDate,
@@ -18987,7 +18997,8 @@ var geldPrMetaSchema = external_exports.object({
   reviewers: external_exports.array(reviewerSchema),
   fold: foldSchema,
   truncated: external_exports.boolean().optional(),
-  summary: reviewSummarySchema.optional()
+  summary: reviewSummarySchema.optional(),
+  previews: external_exports.array(previewRecordSchema).optional()
 });
 var deeplinkSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -19045,7 +19056,14 @@ function metaFrom(value) {
     fold: { comments: value.fold.comments, events: value.fold.events }
   };
   const flagged = value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
-  return value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
+  const summarised = value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
+  return value.previews === void 0 ? summarised : {
+    ...summarised,
+    previews: value.previews.map((entry2) => {
+      const record3 = { host: entry2.host, project: entry2.project, status: entry2.status, url: entry2.url, inspectUrl: entry2.inspectUrl, anchor: entry2.anchor };
+      return entry2.updatedAt === void 0 ? record3 : { ...record3, updatedAt: entry2.updatedAt };
+    })
+  };
 }
 function parseGeldPrMeta(value) {
   const parsed = geldPrMetaSchema.safeParse(value);
@@ -19287,8 +19305,31 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
 }
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body, extraLogins = []) {
-  const lines = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
-  if (lines.length > 1) return lines.length <= 6 && lines.every((line) => isTriggerComment(line, extraLogins));
+  const lines2 = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
+  if (lines2.length > 1) return lines2.length <= 6 && lines2.every((line) => isTriggerComment(line, extraLogins));
+  if (isSingleTrigger(body, extraLogins)) return true;
+  return isTriggerSequence(body, extraLogins);
+}
+function knownTriggers(extraLogins) {
+  const list = REVIEW_BOTS.flatMap((bot) => bot.triggers.map((trigger) => trigger.toLowerCase()));
+  for (const login of extraLogins) list.push(`@${login.replace(/\[bot\]$/i, "").toLowerCase()}`);
+  return [...new Set(list)].sort((a, b) => b.length - a.length);
+}
+function isTriggerSequence(body, extraLogins) {
+  let text = body.replace(/[`*_~]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (text === "" || text.length > 240) return false;
+  const triggers = knownTriggers(extraLogins);
+  let count = 0;
+  while (text !== "") {
+    const match = triggers.find((trigger) => text === trigger || text.startsWith(trigger) && /^[\s.!,;]/.test(text.slice(trigger.length)));
+    if (match === void 0) return false;
+    text = text.slice(match.length).replace(/^[\s.!,;]+/, "");
+    count += 1;
+    if (count > 8) return false;
+  }
+  return count > 1;
+}
+function isSingleTrigger(body, extraLogins) {
   const text = body.replace(/[`*_~]/g, "").replace(/\s+/g, " ").trim().replace(/[.!]+$/, "").toLowerCase();
   if (text === "" || text.length > 60) return false;
   for (const bot of REVIEW_BOTS) {
@@ -19686,48 +19727,48 @@ function headerLine(meta3) {
 }
 function renderSummary(meta3, subject) {
   const { open: open2, done } = groupItems(meta3.items);
-  const lines = [
+  const lines2 = [
     SUMMARY_MARKER,
     `### ${SUMMARY_HEADING}`,
     headerLine(meta3),
     ""
   ];
   if (meta3.summary !== void 0) {
-    lines.push(meta3.summary.tldr, "");
+    lines2.push(meta3.summary.tldr, "");
   }
   if (open2.length > 0) {
-    lines.push(`**Open (${open2.length})**`);
-    for (const item of open2) lines.push(itemLine(item, false));
-    lines.push("");
+    lines2.push(`**Open (${open2.length})**`);
+    for (const item of open2) lines2.push(itemLine(item, false));
+    lines2.push("");
   }
   if (done.length > 0) {
-    lines.push(`<details><summary>Done (${done.length})</summary>`);
-    lines.push("");
-    for (const item of done) lines.push(itemLine(item, true));
-    lines.push("");
-    lines.push("</details>");
-    lines.push("");
+    lines2.push(`<details><summary>Done (${done.length})</summary>`);
+    lines2.push("");
+    for (const item of done) lines2.push(itemLine(item, true));
+    lines2.push("");
+    lines2.push("</details>");
+    lines2.push("");
   }
   if (meta3.reviewers.length > 0) {
-    lines.push(meta3.reviewers.map(reviewerPhrase).join(" \xB7 "));
-    lines.push("");
+    lines2.push(meta3.reviewers.map(reviewerPhrase).join(" \xB7 "));
+    lines2.push("");
   }
   if (meta3.truncated === true) {
-    lines.push("_List truncated; open the pull request with Geld to see the rest._");
-    lines.push("");
+    lines2.push("_List truncated; open the pull request with Geld to see the rest._");
+    lines2.push("");
   }
-  lines.push(`<details><summary>${DATA_SUMMARY}</summary>`);
-  lines.push("");
-  lines.push("```" + PAYLOAD_FENCE);
-  lines.push(JSON.stringify(meta3));
-  lines.push("```");
-  lines.push("");
-  lines.push("</details>");
-  lines.push("");
+  lines2.push(`<details><summary>${DATA_SUMMARY}</summary>`);
+  lines2.push("");
+  lines2.push("```" + PAYLOAD_FENCE);
+  lines2.push(JSON.stringify(meta3));
+  lines2.push("```");
+  lines2.push("");
+  lines2.push("</details>");
+  lines2.push("");
   const openHref = subject === void 0 ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta3);
-  lines.push(`<sub>Maintained by Geld \xB7 <a href="${openHref}">Open in Geld</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a></sub>`);
-  lines.push("");
-  return lines.join("\n");
+  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${openHref}">Open in Geld</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a></sub>`);
+  lines2.push("");
+  return lines2.join("\n");
 }
 
 // ../../packages/review/src/summary-parse.ts
@@ -19759,10 +19800,10 @@ function looksLikeSummaryBody(body) {
 }
 function tickedItemIds(body, items) {
   const ticked = /* @__PURE__ */ new Set();
-  const lines = body.split(/\r?\n/);
+  const lines2 = body.split(/\r?\n/);
   for (const item of items) {
     const anchors = item.sources.map((source) => source.anchor);
-    const checked = lines.some((line) => {
+    const checked = lines2.some((line) => {
       if (!/^\s*[-*]\s+\[[xX]\]/.test(line)) return false;
       return anchors.some((anchor2) => line.includes(`#${anchor2}`));
     });
@@ -19779,6 +19820,7 @@ Rules:
 - When "previousTitle" is given, the item was already summarised; change the title and context only as much as the new sources require. Prefer keeping them.
 - "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. Omit otherwise.
 - "severity": one of the allowed values when you can tell; omit otherwise.
+- When "sameProblemAs" lists other ids, those items were judged to report the same underlying problem: give them one and the same title, and let each context say which other reporters raised it.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
 var SUMMARY_SYSTEM = `You write the TL;DR of a pull request's review state for its digest.
 Rules:
@@ -19976,6 +20018,258 @@ async function completeChat(options) {
   }
 }
 
+// ../../packages/review/src/previews.ts
+var STATUS_WORDS = [
+  [/\b(ready|success(?:ful)?|deployed|live|published|passed|complete[d]?)\b|✅|🟢/i, "ready"],
+  [/\b(fail(?:ed|ure)?|error(?:ed)?|broken)\b|❌|🔴/i, "failed"],
+  [/\b(building|deploying|in progress|running|pending|queued|testing)\b|⚡|⏳|🟡/i, "building"],
+  [/\b(skipped|cancel(?:l)?ed|ignored)\b|⚪/i, "skipped"]
+];
+function statusFromText(text) {
+  for (const [pattern, status] of STATUS_WORDS) if (pattern.test(text)) return status;
+  return "unknown";
+}
+function isExternal(href) {
+  return /^https?:\/\//i.test(href) && !/(^|\.)github\.com\//i.test(href) && !/githubusercontent\.com/i.test(href);
+}
+function hostOf(href) {
+  try {
+    return new URL(href).hostname;
+  } catch {
+    return "";
+  }
+}
+function lines(doc) {
+  return doc.text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
+}
+function linkWhere(doc, textPattern, hrefPattern = null) {
+  return doc.links.find((link) => textPattern.test(link.text.trim()) && (hrefPattern === null || hrefPattern.test(link.href))) ?? null;
+}
+function linkByHref(doc, hrefPattern) {
+  return doc.links.find((link) => hrefPattern.test(link.href)) ?? null;
+}
+function withScheme(url2) {
+  if (url2 === null || url2 === "") return null;
+  return /^[a-z]+:\/\//i.test(url2) ? url2 : `https://${url2}`;
+}
+function preview(host, doc, project, status, rawUrl, rawInspectUrl) {
+  const url2 = withScheme(rawUrl);
+  const inspectUrl = withScheme(rawInspectUrl);
+  const base = { host, project: project.trim() || hostOf(url2 ?? inspectUrl ?? "") || host, status, url: url2, inspectUrl, anchor: doc.anchor };
+  return doc.updatedAt === void 0 ? base : { ...base, updatedAt: doc.updatedAt };
+}
+function isVercelProject(value) {
+  return typeof value === "object" && value !== null && typeof Reflect.get(value, "name") === "string" && typeof Reflect.get(value, "nextCommitStatus") === "string";
+}
+function vercelHeader(text) {
+  const match = /\[vc\]:\s*#[^:\s]+:([A-Za-z0-9+/=]+)/.exec(text);
+  if (match?.[1] === void 0) return null;
+  try {
+    const binary = atob(match[1]);
+    const decoded = decodeURIComponent(Array.from(binary, (char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+    const parsed = JSON.parse(decoded);
+    const projects = typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, "projects") : null;
+    if (!Array.isArray(projects)) return null;
+    return projects.filter(isVercelProject);
+  } catch {
+    return null;
+  }
+}
+function vercelStatus(word) {
+  const upper = word.trim().toUpperCase();
+  if (upper === "READY") return "ready";
+  if (upper === "ERROR" || upper === "FAILED") return "failed";
+  if (upper === "SKIPPED" || upper === "CANCELED" || upper === "CANCELLED" || upper === "IGNORED") return "skipped";
+  if (upper === "BUILDING" || upper === "QUEUED" || upper === "PENDING" || upper === "INITIALIZING") return "building";
+  return statusFromText(word);
+}
+function tableRowFor(doc, project) {
+  return lines(doc).find((line) => line.startsWith("|") && line.includes(`| ${project} |`)) ?? null;
+}
+function parseVercel(doc) {
+  const header = vercelHeader(doc.text);
+  if (header !== null && header.length > 0) {
+    return header.map((project) => preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl));
+  }
+  const out = [];
+  const projectLinks = doc.links.filter((link) => /^https:\/\/vercel\.com\/[^/]+\/[^/?#]+\/?$/.test(link.href) && link.text.trim() !== "");
+  for (const link of projectLinks) {
+    const name = link.text.trim();
+    if (out.some((entry2) => entry2.project === name)) continue;
+    const inspector = doc.links.find((candidate) => candidate.href.startsWith(`${link.href.replace(/\/$/, "")}/`) && candidate !== link);
+    const row = tableRowFor(doc, name);
+    let status = inspector === void 0 ? "unknown" : vercelStatus(inspector.text);
+    if (status === "unknown") {
+      const image = doc.images.find((candidate) => /vercel\.com\/static\/status\//.test(candidate.src) && candidate.alt.trim() !== "");
+      if (image !== void 0 && projectLinks.length === 1) status = vercelStatus(image.alt);
+    }
+    if (status === "unknown" && row !== null) status = statusFromText(row.replace(`| ${name} |`, "|"));
+    const at = inspector === void 0 ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
+    const visit2 = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
+    if (status === "unknown" && visit2 !== void 0) status = "ready";
+    out.push(preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null));
+  }
+  if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
+    const team = /to the \*{0,2}([^*\n]+?)\*{0,2} Team/i.exec(doc.text)?.[1] ?? "Vercel";
+    return [preview("vercel", doc, team.trim(), "building", null, linkWhere(doc, /authorize it/i)?.href ?? null)];
+  }
+  return out;
+}
+function parseNetlify(doc) {
+  const head = /Deploy Preview for \*?([^*\n]+?)\*?\s+(ready|failed|processing|building|canceled|errored)/i.exec(doc.text);
+  const name = head?.[1]?.trim() ?? "";
+  const status = head?.[2] === void 0 ? statusFromText(doc.text) : statusFromText(head[2]);
+  const site = linkByHref(doc, /\.netlify\.app\/?$/i) ?? linkByHref(doc, /--[^.]+\.netlify\.app/i);
+  const log = linkByHref(doc, /app\.netlify\.com\/(projects|sites)\/[^/]+\/deploys\//i);
+  if (name === "" && site === null) return [];
+  return [preview("netlify", doc, name, status, site?.href ?? null, log?.href ?? null)];
+}
+function parseCloudflare(doc) {
+  const pages = /Deploying\s+(\S+)\s+with\s+.*Cloudflare Pages/i.exec(doc.text) ?? /Deploying\s+(\S+)\s+with/i.exec(doc.text);
+  const previewUrl = (() => {
+    const after = /Preview URL:?\s*\n?\s*(https?:\/\/\S+)/i.exec(doc.text)?.[1];
+    return after ?? linkByHref(doc, /^https:\/\/[a-z0-9-]+\.[^.]+\.pages\.dev/i)?.href ?? null;
+  })();
+  const statusLine = lines(doc).find((line) => /^Status:?/i.test(line) || /Deploy(ment)? (successful|failed)|Building/i.test(line)) ?? "";
+  const logs = linkWhere(doc, /view logs/i) ?? linkByHref(doc, /dash\.cloudflare\.com/i);
+  const out = [];
+  if (pages?.[1] !== void 0 || previewUrl !== null) {
+    out.push(preview("cloudflare", doc, pages?.[1] ?? "", statusLine === "" ? previewUrl === null ? "unknown" : "ready" : statusFromText(statusLine), previewUrl, logs?.href ?? null));
+  }
+  if (out.length === 0) {
+    for (const line of lines(doc)) {
+      const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell !== "");
+      if (cells.length < 3 || !/deploy|building|success|fail/i.test(cells[0] ?? "")) continue;
+      out.push(preview("cloudflare", doc, cells[1] ?? "", statusFromText(cells[0] ?? ""), null, logs?.href ?? null));
+    }
+  }
+  return out;
+}
+function tableRows(doc) {
+  return lines(doc).filter((line) => line.includes("|") && !/^\|?\s*:?-+/.test(line)).map(
+    (line) => line.split("|").map((cell) => cell.trim()).filter((cell) => cell !== "")
+  );
+}
+function parseMintlify(doc) {
+  const out = [];
+  const projectLinks = doc.links.filter((link) => /app\.mintlify\.com\//.test(link.href) && link.text.trim() !== "");
+  const previews = doc.links.filter((link) => /^view preview$/i.test(link.text.trim()) || /\.mintlify\.(site|app)\//i.test(link.href));
+  const rows = tableRows(doc).filter((cells) => cells.length >= 3 && !/^project$/i.test(cells[0] ?? ""));
+  projectLinks.forEach((link, index) => {
+    const name = link.text.trim();
+    const row = rows.find((cells) => cells.some((cell) => cell.includes(name))) ?? rows[index];
+    const statusCell = row?.find((cell) => /ready|building|failed|error|🟢|🟡|🔴/i.test(cell)) ?? "";
+    out.push(preview("mintlify", doc, name, statusFromText(statusCell), previews[index]?.href ?? previews[0]?.href ?? null, link.href));
+  });
+  if (out.length === 0 && previews.length > 0) out.push(preview("mintlify", doc, "docs", "ready", previews[0]?.href ?? null, null));
+  return out;
+}
+function parseRailway(doc) {
+  const out = [];
+  const webLinks = doc.links.filter((link) => /^web$/i.test(link.text.trim()) || /\.up\.railway\.app/i.test(link.href));
+  const logLinks = doc.links.filter((link) => /view logs/i.test(link.text));
+  const rows = tableRows(doc).filter((cells) => cells.length >= 2 && !/^service$/i.test(cells[0]?.replace(/\*/g, "") ?? ""));
+  rows.forEach((cells, index) => {
+    const name = (cells[0] ?? "").replace(/<[^>]+>/g, "").trim();
+    const statusCell = cells[1] ?? "";
+    if (name === "" || !/success|fail|build|deploy|✅|❌|⏳/i.test(statusCell)) return;
+    out.push(preview("railway", doc, name, statusFromText(statusCell), webLinks[index]?.href ?? null, logLinks[index]?.href ?? null));
+  });
+  return out;
+}
+function parseRender(doc) {
+  const url2 = /PR Server URL is\s+(https?:\/\/\S+?)\.?(\s|$)/i.exec(doc.text)?.[1] ?? linkByHref(doc, /\.onrender\.com/i)?.href ?? null;
+  if (url2 === null) return [];
+  const dash = linkByHref(doc, /dashboard\.render\.com/i)?.href ?? /(https?:\/\/dashboard\.render\.com\/\S+?)\.?(\s|$)/i.exec(doc.text)?.[1] ?? null;
+  return [preview("render", doc, hostOf(url2).split(".")[0] ?? "", "ready", url2, dash)];
+}
+function parseAmplify(doc) {
+  const url2 = /Access this pull request here:\s*(https?:\/\/\S+)/i.exec(doc.text)?.[1] ?? linkByHref(doc, /\.amplifyapp\.com/i)?.href ?? null;
+  if (url2 === null) return [];
+  return [preview("amplify", doc, hostOf(url2).split(".")[1] ?? "amplify", "ready", url2, null)];
+}
+function parseAzureSwa(doc) {
+  const url2 = /Azure Static Web Apps:.*?Visit it here:\s*(https?:\/\/\S+)/i.exec(doc.text)?.[1] ?? linkByHref(doc, /\.azurestaticapps\.net/i)?.href ?? null;
+  if (url2 === null) return [];
+  return [preview("azure-swa", doc, hostOf(url2).split(".")[0] ?? "static web app", statusFromText(doc.text), url2, null)];
+}
+function parseReadTheDocs(doc) {
+  const build = linkWhere(doc, /preview build/i) ?? linkByHref(doc, /\.readthedocs\.build\//i);
+  if (build === null) return [];
+  const project = linkByHref(doc, /app\.readthedocs\.org\/projects\/[^/]+\/?$/i);
+  const log = linkByHref(doc, /readthedocs\.org\/projects\/[^/]+\/builds\//i);
+  return [preview("readthedocs", doc, project?.text.trim() ?? "docs", statusFromText(doc.text) === "failed" ? "failed" : "ready", build.href, log?.href ?? null)];
+}
+function parseCodeSandbox(doc) {
+  const open2 = linkWhere(doc, /^preview$/i, /codesandbox\.io/i) ?? linkByHref(doc, /codesandbox\.io\/p\/devtool\/preview/i);
+  if (open2 === null) return [];
+  return [preview("codesandbox", doc, "CodeSandbox", "ready", open2.href, linkWhere(doc, /web editor/i)?.href ?? null)];
+}
+function parseChromatic(doc) {
+  const storybook = linkWhere(doc, /storybook publish/i) ?? linkByHref(doc, /^https:\/\/[a-z0-9-]+\.(staging-)?chromatic\.com\/?$/i);
+  const tests = linkWhere(doc, /ui tests/i);
+  if (storybook === null && tests === null) return [];
+  const status = /need review|changes must be accepted/i.test(doc.text) ? "building" : statusFromText(doc.text);
+  return [preview("chromatic", doc, "Storybook", storybook === null ? status : "ready", storybook?.href ?? null, tests?.href ?? null)];
+}
+function parseStackBlitz(doc) {
+  const open2 = linkWhere(doc, /open in stackblitz/i);
+  if (open2 === null) return [];
+  return [preview("pkg-pr-new", doc, "StackBlitz", "ready", open2.href, null)];
+}
+function parseGeneric(doc) {
+  if (!/\bpreview\b/i.test(doc.text)) return [];
+  const external = doc.links.filter((link) => isExternal(link.href));
+  const named = external.find((link) => /^(🔗\s*)?(visit |view |open )?(the )?preview( url| site| build)?$/i.test(link.text.trim())) ?? null;
+  const fromText = /Preview URL:?\*{0,2}\s*(https?:\/\/\S+)/i.exec(doc.text)?.[1] ?? null;
+  const url2 = named?.href ?? fromText ?? external.find((link) => link.text.trim() === link.href || /^https?:\/\//.test(link.text.trim()))?.href ?? null;
+  if (url2 === null) return [];
+  const logs = linkWhere(doc, /view logs|build log|deploy log|logs/i)?.href ?? null;
+  return [preview("generic", doc, hostOf(url2), statusFromText(doc.text), url2, logs)];
+}
+var PREVIEW_HOSTS = [
+  { id: "vercel", title: "Vercel", logins: ["vercel[bot]"], parse: parseVercel },
+  { id: "netlify", title: "Netlify", logins: ["netlify[bot]"], parse: parseNetlify },
+  { id: "cloudflare", title: "Cloudflare", logins: ["cloudflare-workers-and-pages[bot]", "cloudflare-pages[bot]"], parse: parseCloudflare },
+  { id: "mintlify", title: "Mintlify", logins: ["mintlify[bot]"], parse: parseMintlify },
+  { id: "railway", title: "Railway", logins: ["railway-app[bot]"], parse: parseRailway },
+  { id: "render", title: "Render", logins: ["render[bot]"], parse: parseRender },
+  { id: "amplify", title: "Amplify", logins: ["aws-amplify-*"], parse: parseAmplify },
+  { id: "readthedocs", title: "Read the Docs", logins: ["read-the-docs-community[bot]", "readthedocs[bot]", "readthedocs-*"], parse: parseReadTheDocs },
+  { id: "codesandbox", title: "CodeSandbox", logins: ["codesandbox[bot]"], parse: parseCodeSandbox },
+  { id: "chromatic", title: "Chromatic", logins: ["chromatic-com[bot]", "chromatic-com-*"], parse: parseChromatic },
+  { id: "pkg-pr-new", title: "pkg.pr.new", logins: ["pkg-pr-new[bot]"], parse: parseStackBlitz },
+  { id: "azure-swa", title: "Azure Static Web Apps", logins: ["github-actions[bot]"], parse: parseAzureSwa },
+  { id: "generic", title: "Preview", logins: ["github-actions[bot]", "*[bot]"], parse: parseGeneric }
+];
+function loginMatches(pattern, login) {
+  const lower = login.toLowerCase();
+  if (pattern.endsWith("*")) return lower.startsWith(pattern.slice(0, -1));
+  if (pattern.startsWith("*")) return lower.endsWith(pattern.slice(1));
+  return lower === pattern;
+}
+function parsePreviews(doc) {
+  const hosts = PREVIEW_HOSTS.filter((host) => host.logins.some((pattern) => loginMatches(pattern, doc.author)));
+  for (const host of hosts) {
+    const found = host.parse(doc);
+    if (found.length > 0) return found;
+  }
+  return [];
+}
+function previewDocFromMarkdown(author, anchor2, markdown, updatedAt) {
+  const links = [];
+  const images = [];
+  for (const match of markdown.matchAll(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) images.push({ alt: match[1] ?? "", src: match[2] ?? "" });
+  for (const match of markdown.matchAll(/<img\b[^>]*\balt=["']([^"']*)["'][^>]*\bsrc=["']([^"']+)["']|<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\balt=["']([^"']*)["']/gi)) {
+    images.push({ alt: match[1] ?? match[4] ?? "", src: match[2] ?? match[3] ?? "" });
+  }
+  for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, "").trim() ?? "", href: match[2] ?? "" });
+  for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? "", text: (match[2] ?? "").replace(/<[^>]+>/g, "").trim() });
+  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const doc = { author, anchor: anchor2, text, links, images };
+  return updatedAt === void 0 ? doc : { ...doc, updatedAt };
+}
+
 // ../../packages/review/src/build.ts
 var REVIEWER_STATE = {
   APPROVED: "approved",
@@ -20127,6 +20421,7 @@ function buildMeta(pr, options) {
     ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}` }))
   ];
   const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra);
+  const previews = pr.comments.flatMap((comment) => parsePreviews(previewDocFromMarkdown(comment.author, `issuecomment-${comment.databaseId}`, comment.body, comment.createdAt)));
   const meta3 = {
     v: META_VERSION,
     generatedAt: options.generatedAt,
@@ -20137,7 +20432,8 @@ function buildMeta(pr, options) {
     reviewers: reviewersOf(pr),
     fold: foldOf(pr, extra),
     ...uncappedCount > items.length ? { truncated: true } : {},
-    ...options.summary === void 0 ? {} : { summary: options.summary }
+    ...options.summary === void 0 ? {} : { summary: options.summary },
+    ...previews.length === 0 ? {} : { previews }
   };
   return truncateMeta(meta3, options.budget ?? PAYLOAD_BUDGET);
 }
