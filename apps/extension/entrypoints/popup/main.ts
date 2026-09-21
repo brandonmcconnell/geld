@@ -13,7 +13,7 @@ import { repoConfigChoicesItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
-import { popupMaxHeight } from '../../src/ui/popup-size';
+import { popupMaxHeight, popupNeedsScroll } from '../../src/ui/popup-size';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 
 interface ActiveTab {
@@ -496,5 +496,11 @@ async function main(): Promise<void> {
 }
 
 document.documentElement.style.setProperty('--geld-popup-max-height', `${popupMaxHeight(window.screen.availHeight)}px`);
+const popup = document.querySelector<HTMLElement>('.popup');
+if (popup !== null) {
+  const updateScrollState = (): void => popup.toggleAttribute('data-scrollable', popupNeedsScroll(popup.scrollHeight, popup.clientHeight));
+  new ResizeObserver(updateScrollState).observe(popup);
+  requestAnimationFrame(updateScrollState);
+}
 polyfillCornerShape();
 void main();

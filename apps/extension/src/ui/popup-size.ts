@@ -10,3 +10,8 @@ export function popupMaxHeight(availableHeight: number): number {
   if (!Number.isFinite(availableHeight) || availableHeight <= 0) return BROWSER_POPUP_MAX_HEIGHT;
   return Math.min(BROWSER_POPUP_MAX_HEIGHT, Math.max(MIN_USABLE_POPUP_HEIGHT, Math.floor(availableHeight * 0.75)));
 }
+
+/** A one-pixel tolerance avoids toggling for subpixel layout rounding. */
+export function popupNeedsScroll(scrollHeight: number, clientHeight: number): boolean {
+  return scrollHeight > clientHeight + 1;
+}
