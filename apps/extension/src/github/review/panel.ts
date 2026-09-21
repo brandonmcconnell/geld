@@ -1370,9 +1370,12 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     rows.append(groupHeading('pushes', plural(model.batches.length, 'push', 'pushes'), model, handlers));
     if (!model.collapsedGroups.has('pushes')) appendBatches([...model.batches].reverse());
   }
-  // Rounds with a thread still open come first and stay open; settled rounds fold away by default.
-  const attention = model.grouping === 'batch' ? [] : model.batches.filter((batch) => batch.items.some((item) => isOpenStatus(item.status)));
-  const settled = model.grouping === 'batch' ? [] : model.batches.filter((batch) => !attention.includes(batch));
+  // Rounds with a thread still open come first and stay open; settled rounds fold away by default. By type a round
+  // is its review content, so a run of commits that nothing followed (the last pushes of a PR nobody has reviewed
+  // yet) is no round at all - its commits are in the Commits fold. By push the same run is a push and stays.
+  const withContent = model.batches.filter((batch) => batch.items.length + batch.comments.length + batch.reviews.length + batch.previews.length > 0);
+  const attention = model.grouping === 'batch' ? [] : withContent.filter((batch) => batch.items.some((item) => isOpenStatus(item.status)));
+  const settled = model.grouping === 'batch' ? [] : withContent.filter((batch) => !attention.includes(batch));
   if (attention.length > 0) {
     rows.append(groupHeading('open', `${plural(attention.length, 'round')} to review · ${plural(open.length, 'open thread')}`, model, handlers));
     if (!model.collapsedGroups.has('open')) appendBatches(attention);
