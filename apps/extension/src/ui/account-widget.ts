@@ -53,14 +53,31 @@ function svg(markup: string): Element {
   return template.content.firstElementChild ?? document.createElement('span');
 }
 
-function relative(timestamp: number): string {
-  const seconds = Math.round((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'just now';
+export interface SyncAge {
+  readonly accessible: string;
+  readonly compact: string;
+}
+
+export function formatSyncAge(timestamp: number, now = Date.now()): SyncAge {
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
+  if (seconds < 60) return { compact: 'now', accessible: 'Synced just now' };
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) {
+    const unit = minutes === 1 ? 'minute' : 'minutes';
+    return { compact: `${minutes} ${minutes === 1 ? 'min' : 'mins'}`, accessible: `Synced ${minutes} ${unit} ago` };
+  }
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return new Date(timestamp).toLocaleDateString();
+  if (hours < 24) {
+    const unit = hours === 1 ? 'hour' : 'hours';
+    return { compact: `${hours} ${hours === 1 ? 'hr' : 'hrs'}`, accessible: `Synced ${hours} ${unit} ago` };
+  }
+  const days = Math.round(hours / 24);
+  if (days < 30) {
+    const unit = days === 1 ? 'day' : 'days';
+    return { compact: `${days} ${unit}`, accessible: `Synced ${days} ${unit} ago` };
+  }
+  const date = new Date(timestamp);
+  return { compact: date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), accessible: `Synced ${date.toLocaleString()}` };
 }
 
 export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOptions): () => void {
@@ -69,6 +86,25 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   let flow: AuthFlowState = { status: 'idle' };
   let sync: SyncState = EMPTY_SYNC_STATE;
   let localError: string | null = null;
+  let syncClock: ReturnType<typeof setInterval> | null = null;
+
+  const stopSyncClock = (): void => {
+    if (syncClock === null) return;
+    clearInterval(syncClock);
+    syncClock = null;
+  };
+
+  const startSyncClock = (status: HTMLTimeElement, summary: HTMLElement, timestamp: number): void => {
+    const update = (): void => {
+      const age = formatSyncAge(timestamp);
+      status.textContent = age.compact;
+      status.title = age.accessible;
+      status.setAttribute('aria-label', age.accessible);
+      summary.title = age.accessible;
+    };
+    update();
+    syncClock = setInterval(update, 30_000);
+  };
 
   const act = async (action: AccountActionMessage['action']): Promise<void> => {
     localError = await send(action);
@@ -76,6 +112,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   };
 
   function render(): void {
+    stopSyncClock();
     host.replaceChildren();
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
 
@@ -107,25 +144,34 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     avatar.alt = '';
     avatar.width = 20;
     avatar.height = 20;
-    const status =
+    const statusText =
       account.auth === 'oauth'
         ? RECONNECT_COPY.title
         : sync.remoteInvalid !== null
-        ? 'Sync paused: settings on GitHub are corrupted'
-        : sync.lastError !== null
-          ? `Sync error: ${sync.lastError}`
-          : sync.pendingChoice !== null
-            ? 'Waiting for your choice'
-            : sync.lastSyncedAt !== null
-              ? `Synced ${relative(sync.lastSyncedAt)}`
+          ? 'Sync paused: settings on GitHub are corrupted'
+          : sync.lastError !== null
+            ? `Sync error: ${sync.lastError}`
+            : sync.pendingChoice !== null
+              ? 'Waiting for your choice'
               : 'Syncing…';
+    const syncedAt =
+      account.auth !== 'oauth' && sync.remoteInvalid === null && sync.lastError === null && sync.pendingChoice === null ? sync.lastSyncedAt : null;
     const details = el('details', 'geld-account__menu');
     const summary = el('summary', 'geld-account__summary', [avatar, el('span', 'geld-account__login', [account.login])]);
-    summary.title = status;
+    const status =
+      syncedAt === null
+        ? el('p', 'geld-account__status', [statusText])
+        : el('time', 'geld-account__status geld-account__status--synced');
+    if (status instanceof HTMLTimeElement && syncedAt !== null) {
+      status.dateTime = new Date(syncedAt).toISOString();
+      startSyncClock(status, summary, syncedAt);
+    } else {
+      summary.title = statusText;
+    }
     const menu = el('div', 'geld-account__menu-body', [
-      el('p', 'geld-account__status', [status]),
-      button(['Sync now'], 'geld-button--small', () => void act('sync-now')),
-      button(['Sign out'], 'geld-button--small geld-button--link', () => void act('sign-out')),
+      status,
+      button(['Sync now'], 'geld-account__menu-item', () => void act('sync-now')),
+      button(['Sign out'], 'geld-account__menu-item', () => void act('sign-out')),
     ]);
     details.append(summary, menu);
     host.append(details);
@@ -295,5 +341,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     if (a !== null && sync.pendingChoice === null) void send('sync-now');
   });
 
-  return () => unwatchers.forEach((unwatch) => unwatch());
+  return () => {
+    stopSyncClock();
+    unwatchers.forEach((unwatch) => unwatch());
+  };
 }
