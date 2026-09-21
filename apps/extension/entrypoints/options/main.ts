@@ -609,6 +609,7 @@ async function main(): Promise<void> {
   applySchemaCopy('experiments');
   const reviewSection = sections.find((candidate) => candidate.id === 'experiments');
   const reviewStack = requireElement('review-stack', HTMLDivElement);
+  const reviewSaved = statusReporter(el('span'));
   const reviewSwitches: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
   /** One block per field, in the schema's order, so every separator and every gap is the same one. */
   const block = (children: ReadonlyArray<Node>, modifier = ''): HTMLDivElement => {
@@ -628,7 +629,7 @@ async function main(): Promise<void> {
     const button = switchButton(field.key, settings[field.key], label.id, help.id);
     const bound = bindSwitch(button, settings[field.key], async (value) => {
       settings = await settingsItem.patch({ [field.key]: value });
-      generalStatus('Saved', 'success');
+      reviewSaved('Saved', 'success');
     });
     reviewSwitches.push({ field, set: bound.set });
     return block([el('div', 'geld-row options__field-row', [head, button]), ...extra]);
