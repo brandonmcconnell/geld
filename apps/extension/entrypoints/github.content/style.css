@@ -1821,8 +1821,14 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   stroke: var(--geld-review-danger-fg);
 }
 
+.geld-review__ring circle[data-state='queued'],
 .geld-review__ring circle[data-state='pending'] {
   stroke: var(--geld-review-attention-fg);
+}
+
+/* Not started yet: the same amber, lighter, so the ring tells queued from running. */
+.geld-review__ring circle[data-state='queued'] {
+  stroke-opacity: 0.45;
 }
 
 .geld-review__ring circle[data-state='skipped'],
@@ -2866,6 +2872,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
 }
 
+.geld-review__check-part[data-state='queued'] .octicon,
 .geld-review__check-part[data-state='pending'] .octicon {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }
