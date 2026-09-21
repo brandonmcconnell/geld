@@ -1222,11 +1222,18 @@ const HOVER_BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-bod
 function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly FoldGroup[], handlers: PanelHandlers): HoverPreview | null {
   const itemId = row.getAttribute('data-geld-item');
   const foldId = row.getAttribute('data-geld-fold');
+  const subAnchor = row.getAttribute('data-geld-sub');
   let anchor: string | null = null;
   let more = 0;
   let onReply: (() => void) | null = null;
   let onOpen: (() => void) | null = null;
-  if (itemId !== null) {
+  if (subAnchor !== null) {
+    // A comment line: a bot's run summary, a person's review or remark. Its card opens the line; a bare verdict
+    // (nothing to open, the state name is the row's text) has no card.
+    if (subAnchor.startsWith('awaiting:') || row.querySelector('[aria-expanded]') === null) return null;
+    anchor = subAnchor;
+    onOpen = () => handlers.onToggleSub(subAnchor);
+  } else if (itemId !== null) {
     const item = meta.items.find((entry) => entry.id === itemId);
     if (item === undefined) return null;
     anchor = item.sources[0]?.anchor ?? null;

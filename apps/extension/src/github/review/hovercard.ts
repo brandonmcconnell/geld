@@ -71,9 +71,15 @@ export function setWhoProvider(next: WhoProvider | null): void {
   install();
 }
 
+function rowKey(row: Element): string | null {
+  return row.getAttribute('data-geld-item') ?? row.getAttribute('data-geld-fold') ?? row.getAttribute('data-geld-sub');
+}
+
 function rowOf(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
-  const row = target.closest<HTMLElement>('.geld-review__row[data-geld-item], .geld-review__row[data-geld-fold]');
+  // Any collapsed line that stands for a comment: an item, a fold, or a comment line (`data-geld-sub`) - a bot's run
+  // summary, a person's review or remark, in the Reviews row or inside a round.
+  const row = target.closest<HTMLElement>('.geld-review__row[data-geld-item], .geld-review__row[data-geld-fold], .geld-review__row[data-geld-sub]');
   return row !== null && !row.hasAttribute('data-open') ? row : null;
 }
 
@@ -198,7 +204,7 @@ export function rehostHoverCard(): void {
     under !== null &&
     (current.hasAttribute(ATTR_WHO)
       ? under.getAttribute(ATTR_WHO) === current.getAttribute(ATTR_WHO)
-      : (under.getAttribute('data-geld-item') ?? under.getAttribute('data-geld-fold')) === (current.getAttribute('data-geld-item') ?? current.getAttribute('data-geld-fold')));
+      : rowKey(under) === rowKey(current));
   if (!same || under === null) {
     hide();
     return;
