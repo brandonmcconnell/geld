@@ -3571,10 +3571,32 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   padding: 6px 0;
 }
 
-/* A push's one pill: the hosts' marks overlapping, then the count. */
-.geld-review__deploy--sum .geld-review__bot-icon + .geld-review__bot-icon {
-  margin-left: -8px;
-  box-shadow: 0 0 0 2px var(--geld-review-bg);
+/*
+ * A push with several previews counts them inline - the hosts' marks overlapping, then "N previews" - with no
+ * border or fill: it is not a link (the pill shape is reserved for what opens a preview), and a click on it opens
+ * the push like the committers' avatars beside it.
+ */
+.geld-review__deploy-sum {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
+.geld-review__deploy-sum-hosts {
+  display: inline-flex;
+  align-items: center;
+}
+
+.geld-review__deploy-sum .geld-review__bot-icon + .geld-review__bot-icon {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--geld-row-bg);
+}
+
+.geld-review__deploy-sum-text {
+  white-space: nowrap;
 }
 
 /* A preview's line starts at the row edge: its state glyph stands in the header glyphs' column, so its text lines up with the header text. */
@@ -3675,6 +3697,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__progress-word,
   .geld-review__check-label,
   .geld-review__bot-name:not(.geld-review__deploy-name),
+  .geld-review__deploy-sum-text,
   .geld-review__bot-detail,
   .geld-review__label-long,
   .geld-review__reviewers-text,
