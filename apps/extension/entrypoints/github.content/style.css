@@ -2829,6 +2829,15 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
 }
 
+/* Grouped by status, each group's heading is a 28px button; with no grouping the "12 checks" heading is a bare 20px
+ * line, so it sat 4px higher and the list 8px higher than in the other mode, and switching modes shifted the list.
+ * The bare heading takes the button's box, its text centred, so both modes start at the same lines. */
+.geld-review__slot[data-kind='checks'] [class*='ExpandedChecks-module__totalChecksCountText'] {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+
 /* The checks gear is worn by the row's gear slot. Changing its mode makes GitHub re-create the group header, gear
  * and tooltip included, inside the list; that copy is on its way to the slot on the next pass (`wearGear`) and is
  * never painted here, so the list does not jump while it waits. The merge box outside compact mode is untouched. */
