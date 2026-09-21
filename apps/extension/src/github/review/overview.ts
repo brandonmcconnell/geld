@@ -414,16 +414,19 @@ function withManualDone(meta: GeldPrMeta): GeldPrMeta {
 }
 
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
-  return groups.filter((group) => group.silent !== true).map((group) => ({
-    key: group.key,
-    label: group.label,
-    section: group.section ?? 'comments',
-    count: group.nodes.length,
-    avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
-    author: group.author,
-    firstAnchor: firstAnchorIn(group.nodes[0] ?? null),
-    time: timeTextOf(group.nodes[0] ?? null),
-  }));
+  return groups.filter((group) => group.silent !== true).map((group) => {
+    const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
+    return {
+      key: group.key,
+      label: group.label,
+      section: group.section ?? 'comments',
+      count: group.nodes.length,
+      avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
+      author: group.author,
+      firstAnchor,
+      time: timeTextOf(group.nodes[0] ?? null, firstAnchor),
+    };
+  });
 }
 
 function firstAnchorIn(node: HTMLElement | null): string | null {
@@ -780,7 +783,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
           avatarSrc: comment.avatar,
           state: 'comment',
           preview: firstSentence(comment.body),
-          time: timeTextOf(comment.node),
+          time: timeTextOf(comment.node, comment.anchor),
           hasBody: true,
           done: false,
           replies: 0,
@@ -793,7 +796,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
       committers: committersOf(round.commits),
       previews: previewsAll.filter((entry) => commentAnchors.has(entry.anchor)),
-      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? round.commits[round.commits.length - 1] ?? null),
+      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? round.commits[round.commits.length - 1] ?? null, first),
       firstAnchor: first,
     };
   });
@@ -1027,7 +1030,11 @@ const shownTimes = new Map<string, string>();
  * The time text last read for a node, by the id it carries (or contains).
  * A node on loan to the panel can have its header worn by a row and its
  * `relative-time` out of reach of any lookup from its home; the words it
- * showed before it moved are the words it still shows.
+ * showed before it moved are the words it still shows. Callers pass the
+ * anchor they know: for one pass while a loan is on its way home the
+ * comment is neither at home nor worn by anything, so the elements carrying
+ * the id are out of reach too, and a lookup from the home node alone found
+ * no key to remember the words under — the line's time blinked on close.
  */
 const timeByAnchor = new Map<string, string>();
 
@@ -1194,7 +1201,7 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
       avatarSrc: entry.avatarSrc,
       state: thread ? 'thread' : 'comment',
       preview: firstSentence(entry.comment.body),
-      time: timeTextOf(document.getElementById(anchor)),
+      time: timeTextOf(document.getElementById(anchor), anchor),
       hasBody: true,
       done: thread && (item !== undefined ? !isOpenStatus(item.status) : entry.comment.isResolved === true),
       replies: Math.max(0, (entry.comment.threadAnchors?.length ?? 1) - 1),
@@ -1263,7 +1270,7 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     avatarSrc: avatarSrcOf(node),
     name: (author?.login ?? 'ghost').replace(/\[bot\]$/i, ''),
     bot: author?.bot ?? false,
-    time: timeTextOf(node),
+    time: timeTextOf(node, anchor),
     body: preview instanceof HTMLElement ? preview : null,
     more,
     onReply,
@@ -1496,7 +1503,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
-    timeFor: (anchor) => timeTextOf(document.getElementById(anchor)),
+    timeFor: (anchor) => timeTextOf(document.getElementById(anchor), anchor),
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.filter((group) => group.silent !== true).reduce((sum, group) => sum + group.nodes.length, 0),
