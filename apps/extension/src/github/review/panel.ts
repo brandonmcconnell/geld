@@ -624,7 +624,9 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
   section(plural(unresolved.length, 'unresolved thread'), unresolved);
   section(plural(resolved.length, 'resolved thread'), resolved);
-  if (byPush && batch.reviews.length > 0) {
+  // People's verdicts and remarks that landed in the round, in either grouping: the header counts them and shows
+  // their avatars, so the open round lists them too (the Reviews row still lists every review across the PR).
+  if (batch.reviews.length > 0) {
     // A person's verdict is a review; their top-level comment is a comment, and the heading says which it lists.
     const verdicts = batch.reviews.filter((entry) => entry.state !== 'comment').length;
     const remarks = batch.reviews.length - verdicts;
