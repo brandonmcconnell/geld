@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatSyncAge } from './account-widget';
+import { formatSyncAge } from './sync-age';
 
 const NOW = Date.UTC(2026, 8, 21, 20, 0, 0);
 
