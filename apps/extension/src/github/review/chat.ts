@@ -17,7 +17,8 @@
 import { createElement, svgFromString } from '../dom';
 import { authorOf } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHEVRON_DOWN, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
+import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
+import { ATTR_WHO } from './hovercard';
 import { onRestore, teleportInto } from './teleport';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
@@ -117,17 +118,65 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
   for (const [element, path] of pathEls) fitPathInto(element, path);
 }
 
+/** Who posted a top-level comment and when, as the crawl read it, for the byline over its bubble. */
+export interface ChatByline {
+  readonly login: string;
+  readonly bot: boolean;
+  readonly avatarSrc: string | null;
+  readonly time: string;
+}
+
+/** A thread a review came with, for the line under the review's bubble that leads to it. */
+export interface ChatThreadLink {
+  readonly anchor: string;
+  readonly path: string;
+  /** The line the thread is on, when known: several threads on one file tell apart by it. */
+  readonly line?: number;
+  /** The thread's first words, shown when several threads share a file and no line tells them apart. */
+  readonly preview: string;
+  readonly done: boolean;
+}
+
 /**
- * A top-level comment as a chat of one bubble: the whole comment on the
- * chat's surface with its reactions under it, no path, no pinned context and
- * no composer, since GitHub offers no reply on a top-level comment other
- * than the page's own form. The row above is its author line (avatar, name,
- * time, GitHub's ⋯), so the bubble carries none of its own.
+ * A top-level comment (a bot's run summary, a review body, a person's
+ * remark) as a chat of one message: a byline with the author's picture, name
+ * and time, the whole comment as a bubble under it, its reactions under
+ * that. No path, no pinned context and no composer, since GitHub offers no
+ * reply on a top-level comment other than the page's own form. A review that
+ * came with threads gets a line under the bubble naming each thread's file,
+ * leading to the thread where it opens (the threads are rows of their own).
+ * The comment's own header stays hidden: its ⋯ is worn by the row above.
  */
-export function renderCommentChat(slot: HTMLElement, node: HTMLElement): void {
+export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null): void {
   const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment' });
+  if (byline !== null) {
+    const who = byline.login === '' ? {} : byline.bot && /\[bot\]$/i.test(byline.login) ? { [ATTR_WHO]: byline.login } : { 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(byline.login)}/hovercard` };
+    const line = createElement('div', { class: 'geld-review__chat-byline' });
+    if (byline.avatarSrc !== null) line.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': byline.bot ? 'bot' : 'user', src: byline.avatarSrc, alt: '', width: '24', height: '24', ...who }));
+    line.append(createElement('span', { class: 'geld-review__chat-byline-name', ...who }, [byline.bot ? byline.login.replace(/\[bot\]$/i, '') : byline.login]));
+    if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time' }, [byline.time]));
+    chat.append(line);
+  }
   const body = createElement('div', { class: 'geld-review__chat-body' });
   chat.append(body);
+  if (threads.length > 0 && onOpenThread !== null) {
+    const list = createElement('div', { class: 'geld-review__chat-threads', role: 'list', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} from this review` });
+    list.append(createElement('span', { class: 'geld-review__chat-threads-label' }, [threads.length === 1 ? '1 thread' : `${threads.length} threads`]));
+    const fileOf = (thread: ChatThreadLink): string => thread.path.split('/').pop() ?? thread.path;
+    for (const thread of threads) {
+      const file = fileOf(thread);
+      const shared = thread.line === undefined && threads.some((other) => other !== thread && other.line === undefined && fileOf(other) === file);
+      const chip = createElement('button', { type: 'button', class: 'geld-review__chat-thread', role: 'listitem', 'data-state': thread.done ? 'done' : 'open', title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` }, [
+        icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE),
+        createElement('code', {}, [thread.line === undefined ? file : `${file}:${thread.line}`]),
+        ...(shared && thread.preview !== '' ? [createElement('span', { class: 'geld-review__chat-thread-words' }, [thread.preview])] : []),
+        icon(ICON_CHEVRON_RIGHT),
+      ]);
+      chip.addEventListener('click', () => onOpenThread(thread.anchor));
+      list.append(chip);
+    }
+    chat.append(list);
+  }
   slot.replaceChildren(createElement('div', { class: 'geld-review__chats' }, [chat]));
   teleportInto(body, [node]);
   if (body.childElementCount === 0) {
