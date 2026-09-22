@@ -1353,7 +1353,7 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
     if (x === null || y === null) return x === null ? (y === null ? 0 : 1) : -1;
     return compareHome(x, y);
   };
-  // Every thread posted with a review (a person's or a bot's), for the review's open body; the crawl knows each
+  // Every thread posted with a review (a person's or a bot's), counted on the review's line; the crawl knows each
   // thread's first comment, its state and its home, which names the review.
   const threadsByReview = new Map<string, ReviewThreadRef[]>();
   for (const entry of crawled.comments) {
@@ -1363,12 +1363,7 @@ function reviewEntries(crawled: Crawled, reviews: readonly CrawledReview[], meta
     if (review === null) continue;
     const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === entry.comment.anchor));
     const refs = threadsByReview.get(review.id) ?? [];
-    refs.push({
-      anchor: entry.comment.anchor,
-      path: threadPathOf(entry.root, item, meta),
-      preview: firstSentence(entry.comment.body),
-      done: item !== undefined ? !isOpenStatus(item.status) : entry.comment.isResolved === true,
-    });
+    refs.push({ anchor: entry.comment.anchor, done: item !== undefined ? !isOpenStatus(item.status) : entry.comment.isResolved === true });
     threadsByReview.set(review.id, refs);
   }
   return list
