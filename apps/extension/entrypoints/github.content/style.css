@@ -371,7 +371,7 @@
  * to the height of the headers beneath it), and rest at the pane's bottom
  * once it has. Opaque, above the list they cover.
  */
-[data-geld-sidebar-sticky] .geld-tree-section[data-geld-pinned] {
+[data-geld-sidebar-sticky] .geld-tree-section[data-geld-lone] {
   position: sticky;
   z-index: 1;
   background: var(--bgColor-default, #fff);
@@ -2972,20 +2972,38 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   animation: geld-spin 1s linear infinite;
 }
 
-/* ---- an item's threads, each in its own frame ---------------------------- */
+/* ---- chats: an opened conversation as one chat ---------------------------- */
 
-.geld-review__qv--threads > .geld-review__thread + .geld-review__thread {
-  margin-top: 8px;
+/*
+ * A conversation is GitHub's own thread node moved into the panel and read
+ * as messages (chat.ts marks each comment's parts): the reader's messages on
+ * the right, everyone else's on the left, avatar and name once per run of
+ * one author's messages, the whole comment in the bubble, its reactions
+ * under it, the thread's own reply control as the composer at the bottom.
+ */
+.geld-review__chats {
+  --geld-chat-avatar: 24px;
+  --geld-chat-gutter: 32px;
+  --geld-chat-radius: 12px;
+  --geld-chat-tight: 4px;
+  --geld-chat-mine-bg: var(--bgColor-accent-muted, var(--color-accent-subtle, #ddf4ff));
+  --geld-chat-mine-border: var(--borderColor-accent-muted, var(--color-accent-muted, rgba(84, 174, 255, 0.4)));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.geld-review__thread {
+.geld-review__chat {
   border: 1px solid var(--geld-review-border);
   border-radius: 6px;
+  background: var(--geld-review-bg);
   overflow: hidden;
 }
 
+/* ---- the head: file path, copy, GitHub's link to the diff ---- */
+
 /* The 28px icons in a 32px head leave 2px above and below; the same 2px on the right keeps the margin square. */
-.geld-review__thread-head {
+.geld-review__chat-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2995,7 +3013,7 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-subtle);
 }
 
-.geld-review__thread-actions {
+.geld-review__chat-head-actions {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -3003,13 +3021,13 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   margin-left: auto;
 }
 
-.geld-review__thread-actions > .geld-review__icon .octicon {
+.geld-review__chat-head-actions > .geld-review__icon .octicon {
   width: 14px;
   height: 14px;
 }
 
-/* Takes the space the actions leave, whatever its text — the fit is computed against that space (path-fit.ts). */
-.geld-review__thread-path {
+/* Takes the space the actions leave, whatever its text: the fit is computed against that space (path-fit.ts). */
+.geld-review__chat-path {
   flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
@@ -3017,102 +3035,500 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   white-space: nowrap;
 }
 
-.geld-review__thread-copy {
-  flex: 0 0 auto;
-}
+/* ---- the body: GitHub's thread, laid out as messages ---- */
 
-/* Collapsed: the first comment only; GitHub's later comments and its reply area wait behind the bar. */
-.geld-review__thread[data-geld-thread='collapsed'] [data-geld-thread-more],
-.geld-review__thread[data-geld-thread='collapsed'] [data-geld-thread-reply] {
+/* GitHub's own thread header (chevron, path, "Show resolved") and its collapsed-thread controls: the chat's head says it. */
+.geld-review__chat-body review-thread-collapsible > .d-flex:first-child,
+.geld-review__chat-body review-thread-collapsible > [class*='bgColor-muted']:first-child,
+.geld-review__chat-body review-thread-collapsible > .js-toggle-outdated-comments,
+.geld-review__chat-body .js-resolvable-timeline-thread-container > .file-header,
+.geld-review__chat-body .review-thread-component > .file-header,
+.geld-review__chat-body [data-testid='review-thread-header'] {
   display: none !important;
 }
 
-.geld-review__thread .file-header,
-.geld-review__thread .js-resolvable-timeline-thread-container > .file-header,
-.geld-review__thread review-thread-collapsible > .js-toggle-outdated-comments,
-.geld-review__thread review-thread-collapsible > [class*='bgColor-muted']:first-child {
-  display: none !important;
-}
-
-.geld-review__thread review-thread-collapsible {
+.geld-review__chat-body review-thread-collapsible,
+.geld-review__chat-body .js-resolvable-timeline-thread-container,
+.geld-review__chat-body .review-thread-component {
   margin: 0 !important;
-}
-
-.geld-review__thread-body .js-resolvable-timeline-thread-container,
-.geld-review__thread-body .review-thread-component,
-.geld-review__thread-body .review-comment {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
 
-.geld-review__thread-body .review-comment + .review-comment {
-  border-top: 1px solid var(--geld-review-border-muted) !important;
+/* A top-level comment arrives as its whole timeline row: the rail, the avatar column and the card chrome go. */
+.geld-review__chat-body .TimelineItem,
+.geld-review__chat-body .js-timeline-item {
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
-/* GitHub gives a review comment 16px above and beside, 8px below; the frame closes it evenly. Its header row
- * pulls itself 4px left (`ml-n1`); here the avatar starts where the bar's text does, and the body keeps the
- * name's edge. */
-.geld-review__thread-body .review-comment {
-  padding: 16px !important;
+.geld-review__chat-body .TimelineItem::before,
+.geld-review__chat-body .js-timeline-item::before,
+.geld-review__chat-body .TimelineItem-avatar,
+.geld-review__chat-body .avatar-parent-child,
+.geld-review__chat-body .TimelineItem:has(> .TimelineItem-badge > .octicon-eye) {
+  display: none !important;
 }
 
-/* A comment that ends in its reactions row: the smiley sits about 5px inside its pill, so 16px under the pill read
- * as more than the 16px above the avatar, which starts at the padding's edge. 10px puts the two ink gaps level. */
-.geld-review__thread-body .review-comment:has(.comment-reactions, .js-reactions-container) {
-  padding-bottom: 10px !important;
-}
-
-.geld-review__thread-body .review-comment > .ml-n1 {
+.geld-review__chat-body .TimelineItem-body,
+.geld-review__chat-body .timeline-comment-group,
+.geld-review__chat-body .ml-n3 {
   margin-left: 0 !important;
+  max-width: none !important;
 }
 
-.geld-review__thread-body .review-comment > .tmp-ml-5 {
-  margin-left: 36px !important;
+/* The message carries its own bubble; the card it came in has no border of its own here. */
+.geld-review__chat-body .timeline-comment,
+.geld-review__chat-body .js-comment-container,
+.geld-review__chat-body .react-issue-comment,
+.geld-review__chat-body [data-testid='comment-viewer-outer-box'],
+.geld-review__chat-body [class*='IssueCommentViewer'],
+.geld-review__chat-body [class*='Comment-module__container'] {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
 }
 
-.geld-review__thread-bar {
-  display: flex;
+.geld-review__chat-body .timeline-comment::before,
+.geld-review__chat-body .timeline-comment::after,
+.geld-review__chat-body .review-comment::before,
+.geld-review__chat-body .review-comment::after {
+  display: none !important;
+}
+
+/* The line range and the diff hunk the thread is about, under the head, in the diff's own type. */
+.geld-review__chat-body .js-resolvable-thread-contents > .f6.border-bottom,
+.geld-review__chat-body [data-target='review-thread-collapsible.body'] > .f6.border-bottom {
+  padding: 6px 12px !important;
+  border-bottom: 1px solid var(--geld-review-border-muted) !important;
+  font-size: 11px;
+}
+
+.geld-review__chat-body .blob-wrapper {
+  max-height: 280px;
+  overflow: auto;
+  border: 0 !important;
+  border-bottom: 1px solid var(--geld-review-border-muted) !important;
+  border-radius: 0 !important;
+}
+
+.geld-review__chat-body .blob-wrapper .diff-table {
+  font-size: 11px;
+}
+
+/* The messages: a column, one author's run close together, a change of author with room between. */
+.geld-review__chat-body :has(> [data-geld-message]) {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 12px 12px 6px;
+}
+
+.geld-review__chat [data-geld-message] {
+  position: relative;
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: flex-start;
+  max-width: calc(100% - 48px);
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 0 0 var(--geld-chat-gutter) !important;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat [data-geld-message][data-geld-run='first'],
+.geld-review__chat [data-geld-message][data-geld-run='only'] {
+  margin-top: 10px !important;
+}
+
+.geld-review__chat :has(> [data-geld-message]) > [data-geld-message]:first-child {
+  margin-top: 0 !important;
+}
+
+.geld-review__chat [data-geld-message][data-geld-mine] {
+  align-items: flex-end;
+  align-self: flex-end;
+  padding: 0 var(--geld-chat-gutter) 0 0 !important;
+}
+
+/* The author line: the picture in the gutter, the name and the time above the bubble, once per run. */
+.geld-review__chat [data-geld-part='meta'] {
+  display: flex !important;
+  align-items: center;
+  align-self: stretch;
+  min-height: 20px;
+  margin: 0 0 4px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] {
+  flex-direction: row-reverse;
+}
+
+.geld-review__chat [data-geld-part='meta'] h3,
+.geld-review__chat [data-geld-part='meta'] .timeline-comment-header-text {
+  flex: 1 1 auto !important;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 12px !important;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] h3 > .d-flex,
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] .timeline-comment-header-text {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.geld-review__chat [data-geld-part='meta'] .avatar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--geld-chat-avatar) !important;
+  height: var(--geld-chat-avatar) !important;
+  margin: 0 !important;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] .avatar {
+  right: 0;
+  left: auto;
+}
+
+.geld-review__chat [data-geld-part='meta'] .author {
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+  font-weight: 600;
+}
+
+.geld-review__chat [data-geld-part='meta'] .js-timestamp,
+.geld-review__chat [data-geld-part='meta'] relative-time {
+  color: var(--geld-review-muted) !important;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* "Author", "Contributor", "Bot": the pills GitHub hangs on the name are a header's chrome, not a chat's. */
+.geld-review__chat [data-geld-part='meta'] .Label,
+.geld-review__chat [data-geld-part='meta'] .tooltipped,
+.geld-review__chat [data-geld-part='meta'] .js-comment-edit-history {
+  display: none !important;
+}
+
+/* Later messages in one author's run: no name, no picture, the bubble alone, close under the one before. */
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'] h3,
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] h3,
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'] .avatar,
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] .avatar,
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'] .timeline-comment-header-text,
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] .timeline-comment-header-text {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'],
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] {
+  min-height: 0;
+  margin-bottom: 0 !important;
+}
+
+/* The bubble: the whole comment as GitHub rendered it, on a tinted surface with round corners, the corner toward
+ * the next message of the run tightened so the run reads as one. */
+.geld-review__chat [data-geld-part='bubble'] {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  border: 1px solid var(--geld-review-border-muted);
+  border-radius: var(--geld-chat-radius);
+  background: var(--geld-review-subtle);
+  overflow-wrap: anywhere;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='bubble'] {
+  border-color: var(--geld-chat-mine-border);
+  background: var(--geld-chat-mine-bg);
+}
+
+.geld-review__chat [data-geld-run='first'] > [data-geld-part='bubble'] {
+  border-bottom-left-radius: var(--geld-chat-tight);
+}
+
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='bubble'] {
+  border-top-left-radius: var(--geld-chat-tight);
+  border-bottom-left-radius: var(--geld-chat-tight);
+}
+
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='bubble'] {
+  border-top-left-radius: var(--geld-chat-tight);
+}
+
+.geld-review__chat [data-geld-mine][data-geld-run='first'] > [data-geld-part='bubble'] {
+  border-radius: var(--geld-chat-radius) var(--geld-chat-radius) var(--geld-chat-tight) var(--geld-chat-radius);
+}
+
+.geld-review__chat [data-geld-mine][data-geld-run='mid'] > [data-geld-part='bubble'] {
+  border-radius: var(--geld-chat-radius) var(--geld-chat-tight) var(--geld-chat-tight) var(--geld-chat-radius);
+}
+
+.geld-review__chat [data-geld-mine][data-geld-run='last'] > [data-geld-part='bubble'] {
+  border-radius: var(--geld-chat-radius) var(--geld-chat-tight) var(--geld-chat-radius) var(--geld-chat-radius);
+}
+
+/* Inside the bubble the markdown is GitHub's; only the size and the first and last margins are the chat's. */
+.geld-review__chat [data-geld-part='bubble'] .comment-body,
+.geld-review__chat [data-geld-part='bubble'] .markdown-body {
+  padding: 0 !important;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.geld-review__chat [data-geld-part='bubble'] .markdown-body > :first-child {
+  margin-top: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='bubble'] .markdown-body > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Bots love an h2 ("Confidence Score: 5/5"); capped so it does not own the bubble. */
+.geld-review__chat [data-geld-part='bubble'] .markdown-body h1,
+.geld-review__chat [data-geld-part='bubble'] .markdown-body h2 {
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+  font-size: 16px !important;
+}
+
+.geld-review__chat [data-geld-part='bubble'] .markdown-body h3,
+.geld-review__chat [data-geld-part='bubble'] .markdown-body h4 {
+  font-size: 14px !important;
+}
+
+/* A wide table or code block scrolls inside its bubble rather than pushing it past the chat's edge. */
+.geld-review__chat [data-geld-part='bubble'] .markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+}
+
+/* GitHub's edit form takes the bubble's place while a comment is being edited: full width, no bubble tint. */
+.geld-review__chat [data-geld-part='edit'] {
+  align-self: stretch;
+  margin: 0 !important;
+}
+
+/* Reactions under the bubble, as chat apps place them; the picker is a hover action (below). */
+.geld-review__chat [data-geld-part='reactions'] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='reactions'] .comment-reactions,
+.geld-review__chat [data-geld-part='reactions'] .js-reactions-container {
+  margin: 0 !important;
+  padding: 2px 0 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='reactions'] .js-comment-reactions-options {
+  justify-content: flex-end;
+}
+
+/* Anything else GitHub puts between the parts (error flashes, hidden forms) keeps its place without a gutter. */
+.geld-review__chat [data-geld-message] > :not([data-geld-part]) {
+  align-self: stretch;
+}
+
+/* ---- the composer: GitHub's reply control, always at the bottom ---- */
+
+.geld-review__chat-body .review-thread-reply {
+  margin: 0 !important;
+  padding: 8px 12px 10px !important;
+  border: 0 !important;
+  border-top: 1px solid var(--geld-review-border-muted) !important;
+  background: var(--geld-review-bg);
+}
+
+.geld-review__chat-body .review-thread-reply .inline-comment-form-actions {
+  padding: 0 !important;
+}
+
+.geld-review__chat-body .review-thread-reply .d-table {
+  display: flex !important;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 0 8px 0 12px;
-  border-top: 1px solid var(--geld-review-border-muted);
+}
+
+.geld-review__chat-body .review-thread-reply .d-table-cell {
+  display: block !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat-body .review-thread-reply .d-table-cell.col-12 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.geld-review__chat-body .review-thread-reply .avatar {
+  width: var(--geld-chat-avatar) !important;
+  height: var(--geld-chat-avatar) !important;
+}
+
+/* The collapsed "Reply…" is GitHub's; here it is drawn as the chat's field. */
+.geld-review__chat-body .review-thread-reply .review-thread-reply-button {
+  min-height: 32px !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--geld-review-border) !important;
+  border-radius: 16px !important;
+  background: var(--geld-review-bg) !important;
+  color: var(--geld-review-muted) !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-body .review-thread-reply .review-thread-reply-button:hover {
+  border-color: var(--geld-review-muted) !important;
+}
+
+.geld-review__chat-body .review-thread-reply .inline-comment-form-box {
+  margin: 8px 0 0 !important;
+}
+
+/* ---- pinned context: the comment the thread came from ---- */
+
+.geld-review__chat-context {
+  border-bottom: 1px solid var(--geld-review-border-muted);
   background: var(--geld-review-subtle);
 }
 
-.geld-review__thread-more {
-  padding: 0;
+.geld-review__chat-pin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 12px;
   border: 0;
   background: none;
   color: var(--geld-review-muted);
   font: inherit;
   font-size: 12px;
+  text-align: left;
   cursor: pointer;
 }
 
-.geld-review__thread-more:hover {
-  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+.geld-review__chat-pin:hover {
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328));
 }
 
-.geld-review__thread-reply {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.geld-review__chat-pin-glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__chat-pin > .geld-review__avatar {
+  width: 20px;
+  height: 20px;
+}
+
+.geld-review__chat-pin-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.geld-review__chat-pin-preview {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__chat-pin > .octicon:last-child {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
   margin-left: auto;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--geld-review-border);
+  transition: transform 120ms ease;
+}
+
+.geld-review__chat-context[data-open='true'] .geld-review__chat-pin > .octicon:last-child {
+  transform: rotate(180deg);
+}
+
+/* A message standing alone under a line that already says who (the pinned context under its strip, a top-level
+ * comment under its row): no author line, no gutter, one bubble the width of the chat on the page's surface. */
+.geld-review__chat :has(> [data-geld-message][data-geld-lone]) {
+  display: flex !important;
+  flex-direction: column;
+  padding: 0 12px 12px;
+}
+
+/* A one-bubble chat is the bubble alone under its row: a frame around a frame read heavy. */
+.geld-review__chat[data-geld-chat='comment'] {
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.geld-review__chat-body :has(> [data-geld-message][data-geld-lone]) {
+  padding: 0;
+}
+
+.geld-review__chat [data-geld-message][data-geld-lone] {
+  align-items: stretch;
+  align-self: stretch;
+  max-width: none;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-lone] > [data-geld-part='meta'],
+.geld-review__chat-context-body .TimelineItem-avatar,
+.geld-review__chat-context-body .avatar-parent-child {
+  display: none !important;
+}
+
+.geld-review__chat-context-body .TimelineItem,
+.geld-review__chat-context-body .js-timeline-item,
+.geld-review__chat-context-body .TimelineItem-body,
+.geld-review__chat-context-body .timeline-comment-group,
+.geld-review__chat-context-body .timeline-comment,
+.geld-review__chat-context-body .js-comment-container {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-context-body .TimelineItem::before,
+.geld-review__chat-context-body .timeline-comment::before,
+.geld-review__chat-context-body .timeline-comment::after {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-lone] > [data-geld-part='bubble'] {
   border-radius: 6px;
   background: var(--geld-review-bg);
-  color: var(--fgColor-default, var(--color-fg-default));
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
 }
 
-.geld-review__thread-reply:hover {
-  background: var(--geld-review-hover);
+.geld-review__chat-context-body [data-geld-lone] > [data-geld-part='bubble'] .comment-body,
+.geld-review__chat-context-body [data-geld-lone] > [data-geld-part='bubble'] .markdown-body {
+  font-size: 13px;
 }
 
 /* ---- rounds --------------------------------------------------------------- */
@@ -3198,92 +3614,19 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   transform: rotate(180deg);
 }
 
-/* Where a thread came from: a small toggle in the frame's head, and the comment itself above the thread. */
-.geld-review__thread-source-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  margin-right: 4px;
-  padding: 0 8px 0 7px;
-  border: 1px solid var(--geld-review-border);
-  border-radius: 6px;
-  background: var(--geld-review-bg);
-  color: var(--geld-review-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.geld-review__thread-source-btn:hover,
-.geld-review__thread-source-btn[aria-pressed='true'] {
-  color: var(--fgColor-default, var(--color-fg-default));
-}
-
-.geld-review__thread-source-btn[aria-pressed='true'] {
-  background: var(--geld-review-hover);
-}
-
-.geld-review__thread-source-btn .octicon {
-  width: 12px;
-  height: 12px;
-  transition: transform 120ms ease;
-}
-
-.geld-review__thread-source-btn[aria-pressed='true'] .octicon:last-child {
-  transform: rotate(180deg);
-}
-
-.geld-review__thread-source {
-  border-bottom: 1px solid var(--geld-review-border-muted);
-  background: var(--geld-review-subtle);
-}
-
-.geld-review__thread-source-label {
-  padding: 8px 16px 0;
-  color: var(--geld-review-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.geld-review__thread-source-body {
-  padding: 4px 16px 12px;
-}
-
-.geld-review__thread-source-body .timeline-comment,
-.geld-review__thread-source-body .js-comment-container,
-.geld-review__thread-source-body .review-comment {
-  border: 0 !important;
-  background: none !important;
-  box-shadow: none !important;
-}
-
-.geld-review__thread-source-body .comment-body {
-  padding: 0 !important;
-  font-size: 13px;
-}
-
-/* The source's own author line stays: it says who and when. Its card chrome does not. */
-.geld-review__thread-source-body .timeline-comment-header {
-  padding: 0 !important;
-  border: 0 !important;
-  background: none !important;
-}
-
 .geld-review__rows--threads > .geld-review__row {
   gap: 10px;
   padding-left: 16px;
 }
 
-/* A thread's frame is a box with its own border: the same room above and below it (a plain comment keeps the
- * slot's 12px, which closes its bottom). The top-level slot's 8/12 became 8/12 around the box too, and read heavy. */
-.geld-review__slot-body:has(> .geld-review__qv--threads) {
+/* A chat is a box with its own border: the same room above and below it (a plain comment keeps the slot's 12px,
+ * which closes its bottom). */
+.geld-review__slot-body:has(> .geld-review__chats) {
   padding-top: 8px;
   padding-bottom: 8px;
 }
 
-.geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body:has(> .geld-review__qv--threads) {
+.geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body:has(> .geld-review__chats) {
   padding: 8px 16px 8px 42px;
 }
 

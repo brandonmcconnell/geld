@@ -20,7 +20,7 @@ import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
 import { formatSyncAge } from '../../ui/sync-age';
 import { reclaimOrphans, restoreAll } from './teleport';
-import { renderQuickView } from './quick-view';
+import { renderCommentChat } from './chat';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
 
 export const PANEL_CLASS = 'geld-review';
@@ -1434,7 +1434,7 @@ export function renderReviewBody(slot: HTMLElement, entry: ReviewEntry, commentN
   const parts: Node[] = [];
   if (commentNode !== null) {
     const comment = createElement('div');
-    renderQuickView(comment, [commentNode]);
+    renderCommentChat(comment, commentNode);
     parts.push(...comment.childNodes);
   }
   const threads = entry.threads ?? [];
