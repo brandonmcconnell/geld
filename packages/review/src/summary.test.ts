@@ -4,7 +4,7 @@ import type { RawPullRequest } from './build';
 import { parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { isStatusLineComment, looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
+import { botByTrigger, isStatusLineComment, looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
 const PRODUCER = { kind: 'action' as const, version: '0.1.0', ai: false };
@@ -273,6 +273,18 @@ describe('bots + prompts', () => {
     expect(rerun[0]?.count).toBeUndefined();
     // The same with the check still going: running.
     expect(verdictsFrom([{ name: 'Devin Review', status: 'in_progress', conclusion: null, sha: 'bbb' }], [{ author: 'devin-ai-integration[bot]', body: 'Found 1 issue.', anchor: 'a' }, { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'b' }], 'bbb')[0]?.verdict).toBe('running');
+  });
+
+  it('counts only review-shaped comments from a conversational agent', () => {
+    const replies = [
+      { author: 'replicas-connector[bot]', body: '@greptile-apps[bot] Request accepted: [Open workspace](https://app.replicas.dev/w/1). Your message was accepted and Codex will start automatically when the workspace is ready.', anchor: 'c1' },
+      { author: 'replicas-connector[bot]', body: 'Thank you. That review covered the previous head. 9ae3272 now also requires HTTPS for remote artifact endpoints.', anchor: 'c2' },
+    ];
+    // Replies to another bot are not a review: no verdict from them alone (the first is a status line, the second a reply).
+    expect(verdictsFrom([], replies, 'aaa').map((bot) => bot.verdict)).toEqual(['running']);
+    const scored = verdictsFrom([], [...replies, { author: 'replicas-connector[bot]', body: 'Code Review\n\nReview score: 4/5\n\nFound 1 issue: the retry loop never backs off.', anchor: 'c3' }], 'aaa');
+    expect(scored[0]).toMatchObject({ id: 'replicas', verdict: 'findings', score: 4, count: 1, sourceId: 'c3' });
+    expect(botByTrigger('/replicas run code-review')?.id).toBe('replicas');
   });
 
   it('drops unknown ids from model output', () => {
