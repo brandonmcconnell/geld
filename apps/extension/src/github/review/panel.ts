@@ -297,7 +297,10 @@ function icon(markup: string): SVGElement {
  * whenever the browser gets to its first frame.
  */
 export function syncSpinners(root: Element): void {
-  for (const spinner of root.querySelectorAll(`.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon`)) {
+  // GitHub's own spinners in the check rows on loan too: a Primer spinner starts at a fixed negative delay, so one
+  // remounted on every status poll showed the same frame each time and read as frozen. Pinned to the document
+  // timeline, a remount continues the turn where the last one left off.
+  for (const spinner of root.querySelectorAll(`.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon, [class*="Spinner-SpinnerAnimation"]`)) {
     for (const animation of spinner.getAnimations()) animation.startTime = 0;
   }
 }
