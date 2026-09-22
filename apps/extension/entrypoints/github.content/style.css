@@ -2955,11 +2955,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }
 
-/* GitHub's `.octicon { fill: currentColor }` beats the SVG's fill="none" and turned the spinner's track into a solid dot. */
+/* GitHub's `.octicon { fill: currentColor }` beats the SVG's fill="none" and turned the spinner's track into a solid
+ * disc; the ring and arc stay strokes. The centre dot (GitHub's own in-progress mark) is the one filled part. */
 .octicon-in-progress,
-.octicon-in-progress circle,
+.octicon-in-progress circle:not(.geld-spin-core),
 .octicon-in-progress path {
   fill: none !important;
+}
+
+.octicon-in-progress .geld-spin-core {
+  fill: currentColor !important;
 }
 
 .octicon-in-progress {
