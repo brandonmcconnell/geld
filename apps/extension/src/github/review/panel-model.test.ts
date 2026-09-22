@@ -127,3 +127,16 @@ describe('status rows', () => {
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'clean' })).toBe('good');
   });
 });
+
+describe('reviewer groups', () => {
+  it('sets a verdict aside once the reviewer is awaited again', async () => {
+    const { reviewerGroups } = await import('./panel');
+    const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    // The sidebar's awaited reviewers come first, the timeline's verdicts after, oldest first.
+    const groups = reviewerGroups([line('kyle', 'awaiting'), line('kyle', 'changes_requested'), line('ana', 'approved'), line('ana', 'commented')]);
+    expect(groups.map((group) => [group.state, group.reviewers.map((reviewer) => reviewer.login)])).toEqual([
+      ['approved', ['ana']],
+      ['awaiting', ['kyle']],
+    ]);
+  });
+});
