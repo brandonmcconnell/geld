@@ -3459,7 +3459,21 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 /* ---- the composer: GitHub's reply control, always at the bottom ---- */
 
+/*
+ * The reply area holds GitHub's editor (collapsed to its "Reply…" field until
+ * pressed) and, for a reader who can resolve, GitHub's Resolve, which is a
+ * form of its own beside the editor's. Collapsed, the two share one line, the
+ * field taking the width. Open, the editor takes the whole width and Resolve
+ * sits at the bottom left, on the editor's own action row across from Cancel
+ * and Comment: a form cannot hold another form, so it is placed there rather
+ * than moved (the editor's bottom padding is the row's, `bottom` matches it).
+ */
 .geld-review__chat-body .review-thread-reply {
+  position: relative;
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 0 !important;
   padding: 8px 12px 10px !important;
   border: 0 !important;
@@ -3468,23 +3482,30 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-bg);
 }
 
-/* The field and, for a reader who can resolve, GitHub's Resolve button on one line. */
-.geld-review__chat-body .review-thread-reply .inline-comment-form-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 !important;
-}
-
-.geld-review__chat-body .review-thread-reply .inline-comment-form-actions > .d-table {
+.geld-review__chat-body .review-thread-reply > .js-inline-comment-form-container {
   flex: 1 1 auto;
   min-width: 0;
+  margin: 0 !important;
 }
 
-.geld-review__chat-body .review-thread-reply .inline-comment-form-actions > form,
-.geld-review__chat-body .review-thread-reply .inline-comment-form-actions > .d-flex {
+.geld-review__chat-body .review-thread-reply > :not(.js-inline-comment-form-container) {
   flex: 0 0 auto;
   margin: 0 !important;
+}
+
+.geld-review__chat-body .review-thread-reply:has(> .js-inline-comment-form-container.open) > :not(.js-inline-comment-form-container) {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+}
+
+/* Open, the field gives way to the editor (GitHub's own rule, kept whatever order the stylesheets load in). */
+.geld-review__chat-body .review-thread-reply .js-inline-comment-form-container.open > .inline-comment-form-actions {
+  display: none !important;
+}
+
+.geld-review__chat-body .review-thread-reply .inline-comment-form-actions {
+  padding: 0 !important;
 }
 
 .geld-review__chat-body .review-thread-reply .d-table {
@@ -3498,8 +3519,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding: 0 !important;
 }
 
+/* Primer's `col-12` is 100% wide beside the avatar's cell, so the field ran past the row; flex sizes it instead. */
 .geld-review__chat-body .review-thread-reply .d-table-cell.col-12 {
   flex: 1 1 auto;
+  width: auto !important;
   min-width: 0;
 }
 
@@ -3511,6 +3534,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 /* The collapsed "Reply…" is GitHub's; here it is drawn as the chat's field. */
 .geld-review__chat-body .review-thread-reply .review-thread-reply-button {
   min-height: 32px !important;
+  /* GitHub spaces it from the avatar with a margin on top of its full width; the row's gap does that here. */
+  margin: 0 !important;
   padding: 0 12px !important;
   border: 1px solid var(--geld-review-border) !important;
   border-radius: 16px !important;
