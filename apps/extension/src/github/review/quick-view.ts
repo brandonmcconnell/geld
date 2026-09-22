@@ -82,6 +82,19 @@ const REPLY_AREA = '.review-thread-reply, .js-inline-comment-form-container, .js
 const ATTR_MORE = 'data-geld-thread-more';
 const ATTR_REPLY = 'data-geld-thread-reply';
 
+/**
+ * Threads the reader has opened past the bar ("Show N more comments", Reply),
+ * by first-comment anchor, for the visit. The panel is rebuilt whenever
+ * anything in it changes (check counts tick every few seconds on a busy PR),
+ * and a frame rendered afresh came back collapsed: a thread the reader had
+ * just opened folded shut under them, again and again.
+ */
+const openedThreads = new Set<string>();
+
+export function resetOpenedThreads(): void {
+  openedThreads.clear();
+}
+
 export interface ThreadSource {
   /** The review comment (or bot run summary) the thread came from, on the page. */
   readonly node: HTMLElement;
@@ -185,10 +198,17 @@ export function renderThreadsView(slot: HTMLElement, nodes: readonly HTMLElement
     });
     // The bar stands in for the rest of the thread; once that shows (GitHub's own reply control with it), the bar goes.
     const bar = createElement('div', { class: 'geld-review__thread-bar' });
+    const anchor = threadAnchorOf(node);
     const reveal = (): void => {
+      openedThreads.add(anchor);
       frame.setAttribute('data-geld-thread', 'open');
       bar.remove();
     };
+    if (openedThreads.has(anchor)) {
+      frame.setAttribute('data-geld-thread', 'open');
+      list.append(frame);
+      continue;
+    }
     if (more > 0) {
       const show = createElement('button', { type: 'button', class: 'geld-review__thread-more' }, [`Show ${more} more comment${more === 1 ? '' : 's'}`]);
       show.addEventListener('click', reveal);
@@ -213,6 +233,8 @@ export function revealThreadFor(anchor: string): void {
   const node = document.getElementById(anchor);
   const frame = node?.closest<HTMLElement>('.geld-review__thread') ?? null;
   if (frame === null) return;
+  const threadNode = frame.querySelector<HTMLElement>('.geld-review__thread-body > *');
+  openedThreads.add(threadNode === null ? anchor : threadAnchorOf(threadNode));
   frame.setAttribute('data-geld-thread', 'open');
   frame.querySelector('.geld-review__thread-bar')?.remove();
 }
