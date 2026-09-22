@@ -1387,9 +1387,12 @@ export function renderCommentsList(slot: HTMLElement, model: PanelModel, handler
  */
 function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers, reserveChevron = false, mode: 'open' | 'pointer' = 'open'): { readonly row: HTMLElement; readonly open: boolean } {
   const pointer = mode === 'pointer';
-  // A pending request is a fact, not a conversation: nothing to open, nowhere to go.
-  const goes = pointer && entry.state !== 'awaiting';
+  const threadCount = entry.threads?.length ?? 0;
+  // A verdict without words but with threads is a way to them: in its round the line points at its first thread
+  // (the others stand right beside it), so a review is never a dead line. A pending request is a fact, not a
+  // conversation: nothing to open, nowhere to go.
   const opens = !pointer && entryOpens(entry);
+  const goes = entry.state !== 'awaiting' && (pointer || (!opens && isVerdict(entry) && threadCount > 0));
   const open = opens && model.openSubKey === entry.anchor;
   const bot = /\[bot\]$/i.test(entry.author);
   const lead =
@@ -1409,8 +1412,10 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
       : entry.lane === 'finding'
         ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': 'finding', title: 'A finding to act on', role: 'img', 'aria-label': 'A finding to act on' }, [icon(ICON_ALERT)])
         : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
+  const firstThread = entry.threads?.[0]?.anchor ?? null;
   const act = (): void => {
     if (pointer) handlers.onOpenAnchor(entry.anchor);
+    else if (goes && firstThread !== null) handlers.onOpenAnchor(firstThread);
     else handlers.onToggleSub(entry.anchor);
   };
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
@@ -1419,9 +1424,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   else if (entry.state === 'awaiting') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, ['awaiting review']));
   if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
   // How many threads the review came with: they are rows of their own in its round, this is the count.
-  const threadCount = entry.threads?.length ?? 0;
   if (isVerdict(entry) && threadCount > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(threadCount, 'thread')]));
-  const focusKey = pointer ? `main:ptr:${entry.anchor}` : `main:sub:${entry.anchor}`;
+  const focusKey = goes ? `main:ptr:${entry.anchor}` : `main:sub:${entry.anchor}`;
   const main =
     opens || goes
       ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, ...(opens ? { 'aria-expanded': String(open) } : {}), [ATTR_FOCUS]: focusKey }, mainChildren)
