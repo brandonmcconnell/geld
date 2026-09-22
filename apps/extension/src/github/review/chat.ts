@@ -15,7 +15,7 @@
  */
 
 import { createElement, svgFromString } from '../dom';
-import { authorOf } from './crawler';
+import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
@@ -111,6 +111,7 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     liftCollapsedBody(thread);
     loadDeferredReplies(thread);
     annotateMessages(messagesIn(thread, true), viewer, false);
+    dressComposer(thread);
     list.append(chat);
   }
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
@@ -212,6 +213,78 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
     annotateMessages(messagesIn(source.node, false), viewer, true);
   }
   return wrap;
+}
+
+const REPLY_AREA = '.review-thread-reply, .js-inline-comment-form-container';
+const RESOLVE_FORM = 'form.js-resolvable-timeline-thread-form, form[action*="/resolve"], form[action*="/unresolve"]';
+/** On GitHub's own label and sentence while Geld's short forms stand in for them. */
+const ATTR_SPOKEN_FOR = 'data-geld-spoken-for';
+
+/**
+ * The composer's right hand: GitHub's Resolve form, which it renders (for a
+ * reader who may resolve) somewhere inside the reply area, wording it
+ * "Resolve conversation" and, once resolved, "<name> marked this
+ * conversation as resolved." Here it is moved to the end of the reply area
+ * (a loan like any other, home on restore), so the field and the form share
+ * one line collapsed and the form sits on the editor's action row open, and
+ * it speaks the chat's way: the button says "Resolve" or "Unresolve", the
+ * sentence is the resolver's picture and "marked resolved". GitHub's own
+ * words stay in the node, hidden by an attribute, and it is GitHub's button
+ * that is pressed.
+ */
+function dressComposer(thread: HTMLElement): void {
+  const area = thread.querySelector<HTMLElement>('.review-thread-reply') ?? thread.querySelector<HTMLElement>(REPLY_AREA);
+  const form = thread.querySelector<HTMLElement>(RESOLVE_FORM);
+  if (area === null || form === null || form.closest('.geld-review__composer-side') !== null) return;
+  const button = form.querySelector<HTMLElement>('button[type="submit"], button');
+  if (button === null) return;
+  const side = createElement('div', { class: 'geld-review__composer-side' });
+  area.append(side);
+  teleportInto(side, [form]);
+  const resolved = thread.getAttribute('data-resolved') === 'true' || /^unresolve/i.test((button.textContent ?? '').trim());
+  const label = button.querySelector<HTMLElement>('.Button-label') ?? button;
+  const spokenFor: Element[] = [];
+  const speakFor = (element: Element): void => {
+    element.setAttribute(ATTR_SPOKEN_FOR, '');
+    spokenFor.push(element);
+  };
+  const added: Element[] = [];
+  if (label === button) {
+    // A bare button holds its words as text: they cannot be hidden alone, so the whole button is sized to the short label drawn over it.
+    speakFor(button);
+    const short = createElement('span', { class: 'geld-review__composer-label' }, [resolved ? 'Unresolve' : 'Resolve']);
+    button.append(short);
+    added.push(short);
+  } else {
+    speakFor(label);
+    const short = createElement('span', { class: 'geld-review__composer-label' }, [resolved ? 'Unresolve' : 'Resolve']);
+    label.after(short);
+    added.push(short);
+  }
+  const hadTitle = button.getAttribute('title');
+  button.setAttribute('title', resolved ? 'Unresolve conversation' : 'Resolve conversation');
+  // "<name> marked this conversation as resolved.": the name is the one element in it, the rest is text.
+  const name = [...form.querySelectorAll<HTMLElement>('strong, a.author, a[data-hovercard-type="user"]')].find((node) => !button.contains(node)) ?? null;
+  if (name !== null) {
+    const login = (name.textContent ?? '').replace(/^@/, '').trim();
+    const sentence = name.parentElement !== null && name.parentElement !== form ? name.parentElement : name;
+    speakFor(sentence);
+    const avatar = avatarSrcForLogin(login);
+    const who = createElement('span', { class: 'geld-review__composer-resolved', title: `${login} marked this conversation as resolved` });
+    if (avatar !== null) who.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: avatar, alt: login, width: '20', height: '20', 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(login)}/hovercard` }));
+    else who.append(createElement('span', { class: 'geld-review__composer-resolved-name' }, [login]));
+    who.append(createElement('span', {}, ['marked resolved']));
+    side.append(who);
+    added.push(who);
+  }
+  onRestore(() => {
+    for (const element of spokenFor) element.removeAttribute(ATTR_SPOKEN_FOR);
+    for (const element of added) element.remove();
+    if (hadTitle === null) button.removeAttribute('title');
+    else button.setAttribute('title', hadTitle);
+    // The form goes home through the loan; the side it stood in is Geld's.
+    side.remove();
+  });
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
