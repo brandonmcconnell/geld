@@ -19214,6 +19214,17 @@ var REVIEW_BOTS = [
     checkNames: ["Gemini Code Assist", "gemini-code-assist"],
     triggers: ["@gemini-code-assist"],
     configFiles: []
+  },
+  {
+    // Replicas (replicas.dev): cloud coding agents with a "Code Review" automation that posts an X/5 review score
+    // on PR open and sync; `/replicas run code-review` runs it on demand, `@tryreplicas` addresses the agent.
+    id: "replicas",
+    title: "Replicas",
+    logins: ["replicas-connector[bot]", "replicas-dev[bot]", "tryreplicas[bot]"],
+    checkNames: ["Replicas"],
+    triggers: ["/replicas run code-review", "@tryreplicas review", "@tryreplicas", "@replicas"],
+    configFiles: [],
+    conversational: true
   }
 ];
 var LOGIN_INDEX = /* @__PURE__ */ new Map();
@@ -19269,8 +19280,19 @@ function reviewBotIdFor(login, extraLogins) {
   if (known !== null) return known.id;
   return extraLogins.some((entry2) => entry2.toLowerCase() === login.toLowerCase()) ? `custom:${login.toLowerCase()}` : null;
 }
+function isStatusLineComment(body) {
+  const text = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
+  if (text === "" || text.length > 240) return false;
+  const sentences = text.split(/(?<=[.!…])\s+/).filter((part) => part !== "");
+  if (sentences.length > 2) return false;
+  const underWay = /^(?:[\w.-]+(?:\[bot\])?\s+)?(?:is\s+)?(?:now\s+)?(?:starting|started|beginning|kicking off|running|reviewing|analy[sz]ing|looking (?:at|into|over)|working on|scanning|checking)\b[^.!…]*\b(?:review|analysis|scan|changes|pull request|pr|code|diff|your|this)\b/i;
+  const stated = /^(?:review|analysis|scan)\s+(?:in progress|started|queued|has started)\b/i;
+  const promise2 = /\b(?:will|I'?ll)\s+(?:post|comment|report|reply|start|begin|review)\b.*\b(?:when|once|shortly|soon)\b/i;
+  return underWay.test(text) || stated.test(text) || promise2.test(text);
+}
 function verdictsFrom(checks, comments, headSha, extraLogins = []) {
   const byId = /* @__PURE__ */ new Map();
+  const checkVerdict = /* @__PURE__ */ new Map();
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
@@ -19278,6 +19300,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     const running = check2.status !== "completed";
     const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled";
     const verdict = running ? "running" : failed ? "failed" : "clean";
+    checkVerdict.set(bot.id, verdict);
     const record3 = {
       id: bot.id,
       login,
@@ -19287,10 +19310,17 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     };
     byId.set(bot.id, record3);
   }
+  const statusOnly = /* @__PURE__ */ new Map();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id === null || isTriggerComment(comment.body, extraLogins)) continue;
+    if (isStatusLineComment(comment.body)) {
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
+      continue;
+    }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
+    if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    statusOnly.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
@@ -19300,6 +19330,19 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     }
     const verdict = parsed.clean ? "clean" : "findings";
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
+  }
+  for (const [id, { login, anchor: anchor2 }] of statusOnly) {
+    const existing = byId.get(id);
+    if (existing === void 0) {
+      byId.set(id, { id, login, verdict: "running", reviewedSha: headSha, sourceId: anchor2 });
+      continue;
+    }
+    if (existing.checkName === void 0) {
+      byId.set(id, { id, login, verdict: "running", reviewedSha: existing.reviewedSha, sourceId: anchor2 });
+      continue;
+    }
+    const fromCheck = checkVerdict.get(id) ?? "running";
+    byId.set(id, { id, login, verdict: fromCheck, reviewedSha: existing.reviewedSha, checkName: existing.checkName, sourceId: anchor2 });
   }
   return [...byId.values()];
 }
