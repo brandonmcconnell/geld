@@ -6,7 +6,7 @@
  * comments and review bodies as single comments.
  */
 
-import type { PreviewDoc, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
+import type { PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
 import { closestAtHome, compareHome, wornPiecesOf } from './teleport';
 
@@ -517,4 +517,39 @@ export function latestReviewers(reviews: readonly CrawledReview[]): readonly Rev
     latest.set(review.author.login, review.state);
   }
   return [...latest].map(([login, state]) => ({ login, state }));
+}
+
+/**
+ * The merge box's check rows as check runs, read from each row's state
+ * glyph (GitHub's octicon names its state) and name, wherever the rows are
+ * (the merge box, or the panel's CI slot on loan). Commit statuses count
+ * too: Devin reports through one, with no "Successful in" text, and its
+ * verdict is the glyph. The Action reads these from the API; the browser
+ * has only the page.
+ */
+export function crawlCheckRuns(root: ParentNode = document, headSha = ''): readonly RawCheckRun[] {
+  const out: RawCheckRun[] = [];
+  const seen = new Set<string>();
+  for (const row of root.querySelectorAll<HTMLElement>('li:has([class*="StatusCheckRow"]), .merge-status-item')) {
+    const name = (row.querySelector('[class*="StatusCheckRow"] h4 a span, [class*="StatusCheckRow"] h4 a, .merge-status-item strong, .merge-status-item .text-emphasized')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (name === '' || seen.has(name)) continue;
+    const glyph = row.querySelector('[class*="LeadingVisual"] svg.octicon, .merge-status-icon svg.octicon, svg.octicon');
+    const state = glyph === null ? null : checkStateOfGlyph(glyph.getAttribute('class') ?? '');
+    if (state === null) continue;
+    seen.add(name);
+    out.push({ name, status: state.status, conclusion: state.conclusion, sha: headSha });
+  }
+  return out;
+}
+
+/** GitHub's octicon for a check row, as a run's status and conclusion; null for a glyph that is not a state. */
+function checkStateOfGlyph(classes: string): { readonly status: string; readonly conclusion: string | null } | null {
+  if (/octicon-check\b|octicon-check-circle/.test(classes)) return { status: 'completed', conclusion: 'success' };
+  if (/octicon-x\b|octicon-x-circle/.test(classes)) return { status: 'completed', conclusion: 'failure' };
+  if (/octicon-stop|octicon-circle-slash/.test(classes)) return { status: 'completed', conclusion: 'cancelled' };
+  if (/octicon-skip/.test(classes)) return { status: 'completed', conclusion: 'skipped' };
+  if (/octicon-alert/.test(classes)) return { status: 'completed', conclusion: 'action_required' };
+  if (/octicon-square-fill|octicon-square\b/.test(classes)) return { status: 'completed', conclusion: 'neutral' };
+  if (/octicon-dot|octicon-clock|octicon-hourglass|octicon-sync|octicon-in-progress/.test(classes)) return { status: 'in_progress', conclusion: null };
+  return null;
 }
