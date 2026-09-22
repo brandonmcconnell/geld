@@ -3660,9 +3660,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding: 0 0 0 var(--geld-chat-gutter);
 }
 
+/* Not a chat: one comment under its author is the comment itself, no bubble, no frame. */
 .geld-review__chat[data-geld-chat='comment'] [data-geld-lone] > [data-geld-part='bubble'] {
-  border-radius: var(--geld-chat-tight) var(--geld-chat-radius) var(--geld-chat-radius) var(--geld-chat-radius);
-  background: var(--geld-review-subtle);
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 
 /* The threads a review came with, by file name, each leading to its row; the state glyph says which are done. */
