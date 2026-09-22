@@ -3490,7 +3490,9 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 .geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary:hover,
 .geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions > details > summary:hover,
 .geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions > button:hover {
-  background: var(--geld-review-hover) !important;
+  /* An opaque shade, not the panel's translucent hover wash: over the bubble's edge a wash reads as a fade. */
+  border-color: var(--geld-review-border) !important;
+  background: var(--geld-review-subtle) !important;
   color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
 }
 
