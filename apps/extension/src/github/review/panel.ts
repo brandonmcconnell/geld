@@ -160,6 +160,8 @@ export function reviewerGroups(entries: readonly ReviewEntry[]): readonly Review
     if (entry.state === 'thread' || entry.state === 'comment' || entry.state === 'dismissed') continue;
     const key = entry.author.toLowerCase();
     const current = latest.get(key);
+    // Awaited again (re-requested) sets any earlier verdict aside; a comment-only review sets nothing aside.
+    if (current?.state === 'awaiting') continue;
     if (entry.state === 'commented' && current !== undefined && current.state !== 'commented') continue;
     latest.set(key, { state: entry.state, avatar: { src: entry.avatarSrc ?? '', bot: false, login: entry.author } });
   }
