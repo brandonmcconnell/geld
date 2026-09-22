@@ -101,6 +101,27 @@ export function forgetLoan(node: HTMLElement): void {
 
 /** Put every quick-viewed node back where it came from. */
 /**
+ * GitHub replaced a loaned node where it stood, inside the panel: the classic
+ * Resolve is a Turbo form whose response swaps the thread for a fresh
+ * `<turbo-frame>` with the new state, and it swaps whatever element it holds
+ * a reference to, which is the loan. The replacement is the loan from here
+ * on: it carries the token (the page-world portal keys on it) and goes home
+ * to the placeholder when the panel lets go. Without this the next rebuild
+ * sent the stale node home and the reader saw the Resolve button come back
+ * on a thread the server had already resolved.
+ */
+export function adoptReplacement(oldNode: HTMLElement, newNode: HTMLElement): boolean {
+  const entry = moved.get(oldNode);
+  if (entry === undefined || newNode.hasAttribute(ATTR_TELEPORTED)) return false;
+  const token = oldNode.getAttribute(ATTR_TELEPORTED);
+  oldNode.removeAttribute(ATTR_TELEPORTED);
+  if (token !== null) newNode.setAttribute(ATTR_TELEPORTED, token);
+  moved.delete(oldNode);
+  moved.set(newNode, { ...entry, node: newNode });
+  return true;
+}
+
+/**
  * Send every loan home. With `keep`, loans it answers true for stay where
  * they are (a slot carried whole into the next panel), and so do the restore
  * hooks, since a hook cannot be told apart by loan.
