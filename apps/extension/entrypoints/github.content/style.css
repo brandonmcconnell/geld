@@ -3271,9 +3271,15 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding-left: 16px;
 }
 
-/* A thread's frame carries its own top margin, so its slot starts tight; a plain comment gets the full 12px above like below. */
+/* A thread's frame is a box with its own border: the same room above and below it (a plain comment keeps the
+ * slot's 12px, which closes its bottom). The top-level slot's 8/12 became 8/12 around the box too, and read heavy. */
+.geld-review__slot-body:has(> .geld-review__qv--threads) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 .geld-review__rows--threads > .geld-review__slot--sub .geld-review__slot-body:has(> .geld-review__qv--threads) {
-  padding: 4px 16px 12px 42px;
+  padding: 8px 16px 8px 42px;
 }
 
 /* ---- mentions ------------------------------------------------------------- */
