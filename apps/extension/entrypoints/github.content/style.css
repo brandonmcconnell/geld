@@ -3461,12 +3461,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 /*
  * The reply area holds GitHub's editor (collapsed to its "Reply…" field until
- * pressed) and, for a reader who can resolve, GitHub's Resolve, which is a
- * form of its own beside the editor's. Collapsed, the two share one line, the
- * field taking the width. Open, the editor takes the whole width and Resolve
- * sits at the bottom left, on the editor's own action row across from Cancel
- * and Comment: a form cannot hold another form, so it is placed there rather
- * than moved (the editor's bottom padding is the row's, `bottom` matches it).
+ * pressed) and, for a reader who can resolve, GitHub's Resolve form, moved
+ * by chat.ts into the side slot at the area's end. Collapsed, the field and
+ * the side share one line, the field taking the width. Open, the editor
+ * takes the whole width and the side sits at the bottom left, on the
+ * editor's own action row across from Cancel and Comment (the area's bottom
+ * padding is the row's, `bottom` matches it).
  */
 .geld-review__chat-body .review-thread-reply {
   position: relative;
@@ -3488,15 +3488,60 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   margin: 0 !important;
 }
 
-.geld-review__chat-body .review-thread-reply > :not(.js-inline-comment-form-container) {
+.geld-review__composer-side {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
   margin: 0 !important;
 }
 
-.geld-review__chat-body .review-thread-reply:has(> .js-inline-comment-form-container.open) > :not(.js-inline-comment-form-container) {
+.geld-review__chat-body .review-thread-reply:has(> .js-inline-comment-form-container.open) > .geld-review__composer-side {
   position: absolute;
   bottom: 10px;
   left: 12px;
+}
+
+.geld-review__composer-side > form {
+  margin: 0 !important;
+}
+
+/* GitHub's words for the button and the sentence stay in the node, out of sight; the chat's short forms stand for them. */
+.geld-review__composer-side [data-geld-spoken-for]:not(button) {
+  display: none !important;
+}
+
+.geld-review__composer-side button[data-geld-spoken-for] {
+  font-size: 0 !important;
+}
+
+.geld-review__composer-side button {
+  height: 32px !important;
+  min-height: 32px !important;
+}
+
+.geld-review__composer-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* "[picture] marked resolved" */
+.geld-review__composer-resolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geld-review__composer-resolved > .geld-review__avatar {
+  width: 20px;
+  height: 20px;
+}
+
+.geld-review__composer-resolved-name {
+  font-weight: 600;
 }
 
 /* Open, the field gives way to the editor (GitHub's own rule, kept whatever order the stylesheets load in). */
