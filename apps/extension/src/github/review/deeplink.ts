@@ -5,6 +5,8 @@
  * timeline yet, its "Load more" control is clicked so the target appears.
  */
 
+import { quietClick } from './quiet-click';
+
 const LOAD_MORE = 'button[data-testid="load-more-timeline"], .ajax-pagination-btn, button.js-ajax-pagination-btn';
 
 export function sourceAnchorFromHash(hash: string): string | null {
@@ -63,7 +65,8 @@ export function clickLoadMore(root: ParentNode = document): boolean {
       void loadMoreOurselves(form);
     });
   }
-  button.click();
+  // Pressed on Geld's behalf: GitHub must not read it as the reader clicking away from the permalink they opened.
+  quietClick(button);
   return true;
 }
 
