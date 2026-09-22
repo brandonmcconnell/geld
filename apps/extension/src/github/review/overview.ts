@@ -1828,11 +1828,19 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     } else if (mounted.slot.childElementCount === 0) {
       if (visit.openKey === REVIEWS_KEY) {
         const nested = renderCommentsList(mounted.slot, model, panelHandlers);
-        const verdict = model.comments.find((entry) => entry.anchor === visit.openSubKey && isVerdict(entry)) ?? null;
+        const openEntry = model.comments.find((entry) => entry.anchor === visit.openSubKey) ?? null;
+        const verdict = openEntry !== null && isVerdict(openEntry) ? openEntry : null;
+        // A person's review thread opens in the same frame as a bot's (path head, the first comment, the rest and
+        // the reply behind a bar), never as the raw timeline row, which for a review is the whole review with every
+        // thread it holds.
+        const thread = openEntry?.state === 'thread' ? threadRootOf(openEntry.anchor) : null;
         // A verdict's body is its own comment (never its whole row) plus its threads, or a note that it has neither.
-        const subNode = visit.openSubKey === null ? null : (entryNodes.get(visit.openSubKey) ?? (verdict === null ? timelineRootOf(visit.openSubKey) : null));
+        const subNode = visit.openSubKey === null ? null : (entryNodes.get(visit.openSubKey) ?? (verdict === null && thread === null ? timelineRootOf(visit.openSubKey) : null));
         if (nested !== null && verdict !== null) {
           renderReviewBody(nested, verdict, subNode, panelHandlers);
+        } else if (nested !== null && thread !== null) {
+          const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
+          renderThreadsView(nested, [thread], threadHandlers(item, meta, reapply));
         } else if (nested !== null && subNode !== null) {
           renderQuickView(nested, [subNode]);
         } else if (visit.openSubKey !== null && subNode === null) {
@@ -1845,10 +1853,15 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
           // By push: the round's commit rows, unfolded under their heading (they keep the commit-hover breakdown).
           if (view.commitsSlot !== null) renderQuickView(view.commitsSlot, batch.commits);
           // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here).
-          const verdict = view.openComment === null ? null : (batch.reviews.find((entry) => entry.anchor === view.openComment && isVerdict(entry)) ?? null);
-          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (verdict === null ? timelineRootOf(view.openComment) : null));
+          const openEntry = view.openComment === null ? null : (batch.reviews.find((entry) => entry.anchor === view.openComment) ?? null);
+          const verdict = openEntry !== null && isVerdict(openEntry) ? openEntry : null;
+          const thread = openEntry?.state === 'thread' ? threadRootOf(openEntry.anchor) : null;
+          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (verdict === null && thread === null ? timelineRootOf(view.openComment) : null));
           if (view.nested !== null && verdict !== null) {
             renderReviewBody(view.nested, verdict, commentNode, panelHandlers);
+          } else if (view.nested !== null && thread !== null) {
+            const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
+            renderThreadsView(view.nested, [thread], threadHandlers(item, meta, reapply));
           } else if (view.nested !== null && commentNode !== null) {
             renderQuickView(view.nested, [commentNode]);
           } else if (view.nested !== null && view.openItem !== null) {
