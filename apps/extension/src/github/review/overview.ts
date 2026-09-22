@@ -38,7 +38,7 @@ import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './pane
 import { installedBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, resetOpenedThreads, revealThreadFor, sourceFocusKey, threadAnchorOf } from './quick-view';
 import type { ThreadSource, ThreadsViewHandlers } from './quick-view';
-import { closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -185,11 +185,27 @@ function touchesThreadState(record: MutationRecord): boolean {
   return false;
 }
 
+/**
+ * A loaned node swapped in place by GitHub (a Turbo response to Resolve): the
+ * element that took its position is the loan now (`adoptReplacement`). Only
+ * a swap GitHub made counts: the panel's own moves take a loan out without
+ * putting a stranger in its place.
+ */
+function adoptReplacements(records: readonly MutationRecord[]): void {
+  for (const record of records) {
+    if (record.type !== 'childList' || !(record.target instanceof Element) || record.target.closest('.geld-review__qv') === null) continue;
+    const gone = [...record.removedNodes].find((node): node is HTMLElement => node instanceof HTMLElement && node.hasAttribute('data-geld-teleported'));
+    const came = [...record.addedNodes].find((node): node is HTMLElement => node instanceof HTMLElement && !node.hasAttribute('data-geld-teleported') && !node.hasAttribute('data-geld-ui'));
+    if (gone !== undefined && came !== undefined) adoptReplacement(gone, came);
+  }
+}
+
 function watchLoans(root: Element): void {
   if (loanWatched === root) return;
   loanWatcher?.disconnect();
   loanWatched = root;
   loanWatcher ??= new MutationObserver((records) => {
+    adoptReplacements(records);
     if (!records.some(touchesThreadState)) return;
     // Only a thread that was open a moment ago can settle: opening an already-resolved thread also mutates its
     // loaned node (GitHub finishes rendering it), and that must not close the row the reader just opened.
