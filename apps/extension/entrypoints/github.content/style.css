@@ -3052,6 +3052,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding: 16px !important;
 }
 
+/* A comment that ends in its reactions row: the smiley sits about 5px inside its pill, so 16px under the pill read
+ * as more than the 16px above the avatar, which starts at the padding's edge. 10px puts the two ink gaps level. */
+.geld-review__thread-body .review-comment:has(.comment-reactions, .js-reactions-container) {
+  padding-bottom: 10px !important;
+}
+
 .geld-review__thread-body .review-comment > .ml-n1 {
   margin-left: 0 !important;
 }
