@@ -4,7 +4,7 @@ import type { RawPullRequest } from './build';
 import { parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
+import { isStatusLineComment, looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
 const PRODUCER = { kind: 'action' as const, version: '0.1.0', ai: false };
@@ -242,6 +242,37 @@ describe('bots + prompts', () => {
       'aaa',
     );
     expect(verdicts[0]?.verdict).toBe('clean');
+  });
+
+  it('lets a green check speak for a bot whose only comment says it started', () => {
+    for (const body of ['Starting Devin Review.', 'Bugbot is reviewing your changes…', 'Review in progress', "I'm looking into this now and will comment when done."]) {
+      expect(isStatusLineComment(body), body).toBe(true);
+    }
+    for (const body of ['Found 2 issues', 'Bugbot reviewed your changes and found no new issues!', 'Starting from line 12, the loop never exits.']) {
+      expect(isStatusLineComment(body), body).toBe(false);
+    }
+    // Devin: says it is looking, then says nothing more when all is well; the completed check is the verdict.
+    const devin = verdictsFrom([{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'aaa' }], [{ author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-7' }], 'aaa');
+    expect(devin[0]).toMatchObject({ id: 'devin', verdict: 'clean', sourceId: 'issuecomment-7' });
+    // No check to go by: the bot is still running as far as anyone can tell.
+    expect(verdictsFrom([], [{ author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-7' }], 'aaa')[0]?.verdict).toBe('running');
+    // A later comment with findings still counts.
+    const found = verdictsFrom([{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'aaa' }], [{ author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-7' }, { author: 'devin-ai-integration[bot]', body: 'Found 3 issues in this change.', anchor: 'issuecomment-8' }], 'aaa');
+    expect(found[0]).toMatchObject({ verdict: 'findings', count: 3, sourceId: 'issuecomment-8' });
+    // Findings, then a new push and "Starting" again, then a green check and silence: the latest run found nothing.
+    const rerun = verdictsFrom(
+      [{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'bbb' }],
+      [
+        { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-7' },
+        { author: 'devin-ai-integration[bot]', body: 'Devin Review found 1 potential issue.', anchor: 'pullrequestreview-1' },
+        { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-9' },
+      ],
+      'bbb',
+    );
+    expect(rerun[0]).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-9' });
+    expect(rerun[0]?.count).toBeUndefined();
+    // The same with the check still going: running.
+    expect(verdictsFrom([{ name: 'Devin Review', status: 'in_progress', conclusion: null, sha: 'bbb' }], [{ author: 'devin-ai-integration[bot]', body: 'Found 1 issue.', anchor: 'a' }, { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'b' }], 'bbb')[0]?.verdict).toBe('running');
   });
 
   it('drops unknown ids from model output', () => {

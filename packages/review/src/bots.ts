@@ -186,9 +186,35 @@ function reviewBotIdFor(login: string, extraLogins: readonly string[]): string |
 }
 
 /**
+ * A bot comment that only says a run began or is under way ("Starting Devin
+ * Review.", "Bugbot is reviewing your changes", "Review in progress"): a
+ * status line, never a verdict. Short, one sentence, and shaped like one.
+ */
+export function isStatusLineComment(body: string): boolean {
+  const text = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/[`*_>~#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text === '' || text.length > 160) return false;
+  const sentences = text.split(/(?<=[.!…])\s+/).filter((part) => part !== '');
+  if (sentences.length > 2) return false;
+  // The verb of a run under way, with what it is running on named in the same sentence ("Starting Devin Review.",
+  // "Bugbot is reviewing your changes"), never a sentence that merely begins with such a word ("Starting from line 12, …").
+  const underWay = /^(?:[\w.-]+(?:\[bot\])?\s+)?(?:is\s+)?(?:now\s+)?(?:starting|started|beginning|kicking off|running|reviewing|analy[sz]ing|looking (?:at|into|over)|working on|scanning|checking)\b[^.!…]*\b(?:review|analysis|scan|changes|pull request|pr|code|diff|your|this)\b/i;
+  const stated = /^(?:review|analysis|scan)\s+(?:in progress|started|queued|has started)\b/i;
+  const promise = /\b(?:will|I'?ll)\s+(?:post|comment|report|reply)\b.*\b(?:when|once)\b/i;
+  return underWay.test(text) || stated.test(text) || promise.test(text);
+}
+
+/**
  * Combine check-run conclusions with the bot's own comments. A green check
  * with "no issues" is `clean`; a completed check plus findings in comments is
- * `findings`; an in-progress check is `running`.
+ * `findings`; an in-progress check is `running`. A comment that only says
+ * the run started does not vote: a bot whose check finished green and that
+ * flagged nothing since is `clean` (Devin says it is looking and then says
+ * nothing more when all is well); with no check to go by, such a bot is
+ * `running` until it says more.
  */
 export function verdictsFrom(
   checks: readonly RawCheckRun[],
@@ -197,6 +223,8 @@ export function verdictsFrom(
   extraLogins: readonly string[] = [],
 ): readonly DerivedBotVerdict[] {
   const byId = new Map<string, DerivedBotVerdict>();
+  /** What each bot's check alone said, for a run its comments have not spoken about. */
+  const checkVerdict = new Map<string, 'clean' | 'failed' | 'running'>();
 
   for (const check of checks) {
     const bot = botByCheckName(check.name);
@@ -205,6 +233,7 @@ export function verdictsFrom(
     const running = check.status !== 'completed';
     const failed = check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled';
     const verdict = running ? 'running' : failed ? 'failed' : 'clean';
+    checkVerdict.set(bot.id, verdict);
     const record: DerivedBotVerdict = {
       id: bot.id,
       login,
@@ -215,9 +244,16 @@ export function verdictsFrom(
     byId.set(bot.id, record);
   }
 
+  /** Bots whose latest comment so far is a status line (the run it announced has not reported), with that line. */
+  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string }>();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id === null || isTriggerComment(comment.body, extraLogins)) continue;
+    if (isStatusLineComment(comment.body)) {
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
+      continue;
+    }
+    statusOnly.delete(id);
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     const existing = byId.get(id);
     const login = comment.author;
@@ -228,6 +264,22 @@ export function verdictsFrom(
     }
     const verdict = parsed.clean ? 'clean' : 'findings';
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
+  }
+  // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
+  // an earlier run (those threads are items in their own right). The check says how this run ended; with no
+  // check to go by the bot is running until it says more.
+  for (const [id, { login, anchor }] of statusOnly) {
+    const existing = byId.get(id);
+    if (existing === undefined) {
+      byId.set(id, { id, login, verdict: 'running', reviewedSha: headSha, sourceId: anchor });
+      continue;
+    }
+    if (existing.checkName === undefined) {
+      byId.set(id, { id, login, verdict: 'running', reviewedSha: existing.reviewedSha, sourceId: anchor });
+      continue;
+    }
+    const fromCheck = checkVerdict.get(id) ?? 'running';
+    byId.set(id, { id, login, verdict: fromCheck, reviewedSha: existing.reviewedSha, checkName: existing.checkName, sourceId: anchor });
   }
 
   return [...byId.values()];
