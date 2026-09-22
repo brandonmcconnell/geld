@@ -777,6 +777,8 @@ function mainClickToggles(main: HTMLElement, toggle: () => void): void {
 }
 
 function rowClickToggles(row: HTMLElement, toggle: () => void): void {
+  // The stylesheet gives the whole row the pointer: every part of it opens the row unless it is a control of its own.
+  row.setAttribute('data-toggles', '');
   row.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
     if (event.target.closest('button, a, details, summary, input, textarea, [contenteditable], [data-geld-ctl], [data-geld-gear-slot]') !== null) return;
@@ -1120,6 +1122,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       ]),
     ]);
     if (open) row.setAttribute('data-open', '');
+    rowClickToggles(row, () => handlers.onToggle(CHECKS_KEY));
     rows.append(row);
     if (open) rows.append(slotRow(CHECKS_KEY, null, 'checks'));
   }
@@ -1170,6 +1173,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       createElement('span', { class: `${PANEL_CLASS}__right` }, right),
     ]);
     if (open) row.setAttribute('data-open', '');
+    rowClickToggles(row, () => handlers.onToggle(REVIEWS_KEY));
     rows.append(row);
     if (open) rows.append(slotRow(REVIEWS_KEY, null, 'list'));
   }
