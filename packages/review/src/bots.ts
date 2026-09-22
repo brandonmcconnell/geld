@@ -239,6 +239,22 @@ export function rerunTriggerFor(botId: string): string | null {
   return bot?.triggers[0] ?? null;
 }
 
+/**
+ * The bot a trigger comment asks for: a body that is one of a bot's trigger
+ * phrases (one per line, markdown noise around it ignored), else null. A
+ * person typing "bugbot run" on a pull request is as clear a sign the bot is
+ * installed as any comment the bot itself posts.
+ */
+export function botByTrigger(body: string): ReviewBot | null {
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.replace(/[`*_>~]/g, '').trim().toLowerCase();
+    if (line === '') continue;
+    const bot = REVIEW_BOTS.find((candidate) => candidate.triggers.some((trigger) => trigger.toLowerCase() === line));
+    if (bot !== null && bot !== undefined) return bot;
+  }
+  return null;
+}
+
 /** The `/apps/<name>` slug GitHub links a bot's avatar and name to, for each login. */
 export function botByAppSlug(slug: string): ReviewBot | null {
   return botByLogin(`${slug.toLowerCase()}[bot]`);
