@@ -1489,8 +1489,15 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   }
 }
 
+/* The sync octicon's arrows run counter-clockwise; the spin follows them. */
+@keyframes geld-spin-ccw {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
 .geld-review__icon--spin .octicon {
-  animation: geld-spin 1.6s linear infinite;
+  animation: geld-spin-ccw 1.6s linear infinite;
 }
 
 /* One level down: reviews, threads and people's comments inside the Reviews row. */
@@ -3567,9 +3574,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  /* The hover surface reaches 8px left of the words, which stay on the column of the avatar above. */
+  width: calc(100% + 8px);
   min-height: 28px;
-  padding: 2px 4px 2px 0;
+  margin-left: -8px;
+  padding: 2px 4px 2px 8px;
   border: 0;
   border-radius: 6px;
   background: none;
