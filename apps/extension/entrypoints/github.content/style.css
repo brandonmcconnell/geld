@@ -3436,6 +3436,29 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   box-shadow: none !important;
 }
 
+/* Primer's button wraps its glyph in two spans with a text line box of their own, which set the glyph a pixel or
+ * two off centre in a round button; here the glyph is the only thing in the box and is centred as such. */
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] reactions-menu > details > summary > *,
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary > *,
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions summary > *,
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions > button > * {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 0;
+}
+
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] reactions-menu > details > summary .octicon,
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary .octicon,
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions summary .octicon,
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions > button .octicon {
+  display: block;
+  margin: 0 !important;
+  vertical-align: top;
+}
+
 .geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] reactions-menu > details > summary:hover,
 .geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary:hover,
 .geld-review__chat [data-geld-message]:not([data-geld-lone]) [data-geld-part='meta'] .timeline-comment-actions summary:hover,
