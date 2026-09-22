@@ -26,7 +26,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
@@ -772,18 +772,25 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
 }
 
 /**
- * After a click that opens a row elsewhere in the panel (a bot chip, a
- * source link), bring that row into view if it is not already there: the
- * reader asked to go somewhere, and nothing else tells them where it opened.
- * Instant, and only when needed; a row already on screen stays put.
+ * After a click that opens a row elsewhere in the panel (a bot chip, a line
+ * in the Reviews index), bring that row into view if it is not already
+ * there: the reader asked to go somewhere, and nothing else tells them where
+ * it opened. A row off screen or under the sticky header goes just under the
+ * header; a row on screen whose opened content runs past the fold comes up
+ * by what is missing and no further (`revealOpened`), so a thread that
+ * landed low in the viewport shows its chat without its own row leaving the
+ * top. Instant, and only when needed.
  */
 function revealRow(focusKey: string): void {
   const row = document.querySelector(`[data-geld-focus="${focusKey}"]`);
   if (!(row instanceof HTMLElement)) return;
   const rect = row.getBoundingClientRect();
   const sticky = stickyHeaderBottomAt(window.scrollY);
-  if (rect.top >= sticky && rect.bottom <= window.innerHeight) return;
-  scrollRowTo(rect.top + window.scrollY);
+  if (rect.top < sticky || rect.bottom > window.innerHeight) {
+    scrollRowTo(rect.top + window.scrollY);
+    return;
+  }
+  revealOpened(row);
 }
 
 /**
@@ -1840,10 +1847,14 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       location.hash = anchor;
     },
     onOpenAnchor: (anchor) => {
+      // A review that wrote nothing but opened threads has nothing of its own to show: the reader who asked for it
+      // (from the Reviews index, from its line in the round) lands on its first thread, which is the conversation.
+      const entry = comments.find((candidate) => candidate.anchor === anchor);
+      const target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
-      const seat = hidingTimeline ? seatFor(anchor, meta, groups, batches) : null;
+      const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
-        location.hash = anchor;
+        location.hash = target;
         return;
       }
       openRowLocal(seat.key, seat.sub);
