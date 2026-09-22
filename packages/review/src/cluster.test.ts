@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clusterComments, firstSentence, guessSeverity, isBotOnly, suggestionOf } from './cluster';
-import { isTriggerComment } from './bots';
+import { botByCheckName, botByTrigger, isTriggerComment } from './bots';
 import type { RawComment } from './cluster';
 
 function comment(overrides: Partial<RawComment> & Pick<RawComment, 'anchor' | 'author' | 'body'>): RawComment {
@@ -107,6 +107,15 @@ describe('clusterComments', () => {
       expect(isTriggerComment(body), body).toBe(false);
     }
     expect(isTriggerComment('@acme-reviewer review', ['acme-reviewer[bot]'])).toBe(true);
+  });
+
+  it('names the bot a trigger or a check run belongs to', () => {
+    expect(botByTrigger('bugbot run')?.id).toBe('bugbot');
+    expect(botByTrigger('`@coderabbitai review`')?.id).toBe('coderabbit');
+    expect(botByTrigger('Looks good\n/devin review')?.id).toBe('devin');
+    expect(botByTrigger('bugbot run and then we ship')).toBeNull();
+    expect(botByCheckName('Cursor Bugbot')?.id).toBe('bugbot');
+    expect(botByCheckName('Unit Tests / test (pull_request)')).toBeNull();
   });
 
   it('marks resolved threads resolved', () => {

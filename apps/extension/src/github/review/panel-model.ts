@@ -3,9 +3,9 @@
  * Kept DOM-free so they can be unit tested.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
-import { botByAppSlug, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor } from '@geld/review';
+import { botByAppSlug, botByCheckName, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor } from '@geld/review';
 
 export interface InstalledBot {
   readonly id: string;
@@ -17,10 +17,13 @@ export interface InstalledBot {
 /**
  * Bots present on this pull request that a comment can re-run: every
  * registered bot the page links to as `/apps/<slug>` (comments, the checks
- * list, the reviewers box), plus those the payload knows from verdicts or
- * item sources. Icons come from the page's own `<img>` next to that link.
+ * list, the reviewers box), those the payload knows from verdicts or item
+ * sources, those with a check run in the merge box (a bot that found nothing
+ * may post no comment at all and leave only its check), and those a person
+ * has asked for with a trigger comment. Icons come from the page's own
+ * `<img>` next to the link or the check row.
  */
-export function installedBots(meta: GeldPrMeta, doc: ParentNode): readonly InstalledBot[] {
+export function installedBots(meta: GeldPrMeta, doc: ParentNode, comments: readonly RawComment[] = []): readonly InstalledBot[] {
   const found = new Map<string, InstalledBot>();
   const add = (id: string, login: string, iconSrc: string | null): void => {
     const trigger = rerunTriggerFor(id);
@@ -45,6 +48,19 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode): readonly Insta
   for (const bot of meta.bots) add(bot.id, bot.login, null);
   for (const item of meta.items) {
     for (const source of item.sources) if (source.bot !== undefined) add(source.bot, source.author, null);
+  }
+  // Check runs: the row's name links to the run (classic) or to the checks tab (React); the row's image is the app's.
+  for (const link of doc.querySelectorAll<HTMLAnchorElement>('a[href*="check_run_id="], a[href*="/runs/"], a[href*="/checks/"]')) {
+    const bot = botByCheckName((link.textContent ?? '').trim());
+    if (bot === null) continue;
+    const row = link.closest('li, .merge-status-item, [class*="StatusCheckRow"], [class*="ListItem"]');
+    const img = row?.querySelector('img');
+    const src = img?.currentSrc || img?.getAttribute('src') || null;
+    add(bot.id, bot.logins[0] ?? `${bot.id}[bot]`, src === null || src === '' ? null : normalizeAvatarSrc(src));
+  }
+  for (const comment of comments) {
+    const bot = botByTrigger(comment.body);
+    if (bot !== null) add(bot.id, bot.logins[0] ?? `${bot.id}[bot]`, null);
   }
   // Alphabetical: the page's link order changes as nodes move into the panel, and buttons must not shuffle.
   return [...found.values()].sort((a, b) => a.label.localeCompare(b.label));

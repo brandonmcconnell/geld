@@ -1617,7 +1617,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (stated !== undefined) visit.knownRequired = Number.parseInt(stated, 10);
   const reviewers = [...latestReviewers(reviews)];
   for (const record of meta.reviewers) if (!reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
-  const requestable = installedBots(meta, document);
+  const requestable = installedBots(meta, document, rawComments);
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
   const model: PanelModel = {
