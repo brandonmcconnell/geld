@@ -1623,11 +1623,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
 }
 
-/* A person's review threads sit under their review's line, stepped in one glyph-and-gap (16 + 10). */
-.geld-review__rows--sub > .geld-review__row--sub[data-nested] {
-  padding-left: 42px;
-}
-
 /* Every row says who and when itself; a worn header only lends its actions (react, ⋯), so open and closed read alike. */
 .geld-review__head-slot .timeline-comment-header-text,
 .geld-review__head-slot h3,
@@ -2564,6 +2559,11 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 
 .geld-review__chevron[data-open='true'] .octicon {
   transform: rotate(180deg);
+}
+
+/* A pointer row's chevron points right and, hovered with its row, nudges that way: the row goes somewhere, it does not open. */
+.geld-review__row[data-pointer]:hover .geld-review__chevron--pointer .octicon {
+  transform: translateX(2px);
 }
 
 /* Controls stay put: a row must read the same collapsed, hovered and open. Muted until hovered. */
@@ -4026,116 +4026,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--geld-review-muted);
 }
 
-/* ---- a review's open body: its threads, or a note that it has none -------- */
-
-/* The threads a review was posted with, one line each; under the review's comment they read as its footer. */
-.geld-review__review-threads-wrap[data-with-comment='true'] {
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid var(--geld-review-border-muted);
-}
-
-.geld-review__review-threads-label {
-  margin-bottom: 4px;
-  color: var(--geld-review-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.geld-review__review-threads {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.geld-review__review-thread {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* The hover surface reaches 8px left of the words, which stay on the column of the avatar above. */
-  width: calc(100% + 8px);
-  min-height: 28px;
-  margin-left: -8px;
-  padding: 2px 4px 2px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--fgColor-default, var(--color-fg-default));
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.geld-review__review-thread:hover {
-  background: var(--geld-review-hover);
-}
-
-.geld-review__review-thread-glyph {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--geld-review-muted);
-}
-
-.geld-review__review-thread[data-state='done'] .geld-review__review-thread-glyph {
-  color: var(--geld-review-done-fg);
-}
-
-.geld-review__review-thread-glyph .octicon,
-.geld-review__review-thread > .octicon {
-  width: 14px;
-  height: 14px;
-}
-
-.geld-review__review-thread > .octicon {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--geld-review-muted);
-}
-
-.geld-review__review-thread-path {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.geld-review__review-thread-preview {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--geld-review-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/*
- * The note under a verdict that came with nothing to read. A dashed well with a
- * glyph: nothing a comment's markdown can produce, so it is never taken for
- * words a reviewer typed.
- */
-.geld-review__callout {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px dashed var(--geld-review-border);
-  border-radius: 6px;
-  background: var(--geld-review-subtle);
-  color: var(--geld-review-muted);
-  font-size: 12px;
-}
-
-.geld-review__callout-glyph {
-  display: inline-flex;
-}
-
-.geld-review__callout-glyph .octicon {
-  width: 14px;
-  height: 14px;
-}
 
 
 /* ---- the timeline's one control ------------------------------------------ */
