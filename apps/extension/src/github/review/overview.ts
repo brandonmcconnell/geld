@@ -36,8 +36,9 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, resetOpenedThreads, revealThreadFor, sourceFocusKey, threadAnchorOf } from './quick-view';
-import type { ThreadSource, ThreadsViewHandlers } from './quick-view';
+import { outgoingMentions, renderMentionsView, renderQuickView } from './quick-view';
+import { renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import type { ChatHandlers, ChatSource } from './chat';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -1063,16 +1064,30 @@ function wearGear(root: HTMLElement): void {
   teleportInto(target, nodes);
 }
 
+/** What the crawl read of each top-level comment, for the pinned strip at the top of a thread's chat. */
+interface SourceFacts {
+  readonly preview: string;
+  readonly avatarSrc: string | null;
+  readonly login: string;
+  readonly bot: boolean;
+}
+
+let sourceFacts = new Map<string, SourceFacts>();
+
 /**
  * The comment a thread was posted from: the body of the review that holds
  * it ("Bugbot reviewed … found 3 issues"), else the bot's run summary for
- * this pull request. What the round's list used to put in front of every
- * thread; here it is one click away inside the thread's own frame.
+ * this pull request. Pinned at the top of the thread's chat: the strip
+ * names it and shows its first line, and unfolds it in place on request.
  */
-function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): ThreadSource | null {
+function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): ChatSource | null {
   const source = item?.sources[0];
   const bot = source?.bot;
   const who = bot !== undefined ? botTitle(bot, source?.author ?? '') : source?.author ?? 'the reviewer';
+  const describe = (node: HTMLElement, anchor: string, label: string): ChatSource => {
+    const facts = sourceFacts.get(anchor);
+    return { node, anchor, label, preview: facts?.preview ?? '', avatarSrc: facts?.avatarSrc ?? avatarSrcOf(node), login: facts?.login ?? source?.author ?? '', bot: facts?.bot ?? bot !== undefined };
+  };
   // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
   // copy at home and read the comment from the DOM there, not from a map keyed by that id.
   let review = closestAtHome(thread, '[id^="pullrequestreview-"]');
@@ -1082,25 +1097,21 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     review = outer;
   }
   const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (reviewNode !== null && !reviewNode.contains(thread)) return { node: reviewNode, label: `${who}'s review comment` };
+  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, `${who}'s review`);
   const summaryAnchor = bot === undefined ? null : (meta.bots.find((record) => record.id === bot)?.sourceId ?? null);
   const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
   // A bot that writes no review body has a thread comment for its "summary"; that is a thread, not a source.
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
   const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
-  if (summary !== null && !summary.contains(thread)) return { node: summary, label: `${who}'s run summary` };
+  if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, `${who}'s run summary`);
   return null;
 }
 
-/** Frame handlers shared by an item opened on its own and inside its round. */
-function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ThreadsViewHandlers {
+/** Chat handlers shared by an item opened on its own and inside its round. */
+function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatHandlers {
   return {
     pathOf: (node) => threadPathOf(node, item, meta),
     onCopy: (text) => void copyText(text),
-    onReply: (node) => {
-      const anchor = node.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? null;
-      if (anchor !== null) focusReply(anchor);
-    },
     sourceOf: (node) => threadSourceOf(node, item, meta),
     sourceOpen: (node) => visit.sourcesShown.has(threadAnchorOf(node)),
     onToggleSource: (node) => {
@@ -1537,13 +1548,13 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
-    resetOpenedThreads();
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
     loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
   lastSettings = settings;
   const crawledDom = crawlConversation();
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
+  sourceFacts = new Map(crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot }]));
   const found = findSummaryComment(document);
   hideSummary(found?.root ?? null);
   const headSha = detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA;
@@ -1734,7 +1745,6 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       if (anchor === null) return;
       openRowLocal(itemKey(id));
       reapply();
-      revealThreadFor(anchor);
       focusReply(anchor);
     },
     onQuoteReply: (id) => {
@@ -1873,9 +1883,9 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
           renderReviewBody(nested, verdict, subNode, panelHandlers);
         } else if (nested !== null && thread !== null) {
           const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
-          renderThreadsView(nested, [thread], threadHandlers(item, meta, reapply));
+          renderChatView(nested, [thread], threadHandlers(item, meta, reapply));
         } else if (nested !== null && subNode !== null) {
-          renderQuickView(nested, [subNode]);
+          renderCommentChat(nested, subNode);
         } else if (visit.openSubKey !== null && subNode === null) {
           visit.openSubKey = null;
         }
@@ -1894,12 +1904,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
             renderReviewBody(view.nested, verdict, commentNode, panelHandlers);
           } else if (view.nested !== null && thread !== null) {
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
-            renderThreadsView(view.nested, [thread], threadHandlers(item, meta, reapply));
+            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply));
           } else if (view.nested !== null && commentNode !== null) {
-            renderQuickView(view.nested, [commentNode]);
+            renderCommentChat(view.nested, commentNode);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
-            renderThreadsView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply));
+            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply));
           } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
             visit.openSubKey = null;
           }
@@ -1912,7 +1922,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
         // reveals the rest of the thread and the reply box.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
-        renderThreadsView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
+        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
       } else {
         renderQuickView(mounted.slot, nodes);
       }
