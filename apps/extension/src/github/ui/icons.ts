@@ -221,7 +221,7 @@ export const ICON_CROSS_REFERENCE = octicon(
 /** Primer's Spinner, as GitHub's checks list draws an in-progress check: a faint full track and a quarter arc that turns. */
 /** GitHub's in-progress check glyph: Primer's spinner ring with the 8px filled dot the check rows put at its centre. */
 export const ICON_IN_PROGRESS =
-  '<svg class="octicon octicon-in-progress" viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke"></circle><path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path><circle cx="8" cy="8" r="4" fill="currentColor"></circle></svg>';
+  '<svg class="octicon octicon-in-progress" viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke"></circle><path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path><circle class="geld-spin-core" cx="8" cy="8" r="4" fill="currentColor"></circle></svg>';
 
 export const ICON_LINK_EXTERNAL = octicon(
   '<path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z"></path>',
