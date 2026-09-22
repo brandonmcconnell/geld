@@ -36,7 +36,7 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, revealThreadFor, sourceFocusKey, threadAnchorOf } from './quick-view';
+import { outgoingMentions, renderMentionsView, renderQuickView, renderThreadsView, resetOpenedThreads, revealThreadFor, sourceFocusKey, threadAnchorOf } from './quick-view';
 import type { ThreadSource, ThreadsViewHandlers } from './quick-view';
 import { closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
@@ -1521,6 +1521,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
+    resetOpenedThreads();
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
     loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
