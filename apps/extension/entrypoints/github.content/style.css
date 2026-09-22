@@ -3100,8 +3100,8 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 }
 
 /* The line range and the diff hunk the thread is about, under the head, in the diff's own type. */
-.geld-review__chat-body .js-resolvable-thread-contents > .f6.border-bottom,
-.geld-review__chat-body [data-target='review-thread-collapsible.body'] > .f6.border-bottom {
+.geld-review__chat-body .f6.border-bottom:has(> * > .js-multi-line-preview-start),
+.geld-review__chat-body .f6.border-bottom:has(> .js-multi-line-preview-start) {
   padding: 6px 12px !important;
   border-bottom: 1px solid var(--geld-review-border-muted) !important;
   font-size: 11px;
