@@ -113,15 +113,13 @@ export interface ReviewEntry {
   readonly lane?: CommentLane;
   /** A review thread posted as part of a person's review: that review's anchor. The line is listed under it. */
   readonly parent?: string;
-  /** A review verdict: the threads it was posted with, listed in its open body so each is one click away. */
+  /** A review verdict: the threads it was posted with. The line counts them; each is a row of its own in the round. */
   readonly threads?: readonly ReviewThreadRef[];
 }
 
-/** One of a review's threads, as its open body lists them. */
+/** One of a review's threads, for the count on its line. */
 export interface ReviewThreadRef {
   readonly anchor: string;
-  readonly path: string;
-  readonly preview: string;
   readonly done: boolean;
 }
 
@@ -1489,7 +1487,7 @@ function signatureOf(model: PanelModel): string {
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
-    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}${thread.path}${thread.preview}`).join('|')}`),
+    comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,
