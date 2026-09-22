@@ -1583,7 +1583,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = crawlReviews();
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
-  const comments = pinOpenEntry([...awaitingReviewers(), ...reviewEntries(crawledDom, reviews, meta, settings)]);
+  const awaiting = awaitingReviewers();
+  const comments = pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings)]);
   const allPreviews = previewsOn(crawledDom, meta);
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
@@ -1646,8 +1647,11 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // states it nowhere, so the row there says "N approved" rather than a fraction.
   const stated = /at least\s+(\d+)\s+approving review/i.exec(`${boxText}\n${reviewersSidebarText()}`)?.[1];
   if (stated !== undefined) visit.knownRequired = Number.parseInt(stated, 10);
-  const reviewers = [...latestReviewers(reviews)];
-  for (const record of meta.reviewers) if (!reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
+  // A re-requested reviewer is awaited again: GitHub sets their earlier verdict aside (the merge box stops saying
+  // "changes requested"), and so does the row, for the tint and the count alike.
+  const awaited = new Set(awaiting.map((entry) => entry.author.toLowerCase()));
+  const reviewers = latestReviewers(reviews).filter((entry) => !awaited.has(entry.login.toLowerCase()));
+  for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
   const requestable = installedBots(meta, document, rawComments);
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
