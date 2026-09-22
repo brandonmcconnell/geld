@@ -1100,6 +1100,10 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--fgColor-default, var(--color-fg-default));
   font-size: 13px;
   line-height: 20px;
+  /* Every digit the same width, so a count that ticks (CI checks, meters, times) moves nothing beside it; the
+   * line shifts only when the number of digits does. Inherited by everything in the panel, GitHub's loaned
+   * checks list included. */
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- summary strip ----------------------------------------------------- */
@@ -1133,7 +1137,6 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   align-items: center;
   gap: 8px;
   color: var(--geld-review-muted);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -4289,10 +4292,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 /* By push the row's avatars sit inside the main button, after the label; push numbers line up as figures. */
 .geld-review__main--batch > .geld-review__avatars {
   flex: 0 0 auto;
-}
-
-.geld-review__main--batch > .geld-review__title {
-  font-variant-numeric: tabular-nums;
 }
 
 .geld-review__slot--sub[data-kind='commits'] .geld-review__commits-body {
