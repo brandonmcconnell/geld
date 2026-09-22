@@ -39,6 +39,7 @@ import { installedBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView } from './quick-view';
 import { renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatHandlers, ChatSource } from './chat';
+import { quietClick } from './quiet-click';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -237,6 +238,24 @@ function reapplyAfterResolve(itemKeyHint: string | null, resolving: boolean): vo
       if (lastSettings !== null && visit.settling !== null) applyReviewOverview(lastSettings);
     }, delay);
   }
+}
+
+/**
+ * The line open inside a round (`openSubKey`) follows its conversation: the
+ * rounds are rebuilt from the timeline on every pass, and while the page is
+ * still loading a comment can land in a different round than the pass
+ * before (new commit rows between it and the last push). The round that
+ * holds it now is the one that opens, so the reader's open comment stays
+ * open instead of closing because its round was no longer the open one.
+ */
+function reseatOpenLine(batches: readonly Batch[]): void {
+  const sub = visit.openSubKey;
+  if (sub === null || visit.openKey === null || !visit.openKey.startsWith('batch:')) return;
+  const holds = (batch: Batch): boolean => batch.items.some((item) => itemKey(item.id) === sub) || batch.comments.some((entry) => entry.anchor === sub) || batch.reviews.some((entry) => entry.anchor === sub);
+  const current = batches.find((batch) => batch.key === visit.openKey);
+  if (current !== undefined && holds(current)) return;
+  const home = batches.find(holds);
+  if (home !== undefined) visit.openKey = home.key;
 }
 
 /** After a thread changed state under the reader: close the item once it is done, and its round once nothing in it is open. */
@@ -869,6 +888,18 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       else if (entry.kind === 'review') last.reviews.push(entry.review);
     }
   }
+  // A round is known by the push that opened it (the first commit row's anchor, `commits-pushed-<sha>`, or the
+  // force-push event's id), else by its first comment; only a round with neither falls back to its position.
+  const identity = (round: Round, position: number): string => {
+    for (const row of round.commits) {
+      const id = /^(commits-pushed-|event-)/.test(row.id) ? row.id : (row.querySelector('[id^="commits-pushed-"], [id^="event-"]')?.id ?? '');
+      if (id !== '') return id;
+      const sha = /\/commits\/([0-9a-f]{7,40})/.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+      if (sha !== undefined) return `commit-${sha}`;
+    }
+    const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor;
+    return first ?? `at-${position + 1}`;
+  };
   return rounds.map((round, position) => {
     const avatars: Avatar[] = [];
     const names: string[] = [];
@@ -898,7 +929,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     // CI is read from the last commit row; a force-push event carries none.
     const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
     return {
-      key: batchKey(position + 1),
+      key: batchKey(identity(round, position)),
       index: position + 1,
       avatars,
       names,
@@ -1052,7 +1083,8 @@ function wearGear(root: HTMLElement): void {
   if (target === null || section === null) return;
   // GitHub renders the list (and its gear) only once expanded; expand it once, folded or not.
   if (visit.checksExpanded === false) {
-    section.querySelector<HTMLElement>('button[aria-label="Expand checks"], button[aria-expanded="false"][aria-label*="checks" i]')?.click();
+    const expand = section.querySelector<HTMLElement>('button[aria-label="Expand checks"], button[aria-expanded="false"][aria-label*="checks" i]');
+    if (expand !== null) quietClick(expand);
     visit.checksExpanded = true;
   }
   const find = (scope: Element): HTMLElement | null => scope.querySelector<HTMLElement>('button[data-action="open_checks_settings"]');
@@ -1634,6 +1666,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
   });
   settleAfterResolve(meta, batches);
+  reseatOpenLine(batches);
   const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
   // By node, not by looking the anchor up: GitHub repeats an id (a review inside its minimized wrapper), and
   // getElementById would answer with whichever copy comes first in the document.

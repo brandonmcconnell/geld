@@ -84,9 +84,15 @@ export interface Batch {
   readonly firstAnchor: string | null;
 }
 
-/** Row key of a round. */
-export function batchKey(index: number): string {
-  return `batch:${index}`;
+/**
+ * Row key of a round, from what identifies it on the page rather than from
+ * its position: the timeline streams in for seconds after the panel first
+ * renders, and a "Load more" that brings commit rows between existing
+ * content renumbers every round after them. A positional key then named a
+ * different round, and the one the reader had open closed under them.
+ */
+export function batchKey(id: string): string {
+  return `batch:${id}`;
 }
 
 /** `awaiting`: a reviewer GitHub is still waiting on (the sidebar's "Awaiting requested review from X"); a line with nothing to open. */
