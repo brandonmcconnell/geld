@@ -2220,10 +2220,26 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-subtle);
 }
 
-/* The rail: the open row and what it opened share one left edge, so the nested list reads as the row's. */
+/*
+ * The rail: the open row and what it opened share one left edge, so the nested list reads as the row's. It is
+ * drawn on an overlay (`::after`, above the children, no pointer events): the rows inside a slot paint their own
+ * surface and borders, and a shadow on the slot itself showed only between them, in pieces. The overlay starts
+ * 1px above its box to run over the border between it and the element before, so the line is unbroken from the
+ * row through the last line of its slot.
+ */
 .geld-review__rows > .geld-review__row[data-open],
 .geld-review__rows > .geld-review__slot {
+  position: relative;
+}
+
+.geld-review__rows > .geld-review__row[data-open]::after,
+.geld-review__rows > .geld-review__slot::after {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  inset: -1px 0 0 0;
   box-shadow: inset 2px 0 0 var(--geld-review-accent);
+  pointer-events: none;
 }
 
 /* ---- tones: a row that has settled wears its colour ------------------------
@@ -2287,21 +2303,29 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 /*
  * The row the URL points at wears GitHub's target ring, drawn around the whole container: the row alone when
  * closed, the row and its slot as one box when open (top and sides on the row, sides and bottom on the slot).
- * Inset shadows, so nothing outside the rows moves.
+ * The same overlay as the rail, so the ring runs over the lines inside the slot too.
  */
-.geld-review__row[data-viewing] {
-  box-shadow: inset 0 0 0 2px var(--geld-review-accent);
+.geld-review__rows > .geld-review__row[data-viewing] {
+  position: relative;
 }
 
-.geld-review__rows > .geld-review__row[data-viewing][data-open],
-.geld-review__rows--sub > .geld-review__row[data-viewing][data-open] {
+.geld-review__rows > .geld-review__row[data-viewing]::after {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  inset: -1px 0 0 0;
+  box-shadow: inset 0 0 0 2px var(--geld-review-accent);
+  pointer-events: none;
+}
+
+.geld-review__rows > .geld-review__row[data-viewing][data-open]::after {
   box-shadow:
     inset 0 2px 0 0 var(--geld-review-accent),
     inset 2px 0 0 0 var(--geld-review-accent),
     inset -2px 0 0 0 var(--geld-review-accent);
 }
 
-.geld-review__row[data-viewing][data-open] + .geld-review__slot {
+.geld-review__rows > .geld-review__row[data-viewing][data-open] + .geld-review__slot::after {
   box-shadow:
     inset 2px 0 0 0 var(--geld-review-accent),
     inset -2px 0 0 0 var(--geld-review-accent),
