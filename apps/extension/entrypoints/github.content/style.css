@@ -2220,6 +2220,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   background: var(--geld-review-subtle);
 }
 
+/* A row that opens on click is a pointer everywhere: its blank space, its glyph, its time. Nested controls (pills,
+ * chips, menus, the resolve glyph) keep their own hover to say they do something else. */
+.geld-review__row[data-toggles],
+.geld-review__row[data-toggles] .geld-review__status--muted,
+.geld-review__row[data-toggles] .geld-review__status--verdict,
+.geld-review__row[data-toggles] .geld-review__time,
+.geld-review__row[data-toggles] .geld-review__right {
+  cursor: pointer;
+}
+
 /*
  * The rail: the open row and what it opened share one left edge, so the nested list reads as the row's. It is
  * drawn on an overlay (`::after`, above the children, no pointer events): the rows inside a slot paint their own
