@@ -100,9 +100,15 @@ export function forgetLoan(node: HTMLElement): void {
 }
 
 /** Put every quick-viewed node back where it came from. */
-export function restoreAll(): void {
-  for (const hook of restoreHooks.splice(0)) hook();
-  for (const entry of moved.values()) {
+/**
+ * Send every loan home. With `keep`, loans it answers true for stay where
+ * they are (a slot carried whole into the next panel), and so do the restore
+ * hooks, since a hook cannot be told apart by loan.
+ */
+export function restoreAll(keep?: (node: HTMLElement) => boolean): void {
+  if (keep === undefined) for (const hook of restoreHooks.splice(0)) hook();
+  for (const [key, entry] of [...moved]) {
+    if (keep?.(entry.node) === true) continue;
     // A placeholder that is gone means another party already sent the node home (a newer Geld
     // instance reclaiming it) or React removed it; either way it is not ours to touch any more.
     if (entry.placeholder.parentNode !== null) {
@@ -112,8 +118,8 @@ export function restoreAll(): void {
       entry.placeholder.replaceWith(entry.node);
     }
     if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
+    moved.delete(key);
   }
-  moved.clear();
 }
 
 /**
@@ -121,8 +127,8 @@ export function restoreAll(): void {
  * panel), by the token their placeholders carry. Without this, removing that
  * panel would take GitHub's comments with it.
  */
-export function reclaimOrphans(container: Element): void {
-  const orphans = [...container.querySelectorAll<HTMLElement>(`[${ATTR_TELEPORTED}]`)].filter((node) => !moved.has(node));
+export function reclaimOrphans(container: Element, except?: Element): void {
+  const orphans = [...container.querySelectorAll<HTMLElement>(`[${ATTR_TELEPORTED}]`)].filter((node) => !moved.has(node) && except?.contains(node) !== true);
   if (orphans.length === 0) return;
   const placeholders = new Map<string, Comment>();
   const walker = document.createTreeWalker(document, NodeFilter.SHOW_COMMENT);

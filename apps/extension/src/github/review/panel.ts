@@ -1537,6 +1537,27 @@ export interface MountedPanel {
   readonly slot: HTMLElement | null;
 }
 
+/**
+ * Put `node` where `target` is, keeping what a plain move loses: a scroll
+ * box's position and running animations (`Element.moveBefore`, Chrome 133+;
+ * elsewhere a plain move, which is what happened before anyway).
+ */
+function movePreservingState(node: HTMLElement, target: HTMLElement): void {
+  const parent = target.parentElement;
+  if (parent === null) return;
+  const mover: unknown = Reflect.get(parent, 'moveBefore');
+  if (typeof mover === 'function') {
+    try {
+      Reflect.apply(mover, parent, [node, target]);
+      target.remove();
+      return;
+    } catch {
+      // Fall through to a plain move.
+    }
+  }
+  target.replaceWith(node);
+}
+
 export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
@@ -1549,10 +1570,15 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   }
   const card = descriptionCard();
   if (card === null) return null;
-  // Quick-viewed nodes live inside the old panel; send them home before it goes.
   const focusKey = focusKeyOf(existing);
-  restoreAll();
-  if (existing !== null) reclaimOrphans(existing);
+  // The open CI checks slot holds GitHub's own live section: a scroll box with spinners in it, always current on
+  // its own. Sending it home and taking it back on every rebuild (the counts tick every few seconds on a busy
+  // PR) reset its scroll position and restarted every spinner at the same frame, so they looked frozen and the
+  // list jumped to its top. It is carried into the new panel instead, with a move that keeps its state.
+  const carried = existing !== null && model.openKey === CHECKS_KEY ? existing.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`) : null;
+  // Quick-viewed nodes live inside the old panel; send them home before it goes.
+  restoreAll(carried === null ? undefined : (node) => carried.contains(node));
+  if (existing !== null) reclaimOrphans(existing, carried ?? undefined);
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
@@ -1674,8 +1700,19 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
 
   panel.style.marginLeft = cardMargins.left;
   panel.style.marginRight = cardMargins.right;
-  if (existing !== null && existing.parentNode !== null) existing.replaceWith(panel);
-  else card.insertAdjacentElement('afterend', panel);
+  const freshBody = carried === null ? null : panel.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`);
+  if (existing !== null && existing.parentNode !== null) {
+    if (carried !== null && freshBody !== null) {
+      // Both panels in the document for the move, so the carried body never leaves it; the old panel goes after.
+      existing.before(panel);
+      movePreservingState(carried, freshBody);
+      existing.remove();
+    } else {
+      existing.replaceWith(panel);
+    }
+  } else {
+    card.insertAdjacentElement('afterend', panel);
+  }
   syncSpinners(panel);
   // A card open over the old panel points at a host that just left the document.
   rehostHoverCard();

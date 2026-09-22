@@ -1477,6 +1477,18 @@ function completePath(path: string, hash: string | null, meta: GeldPrMeta): stri
   return wholePath(path, hash, knownPaths(meta), reapplySoon);
 }
 
+/**
+ * A slot is rendered when it is new, and again when a quick view inside it
+ * has lost its node: React swaps GitHub's own sections (the checks list on
+ * every status poll), and the page-world portal then takes the loaned node
+ * out of the slot along with its placeholder. A slot carried across a panel
+ * rebuild would otherwise stay empty until something else changed.
+ */
+function slotNeedsRender(slot: HTMLElement): boolean {
+  if (slot.childElementCount === 0) return true;
+  return [...slot.querySelectorAll<HTMLElement>('.geld-review__qv')].some((view) => view.childElementCount === 0);
+}
+
 export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null): void {
   if (paths !== undefined) diffPaths = paths;
   const page = describePage(new URL(window.location.href));
@@ -1825,7 +1837,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     if (nodes.length === 0) {
       visit.openKey = null;
       restoreAll();
-    } else if (mounted.slot.childElementCount === 0) {
+    } else if (slotNeedsRender(mounted.slot)) {
       if (visit.openKey === REVIEWS_KEY) {
         const nested = renderCommentsList(mounted.slot, model, panelHandlers);
         const openEntry = model.comments.find((entry) => entry.anchor === visit.openSubKey) ?? null;
