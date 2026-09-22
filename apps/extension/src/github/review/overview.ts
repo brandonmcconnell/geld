@@ -26,7 +26,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReviewBody, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
@@ -1407,11 +1407,14 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
   let onReply: (() => void) | null = null;
   let onOpen: (() => void) | null = null;
   if (subAnchor !== null) {
-    // A comment line: a bot's run summary, a person's review or remark. Its card opens the line; a bare verdict
-    // (nothing to open, the state name is the row's text) has no card.
-    if (subAnchor.startsWith('awaiting:') || row.querySelector('[aria-expanded]') === null) return null;
+    // A comment line: a bot's run summary, a person's review or remark. Its card opens the line, or, for a line in
+    // the Reviews index, goes where the line points; a bare verdict (nothing to open, the state name is the row's
+    // text) has no card.
+    if (subAnchor.startsWith('awaiting:')) return null;
+    const pointer = row.hasAttribute('data-pointer');
+    if (!pointer && row.querySelector('[aria-expanded]') === null) return null;
     anchor = subAnchor;
-    onOpen = () => handlers.onToggleSub(subAnchor);
+    onOpen = pointer ? () => handlers.onOpenAnchor(subAnchor) : () => handlers.onToggleSub(subAnchor);
   } else if (itemId !== null) {
     const item = meta.items.find((entry) => entry.id === itemId);
     if (item === undefined) return null;
@@ -1827,16 +1830,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       void clearAiForPage().then(reapply);
     },
     onReact: (anchor) => {
-      // Open whatever row holds the comment, then GitHub's own picker inside it.
-      const sub = comments.find((entry) => entry.anchor === anchor && entry.hasBody);
+      // Open the row that holds the comment, then GitHub's own picker inside it.
       const seat = seatFor(anchor, meta, groups, batches);
-      if (sub !== undefined && (visit.openKey === REVIEWS_KEY || seat === null)) {
-        visit.openKey = REVIEWS_KEY;
-        visit.openSubKey = anchor;
-      } else {
-        if (seat === null) return;
-        openRowLocal(seat.key, seat.sub);
-      }
+      if (seat === null) return;
+      openRowLocal(seat.key, seat.sub);
       reapply();
       openReactions(anchor);
     },
@@ -1870,39 +1867,20 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       restoreAll();
     } else if (slotNeedsRender(mounted.slot)) {
       if (visit.openKey === REVIEWS_KEY) {
-        const nested = renderCommentsList(mounted.slot, model, panelHandlers);
-        const openEntry = model.comments.find((entry) => entry.anchor === visit.openSubKey) ?? null;
-        const verdict = openEntry !== null && isVerdict(openEntry) ? openEntry : null;
-        // A person's review thread opens in the same frame as a bot's (path head, the first comment, the rest and
-        // the reply behind a bar), never as the raw timeline row, which for a review is the whole review with every
-        // thread it holds.
-        const thread = openEntry?.state === 'thread' ? threadRootOf(openEntry.anchor) : null;
-        // A verdict's body is its own comment (never its whole row) plus its threads, or a note that it has neither.
-        const subNode = visit.openSubKey === null ? null : (entryNodes.get(visit.openSubKey) ?? (verdict === null && thread === null ? timelineRootOf(visit.openSubKey) : null));
-        if (nested !== null && verdict !== null) {
-          renderReviewBody(nested, verdict, subNode, panelHandlers);
-        } else if (nested !== null && thread !== null) {
-          const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
-          renderChatView(nested, [thread], threadHandlers(item, meta, reapply));
-        } else if (nested !== null && subNode !== null) {
-          renderCommentChat(nested, subNode);
-        } else if (visit.openSubKey !== null && subNode === null) {
-          visit.openSubKey = null;
-        }
+        // An index of people's reviews; each line points at the round where its conversation opens.
+        renderCommentsList(mounted.slot, model, panelHandlers);
       } else if (visit.openKey.startsWith('batch:')) {
         const batch = batches.find((entry) => entry.key === visit.openKey);
         if (batch !== undefined) {
           const view = renderBatchView(mounted.slot, batch, model, panelHandlers);
           // By push: the round's commit rows, unfolded under their heading (they keep the commit-hover breakdown).
           if (view.commitsSlot !== null) renderQuickView(view.commitsSlot, batch.commits);
-          // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here).
-          const openEntry = view.openComment === null ? null : (batch.reviews.find((entry) => entry.anchor === view.openComment) ?? null);
-          const verdict = openEntry !== null && isVerdict(openEntry) ? openEntry : null;
+          // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here), as
+          // a one-bubble chat; a bot's run summary and a person's remark the same way; a thread as its chat.
+          const openEntry = view.openComment === null ? null : ([...batch.reviews, ...batch.comments].find((entry) => entry.anchor === view.openComment) ?? null);
           const thread = openEntry?.state === 'thread' ? threadRootOf(openEntry.anchor) : null;
-          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (verdict === null && thread === null ? timelineRootOf(view.openComment) : null));
-          if (view.nested !== null && verdict !== null) {
-            renderReviewBody(view.nested, verdict, commentNode, panelHandlers);
-          } else if (view.nested !== null && thread !== null) {
+          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (thread === null ? timelineRootOf(view.openComment) : null));
+          if (view.nested !== null && thread !== null) {
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
             renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply));
           } else if (view.nested !== null && commentNode !== null) {
@@ -1919,8 +1897,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       } else if (visit.openKey === foldKey('mentions')) {
         renderMentionsView(mounted.slot, nodes, outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]')), (href) => refDetails(href, reapplySoon));
       } else if (visit.openKey.startsWith('item:')) {
-        // Each review thread in its own frame: path with a copy button, the first comment, and a bar that
-        // reveals the rest of the thread and the reply box.
+        // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
         renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
       } else {
