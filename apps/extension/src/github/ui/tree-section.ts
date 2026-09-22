@@ -1,7 +1,17 @@
 import type { FileStatus, HiddenCategory } from '@geld/core';
 import { formatCount } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { categoryIconFor, ICON_CHEVRON_RIGHT, ICON_FILE_ADDED, ICON_FILE_DIFF, ICON_FILE_DIRECTORY, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED } from './icons';
+import {
+  categoryIconFor,
+  ICON_CHEVRON_RIGHT,
+  ICON_FILE_ADDED,
+  ICON_FILE_DIFF,
+  ICON_FILE_DIRECTORY,
+  ICON_FILE_DIRECTORY_OPEN,
+  ICON_FILE_MODIFIED,
+  ICON_FILE_MOVED,
+  ICON_FILE_REMOVED,
+} from './icons';
 
 export const TREE_SECTION_CLASS = 'geld-tree-section';
 
@@ -111,13 +121,25 @@ function row(level: number, children: ReadonlyArray<Node | string>, attributes: 
   return button;
 }
 
+/** GitHub's folder reads open or closed with its own icon, not just the chevron. */
+function setDirVisual(button: HTMLElement, expanded: boolean): void {
+  const visual = button.querySelector('.geld-tree__visual--dir');
+  if (visual === null) return;
+  const next = expanded ? ICON_FILE_DIRECTORY_OPEN : ICON_FILE_DIRECTORY;
+  if (visual.getAttribute('data-open') === String(expanded)) return;
+  visual.setAttribute('data-open', String(expanded));
+  visual.replaceChildren(svgFromString(next));
+}
+
 function renderDir(dir: DirNode, level: number, collapsed: ReadonlySet<string>): HTMLLIElement {
   const isCollapsed = collapsed.has(dir.path);
   const button = row(
     level,
     [
       createElement('span', { class: 'geld-tree__toggle' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
-      createElement('span', { class: 'geld-tree__visual geld-tree__visual--dir' }, [svgFromString(ICON_FILE_DIRECTORY)]),
+      createElement('span', { class: 'geld-tree__visual geld-tree__visual--dir', 'data-open': String(!isCollapsed) }, [
+        svgFromString(isCollapsed ? ICON_FILE_DIRECTORY : ICON_FILE_DIRECTORY_OPEN),
+      ]),
       createElement('span', { class: 'geld-tree__label' }, [dir.name]),
     ],
     { 'data-dir': dir.path, 'aria-expanded': String(!isCollapsed), title: dir.path },
@@ -223,6 +245,7 @@ function build(
       if (nowCollapsed) collapsed.add(dir);
       else collapsed.delete(dir);
       button.setAttribute('aria-expanded', String(!nowCollapsed));
+      setDirVisual(button, !nowCollapsed);
       const childGroup = button.nextElementSibling;
       if (childGroup instanceof HTMLElement) childGroup.hidden = nowCollapsed;
       return;
