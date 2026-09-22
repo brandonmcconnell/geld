@@ -1890,7 +1890,14 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
             renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply));
           } else if (view.nested !== null && commentNode !== null) {
-            renderCommentChat(view.nested, commentNode);
+            const byline = openEntry === null ? null : { login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time };
+            // The threads the review came with, by file, leading to their rows.
+            const links = (openEntry?.threads ?? []).map((thread) => {
+              const root = threadRootOf(thread.anchor);
+              const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === thread.anchor));
+              return { anchor: thread.anchor, path: root === null ? '' : threadPathOf(root, item, meta), ...(item?.line === undefined ? {} : { line: item.line }), preview: firstSentence(bodies.get(thread.anchor)?.body ?? ''), done: thread.done };
+            });
+            renderCommentChat(view.nested, commentNode, byline, links, panelHandlers.onOpenAnchor);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
             renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply));

@@ -3624,16 +3624,104 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   padding: 0 12px 12px;
 }
 
-/* A one-bubble chat is the bubble alone under its row: a frame around a frame read heavy. */
+/* A one-bubble chat reads as one message: the author's picture in the gutter, name and time over the bubble, the
+ * bubble on the message surface, indented under the name like the others. No frame: a frame around a bubble
+ * under a row read heavy. */
 .geld-review__chat[data-geld-chat='comment'] {
   border: 0;
   border-radius: 0;
   background: none;
 }
 
+.geld-review__chat-byline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review__chat-byline > .geld-review__avatar {
+  width: var(--geld-chat-avatar);
+  height: var(--geld-chat-avatar);
+}
+
+.geld-review__chat-byline-name {
+  font-weight: 600;
+}
+
 .geld-review__chat-body :has(> [data-geld-message][data-geld-lone]) {
   padding: 0;
 }
+
+.geld-review__chat[data-geld-chat='comment'] .geld-review__chat-body :has(> [data-geld-message][data-geld-lone]) {
+  padding: 0 0 0 var(--geld-chat-gutter);
+}
+
+.geld-review__chat[data-geld-chat='comment'] [data-geld-lone] > [data-geld-part='bubble'] {
+  border-radius: var(--geld-chat-tight) var(--geld-chat-radius) var(--geld-chat-radius) var(--geld-chat-radius);
+  background: var(--geld-review-subtle);
+}
+
+/* The threads a review came with, by file name, each leading to its row; the state glyph says which are done. */
+.geld-review__chat-threads {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: var(--geld-chat-gutter);
+  font-size: 12px;
+}
+
+.geld-review__chat-threads-label {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__chat-thread {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 12px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review__chat-thread:hover {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__chat-thread > code {
+  font-size: 11px;
+}
+
+.geld-review__chat-thread-words {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--geld-review-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__chat-thread > .octicon {
+  width: 12px;
+  height: 12px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__chat-thread[data-state='done'] > .octicon:first-child {
+  color: var(--geld-review-done-fg);
+}
+
+
 
 .geld-review__chat [data-geld-message][data-geld-lone] {
   align-items: stretch;
