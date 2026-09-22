@@ -11,6 +11,13 @@ export interface ReviewBot {
   readonly checkNames: readonly string[];
   readonly triggers: readonly string[];
   readonly configFiles: readonly string[];
+  /**
+   * A coding agent that also reviews: most of its comments are replies and
+   * progress notes (to a person, or to another bot's review), so only a
+   * comment shaped like a review (a score, a findings count, "no issues")
+   * counts as its verdict.
+   */
+  readonly conversational?: boolean;
 }
 
 export const REVIEW_BOTS: readonly ReviewBot[] = [
@@ -69,6 +76,17 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     checkNames: ['Gemini Code Assist', 'gemini-code-assist'],
     triggers: ['@gemini-code-assist'],
     configFiles: [],
+  },
+  {
+    // Replicas (replicas.dev): cloud coding agents with a "Code Review" automation that posts an X/5 review score
+    // on PR open and sync; `/replicas run code-review` runs it on demand, `@tryreplicas` addresses the agent.
+    id: 'replicas',
+    title: 'Replicas',
+    logins: ['replicas-connector[bot]', 'replicas-dev[bot]', 'tryreplicas[bot]'],
+    checkNames: ['Replicas'],
+    triggers: ['/replicas run code-review', '@tryreplicas review', '@tryreplicas', '@replicas'],
+    configFiles: [],
+    conversational: true,
   },
 ];
 
@@ -193,17 +211,18 @@ function reviewBotIdFor(login: string, extraLogins: readonly string[]): string |
 export function isStatusLineComment(body: string): boolean {
   const text = body
     .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[`*_>~#]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (text === '' || text.length > 160) return false;
+  if (text === '' || text.length > 240) return false;
   const sentences = text.split(/(?<=[.!…])\s+/).filter((part) => part !== '');
   if (sentences.length > 2) return false;
   // The verb of a run under way, with what it is running on named in the same sentence ("Starting Devin Review.",
   // "Bugbot is reviewing your changes"), never a sentence that merely begins with such a word ("Starting from line 12, …").
   const underWay = /^(?:[\w.-]+(?:\[bot\])?\s+)?(?:is\s+)?(?:now\s+)?(?:starting|started|beginning|kicking off|running|reviewing|analy[sz]ing|looking (?:at|into|over)|working on|scanning|checking)\b[^.!…]*\b(?:review|analysis|scan|changes|pull request|pr|code|diff|your|this)\b/i;
   const stated = /^(?:review|analysis|scan)\s+(?:in progress|started|queued|has started)\b/i;
-  const promise = /\b(?:will|I'?ll)\s+(?:post|comment|report|reply)\b.*\b(?:when|once)\b/i;
+  const promise = /\b(?:will|I'?ll)\s+(?:post|comment|report|reply|start|begin|review)\b.*\b(?:when|once|shortly|soon)\b/i;
   return underWay.test(text) || stated.test(text) || promise.test(text);
 }
 
@@ -253,8 +272,10 @@ export function verdictsFrom(
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
       continue;
     }
-    statusOnly.delete(id);
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
+    // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
+    if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    statusOnly.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== undefined) {
