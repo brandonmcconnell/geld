@@ -1566,6 +1566,12 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   font-style: italic;
 }
 
+/* "closed this" is the row's verb: whole, the comment's words take the ellipsis. */
+.geld-review__row--fold .geld-review__preview--verdict {
+  flex: 0 0 auto;
+  font-style: normal;
+}
+
 .geld-review__time {
   margin-right: 4px;
   color: var(--geld-review-muted);
@@ -2862,16 +2868,46 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   color: var(--geld-review-muted) !important;
 }
 
-.geld-review__qv .TimelineItem-badge.color-bg-done-emphasis {
+.geld-review__qv .TimelineItem-badge.color-bg-done-emphasis,
+.geld-review__qv .TimelineItem-badge[class*='bgColor-done-emphasis'] {
   color: var(--fgColor-done, var(--color-done-fg, #8250df)) !important;
 }
 
-.geld-review__qv .TimelineItem-badge.color-bg-danger-emphasis {
+.geld-review__qv .TimelineItem-badge.color-bg-danger-emphasis,
+.geld-review__qv .TimelineItem-badge[class*='bgColor-danger-emphasis'] {
   color: var(--geld-review-danger-fg) !important;
 }
 
-.geld-review__qv .TimelineItem-badge.color-bg-success-emphasis {
+/* A closed pull request's badge takes GitHub's closed colour (its own token, red on the default themes, whatever an
+ * accessible theme sets), an open or reopened one its open colour. */
+.geld-review__qv .TimelineItem-badge.color-bg-closed-emphasis,
+.geld-review__qv .TimelineItem-badge[class*='bgColor-closed-emphasis'] {
+  color: var(--fgColor-closed, var(--color-closed-fg, #cf222e)) !important;
+}
+
+.geld-review__qv .TimelineItem-badge.color-bg-open-emphasis,
+.geld-review__qv .TimelineItem-badge[class*='bgColor-open-emphasis'] {
+  color: var(--fgColor-open, var(--color-open-fg, #1a7f37)) !important;
+}
+
+.geld-review__qv .TimelineItem-badge.color-bg-success-emphasis,
+.geld-review__qv .TimelineItem-badge[class*='bgColor-success-emphasis'] {
   color: var(--geld-review-done-fg) !important;
+}
+
+/* The row for a close or reopen wears the same state colours on its glyph. */
+.geld-review__status[data-pr-state='closed'] {
+  color: var(--fgColor-closed, var(--color-closed-fg, #cf222e));
+}
+
+.geld-review__status[data-pr-state='reopened'] {
+  color: var(--fgColor-open, var(--color-open-fg, #1a7f37));
+}
+
+/* GitHub closes the timeline with a thick rule above the merge box. In compact mode the timeline it closes is
+ * folded away, and the rule stacked on the merge box's own top border read as two lines. */
+html[data-geld-timeline='compact'] .TimelineItem-break {
+  display: none !important;
 }
 
 .geld-review__qv .TimelineItem-badge .octicon {

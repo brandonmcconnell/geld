@@ -188,18 +188,35 @@ export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElemen
   if (wrap.childElementCount === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
 }
 
-/** Issues and PRs the description links to (`a.issue-link`), as mention lines without a mentioner. */
-export function outgoingMentions(description: Element | null): readonly MentionLine[] {
+/** Who wrote the description, for the lines of what it mentions. */
+export interface MentionAuthor {
+  readonly login: string;
+  readonly avatarSrc: string;
+}
+
+/**
+ * Issues and PRs the description links to (`a.issue-link`), as mention
+ * lines. The mentioner is the description's author, whose picture GitHub
+ * puts nowhere near those links, so the line is given it here with
+ * GitHub's hovercard, like the pictures on the lines that mention this PR.
+ */
+export function outgoingMentions(description: Element | null, author: MentionAuthor | null = null): readonly MentionLine[] {
   if (description === null) return [];
   const seen = new Set<string>();
   const lines: MentionLine[] = [];
+  const who = (): HTMLElement | null =>
+    author === null
+      ? null
+      : createElement('a', { class: 'geld-review__mention-who', href: `/${author.login}`, 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(author.login)}/hovercard` }, [
+          createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: author.avatarSrc, alt: `@${author.login}`, width: '20', height: '20' }),
+        ]);
   for (const link of description.querySelectorAll<HTMLAnchorElement>('a.issue-link[href], a[data-hovercard-type="pull_request"][href], a[data-hovercard-type="issue"][href]')) {
     const href = link.getAttribute('href') ?? '';
     const match = /\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)/.exec(href);
     if (match === null || seen.has(href)) continue;
     seen.add(href);
     const title = (link.getAttribute('title') ?? link.getAttribute('aria-label') ?? link.textContent ?? '').replace(/\s+/g, ' ').trim();
-    lines.push({ href, ref: `${match[1]}/${match[2]}#${match[4]}`, title: title === '' || /^#?\d+$/.test(title) ? '' : title, state: 'unknown', avatar: null, time: '' });
+    lines.push({ href, ref: `${match[1]}/${match[2]}#${match[4]}`, title: title === '' || /^#?\d+$/.test(title) ? '' : title, state: 'unknown', avatar: who(), time: '' });
   }
   return lines;
 }
