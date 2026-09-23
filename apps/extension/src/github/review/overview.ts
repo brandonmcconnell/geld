@@ -1747,6 +1747,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     onToggle: (key) => {
       keepInPlace(`main:${key}`, () => {
         visit.openKey = visit.openKey === key ? null : key;
+        // The line open inside the row that just closed belongs to that row. Left standing, the next pass
+        // re-seated the open key into the round that holds it, and the round the reader clicked closed under
+        // them while the other opened.
+        visit.openSubKey = null;
         reapply();
       });
     },
