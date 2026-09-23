@@ -236,11 +236,38 @@ function dressComposer(thread: HTMLElement): void {
   const area = thread.querySelector<HTMLElement>('.review-thread-reply') ?? thread.querySelector<HTMLElement>(REPLY_AREA);
   const form = thread.querySelector<HTMLElement>(RESOLVE_FORM);
   if (area === null || form === null || form.closest('.geld-review__composer-side') !== null) return;
-  const button = form.querySelector<HTMLElement>('button[type="submit"], button');
-  if (button === null) return;
   const side = createElement('div', { class: 'geld-review__composer-side' });
   area.append(side);
   teleportInto(side, [form]);
+  labelComposer(thread, form, side);
+  onRestore(() => {
+    // The form goes home through the loan; the side it stood in is Geld's.
+    side.remove();
+  });
+}
+
+/**
+ * GitHub answered a Resolve by swapping the form in place (chat.ts moved the
+ * old one into the side slot, and the new one took its position there, its
+ * loan adopted by the watcher): the new form arrives in GitHub's words, and
+ * nothing else rebuilds when only the form changed. Dress it where it is.
+ */
+export function redressComposer(form: HTMLElement): void {
+  const side = form.closest<HTMLElement>('.geld-review__composer-side');
+  const thread = form.closest<HTMLElement>('.js-resolvable-timeline-thread-container, [data-testid="review-thread"], .review-thread-component');
+  if (side === null || thread === null) return;
+  for (const stale of side.querySelectorAll('.geld-review__composer-resolved')) stale.remove();
+  labelComposer(thread, form, side);
+}
+
+/** The chat's words on GitHub's form: Resolve or Unresolve on the button, the resolver's picture and "marked resolved" for the sentence. */
+function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement): void {
+  const button = form.querySelector<HTMLElement>('button[type="submit"], button');
+  if (button === null) return;
+  // A form dressed on an earlier pass and not undressed (GitHub swapped the thread under it) is dressed afresh.
+  for (const stale of form.querySelectorAll('.geld-review__composer-label')) stale.remove();
+  for (const stale of form.querySelectorAll(`[${ATTR_SPOKEN_FOR}]`)) stale.removeAttribute(ATTR_SPOKEN_FOR);
+  button.removeAttribute(ATTR_SPOKEN_FOR);
   const resolved = thread.getAttribute('data-resolved') === 'true' || /^unresolve/i.test((button.textContent ?? '').trim());
   const label = button.querySelector<HTMLElement>('.Button-label') ?? button;
   const spokenFor: Element[] = [];
@@ -282,8 +309,6 @@ function dressComposer(thread: HTMLElement): void {
     for (const element of added) element.remove();
     if (hadTitle === null) button.removeAttribute('title');
     else button.setAttribute('title', hadTitle);
-    // The form goes home through the loan; the side it stood in is Geld's.
-    side.remove();
   });
 }
 
