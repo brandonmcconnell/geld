@@ -13,12 +13,13 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } f
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
 import { formatSyncAge } from '../../ui/sync-age';
+import type { Closure } from './fold';
 import { reclaimOrphans, restoreAll } from './teleport';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
 
@@ -43,6 +44,8 @@ export interface FoldRow {
   readonly firstAnchor: string | null;
   /** When the fold holds one comment: its time, as the page shows it. */
   readonly time: string;
+  /** A state change paired with its comment (fold.ts `Closure`): the row reads "X closed this" with the comment's first line. */
+  readonly closure?: Closure;
 }
 
 
@@ -556,9 +559,16 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
 function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const key = foldKey(fold.key);
   const open = model.openKey === key;
-  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${key}` }, [
-    createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [fold.label]),
-  ]);
+  // A state change reads as a line: who did what, then the first words of the comment they left with it.
+  const mainChildren: Node[] =
+    fold.closure === undefined
+      ? [createElement('span', { class: `${PANEL_CLASS}__title ${PANEL_CLASS}__title--plain` }, [fold.label])]
+      : [
+          createElement('span', { class: `${PANEL_CLASS}__name` }, [fold.author ?? '']),
+          createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [`${fold.closure.kind} this`]),
+          ...(fold.closure.preview === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__preview` }, [fold.closure.preview])]),
+        ];
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main${fold.closure === undefined ? '' : ` ${PANEL_CLASS}__main--entry`}`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${key}` }, mainChildren);
   const toggle = (): void => handlers.onToggle(key);
   mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
@@ -574,10 +584,15 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
     right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
   }
   right.append(chevron(open, toggle));
-  const glyph = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(FOLD_GLYPH[fold.key] ?? ICON_COMMENT_DISCUSSION)]);
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold`, 'data-geld-fold': fold.key, 'data-section': fold.section }, [
+  // A state change wears the pull request's own state glyph in the state's colour (closed red, reopened green), as GitHub draws it.
+  const glyph =
+    fold.closure === undefined
+      ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(FOLD_GLYPH[fold.key] ?? ICON_COMMENT_DISCUSSION)])
+      : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-pr-state': fold.closure.kind, role: 'img', 'aria-label': fold.closure.kind === 'closed' ? 'Closed' : 'Reopened' }, [icon(fold.closure.kind === 'closed' ? ICON_GIT_PULL_REQUEST_CLOSED : ICON_GIT_PULL_REQUEST)]);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--fold${fold.closure === undefined ? '' : ` ${PANEL_CLASS}__row--sub`}`, 'data-geld-fold': fold.key, 'data-section': fold.section }, [
     glyph,
-    ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: true, login: fold.author ?? '' }], fold.label, true)]),
+    // The comment's author is a person: their picture is round and carries GitHub's hovercard.
+    ...(fold.avatarSrc === null ? [] : [avatarStack([{ src: fold.avatarSrc, bot: fold.closure === undefined, login: fold.author ?? '' }], fold.label, fold.closure === undefined)]),
     main,
     right,
   ]);
@@ -1486,7 +1501,7 @@ function signatureOf(model: PanelModel): string {
     tldr: model.meta.summary?.tldr ?? '',
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
-    folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}`),
+    folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),

@@ -23,7 +23,7 @@ import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { applyFolds, collapseDescription, groupBotRuns, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
+import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
@@ -330,7 +330,14 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
   };
 }
 
-function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled): readonly FoldGroup[] {
+/** Each state-change event paired with the comment left with it (fold.ts), and the anchors those pairs take out of the other lists. */
+function closureGroups(crawled: Crawled): { readonly groups: readonly FoldGroup[]; readonly paired: ReadonlySet<string> } {
+  const events = crawled.events.map((event) => ({ anchor: event.anchor, root: event.root, kind: closureKindOf(event.root), actor: authorOf(event.root)?.login ?? '', at: Date.parse(findIn(event.root, 'relative-time, time-ago, time')?.getAttribute('datetime') ?? '') }));
+  const comments = crawled.comments.map((entry) => ({ author: entry.author.login, bot: entry.author.bot, anchor: entry.comment.anchor, root: entry.root, at: Date.parse(entry.comment.createdAt), preview: firstSentence(entry.comment.body), kind: entry.comment.kind }));
+  return groupClosures(events, comments);
+}
+
+function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled, paired: ReadonlySet<string>): readonly FoldGroup[] {
   if (settings.compactTimeline === 'off' || visit.fullTimeline) return [];
   // Triggers and bots' run-status lines fold without a row; the rest of the bot comments get their rounds.
   const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
@@ -339,7 +346,7 @@ function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled):
   const groups = [...groupBotRuns(commentRefs, botAnchors, [])];
   const triggers = groupTriggers(commentRefs, triggerAnchors);
   if (triggers !== null) groups.push(triggers);
-  const eventGroup = groupBotRuns([], new Set(), crawled.events);
+  const eventGroup = groupBotRuns([], new Set(), crawled.events.filter((event) => !paired.has(event.anchor)));
   groups.push(...eventGroup);
   if (settings.compactTimeline === 'minimal') {
     const doneAnchors = new Set(meta.items.filter((item) => !isOpenStatus(item.status)).flatMap((item) => item.sources.map((source) => source.anchor)));
@@ -466,6 +473,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       author: group.author,
       firstAnchor,
       time: timeTextOf(group.nodes[0] ?? null, firstAnchor),
+      ...(group.closure === undefined ? {} : { closure: group.closure }),
     };
   });
 }
@@ -1624,9 +1632,11 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (viewingAnchor !== null && document.getElementById(viewingAnchor) === null && visit.loadMoreTries < MAX_LOAD_MORE) {
     if (clickLoadMore()) visit.loadMoreTries += 1;
   }
-  const groups = [...foldGroups(meta, settings, crawledDom)];
   const compacting = settings.compactTimeline !== 'off';
   const hidingTimeline = compacting && !visit.fullTimeline;
+  // "X closed this" with the comment X left as they did: one row, the comment its content.
+  const closures = hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() };
+  const groups = [...foldGroups(meta, settings, crawledDom, closures.paired), ...closures.groups];
   // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
@@ -1637,7 +1647,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const reviews = crawlReviews();
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
   const awaiting = awaitingReviewers();
-  const comments = pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings)]);
+  // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
+  const comments = pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor))]);
   const allPreviews = previewsOn(crawledDom, meta);
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
@@ -1949,8 +1960,26 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         }
       } else if (visit.openKey === CHECKS_KEY) {
         renderQuickView(mounted.slot, nodes);
+      } else if (visit.openKey.startsWith(foldKey('closure:'))) {
+        // The comment left with the change, as a one-comment chat; the event row itself is the panel row.
+        const group = groups.find((entry) => foldKey(entry.key) === visit.openKey);
+        const comment = group?.nodes[0];
+        if (group !== undefined && comment !== undefined) {
+          const byline = { login: group.author ?? '', bot: false, avatarSrc: avatarSrcOf(comment), time: timeTextOf(comment, group.closure?.commentAnchor ?? null) };
+          renderCommentChat(mounted.slot, comment, byline);
+        } else {
+          renderQuickView(mounted.slot, nodes);
+        }
       } else if (visit.openKey === foldKey('mentions')) {
-        renderMentionsView(mounted.slot, nodes, outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]')), (href) => refDetails(href, reapplySoon));
+        const card = document.querySelector('[data-geld-attached]');
+        const cardAuthor = card === null ? null : authorOf(card);
+        const cardAvatar = card === null ? null : avatarSrcOf(card);
+        renderMentionsView(
+          mounted.slot,
+          nodes,
+          outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]'), cardAuthor === null || cardAvatar === null ? null : { login: cardAuthor.login, avatarSrc: cardAvatar }),
+          (href) => refDetails(href, reapplySoon),
+        );
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);

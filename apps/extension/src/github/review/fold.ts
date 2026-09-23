@@ -24,6 +24,66 @@ export interface FoldGroup {
   readonly silent?: boolean;
   /** Which panel section lists the row: comments (default) or the activity section. */
   readonly section?: 'activity';
+  /** A state change (closed, reopened) paired with the comment posted with it: the row is the change, its slot the comment. */
+  readonly closure?: Closure;
+}
+
+export type ClosureKind = 'closed' | 'reopened';
+
+export interface Closure {
+  readonly kind: ClosureKind;
+  /** The comment posted with the change (GitHub's "Close with comment"): its anchor and first line. */
+  readonly commentAnchor: string;
+  readonly preview: string;
+  /** The event row's anchor. */
+  readonly eventAnchor: string;
+}
+
+const CLOSURE_WINDOW_MS = 15_000;
+
+/**
+ * "Close with comment" posts a comment and closes in the same second, and
+ * the page shows them as two rows with nothing tying them together. Each
+ * state-change event whose actor posted a comment just before it becomes
+ * one group: the comment first (the row's avatar, preview and time read from
+ * it), then the event. Pairing needs the event's actor and time and the
+ * comment's author and time, all from the page; an event nobody commented
+ * on stays with the other timeline events.
+ */
+export function groupClosures(
+  events: ReadonlyArray<{ readonly anchor: string; readonly root: HTMLElement; readonly kind: ClosureKind | null; readonly actor: string; readonly at: number }>,
+  comments: ReadonlyArray<{ readonly author: string; readonly bot: boolean; readonly anchor: string; readonly root: HTMLElement; readonly at: number; readonly preview: string; readonly kind: string }>,
+): { readonly groups: readonly FoldGroup[]; readonly paired: ReadonlySet<string> } {
+  const groups: FoldGroup[] = [];
+  const paired = new Set<string>();
+  const taken = new Set<string>();
+  for (const event of events) {
+    if (event.kind === null || event.actor === '' || Number.isNaN(event.at)) continue;
+    const comment = comments
+      .filter((entry) => entry.kind === 'comment' && !entry.bot && !taken.has(entry.anchor) && entry.author.toLowerCase() === event.actor.toLowerCase() && !Number.isNaN(entry.at) && event.at >= entry.at && event.at - entry.at <= CLOSURE_WINDOW_MS)
+      .sort((a, b) => b.at - a.at)[0];
+    if (comment === undefined) continue;
+    taken.add(comment.anchor);
+    paired.add(comment.anchor);
+    paired.add(event.anchor);
+    groups.push({
+      key: `closure:${event.anchor}`,
+      label: `${event.actor} ${event.kind} this`,
+      author: event.actor,
+      nodes: [comment.root, event.root],
+      section: 'activity',
+      closure: { kind: event.kind, commentAnchor: comment.anchor, preview: comment.preview, eventAnchor: event.anchor },
+    });
+  }
+  return { groups, paired };
+}
+
+/** What a timeline event row says the pull request did, when it is a state change. */
+export function closureKindOf(root: Element): ClosureKind | null {
+  const text = (root.textContent ?? '').replace(/\s+/g, ' ');
+  if (/\breopened this\b/i.test(text)) return 'reopened';
+  if (/\bclosed this\b/i.test(text) || root.querySelector('.octicon-git-pull-request-closed, .octicon-issue-closed, [class*="bg-closed-emphasis"]') !== null) return 'closed';
+  return null;
 }
 
 export function clearFolds(root: ParentNode = document): void {
