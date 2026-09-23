@@ -37,7 +37,7 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView } from './quick-view';
-import { renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
@@ -158,6 +158,9 @@ function awaitingReviewers(): ReviewEntry[] {
  * the panel for exactly that and re-applies: the crawl then reads the new
  * state, the row turns, and the settled item closes.
  */
+/** Where loaned nodes are shown: the quick view and the chats (a chat's body, its pinned context, the composer's side slot). */
+const LOAN_VIEWS = '.geld-review__qv, .geld-review__chat';
+
 let loanWatcher: MutationObserver | null = null;
 let loanWatched: Element | null = null;
 const THREAD_STATE = '[data-resolved], .js-resolvable-timeline-thread-container, .js-resolvable-thread-contents, .review-thread-component, [data-testid*="thread" i]';
@@ -180,7 +183,7 @@ function touchesThreadState(record: MutationRecord): boolean {
   if (record.type === 'characterData') return target.closest(`${THREAD_SELECTOR}, ${THREAD_STATE}`) !== null;
   // Nodes the panel moves in and out carry the loan token; what GitHub writes does not.
   for (const node of [...record.addedNodes, ...record.removedNodes]) {
-    if (node instanceof Element && (node.hasAttribute('data-geld-teleported') || node.closest('.geld-review__qv, .geld-review__thread') === null)) continue;
+    if (node instanceof Element && (node.hasAttribute('data-geld-teleported') || node.closest(LOAN_VIEWS) === null)) continue;
     if (node instanceof Element && node.hasAttribute('data-geld-ui')) continue;
     return true;
   }
@@ -195,10 +198,12 @@ function touchesThreadState(record: MutationRecord): boolean {
  */
 function adoptReplacements(records: readonly MutationRecord[]): void {
   for (const record of records) {
-    if (record.type !== 'childList' || !(record.target instanceof Element) || record.target.closest('.geld-review__qv') === null) continue;
+    if (record.type !== 'childList' || !(record.target instanceof Element) || record.target.closest(LOAN_VIEWS) === null) continue;
     const gone = [...record.removedNodes].find((node): node is HTMLElement => node instanceof HTMLElement && node.hasAttribute('data-geld-teleported'));
     const came = [...record.addedNodes].find((node): node is HTMLElement => node instanceof HTMLElement && !node.hasAttribute('data-geld-teleported') && !node.hasAttribute('data-geld-ui'));
-    if (gone !== undefined && came !== undefined) adoptReplacement(gone, came);
+    if (gone === undefined || came === undefined || !adoptReplacement(gone, came)) continue;
+    // The composer's Resolve form swapped for a fresh one: it arrives in GitHub's words and is dressed where it stands.
+    if (came.matches('form') && came.closest('.geld-review__composer-side') !== null) redressComposer(came);
   }
 }
 
@@ -1550,7 +1555,7 @@ function completePath(path: string, hash: string | null, meta: GeldPrMeta): stri
  */
 function slotNeedsRender(slot: HTMLElement): boolean {
   if (slot.childElementCount === 0) return true;
-  return [...slot.querySelectorAll<HTMLElement>('.geld-review__qv')].some((view) => view.childElementCount === 0);
+  return [...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0);
 }
 
 export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null): void {
