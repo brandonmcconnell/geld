@@ -389,11 +389,15 @@ function annotateMessages(messages: readonly HTMLElement[], viewer: string, pinn
     const after = !pinned && index < messages.length - 1 && logins[index + 1] === login;
     mark(message, ATTR_RUN, before && after ? 'mid' : before ? 'last' : after ? 'first' : 'only');
     const bubble = partHolding(message, message.querySelector(BODY_SELECTOR));
-    const reactions = partHolding(message, message.querySelector(REACTIONS_SELECTOR));
+    const reactionsRow = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
+    const reactionsHolder = partHolding(message, reactionsRow);
     const meta = partHolding(message, message.querySelector(META_SELECTOR));
     if (meta !== null && meta !== bubble) mark(meta, ATTR_PART, 'meta');
     if (bubble !== null) mark(bubble, ATTR_PART, 'bubble');
-    if (reactions !== null && reactions !== bubble && reactions !== meta) mark(reactions, ATTR_PART, 'reactions');
+    // Review comments keep their reactions in a wrapper of their own beside the body's; an issue comment nests
+    // them inside the body's wrapper. The part is the row itself then, so it lays out and floats the same way.
+    if (reactionsHolder !== null && reactionsHolder !== bubble && reactionsHolder !== meta) mark(reactionsHolder, ATTR_PART, 'reactions');
+    else if (reactionsRow !== null && reactionsRow !== bubble && !reactionsRow.matches('[data-geld-part]')) mark(reactionsRow, ATTR_PART, 'reactions');
     for (const form of message.querySelectorAll<HTMLFormElement>(':scope > form.js-comment-update, :scope > form[data-testid="comment-edit-form"]')) mark(form, ATTR_PART, 'edit');
   });
   onRestore(() => {
