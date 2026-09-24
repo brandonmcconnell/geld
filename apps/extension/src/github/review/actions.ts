@@ -159,19 +159,44 @@ function waitForCommentForm(timeoutMs: number): Promise<boolean> {
   });
 }
 
+/**
+ * The form's plain "Comment" button, never its neighbour. GitHub's classic
+ * new-comment form has two submit buttons and the first in the DOM is "Close
+ * pull request" (`name="comment_and_close"`, "Close with comment" once there
+ * is text), which is what a first-submit-button lookup used to press: every
+ * bot re-run posted the trigger and closed the pull request with it. Only a
+ * submit button that carries no `name` (GitHub names every alternative
+ * action) and reads "Comment" qualifies; nothing is pressed otherwise.
+ */
+export function commentSubmitButton(form: HTMLFormElement): HTMLButtonElement | null {
+  const candidates = [...form.querySelectorAll<HTMLButtonElement>('button[type="submit"], button:not([type])')];
+  return (
+    candidates.find((button) => {
+      if (button.name !== '' || button.matches('.js-comment-and-button, .js-quick-submit-alternative, [name="comment_and_close"], [name="comment_and_open"]')) return false;
+      const words = textOf(button);
+      return /^comment$/i.test(words) || /^submit new comment$/i.test(words) || (button.classList.contains('btn-primary') && !/close|reopen/i.test(words));
+    }) ?? null
+  );
+}
+
 export function postTopLevelComment(body: string): boolean {
   const field =
     document.querySelector<HTMLTextAreaElement>('#new_comment_field') ??
     document.querySelector<HTMLTextAreaElement>('textarea[name="comment[body]"]') ??
     document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="comment" i]');
   if (field === null) return false;
+  const form = field.closest('form');
+  if (form === null) return false;
+  const submit = commentSubmitButton(form);
+  if (submit === null) return false;
   field.focus({ preventScroll: true });
   field.value = body;
   field.dispatchEvent(new Event('input', { bubbles: true }));
-  const form = field.closest('form');
-  const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
-  submit?.click();
-  return submit !== undefined && submit !== null;
+  field.dispatchEvent(new Event('change', { bubbles: true }));
+  // GitHub enables "Comment" from its own input handler; a still-disabled button is not one to press.
+  if (submit.disabled) return false;
+  submit.click();
+  return true;
 }
 
 const REACTION_OPENER =
