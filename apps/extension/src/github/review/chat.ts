@@ -264,6 +264,20 @@ export function redressComposer(form: HTMLElement): void {
   labelComposer(thread, form, side);
 }
 
+/**
+ * Whether the thread stands resolved, read from every sign GitHub gives:
+ * `data-resolved` on the container (or on the collapsible inside it, when
+ * the container is a wrapper), the form's action, the button's name, value
+ * or words ("Unresolve conversation"), and the sentence GitHub writes next
+ * to the button once someone has resolved it. Any one is enough.
+ */
+function isResolvedThread(thread: HTMLElement, form: HTMLElement, button: HTMLElement): boolean {
+  if (thread.getAttribute('data-resolved') === 'true' || thread.querySelector('[data-resolved="true"]') !== null) return true;
+  if (/unresolve/i.test(form.getAttribute('action') ?? '')) return true;
+  if (/unresolve/i.test(`${button.getAttribute('name') ?? ''} ${button.getAttribute('value') ?? ''} ${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`)) return true;
+  return /\bmarked (?:this )?(?:conversation )?as resolved\b/i.test((form.textContent ?? '').replace(/\s+/g, ' '));
+}
+
 /** The chat's words on GitHub's form: Resolve or Unresolve on the button, the resolver's picture and "marked resolved" for the sentence. */
 function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement): void {
   const button = form.querySelector<HTMLElement>('button[type="submit"], button');
@@ -272,7 +286,7 @@ function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement
   for (const stale of form.querySelectorAll('.geld-review__composer-label')) stale.remove();
   for (const stale of form.querySelectorAll(`[${ATTR_SPOKEN_FOR}]`)) stale.removeAttribute(ATTR_SPOKEN_FOR);
   button.removeAttribute(ATTR_SPOKEN_FOR);
-  const resolved = thread.getAttribute('data-resolved') === 'true' || /^unresolve/i.test((button.textContent ?? '').trim());
+  const resolved = isResolvedThread(thread, form, button);
   const label = button.querySelector<HTMLElement>('.Button-label') ?? button;
   const spokenFor: Element[] = [];
   const speakFor = (element: Element): void => {
