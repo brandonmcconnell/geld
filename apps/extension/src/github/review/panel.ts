@@ -1025,7 +1025,7 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   return createElement('span', { class: `${PANEL_CLASS}__bot`, ...who, ...(current ? {} : { 'data-current': 'false' }) }, children);
 }
 
-/** Re-run menu: one entry per installed bot plus All; choosing one turns the menu into a confirm. */
+/** Re-run menu: one entry per installed bot plus All; choosing one posts its trigger comment at once. */
 function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (model.requestable.length === 0) return null;
   installMenuDismissal();
@@ -1037,44 +1037,23 @@ function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | nu
   );
   summary.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' });
-  const choices: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[]; readonly prompt: string; readonly iconSrc: string | null }> = [
-    ...model.requestable.map((bot) => ({ label: `Re-run ${bot.label}`, ids: [bot.id], prompt: `Post “${bot.trigger}”?`, iconSrc: bot.iconSrc })),
-    ...(model.requestable.length > 1
-      ? [{ label: 'Re-run all', ids: model.requestable.map((bot) => bot.id), prompt: `Post ${model.requestable.length} comments: ${model.requestable.map((bot) => `“${bot.trigger}”`).join(', ')}?`, iconSrc: null }]
-      : []),
+  const choices: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[]; readonly hint: string; readonly iconSrc: string | null }> = [
+    ...model.requestable.map((bot) => ({ label: `Re-run ${bot.label}`, ids: [bot.id], hint: `Posts “${bot.trigger}”`, iconSrc: bot.iconSrc })),
+    ...(model.requestable.length > 1 ? [{ label: 'Re-run all', ids: model.requestable.map((bot) => bot.id), hint: `Posts ${model.requestable.length} comments`, iconSrc: null }] : []),
   ];
-  const render = (): void => {
-    list.replaceChildren(
-      createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']),
-      ...choices.map((choice) => {
-        const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item`, role: 'menuitem' });
-        if (choice.iconSrc !== null) item.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: choice.iconSrc, alt: '', width: '16', height: '16' }));
-        item.append(createElement('span', {}, [choice.label]));
-        item.addEventListener('click', (event) => {
-          event.stopPropagation();
-          const yes = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--primary`, role: 'menuitem' }, ['Post comment']);
-          const no = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item`, role: 'menuitem' }, ['Cancel']);
-          yes.addEventListener('click', (inner) => {
-            inner.stopPropagation();
-            details.removeAttribute('open');
-            render();
-            handlers.onRequest(choice.ids);
-          });
-          no.addEventListener('click', (inner) => {
-            inner.stopPropagation();
-            render();
-          });
-          list.replaceChildren(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, [choice.prompt]), yes, no);
-          yes.focus({ preventScroll: true });
-        });
-        return item;
-      }),
-    );
-  };
-  render();
-  details.addEventListener('toggle', () => {
-    if (!details.hasAttribute('open')) render();
-  });
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']));
+  for (const choice of choices) {
+    // The item says what it posts; choosing it is the confirmation.
+    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitem', title: choice.hint });
+    if (choice.iconSrc !== null) item.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: choice.iconSrc, alt: '', width: '16', height: '16' }));
+    item.append(createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [createElement('span', {}, [choice.label]), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [choice.hint])]));
+    item.addEventListener('click', (event) => {
+      event.stopPropagation();
+      details.removeAttribute('open');
+      handlers.onRequest(choice.ids);
+    });
+    list.append(item);
+  }
   details.append(summary, list);
   return details;
 }
