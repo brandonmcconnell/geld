@@ -251,6 +251,18 @@ describe('bots + prompts', () => {
     for (const body of ['Found 2 issues', 'Bugbot reviewed your changes and found no new issues!', 'Starting from line 12, the loop never exits.']) {
       expect(isStatusLineComment(body), body).toBe(false);
     }
+    // Bugbot: a run that found something, then a run that found nothing. The latest word wins, and the earlier
+    // run's count does not ride along on a clean verdict.
+    const bugbot = verdictsFrom(
+      [],
+      [
+        { author: 'cursor[bot]', body: 'Cursor Bugbot has reviewed your changes and found 1 potential issue.', anchor: 'issuecomment-1' },
+        { author: 'cursor[bot]', body: '✅ Bugbot reviewed your changes and found no new issues!', anchor: 'issuecomment-2' },
+      ],
+      'aaa',
+    );
+    expect(bugbot[0]).toMatchObject({ id: 'bugbot', verdict: 'clean', sourceId: 'issuecomment-2' });
+    expect(bugbot[0]?.count).toBeUndefined();
     // Devin: says it is looking, then says nothing more when all is well; the completed check is the verdict.
     const devin = verdictsFrom([{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'aaa' }], [{ author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-7' }], 'aaa');
     expect(devin[0]).toMatchObject({ id: 'devin', verdict: 'clean', sourceId: 'issuecomment-7' });
