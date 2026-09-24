@@ -14,7 +14,7 @@
  * panel opens into the same shape.
  */
 
-import { createElement, svgFromString } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
@@ -110,7 +110,9 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     teleportInto(body, [thread]);
     liftCollapsedBody(thread);
     loadDeferredReplies(thread);
-    annotateMessages(messagesIn(thread, true), viewer, false);
+    const messages = messagesIn(thread, true);
+    annotateMessages(messages, viewer, false);
+    for (const message of messages) hoistMenu(message);
     dressComposer(thread);
     list.append(chat);
   }
@@ -210,7 +212,9 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
     wrap.append(body);
     teleportInto(body, [source.node]);
     openMinimized(body);
-    annotateMessages(messagesIn(source.node, false), viewer, true);
+    const messages = messagesIn(source.node, false);
+    annotateMessages(messages, viewer, true);
+    for (const message of messages) hoistMenu(message);
   }
   return wrap;
 }
@@ -310,6 +314,38 @@ function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement
     if (hadTitle === null) button.removeAttribute('title');
     else button.setAttribute('title', hadTitle);
   });
+}
+
+/** The comment's own ⋯ menu, most specific first; the reaction trigger is a `details` too and must not be taken for it. */
+const COMMENT_MENU = 'details.js-comment-header-actions-menu, .timeline-comment-actions details:not(.js-add-reaction):not(.js-reaction-popover-container), [data-testid="comment-header"] button[aria-label="Show options" i], button[aria-label="Comment actions" i]';
+
+/**
+ * The message strip on a bubble's top edge is GitHub's reactions row: the
+ * pills always, the picker on hover. The comment's ⋯ lives in its author line,
+ * a different part of the message, so it is moved into the row (a loan, home
+ * on restore) between the picker and the pills: the strip is then one flex
+ * row and the pills, farthest out, never move when the controls appear. A
+ * menu already worn by a panel row (a single comment's line wears its own)
+ * is left there: `teleportInto` skips a node on loan.
+ */
+function hoistMenu(message: HTMLElement): void {
+  const meta = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta']`);
+  const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
+  if (meta === null || reactions === null) return;
+  const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
+  if (menu === null || menu.closest('[data-geld-teleported]') === menu) return;
+  const row = reactions.matches('.comment-reactions, .js-reactions-container') ? reactions : (reactions.querySelector<HTMLElement>('.comment-reactions, .js-reactions-container') ?? reactions);
+  const slot = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
+  const picker = row.querySelector(':scope > reactions-menu, :scope > details.js-add-reaction');
+  if (picker !== null) picker.after(slot);
+  else row.prepend(slot);
+  teleportInto(slot, [menu]);
+  // Not moved (worn by a row already): no empty slot, which would still take the row's gap.
+  if (slot.childElementCount === 0) {
+    slot.remove();
+    return;
+  }
+  onRestore(() => slot.remove());
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
