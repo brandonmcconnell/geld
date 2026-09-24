@@ -3378,12 +3378,26 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   padding: 0 !important;
 }
 
+/* The reactions row itself, whether it is the part or sits inside it (an issue comment nests it in the body's
+ * wrapper, so there the row is the part): flush with the text's left edge, a little room under the text. */
 .geld-review__chat [data-geld-part='reactions'] .comment-reactions,
-.geld-review__chat [data-geld-part='reactions'] .js-reactions-container {
+.geld-review__chat [data-geld-part='reactions'] .js-reactions-container,
+.geld-review__chat [data-geld-part='reactions'].comment-reactions,
+.geld-review__chat [data-geld-part='reactions'].js-reactions-container {
   margin: 0 !important;
   padding: 2px 0 0 !important;
   border: 0 !important;
   background: none !important;
+}
+
+/* Inside a bubble the row takes no room while it holds only the picker (which floats), and follows the text with
+ * the same 8px the bubble keeps under its last line once reactions are in it. */
+.geld-review__chat [data-geld-part='bubble'] [data-geld-part='reactions'] {
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='bubble'] [data-geld-part='reactions']:has(.social-reaction-summary-item, .js-comment-reactions-options > button) {
+  margin-top: 8px !important;
 }
 
 .geld-review__chat [data-geld-mine] > [data-geld-part='reactions'] .js-comment-reactions-options {
