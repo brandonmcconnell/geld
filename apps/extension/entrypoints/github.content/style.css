@@ -3372,55 +3372,21 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin: 0 !important;
 }
 
-/* Reactions under the bubble, as chat apps place them; the picker is a hover action (below). */
-.geld-review__chat [data-geld-part='reactions'] {
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-/* The reactions row itself, whether it is the part or sits inside it (an issue comment nests it in the body's
- * wrapper, so there the row is the part): flush with the text's left edge, a little room under the text. */
-.geld-review__chat [data-geld-part='reactions'] .comment-reactions,
-.geld-review__chat [data-geld-part='reactions'] .js-reactions-container,
-.geld-review__chat [data-geld-part='reactions'].comment-reactions,
-.geld-review__chat [data-geld-part='reactions'].js-reactions-container {
-  margin: 0 !important;
-  padding: 2px 0 0 !important;
-  border: 0 !important;
-  background: none !important;
-}
-
-/* Inside a bubble the row takes no room while it holds only the picker (which floats), and follows the text with
- * the same 8px the bubble keeps under its last line once reactions are in it. */
-.geld-review__chat [data-geld-part='bubble'] [data-geld-part='reactions'] {
-  padding: 0 !important;
-}
-
-.geld-review__chat [data-geld-part='bubble'] [data-geld-part='reactions']:has(.social-reaction-summary-item, .js-comment-reactions-options > button) {
-  margin-top: 8px !important;
-}
-
-.geld-review__chat [data-geld-mine] > [data-geld-part='reactions'] .js-comment-reactions-options {
-  justify-content: flex-end;
-}
-
-/* Anything else GitHub puts between the parts (error flashes, hidden forms) keeps its place without a gutter. */
-.geld-review__chat [data-geld-message] > :not([data-geld-part]) {
-  align-self: stretch;
-}
-
 /*
- * Message actions. GitHub's own reaction picker (in the reactions row) and ⋯
- * menu (in the author line) are lifted out of their rows and set on the
- * bubble's top edge at its outer corner, 12px in from the rounding, the
- * picker then the menu, as chat apps arrange them. They show while the
- * message is hovered or holds focus, and while a menu is open. Nothing moves
- * in the DOM: the elements are GitHub's, only positioned, so Copy link, Quote
- * reply, Edit, Hide, Delete and every reaction still run GitHub's code.
+ * The message strip. Every message's reactions row (GitHub's, with its
+ * picker and the reaction pills in it) is lifted onto the bubble's top edge,
+ * halfway across the line, at the bubble's outer corner 12px in from the
+ * rounding. The pills are always there, farthest out; the picker and the ⋯
+ * (chat.ts moves the comment's own menu into the row, a loan like any other)
+ * stand inside them and show while the message is hovered or holds focus or
+ * a menu is open. The pills never move when the controls appear, so nothing
+ * shifts under the pointer. On the reader's own messages the strip is
+ * mirrored to the top-left. The elements are GitHub's throughout, so every
+ * reaction and every menu item runs GitHub's code.
  *
  * A message is as wide as its bubble, so a hover strip (::before) fills the
  * empty side of its row, from the message's edge to the row's: hovering
- * anywhere level with the message shows its actions, and nothing lies over
+ * anywhere level with the message shows its controls, and nothing lies over
  * the message itself.
  */
 .geld-review__chat [data-geld-message] {
@@ -3429,12 +3395,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 .geld-review__chat [data-geld-message][data-geld-run='mid'],
-.geld-review__chat [data-geld-message][data-geld-run='last'] {
+.geld-review__chat [data-geld-message][data-geld-run='last'],
+.geld-review__chat [data-geld-lone] {
   --geld-chat-bubble-top: 0px;
 }
 
-
-.geld-review__chat [data-geld-message]:not([data-geld-lone])::before {
+.geld-review__chat [data-geld-message]::before {
   content: '';
   /* GitHub's comment cards draw a speech caret with this pseudo, which the chat hides; the strip needs it back. */
   display: block !important;
@@ -3445,19 +3411,95 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   width: calc(100cqw - 100%);
 }
 
-.geld-review__chat [data-geld-message][data-geld-mine]:not([data-geld-lone])::before {
+.geld-review__chat [data-geld-message][data-geld-mine]::before {
   right: 100%;
   left: auto;
 }
 
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions {
+/* The row, wherever GitHub put it (a wrapper of its own, or nested inside the body's), on the top edge. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] {
   position: absolute;
   top: calc(var(--geld-chat-bubble-top) - var(--geld-chat-action) / 2);
-  right: calc(12px + var(--geld-chat-action) + 4px);
+  right: 12px;
   z-index: 2;
+  display: flex !important;
+  align-items: center;
+  height: var(--geld-chat-action);
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] {
+  right: auto;
+  left: 12px;
+}
+
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .comment-reactions,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .js-reactions-container,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'].comment-reactions,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'].js-reactions-container {
+  display: flex !important;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+/* Mirrored for the reader's own messages: pills at the outer (left) edge, the controls inside them. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] .comment-reactions,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] .js-reactions-container,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'].comment-reactions,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'].js-reactions-container {
+  flex-direction: row-reverse;
+}
+
+/* The pills: GitHub's reaction buttons, sized to the strip's controls. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .js-comment-reactions-options,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] form.js-pick-reaction {
+  display: flex !important;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .js-comment-reactions-options:empty,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] form.js-pick-reaction:not(:has(button)) {
+  display: none !important;
+}
+
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item {
   display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  height: var(--geld-chat-action) !important;
+  margin: 0 !important;
+  padding: 0 8px !important;
+  border: 1px solid var(--geld-review-border-muted) !important;
+  border-radius: calc(var(--geld-chat-action) / 2) !important;
+  background: var(--geld-review-bg) !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+}
+
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item.user-has-reacted {
+  border-color: var(--geld-chat-mine-border) !important;
+  background: var(--geld-chat-mine-bg) !important;
+}
+
+/* The controls: the picker and the moved ⋯, hidden until the message is hovered or focused or a menu is open. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .geld-review__msg-actions {
+  display: inline-flex !important;
+  flex: 0 0 auto;
   align-items: center;
   height: var(--geld-chat-action);
   margin: 0 !important;
@@ -3465,39 +3507,24 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   transition: opacity 80ms ease;
 }
 
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions {
-  right: 12px;
-}
-
-.geld-review__chat [data-geld-message][data-geld-mine] [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat [data-geld-message][data-geld-mine] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction {
-  right: auto;
-  left: calc(12px + var(--geld-chat-action) + 4px);
-}
-
-.geld-review__chat [data-geld-message][data-geld-mine] [data-geld-part='meta'] .timeline-comment-actions {
-  right: auto;
-  left: 12px;
-}
-
-.geld-review__chat [data-geld-message]:hover [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat [data-geld-message]:hover [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
-.geld-review__chat [data-geld-message]:hover [data-geld-part='meta'] .timeline-comment-actions,
-.geld-review__chat [data-geld-message]:focus-within [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat [data-geld-message]:focus-within [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
-.geld-review__chat [data-geld-message]:focus-within [data-geld-part='meta'] .timeline-comment-actions,
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] reactions-menu:has(details[open]),
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction[open],
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions:has(details[open]) {
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] reactions-menu,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] .geld-review__msg-actions,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:focus-within [data-geld-part='reactions'] reactions-menu,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:focus-within [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:focus-within [data-geld-part='reactions'] .geld-review__msg-actions,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu:has(details[open]),
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction[open],
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .geld-review__msg-actions:has(details[open]) {
   opacity: 1;
 }
 
-/* The lifted controls draw as round buttons on the chat's surface, like the panel's own icon buttons; only the
- * control that opens each one, never the summaries inside the menu it opens. */
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] reactions-menu > details > summary,
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > details > summary,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > button {
+/* Round buttons on the chat's surface, like the panel's own icon buttons; only the control that opens each one,
+ * never the summaries inside the menu it opens. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -3514,10 +3541,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 /* Primer's button wraps its glyph in two spans with a text line box of their own, which set the glyph a pixel or
  * two off centre in a round button; here the glyph is the only thing in the box and is centred as such. */
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] reactions-menu > details > summary > *,
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary > *,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > details > summary > *,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > button > * {
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary > *,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary > *,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary > *,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button > * {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -3526,10 +3553,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   line-height: 0;
 }
 
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] reactions-menu > details > summary .octicon,
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary .octicon,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > details > summary .octicon,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > button .octicon {
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary .octicon,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary .octicon,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary .octicon,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button .octicon {
   display: block;
   width: 14px;
   height: 14px;
@@ -3537,83 +3564,83 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   vertical-align: top;
 }
 
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] reactions-menu > details > summary:hover,
-.geld-review__chat [data-geld-message] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary:hover,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > details > summary:hover,
-.geld-review__chat [data-geld-message] [data-geld-part='meta'] .timeline-comment-actions > button:hover {
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary:hover,
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary:hover,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary:hover,
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button:hover {
   /* An opaque shade, not the panel's translucent hover wash: over the bubble's edge a wash reads as a fade. */
   border-color: var(--geld-review-border) !important;
   background: var(--geld-review-subtle) !important;
   color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
 }
 
-
-/*
- * A message alone under its line (the pinned source, a one-comment chat)
- * wears the same actions. Its author line is folded to nothing, since the
- * line above already names the author, but GitHub's ⋯ inside it stays
- * reachable: the line keeps no height and hides its words, and the actions
- * float from it as from any message. A one-comment chat's row already wears
- * that ⋯ (wearControls), so an emptied container shows nothing.
- */
-.geld-review__chat [data-geld-lone] {
-  --geld-chat-bubble-top: 0px;
+/* The moved ⋯ is a details whose menu drops down from it; positioned so the menu anchors to the button. */
+.geld-review__msg-actions > details {
+  position: relative;
 }
 
+/* The ⋯ menu of a message on the right opens toward the bubble (GitHub's default opens south-west, off the panel). */
+.geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw {
+  right: auto;
+  left: 0;
+}
+
+.geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw::before,
+.geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw::after {
+  right: auto;
+  left: 9px;
+}
+
+/*
+ * A message alone under its line (the pinned source under its strip, a
+ * one-comment chat under its row) folds its author line to nothing, since the
+ * line above already names the author; a ⋯ left inside it (the row above did
+ * not wear it) is moved into the strip by chat.ts like any other.
+ */
 .geld-review__chat [data-geld-lone] > [data-geld-part='meta'] {
   display: block !important;
   height: 0;
   min-height: 0;
   margin: 0 !important;
-  overflow: visible;
+  overflow: hidden;
   visibility: hidden;
 }
 
-.geld-review__chat [data-geld-lone] > [data-geld-part='meta'] .timeline-comment-actions {
-  visibility: visible;
+/*
+ * Not the chat: a single comment under its byline keeps its reactions where
+ * a comment has them, under the text, flush with the text's left edge, the
+ * picker always shown. Its ⋯ is worn by the row above.
+ */
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] {
+  margin: 8px 0 0 !important;
+  padding: 0 !important;
 }
 
-.geld-review__chat [data-geld-lone] > [data-geld-part='meta'] .timeline-comment-actions:not(:has(details, button)) {
-  display: none !important;
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] .comment-reactions,
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] .js-reactions-container,
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'].comment-reactions,
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'].js-reactions-container {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
 }
 
-/* The frameless one-comment view has no edge to sit on; the actions take the right end of its byline instead. */
-.geld-review__chat[data-geld-chat='comment'] [data-geld-lone] {
-  --geld-chat-bubble-top: calc(-4px - var(--geld-chat-action) / 2);
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] reactions-menu,
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] .js-comment-reactions-options,
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] form.js-pick-reaction {
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
-.geld-review__chat[data-geld-chat='comment'] [data-geld-lone] [data-geld-part='meta'] .timeline-comment-actions {
-  right: 0;
+/* Anything else GitHub puts between the parts (error flashes, hidden forms) keeps its place without a gutter. */
+.geld-review__chat [data-geld-message] > :not([data-geld-part]) {
+  align-self: stretch;
 }
-
-.geld-review__chat[data-geld-chat='comment'] [data-geld-lone] [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat[data-geld-chat='comment'] [data-geld-lone] [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction {
-  right: calc(var(--geld-chat-action) + 4px);
-}
-
-/* With the ⋯ worn elsewhere, the picker takes the corner slot rather than leaving a gap for it. */
-.geld-review__chat [data-geld-lone]:not(:has([data-geld-part='meta'] .timeline-comment-actions details, [data-geld-part='meta'] .timeline-comment-actions button)) [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat [data-geld-lone]:not(:has([data-geld-part='meta'] .timeline-comment-actions details, [data-geld-part='meta'] .timeline-comment-actions button)) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction {
-  right: 12px;
-}
-
-.geld-review__chat[data-geld-chat='comment'] [data-geld-lone]:not(:has([data-geld-part='meta'] .timeline-comment-actions details, [data-geld-part='meta'] .timeline-comment-actions button)) [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat[data-geld-chat='comment'] [data-geld-lone]:not(:has([data-geld-part='meta'] .timeline-comment-actions details, [data-geld-part='meta'] .timeline-comment-actions button)) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction {
-  right: 0;
-}
-
-/* The ⋯ menu of a message on the right opens toward the bubble (GitHub's default opens south-west, off the panel). */
-.geld-review__chat [data-geld-message][data-geld-mine] [data-geld-part='meta'] .timeline-comment-actions .dropdown-menu-sw {
-  right: auto;
-  left: 0;
-}
-
-.geld-review__chat [data-geld-message][data-geld-mine] [data-geld-part='meta'] .timeline-comment-actions .dropdown-menu-sw::before,
-.geld-review__chat [data-geld-message][data-geld-mine] [data-geld-part='meta'] .timeline-comment-actions .dropdown-menu-sw::after {
-  right: auto;
-  left: 9px;
-}
-
 
 /* ---- the composer: GitHub's reply control, always at the bottom ---- */
 
