@@ -154,8 +154,10 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
       ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text)
       : /(\d+)\s+(?:issue|finding|bug|problem)s?\b/i.exec(text);
   const count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
+  // "found no new issues", "no further problems", "0 potential issues": the adjectives between "no" and the noun
+  // vary by bot and by run, so a few are allowed through.
   const clean =
-    /\bno (?:issues|bugs|findings|problems)\b/i.test(text) ||
+    /\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking))* (?:issues|bugs|findings|problems)\b/i.test(text) ||
     /\b(?:looks good|lgtm|all clean|no bugs found)\b/i.test(text) ||
     (count === 0 && score === null);
   const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(text)
@@ -280,7 +282,10 @@ export function verdictsFrom(
     const login = comment.author;
     if (existing !== undefined) {
       const verdict = parsed.clean && existing.verdict === 'failed' ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
-      byId.set(id, withOptionalCount({ ...existing, verdict, sourceId: comment.anchor, login }, parsed));
+      // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
+      const base: DerivedBotVerdict =
+        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : existing;
+      byId.set(id, withOptionalCount({ ...base, verdict, sourceId: comment.anchor, login }, parsed));
       continue;
     }
     const verdict = parsed.clean ? 'clean' : 'findings';
