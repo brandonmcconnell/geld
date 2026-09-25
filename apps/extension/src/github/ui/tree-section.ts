@@ -1,6 +1,6 @@
 import type { FileStatus, HiddenCategory } from '@geld/core';
 import { formatCount } from '@geld/core';
-import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString, writeAttribute, writeText } from '../dom';
 import {
   categoryIconFor,
   ICON_CHEVRON_RIGHT,
@@ -341,16 +341,13 @@ export function renderTreeSection(
     after.insertAdjacentElement('afterend', section.root);
   }
 
-  section.root.dataset.view = state.view;
-  section.title.textContent = state.category.title;
-  section.count.textContent = formatCount(state.files.length);
-  section.header.setAttribute(
-    'aria-label',
-    `${state.category.title}: ${formatCount(state.files.length)} hidden ${state.category.nounPlural}`,
-  );
-  section.header.setAttribute('aria-expanded', String(state.active));
-  section.group.hidden = !state.active;
-  section.root.toggleAttribute('data-active', state.active);
+  writeAttribute(section.root, 'data-view', state.view);
+  writeText(section.title, state.category.title);
+  writeText(section.count, formatCount(state.files.length));
+  writeAttribute(section.header, 'aria-label', `${state.category.title}: ${formatCount(state.files.length)} hidden ${state.category.nounPlural}`);
+  writeAttribute(section.header, 'aria-expanded', String(state.active));
+  if (section.group.hidden !== !state.active) section.group.hidden = !state.active;
+  if (section.root.hasAttribute('data-active') !== state.active) section.root.toggleAttribute('data-active', state.active);
 
   const signature = `${state.stateKey}#${state.category.id}\n${state.files
     .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('class') ?? file.status ?? ''}`)
@@ -442,11 +439,11 @@ export function renderChangesHeader(
     changesParts.set(root, parts);
     treeRoot.insertAdjacentElement('beforebegin', root);
   }
-  parts.root.dataset.view = state.view;
-  parts.count.textContent = formatCount(state.count);
-  parts.header.setAttribute('aria-expanded', String(state.active));
-  parts.header.setAttribute('aria-label', `Essential: ${formatCount(state.count)} files`);
-  parts.root.toggleAttribute('data-active', state.active);
+  writeAttribute(parts.root, 'data-view', state.view);
+  writeText(parts.count, formatCount(state.count));
+  writeAttribute(parts.header, 'aria-expanded', String(state.active));
+  writeAttribute(parts.header, 'aria-label', `Essential: ${formatCount(state.count)} files`);
+  if (parts.root.hasAttribute('data-active') !== state.active) parts.root.toggleAttribute('data-active', state.active);
   sidebarGeometry.watch(treeRoot, parts.root);
   return parts.root;
 }
@@ -983,17 +980,17 @@ export function applySidebarLayout(treeRoot: HTMLElement, active: string): void 
     scrollContainerOf(treeRoot) ??
     treeRoot.parentElement;
   if (root === null) return;
-  root.setAttribute(ATTR_SIDEBAR, active);
+  writeAttribute(root, ATTR_SIDEBAR, active);
   // Decided once here when the pane is rendered; `SidebarSizer` takes it (or
   // takes it again) when the pane appears later or the viewport width changes.
   if (!root.hasAttribute(ATTR_SIDEBAR_LAYOUT)) settleSidebarDirection(root);
-  treeRoot.setAttribute(ATTR_TREE_LIST, '');
+  writeAttribute(treeRoot, ATTR_TREE_LIST, '');
   // Mark the chain between the root and the tree so heights propagate.
   const onPath = new Set<Element>();
   let current = treeRoot.parentElement;
   while (current !== null && current !== root) {
     onPath.add(current);
-    current.setAttribute(ATTR_SIDEBAR_PATH, '');
+    writeAttribute(current, ATTR_SIDEBAR_PATH, '');
     current = current.parentElement;
   }
   for (const stale of root.querySelectorAll(`[${ATTR_SIDEBAR_PATH}]`)) {
@@ -1033,7 +1030,7 @@ function settleSidebarDirection(root: HTMLElement): void {
   const display = style.display;
   const isRow = display.includes('flex') && style.flexDirection.startsWith('row');
   const direction = display === 'none' ? previous : isRow ? 'row' : 'column';
-  if (direction !== null) root.setAttribute(ATTR_SIDEBAR_LAYOUT, direction);
+  if (direction !== null) writeAttribute(root, ATTR_SIDEBAR_LAYOUT, direction);
 }
 
 /**
