@@ -18,7 +18,7 @@ import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown
 import { DiffSource } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
-import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString } from './dom';
+import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { detectHeadSha, shaFromCommitUrl } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText, restoreHeaderStats } from './header-stats';
@@ -166,7 +166,7 @@ function markHiddenDirectories(treeDirectories: readonly HTMLElement[]): void {
   for (const directory of directories) {
     const hasVisible = directory.querySelector(`[${ATTR_TREE}="visible"]`) !== null;
     const hasHidden = directory.querySelector(`[${ATTR_TREE}="hidden"]`) !== null;
-    directory.setAttribute(ATTR_TREE, !hasVisible && hasHidden ? 'hidden' : 'visible');
+    writeAttribute(directory, ATTR_TREE, !hasVisible && hasHidden ? 'hidden' : 'visible');
   }
 }
 
@@ -949,10 +949,10 @@ export class GeldController {
     const host = view.treeRoot.parentElement ?? document;
     removeTreeSection(host);
     removeSidebarLayout(host);
-    view.treeRoot.setAttribute(ATTR_TREE_MODE, 'inline');
+    writeAttribute(view.treeRoot, ATTR_TREE_MODE, 'inline');
     for (const file of view.treeFiles) {
       const category = view.filteredPaths.has(file.path) ? null : this.classify(matcher, file.path, null);
-      file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
+      writeAttribute(file.element, ATTR_TREE, category === null ? 'visible' : 'hidden');
       setInlineIcon(file.element, category);
     }
     markHiddenDirectories(view.treeDirectories);
@@ -969,7 +969,7 @@ export class GeldController {
 
   private applyTree(view: DiffView, stateKey: string, matcher: PathMatcher, tree: readonly ClassifiedTreeFile[] = this.classifyTree(view, matcher)): void {
     if (view.treeRoot === null) return;
-    view.treeRoot.setAttribute(ATTR_TREE_MODE, 'grouped');
+    writeAttribute(view.treeRoot, ATTR_TREE_MODE, 'grouped');
     for (const element of view.treeRoot.querySelectorAll<HTMLElement>(`.${INLINE_ICON_CLASS}`)) element.remove();
     for (const element of view.treeRoot.querySelectorAll<HTMLElement>(`[${ATTR_SWAPPED_ICON}]`)) element.removeAttribute(ATTR_SWAPPED_ICON);
 
@@ -977,7 +977,7 @@ export class GeldController {
     const byCategory = new Map<HiddenCategory, TreeSectionFile[]>();
     let visibleFiles = 0;
     for (const { file, category, filtered } of tree) {
-      file.element.setAttribute(ATTR_TREE, category === null ? 'visible' : 'hidden');
+      writeAttribute(file.element, ATTR_TREE, category === null ? 'visible' : 'hidden');
       if (category === null) {
         if (filtered !== true) visibleFiles += 1;
         continue;
