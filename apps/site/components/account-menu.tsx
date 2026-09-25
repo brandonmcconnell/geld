@@ -31,7 +31,10 @@ export function AccountMenu({ className }: { readonly className?: string | undef
             className,
           )}
         >
-          <UserGlyphIcon className="size-full" />
+          {/* Clips the glyph to the cut corners (native corner-shape shapes the border, not the content); inherits the radius so the hover cut follows. Kept off the button itself so its ::after hit area stays unclipped. */}
+          <span aria-hidden="true" className="block size-full overflow-clip rounded-[inherit] [corner-shape:inherit]">
+            <UserGlyphIcon className="size-full" />
+          </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">Sign in with GitHub</TooltipContent>
       </Tooltip>
