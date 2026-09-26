@@ -827,9 +827,19 @@ export function pinSidebarHeaders(treeRoot: HTMLElement): void {
     changed = true;
     if (pin) {
       section.setAttribute(ATTR_PINNED, '');
+      // Inline as well as in the stylesheet: a pinned header that stays in
+      // normal flow sits below the fold, and in at least one Chrome profile the
+      // stylesheet rule for `[data-geld-pinned]` was not applied while every
+      // other rule on the element was. The offsets are inline already.
+      section.style.position = 'sticky';
+      section.style.zIndex = '1';
+      section.style.background = 'var(--bgColor-default, #fff)';
     } else {
       section.removeAttribute(ATTR_PINNED);
       section.style.removeProperty('bottom');
+      section.style.removeProperty('position');
+      section.style.removeProperty('z-index');
+      section.style.removeProperty('background');
     }
   }
   if (changed) sidebarGeometry.refresh();
@@ -1054,7 +1064,7 @@ export function removeSidebarLayout(root: ParentNode = document): void {
   }
   for (const element of scope.querySelectorAll<HTMLElement>(`[${ATTR_PINNED}]`)) {
     element.removeAttribute(ATTR_PINNED);
-    element.style.removeProperty('bottom');
+    for (const property of ['bottom', 'position', 'z-index', 'background']) element.style.removeProperty(property);
   }
   for (const element of scope.querySelectorAll<HTMLElement>(`.${TREE_SECTION_CLASS}--changes`)) element.remove();
 }
