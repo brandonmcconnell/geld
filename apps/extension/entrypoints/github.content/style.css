@@ -371,7 +371,7 @@
  * to the height of the headers beneath it), and rest at the pane's bottom
  * once it has. Opaque, above the list they cover.
  */
-[data-geld-sidebar-sticky] .geld-tree-section[data-geld-lone] {
+[data-geld-sidebar-sticky] .geld-tree-section[data-geld-pinned] {
   position: sticky;
   z-index: 1;
   background: var(--bgColor-default, #fff);
