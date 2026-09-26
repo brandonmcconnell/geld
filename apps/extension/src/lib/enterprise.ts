@@ -6,8 +6,10 @@ import { browser } from 'wxt/browser';
  * granted by the user (optional host permissions) and registered here.
  */
 
-export const GHES_SCRIPT_ID = 'geld-enterprise';
+const GHES_SCRIPT_ID = 'geld-enterprise';
+const GHES_PORTAL_ID = 'geld-enterprise-portal';
 const CONTENT_JS = 'content-scripts/github.js';
+const PORTAL_JS = 'content-scripts/portal.js';
 const CONTENT_CSS = 'content-scripts/github.css';
 
 export function originPattern(host: string): string {
@@ -93,6 +95,16 @@ export async function syncEnterpriseHosts(hosts: readonly string[]): Promise<voi
         persistAcrossSessions: true,
       },
     ]);
+    try {
+      await browser.scripting.unregisterContentScripts({ ids: [GHES_PORTAL_ID] });
+    } catch {
+      // Nothing registered yet.
+    }
+    try {
+      await browser.scripting.registerContentScripts([{ id: GHES_PORTAL_ID, matches, js: [PORTAL_JS], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: true }]);
+    } catch {
+      // No MAIN-world content scripts here: quick view still works, React's own controls inside it do not.
+    }
     return;
   }
 

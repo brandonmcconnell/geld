@@ -1,4 +1,4 @@
-import { cleanText, directChildOf, isHTMLElement, mostCommon, parseLineStats, query, queryAll } from '../dom';
+import { cleanText, parseLineStats, query, queryAll } from '../dom';
 import type { DiffEntry, DiffView, DiffViewAdapter, TreeFileNode } from '../model';
 import { filteredPathsOf } from '../model';
 
@@ -15,7 +15,17 @@ import { filteredPathsOf } from '../model';
  *         span.sr-only                "Lines changed: 8 additions & 7 deletions"
  *         [data-diff-anchor="diff-<digest>"]
  *   ul[role=tree][aria-label="File Tree"] li[role=treeitem][id="<path>"]
+ *
+ * Large pull requests offer an experimental mode (`?mode=virtualization`):
+ *   div[data-testid="virtualized-diffs-list"]
+ *     <div style="height: <sum of estimates>px">      (entry container, position: relative)
+ *       div[data-index][data-path-digest][style="top: …"]   (entry root, position: absolute)
+ *         div[role=region][id="diff-<digest>"]
+ * Only rows near the viewport exist; the tree still lists every file.
  */
+
+/** The list of the React view's virtualised mode; the entry container is its spacer child. */
+const VIRTUAL_LIST_SELECTOR = '[data-testid="virtualized-diffs-list"]';
 /** Resolve a control's label from aria-label, aria-labelledby or its text. */
 function accessibleName(element: HTMLElement): string {
   const label = element.getAttribute('aria-label');
@@ -78,6 +88,53 @@ function headingPath(text: string | null | undefined): string {
   return clean.slice(arrow + 1).trim().split(/\s+/)[0] ?? '';
 }
 
+/** Marks a wrapper between an entry root and the container (a render chunk); the stylesheet flattens it. */
+export const ATTR_WRAP = 'data-geld-wrap';
+
+/**
+ * Select a file in GitHub's tree as a click would: Primer's TreeView acts on
+ * its item's content row, and in the virtualised mode that scrolls the list
+ * to the file and mounts its row at once. Works on a row Geld has hidden
+ * (`display: none`), since a dispatched click needs no layout.
+ */
+export function activateTreeItem(item: HTMLElement): void {
+  (item.querySelector<HTMLElement>('.PRIVATE_TreeView-item-content') ?? item).click();
+}
+
+/** Whether the tree marks this file as the one the page is at (`aria-current`); selecting it again does nothing. */
+export function isSelectedTreeItem(item: HTMLElement): boolean {
+  return item.getAttribute('aria-current') === 'true';
+}
+
+/** An entry's root: the element wrapping just its region (GitHub's `diffEntry`), or the region itself. */
+function rootOf(region: HTMLElement): HTMLElement {
+  const parent = region.parentElement;
+  return parent !== null && parent.querySelectorAll('[role="region"]').length === 1 ? parent : region;
+}
+
+/**
+ * The element currently rendering `entry`, when its own root has been
+ * replaced since it was read: the virtualiser remounts a row it re-measures.
+ * Found by the anchor, which the region carries as its id.
+ */
+export function liveEntryRoot(entry: DiffEntry): HTMLElement | null {
+  if (entry.anchor === null) return null;
+  const region = document.getElementById(entry.anchor)?.closest<HTMLElement>('[role="region"]') ?? null;
+  return region === null ? null : rootOf(region);
+}
+
+/** The lowest element containing every one of `nodes`, or null when there is none inside the document. */
+function commonAncestor(nodes: readonly HTMLElement[]): HTMLElement | null {
+  const [first, ...rest] = nodes;
+  if (first === undefined) return null;
+  let candidate: HTMLElement | null = first.parentElement;
+  while (candidate !== null && candidate !== document.documentElement) {
+    if (rest.every((node) => candidate?.contains(node) === true)) return candidate;
+    candidate = candidate.parentElement;
+  }
+  return null;
+}
+
 export const reactAdapter: DiffViewAdapter = {
   kind: 'react',
   read(): DiffView | null {
@@ -91,14 +148,25 @@ export const reactAdapter: DiffViewAdapter = {
     }
     if (regions.size === 0) return null;
 
-    const container = mostCommon(
-      Array.from(regions, (region) => region.parentElement?.parentElement ?? null).filter(isHTMLElement),
-    );
+    // An entry's root is the element wrapping just its region (GitHub's `diffEntry`), or the region itself. The
+    // container is the lowest ancestor holding every root. Large diffs render the list in chunks - several entry
+    // wrappers under one intermediate div - and the old "most common grandparent" then took a whole chunk as one
+    // entry's root, so hiding one file hid (or failed to hide) its neighbours. Chunk wrappers between a root and
+    // the container are marked so the stylesheet flattens them (`display: contents`) and every root is a flex
+    // child of the container, as the ordering needs.
+    const roots = new Map<HTMLElement, HTMLElement>();
+    for (const region of regions) roots.set(region, rootOf(region));
+    const container = commonAncestor([...roots.values()]);
     if (container === null) return null;
+    // With one row mounted the container is its parent, which is the spacer as well.
+    const virtualized = container.parentElement?.matches(VIRTUAL_LIST_SELECTOR) === true;
+    for (const root of roots.values()) {
+      for (let wrap = root.parentElement; wrap !== null && wrap !== container; wrap = wrap.parentElement) wrap.setAttribute(ATTR_WRAP, '');
+    }
 
     const entries: DiffEntry[] = [];
     for (const region of regions) {
-      const root = directChildOf(container, region);
+      const root = roots.get(region) ?? null;
       if (root === null) continue;
       const path = cleanText(
         region.querySelector('button[data-file-path]')?.getAttribute('data-file-path') ??
@@ -132,13 +200,15 @@ export const reactAdapter: DiffViewAdapter = {
         if (path === '') continue;
         // The item's leading visual is GitHub's status icon (file-added, file-removed, file-moved, file-diff).
         const statusIcon = item.querySelector(':scope > [class*="item-container"] [class*="item-visual"] svg');
-        treeFiles.push({ path, element: item, statusIcon: statusIcon instanceof SVGElement ? statusIcon : null });
+        const href = item.querySelector('a[href^="#diff-"]')?.getAttribute('href') ?? null;
+        treeFiles.push({ path, element: item, statusIcon: statusIcon instanceof SVGElement ? statusIcon : null, anchor: href === null ? null : href.slice(1) });
       }
     }
 
     return {
       kind: 'react',
       container,
+      virtualized,
       entries,
       treeRoot,
       treeFiles,

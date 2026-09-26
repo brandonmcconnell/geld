@@ -102,9 +102,31 @@ export function originalText(element: HTMLElement): string {
   return element.getAttribute('data-geld-original') ?? element.textContent ?? '';
 }
 
+/**
+ * Write an attribute only when its value changes. Every pass re-marks the
+ * same hundreds of nodes (each tree row, the sidebar chain), and a write of
+ * the value already there still records a mutation and invalidates the
+ * node's style: on a page streaming a large diff that was two hundred
+ * pointless style recalculations twice a second, and the sidebar flickered
+ * for as long as the diff loaded.
+ */
+export function writeAttribute(element: Element, name: string, value: string): void {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+}
+
+/** Set text only when it changes: assigning the same string still replaces the text node. */
+export function writeText(element: Element, text: string): void {
+  if (element.textContent !== text) element.textContent = text;
+}
+
 export function isOwnElement(node: Node | null): boolean {
   const element = node instanceof Element ? node : node?.parentElement ?? null;
-  return element?.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null && element !== null;
+  if (element === null) return false;
+  const own = element.closest(`[${OWN_UI_ATTRIBUTE}]`);
+  if (own === null) return false;
+  // A GitHub node on loan to the review panel (quick view) is still GitHub's: its commit links keep their tooltip.
+  const loaned = element.closest('[data-geld-teleported]');
+  return loaned === null || !own.contains(loaned);
 }
 
 export function createElement<K extends keyof HTMLElementTagNameMap>(

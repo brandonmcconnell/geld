@@ -59,6 +59,14 @@ const PERSONAL_KEYS = [
   'hideTests',
   'testGroups',
   'customPatterns',
+  'prOverview',
+  'compactTimeline',
+  'reviewGrouping',
+  'collapseDescription',
+  'reviewBots',
+  'aiBaseUrl',
+  'aiModel',
+  'suggestedFixes',
 ] as const;
 
 /**

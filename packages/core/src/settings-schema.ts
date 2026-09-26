@@ -20,9 +20,10 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = {
-  [K in keyof GeldSettings]: GeldSettings[K] extends string ? K : never;
-}[keyof GeldSettings];
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
+
+/** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
+export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
 
 export type SettingsSurface = 'extension' | 'site';
 
@@ -109,6 +110,20 @@ export interface ListField extends FieldBase {
   readonly saveLabel: string;
 }
 
+export interface TextField extends FieldBase {
+  readonly kind: 'text';
+  readonly key: TextSettingKey;
+  readonly placeholder: string;
+  readonly autocomplete?: string;
+  /** Ready-made values offered under the field, applied with one click. */
+  readonly presets?: readonly TextPreset[];
+}
+
+export interface TextPreset {
+  readonly label: string;
+  readonly value: string;
+}
+
 export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'reset';
 
 /** A one-off operation on the whole settings document. */
@@ -130,9 +145,9 @@ export interface ActionsField extends FieldBase {
   readonly actions: readonly MaintenanceAction[];
 }
 
-export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | ActionsField;
+export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'enterprise' | 'maintenance';
+export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -274,8 +289,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'Hide large diffs ⚠️',
         description:
           'Move files with 1000+ changed lines out of the initial review and exclude them from the visible counts. Enable this carefully: size alone does not make a change unimportant.',
-        popup: true,
-        popupDescription: 'Move 1000+ line diffs out of review. Enable carefully.',
+        // A deliberate opt-in with a warning to read: the options page and geld.sh only, not the toolbar popup.
+        popup: false,
       },
     ],
   },
@@ -370,6 +385,124 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           'Matching ignores case. Lines starting with `#` are comments.',
         ],
         saveLabel: 'Save authors',
+      },
+    ],
+  },
+  {
+    id: 'experiments',
+    title: 'Experiments',
+    intro:
+      'Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations — a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.',
+    fields: [
+      {
+        kind: 'toggle',
+        key: 'prOverview',
+        label: 'Review digest on pull requests',
+        description: 'Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.',
+        // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
+        popup: true,
+      },
+      {
+        kind: 'choice',
+        key: 'compactTimeline',
+        label: 'Timeline',
+        description:
+          '`Compact` folds bot reviews and noisy events into accordions. `Minimal` also folds human comments that belong to finished items. `Off` leaves GitHub’s timeline and only shows the panel.',
+        popup: false,
+        options: [
+          { value: 'off', label: 'Off', description: 'Leave the timeline as GitHub shows it; still render the digest panel.' },
+          { value: 'compact', label: 'Compact', description: 'Fold bot review comments and low-signal events. Human discussion stays.' },
+          { value: 'minimal', label: 'Minimal', description: 'Also fold human comments on done items. Powerful, easy to miss a remark.' },
+        ],
+      },
+      {
+        kind: 'choice',
+        key: 'reviewGrouping',
+        label: 'Group the digest by',
+        description: '`Type` lists bots, CI, reviews, review rounds and activity as their own sections. `Push` lists every push as one row holding what landed since the previous one: its threads, reviews, previews and commits.',
+        popup: false,
+        options: [
+          { value: 'type', label: 'Type', description: 'Bots, CI, reviews, rounds and activity, each in its own section.' },
+          { value: 'batch', label: 'Push', description: 'One row per push with everything that landed between it and the last.' },
+        ],
+      },
+      {
+        kind: 'toggle',
+        key: 'collapseDescription',
+        label: 'Collapse the description',
+        description: 'In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.',
+        popup: false,
+      },
+      {
+        kind: 'list',
+        key: 'reviewBots',
+        label: 'Extra review bots',
+        description: 'Logins to treat as review bots on top of the built-in list (Bugbot, Greptile, Copilot, CodeRabbit, Codex, Devin, Gemini).',
+        popup: false,
+        rows: 3,
+        placeholder: 'my-reviewer[bot]',
+        syntax: [
+          'A login as GitHub shows it: `my-bot[bot]`. Built-in bots do not need to be listed.',
+          '`*` is allowed the same way as hidden authors. Lines starting with `#` are comments.',
+        ],
+        saveLabel: 'Save bots',
+      },
+      {
+        kind: 'choice',
+        key: 'suggestedFixes',
+        label: 'Suggested fixes',
+        description: 'Review bots often attach a fix; with AI on, Geld can propose one too. Choose which appear on an item.',
+        popup: false,
+        options: [
+          { value: 'bots', label: 'From bots', description: 'Show the fix a review bot attached to its comment.' },
+          { value: 'ai', label: 'From AI', description: 'Only fixes the consolidation model proposes (needs a gateway key).' },
+          { value: 'all', label: 'Both', description: 'Bot fixes and, with AI on, proposed ones.' },
+          { value: 'off', label: 'Off', description: 'Never show a suggested fix; the finding alone.' },
+        ],
+      },
+      {
+        kind: 'toggle',
+        key: 'aiEnabled',
+        label: 'AI features',
+        description:
+          'Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, nothing below is used and no request is made; on, it takes effect once a gateway URL, key and model are set.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'text',
+        key: 'aiBaseUrl',
+        label: 'AI gateway URL',
+        description:
+          'An OpenAI-compatible base URL: Vercel AI Gateway, OpenRouter, OpenAI, or your own. Paste it with or without the `/v1`; requests add their own path. The key stays on this device (`storage.local`, never the gist).',
+        popup: false,
+        placeholder: 'https://ai-gateway.vercel.sh',
+        autocomplete: 'off',
+        surfaces: ['extension'],
+        presets: [
+          { label: 'Vercel AI Gateway', value: 'https://ai-gateway.vercel.sh' },
+          { label: 'OpenRouter', value: 'https://openrouter.ai/api' },
+          { label: 'OpenAI', value: 'https://api.openai.com' },
+        ],
+      },
+      {
+        kind: 'text',
+        key: 'aiModel',
+        label: 'AI model',
+        description: 'The model that writes: consolidated findings, the TL;DR, proposed fixes. Listed from the gateway once a URL and key are saved; evaluation models such as Jev are not offered here.',
+        popup: false,
+        placeholder: 'anthropic/claude-sonnet-4.5',
+        autocomplete: 'off',
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
+        key: 'aiJev',
+        label: 'Use Jev for decisions',
+        description:
+          'TypeSafe’s Jev answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks Jev which findings report the same problem before the AI model rewrites them; off, the AI model decides that itself.',
+        popup: false,
+        surfaces: ['extension'],
       },
     ],
   },
@@ -473,6 +606,10 @@ export function choiceFields(fields: readonly SettingsField[]): readonly ChoiceF
 
 export function listFields(fields: readonly SettingsField[]): readonly ListField[] {
   return fields.filter((field): field is ListField => field.kind === 'list');
+}
+
+export function textFields(fields: readonly SettingsField[]): readonly TextField[] {
+  return fields.filter((field): field is TextField => field.kind === 'text');
 }
 
 export type InlineRun =

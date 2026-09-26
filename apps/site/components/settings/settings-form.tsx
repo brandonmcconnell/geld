@@ -201,6 +201,8 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                     return <ListEditor key={field.key} field={field} lines={settings[field.key]} disabled={signedOut || remoteInvalid || busy} onSave={onList(field.key)} />;
                   case 'actions':
                     return <ActionsRow key="actions" field={field} settings={settings} disabled={signedOut || remoteInvalid || busy} onReplace={onReplace} />;
+                  case 'text':
+                    return null;
                 }
               })}
             </div>

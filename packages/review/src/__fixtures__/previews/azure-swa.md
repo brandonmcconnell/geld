@@ -1,0 +1,1 @@
+Azure Static Web Apps: Your stage site is ready! Visit it here: https://brave-bay-04f351e03-128.westeurope.4.azurestaticapps.net
