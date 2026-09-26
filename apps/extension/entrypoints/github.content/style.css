@@ -3640,11 +3640,6 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
  * a comment has them, under the text, flush with the text's left edge, the
  * picker always shown. Its ⋯ is worn by the row above.
  */
-.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] {
-  margin: 8px 0 0 !important;
-  padding: 0 !important;
-}
-
 .geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] .comment-reactions,
 .geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] .js-reactions-container,
 .geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'].comment-reactions,
@@ -3657,6 +3652,24 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   padding: 0 !important;
   border: 0 !important;
   background: none !important;
+}
+
+/* 8px under the text, as the bubble keeps; the part can be the row itself, so the row's own selectors are here too
+ * (a rule with fewer classes than the reset above would lose to it whatever its order). */
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'],
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'].comment-reactions,
+.geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'].js-reactions-container {
+  margin: 8px 0 0 !important;
+  padding: 0 !important;
+}
+
+/* GitHub clears the row with two empty table pseudo-elements; as flex items they take a gap each, which read as a
+ * 4px indent before the picker and a phantom slot at the strip's end. */
+.geld-review__chat .comment-reactions::before,
+.geld-review__chat .comment-reactions::after,
+.geld-review__chat .js-reactions-container::before,
+.geld-review__chat .js-reactions-container::after {
+  display: none !important;
 }
 
 .geld-review__chat[data-geld-chat='comment'] [data-geld-part='reactions'] reactions-menu,
