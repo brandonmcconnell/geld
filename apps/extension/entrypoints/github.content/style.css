@@ -3124,6 +3124,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+  /* GitHub clips the collapsible to its rounded box; here a message's menu and picker open past the thread. */
+  overflow: visible !important;
 }
 
 /* A top-level comment arrives as its whole timeline row: the rail, the avatar column and the card chrome go. */
@@ -3505,8 +3507,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item {
   display: inline-flex !important;
-  align-items: center;
-  gap: 4px;
+  /* GitHub aligns the pill's emoji and count on the baseline, which in a 24px pill puts the emoji at the top. */
+  align-items: center !important;
+  gap: 3px;
   height: var(--geld-chat-action) !important;
   margin: 0 !important;
   padding: 0 8px !important;
@@ -3516,6 +3519,23 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-size: 12px !important;
   line-height: 1 !important;
   white-space: nowrap;
+}
+
+/* GitHub gives the count a 24px box with its digits at the top; here it is a line as tall as its digits. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item > * {
+  display: inline-flex !important;
+  align-items: center;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
+
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item g-emoji {
+  display: inline-flex !important;
+  align-items: center;
+  height: 16px;
 }
 
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item.user-has-reacted {
@@ -3533,7 +3553,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   height: var(--geld-chat-action);
   margin: 0 !important;
   opacity: 0;
-  transition: opacity 80ms ease;
+  transition: opacity 150ms ease-out;
 }
 
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] reactions-menu,
