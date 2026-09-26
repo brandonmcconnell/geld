@@ -3206,7 +3206,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   flex-direction: column;
   align-items: flex-start;
   align-self: flex-start;
-  max-width: calc(100% - 40px);
+  /* Both sides' bubbles span the same columns: the gutter's width on the empty side too. */
+  max-width: calc(100% - var(--geld-chat-gutter));
   min-width: 0;
   margin: 0 !important;
   padding: 0 0 0 var(--geld-chat-gutter) !important;
@@ -3261,8 +3262,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat [data-geld-mine] > [data-geld-part='meta'] h3 > .d-flex,
 .geld-review__chat [data-geld-mine] > [data-geld-part='meta'] .timeline-comment-header-text {
-  justify-content: flex-end;
+  /* Read from the avatar inward, as on the left: name beside the picture, then the time. The line is reversed
+   * visually only; the DOM keeps name before time. */
+  flex-direction: row-reverse;
+  justify-content: flex-start;
   text-align: right;
+}
+
+/* GitHub's header keeps a holder for the ⋯ and the "Author" labels, padded 24px on the left; with the ⋯ moved to the
+ * strip and the labels hidden it is an empty box that pushed the words 24px in from the picture. */
+.geld-review__chat [data-geld-part='meta'] > .d-flex.flex-row-reverse:not(:has(details, button)) {
+  display: none !important;
 }
 
 .geld-review__chat [data-geld-part='meta'] .avatar {
