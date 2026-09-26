@@ -2844,11 +2844,40 @@ html[data-geld-timeline='full'] [data-geld-folded] {
 .geld-review__qv .TimelineItem--condensed,
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) {
   display: flex !important;
-  align-items: flex-start !important;
+  align-items: center !important;
   gap: 10px;
   padding: 4px 0 !important;
   font-size: 12px;
   line-height: 20px;
+}
+
+/* One 20px line: the avatar (GitHub gives it a 4px gap, the rows here use 8px) and the words, and a button GitHub
+ * floats at the right ("View deployment", 28px in the timeline) shrunk to the line so nothing sits above centre. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body > .d-flex {
+  align-items: center;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .flex-shrink-0.mr-1 {
+  margin-right: 8px !important;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .avatar {
+  vertical-align: middle;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right {
+  min-height: 20px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+  line-height: 18px !important;
+}
+
+/* The activity folds (events, commits, mentions) are lists of one-line rows: the same room above and below. */
+.geld-review__slot[data-geld-slot='fold:events'] > .geld-review__slot-body,
+.geld-review__slot[data-geld-slot='fold:commits'] > .geld-review__slot-body,
+.geld-review__slot[data-geld-slot='fold:mentions'] > .geld-review__slot-body,
+.geld-review__slot[data-geld-slot='fold:misc'] > .geld-review__slot-body {
+  padding: 8px 16px;
 }
 
 .geld-review__qv .TimelineItem-badge,
