@@ -3291,7 +3291,14 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat [data-geld-part='meta'] .author {
   color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+  /* The rows' name size (13px, the time a step smaller at 12px), the two on one baseline. */
+  font-size: 13px !important;
   font-weight: 600;
+}
+
+.geld-review__chat [data-geld-part='meta'] h3 > .d-flex,
+.geld-review__chat [data-geld-part='meta'] .timeline-comment-header-text {
+  align-items: baseline !important;
 }
 
 .geld-review__chat [data-geld-part='meta'] .js-timestamp,
@@ -3937,12 +3944,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat-byline {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-height: 24px;
   margin-bottom: 4px;
   font-size: 12px;
   line-height: 20px;
+}
+
+/* The picture has no baseline of its own to share; it centres on the line. */
+.geld-review__chat-byline > .geld-review__avatar {
+  align-self: center;
 }
 
 .geld-review__chat-byline > .geld-review__avatar {
@@ -3951,6 +3963,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 .geld-review__chat-byline-name {
+  font-size: 13px;
   font-weight: 600;
 }
 
