@@ -442,6 +442,19 @@ function annotateMessages(messages: readonly HTMLElement[], viewer: string, pinn
     const reactionsRow = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
     const reactionsHolder = partHolding(message, reactionsRow);
     const meta = partHolding(message, message.querySelector(META_SELECTOR));
+    // The author's picture carries the same card as their name: GitHub's hovercard for a person (its script picks
+    // the attributes up on any element), Geld's identity card for an App. Marks only, gone on restore.
+    const avatar = (meta ?? message).querySelector<HTMLElement>('img.avatar, img[class*="avatar" i]');
+    const authorLink = message.querySelector<HTMLElement>('a.author, a[data-testid="author-link"]');
+    if (avatar !== null && authorLink !== null && !avatar.hasAttribute('data-hovercard-url') && !avatar.hasAttribute(ATTR_WHO)) {
+      const card = authorLink.getAttribute('data-hovercard-url');
+      if (card !== null) {
+        mark(avatar, 'data-hovercard-type', authorLink.getAttribute('data-hovercard-type') ?? 'user');
+        mark(avatar, 'data-hovercard-url', card);
+      } else if (login !== '' && /\[bot\]$/i.test(login)) {
+        mark(avatar, ATTR_WHO, login);
+      }
+    }
     if (meta !== null && meta !== bubble) mark(meta, ATTR_PART, 'meta');
     if (bubble !== null) mark(bubble, ATTR_PART, 'bubble');
     // Review comments keep their reactions in a wrapper of their own beside the body's; an issue comment nests
