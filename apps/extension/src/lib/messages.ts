@@ -34,6 +34,11 @@ export interface ColorSchemeMessage {
   readonly dark: boolean;
 }
 
+/** Options page → background: forget the diffs held in memory (the on-disk cache is cleared by the sender). */
+export interface ClearDiffCacheMessage {
+  readonly type: 'geld:clear-diff-cache';
+}
+
 /** Background → content script: the keyboard shortcut was pressed. */
 export interface ToggleHiddenMessage {
   readonly type: 'geld:toggle-hidden';
@@ -189,6 +194,10 @@ export function isFetchFileResponse(value: unknown): value is FetchFileResponse 
 
 export function isColorSchemeMessage(value: unknown): value is ColorSchemeMessage {
   return isRecord(value) && value.type === 'geld:color-scheme' && typeof value.dark === 'boolean';
+}
+
+export function isClearDiffCacheMessage(value: unknown): value is ClearDiffCacheMessage {
+  return isRecord(value) && value.type === 'geld:clear-diff-cache';
 }
 
 export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMessage {

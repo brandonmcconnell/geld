@@ -171,10 +171,16 @@ export function applyPrListStats(options: PrListOptions): void {
       continue;
     }
     const state = options.diffSource.request(row.diffUrl);
+    if (state.status === 'failed') {
+      renderFailure(row, state.reason);
+      continue;
+    }
     if (state.status !== 'ready') continue;
 
     const matcher = options.matcherFor(row.repo);
     const chip = ensureChip(row);
+    delete chip.dataset.failed;
+    chip.removeAttribute('title');
     const { all, hidden } = breakdownFromFiles(state.files, matcher, options.hideCommentLines);
     const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(matcher.activeCategories, hidden), matcher.activeCategories);
     // With nothing that could be hidden the chip is plain line counts: "0 hidden" would be noise.
@@ -201,6 +207,36 @@ export function applyPrListStats(options: PrListOptions): void {
       delete chip.dataset.hasTests;
     }
   }
+}
+
+/** What to say in a row whose diff could not be had, by the background's reason. */
+export function failureCopy(reason: string): { readonly text: string; readonly title: string } {
+  if (reason === 'signed-out') return { text: 'sign in to count', title: 'GitHub answered with its sign-in page: sign in (or renew your SSO session) and reload to see the counts.' };
+  if (reason === 'rate-limited') return { text: 'counts paused', title: 'GitHub is rate limiting diff downloads; Geld retries shortly.' };
+  if (reason === 'too-large') return { text: 'diff too large', title: 'This diff is over 20 MB; Geld does not count it.' };
+  if (reason === 'http-404') return { text: 'counts unavailable', title: 'GitHub answered 404 for this diff. For a private repository that means you are signed out: sign in and reload.' };
+  return { text: 'counts unavailable', title: `The diff could not be fetched (${reason}). Open the pull request to see whether GitHub serves it, then reload.` };
+}
+
+/**
+ * A row whose diff failed says so instead of showing nothing: a blank row
+ * reads as "not counted yet", while "sign in to count" points at the fix.
+ * Rendered with the chip's own class so it sits where the counts would.
+ */
+function renderFailure(row: ListRow, reason: string): void {
+  const chip = ensureChip(row);
+  const { text, title } = failureCopy(reason);
+  if (chip.dataset.rendered !== `!${reason}`) {
+    chip.dataset.rendered = `!${reason}`;
+    chip.replaceChildren(
+      createElement('span', { class: `${PR_STAT_CLASS}__sep`, 'aria-hidden': 'true' }, ['\u2022']),
+      createElement('span', { class: `${PR_STAT_CLASS}__failure` }, [text]),
+    );
+  }
+  chip.dataset.failed = '';
+  chip.title = title;
+  detachBreakdownTooltip(chip);
+  delete chip.dataset.hasTests;
 }
 
 export function removePrListStats(): void {

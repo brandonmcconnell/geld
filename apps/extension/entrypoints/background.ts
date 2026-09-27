@@ -16,6 +16,7 @@ import {
   isEnsureContentMessage,
   isFetchDiffRequest,
   isFetchFileRequest,
+  isClearDiffCacheMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
@@ -167,6 +168,11 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
     if (response.status === 429 || response.status === 403) {
       const retryAfterMs = await recordRateLimit(response.headers.get('retry-after'));
       result = { ok: false, reason: 'rate-limited', retryAfterMs };
+    } else if (response.redirected && /^\/(login|sessions?|sso|orgs\/[^/]+\/sso)\b/.test(new URL(response.url).pathname)) {
+      // A private repository while signed out (or with an SSO session that
+      // lapsed): GitHub answers 200 with its login page. Parsed as a diff
+      // that is "no files", which used to be cached and shown as 0 +0 −0.
+      result = { ok: false, reason: 'signed-out' };
     } else if (!response.ok) {
       result = { ok: false, reason: `http-${response.status}` };
     } else {
@@ -175,15 +181,24 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
         result = { ok: false, reason: 'too-large' };
       } else {
         const text = await readWithLimit(response, MAX_DIFF_BYTES);
-        result = { ok: true, files: parseUnifiedDiff(text) };
-        await recordSuccess();
+        if (looksLikeHtml(response.headers.get('content-type'), text)) {
+          // Not a diff at all (an interstitial, an error page served as 200).
+          result = { ok: false, reason: 'not-a-diff' };
+        } else {
+          result = { ok: true, files: parseUnifiedDiff(text) };
+          await recordSuccess();
+        }
       }
     }
   } catch (error) {
     result = { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
   }
-  // Only successful and definitive failures are cached; transient network errors retry.
-  if (result.ok || result.reason === 'too-large' || result.reason.startsWith('http-4')) {
+  // Only successful and definitive failures are cached; transient network
+  // errors retry, and so do sign-in problems — signing in fixes them. A 404
+  // is what a private repository answers to a signed-out browser (its diff
+  // as much as its pages), so it is not held either: signed in, the next
+  // request must succeed at once.
+  if (result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404')) {
     writeCache(parsed.toString(), result);
   }
   return result;
@@ -339,6 +354,11 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
+      return undefined;
+    }
+    if (isClearDiffCacheMessage(message)) {
+      cache.clear();
+      sendResponse(true);
       return undefined;
     }
     if (isTabStateMessage(message)) {

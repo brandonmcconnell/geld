@@ -36,7 +36,7 @@ import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, T
 import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
 import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
-import type { CatalogCheckMessage } from '../../src/lib/messages';
+import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
 import { settingsItem } from '../../src/lib/storage';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -748,7 +748,10 @@ async function main(): Promise<void> {
     import: () => importInput.click(),
     'clear-cache': async () => {
       await browser.storage.local.remove(['diffCache', 'repoConfigCache']);
-      maintenanceStatus('Cached diffs and repository configs cleared', 'success');
+      // The worker keeps recent responses in memory for ten minutes too.
+      const clear: ClearDiffCacheMessage = { type: 'geld:clear-diff-cache' };
+      await browser.runtime.sendMessage(clear).catch(() => undefined);
+      maintenanceStatus('Cached diffs and repository configs cleared; open pages recount on reload', 'success');
     },
     reset: async () => {
       await settingsItem.setValue(DEFAULT_SETTINGS);

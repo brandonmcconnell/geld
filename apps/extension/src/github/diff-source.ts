@@ -23,9 +23,15 @@ const RATE_LIMIT_SLACK_MS = 2 * 1000;
  */
 const TRANSIENT_RETRY_MS: readonly number[] = [4 * 1000, 15 * 1000, 45 * 1000];
 
-/** Failures that will not change by asking again. */
+/**
+ * Failures that will not change by asking again on this page. Sign-in
+ * problems (a 404 or GitHub's login page for a private repository) are among
+ * them: the fix is signing in and reloading, and retrying every row of a list
+ * in the meantime would only spend the rate budget. The background does not
+ * cache them, so the reload after signing in gets fresh answers.
+ */
 function isDefinitive(reason: string): boolean {
-  return reason === 'too-large' || reason === 'invalid-url' || reason === 'disallowed-url' || /^http-4\d\d$/.test(reason);
+  return reason === 'too-large' || reason === 'invalid-url' || reason === 'disallowed-url' || reason === 'signed-out' || reason === 'not-a-diff' || /^http-4\d\d$/.test(reason);
 }
 
 /**
@@ -77,7 +83,10 @@ export class DiffSource {
         this.memory.set(key, ready);
         // Stale-while-revalidate for list rows: show the old counts now,
         // refresh them in the background; the chip updates when that lands.
-        if (!this.persistent.isFresh(persistKey) && !this.revalidating.has(key)) {
+        // An entry with no files at all is refreshed too: older builds cached
+        // GitHub's sign-in page as an empty diff, and those entries live on
+        // devices until they are replaced.
+        if ((!this.persistent.isFresh(persistKey) || cached.length === 0) && !this.revalidating.has(key)) {
           this.revalidating.add(key);
           this.queue.push({ url: diffUrl, key, persistKey, revalidate: true });
           this.pump();

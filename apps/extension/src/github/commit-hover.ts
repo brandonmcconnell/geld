@@ -118,7 +118,14 @@ function present(): void {
       return;
     }
     case 'failed':
-      showTooltipMessage(link, state.reason === 'rate-limited' ? 'GitHub is rate limiting diffs \u2014 try again shortly' : 'Line counts unavailable for this commit');
+      showTooltipMessage(
+        link,
+        state.reason === 'signed-out'
+          ? 'Sign in to GitHub to count this commit'
+          : state.reason === 'rate-limited'
+            ? 'GitHub is rate limiting diffs \u2014 try again shortly'
+            : 'Line counts unavailable for this commit',
+      );
       return;
   }
 }

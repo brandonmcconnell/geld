@@ -658,6 +658,16 @@
   cursor: help;
 }
 
+/* The diff could not be fetched: the reason, muted, where the counts would be (title has the details). */
+.geld-pr-stat__failure {
+  color: var(--fgColor-muted, #59636e);
+  font-style: italic;
+}
+
+.geld-pr-stat[data-failed] {
+  cursor: help;
+}
+
 /*
  * Every count Geld draws is set the way GitHub sets the header's own
  * `+N −M`: the page's sans-serif at 600 (no monospace), in the same success
