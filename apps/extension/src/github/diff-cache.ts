@@ -80,19 +80,59 @@ function isLatest(key: string): boolean {
   return key.endsWith(`:${LATEST}`);
 }
 
+/** Drop malformed and pre-format entries; the rest is the map as stored. */
+function cleanMap(value: CacheMap): CacheMap {
+  const clean: CacheMap = {};
+  for (const [key, entry] of Object.entries(value)) if (key.startsWith('github') && isCachedDiff(entry)) clean[key] = entry;
+  return clean;
+}
+
+/**
+ * Write `entry` into a map: a list row's `latest` replaces only a previous
+ * `latest`; a SHA-keyed entry replaces every entry of the same pull request
+ * and refreshes its `latest`. Oldest entries go when the map is full.
+ */
+function writeEntry(map: CacheMap, key: string, entry: CachedDiff): CacheMap {
+  const next: CacheMap = { ...map };
+  const subject = subjectOf(key);
+  if (isLatest(key)) {
+    next[key] = entry;
+  } else {
+    for (const existing of Object.keys(next)) {
+      if (existing !== key && subjectOf(existing) === subject) delete next[existing];
+    }
+    next[key] = entry;
+    if (!key.includes(':commit:')) next[`${subject}:${LATEST}`] = entry;
+  }
+  const keys = Object.keys(next);
+  if (keys.length > MAX_ENTRIES) {
+    keys
+      .sort((a, b) => (next[a]?.at ?? 0) - (next[b]?.at ?? 0))
+      .slice(0, keys.length - MAX_ENTRIES)
+      .forEach((stale) => delete next[stale]);
+  }
+  return next;
+}
+
 export class DiffCache {
-  private loaded: Promise<CacheMap> | null = null;
+  private loaded: Promise<void> | null = null;
   private map: CacheMap = {};
+  /** Writes are serialised so two quick `set`s cannot race each other's read-merge-write. */
+  private writing: Promise<void> = Promise.resolve();
+  private unwatch: (() => void) | null = null;
 
   /** Load once; subsequent calls are instant. */
   async ready(): Promise<void> {
     if (this.loaded === null) {
       this.loaded = cacheItem.getValue().then((value) => {
-        const clean: CacheMap = {};
-        // Entries from before the key format was fixed (keyed by URL) are simply dropped.
-        for (const [key, entry] of Object.entries(value)) if (key.startsWith('github') && isCachedDiff(entry)) clean[key] = entry;
-        this.map = clean;
-        return clean;
+        this.map = cleanMap(value);
+        // Every GitHub tab has its own copy of this map. Another tab's write
+        // (a pull request opened from a list) lands here as it happens, so
+        // this tab neither re-fetches what that tab just counted nor, on its
+        // own next write, overwrites it with a snapshot from before.
+        this.unwatch ??= cacheItem.watch((next) => {
+          if (next !== null) this.map = cleanMap(next);
+        });
       });
     }
     await this.loaded;
@@ -113,27 +153,19 @@ export class DiffCache {
 
   set(key: string, files: readonly FileStats[]): void {
     if (files.length > MAX_FILES_PER_ENTRY) return;
-    const subject = subjectOf(key);
-    const at = Date.now();
-    if (isLatest(key)) {
-      // A list row's fetch: never newer than knowledge pinned to a commit, so
-      // it replaces only a previous `latest`.
-      this.map[key] = { files, at };
-    } else {
-      for (const existing of Object.keys(this.map)) {
-        if (existing !== key && subjectOf(existing) === subject) delete this.map[existing];
-      }
-      this.map[key] = { files, at };
-      if (!key.includes(':commit:')) this.map[`${subject}:${LATEST}`] = { files, at };
-    }
-    const keys = Object.keys(this.map);
-    if (keys.length > MAX_ENTRIES) {
-      keys
-        .sort((a, b) => (this.map[a]?.at ?? 0) - (this.map[b]?.at ?? 0))
-        .slice(0, keys.length - MAX_ENTRIES)
-        .forEach((key) => delete this.map[key]);
-    }
-    persist(cacheItem.setValue(this.map));
+    const entry: CachedDiff = { files, at: Date.now() };
+    // Visible to this tab at once...
+    this.map = writeEntry(this.map, key, entry);
+    // ...and merged into what is *stored* now, not into this tab's snapshot of
+    // it: writing the snapshot back used to drop every entry other tabs had
+    // added since it was taken, so counts kept getting fetched again.
+    this.writing = this.writing
+      .then(async () => {
+        const stored = cleanMap(await cacheItem.getValue());
+        await cacheItem.setValue(writeEntry(stored, key, entry));
+      })
+      .catch(() => undefined);
+    persist(this.writing);
   }
 
   async clear(): Promise<void> {
