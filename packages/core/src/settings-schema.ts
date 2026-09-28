@@ -554,6 +554,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
             surfaces: ['extension'],
           },
           {
+            id: 'copy-diagnostics',
+            label: 'Copy diagnostics',
+            description:
+              'Copies a short log of this session\'s diff fetches (which pull request, outcome, timing, rate budget) to the clipboard, for bug reports. No URLs, content or tokens.',
+            surfaces: ['extension'],
+          },
+          {
             id: 'reset',
             label: 'Reset to defaults',
             description: 'Put every setting back to how Geld ships.',
