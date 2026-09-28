@@ -88,7 +88,7 @@ export function splitItems(items: readonly ReviewItem[]): { readonly open: reado
 export type VerdictTone = 'success' | 'attention' | 'danger' | 'neutral';
 
 export function verdictTone(bot: BotVerdictRecord): VerdictTone {
-  if (bot.verdict === 'clean') return 'success';
+  if (bot.verdict === 'clean' || allResolved(bot)) return 'success';
   if (bot.verdict === 'failed') return 'danger';
   if (bot.verdict === 'running') return 'neutral';
   return 'attention';
@@ -100,12 +100,18 @@ export function isCurrent(bot: BotVerdictRecord, headSha: string): boolean {
   return reviewed === head || head.startsWith(reviewed) || reviewed.startsWith(head);
 }
 
-/** "Greptile 4/5", "Bugbot clean", "Devin 1 issue", "Copilot running". */
+/** Findings whose every thread has been resolved: nothing outstanding, though the bot never said "clean". */
+export function allResolved(bot: BotVerdictRecord): boolean {
+  return bot.verdict === 'findings' && bot.count === 0;
+}
+
+/** "Greptile 4/5", "Bugbot clean", "Devin 1 issue", "Copilot running", "Greptile resolved". */
 export function verdictLabel(bot: BotVerdictRecord): string {
   const title = botTitle(bot.id, bot.login);
   if (bot.verdict === 'running') return `${title} running`;
   if (bot.verdict === 'failed') return `${title} failed`;
   if (bot.verdict === 'clean') return `${title} clean`;
+  if (allResolved(bot)) return `${title} resolved`;
   if (bot.score !== undefined) return `${title} ${bot.score}/5`;
   if (bot.count !== undefined) return `${title} ${bot.count} issue${bot.count === 1 ? '' : 's'}`;
   return `${title} findings`;
@@ -202,18 +208,18 @@ export type Health = 'good' | 'warn' | 'bad' | 'pending';
 export function botHealth(bot: BotVerdictRecord): Health {
   if (bot.verdict === 'running') return 'pending';
   if (bot.verdict === 'failed') return 'bad';
-  if (bot.verdict === 'clean') return 'good';
+  if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
   if (bot.severity === 'high') return 'bad';
   if (bot.score !== undefined) return bot.score >= 5 ? 'good' : bot.score >= 3 ? 'warn' : 'bad';
-  if (bot.count === 0) return 'good';
   return 'warn';
 }
 
-/** Short text beside the glyph: "4/5", "2 issues", "clean", "running". */
+/** Short text beside the glyph: "4/5", "2 issues", "clean", "resolved", "running". */
 export function botDetail(bot: BotVerdictRecord): string {
   if (bot.verdict === 'running') return 'running';
   if (bot.verdict === 'failed') return 'failed';
   if (bot.verdict === 'clean') return 'clean';
+  if (allResolved(bot)) return 'resolved';
   if (bot.score !== undefined) return `${bot.score}/5`;
   if (bot.count !== undefined) return `${bot.count} issue${bot.count === 1 ? '' : 's'}`;
   return 'findings';

@@ -228,6 +228,26 @@ export function isStatusLineComment(body: string): boolean {
   return underWay.test(text) || stated.test(text) || promise.test(text);
 }
 
+export interface BotComment {
+  readonly author: string;
+  readonly body: string;
+  readonly anchor: string;
+  /**
+   * Set on a review thread the bot opened: whether someone has resolved it.
+   * Absent for its comments and review bodies.
+   */
+  readonly resolved?: boolean;
+}
+
+/** A bot's review threads since it last summarised a run: a finding each, open until resolved. */
+interface ThreadRun {
+  readonly login: string;
+  readonly open: number;
+  /** Where the reader should go: the first thread still open, else the last one. */
+  readonly openAnchor: string | null;
+  readonly lastAnchor: string;
+}
+
 /**
  * Combine check-run conclusions with the bot's own comments. A green check
  * with "no issues" is `clean`; a completed check plus findings in comments is
@@ -236,10 +256,16 @@ export function isStatusLineComment(body: string): boolean {
  * flagged nothing since is `clean` (Devin says it is looking and then says
  * nothing more when all is well); with no check to go by, such a bot is
  * `running` until it says more.
+ *
+ * A review thread the bot opened is a finding whatever its wording, and it
+ * stays one only until someone resolves it: a run whose threads are all
+ * resolved has nothing outstanding, so it reads `findings` with `count: 0`
+ * ("resolved"), or as its check ended when it has one. Threads posted before
+ * the bot's next summary comment belong to the run that summary reports on.
  */
 export function verdictsFrom(
   checks: readonly RawCheckRun[],
-  comments: readonly { readonly author: string; readonly body: string; readonly anchor: string }[],
+  comments: readonly BotComment[],
   headSha: string,
   extraLogins: readonly string[] = [],
 ): readonly DerivedBotVerdict[] {
@@ -267,16 +293,30 @@ export function verdictsFrom(
 
   /** Bots whose latest comment so far is a status line (the run it announced has not reported), with that line. */
   const statusOnly = new Map<string, { readonly login: string; readonly anchor: string }>();
+  const threadRuns = new Map<string, ThreadRun>();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
-    if (id === null || isTriggerComment(comment.body, extraLogins)) continue;
+    if (id === null) continue;
+    if (comment.resolved !== undefined) {
+      // The run the bot announced has reported: its findings are these threads.
+      statusOnly.delete(id);
+      const run = threadRuns.get(id);
+      const open = (run?.open ?? 0) + (comment.resolved ? 0 : 1);
+      const openAnchor = run?.openAnchor ?? (comment.resolved ? null : comment.anchor);
+      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor });
+      continue;
+    }
+    if (isTriggerComment(comment.body, extraLogins)) continue;
     if (isStatusLineComment(comment.body)) {
+      // A new run began: the threads so far belong to the run before it.
+      threadRuns.delete(id);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    threadRuns.delete(id);
     statusOnly.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
@@ -306,6 +346,25 @@ export function verdictsFrom(
     }
     const fromCheck = checkVerdict.get(id) ?? 'running';
     byId.set(id, { id, login, verdict: fromCheck, reviewedSha: existing.reviewedSha, checkName: existing.checkName, sourceId: anchor });
+  }
+  // The bot's latest word is a set of review threads: the ones still open are its outstanding findings. With
+  // every one resolved nothing is outstanding, and the check (when there is one) says how that run ended.
+  for (const [id, run] of threadRuns) {
+    const existing = byId.get(id);
+    const reviewedSha = existing?.reviewedSha ?? headSha;
+    const checkName = existing?.checkName;
+    const named = checkName === undefined ? {} : { checkName };
+    if (run.open > 0) {
+      const severity = existing?.verdict === 'findings' && existing.severity !== undefined ? { severity: existing.severity } : {};
+      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.lastAnchor });
+      continue;
+    }
+    const fromCheck = checkName === undefined ? null : checkVerdict.get(id) ?? null;
+    if (fromCheck !== null) {
+      byId.set(id, { id, login: run.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run.lastAnchor });
+      continue;
+    }
+    byId.set(id, { id, login: run.login, verdict: 'findings', count: 0, reviewedSha, ...named, sourceId: run.lastAnchor });
   }
 
   return [...byId.values()];

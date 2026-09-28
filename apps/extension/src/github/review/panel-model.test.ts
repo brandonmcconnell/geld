@@ -125,6 +125,11 @@ describe('status rows', () => {
     expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('bad');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'findings', count: 1, severity: 'high' })).toBe('bad');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'clean' })).toBe('good');
+    // Findings whose threads are all resolved: nothing outstanding.
+    const resolved = { ...base, verdict: 'findings', count: 0 } as const;
+    expect(botHealth(resolved)).toBe('good');
+    expect(verdictLabel(resolved)).toBe('Greptile resolved');
+    expect(verdictTone(resolved)).toBe('success');
   });
 });
 

@@ -19311,15 +19311,27 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     byId.set(bot.id, record3);
   }
   const statusOnly = /* @__PURE__ */ new Map();
+  const threadRuns = /* @__PURE__ */ new Map();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
-    if (id === null || isTriggerComment(comment.body, extraLogins)) continue;
+    if (id === null) continue;
+    if (comment.resolved !== void 0) {
+      statusOnly.delete(id);
+      const run2 = threadRuns.get(id);
+      const open2 = (run2?.open ?? 0) + (comment.resolved ? 0 : 1);
+      const openAnchor = run2?.openAnchor ?? (comment.resolved ? null : comment.anchor);
+      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor });
+      continue;
+    }
+    if (isTriggerComment(comment.body, extraLogins)) continue;
     if (isStatusLineComment(comment.body)) {
+      threadRuns.delete(id);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    threadRuns.delete(id);
     statusOnly.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
@@ -19344,6 +19356,23 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     }
     const fromCheck = checkVerdict.get(id) ?? "running";
     byId.set(id, { id, login, verdict: fromCheck, reviewedSha: existing.reviewedSha, checkName: existing.checkName, sourceId: anchor2 });
+  }
+  for (const [id, run2] of threadRuns) {
+    const existing = byId.get(id);
+    const reviewedSha = existing?.reviewedSha ?? headSha;
+    const checkName = existing?.checkName;
+    const named = checkName === void 0 ? {} : { checkName };
+    if (run2.open > 0) {
+      const severity = existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
+      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.lastAnchor });
+      continue;
+    }
+    const fromCheck = checkName === void 0 ? null : checkVerdict.get(id) ?? null;
+    if (fromCheck !== null) {
+      byId.set(id, { id, login: run2.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run2.lastAnchor });
+      continue;
+    }
+    byId.set(id, { id, login: run2.login, verdict: "findings", count: 0, reviewedSha, ...named, sourceId: run2.lastAnchor });
   }
   return [...byId.values()];
 }

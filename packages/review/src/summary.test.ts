@@ -287,6 +287,28 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([{ name: 'Devin Review', status: 'in_progress', conclusion: null, sha: 'bbb' }], [{ author: 'devin-ai-integration[bot]', body: 'Found 1 issue.', anchor: 'a' }, { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'b' }], 'bbb')[0]?.verdict).toBe('running');
   });
 
+  it('weighs a bot\'s review threads by whether they are still open', () => {
+    const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\nFound 2 issues.', anchor: 'pullrequestreview-1' };
+    const open = [
+      summary,
+      { author: 'greptile-apps[bot]', body: 'Distinct cookie name dropped', anchor: 'discussion_r1', resolved: false },
+      { author: 'greptile-apps[bot]', body: 'Copied paths use wrong encoding', anchor: 'discussion_r2', resolved: true },
+    ];
+    // One thread still open: that is the outstanding finding, and where the chip points.
+    expect(verdictsFrom([], open, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r1' });
+    // Every thread resolved: nothing outstanding, whatever the wording of the threads themselves.
+    const resolved = open.map((comment) => ('resolved' in comment ? { ...comment, resolved: true } : comment));
+    expect(verdictsFrom([], resolved, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 0, sourceId: 'discussion_r2' });
+    expect(verdictsFrom([], resolved, 'aaa')[0]?.score).toBeUndefined();
+    // With a check to go by, the check says how that run ended.
+    expect(verdictsFrom([{ name: 'Greptile', status: 'completed', conclusion: 'success', sha: 'aaa' }], resolved, 'aaa')[0]?.verdict).toBe('clean');
+    // A clean summary after resolved threads is the latest word; threads after a summary belong to that summary's run.
+    const later = [...resolved, { author: 'greptile-apps[bot]', body: 'No findings outside the diff remain.', anchor: 'issuecomment-9' }];
+    expect(verdictsFrom([], later, 'aaa')[0]).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-9' });
+    const rerun = [...later, { author: 'greptile-apps[bot]', body: 'Escaped schema refs fail', anchor: 'discussion_r3', resolved: false }];
+    expect(verdictsFrom([], rerun, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r3' });
+  });
+
   it('counts only review-shaped comments from a conversational agent', () => {
     const replies = [
       { author: 'replicas-connector[bot]', body: '@greptile-apps[bot] Request accepted: [Open workspace](https://app.replicas.dev/w/1). Your message was accepted and Codex will start automatically when the workspace is ready.', anchor: 'c1' },

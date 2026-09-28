@@ -23,14 +23,14 @@ import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, setFullTimeline } from './fold';
+import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
-import { checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, requiredReviewsFrom } from './panel-model';
+import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -307,7 +307,11 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
   // that flagged nothing is clean, whatever its opening comment said.
   const bots = verdictsFrom(
     crawlCheckRuns(document, headSha),
-    comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: comment.anchor })),
+    comments.map((comment) =>
+      comment.kind === 'thread' && comment.isResolved !== undefined
+        ? { author: comment.author, body: comment.body, anchor: comment.anchor, resolved: comment.isResolved }
+        : { author: comment.author, body: comment.body, anchor: comment.anchor },
+    ),
     headSha,
     settings.reviewBots,
   );
@@ -1024,6 +1028,7 @@ function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'running') return 'Reviewing this pull request now';
   if (record.verdict === 'failed') return 'Its review of this pull request failed';
   if (record.verdict === 'clean') return 'Found nothing on this pull request';
+  if (allResolved(record)) return 'Everything it found on this pull request is resolved';
   if (record.score !== undefined) return `Scored this pull request ${record.score}/5`;
   if (record.count !== undefined) return `Reported ${record.count} issue${record.count === 1 ? '' : 's'} on this pull request`;
   return 'Reported findings on this pull request';
@@ -2021,6 +2026,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
+  // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
+  markSeen();
   // The row the reader opened stays put under whatever this pass moved above it.
   applyHold();
 
