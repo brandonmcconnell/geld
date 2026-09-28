@@ -4429,6 +4429,32 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--geld-review-muted);
 }
 
+/* A commit's message keeps to its line: the time column takes width the message used to wrap into. GitHub's
+ * `pr-1 flex-auto min-width-0` cell is the one that can shrink; the message ellipsizes inside it. */
+.geld-review__qv .TimelineItem .pr-1.flex-auto.min-width-0 {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* When the commit (or push) was made: one right-aligned column after the SHAs, so every row's SHA ends at the
+ * same place and the times read down as a column. GitHub's commit rows carry no time of their own. */
+.geld-review__commit-time {
+  flex: 0 0 auto;
+  min-width: 6.5em;
+  margin-left: 8px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-review__push .geld-review__commit-time {
+  margin-left: 0;
+}
+
 /* ---- an open row wears its comment's header --------------------------------- */
 
 .geld-review__head-slot {

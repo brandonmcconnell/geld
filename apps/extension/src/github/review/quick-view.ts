@@ -10,19 +10,51 @@ import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
 import { ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK } from '../ui/icons';
 import { openMinimized } from './chat';
+import { commitDate } from './commit-dates';
 import { onRestore, teleportInto } from './teleport';
+import { relativeTimeElement } from './time';
 
-/** Fill `slot` with `nodes`. */
-export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]): void {
+/**
+ * Fill `slot` with `nodes`. `onChange` runs when something a row shows
+ * arrives later (a commit's date), so the caller can render again.
+ */
+export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[], onChange: () => void = () => undefined): void {
   const list = createElement('div', { class: 'geld-review__qv' });
   slot.replaceChildren(list);
   teleportInto(list, nodes);
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
   openMinimized(list);
   compactForcePushes(list);
+  timeCommitRows(list, onChange);
 }
 
 const ATTR_PUSH_HIDDEN = 'data-geld-push-hidden';
+const TIME_CLASS = 'geld-review__commit-time';
+
+/**
+ * When each commit was made, at the end of its row. GitHub's commit rows say
+ * nothing about time while the force-push rows between them do, so the list
+ * read as if every commit had landed with the push after it. The dates come
+ * from the Commits tab (commit-dates.ts); until they land the row has no
+ * time, and `onChange` brings them in on a later pass (the caller runs this
+ * on every pass; a row already timed is left alone). Undone when the node
+ * goes home.
+ */
+export function timeCommitRows(list: HTMLElement, onChange: () => void): void {
+  for (const row of list.querySelectorAll<HTMLElement>('.TimelineItem, .js-commits-list-item')) {
+    if (row.querySelector(`.${TIME_CLASS}`) !== null || row.querySelector('.geld-review__push') !== null) continue;
+    const link = row.querySelector<HTMLAnchorElement>('a[href*="/commits/"]');
+    const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link?.getAttribute('href') ?? '')?.[1];
+    if (link === null || sha === undefined) continue;
+    const date = commitDate(sha, onChange);
+    if (date === null) continue;
+    // The row's one line: GitHub's flex row holding avatar, message, badge and SHA (its wrapper on the React page).
+    const line = link.closest<HTMLElement>('.d-flex.flex-md-row, .d-flex.flex-row, [class*="commit-row"], .TimelineItem-body') ?? row;
+    const time = relativeTimeElement(date, TIME_CLASS);
+    line.append(time);
+    onRestore(() => time.remove());
+  }
+}
 
 /**
  * A force-push event, set like the commit rows around it. GitHub's sentence —
@@ -47,6 +79,8 @@ function compactForcePushes(list: HTMLElement): void {
     const hidden = [...line.children].filter((child): child is HTMLElement => child instanceof HTMLElement);
     for (const child of hidden) child.setAttribute(ATTR_PUSH_HIDDEN, '');
     const sha = (link: HTMLAnchorElement): HTMLElement => createElement('code', { class: 'geld-review__push-sha' }, [createElement('a', { href: link.href, class: 'Link--secondary' }, [link.textContent?.trim() ?? ''])]);
+    // The push's time, as the commit rows around it get theirs (timeCommitRows), from GitHub's own sentence.
+    const when = body.querySelector('relative-time[datetime], time-ago[datetime], time[datetime]')?.getAttribute('datetime') ?? null;
     const row = createElement('div', { class: 'geld-review__push' }, [
       ...(avatar === null ? [] : [createElement('img', { class: 'geld-review__push-avatar', src: avatar.currentSrc || avatar.src, alt: avatar.alt, width: '20', height: '20' })]),
       createElement('a', { class: 'geld-review__push-verb Link--secondary', href: verb.href }, ['force-pushed']),
@@ -54,6 +88,7 @@ function compactForcePushes(list: HTMLElement): void {
         ? []
         : [createElement('a', { class: 'geld-review__push-compare', href: compare.href, 'aria-label': 'Compare the two heads', title: 'Compare' }, [svgFromString(ICON_GIT_COMPARE), createElement('span', {}, ['Compare'])])]),
       createElement('span', { class: 'geld-review__push-shas' }, shas.length === 2 && shas[0] !== undefined && shas[1] !== undefined ? [sha(shas[0]), createElement('span', { class: 'geld-review__push-arrow', 'aria-hidden': 'true' }, ['→']), sha(shas[1])] : shas.map(sha)),
+      ...(when === null ? [] : [relativeTimeElement(when, TIME_CLASS)]),
     ]);
     line.append(row);
     onRestore(() => {

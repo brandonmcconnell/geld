@@ -21,6 +21,7 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
+import { relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
@@ -36,7 +37,7 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
-import { outgoingMentions, renderMentionsView, renderQuickView } from './quick-view';
+import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -1250,28 +1251,16 @@ function timeTextRead(node: Element): string {
   if (el === null) return '';
   const datetime = el.getAttribute('datetime') ?? '';
   let shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
-  if (shown !== '' && datetime !== '' && ABSOLUTE_TIME.test(shown)) shown = fallbackTime(datetime) || shown;
+  if (shown !== '' && datetime !== '' && ABSOLUTE_TIME.test(shown)) shown = relativeTimeText(datetime) || shown;
   if (shown !== '') {
     if (datetime !== '') shownTimes.set(datetime, shown);
     return shown;
   }
   if (datetime === '') return '';
-  return shownTimes.get(datetime) ?? fallbackTime(datetime);
+  return shownTimes.get(datetime) ?? relativeTimeText(datetime);
 }
 
 /** Close to GitHub's relative wording for a time it has not rendered yet. */
-function fallbackTime(datetime: string): string {
-  const then = Date.parse(datetime);
-  if (Number.isNaN(then)) return '';
-  const days = Math.floor((Date.now() - then) / 86_400_000);
-  if (days < 1) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days} days ago`;
-  if (days < 14) return 'last week';
-  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
-  if (days < 60) return 'last month';
-  return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(new Date(then).getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
-}
 
 /** The comment's ⋯ menu, most specific first; the reaction trigger is a `details` too and must not be taken for it. */
 const COMMENT_MENUS = [
@@ -1943,7 +1932,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         if (batch !== undefined) {
           const view = renderBatchView(mounted.slot, batch, model, panelHandlers);
           // By push: the round's commit rows, unfolded under their heading (they keep the commit-hover breakdown).
-          if (view.commitsSlot !== null) renderQuickView(view.commitsSlot, batch.commits);
+          if (view.commitsSlot !== null) renderQuickView(view.commitsSlot, batch.commits, reapplySoon);
           // A review's own comment, not its whole row ("X reviewed · View reviewed changes" says nothing here), as
           // a one-bubble chat; a bot's run summary and a person's remark the same way; a thread as its chat.
           const openEntry = view.openComment === null ? null : ([...batch.reviews, ...batch.comments].find((entry) => entry.anchor === view.openComment) ?? null);
@@ -1995,7 +1984,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
         renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
       } else {
-        renderQuickView(mounted.slot, nodes);
+        // The Commits fold among these: its rows get their dates as they land.
+        renderQuickView(mounted.slot, nodes, reapplySoon);
       }
     }
   } else {
@@ -2006,6 +1996,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     wearGear(mounted.root);
     // Spinners rendered into the slot after the mount (preview lines, a round's CI glyph) join the same phase.
     syncSpinners(mounted.root);
+    // Commit rows on loan get their dates once those land (the slot itself is not rebuilt for that).
+    timeCommitRows(mounted.root, reapplySoon);
   }
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
