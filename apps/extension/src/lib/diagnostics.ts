@@ -9,7 +9,7 @@ import { storage } from 'wxt/utils/storage';
  */
 export interface DiagnosticEvent {
   readonly at: number;
-  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'cache-clear';
+  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear';
   readonly subject?: string | undefined;
   /** `ok`, `memory-hit`, `queued`, `rate-limited`, `signed-out`, `not-a-diff`, `http-NNN`, `too-large`, or an error name. */
   readonly outcome?: string;

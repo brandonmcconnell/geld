@@ -58,6 +58,14 @@ const DIFF_BUDGET = 30;
 const DIFF_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MAX_MS = 15 * 60 * 1000;
+/*
+ * The diff endpoint also answers 503 (occasionally 502/504) to a burst —
+ * measured: a third of a page of rows, within seconds, well under the budget
+ * above. That is GitHub being busy rather than blocking us, so it gets a
+ * short, gently growing pause during which rows stay "loading", not a strike.
+ */
+const BUSY_COOLDOWN_MS = 12 * 1000;
+const BUSY_COOLDOWN_MAX_MS = 60 * 1000;
 
 interface Throttle {
   /** Unix ms of recent request starts, oldest first. */
@@ -65,6 +73,10 @@ interface Throttle {
   readonly cooldownUntil: number;
   /** Consecutive rate-limit answers; each doubles the next cooldown. */
   readonly strikes: number;
+  /** Consecutive 5xx answers; each doubles the next busy pause (absent in older stored state). */
+  readonly busy?: number;
+  /** Whether the current cooldown is a block (`rate-limited`) or a pause (`busy`). */
+  readonly cooldownReason?: 'rate-limited' | 'busy';
 }
 
 const throttleItem = storage.defineItem<Throttle>('local:diffThrottle', { fallback: { sent: [], cooldownUntil: 0, strikes: 0 } });
@@ -74,7 +86,13 @@ let throttleLoading: Promise<Throttle> | null = null;
 async function loadThrottle(): Promise<Throttle> {
   if (throttle !== null) return throttle;
   throttleLoading ??= throttleItem.getValue().then((value) => {
-    throttle = { sent: Array.isArray(value.sent) ? value.sent.filter((t): t is number => typeof t === 'number') : [], cooldownUntil: value.cooldownUntil, strikes: value.strikes };
+    throttle = {
+      sent: Array.isArray(value.sent) ? value.sent.filter((t): t is number => typeof t === 'number') : [],
+      cooldownUntil: value.cooldownUntil,
+      strikes: value.strikes,
+      ...(typeof value.busy === 'number' ? { busy: value.busy } : {}),
+      ...(value.cooldownReason === 'busy' || value.cooldownReason === 'rate-limited' ? { cooldownReason: value.cooldownReason } : {}),
+    };
     return throttle;
   });
   return throttleLoading;
@@ -110,14 +128,27 @@ async function recordRateLimit(retryAfterHeader: string | null): Promise<number>
   const strikes = current.strikes + 1;
   const asked = Number.parseInt(retryAfterHeader ?? '', 10);
   const cooldown = Number.isFinite(asked) && asked > 0 ? asked * 1000 : Math.min(RATE_LIMIT_COOLDOWN_MS * 2 ** (strikes - 1), RATE_LIMIT_COOLDOWN_MAX_MS);
-  saveThrottle({ ...current, strikes, cooldownUntil: Date.now() + cooldown });
+  saveThrottle({ ...current, strikes, cooldownUntil: Date.now() + cooldown, cooldownReason: 'rate-limited' });
   recordDiagnostic({ kind: 'rate-limit', cooldownMs: cooldown, strikes });
   return cooldown;
 }
 
+/** A 5xx arrived: pause briefly, longer while they keep coming, or for what GitHub asks. */
+async function recordBusy(retryAfterHeader: string | null): Promise<number> {
+  const current = await loadThrottle();
+  const busy = (current.busy ?? 0) + 1;
+  const asked = Number.parseInt(retryAfterHeader ?? '', 10);
+  const cooldown = Number.isFinite(asked) && asked > 0 ? Math.min(asked * 1000, BUSY_COOLDOWN_MAX_MS) : Math.min(BUSY_COOLDOWN_MS * 2 ** (busy - 1), BUSY_COOLDOWN_MAX_MS);
+  // Never shorten a rate-limit block that is already running.
+  const until = Math.max(current.cooldownUntil, Date.now() + cooldown);
+  saveThrottle({ ...current, busy, cooldownUntil: until, cooldownReason: current.cooldownUntil > Date.now() ? (current.cooldownReason ?? 'busy') : 'busy' });
+  recordDiagnostic({ kind: 'busy', cooldownMs: until - Date.now(), strikes: busy });
+  return until - Date.now();
+}
+
 async function recordSuccess(): Promise<void> {
   const current = await loadThrottle();
-  if (current.strikes !== 0) saveThrottle({ ...current, strikes: 0 });
+  if (current.strikes !== 0 || (current.busy ?? 0) !== 0) saveThrottle({ ...current, strikes: 0, busy: 0 });
 }
 
 function readCache(url: string): FetchDiffResponse | null {
@@ -164,8 +195,9 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
   }
   const state = await loadThrottle();
   if (Date.now() < state.cooldownUntil) {
-    recordDiagnostic({ kind: 'fetch', subject, outcome: 'rate-limited', cooldownMs: state.cooldownUntil - Date.now(), strikes: state.strikes });
-    return { ok: false, reason: 'rate-limited', retryAfterMs: state.cooldownUntil - Date.now() };
+    const reason = state.cooldownReason ?? 'rate-limited';
+    recordDiagnostic({ kind: 'fetch', subject, outcome: reason, cooldownMs: state.cooldownUntil - Date.now(), strikes: reason === 'busy' ? (state.busy ?? 0) : state.strikes });
+    return { ok: false, reason, retryAfterMs: state.cooldownUntil - Date.now() };
   }
   const wait = await takeTurn();
   if (wait > 0) {
@@ -186,6 +218,9 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
     if (response.status === 429 || response.status === 403) {
       const retryAfterMs = await recordRateLimit(response.headers.get('retry-after'));
       result = { ok: false, reason: 'rate-limited', retryAfterMs };
+    } else if (response.status === 502 || response.status === 503 || response.status === 504) {
+      const retryAfterMs = await recordBusy(response.headers.get('retry-after'));
+      result = { ok: false, reason: 'busy', retryAfterMs };
     } else if (response.redirected && /^\/(login|sessions?|sso|orgs\/[^/]+\/sso)\b/.test(new URL(response.url).pathname)) {
       // A private repository while signed out (or with an SSO session that
       // lapsed): GitHub answers 200 with its login page. Parsed as a diff

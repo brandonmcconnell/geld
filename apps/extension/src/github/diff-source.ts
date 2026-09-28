@@ -27,6 +27,8 @@ const TRANSIENT_RETRY_MS: readonly number[] = [4 * 1000, 15 * 1000, 45 * 1000];
 const TRANSIENT_MAX_ATTEMPTS = 8;
 /** A little spread so a page of queued rows does not re-ask in one burst. */
 const QUEUE_JITTER_MS = 400;
+/** GitHub answering 5xx keeps a row loading through this many pauses before the row says so. */
+const BUSY_MAX_WAITS = 6;
 
 /**
  * Failures that will not change by asking again on this page. Sign-in
@@ -53,6 +55,8 @@ export class DiffSource {
   private readonly revalidating = new Set<string>();
   /** Failed attempts so far per key, carried across the idle gap between retries. */
   private readonly retryAttempts = new Map<string, number>();
+  /** Pauses waited per key while GitHub answered 5xx. */
+  private readonly busyWaits = new Map<string, number>();
   private cacheReady = false;
   private inFlight = 0;
 
@@ -138,6 +142,7 @@ export class DiffSource {
       if (isFetchDiffResponse(response) && response.ok) {
         this.memory.set(key, { status: 'ready', files: response.files });
         this.retryAttempts.delete(key);
+        this.busyWaits.delete(key);
         this.revalidating.delete(key);
         if (persistKey !== null) this.persistent.set(persistKey, response.files);
         this.onChange();
@@ -153,6 +158,13 @@ export class DiffSource {
       // The stale counts stay on screen; a later visit tries again.
       this.revalidating.delete(key);
       return;
+    }
+    // GitHub answering 5xx pauses everyone briefly; a row waits through a few
+    // such pauses as "loading" before it is called unavailable.
+    if (reason === 'busy') {
+      const waits = (this.busyWaits.get(key) ?? 0) + 1;
+      this.busyWaits.set(key, waits);
+      if (waits <= BUSY_MAX_WAITS) reason = 'queued';
     }
     // Waiting for a budget slot is not a failure and not an attempt: the row
     // stays "loading" and asks again when the background said a slot frees.
