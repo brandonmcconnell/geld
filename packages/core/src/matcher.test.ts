@@ -83,6 +83,42 @@ describe('built-in test detection', () => {
   });
 });
 
+describe('migration snapshots (Generated)', () => {
+  const generated = createMatcher({ ...DEFAULT_SETTINGS, categories: { generated: true } });
+
+  it.each([
+    // drizzle-kit 0.x: meta/ inside the configurable `out` folder, snapshots
+    // prefixed like the migration (index, timestamp, unix or none)
+    'drizzle/meta/_journal.json',
+    'drizzle/meta/0000_snapshot.json',
+    'drizzle/meta/20240823160430_snapshot.json',
+    'drizzle/meta/_snapshot.json',
+    'apps/api/src/db/migrations/meta/0012_snapshot.json',
+    // drizzle-kit 1.0: one folder per migration, no journal
+    'drizzle/20240823160430_public_electro/snapshot.json',
+  ])('hides %s', (path) => {
+    expect(generated.categorize(path)?.id).toBe('generated');
+  });
+
+  it.each([
+    'drizzle/0000_nice_name.sql',
+    'drizzle/20240823160430_public_electro/migration.sql',
+    'drizzle/schema.ts',
+    'drizzle/relations.ts',
+    'src/meta/config.json',
+    'data/snapshot.json',
+  ])('keeps %s', (path) => {
+    expect(generated.categorize(path)).toBeNull();
+  });
+
+  it('is off by default and can be switched off on its own', () => {
+    expect(matcher.categorize('drizzle/meta/0000_snapshot.json')).toBeNull();
+    const off = createMatcher({ ...DEFAULT_SETTINGS, categories: { generated: true }, groups: { 'generated/migration-snapshots': false } });
+    expect(off.categorize('drizzle/meta/0000_snapshot.json')).toBeNull();
+    expect(off.categorize('pnpm-lock.yaml')?.id).toBe('generated');
+  });
+});
+
 describe('settings interplay', () => {
   it('matches nothing when disabled', () => {
     const disabled = createMatcher({ ...DEFAULT_SETTINGS, enabled: false });

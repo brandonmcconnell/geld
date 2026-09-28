@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260924,
+  "version": 20260928,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -251,6 +251,16 @@
             "schema.graphql.json",
             "graphql.schema.json",
             "*.tsbuildinfo"
+          ]
+        },
+        {
+          "id": "migration-snapshots",
+          "label": "Migration snapshots",
+          "description": "Schema snapshots and journals Drizzle writes next to your migrations. The migrations stay visible.",
+          "patterns": [
+            "**/meta/_journal.json",
+            "**/meta/*_snapshot.json",
+            "**/[0-9]*_*/snapshot.json"
           ]
         }
       ]
