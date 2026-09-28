@@ -40,6 +40,7 @@ import { outgoingMentions, renderMentionsView, renderQuickView } from './quick-v
 import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
+import { applyHold, holdRow, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -599,11 +600,10 @@ function keepInPlace(focusKey: string, change: () => void): void {
     top = after.getBoundingClientRect().top;
   }
   const sticky = stickyHeaderBottomAt(window.scrollY);
-  if (top < sticky) {
-    scrollRowTo(top + window.scrollY);
-    return;
-  }
-  revealOpened(after);
+  if (top < sticky) scrollRowTo(top + window.scrollY);
+  else revealOpened(after);
+  // From here until the reader scrolls, the row stays where it landed whatever arrives above it.
+  holdRow(focusKey);
 }
 
 /**
@@ -818,11 +818,9 @@ function revealRow(focusKey: string): void {
   if (!(row instanceof HTMLElement)) return;
   const rect = row.getBoundingClientRect();
   const sticky = stickyHeaderBottomAt(window.scrollY);
-  if (rect.top < sticky || rect.bottom > window.innerHeight) {
-    scrollRowTo(rect.top + window.scrollY);
-    return;
-  }
-  revealOpened(row);
+  if (rect.top < sticky || rect.bottom > window.innerHeight) scrollRowTo(rect.top + window.scrollY);
+  else revealOpened(row);
+  holdRow(focusKey);
 }
 
 /**
@@ -1589,6 +1587,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
+    releaseHold();
     timeByAnchor.clear();
     visit.lastReviews = null;
     visit.checksExpanded = false;
@@ -1916,8 +1915,13 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     },
   };
   const mounted = mountPanel(model, panelHandlers);
-  if (mounted !== null) watchLoans(mounted.root);
-  else unwatchLoans();
+  if (mounted !== null) {
+    watchLoans(mounted.root);
+    watchPanelForHold(mounted.root);
+  } else {
+    unwatchLoans();
+    releaseHold();
+  }
 
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
@@ -2008,12 +2012,17 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (visit.pendingAnchor !== null && mounted !== null && ((pendingKey !== null && (visit.openKey === pendingKey || visit.openSubKey === pendingKey)) || visit.loadMoreTries >= MAX_LOAD_MORE)) {
     const subFocus = visit.openSubKey === null ? null : visit.openSubKey.startsWith('item:') ? visit.openSubKey : `sub:${visit.openSubKey}`;
     const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${subFocus ?? visit.openKey}"]`);
-    if (row instanceof HTMLElement && hidingTimeline) scrollRowTo(row.getBoundingClientRect().top + window.scrollY);
+    if (row instanceof HTMLElement && hidingTimeline) {
+      scrollRowTo(row.getBoundingClientRect().top + window.scrollY);
+      holdRow(`main:${subFocus ?? visit.openKey}`);
+    }
     if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
   }
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
+  // The row the reader opened stays put under whatever this pass moved above it.
+  applyHold();
 
 }
 
@@ -2038,6 +2047,7 @@ export function onReviewBeforeMatch(event: Event, settings: GeldSettings): void 
 
 export function teardownReviewOverview(): void {
   hideHoverCard();
+  releaseHold();
   setHoverProvider(null);
   setWhoProvider(null);
   unwatchLoans();
