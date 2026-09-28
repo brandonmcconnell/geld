@@ -9,7 +9,7 @@ export interface FetchDiffRequest {
 
 export type FetchDiffResponse =
   | { readonly ok: true; readonly files: readonly FileStats[] }
-  /** `retryAfterMs`: for `rate-limited`, how long the background will refuse before asking GitHub again. */
+  /** `retryAfterMs`: for `rate-limited`, how long the background will refuse before asking GitHub again; for `queued`, when a slot in its per-minute budget frees up. */
   | { readonly ok: false; readonly reason: string; readonly retryAfterMs?: number };
 
 /**

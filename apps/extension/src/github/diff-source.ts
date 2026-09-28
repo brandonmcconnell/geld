@@ -18,10 +18,15 @@ const RATE_LIMIT_RETRY_MS = 70 * 1000;
 const RATE_LIMIT_SLACK_MS = 2 * 1000;
 /**
  * Transient failures (the MV3 service worker restarting mid-request, a network
- * blip, a 5xx) retry on this schedule; without it one row in a list could stay
- * blank until a reload while its neighbours were fine.
+ * blip, a 5xx) retry on this schedule, then keep retrying at its last step;
+ * without it one row in a list could stay blank until a reload while its
+ * neighbours were fine.
  */
 const TRANSIENT_RETRY_MS: readonly number[] = [4 * 1000, 15 * 1000, 45 * 1000];
+/** Give up on a transient failure after this many tries; the row then says so. */
+const TRANSIENT_MAX_ATTEMPTS = 8;
+/** A little spread so a page of queued rows does not re-ask in one burst. */
+const QUEUE_JITTER_MS = 400;
 
 /**
  * Failures that will not change by asking again on this page. Sign-in
@@ -142,19 +147,37 @@ export class DiffSource {
       if (isFetchDiffResponse(response) && !response.ok && typeof response.retryAfterMs === 'number') retryAfterMs = response.retryAfterMs;
     } catch (error) {
       // Typically "message port closed": the service worker went away mid-request.
-      reason = error instanceof Error ? error.message : 'fetch-failed';
+      reason = error instanceof Error && /port closed|receiving end/i.test(error.message) ? 'port-closed' : error instanceof Error ? error.message : 'fetch-failed';
     }
     if (revalidate) {
       // The stale counts stay on screen; a later visit tries again.
       this.revalidating.delete(key);
       return;
     }
+    // Waiting for a budget slot is not a failure and not an attempt: the row
+    // stays "loading" and asks again when the background said a slot frees.
+    if (reason === 'queued') {
+      this.memory.set(key, { status: 'loading' });
+      setTimeout(
+        () => {
+          if (this.memory.get(key)?.status !== 'loading') return;
+          this.memory.set(key, { status: 'idle' });
+          this.onChange();
+        },
+        (retryAfterMs ?? 1000) + Math.random() * QUEUE_JITTER_MS,
+      );
+      return;
+    }
     this.memory.set(key, { status: 'failed', reason, attempts });
     // Forget the failure later so the next apply() asks again — once the
-    // background's rate-limit block lifts, on a short backoff for anything
+    // background's rate-limit block lifts, on a backoff for anything
     // transient. Definitive failures stay failed for this page.
     const delay =
-      reason === 'rate-limited' ? (retryAfterMs ?? RATE_LIMIT_RETRY_MS) + RATE_LIMIT_SLACK_MS : isDefinitive(reason) ? null : (TRANSIENT_RETRY_MS[attempts - 1] ?? null);
+      reason === 'rate-limited'
+        ? (retryAfterMs ?? RATE_LIMIT_RETRY_MS) + RATE_LIMIT_SLACK_MS
+        : isDefinitive(reason) || attempts >= TRANSIENT_MAX_ATTEMPTS
+          ? null
+          : (TRANSIENT_RETRY_MS[Math.min(attempts, TRANSIENT_RETRY_MS.length) - 1] ?? null);
     if (delay !== null) {
       setTimeout(() => {
         const current = this.memory.get(key);

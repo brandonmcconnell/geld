@@ -214,6 +214,7 @@ export function failureCopy(reason: string): { readonly text: string; readonly t
   if (reason === 'signed-out') return { text: 'sign in to count', title: 'GitHub answered with its sign-in page: sign in (or renew your SSO session) and reload to see the counts.' };
   if (reason === 'rate-limited') return { text: 'counts paused', title: 'GitHub is rate limiting diff downloads; Geld retries shortly.' };
   if (reason === 'too-large') return { text: 'diff too large', title: 'This diff is over 20 MB; Geld does not count it.' };
+  if (reason === 'port-closed') return { text: 'counts unavailable', title: 'The extension restarted mid-request; Geld keeps retrying. Reload if this stays.' };
   if (reason === 'http-404') return { text: 'counts unavailable', title: 'GitHub answered 404 for this diff. For a private repository that means you are signed out: sign in and reload.' };
   return { text: 'counts unavailable', title: `The diff could not be fetched (${reason}). Open the pull request to see whether GitHub serves it, then reload.` };
 }

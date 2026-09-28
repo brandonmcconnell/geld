@@ -84,19 +84,23 @@ function saveThrottle(next: Throttle): void {
   void throttleItem.setValue(next).catch(() => undefined);
 }
 
-/** Wait for a slot in the sliding window, then claim it. */
-async function takeTurn(): Promise<void> {
-  for (;;) {
-    const current = await loadThrottle();
-    const now = Date.now();
-    const sent = current.sent.filter((t) => now - t < DIFF_WINDOW_MS);
-    if (sent.length < DIFF_BUDGET) {
-      saveThrottle({ ...current, sent: [...sent, now] });
-      return;
-    }
-    const oldest = sent[0] ?? now;
-    await new Promise((resolve) => setTimeout(resolve, oldest + DIFF_WINDOW_MS - now + 50));
+/**
+ * Claim a slot in the sliding window, or say how long until one frees up.
+ * The wait happens in the page, not here: a worker sleeping in a timer is
+ * idle to Chrome, which stops it after ~30 s and closes every message port
+ * still waiting on it — the rows then failed with "message port closed" and,
+ * after a few such failures, gave up until the page was reloaded.
+ */
+async function takeTurn(): Promise<number> {
+  const current = await loadThrottle();
+  const now = Date.now();
+  const sent = current.sent.filter((t) => now - t < DIFF_WINDOW_MS);
+  if (sent.length < DIFF_BUDGET) {
+    saveThrottle({ ...current, sent: [...sent, now] });
+    return 0;
   }
+  const oldest = sent[0] ?? now;
+  return Math.max(50, oldest + DIFF_WINDOW_MS - now + 50);
 }
 
 /** A 429/403 arrived: block for longer each time it repeats, or for what GitHub asks. */
@@ -154,7 +158,8 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
   if (cached !== null) return cached;
   const state = await loadThrottle();
   if (Date.now() < state.cooldownUntil) return { ok: false, reason: 'rate-limited', retryAfterMs: state.cooldownUntil - Date.now() };
-  await takeTurn();
+  const wait = await takeTurn();
+  if (wait > 0) return { ok: false, reason: 'queued', retryAfterMs: wait };
 
   let result: FetchDiffResponse;
   try {
