@@ -384,6 +384,16 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
   const timeline = root.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline');
   if (timeline === null) return list;
   const ROW = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
+  // GitHub collapses a run of identical comments behind "N similar comments": a `details` set directly in the
+  // timeline, not a row, holding the comment rows. The rows inside are crawled (and fold) like any other; the
+  // wrapper with its summary is folded silently too, else that one line stood under the panel.
+  for (const wrap of timeline.querySelectorAll<HTMLElement>('details.Details-element.details-reset')) {
+    if (wrap.closest(ROW) !== null || wrap.closest('form') !== null) continue;
+    if (wrap.closest('.geld-review') !== null && wrap.closest('[data-geld-teleported]') === null) continue;
+    const summary = wrap.querySelector(':scope > summary');
+    if (summary === null || !/^\d+\s+similar comments?$/i.test((summary.textContent ?? '').replace(/\s+/g, ' ').trim())) continue;
+    list.push({ kind: 'noise', root: wrap });
+  }
   const rows = timeline.querySelectorAll<HTMLElement>(ROW);
   for (const row of rows) {
     // Rows on loan sit inside the panel right now; they still belong to the timeline. Panel-made rows do not.
