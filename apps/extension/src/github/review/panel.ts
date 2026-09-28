@@ -717,9 +717,9 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
 }
 
 /**
- * An open round: its run summaries and other comments as lines, then its
- * threads under two headings — unresolved first, resolved after — all as
- * rows that open one at a time (`openSubKey`: a comment's anchor or an
+ * An open round: people's reviews first, then its threads under two
+ * headings — unresolved first, resolved after — then its bot comments and
+ * (by push) its commits, all as rows that open one at a time (`openSubKey`: a comment's anchor or an
  * item key). Returns the nested slot and what is open in it.
  */
 export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null; readonly openComment: string | null; readonly commitsSlot: HTMLElement | null } {
@@ -749,12 +749,9 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
       }
     }
   };
-  const unresolved = batch.items.filter((item) => isOpenStatus(item.status));
-  const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
-  section(plural(unresolved.length, 'unresolved thread'), unresolved);
-  section(plural(resolved.length, 'resolved thread'), resolved);
-  // People's verdicts and remarks that landed in the round, in either grouping: the header counts them and shows
-  // their avatars, so the open round lists them too (the Reviews row still lists every review across the PR).
+  // People's verdicts and remarks that landed in the round, in either grouping, first: a review is the verdict on
+  // the round and the threads are its detail, so the reader sees "looks good, a few nits" before the nits. The
+  // header counts them and shows their avatars (the Reviews row still lists every review across the PR).
   if (batch.reviews.length > 0) {
     // A person's verdict is a review; their top-level comment is a comment, and the heading says which it lists.
     const verdicts = batch.reviews.filter((entry) => entry.state !== 'comment').length;
@@ -774,6 +771,10 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
       }
     }
   }
+  const unresolved = batch.items.filter((item) => isOpenStatus(item.status));
+  const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
+  section(plural(unresolved.length, 'unresolved thread'), unresolved);
+  section(plural(resolved.length, 'resolved thread'), resolved);
   if (batch.comments.length > 0) {
     // The round's other bot comments (run summaries, deploy notes), after the work, as lines that open one at a
     // time — right there, not behind another toggle: a round is already two clicks in.
