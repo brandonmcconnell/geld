@@ -109,7 +109,7 @@ export interface ListField extends FieldBase {
   readonly saveLabel: string;
 }
 
-export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'reset';
+export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'copy-diagnostics' | 'reset';
 
 /** A one-off operation on the whole settings document. */
 export interface MaintenanceAction {
@@ -418,6 +418,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
             id: 'clear-cache',
             label: 'Clear cached diffs',
             description: 'Forget the parsed diffs and repository config files stored on this device; they are fetched again as needed.',
+            surfaces: ['extension'],
+          },
+          {
+            id: 'copy-diagnostics',
+            label: 'Copy diagnostics',
+            description:
+              'Copies a short log of this session\'s diff fetches (which pull request, outcome, timing, rate budget) to the clipboard, for bug reports. No URLs, content or tokens.',
             surfaces: ['extension'],
           },
           {

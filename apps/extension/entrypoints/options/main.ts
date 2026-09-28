@@ -37,6 +37,7 @@ import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, desc
 import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
+import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { settingsItem } from '../../src/lib/storage';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -752,6 +753,15 @@ async function main(): Promise<void> {
       const clear: ClearDiffCacheMessage = { type: 'geld:clear-diff-cache' };
       await browser.runtime.sendMessage(clear).catch(() => undefined);
       maintenanceStatus('Cached diffs and repository configs cleared; open pages recount on reload', 'success');
+    },
+    'copy-diagnostics': async () => {
+      const text = formatDiagnostics(await readDiagnostics(), browser.runtime.getManifest().version);
+      try {
+        await navigator.clipboard.writeText(text);
+        maintenanceStatus('Diagnostics copied to the clipboard', 'success');
+      } catch {
+        maintenanceStatus('Could not write to the clipboard', 'error');
+      }
     },
     reset: async () => {
       await settingsItem.setValue(DEFAULT_SETTINGS);

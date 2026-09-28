@@ -7,6 +7,7 @@ import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { settingsItem } from '../src/lib/storage';
+import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
@@ -110,6 +111,7 @@ async function recordRateLimit(retryAfterHeader: string | null): Promise<number>
   const asked = Number.parseInt(retryAfterHeader ?? '', 10);
   const cooldown = Number.isFinite(asked) && asked > 0 ? asked * 1000 : Math.min(RATE_LIMIT_COOLDOWN_MS * 2 ** (strikes - 1), RATE_LIMIT_COOLDOWN_MAX_MS);
   saveThrottle({ ...current, strikes, cooldownUntil: Date.now() + cooldown });
+  recordDiagnostic({ kind: 'rate-limit', cooldownMs: cooldown, strikes });
   return cooldown;
 }
 
@@ -154,12 +156,23 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
     return { ok: false, reason: 'disallowed-url' };
   }
 
+  const subject = diagnosticSubject(parsed.toString()) ?? undefined;
   const cached = readCache(parsed.toString());
-  if (cached !== null) return cached;
+  if (cached !== null) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: cached.ok ? 'memory-hit' : `memory-hit:${cached.reason}` });
+    return cached;
+  }
   const state = await loadThrottle();
-  if (Date.now() < state.cooldownUntil) return { ok: false, reason: 'rate-limited', retryAfterMs: state.cooldownUntil - Date.now() };
+  if (Date.now() < state.cooldownUntil) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: 'rate-limited', cooldownMs: state.cooldownUntil - Date.now(), strikes: state.strikes });
+    return { ok: false, reason: 'rate-limited', retryAfterMs: state.cooldownUntil - Date.now() };
+  }
   const wait = await takeTurn();
-  if (wait > 0) return { ok: false, reason: 'queued', retryAfterMs: wait };
+  if (wait > 0) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: 'queued', ms: wait, budgetUsed: DIFF_BUDGET });
+    return { ok: false, reason: 'queued', retryAfterMs: wait };
+  }
+  const started = Date.now();
 
   let result: FetchDiffResponse;
   try {
@@ -198,6 +211,14 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
   } catch (error) {
     result = { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
   }
+  recordDiagnostic({
+    kind: 'fetch',
+    subject,
+    outcome: result.ok ? 'ok' : result.reason,
+    ms: Date.now() - started,
+    budgetUsed: (throttle?.sent ?? []).length,
+    ...(result.ok ? { files: result.files.length } : {}),
+  });
   // Only successful and definitive failures are cached; transient network
   // errors retry, and so do sign-in problems — signing in fixes them. A 404
   // is what a private repository answers to a signed-out browser (its diff
@@ -356,6 +377,8 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
+  recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
@@ -363,6 +386,7 @@ export default defineBackground(() => {
     }
     if (isClearDiffCacheMessage(message)) {
       cache.clear();
+      recordDiagnostic({ kind: 'cache-clear' });
       sendResponse(true);
       return undefined;
     }
