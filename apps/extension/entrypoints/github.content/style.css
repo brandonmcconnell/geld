@@ -3460,13 +3460,19 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat [data-geld-message]::before {
   content: '';
-  /* GitHub's comment cards draw a speech caret with this pseudo, which the chat hides; the strip needs it back. */
+  /* GitHub's comment cards draw a speech caret with this pseudo, out of borders on a zero-size box; the chat hides
+   * it, and the strip takes the pseudo back as a plain box. Without clearing the borders the caret's 8px edges were
+   * stretched across the strip's width and read as a grey wedge over the comment. */
   display: block !important;
   position: absolute;
   top: 0;
   bottom: 0;
   left: 100%;
   width: calc(100cqw - 100%);
+  height: auto !important;
+  border: 0 !important;
+  background: none !important;
+  pointer-events: auto;
 }
 
 .geld-review__chat [data-geld-message][data-geld-mine]::before {
