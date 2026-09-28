@@ -220,6 +220,9 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: Leftove
   // content is not yet anything — listing it would only have it change kind (and the counts) a moment later.
   const noise = [...by('noise'), ...by('pending')];
   if (noise.length > 0) groups.push({ key: 'noise', label: '', author: null, nodes: noise, silent: true });
+  // "New changes since you last viewed": the panel's summary strip says it (`revisionMarker`); the row itself folds.
+  const marker = by('marker');
+  if (marker.length > 0) groups.push({ key: 'marker', label: '', author: null, nodes: marker, silent: true });
   const other = by('other');
   if (other.length > 0) groups.push({ key: 'misc', label: `${other.length} other timeline item${other.length === 1 ? '' : 's'}`, author: null, nodes: other, section: 'activity' });
   return groups;

@@ -1223,6 +1223,17 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   opacity: 0.7;
 }
 
+/* The "since your last visit" chip is a link to that diff: same chip, underlined on hover, no visited colour. */
+.geld-review__chip--link,
+.geld-review__chip--link:visited {
+  text-decoration: none;
+}
+
+.geld-review__chip--link:hover,
+.geld-review__chip--link:focus-visible {
+  text-decoration: underline;
+}
+
 .geld-review__chip-note {
   opacity: 0.75;
   font-weight: 400;

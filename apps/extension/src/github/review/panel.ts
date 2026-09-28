@@ -13,7 +13,8 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } f
 import { previewHostById } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import type { RevisionMarker } from './crawler';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -183,6 +184,8 @@ export interface PanelModel {
   readonly meta: GeldPrMeta;
   readonly freshness: 'fresh' | 'stale' | 'partial' | 'local';
   readonly truncated: boolean;
+  /** GitHub's "New changes since you last viewed" marker, when the timeline has one: the summary strip links to that diff. */
+  readonly sinceLastVisit: RevisionMarker | null;
   /** `item:<id>` or `fold:<key>`; at most one row is open. */
   readonly openKey: string | null;
   readonly collapsedGroups: ReadonlySet<GroupId>;
@@ -1475,6 +1478,7 @@ function signatureOf(model: PanelModel): string {
         `${item.id}:${item.status}:${item.title}:${item.path ?? ''}:${item.context ?? ''}:${model.fixFor(item)?.text ?? ''}:${model.avatarsFor(item).map((entry) => entry.src).join(',')}:${model.resolvable(item) ? 'r' : ''}:${item.rewritten ? 'ai' : ''}:${item.sources[0] === undefined ? '' : `${model.timeFor(item.sources[0].anchor)}:${model.myReactionFor(item.sources[0].anchor) ?? ''}`}`,
     ),
     hiddenCount: model.hiddenCount,
+    sinceLastVisit: model.sinceLastVisit === null ? '' : `${model.sinceLastVisit.href}:${model.sinceLastVisit.commits}`,
     pending: [...model.aiPending].sort(),
     ai: model.ai,
     tldr: model.meta.summary?.tldr ?? '',
@@ -1581,6 +1585,18 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   /* Summary strip: the meter only once there is something to measure. */
   const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']), progressMeter(doneCount, total, 'review item')]);
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
+  // GitHub's revision marker, said here instead of as a timeline row: what landed since the reader last opened
+  // this page, linking to that diff (the marker's own "View changes" URL).
+  if (model.sinceLastVisit !== null) {
+    const words = model.sinceLastVisit.commits > 0 ? `${plural(model.sinceLastVisit.commits, 'new commit')} since your last visit` : 'New changes since your last visit';
+    summary.append(
+      createElement('a', { class: `${PANEL_CLASS}__chip ${PANEL_CLASS}__chip--link`, 'data-tone': 'attention', href: model.sinceLastVisit.href, title: 'View the changes since you last viewed this pull request', [ATTR_FOCUS]: 'since-last-visit' }, [
+        icon(ICON_FILE_DIFF),
+        createElement('span', { class: `${PANEL_CLASS}__label-long` }, [words]),
+        createElement('span', { class: `${PANEL_CLASS}__label-short`, 'aria-hidden': 'true' }, [model.sinceLastVisit.commits > 0 ? `${model.sinceLastVisit.commits} new` : 'New']),
+      ]),
+    );
+  }
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const aiControl = aiButton(model.ai, handlers);

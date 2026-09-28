@@ -361,8 +361,44 @@ export interface CrawledLeftover {
   readonly root: HTMLElement;
 }
 
-/** `push` is a force-push event ("X force-pushed the branch from a to b"): a push with no commit rows of its own. */
-export type LeftoverKind = 'commit' | 'push' | 'mention' | 'review-event' | 'noise' | 'pending' | 'other';
+/**
+ * `push` is a force-push event ("X force-pushed the branch from a to b"): a push with no commit rows of its own.
+ * `marker` is GitHub's revision marker ("New changes since you last viewed · View changes"): about the reader,
+ * not the pull request, so the panel says it in its own words (`revisionMarker`) and the row folds silently.
+ */
+export type LeftoverKind = 'commit' | 'push' | 'mention' | 'review-event' | 'noise' | 'pending' | 'marker' | 'other';
+
+const MARKER_LINK = 'a[data-ga-click*="revision marker"], a[href*="/files/"][href*=".."]';
+
+/** GitHub's "New changes since you last viewed" row: the `+` badge with a link to the diff since the reader's last visit. */
+export function isRevisionMarkerRow(row: Element): boolean {
+  return row.querySelector(MARKER_LINK) !== null && /\bsince you last viewed/i.test(row.textContent ?? '');
+}
+
+export interface RevisionMarker {
+  /** The diff GitHub offers: `/owner/repo/pull/N/files/<last viewed sha>..HEAD`. */
+  readonly href: string;
+  /** Commit rows below the marker in the timeline: what landed since the reader's last visit. */
+  readonly commits: number;
+}
+
+/**
+ * What GitHub's revision marker says, in numbers: where the diff since the
+ * last visit is and how many commits it spans. The commits are the crawled
+ * commit rows that follow the marker in timeline order (wherever they sit
+ * right now); a grouped row ("X added 3 commits") counts its list items.
+ */
+export function revisionMarker(leftovers: readonly CrawledLeftover[]): RevisionMarker | null {
+  const marker = leftovers.find((entry) => entry.kind === 'marker');
+  const link = marker?.root.querySelector<HTMLAnchorElement>(MARKER_LINK);
+  if (link === undefined || link === null) return null;
+  let commits = 0;
+  for (const entry of leftovers) {
+    if (entry.kind !== 'commit' || compareHome(link, entry.root) >= 0) continue;
+    commits += Math.max(1, entry.root.querySelectorAll('.js-commits-list-item').length);
+  }
+  return { href: link.href, commits };
+}
 
 const FORCE_PUSH_ROW = '.TimelineItem:has(.octicon-repo-push), [data-testid="force-pushed-event"], [class*="ForcePush"]';
 
@@ -418,6 +454,7 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     else if (row.querySelector('.minimized-comment include-fragment[src]') !== null) kind = 'pending';
     // What someone minimized (resolved, outdated, off-topic) is noise here; its comment, once loaded, is crawled on its own.
     else if (minimized || row.querySelector('.minimized-comment') !== null) kind = 'noise';
+    else if (isRevisionMarkerRow(row)) kind = 'marker';
     else if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
     else if (isForcePushRow(row)) kind = 'push';
     else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';

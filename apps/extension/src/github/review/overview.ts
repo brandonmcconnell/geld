@@ -15,7 +15,7 @@ import { describePage } from '../page';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
@@ -1759,6 +1759,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.filter((group) => group.silent !== true).reduce((sum, group) => sum + group.nodes.length, 0),
+    sinceLastVisit: hidingTimeline ? revisionMarker(leftoverList) : null,
     aiPending: aiPending(),
     fixFor,
   };
