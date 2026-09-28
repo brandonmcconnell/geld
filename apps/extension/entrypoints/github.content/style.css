@@ -1076,6 +1076,18 @@ html[data-geld-timeline='full'] [data-geld-folded] {
   content-visibility: visible !important;
 }
 
+/*
+ * Compact mode: an item GitHub inserted since the last pass (a loaded chunk,
+ * a live comment) waits out of sight until that pass has read it (`markSeen`
+ * stamps `data-geld-seen` on everything present when a pass ends), so the
+ * time between arrival and fold never paints it. Only once the panel is up,
+ * so the first paint of the page is GitHub's own; items on loan to the
+ * panel are exempt.
+ */
+html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-timeline-item, .TimelineItem, [data-testid='timeline-row']):not([data-geld-seen]):not(.geld-review *) {
+  display: none !important;
+}
+
 /* The description card the panel grows out of: one box, shared border. */
 [data-geld-attached] {
   border-bottom-left-radius: 0 !important;

@@ -13,6 +13,22 @@ import { isTeleported } from './teleport';
 
 export const ATTR_FOLDED = 'data-geld-folded';
 const ATTR_VISIT = 'data-geld-timeline';
+const ATTR_SEEN = 'data-geld-seen';
+const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
+
+/**
+ * Mark every timeline item a pass has read. In compact mode an item without
+ * the mark stays out of sight (stylesheet rule keyed on `[data-geld-seen]`):
+ * GitHub inserts a loaded chunk or a live comment whole, and it would paint
+ * in full for the time between its arrival and the pass that folds it. A
+ * page GitHub loads in dozens of chunks blinked with every one, its
+ * "marked as resolved" blocks flashing in and folding away for a minute.
+ */
+export function markSeen(root: ParentNode = document): void {
+  for (const node of root.querySelectorAll(TIMELINE_ITEM)) {
+    if (!node.hasAttribute(ATTR_SEEN)) node.setAttribute(ATTR_SEEN, '');
+  }
+}
 
 export interface FoldGroup {
   readonly key: string;
