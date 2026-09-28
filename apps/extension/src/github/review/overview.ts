@@ -850,9 +850,16 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     readonly commits: HTMLElement[];
     readonly items: ReviewItem[];
     readonly comments: RoundComment[];
+    /** A host's preview comments: the round's previews (pills), never bot comment lines. */
+    readonly previewComments: RoundComment[];
     readonly reviews: ReviewEntry[];
   }
-  type Entry = { readonly node: Element; readonly kind: 'commit' } | { readonly node: Element; readonly kind: 'item'; readonly item: ReviewItem } | { readonly node: Element; readonly kind: 'comment'; readonly comment: RoundComment } | { readonly node: Element; readonly kind: 'review'; readonly review: ReviewEntry };
+  type Entry =
+    | { readonly node: Element; readonly kind: 'commit' }
+    | { readonly node: Element; readonly kind: 'item'; readonly item: ReviewItem }
+    | { readonly node: Element; readonly kind: 'comment' | 'preview'; readonly comment: RoundComment }
+    | { readonly node: Element; readonly kind: 'review'; readonly review: ReviewEntry };
+  const previewAnchors = new Set(previewsAll.map((entry) => entry.anchor));
   const entries: Entry[] = commitRoots.map((node) => ({ node, kind: 'commit' as const }));
   const unplaced: Entry[] = [];
   const place = (entry: Entry, node: Element | null): void => {
@@ -863,7 +870,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   for (const entry of crawled.comments) {
     if (!botAnchors.has(entry.comment.anchor) || !entry.author.bot) continue;
     const comment: RoundComment = { anchor: entry.comment.anchor, avatar: entry.avatarSrc ?? avatarSrcForLogin(entry.author.login), author: entry.author.login, node: entry.root, body: entry.comment.body, lane: jevNow.lanes.get(entry.comment.anchor) ?? null };
-    place({ node: entry.root, kind: 'comment', comment }, entry.root);
+    // A comment that announces a preview (ready, failed, refused) is that preview: it shows as a pill, not a line.
+    place({ node: entry.root, kind: previewAnchors.has(entry.comment.anchor) ? 'preview' : 'comment', comment }, entry.root);
   }
   const itemAnchors = new Set(meta.items.flatMap((item) => item.sources.map((source) => source.anchor)));
   for (const review of reviewEntriesAll) {
@@ -874,8 +882,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   entries.sort((a, b) => compareHome(a.node, b.node));
   const rounds: Round[] = [];
   let current: Round | null = null;
-  const fresh = (): Round => ({ commits: [], items: [], comments: [], reviews: [] });
-  const hasContent = (round: Round): boolean => round.items.length + round.comments.length + round.reviews.length > 0;
+  const fresh = (): Round => ({ commits: [], items: [], comments: [], previewComments: [], reviews: [] });
+  const hasContent = (round: Round): boolean => round.items.length + round.comments.length + round.previewComments.length + round.reviews.length > 0;
   for (const entry of entries) {
     if (entry.kind === 'commit') {
       // A commit after content closes that round and opens the next; consecutive commits share one round.
@@ -892,7 +900,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     }
     if (entry.kind === 'item') current.items.push(entry.item);
     else if (entry.kind === 'comment') current.comments.push(entry.comment);
-    else current.reviews.push(entry.review);
+    else if (entry.kind === 'preview') current.previewComments.push(entry.comment);
+    else if (entry.kind === 'review') current.reviews.push(entry.review);
   }
   // Whatever the page could not place (not loaded yet) goes with the latest round.
   if (unplaced.length > 0) {
@@ -901,6 +910,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     for (const entry of unplaced) {
       if (entry.kind === 'item') last.items.push(entry.item);
       else if (entry.kind === 'comment') last.comments.push(entry.comment);
+      else if (entry.kind === 'preview') last.previewComments.push(entry.comment);
       else if (entry.kind === 'review') last.reviews.push(entry.review);
     }
   }
@@ -913,7 +923,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       const sha = /\/commits\/([0-9a-f]{7,40})/.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
       if (sha !== undefined) return `commit-${sha}`;
     }
-    const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor;
+    const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? round.previewComments[0]?.anchor;
     return first ?? `at-${position + 1}`;
   };
   return rounds.map((round, position) => {
@@ -934,13 +944,14 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       if (src !== null) addAvatar({ src, bot, login });
     };
     for (const comment of round.comments) add(comment.author, comment.avatar, true);
+    for (const comment of round.previewComments) add(comment.author, comment.avatar, true);
     for (const item of round.items) {
       for (const avatar of avatarsFor(item)) addAvatar(avatar);
       for (const source of item.sources) add(source.author, avatarSrcForLogin(source.author), source.bot !== undefined || /\[bot\]$/i.test(source.author));
     }
     for (const review of round.reviews) add(review.author, review.avatarSrc ?? avatarSrcForLogin(review.author), false);
-    const commentAnchors = new Set(round.comments.map((comment) => comment.anchor));
-    const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? null;
+    const previewAnchorsHere = new Set(round.previewComments.map((comment) => comment.anchor));
+    const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? round.previewComments[0]?.anchor ?? null;
     const firstNode = first === null ? null : document.getElementById(first);
     // CI is read from the last commit row; a force-push event carries none.
     const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
@@ -971,8 +982,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       commitCount: round.commits.filter((row) => !pushRoots.has(row)).length,
       ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
       committers: committersOf(round.commits),
-      previews: previewsAll.filter((entry) => commentAnchors.has(entry.anchor)),
-      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? round.commits[round.commits.length - 1] ?? null, first),
+      previews: previewsAll.filter((entry) => previewAnchorsHere.has(entry.anchor)),
+      time: timeTextOf(firstNode ?? round.comments[0]?.node ?? round.previewComments[0]?.node ?? round.commits[round.commits.length - 1] ?? null, first),
       firstAnchor: first,
     };
   });
@@ -1676,7 +1687,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   });
   settleAfterResolve(meta, batches);
   reseatOpenLine(batches);
-  const batchedAnchors = new Set(batches.flatMap((batch) => batch.comments.map((entry) => entry.anchor)));
+  // A round's bot comment lines and its preview pills both stand for their comments: neither needs a fold row too.
+  const batchedAnchors = new Set(batches.flatMap((batch) => [...batch.comments.map((entry) => entry.anchor), ...batch.previews.map((entry) => entry.anchor)]));
   // By node, not by looking the anchor up: GitHub repeats an id (a review inside its minimized wrapper), and
   // getElementById would answer with whichever copy comes first in the document.
   const batchedRoots = new Set(crawledDom.comments.filter((entry) => batchedAnchors.has(entry.comment.anchor)).map((entry) => entry.root));

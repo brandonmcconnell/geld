@@ -164,6 +164,8 @@ export interface PreviewRecord {
   readonly inspectUrl: string | null;
   readonly anchor: string;
   readonly updatedAt?: string;
+  /** Why there is no deployment, when the host said so in words ("X is not a member of the team"). */
+  readonly reason?: string;
 }
 
 export interface GeldDeeplink {
@@ -250,6 +252,7 @@ export const previewRecordSchema = z.object({
   inspectUrl: z.string().url().nullable(),
   anchor: sourceAnchorSchema,
   updatedAt: isoDate.optional(),
+  reason: z.string().min(1).max(200).optional(),
 });
 
 export const geldPrMetaSchema = z.object({
@@ -343,7 +346,8 @@ function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
         ...summarised,
         previews: value.previews.map((entry) => {
           const record: PreviewRecord = { host: entry.host, project: entry.project, status: entry.status, url: entry.url, inspectUrl: entry.inspectUrl, anchor: entry.anchor };
-          return entry.updatedAt === undefined ? record : { ...record, updatedAt: entry.updatedAt };
+          const dated = entry.updatedAt === undefined ? record : { ...record, updatedAt: entry.updatedAt };
+          return entry.reason === undefined ? dated : { ...dated, reason: entry.reason };
         }),
       };
 }

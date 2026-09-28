@@ -166,15 +166,26 @@ function tableRowFor(doc: PreviewDoc, project: string): string | null {
   return lines(doc).find((line) => line.startsWith('|') && line.includes(`| ${project} |`)) ?? null;
 }
 
+/** Vercel's own pages under vercel.com that are not `<team>/<project>`: account, team and docs paths. */
+const VERCEL_NOT_A_PROJECT = /^https:\/\/vercel\.com\/(?:account|teams|docs|login|signup|new|dashboard|support|blog|changelog|guides|templates|help)(?:[/?#]|$)/i;
+
 function parseVercel(doc: PreviewDoc): readonly Preview[] {
   const header = vercelHeader(doc.text);
   if (header !== null && header.length > 0) {
     return header.map((project) => preview('vercel', doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === '' ? null : project.previewUrl, project.inspectorUrl === '' ? null : project.inspectorUrl));
   }
+  // "@someone must be a member of the Acme team on Vercel to deploy." No deployment was made for this push: the
+  // committer is not on the team. A failed preview for the team, with the comment's own fix (add them) as the link.
+  const member = /@?([\w-]+(?:\[bot\])?)\s+must be a member of the\s+\*{0,2}(.+?)\*{0,2}\s+team on Vercel to deploy/i.exec(doc.text);
+  if (member?.[1] !== undefined && member[2] !== undefined) {
+    const team = member[2].trim();
+    const fix = linkWhere(doc, /click here|add .* to the team|request access/i) ?? linkByHref(doc, /vercel\.com\/teams\//i);
+    return [{ ...preview('vercel', doc, team, 'failed', null, fix?.href ?? null), reason: `${member[1]} is not a member of the ${team} team on Vercel` }];
+  }
   // Rendered: one table row per project — the project link to vercel.com/<team>/<project>, the status image's
   // alt with the inspector link beside it, the Preview link.
   const out: Preview[] = [];
-  const projectLinks = doc.links.filter((link) => /^https:\/\/vercel\.com\/[^/]+\/[^/?#]+\/?$/.test(link.href) && link.text.trim() !== '');
+  const projectLinks = doc.links.filter((link) => /^https:\/\/vercel\.com\/[^/]+\/[^/?#]+\/?$/.test(link.href) && !VERCEL_NOT_A_PROJECT.test(link.href) && link.text.trim() !== '');
   for (const link of projectLinks) {
     const name = link.text.trim();
     if (out.some((entry) => entry.project === name)) continue;

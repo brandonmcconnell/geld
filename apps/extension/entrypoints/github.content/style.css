@@ -4685,6 +4685,21 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-weight: 400;
 }
 
+/* Why a preview has nothing to open, in the host's words, after "Vercel · failed"; it is the part that gives way. */
+.geld-review__deploy-reason {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.geld-review__deploy-reason::before {
+  content: '· ';
+}
+
 .geld-review__right--links {
   gap: 10px;
   padding-right: 6px;

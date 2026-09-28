@@ -18985,7 +18985,8 @@ var previewRecordSchema = external_exports.object({
   url: external_exports.string().url().nullable(),
   inspectUrl: external_exports.string().url().nullable(),
   anchor: sourceAnchorSchema,
-  updatedAt: isoDate.optional()
+  updatedAt: isoDate.optional(),
+  reason: external_exports.string().min(1).max(200).optional()
 });
 var geldPrMetaSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -19061,7 +19062,8 @@ function metaFrom(value) {
     ...summarised,
     previews: value.previews.map((entry2) => {
       const record3 = { host: entry2.host, project: entry2.project, status: entry2.status, url: entry2.url, inspectUrl: entry2.inspectUrl, anchor: entry2.anchor };
-      return entry2.updatedAt === void 0 ? record3 : { ...record3, updatedAt: entry2.updatedAt };
+      const dated = entry2.updatedAt === void 0 ? record3 : { ...record3, updatedAt: entry2.updatedAt };
+      return entry2.reason === void 0 ? dated : { ...dated, reason: entry2.reason };
     })
   };
 }
@@ -20159,13 +20161,20 @@ function vercelStatus(word) {
 function tableRowFor(doc, project) {
   return lines(doc).find((line) => line.startsWith("|") && line.includes(`| ${project} |`)) ?? null;
 }
+var VERCEL_NOT_A_PROJECT = /^https:\/\/vercel\.com\/(?:account|teams|docs|login|signup|new|dashboard|support|blog|changelog|guides|templates|help)(?:[/?#]|$)/i;
 function parseVercel(doc) {
   const header = vercelHeader(doc.text);
   if (header !== null && header.length > 0) {
     return header.map((project) => preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl));
   }
+  const member = /@?([\w-]+(?:\[bot\])?)\s+must be a member of the\s+\*{0,2}(.+?)\*{0,2}\s+team on Vercel to deploy/i.exec(doc.text);
+  if (member?.[1] !== void 0 && member[2] !== void 0) {
+    const team = member[2].trim();
+    const fix = linkWhere(doc, /click here|add .* to the team|request access/i) ?? linkByHref(doc, /vercel\.com\/teams\//i);
+    return [{ ...preview("vercel", doc, team, "failed", null, fix?.href ?? null), reason: `${member[1]} is not a member of the ${team} team on Vercel` }];
+  }
   const out = [];
-  const projectLinks = doc.links.filter((link) => /^https:\/\/vercel\.com\/[^/]+\/[^/?#]+\/?$/.test(link.href) && link.text.trim() !== "");
+  const projectLinks = doc.links.filter((link) => /^https:\/\/vercel\.com\/[^/]+\/[^/?#]+\/?$/.test(link.href) && !VERCEL_NOT_A_PROJECT.test(link.href) && link.text.trim() !== "");
   for (const link of projectLinks) {
     const name = link.text.trim();
     if (out.some((entry2) => entry2.project === name)) continue;

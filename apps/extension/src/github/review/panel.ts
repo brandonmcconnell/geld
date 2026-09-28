@@ -729,7 +729,8 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   let openComment: string | null = null;
   let commitsSlot: HTMLElement | null = null;
   const byPush = model.grouping === 'batch';
-  if (byPush && batch.previews.length > 0) {
+  // The previews this push deployed (or failed to), as pills: a host's comment is its preview, never a bot comment line.
+  if (batch.previews.length > 0) {
     list.append(subhead(plural(batch.previews.length, 'preview'), ICON_ROCKET));
     list.append(createElement('li', { class: `${PANEL_CLASS}__deploy-strip` }, batch.previews.map((entry) => previewPill(entry, model))));
   }
@@ -1254,7 +1255,7 @@ function previewGlyph(status: Preview['status']): HTMLElement {
  */
 function previewPill(entry: Preview, model: PanelModel): HTMLElement {
   const host = previewHostById(entry.host);
-  const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}`;
+  const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}${entry.reason === undefined ? '' : ` · ${entry.reason}`}`;
   const children: Node[] = [];
   const avatar = model.avatarForAnchor(entry.anchor);
   if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
@@ -1299,10 +1300,13 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': entry.status, role: 'img', 'aria-label': PREVIEW_STATUS_LABEL[entry.status] || 'Preview' }, [icon(PREVIEW_GLYPH[entry.status])]);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.project])];
   mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [`${host?.title ?? 'Preview'}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status].toLowerCase()}`}`]));
+  // The host's own words for why there is nothing to open ("X is not a member of the team"), truncating before the links.
+  if (entry.reason !== undefined) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploy-reason`, title: entry.reason }, [entry.reason]));
   const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
   const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
   if (entry.url !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
-  if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.status === 'failed' ? 'Logs' : 'Inspect']));
+  // With a reason the link is the host's remedy (add the member, request access), not a build log.
+  if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.reason !== undefined ? 'Fix' : entry.status === 'failed' ? 'Logs' : 'Inspect']));
   if (model.timeFor(entry.anchor) !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [model.timeFor(entry.anchor)]));
   return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': entry.status }, [
     lead,

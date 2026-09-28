@@ -80,6 +80,20 @@ describe('parsePreviews', () => {
     expect(found[0]).toMatchObject({ host: 'mintlify', project: 'kb', status: 'ready', url: 'https://mintlify-kb-abc123.mintlify.site/' });
   });
 
+  it('reads a Vercel deployment refused for a committer outside the team as a failed preview', () => {
+    const md = [
+      '[@harkirat-bit](https://github.com/harkirat-bit) must be a member of the **Mintlify** team on Vercel to deploy.',
+      '- [Click here](https://vercel.com/teams/mintlify/members?invite=harkirat-bit) to add [@harkirat-bit](https://github.com/harkirat-bit) to the team.',
+      "- If you initiated this build, [request access](https://vercel.com/teams/mintlify/request-access).",
+      "- If you're already a member of the **Mintlify** team, make sure that your Vercel account is [connected](https://vercel.com/account/login-connections) to your GitHub account.",
+      '',
+      'Learn more about collaboration on Vercel and other options [here](https://vercel.com/docs/accounts/team-members-and-roles).',
+    ].join('\n');
+    const found = parsePreviews(previewDocFromMarkdown('vercel[bot]', 'issuecomment-77', md));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ host: 'vercel', project: 'Mintlify', status: 'failed', url: null, inspectUrl: 'https://vercel.com/teams/mintlify/members?invite=harkirat-bit', reason: 'harkirat-bit is not a member of the Mintlify team on Vercel' });
+  });
+
   it('ignores bot comments that are not about previews', () => {
     expect(parsePreviews(previewDocFromMarkdown('github-actions[bot]', 'issuecomment-9', '⚠️ getStaticProps changed? Please double check.'))).toEqual([]);
     expect(parsePreviews(previewDocFromMarkdown('cursor[bot]', 'issuecomment-9', 'Bugbot reviewed your changes and found no new issues!'))).toEqual([]);
