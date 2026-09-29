@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { FileStats } from '@geld/core';
+import { diffSummariesUrl, parseDiffSummaries } from '@geld/core';
 import type { DiffPriority, FetchDiffRequest } from '../lib/messages';
 import { isFetchDiffResponse } from '../lib/messages';
 import { DiffCache, diffCacheKey, latestCacheKey } from './diff-cache';
@@ -7,7 +8,8 @@ import { DiffCache, diffCacheKey, latestCacheKey } from './diff-cache';
 export type DiffFetchState =
   | { readonly status: 'idle' }
   | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly files: readonly FileStats[] }
+  /** `provisional`: from GitHub's files-tab summaries while the diff itself is still on its way (see `DiffSource`). */
+  | { readonly status: 'ready'; readonly files: readonly FileStats[]; readonly provisional?: true }
   | { readonly status: 'failed'; readonly reason: string; readonly attempts: number };
 
 /** PR lists request one diff per row; the background paces them further, under GitHub's burst limit. */
@@ -52,6 +54,16 @@ function isDefinitive(reason: string): boolean {
  * Lazily asks the background script for `<page>.diff` and caches the per-file
  * statistics — in memory for this page, and on disk keyed by commit SHA so a
  * pull request that has not changed never needs a second request.
+ *
+ * The page's own pull request has a second source: the files tab's JSON
+ * (`diffSummariesUrl`), served by github.com itself with the session cookie.
+ * The patch-diff host answers 503 for a minute or more to a pull request
+ * whose `.diff` nobody has asked for yet (a freshly opened one), so the
+ * moment the diff request comes back anything but ok, the summaries are
+ * fetched and shown as `provisional` counts. The diff keeps retrying behind
+ * them and replaces them when it lands, with what only a diff knows (binary
+ * files, whitespace and comment-only lines); nothing provisional is written
+ * to the on-disk cache.
  */
 export class DiffSource {
   /** Keyed by cache key when the commit is known (so a new push is a new entry), else by URL. */
@@ -64,6 +76,10 @@ export class DiffSource {
   private readonly retryAttempts = new Map<string, number>();
   /** Pauses waited per key while GitHub answered 5xx. */
   private readonly busyWaits = new Map<string, number>();
+  /** Files from the files tab's summaries, per key, standing in until the diff lands. */
+  private readonly provisional = new Map<string, readonly FileStats[]>();
+  /** Keys whose summaries were asked for this page (once is enough: they change only with a push, which is a new key). */
+  private readonly summariesAsked = new Set<string>();
   private cacheReady = false;
   private inFlight = 0;
 
@@ -75,7 +91,15 @@ export class DiffSource {
   }
 
   get(diffUrl: string, sha: string | null = null): DiffFetchState {
-    return this.memory.get(this.keyFor(diffUrl, sha)) ?? { status: 'idle' };
+    return this.stateOf(this.keyFor(diffUrl, sha));
+  }
+
+  /** The diff when it is here; the summaries while it is not; whatever the request is at otherwise. */
+  private stateOf(key: string): DiffFetchState {
+    const current = this.memory.get(key) ?? { status: 'idle' };
+    if (current.status === 'ready') return current;
+    const files = this.provisional.get(key);
+    return files === undefined ? current : { status: 'ready', files, provisional: true };
   }
 
   /**
@@ -93,7 +117,7 @@ export class DiffSource {
   request(diffUrl: string, sha: string | null = null, priority: DiffPriority = sha === null ? 'background' : 'page'): DiffFetchState {
     const key = this.keyFor(diffUrl, sha);
     const current = this.memory.get(key) ?? { status: 'idle' };
-    if (current.status !== 'idle') return current;
+    if (current.status !== 'idle') return this.stateOf(key);
 
     const persistKey = sha === null ? latestCacheKey(diffUrl) : diffCacheKey(diffUrl, sha);
     if (persistKey !== null) {
@@ -122,7 +146,7 @@ export class DiffSource {
     if (priority === 'page') this.queue.unshift(item);
     else this.queue.push(item);
     this.pump();
-    return loading;
+    return this.stateOf(key);
   }
 
   private keyFor(diffUrl: string, sha: string | null): string {
@@ -155,6 +179,7 @@ export class DiffSource {
       const response: unknown = await browser.runtime.sendMessage(request);
       if (isFetchDiffResponse(response) && response.ok) {
         this.memory.set(key, { status: 'ready', files: response.files });
+        this.provisional.delete(key);
         this.retryAttempts.delete(key);
         this.busyWaits.delete(key);
         this.revalidating.delete(key);
@@ -173,6 +198,8 @@ export class DiffSource {
       this.revalidating.delete(key);
       return;
     }
+    // The page's own pull request need not wait for the patch-diff host: GitHub's own files-tab data has the counts.
+    if (priority === 'page') this.askSummaries(diffUrl, key);
     // GitHub answering 5xx pauses everyone briefly; a row waits through a few
     // such pauses as "loading" before it is called unavailable.
     if (reason === 'busy') {
@@ -216,5 +243,20 @@ export class DiffSource {
       }, delay);
     }
     this.onChange();
+  }
+
+  private askSummaries(diffUrl: string, key: string): void {
+    const url = diffSummariesUrl(diffUrl);
+    if (url === null || this.summariesAsked.has(key)) return;
+    this.summariesAsked.add(key);
+    void fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(async (response) => (response.ok ? parseDiffSummaries(await response.json()) : null))
+      .then((files) => {
+        // The diff may have landed meanwhile; it says everything the summaries say and more.
+        if (files === null || this.memory.get(key)?.status === 'ready') return;
+        this.provisional.set(key, files);
+        this.onChange();
+      })
+      .catch(() => undefined);
   }
 }
