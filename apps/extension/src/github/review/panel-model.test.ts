@@ -129,6 +129,11 @@ describe('status rows', () => {
     const resolved = { ...base, verdict: 'findings', count: 0 } as const;
     expect(botHealth(resolved)).toBe('good');
     expect(verdictLabel(resolved)).toBe('Greptile resolved');
+    // A scored run: the score always, the open count while threads are open.
+    expect(verdictLabel({ ...base, verdict: 'findings', score: 4, count: 1 })).toBe('Greptile 4/5 · 1 issue');
+    expect(verdictLabel({ ...base, verdict: 'findings', score: 4, count: 0 })).toBe('Greptile 4/5');
+    expect(verdictLabel({ ...base, verdict: 'clean', score: 5 })).toBe('Greptile 5/5');
+    expect(verdictLabel({ ...base, id: 'bugbot', login: 'cursor[bot]', verdict: 'findings', count: 2 })).toBe('Bugbot 2 issues');
     expect(verdictTone(resolved)).toBe('success');
   });
 });

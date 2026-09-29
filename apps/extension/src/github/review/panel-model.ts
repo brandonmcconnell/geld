@@ -110,12 +110,7 @@ export function verdictLabel(bot: BotVerdictRecord): string {
   const title = botTitle(bot.id, bot.login);
   if (bot.verdict === 'running') return `${title} running`;
   if (bot.verdict === 'failed') return `${title} failed`;
-  // A scored run reads as its score; the glyph beside it says whether anything is still open.
-  if (bot.score !== undefined) return `${title} ${bot.score}/5`;
-  if (bot.verdict === 'clean') return `${title} clean`;
-  if (allResolved(bot)) return `${title} resolved`;
-  if (bot.count !== undefined) return `${title} ${bot.count} issue${bot.count === 1 ? '' : 's'}`;
-  return `${title} findings`;
+  return `${title} ${botDetail(bot)}`;
 }
 
 export function statusBadge(status: ReviewItemStatus): string | null {
@@ -219,12 +214,14 @@ export function botHealth(bot: BotVerdictRecord): Health {
 export function botDetail(bot: BotVerdictRecord): string {
   if (bot.verdict === 'running') return 'running';
   if (bot.verdict === 'failed') return 'failed';
-  // A scored run shows its score whatever became of its findings; the glyph beside it says resolved or clean.
-  if (bot.score !== undefined) return `${bot.score}/5`;
+  // A scored run shows its score whatever became of its findings, and the open count beside it while threads are
+  // open: "4/5 · 1 issue" amber, then "4/5" with the green check once all are resolved. Without a score the count
+  // alone says it: "1 issue", then "resolved".
+  const issues = bot.verdict === 'findings' && bot.count !== undefined && bot.count > 0 ? `${bot.count} issue${bot.count === 1 ? '' : 's'}` : null;
+  if (bot.score !== undefined) return issues === null ? `${bot.score}/5` : `${bot.score}/5 · ${issues}`;
   if (bot.verdict === 'clean') return 'clean';
   if (allResolved(bot)) return 'resolved';
-  if (bot.count !== undefined) return `${bot.count} issue${bot.count === 1 ? '' : 's'}`;
-  return 'findings';
+  return issues ?? 'findings';
 }
 
 export type CheckState = 'success' | 'failure' | 'queued' | 'pending' | 'skipped' | 'neutral';

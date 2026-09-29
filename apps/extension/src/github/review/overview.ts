@@ -1044,8 +1044,9 @@ function botCardLine(record: BotVerdictRecord): string {
   const scored = record.score === undefined ? '' : `Scored this pull request ${record.score}/5`;
   if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
   if (allResolved(record)) return scored === '' ? 'Everything it found on this pull request is resolved' : `${scored}, everything it found is resolved`;
-  if (scored !== '') return scored;
-  if (record.count !== undefined) return `Reported ${record.count} issue${record.count === 1 ? '' : 's'} on this pull request`;
+  const issues = record.count === undefined ? null : `${record.count} issue${record.count === 1 ? '' : 's'}`;
+  if (scored !== '') return issues === null ? scored : `${scored}, ${issues} still open`;
+  if (issues !== null) return `Reported ${issues} on this pull request`;
   return 'Reported findings on this pull request';
 }
 
