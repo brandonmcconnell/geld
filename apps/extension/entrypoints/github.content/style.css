@@ -2675,6 +2675,16 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   display: none;
 }
 
+/* A review line's slot keeps its square while empty (before the ⋯ is worn, or when the comment has none), so its
+ * time does not move when the menu lands and lines up with the lines whose menu is there. A fold row's slot has
+ * Geld's own menu standing in beside it and collapses instead. */
+.geld-review__ctl-slot--held,
+.geld-review__ctl-slot--held:empty {
+  display: inline-flex;
+  min-width: 28px;
+  min-height: 28px;
+}
+
 .geld-review__ctl-slot > *,
 .geld-review__ctl-slot > details > summary,
 .geld-review__ctl-slot > button {

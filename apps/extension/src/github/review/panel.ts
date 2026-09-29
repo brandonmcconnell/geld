@@ -338,8 +338,9 @@ export const ATTR_GEAR_SLOT = 'data-geld-gear-slot';
 export const ATTR_CTL_SLOT = 'data-geld-ctl';
 
 /** Where GitHub's own per-comment controls (reaction trigger, ⋯) sit in a row, whether it is open or not. */
-function controlSlot(anchor: string): HTMLElement {
-  return createElement('span', { class: `${PANEL_CLASS}__ctl-slot`, [ATTR_CTL_SLOT]: anchor });
+/** Where a comment's own ⋯ is worn once found. `held`: the square is kept while empty, so the time beside it does not move. */
+function controlSlot(anchor: string, held = false): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__ctl-slot${held ? ` ${PANEL_CLASS}__ctl-slot--held` : ''}`, [ATTR_CTL_SLOT]: anchor });
 }
 
 function focusKeyOf(root: Element | null): string | null {
@@ -1444,9 +1445,11 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (goes) {
     right.append(pointerChevron(act));
   } else if (entry.hasBody) {
-    right.append(controlSlot(entry.anchor), chevron(open, act));
+    right.append(controlSlot(entry.anchor, true), chevron(open, act));
   } else if (reserveChevron) {
-    right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
+    // A bare verdict beside reviews with comments: their time is followed by a ⋯ and a chevron, so this one gets
+    // both squares' worth of space and the times read as one column.
+    right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }), createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
   }
   const row = createElement(
     'li',
