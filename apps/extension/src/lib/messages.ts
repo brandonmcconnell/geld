@@ -3,9 +3,19 @@ import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
 
 /** Messages exchanged between the content script, popup and background. */
 
+/**
+ * `page`: the diff of what the reader is looking at (a pull request's or
+ * commit's own header, a hover they made). `background`: a list row, a
+ * refresh of stale counts. The background keeps part of its per-minute
+ * budget for the former, so a page never waits behind a list.
+ */
+export type DiffPriority = 'page' | 'background';
+
 export interface FetchDiffRequest {
   readonly type: 'geld:fetch-diff';
   readonly url: string;
+  /** Absent in messages from older content scripts still running: treated as `background`. */
+  readonly priority?: DiffPriority;
 }
 
 export type FetchDiffResponse =
@@ -174,7 +184,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isFetchDiffRequest(value: unknown): value is FetchDiffRequest {
-  return isRecord(value) && value.type === 'geld:fetch-diff' && typeof value.url === 'string';
+  return isRecord(value) && value.type === 'geld:fetch-diff' && typeof value.url === 'string' && (value.priority === undefined || value.priority === 'page' || value.priority === 'background');
 }
 
 export function isFetchDiffResponse(value: unknown): value is FetchDiffResponse {

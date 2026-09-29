@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { FileStats } from '@geld/core';
-import type { FetchDiffRequest } from '../lib/messages';
+import type { DiffPriority, FetchDiffRequest } from '../lib/messages';
 import { isFetchDiffResponse } from '../lib/messages';
 import { DiffCache, diffCacheKey, latestCacheKey } from './diff-cache';
 
@@ -29,6 +29,13 @@ const TRANSIENT_MAX_ATTEMPTS = 8;
 const QUEUE_JITTER_MS = 400;
 /** GitHub answering 5xx keeps a row loading through this many pauses before the row says so. */
 const BUSY_MAX_WAITS = 6;
+/**
+ * The page's own subject does not sit out a busy pause with the rows: one
+ * request is a fair probe, and the header is what the reader opened the page
+ * for. It asks again on this schedule (then keeps the last step) until the
+ * host answers or `BUSY_MAX_WAITS` is spent.
+ */
+const PAGE_BUSY_RETRY_MS: readonly number[] = [1500, 3000, 6000, 12000];
 
 /**
  * Failures that will not change by asking again on this page. Sign-in
@@ -49,7 +56,7 @@ function isDefinitive(reason: string): boolean {
 export class DiffSource {
   /** Keyed by cache key when the commit is known (so a new push is a new entry), else by URL. */
   private readonly memory = new Map<string, DiffFetchState>();
-  private readonly queue: Array<{ readonly url: string; readonly key: string; readonly persistKey: string | null; readonly revalidate: boolean }> = [];
+  private readonly queue: Array<{ readonly url: string; readonly key: string; readonly persistKey: string | null; readonly revalidate: boolean; readonly priority: DiffPriority }> = [];
   private readonly persistent = new DiffCache();
   /** Keys whose stale on-disk entry is on screen while a fresh copy is fetched. */
   private readonly revalidating = new Set<string>();
@@ -77,8 +84,13 @@ export class DiffSource {
    * knows no SHA — the result is ready immediately with no request. Until the
    * on-disk cache has loaded, a request waits (reported as `loading`) rather
    * than fetching something we very likely already have.
+   *
+   * A subject with a SHA is what the reader is looking at (a pull request's
+   * or commit's own page, a commit they hover): it goes to the front of this
+   * queue and to the background as `page`, which keeps budget for it. List
+   * rows know no SHA and, like every refresh of stale counts, wait their turn.
    */
-  request(diffUrl: string, sha: string | null = null): DiffFetchState {
+  request(diffUrl: string, sha: string | null = null, priority: DiffPriority = sha === null ? 'background' : 'page'): DiffFetchState {
     const key = this.keyFor(diffUrl, sha);
     const current = this.memory.get(key) ?? { status: 'idle' };
     if (current.status !== 'idle') return current;
@@ -97,7 +109,7 @@ export class DiffSource {
         // devices until they are replaced.
         if ((!this.persistent.isFresh(persistKey) || cached.length === 0) && !this.revalidating.has(key)) {
           this.revalidating.add(key);
-          this.queue.push({ url: diffUrl, key, persistKey, revalidate: true });
+          this.queue.push({ url: diffUrl, key, persistKey, revalidate: true, priority: 'background' });
           this.pump();
         }
         return ready;
@@ -106,7 +118,9 @@ export class DiffSource {
 
     const loading: DiffFetchState = { status: 'loading' };
     this.memory.set(key, loading);
-    this.queue.push({ url: diffUrl, key, persistKey, revalidate: false });
+    const item = { url: diffUrl, key, persistKey, revalidate: false, priority };
+    if (priority === 'page') this.queue.unshift(item);
+    else this.queue.push(item);
     this.pump();
     return loading;
   }
@@ -125,15 +139,15 @@ export class DiffSource {
       const next = this.queue.shift();
       if (next === undefined) return;
       this.inFlight += 1;
-      void this.load(next.url, next.key, next.persistKey, next.revalidate).finally(() => {
+      void this.load(next.url, next.key, next.persistKey, next.revalidate, next.priority).finally(() => {
         this.inFlight -= 1;
         this.pump();
       });
     }
   }
 
-  private async load(diffUrl: string, key: string, persistKey: string | null, revalidate: boolean): Promise<void> {
-    const request: FetchDiffRequest = { type: 'geld:fetch-diff', url: diffUrl };
+  private async load(diffUrl: string, key: string, persistKey: string | null, revalidate: boolean, priority: DiffPriority): Promise<void> {
+    const request: FetchDiffRequest = { type: 'geld:fetch-diff', url: diffUrl, priority };
     const attempts = (this.retryAttempts.get(key) ?? 0) + 1;
     let reason: string;
     let retryAfterMs: number | null = null;
@@ -165,6 +179,7 @@ export class DiffSource {
       const waits = (this.busyWaits.get(key) ?? 0) + 1;
       this.busyWaits.set(key, waits);
       if (waits <= BUSY_MAX_WAITS) reason = 'queued';
+      if (priority === 'page') retryAfterMs = PAGE_BUSY_RETRY_MS[Math.min(waits, PAGE_BUSY_RETRY_MS.length) - 1] ?? retryAfterMs;
     }
     // Waiting for a budget slot is not a failure and not an attempt: the row
     // stays "loading" and asks again when the background said a slot frees.

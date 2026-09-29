@@ -599,7 +599,7 @@ export class GeldController {
     const url = new URL(window.location.href);
     const page = describePage(url);
     if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
-    const state = this.diffSource.request(page.diffUrl, detectHeadSha());
+    const state = this.diffSource.request(page.diffUrl, detectHeadSha(), 'page');
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
@@ -608,7 +608,7 @@ export class GeldController {
     this.diffFacts = null;
     if ((!matcher.usesChangeKinds && !this.settings.hideCommentLines) || page.diffUrl === null) return;
     const sha = this.headShaFor(page, url);
-    const state = this.diffSource.request(page.diffUrl, sha);
+    const state = this.diffSource.request(page.diffUrl, sha, 'page');
     if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
   }
 
@@ -1245,7 +1245,8 @@ export class GeldController {
       // Settle once, with the repository's config included, rather than twice.
       this.headerGroups = [];
     } else if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
-      const state = this.diffSource.request(page.diffUrl, sha);
+      // The page's own diff: first in line whether or not its head SHA has been read yet.
+      const state = this.diffSource.request(page.diffUrl, sha, 'page');
       if (state.status === 'ready') {
         const fromDiff = breakdownFromFiles(state.files, matcher, this.settings.hideCommentLines, view?.filteredPaths ?? null);
         headerHidden = fromDiff.hidden;

@@ -19,6 +19,9 @@ export interface DiagnosticEvent {
   readonly files?: number | undefined;
   readonly cooldownMs?: number;
   readonly strikes?: number;
+  /** For a 429/403 or 5xx: the status and the host that answered (github.com itself, or the patch-diff host after the redirect). */
+  readonly status?: number;
+  readonly host?: string;
 }
 
 const MAX_EVENTS = 300;
@@ -69,6 +72,8 @@ export function formatDiagnostics(events: readonly DiagnosticEvent[], version: s
     if (event.files !== undefined) parts.push(`files=${event.files}`);
     if (event.cooldownMs !== undefined) parts.push(`cooldown=${Math.round(event.cooldownMs / 1000)}s`);
     if (event.strikes !== undefined) parts.push(`strikes=${event.strikes}`);
+    if (event.status !== undefined) parts.push(`status=${event.status}`);
+    if (event.host !== undefined) parts.push(`from=${event.host}`);
     return parts.filter((part): part is string => part !== undefined).join(' ');
   });
   return [`Geld ${version} diagnostics — ${events.length} events (this browser session)`, ...lines].join('\n');
