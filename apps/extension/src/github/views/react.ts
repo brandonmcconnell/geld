@@ -106,10 +106,20 @@ export function isSelectedTreeItem(item: HTMLElement): boolean {
   return item.getAttribute('aria-current') === 'true';
 }
 
+/** The regions directly under `parent`: a region inside another (a diff's own landmarks) is that entry's, not a sibling entry. */
+function topLevelRegionCount(parent: Element): number {
+  let count = 0;
+  for (const region of parent.querySelectorAll('[role="region"]')) {
+    const outer = region.parentElement?.closest('[role="region"]');
+    if (outer === null || outer === undefined || !parent.contains(outer)) count += 1;
+  }
+  return count;
+}
+
 /** An entry's root: the element wrapping just its region (GitHub's `diffEntry`), or the region itself. */
 function rootOf(region: HTMLElement): HTMLElement {
   const parent = region.parentElement;
-  return parent !== null && parent.querySelectorAll('[role="region"]').length === 1 ? parent : region;
+  return parent !== null && topLevelRegionCount(parent) === 1 ? parent : region;
 }
 
 /**
@@ -160,8 +170,18 @@ export const reactAdapter: DiffViewAdapter = {
     if (container === null) return null;
     // With one row mounted the container is its parent, which is the spacer as well.
     const virtualized = container.parentElement?.matches(VIRTUAL_LIST_SELECTOR) === true;
+    // Reconciled on every pass, never only added: a row caught mid-remount (the virtualiser replacing its region,
+    // both copies in the row for a frame) reads as a wrapper around two regions, and a mark left on it would flatten
+    // the row for good - no box to scroll to or stick a header in, no intrinsic size for the virtualiser.
+    const wraps = new Set<HTMLElement>();
     for (const root of roots.values()) {
-      for (let wrap = root.parentElement; wrap !== null && wrap !== container; wrap = wrap.parentElement) wrap.setAttribute(ATTR_WRAP, '');
+      for (let wrap = root.parentElement; wrap !== null && wrap !== container; wrap = wrap.parentElement) wraps.add(wrap);
+    }
+    for (const stale of container.querySelectorAll<HTMLElement>(`[${ATTR_WRAP}]`)) {
+      if (!wraps.has(stale)) stale.removeAttribute(ATTR_WRAP);
+    }
+    for (const wrap of wraps) {
+      if (!wrap.hasAttribute(ATTR_WRAP)) wrap.setAttribute(ATTR_WRAP, '');
     }
 
     const entries: DiffEntry[] = [];
