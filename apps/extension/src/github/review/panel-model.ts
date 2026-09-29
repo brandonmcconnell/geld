@@ -110,9 +110,10 @@ export function verdictLabel(bot: BotVerdictRecord): string {
   const title = botTitle(bot.id, bot.login);
   if (bot.verdict === 'running') return `${title} running`;
   if (bot.verdict === 'failed') return `${title} failed`;
-  if (bot.verdict === 'clean') return bot.score === undefined ? `${title} clean` : `${title} ${bot.score}/5, clean`;
-  if (allResolved(bot)) return bot.score === undefined ? `${title} resolved` : `${title} ${bot.score}/5, resolved`;
+  // A scored run reads as its score; the glyph beside it says whether anything is still open.
   if (bot.score !== undefined) return `${title} ${bot.score}/5`;
+  if (bot.verdict === 'clean') return `${title} clean`;
+  if (allResolved(bot)) return `${title} resolved`;
   if (bot.count !== undefined) return `${title} ${bot.count} issue${bot.count === 1 ? '' : 's'}`;
   return `${title} findings`;
 }
