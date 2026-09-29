@@ -307,8 +307,8 @@ body {
   gap: 4px 12px;
 }
 
-/* Experiments: one per row on the Hide grid's two columns, so the checkbox stands in the column of the Hide
- * grid's right-hand checkboxes. The title may take two lines; the description is the row's tooltip. */
+/* Experiments: one per row, shaped like a Hide row (checkbox in the Hide grid's left column, then the title
+ * across the rest of the width); the description is the row's tooltip. */
 .popup__experiments {
   display: flex;
   flex-direction: column;
@@ -320,25 +320,19 @@ body {
 }
 
 .popup__experiment {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   font-size: 13px;
   line-height: 24px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.popup__experiment > .geld-checkbox {
-  justify-self: start;
-  margin-top: 4px;
-}
-
 .popup__experiment-label {
-  line-height: 20px;
-  padding: 2px 0;
-  text-wrap: balance;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .popup__category {

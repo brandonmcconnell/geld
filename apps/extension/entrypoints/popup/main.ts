@@ -101,9 +101,9 @@ async function main(): Promise<void> {
   }
 
   /**
-   * An experiment in the popup: one per row, the title alone (its description
-   * is the row's tooltip), a checkbox in the column of the Hide grid's right
-   * checkboxes rather than a switch at the edge.
+   * An experiment in the popup: one per row, shaped like a Hide row (checkbox,
+   * then the title, which has the whole width), the description as the row's
+   * tooltip rather than a paragraph.
    */
   function renderExperiment(field: ToggleField): HTMLElement {
     const input = document.createElement('input');
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
     const row = document.createElement('label');
     row.className = 'popup__experiment';
     row.title = plainText(field.popupDescription ?? field.description);
-    row.append(text, input);
+    row.append(input, text);
     return row;
   }
 
