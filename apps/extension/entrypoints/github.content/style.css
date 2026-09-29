@@ -3406,6 +3406,33 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   background: var(--geld-chat-mine-bg);
 }
 
+/* The comment the URL points at: GitHub rings whatever `.timeline-comment` sits inside the target with a 1px
+ * accent shadow, which in the chat layout is the content box, not the message. The ring moves to the bubble. */
+.geld-review__chat :target .timeline-comment,
+.geld-review__chat .timeline-comment:target {
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+
+/* The ring goes round the whole message (byline, bubble, reactions) with room to breathe, not round the text.
+ * The target is the message, something in it, or the comment group around it (GitHub puts the id on the group
+ * and the `.timeline-comment` inside it for some comments). */
+.geld-review__chat [data-geld-message]:not([data-geld-lone]):is(:target, :has(:target)),
+.geld-review__chat :target:is([id^='issuecomment-'], [id^='pullrequestreview-'], [id^='discussion_r']) [data-geld-message]:not([data-geld-lone]) {
+  /* GitHub's own `:target .timeline-comment { outline: none !important }` would take this off the message. */
+  outline: 1px solid var(--fgColor-accent, var(--color-accent-fg)) !important;
+  outline-offset: 8px;
+  border-radius: var(--geld-chat-radius);
+}
+
+/* A lone message is the whole view (its byline and picture are the chat's own, outside the message), so the ring
+ * goes round the chat: the comment box, not its contents. */
+.geld-review__chat:has([data-geld-message][data-geld-lone]:is(:target, :has(:target))),
+.geld-review__chat:has(:target:is([id^='issuecomment-'], [id^='pullrequestreview-'], [id^='discussion_r']) [data-geld-message][data-geld-lone]) {
+  outline: 1px solid var(--fgColor-accent, var(--color-accent-fg));
+  outline-offset: -1px;
+}
+
 .geld-review__chat [data-geld-run='first'] > [data-geld-part='bubble'] {
   border-bottom-left-radius: var(--geld-chat-tight);
 }
