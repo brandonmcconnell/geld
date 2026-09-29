@@ -19292,7 +19292,8 @@ function isStatusLineComment(body) {
   const promise2 = /\b(?:will|I'?ll)\s+(?:post|comment|report|reply|start|begin|review)\b.*\b(?:when|once|shortly|soon)\b/i;
   return underWay.test(text) || stated.test(text) || promise2.test(text);
 }
-function verdictsFrom(checks, comments, headSha, extraLogins = []) {
+var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
+function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now()) {
   const byId = /* @__PURE__ */ new Map();
   const checkVerdict = /* @__PURE__ */ new Map();
   for (const check2 of checks) {
@@ -19328,7 +19329,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     if (isTriggerComment(comment.body, extraLogins)) continue;
     if (isStatusLineComment(comment.body)) {
       threadRuns.delete(id);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
+      const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
@@ -19346,14 +19348,15 @@ function verdictsFrom(checks, comments, headSha, extraLogins = []) {
     const verdict = parsed.clean ? "clean" : "findings";
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
   }
-  for (const [id, { login, anchor: anchor2 }] of statusOnly) {
+  for (const [id, { login, anchor: anchor2, at }] of statusOnly) {
     const existing = byId.get(id);
+    const stale = at !== null && now - at > STATUS_LINE_STALE_MS;
     if (existing === void 0) {
-      byId.set(id, { id, login, verdict: "running", reviewedSha: headSha, sourceId: anchor2 });
+      byId.set(id, { id, login, verdict: stale ? "failed" : "running", reviewedSha: headSha, sourceId: anchor2 });
       continue;
     }
     if (existing.checkName === void 0) {
-      byId.set(id, { id, login, verdict: "running", reviewedSha: existing.reviewedSha, sourceId: anchor2 });
+      if (!stale) byId.set(id, { id, login, verdict: "running", reviewedSha: existing.reviewedSha, sourceId: anchor2 });
       continue;
     }
     const fromCheck = checkVerdict.get(id) ?? "running";
@@ -20499,10 +20502,10 @@ function buildMeta(pr, options) {
     items = [...items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]).slice(0, maxItems);
   }
   const botComments = [
-    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}` })),
-    ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}` }))
+    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt })),
+    ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...review.submittedAt === null ? {} : { createdAt: review.submittedAt } }))
   ];
-  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra);
+  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now());
   const previews = pr.comments.flatMap((comment) => parsePreviews(previewDocFromMarkdown(comment.author, `issuecomment-${comment.databaseId}`, comment.body, comment.createdAt)));
   const meta3 = {
     v: META_VERSION,

@@ -238,10 +238,10 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
   }
 
   const botComments = [
-    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}` })),
-    ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}` })),
+    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt })),
+    ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...(review.submittedAt === null ? {} : { createdAt: review.submittedAt }) })),
   ];
-  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra);
+  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now());
   const previews = pr.comments.flatMap((comment) => parsePreviews(previewDocFromMarkdown(comment.author, `issuecomment-${comment.databaseId}`, comment.body, comment.createdAt)));
   const meta: GeldPrMeta = {
     v: META_VERSION,

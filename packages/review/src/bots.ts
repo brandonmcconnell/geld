@@ -237,7 +237,17 @@ export interface BotComment {
    * Absent for its comments and review bodies.
    */
   readonly resolved?: boolean;
+  /** When it was posted, ISO; lets a status line age (see `STATUS_LINE_STALE_MS`). */
+  readonly createdAt?: string;
 }
+
+/**
+ * A run announced this long ago that has said nothing since, with no check
+ * to report how it ended, is not running: the bot never reported (Devin's
+ * second "Starting Devin Review." on a push, then silence for days). The
+ * longest reviews seen take a quarter of this.
+ */
+export const STATUS_LINE_STALE_MS = 45 * 60 * 1000;
 
 /** A bot's review threads since it last summarised a run: a finding each, open until resolved. */
 interface ThreadRun {
@@ -268,6 +278,7 @@ export function verdictsFrom(
   comments: readonly BotComment[],
   headSha: string,
   extraLogins: readonly string[] = [],
+  now: number = Date.now(),
 ): readonly DerivedBotVerdict[] {
   const byId = new Map<string, DerivedBotVerdict>();
   /** What each bot's check alone said, for a run its comments have not spoken about. */
@@ -292,7 +303,7 @@ export function verdictsFrom(
   }
 
   /** Bots whose latest comment so far is a status line (the run it announced has not reported), with that line. */
-  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string }>();
+  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
@@ -310,7 +321,8 @@ export function verdictsFrom(
     if (isStatusLineComment(comment.body)) {
       // A new run began: the threads so far belong to the run before it.
       threadRuns.delete(id);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor });
+      const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
@@ -334,14 +346,17 @@ export function verdictsFrom(
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
   // check to go by the bot is running until it says more.
-  for (const [id, { login, anchor }] of statusOnly) {
+  for (const [id, { login, anchor, at }] of statusOnly) {
     const existing = byId.get(id);
+    // Announced long ago, nothing since, no check to say how it went: the run never reported. What the bot said
+    // before that stands (from that earlier run); a bot that never said anything else did not review this.
+    const stale = at !== null && now - at > STATUS_LINE_STALE_MS;
     if (existing === undefined) {
-      byId.set(id, { id, login, verdict: 'running', reviewedSha: headSha, sourceId: anchor });
+      byId.set(id, { id, login, verdict: stale ? 'failed' : 'running', reviewedSha: headSha, sourceId: anchor });
       continue;
     }
     if (existing.checkName === undefined) {
-      byId.set(id, { id, login, verdict: 'running', reviewedSha: existing.reviewedSha, sourceId: anchor });
+      if (!stale) byId.set(id, { id, login, verdict: 'running', reviewedSha: existing.reviewedSha, sourceId: anchor });
       continue;
     }
     const fromCheck = checkVerdict.get(id) ?? 'running';

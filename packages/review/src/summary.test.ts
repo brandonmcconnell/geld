@@ -287,6 +287,27 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([{ name: 'Devin Review', status: 'in_progress', conclusion: null, sha: 'bbb' }], [{ author: 'devin-ai-integration[bot]', body: 'Found 1 issue.', anchor: 'a' }, { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'b' }], 'bbb')[0]?.verdict).toBe('running');
   });
 
+  it('does not keep a bot running on a status line that aged with nothing after it', () => {
+    const t = (minutesAgo: number): string => new Date(Date.UTC(2026, 8, 25, 5, 40) - minutesAgo * 60_000).toISOString();
+    const now = Date.UTC(2026, 8, 25, 5, 40) + 4 * 24 * 3_600_000;
+    // Devin on mintlify/mint#11955: starting, a clean review, starting again on a push, then silence for days
+    // and no check run on the repository. The clean review stands; "running" for four days does not.
+    const devin = [
+      { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-1', createdAt: t(5) },
+      { author: 'devin-ai-integration[bot]', body: '✅ Devin Review: No Issues Found\nDevin Review analyzed this PR and found no bugs or issues to report.', anchor: 'pullrequestreview-1', createdAt: t(4) },
+      { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-2', createdAt: t(0) },
+    ];
+    expect(verdictsFrom([], devin, 'aaa', [], now)[0]).toMatchObject({ verdict: 'clean', sourceId: 'pullrequestreview-1' });
+    // The same lines ten minutes later: still running.
+    expect(verdictsFrom([], devin, 'aaa', [], Date.UTC(2026, 8, 25, 5, 50))[0]).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-2' });
+    // A bot that only ever said "starting", long ago: it did not review this.
+    expect(verdictsFrom([], devin.slice(2), 'aaa', [], now)[0]).toMatchObject({ verdict: 'failed', sourceId: 'issuecomment-2' });
+    // A check run says how the run ended, however old the line.
+    expect(verdictsFrom([{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'aaa' }], devin.slice(2), 'aaa', [], now)[0]?.verdict).toBe('clean');
+    // Without a timestamp nothing ages.
+    expect(verdictsFrom([], devin.slice(2).map(({ createdAt: _at, ...rest }) => rest), 'aaa', [], now)[0]?.verdict).toBe('running');
+  });
+
   it('weighs a bot\'s review threads by whether they are still open', () => {
     const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\nFound 2 issues.', anchor: 'pullrequestreview-1' };
     const open = [

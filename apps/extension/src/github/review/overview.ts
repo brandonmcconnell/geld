@@ -308,11 +308,13 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
   // that flagged nothing is clean, whatever its opening comment said.
   const bots = verdictsFrom(
     crawlCheckRuns(document, headSha),
-    comments.map((comment) =>
-      comment.kind === 'thread' && comment.isResolved !== undefined
-        ? { author: comment.author, body: comment.body, anchor: comment.anchor, resolved: comment.isResolved }
-        : { author: comment.author, body: comment.body, anchor: comment.anchor },
-    ),
+    comments.map((comment) => ({
+      author: comment.author,
+      body: comment.body,
+      anchor: comment.anchor,
+      ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
+      ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
+    })),
     headSha,
     settings.reviewBots,
   );
