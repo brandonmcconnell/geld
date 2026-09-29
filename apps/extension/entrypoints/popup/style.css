@@ -76,10 +76,14 @@ body {
 
 /* Current-tab context ------------------------------------------------------- */
 
-/* The stats row carries its own leading; shave the top so the block reads centred. */
 .popup__context {
-  padding: 9px 16px 14px;
   background: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+
+/* The stats row carries its own leading; with it showing, shave the top so the block reads centred. A lone
+ * line ("Open a GitHub repo…", "No diff on this page.") keeps the section's even padding. */
+.popup__context:has(> .popup__files:not([hidden])) {
+  padding: 9px 16px 14px;
 }
 
 .popup__context-line {
