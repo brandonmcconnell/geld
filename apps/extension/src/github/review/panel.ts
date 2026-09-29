@@ -1049,10 +1049,11 @@ function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | nu
   ];
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']));
   for (const choice of choices) {
-    // The item says what it posts; choosing it is the confirmation.
-    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitem', title: choice.hint });
+    // One line per action; what it posts is the tooltip. Choosing it is the confirmation.
+    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice ${PANEL_CLASS}__menu-item--line`, role: 'menuitem', title: choice.hint });
     if (choice.iconSrc !== null) item.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: choice.iconSrc, alt: '', width: '16', height: '16' }));
-    item.append(createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [createElement('span', {}, [choice.label]), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [choice.hint])]));
+    else item.append(createElement('span', { class: `${PANEL_CLASS}__bot-icon`, 'aria-hidden': 'true' }));
+    item.append(createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [choice.label]));
     item.addEventListener('click', (event) => {
       event.stopPropagation();
       details.removeAttribute('open');

@@ -1419,6 +1419,17 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   flex-direction: column;
 }
 
+/* A one-line action (the re-run items): icon and label centred on the line; "Re-run all" keeps the icon's space. */
+.geld-review__menu-list > .geld-review__menu-item--line {
+  align-items: center;
+}
+
+.geld-review__menu-item--line > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
 .geld-review__menu-hint {
   color: var(--geld-review-muted);
   font-size: 12px;

@@ -110,8 +110,8 @@ export function verdictLabel(bot: BotVerdictRecord): string {
   const title = botTitle(bot.id, bot.login);
   if (bot.verdict === 'running') return `${title} running`;
   if (bot.verdict === 'failed') return `${title} failed`;
-  if (bot.verdict === 'clean') return `${title} clean`;
-  if (allResolved(bot)) return `${title} resolved`;
+  if (bot.verdict === 'clean') return bot.score === undefined ? `${title} clean` : `${title} ${bot.score}/5, clean`;
+  if (allResolved(bot)) return bot.score === undefined ? `${title} resolved` : `${title} ${bot.score}/5, resolved`;
   if (bot.score !== undefined) return `${title} ${bot.score}/5`;
   if (bot.count !== undefined) return `${title} ${bot.count} issue${bot.count === 1 ? '' : 's'}`;
   return `${title} findings`;
@@ -218,9 +218,10 @@ export function botHealth(bot: BotVerdictRecord): Health {
 export function botDetail(bot: BotVerdictRecord): string {
   if (bot.verdict === 'running') return 'running';
   if (bot.verdict === 'failed') return 'failed';
+  // A scored run shows its score whatever became of its findings; the glyph beside it says resolved or clean.
+  if (bot.score !== undefined) return `${bot.score}/5`;
   if (bot.verdict === 'clean') return 'clean';
   if (allResolved(bot)) return 'resolved';
-  if (bot.score !== undefined) return `${bot.score}/5`;
   if (bot.count !== undefined) return `${bot.count} issue${bot.count === 1 ? '' : 's'}`;
   return 'findings';
 }

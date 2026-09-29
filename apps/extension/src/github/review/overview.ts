@@ -1041,9 +1041,10 @@ function botTitleFor(login: string): string {
 function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'running') return 'Reviewing this pull request now';
   if (record.verdict === 'failed') return 'Its review of this pull request failed';
-  if (record.verdict === 'clean') return 'Found nothing on this pull request';
-  if (allResolved(record)) return 'Everything it found on this pull request is resolved';
-  if (record.score !== undefined) return `Scored this pull request ${record.score}/5`;
+  const scored = record.score === undefined ? '' : `Scored this pull request ${record.score}/5`;
+  if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
+  if (allResolved(record)) return scored === '' ? 'Everything it found on this pull request is resolved' : `${scored}, everything it found is resolved`;
+  if (scored !== '') return scored;
   if (record.count !== undefined) return `Reported ${record.count} issue${record.count === 1 ? '' : 's'} on this pull request`;
   return 'Reported findings on this pull request';
 }

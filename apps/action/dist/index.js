@@ -19317,7 +19317,16 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const threadRuns = /* @__PURE__ */ new Map();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
-    if (id === null) continue;
+    if (id === null) {
+      if (comment.resolved === void 0 && isTriggerComment(comment.body, extraLogins)) {
+        const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+        for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
+          threadRuns.delete(asked.id);
+          statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
+        }
+      }
+      continue;
+    }
     if (comment.resolved !== void 0) {
       statusOnly.delete(id);
       const run2 = threadRuns.get(id);
@@ -19367,19 +19376,34 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const reviewedSha = existing?.reviewedSha ?? headSha;
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
+    const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
     if (run2.open > 0) {
       const severity = existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
-      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.lastAnchor });
+      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.lastAnchor });
       continue;
     }
     const fromCheck = checkName === void 0 ? null : checkVerdict.get(id) ?? null;
     if (fromCheck !== null) {
-      byId.set(id, { id, login: run2.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run2.lastAnchor });
+      byId.set(id, { id, login: run2.login, verdict: fromCheck, ...fromCheck === "clean" ? scored : {}, reviewedSha, ...named, sourceId: run2.lastAnchor });
       continue;
     }
-    byId.set(id, { id, login: run2.login, verdict: "findings", count: 0, reviewedSha, ...named, sourceId: run2.lastAnchor });
+    byId.set(id, { id, login: run2.login, verdict: "findings", count: 0, ...scored, reviewedSha, ...named, sourceId: run2.lastAnchor });
   }
   return [...byId.values()];
+}
+function botsTriggeredBy(body, extraLogins = []) {
+  const text = ` ${body.replace(/[`*_>~]/g, "").replace(/\s+/g, " ").trim().toLowerCase()} `;
+  const out = [];
+  for (const bot of REVIEW_BOTS) {
+    if (bot.triggers.some((trigger) => text.includes(` ${trigger.toLowerCase()} `) || text.includes(` ${trigger.toLowerCase()}.`) || text.includes(` ${trigger.toLowerCase()}!`))) {
+      out.push({ id: bot.id, login: bot.logins[0] ?? bot.id });
+    }
+  }
+  for (const login of extraLogins) {
+    const handle = `@${login.replace(/\[bot\]$/i, "").toLowerCase()}`;
+    if (text.includes(` ${handle} `) && !out.some((entry2) => entry2.login.toLowerCase() === login.toLowerCase())) out.push({ id: `custom:${login.toLowerCase()}`, login });
+  }
+  return out;
 }
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body, extraLogins = []) {

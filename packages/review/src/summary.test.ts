@@ -4,7 +4,8 @@ import type { RawPullRequest } from './build';
 import { parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, isStatusLineComment, looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, isStatusLineComment, looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
+import type { DerivedBotVerdict } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
 const PRODUCER = { kind: 'action' as const, version: '0.1.0', ai: false };
@@ -287,6 +288,27 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([{ name: 'Devin Review', status: 'in_progress', conclusion: null, sha: 'bbb' }], [{ author: 'devin-ai-integration[bot]', body: 'Found 1 issue.', anchor: 'a' }, { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'b' }], 'bbb')[0]?.verdict).toBe('running');
   });
 
+  it('starts a run when a person asks a bot to', () => {
+    const now = Date.UTC(2026, 8, 29, 19, 0);
+    const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();
+    const before = [
+      { author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.', anchor: 'issuecomment-1', createdAt: at(60) },
+      { author: 'cursor[bot]', body: 'Bugbot reviewed your changes and found no new issues!', anchor: 'issuecomment-2', createdAt: at(60) },
+    ];
+    const asked = [...before, { author: 'brandonmcconnell', body: '@greptileai', anchor: 'issuecomment-3', createdAt: at(1) }];
+    const byId = (list: readonly DerivedBotVerdict[], id: string): DerivedBotVerdict | undefined => list.find((bot) => bot.id === id);
+    // Greptile was asked a minute ago and has not spoken: running, from the request. Bugbot was not asked.
+    expect(byId(verdictsFrom([], asked, 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-3', login: 'greptile-apps[bot]' });
+    expect(byId(verdictsFrom([], asked, 'aaa', [], now), 'bugbot')?.verdict).toBe('clean');
+    // Its answer ends the run.
+    const answered = [...asked, { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\nFound 1 issue.', anchor: 'issuecomment-4', createdAt: at(0) }];
+    expect(byId(verdictsFrom([], answered, 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'findings', score: 4, sourceId: 'issuecomment-4' });
+    // Several bots in one comment; a request that aged with no answer is a run that never reported.
+    expect(verdictsFrom([], [...before, { author: 'someone', body: 'bugbot run @greptileai', anchor: 'c', createdAt: at(1) }], 'aaa', [], now).map((bot) => `${bot.id}:${bot.verdict}`).sort()).toEqual(['bugbot:running', 'greptile:running']);
+    expect(byId(verdictsFrom([], [...before, { author: 'someone', body: '@greptileai', anchor: 'c', createdAt: at(120) }], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
+    expect(botsTriggeredBy('/devin review').map((bot) => bot.id)).toEqual(['devin']);
+  });
+
   it('does not keep a bot running on a status line that aged with nothing after it', () => {
     const t = (minutesAgo: number): string => new Date(Date.UTC(2026, 8, 25, 5, 40) - minutesAgo * 60_000).toISOString();
     const now = Date.UTC(2026, 8, 25, 5, 40) + 4 * 24 * 3_600_000;
@@ -319,8 +341,9 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([], open, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r1' });
     // Every thread resolved: nothing outstanding, whatever the wording of the threads themselves.
     const resolved = open.map((comment) => ('resolved' in comment ? { ...comment, resolved: true } : comment));
-    expect(verdictsFrom([], resolved, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 0, sourceId: 'discussion_r2' });
-    expect(verdictsFrom([], resolved, 'aaa')[0]?.score).toBeUndefined();
+    // ...and the run's score stays with it: the score is what Greptile is read for.
+    expect(verdictsFrom([], resolved, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 0, score: 4, sourceId: 'discussion_r2' });
+    expect(verdictsFrom([], open, 'aaa')[0]?.score).toBe(4);
     // With a check to go by, the check says how that run ended.
     expect(verdictsFrom([{ name: 'Greptile', status: 'completed', conclusion: 'success', sha: 'aaa' }], resolved, 'aaa')[0]?.verdict).toBe('clean');
     // A clean summary after resolved threads is the latest word; threads after a summary belong to that summary's run.

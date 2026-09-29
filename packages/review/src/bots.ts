@@ -307,7 +307,18 @@ export function verdictsFrom(
   const threadRuns = new Map<string, ThreadRun>();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
-    if (id === null) continue;
+    if (id === null) {
+      // A person asking a bot to run ("bugbot run", "@greptileai") starts a run as surely as the bot's own
+      // "Starting" line does: that bot is running until it speaks (or the line ages, or its check says).
+      if (comment.resolved === undefined && isTriggerComment(comment.body, extraLogins)) {
+        const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+        for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
+          threadRuns.delete(asked.id);
+          statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
+        }
+      }
+      continue;
+    }
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
       statusOnly.delete(id);
@@ -369,20 +380,42 @@ export function verdictsFrom(
     const reviewedSha = existing?.reviewedSha ?? headSha;
     const checkName = existing?.checkName;
     const named = checkName === undefined ? {} : { checkName };
+    // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not.
+    const scored = existing?.verdict === 'findings' && existing.score !== undefined ? { score: existing.score } : {};
     if (run.open > 0) {
       const severity = existing?.verdict === 'findings' && existing.severity !== undefined ? { severity: existing.severity } : {};
-      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.lastAnchor });
+      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.lastAnchor });
       continue;
     }
     const fromCheck = checkName === undefined ? null : checkVerdict.get(id) ?? null;
     if (fromCheck !== null) {
-      byId.set(id, { id, login: run.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run.lastAnchor });
+      byId.set(id, { id, login: run.login, verdict: fromCheck, ...(fromCheck === 'clean' ? scored : {}), reviewedSha, ...named, sourceId: run.lastAnchor });
       continue;
     }
-    byId.set(id, { id, login: run.login, verdict: 'findings', count: 0, reviewedSha, ...named, sourceId: run.lastAnchor });
+    byId.set(id, { id, login: run.login, verdict: 'findings', count: 0, ...scored, reviewedSha, ...named, sourceId: run.lastAnchor });
   }
 
   return [...byId.values()];
+}
+
+/**
+ * The bots a trigger comment asks for, by id with the login the answer will
+ * come from: every registered bot whose trigger phrase the comment contains
+ * as a whole, and `@handle` for a user-listed bot.
+ */
+export function botsTriggeredBy(body: string, extraLogins: readonly string[] = []): readonly { readonly id: string; readonly login: string }[] {
+  const text = ` ${body.replace(/[`*_>~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()} `;
+  const out: { readonly id: string; readonly login: string }[] = [];
+  for (const bot of REVIEW_BOTS) {
+    if (bot.triggers.some((trigger) => text.includes(` ${trigger.toLowerCase()} `) || text.includes(` ${trigger.toLowerCase()}.`) || text.includes(` ${trigger.toLowerCase()}!`))) {
+      out.push({ id: bot.id, login: bot.logins[0] ?? bot.id });
+    }
+  }
+  for (const login of extraLogins) {
+    const handle = `@${login.replace(/\[bot\]$/i, '').toLowerCase()}`;
+    if (text.includes(` ${handle} `) && !out.some((entry) => entry.login.toLowerCase() === login.toLowerCase())) out.push({ id: `custom:${login.toLowerCase()}`, login });
+  }
+  return out;
 }
 
 /** First configured re-run trigger for a bot id, if any. */
