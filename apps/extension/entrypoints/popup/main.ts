@@ -94,9 +94,12 @@ async function main(): Promise<void> {
   function eyebrow(text: string, icon: string, className: string): HTMLParagraphElement {
     const heading = document.createElement('p');
     heading.className = `geld-eyebrow popup__eyebrow ${className}`;
-    const glyph = svgFromString(icon);
-    glyph.setAttribute('class', 'popup__eyebrow-icon');
-    heading.append(glyph, document.createTextNode(text));
+    // The glyph sits in a checkbox-sized box, so it is centred on the column of checkboxes below it.
+    const box = document.createElement('span');
+    box.className = 'popup__eyebrow-icon';
+    box.setAttribute('aria-hidden', 'true');
+    box.append(svgFromString(icon));
+    heading.append(box, document.createTextNode(text));
     return heading;
   }
 
