@@ -15,6 +15,8 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { popupMaxHeight, popupNeedsScroll } from '../../src/ui/popup-size';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
+import { svgFromString } from '../../src/github/dom';
+import { ICON_BEAKER, ICON_EYE_CLOSED } from '../../src/github/ui/icons';
 
 interface ActiveTab {
   readonly id: number;
@@ -88,6 +90,47 @@ async function main(): Promise<void> {
   const toggles: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
   const categoryInputs = new Map<string, HTMLInputElement>();
 
+  /** A section's eyebrow with its glyph before the word: the eye with a slash for Hide, the beaker for Experiments. */
+  function eyebrow(text: string, icon: string, className: string): HTMLParagraphElement {
+    const heading = document.createElement('p');
+    heading.className = `geld-eyebrow popup__eyebrow ${className}`;
+    const glyph = svgFromString(icon);
+    glyph.setAttribute('class', 'popup__eyebrow-icon');
+    heading.append(glyph, document.createTextNode(text));
+    return heading;
+  }
+
+  /**
+   * An experiment in the popup: one per row, the title alone (its description
+   * is the row's tooltip), a checkbox in the column of the Hide grid's right
+   * checkboxes rather than a switch at the edge.
+   */
+  function renderExperiment(field: ToggleField): HTMLElement {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'geld-checkbox';
+    input.id = field.key;
+    input.checked = settings[field.key];
+    input.addEventListener('change', async () => {
+      settings = await settingsItem.patch({ [field.key]: input.checked });
+      saved();
+    });
+    toggles.push({
+      field,
+      set: (checked) => {
+        input.checked = checked;
+      },
+    });
+    const text = document.createElement('span');
+    text.className = 'popup__experiment-label';
+    text.textContent = field.label;
+    const row = document.createElement('label');
+    row.className = 'popup__experiment';
+    row.title = plainText(field.popupDescription ?? field.description);
+    row.append(text, input);
+    return row;
+  }
+
   function renderToggle(field: ToggleField): HTMLElement {
     const label = document.createElement('span');
     label.className = 'geld-label';
@@ -125,9 +168,7 @@ async function main(): Promise<void> {
     const section = document.createElement('section');
     section.className = 'popup__section popup__categories';
     section.setAttribute('aria-label', 'Categories');
-    const heading = document.createElement('p');
-    heading.className = 'geld-eyebrow popup__categories-title';
-    heading.textContent = field.label;
+    const heading = eyebrow(field.label, ICON_EYE_CLOSED, 'popup__categories-title');
     const grid = document.createElement('div');
     grid.className = 'popup__categories-grid';
     // Built-in and user-defined categories alike; a new custom category appears here after a reload of the popup.
@@ -158,10 +199,13 @@ async function main(): Promise<void> {
     const fields = section.fields.filter((field) => field.popup);
     if (fields.length === 0) continue;
     if (section.id === 'experiments') {
-      const heading = document.createElement('p');
-      heading.className = 'geld-eyebrow popup__section-title';
-      heading.textContent = section.title;
-      settingsHost.append(heading);
+      const experiments = document.createElement('section');
+      experiments.className = 'popup__section popup__experiments';
+      experiments.setAttribute('aria-label', section.title);
+      experiments.append(eyebrow(section.title, ICON_BEAKER, 'popup__categories-title'));
+      for (const field of fields) if (field.kind === 'toggle') experiments.append(renderExperiment(field));
+      settingsHost.append(experiments);
+      continue;
     }
     for (const field of fields) {
       if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
