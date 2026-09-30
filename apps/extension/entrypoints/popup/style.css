@@ -15,7 +15,7 @@ body {
 }
 
 .popup__header {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -65,8 +65,10 @@ body {
   white-space: nowrap;
 }
 
+/* Chrome caps an action popup at 600 CSS px, so the sections keep to a 10px rhythm: on a pull request tab the header,
+ * the tab context, three settings, the Hide grid, the experiment and the footer must all fit in that. */
 .popup__section {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -83,7 +85,7 @@ body {
 /* The stats row carries its own leading; with it showing, shave the top so the block reads centred. A lone
  * line ("Open a GitHub repo…", "No diff on this page.") keeps the section's even padding. */
 .popup__context:has(> .popup__files:not([hidden])) {
-  padding: 9px 16px 14px;
+  padding: 7px 16px 12px;
 }
 
 .popup__context-line {
@@ -179,7 +181,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 /* Repository config ----------------------------------------------------------- */
@@ -318,7 +320,7 @@ body {
 .popup__categories-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 12px;
+  gap: 2px 12px;
 }
 
 /* Experiments: one per row, shaped like a Hide row (checkbox in the Hide grid's left column, then the title
@@ -326,7 +328,7 @@ body {
 .popup__experiments {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .popup__experiments > .popup__categories-title {
