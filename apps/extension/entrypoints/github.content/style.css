@@ -2844,8 +2844,9 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   max-width: none !important;
 }
 
-/* "X reviewed 2 hours ago · View reviewed changes": the round's row already says who and when. */
-.geld-review__qv .TimelineItem:has(> .TimelineItem-badge > .octicon-eye) {
+/* "X reviewed 2 hours ago · View reviewed changes": the round's row already says who and when. A review request
+ * ("X requested review from Y") wears the same eye but is a timeline event (`event-N`) and stays listed. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge > .octicon-eye):not([id^='event-']) {
   display: none !important;
 }
 
@@ -3202,7 +3203,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__chat-body .js-timeline-item::before,
 .geld-review__chat-body .TimelineItem-avatar,
 .geld-review__chat-body .avatar-parent-child,
-.geld-review__chat-body .TimelineItem:has(> .TimelineItem-badge > .octicon-eye) {
+.geld-review__chat-body .TimelineItem:has(> .TimelineItem-badge > .octicon-eye):not([id^='event-']) {
   display: none !important;
 }
 
