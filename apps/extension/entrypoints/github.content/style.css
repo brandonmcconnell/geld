@@ -2987,6 +2987,15 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   color: var(--fgColor-open, var(--color-open-fg, #1a7f37));
 }
 
+/* The count beside a headlined events row: "merged into main · 5 timeline events". */
+.geld-review__preview--count::before {
+  content: '· ';
+}
+
+.geld-review__status[data-pr-state='merged'] {
+  color: var(--fgColor-done, var(--color-done-fg, #8250df));
+}
+
 /* GitHub closes the timeline with a thick rule above the merge box. In compact mode the timeline it closes is
  * folded away, and the rule stacked on the merge box's own top border read as two lines. */
 html[data-geld-timeline='compact'] .TimelineItem-break {
@@ -4483,6 +4492,116 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* ---- timeline events, set like the commit rows (quick-view.ts: compactEvents) ---- */
+
+.geld-review__qv [data-geld-event-hidden] {
+  display: none !important;
+}
+
+/* The badge sits on the row's middle line, so a wrapped sentence is centred on it; a merge with its checks list
+ * unfolded (GitHub's `open`) keeps the badge at the top as the timeline does. */
+.geld-review__qv .TimelineItem:not(.open) {
+  align-items: center;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-body > .geld-review__event) {
+  padding: 2px 0 !important;
+}
+
+.geld-review__event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  min-height: 24px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review__event-who {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__event-words {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__event-ref {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bgColor-accent-muted, var(--color-accent-subtle));
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 11px;
+}
+
+.geld-review__event-ref-link {
+  text-decoration: none;
+}
+
+/* The merge's checks as the commit rows show theirs: the glyph and the counts, never a sentence, never wrapping. */
+.geld-review__event-checks {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--geld-review-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.geld-review__event-checks > .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__event-checks[data-state='success'] > .octicon {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__event-checks[data-state='failure'] > .octicon {
+  color: var(--geld-review-danger-fg);
+}
+
+/* GitHub's own buttons (Details, Revert, Restore branch) inline after the words, the size of the Compare button. */
+.geld-review__event-control {
+  flex: 0 0 auto;
+  float: none !important;
+  margin: 0 !important;
+}
+
+.geld-review__event-control .btn,
+.geld-review__event-control.btn {
+  height: 24px;
+  padding: 0 8px !important;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+/* The time is the last thing on the line, in the column the commit rows use. */
+.geld-review__event > .geld-review__commit-time {
+  margin-left: auto;
+}
+
+/* A row that keeps GitHub's words (labels, assignees, review requests): the words stay inline and centred, the time
+ * moves off the sentence into the column. */
+.geld-review__qv .TimelineItem-body:has(> .geld-review__event--time-only) {
+  position: relative;
+  padding-right: calc(6.5em + 8px);
+}
+
+.geld-review__event--time-only {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  min-height: 0;
+  transform: translateY(-50%);
 }
 
 /* When the commit (or push) was made: one right-aligned column after the SHAs, so every row's SHA ends at the

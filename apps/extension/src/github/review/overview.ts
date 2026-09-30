@@ -472,6 +472,8 @@ function withManualDone(meta: GeldPrMeta): GeldPrMeta {
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
   return groups.filter((group) => group.silent !== true).map((group) => {
     const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
+    // A row headlined by its state change keeps that change's time, not the first event's.
+    const headlineNode = group.headline === undefined ? null : (group.nodes.find((node) => node.id === group.headline?.anchor) ?? null);
     return {
       key: group.key,
       label: group.label,
@@ -480,8 +482,9 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
       author: group.author,
       firstAnchor,
-      time: timeTextOf(group.nodes[0] ?? null, firstAnchor),
+      time: headlineNode === null ? timeTextOf(group.nodes[0] ?? null, firstAnchor) : timeTextOf(headlineNode, headlineNode.id),
       ...(group.closure === undefined ? {} : { closure: group.closure }),
+      ...(group.headline === undefined ? {} : { headline: group.headline }),
     };
   });
 }
@@ -2001,7 +2004,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
       } else {
         // The Commits fold among these: its rows get their dates as they land.
-        renderQuickView(mounted.slot, nodes, reapplySoon);
+        renderQuickView(mounted.slot, nodes, reapplySoon, { headSha: meta.headSha });
       }
     }
   } else {

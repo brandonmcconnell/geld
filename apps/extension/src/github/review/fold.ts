@@ -42,9 +42,49 @@ export interface FoldGroup {
   readonly section?: 'activity';
   /** A state change (closed, reopened) paired with the comment posted with it: the row is the change, its slot the comment. */
   readonly closure?: Closure;
+  /** The timeline events group: the state change among them, for the row to read at a glance (see `eventHeadline`). */
+  readonly headline?: EventHeadline;
 }
 
-export type ClosureKind = 'closed' | 'reopened';
+export type ClosureKind = 'merged' | 'closed' | 'reopened';
+
+/**
+ * What the timeline events say happened to the pull request: the latest
+ * merge, close or reopen among them, with who did it and, for a merge, the
+ * branch it went into. A branch deletion or restore never outranks these.
+ */
+export interface EventHeadline {
+  readonly kind: ClosureKind;
+  readonly actor: string;
+  readonly avatarSrc: string | null;
+  /** For a merge: the base ref as GitHub writes it (`main`, or `owner:main` across forks). */
+  readonly target: string | null;
+  readonly anchor: string;
+}
+
+const EVENT_ACTOR = 'a.author, [data-test-selector="pr-timeline-events-actor-profile-link"]';
+const EVENT_AVATAR = 'img.avatar, img.avatar-user, img[class*="avatar"]';
+
+/** The state change to headline a set of event rows with: the last merge, close or reopen in timeline order. */
+export function eventHeadline(nodes: readonly HTMLElement[]): EventHeadline | null {
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const node = nodes[index];
+    if (node === undefined) continue;
+    const kind = closureKindOf(node);
+    if (kind === null) continue;
+    const actor = (node.querySelector(EVENT_ACTOR)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const avatar = node.querySelector<HTMLImageElement>(EVENT_AVATAR);
+    const target = kind === 'merged' ? (node.querySelector('.base-ref')?.textContent ?? '').replace(/\s+/g, '').trim() || null : null;
+    return { kind, actor, avatarSrc: avatar === null ? null : avatar.currentSrc || avatar.getAttribute('src') || null, target, anchor: node.id };
+  }
+  return null;
+}
+
+/** "merged into main", "closed this", "reopened this". */
+export function headlineText(headline: EventHeadline): string {
+  if (headline.kind === 'merged') return headline.target === null ? 'merged this' : `merged into ${headline.target}`;
+  return `${headline.kind} this`;
+}
 
 export interface Closure {
   readonly kind: ClosureKind;
@@ -98,6 +138,7 @@ export function groupClosures(
 export function closureKindOf(root: Element): ClosureKind | null {
   const text = (root.textContent ?? '').replace(/\s+/g, ' ');
   if (/\breopened this\b/i.test(text)) return 'reopened';
+  if (/\bmerged (?:commit|pull request|this)\b/i.test(text) || root.querySelector(':scope > .TimelineItem-badge .octicon-git-merge, .TimelineItem-badge .octicon-git-merge') !== null) return 'merged';
   if (/\bclosed this\b/i.test(text) || root.querySelector('.octicon-git-pull-request-closed, .octicon-issue-closed, [class*="bg-closed-emphasis"]') !== null) return 'closed';
   return null;
 }
@@ -190,12 +231,14 @@ export function groupBotRuns(
   flush();
   const eventNodes = events.map((event) => event.root).filter((node) => !seen.has(node));
   if (eventNodes.length > 0) {
+    const headline = eventHeadline(eventNodes);
     groups.push({
       key: 'events',
       label: `${eventNodes.length} timeline event${eventNodes.length === 1 ? '' : 's'}`,
       author: null,
       nodes: eventNodes,
       section: 'activity',
+      ...(headline === null ? {} : { headline }),
     });
   }
   return groups;

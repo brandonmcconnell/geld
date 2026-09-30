@@ -8,24 +8,164 @@
 
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
-import { ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK } from '../ui/icons';
+import { ICON_CHECK, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
-import { onRestore, teleportInto } from './teleport';
+import { compareHome, onRestore, teleportInto } from './teleport';
 import { relativeTimeElement } from './time';
 
 /**
  * Fill `slot` with `nodes`. `onChange` runs when something a row shows
  * arrives later (a commit's date), so the caller can render again.
  */
-export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[], onChange: () => void = () => undefined): void {
+export interface QuickViewContext {
+  /** The pull request's head, so a merge of it need not name the commit. */
+  readonly headSha?: string;
+}
+
+export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[], onChange: () => void = () => undefined, context: QuickViewContext = {}): void {
   const list = createElement('div', { class: 'geld-review__qv' });
   slot.replaceChildren(list);
   teleportInto(list, nodes);
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
   openMinimized(list);
   compactForcePushes(list);
+  compactEvents(list, context.headSha ?? null);
   timeCommitRows(list, onChange);
+}
+
+const ATTR_EVENT_HIDDEN = 'data-geld-event-hidden';
+
+const COMMIT_ROWS = '.js-commits-list-item, [data-testid="commit-row"], [data-testid="timeline-commit-row"], .TimelineItem:has(> .TimelineItem-badge .octicon-git-commit)';
+
+/** Whether any commit row follows `event` in the timeline (wherever either sits right now). */
+function commitsAfter(event: HTMLElement): boolean {
+  const timeline = document.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline') ?? document;
+  for (const commit of timeline.querySelectorAll<HTMLElement>(COMMIT_ROWS)) {
+    if (compareHome(event, commit) < 0) return true;
+  }
+  return false;
+}
+
+/** "68 of 69 checks passed", "18 checks passed", "1 check failed": what GitHub writes under a merge. */
+function checksOf(text: string): { readonly passed: number; readonly total: number } | null {
+  const partial = /(\d+) of (\d+) checks? passed/i.exec(text);
+  if (partial?.[1] !== undefined && partial[2] !== undefined) return { passed: Number(partial[1]), total: Number(partial[2]) };
+  const all = /(\d+) checks? passed/i.exec(text);
+  if (all?.[1] !== undefined) return { passed: Number(all[1]), total: Number(all[1]) };
+  return null;
+}
+
+/**
+ * Timeline events set like the commit rows around them: the actor's picture,
+ * what happened in the fewest words, GitHub's own buttons inline after the
+ * words (as the Compare button sits on a force-push), and the time in the
+ * right-hand column. The sentence is hidden, not removed, and everything is
+ * undone when the node goes home.
+ *
+ * - A merge reads "merged into main", the commit named only when it is not
+ *   the pull request's head (then something landed after what was merged),
+ *   with the checks as a glyph and counts ("✓ 68 / 69") rather than a
+ *   sentence, and "View details" shortened to "Details".
+ * - A branch deletion or restore, a close or reopen: the same shape.
+ * - Anything else (labels, assignees, review requests) keeps GitHub's words,
+ *   centred on the row, its time moved to the column.
+ */
+function compactEvents(list: HTMLElement, headSha: string | null): void {
+  for (const row of list.querySelectorAll<HTMLElement>('.TimelineItem')) {
+    const body = row.querySelector<HTMLElement>(':scope > .TimelineItem-body');
+    if (body === null || body.querySelector('.geld-review__push, .geld-review__event') !== null || row.querySelector('.js-commits-list-item, code.js-commit-sha, .comment-body') !== null) continue;
+    const time = body.querySelector('relative-time[datetime], time-ago[datetime], time[datetime]');
+    const when = time?.getAttribute('datetime') ?? null;
+    const text = (body.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const kind = /\bmerged (?:commit|pull request|this)\b/i.test(text) ? 'merged' : /\bdeleted the\b/i.test(text) ? 'deleted' : /\brestored the\b/i.test(text) ? 'restored' : /\breopened this\b/i.test(text) ? 'reopened' : /\bclosed this\b/i.test(text) ? 'closed' : null;
+    const undo: Array<() => void> = [];
+    const hide = (element: Element): void => {
+      element.setAttribute(ATTR_EVENT_HIDDEN, '');
+      undo.push(() => element.removeAttribute(ATTR_EVENT_HIDDEN));
+    };
+    // The time link goes: the column has it.
+    const timeLink = time?.closest('a') ?? time;
+    if (timeLink !== null && timeLink !== undefined) hide(timeLink);
+    const words = createElement('span', { class: 'geld-review__event-words' });
+    const line = createElement('div', { class: 'geld-review__event' });
+    if (kind !== null) {
+      const avatarLink = body.querySelector<HTMLAnchorElement>('a:has(> img.avatar), a:has(> img.avatar-user), a:has(> img[class*="avatar"])');
+      const avatarImg = body.querySelector<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"]');
+      if (avatarLink !== null && avatarImg !== null) {
+        // GitHub's hovercard attributes on a copy of the link, so who did it is one hover away; the name itself is not repeated.
+        const who = avatarLink.cloneNode(false);
+        if (who instanceof HTMLElement) {
+          who.className = 'geld-review__event-who';
+          who.append(createElement('img', { class: 'geld-review__push-avatar', src: avatarImg.currentSrc || avatarImg.src, alt: avatarImg.alt, width: '20', height: '20' }));
+          line.append(who);
+        }
+      }
+      line.append(words);
+      const ref = (node: Element | null): HTMLElement | null => (node === null ? null : createElement('code', { class: 'geld-review__event-ref' }, [(node.textContent ?? '').replace(/\s+/g, '').trim()]));
+      if (kind === 'merged') {
+        const sha = body.querySelector<HTMLAnchorElement>('a[href*="/commit/"]');
+        const shaText = (sha?.textContent ?? '').trim();
+        // The merge commit is named only when it is not what the pull request ends on: the branch head itself (a
+        // rebase or fast-forward), or with nothing pushed after the merge. A squash or merge commit differs from
+        // the head by nature, so the timeline decides: a commit row after the merge event means the name matters.
+        const isHead = headSha !== null && shaText !== '' && headSha.toLowerCase().startsWith(shaText.toLowerCase());
+        words.append('merged ');
+        if (sha !== null && !isHead && commitsAfter(row)) words.append(createElement('a', { href: sha.href, class: 'geld-review__event-ref-link' }, [createElement('code', { class: 'geld-review__event-ref' }, [shaText])]), ' ');
+        const target = ref(body.querySelector('.base-ref'));
+        if (target !== null) words.append('into ', target);
+        else words.append('this');
+        const checks = checksOf(text);
+        if (checks !== null) {
+          const passed = checks.passed === checks.total;
+          line.append(
+            createElement('span', { class: 'geld-review__event-checks', 'data-state': passed ? 'success' : 'failure', role: 'img', 'aria-label': `${checks.passed} of ${checks.total} checks passed` }, [
+              svgFromString(passed ? ICON_CHECK : ICON_X),
+              createElement('span', {}, [`${checks.passed} / ${checks.total}`]),
+            ]),
+          );
+        }
+      } else if (kind === 'deleted' || kind === 'restored') {
+        const branch = ref(body.querySelector('.commit-ref, .branch-name, code'));
+        words.append(`${kind} the `);
+        if (branch !== null) words.append(branch, ' branch');
+        else words.append('branch');
+      } else {
+        words.append(`${kind} this`);
+      }
+      // GitHub's own controls (View details, Revert, Restore branch) move into the line, after the words, and back home after.
+      for (const control of body.querySelectorAll<HTMLElement>(':scope > button, :scope > form, :scope > a.btn, :scope > .btn, :scope > details, :scope > .float-right')) {
+        const parent = control.parentNode;
+        const next = control.nextSibling;
+        undo.push(() => parent?.insertBefore(control, next));
+        control.classList.add('geld-review__event-control');
+        undo.push(() => control.classList.remove('geld-review__event-control'));
+        const shown = control.querySelector('.Details-content--shown');
+        if (shown !== null && /^view details$/i.test((shown.textContent ?? '').trim())) {
+          const original = shown.textContent;
+          shown.textContent = 'Details';
+          undo.push(() => {
+            shown.textContent = original;
+          });
+        }
+        line.append(control);
+      }
+      // What the sentence was in: everything of the body but the controls we took and the fragment below the fold.
+      for (const child of [...body.children]) {
+        if (child === line || child.classList.contains('Details-content--hidden') || child.hasAttribute(ATTR_EVENT_HIDDEN)) continue;
+        hide(child);
+      }
+    }
+    if (when !== null) line.append(relativeTimeElement(when, TIME_CLASS));
+    if (kind === null && when === null) continue;
+    if (kind === null) line.classList.add('geld-review__event--time-only');
+    // First in the body: the checks list a merge unfolds ("Details") stays below the line.
+    body.prepend(line);
+    onRestore(() => {
+      line.remove();
+      for (const step of undo.reverse()) step();
+    });
+  }
 }
 
 const ATTR_PUSH_HIDDEN = 'data-geld-push-hidden';
