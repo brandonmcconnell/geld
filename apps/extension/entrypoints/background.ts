@@ -129,18 +129,46 @@ function saveThrottle(next: Throttle): void {
  * still waiting on it — the rows then failed with "message port closed" and,
  * after a few such failures, gave up until the page was reloaded.
  */
-async function takeTurn(priority: DiffPriority): Promise<number> {
+async function takeTurn(priority: DiffPriority): Promise<{ readonly wait: number; readonly stamp: number }> {
   const current = await loadThrottle();
   const now = Date.now();
   const sent = current.sent.filter((t) => now - t < DIFF_WINDOW_MS);
   const allowed = priority === 'page' ? DIFF_BUDGET : DIFF_BUDGET - PAGE_RESERVE;
   if (sent.length < allowed) {
     saveThrottle({ ...current, sent: [...sent, now] });
-    return 0;
+    return { wait: 0, stamp: now };
   }
   // The slot frees when the request that would bring the count under the line leaves the window.
   const blocking = sent[sent.length - allowed] ?? now;
-  return Math.max(50, blocking + DIFF_WINDOW_MS - now + 50);
+  return { wait: Math.max(50, blocking + DIFF_WINDOW_MS - now + 50), stamp: 0 };
+}
+
+/**
+ * Give a slot back: the answer never came from the diff host (github.com
+ * served its sign-in or SSO page, an error page), so it spent nothing of
+ * that host's tolerance. Without this a lapsed SSO session cost a page of
+ * rows the whole budget, and after signing in again every row waited out
+ * the window ("queued 32s").
+ */
+async function refundTurn(stamp: number): Promise<void> {
+  if (stamp === 0) return;
+  const current = await loadThrottle();
+  const index = current.sent.indexOf(stamp);
+  if (index === -1) return;
+  saveThrottle({ ...current, sent: [...current.sent.slice(0, index), ...current.sent.slice(index + 1)] });
+}
+
+const DIFF_HOST = 'patch-diff.githubusercontent.com';
+
+/**
+ * GitHub's own pages served in a diff's place: the sign-in wall, an
+ * organisation's SSO prompt ("Sign in to Mintlify"), the two-factor or
+ * device-verification interstitials. Recognised by their titles so they
+ * read as "signed out" (the fix is signing in) rather than "not a diff".
+ */
+function looksLikeSignInPage(html: string): boolean {
+  const title = /<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? '';
+  return /sign in|single sign-on|\bSSO\b|two-factor|verify your|confirm access|login/i.test(title) || /<form[^>]+action="\/(?:session|sessions|login|orgs\/[^"/]+\/sso)/i.test(html);
 }
 
 /** A 429/403 arrived: block for longer each time it repeats, or for what GitHub asks. */
@@ -225,12 +253,14 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
     recordDiagnostic({ kind: 'fetch', subject, outcome: reason, cooldownMs: state.cooldownUntil - Date.now(), strikes: reason === 'busy' ? (state.busy ?? 0) : state.strikes });
     return { ok: false, reason, retryAfterMs: state.cooldownUntil - Date.now() };
   }
-  const wait = await takeTurn(priority);
-  if (wait > 0) {
-    recordDiagnostic({ kind: 'fetch', subject, outcome: 'queued', ms: wait, budgetUsed: (throttle?.sent ?? []).length });
-    return { ok: false, reason: 'queued', retryAfterMs: wait };
+  const turn = await takeTurn(priority);
+  if (turn.wait > 0) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: 'queued', ms: turn.wait, budgetUsed: (throttle?.sent ?? []).length });
+    return { ok: false, reason: 'queued', retryAfterMs: turn.wait };
   }
   const started = Date.now();
+  /** Whether the diff host answered at all; an answer from elsewhere gives its slot back. */
+  let servedByDiffHost = false;
 
   let result: FetchDiffResponse;
   try {
@@ -242,6 +272,7 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
       redirect: 'follow',
     });
     const answer = { status: response.status, host: new URL(response.url).hostname };
+    servedByDiffHost = answer.host === DIFF_HOST || !parsed.hostname.endsWith('github.com');
     if (response.status === 429 || response.status === 403) {
       const retryAfterMs = await recordRateLimit(response.headers.get('retry-after'), answer);
       result = { ok: false, reason: 'rate-limited', retryAfterMs };
@@ -262,8 +293,9 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
       } else {
         const text = await readWithLimit(response, MAX_DIFF_BYTES);
         if (looksLikeHtml(response.headers.get('content-type'), text)) {
-          // Not a diff at all (an interstitial, an error page served as 200).
-          result = { ok: false, reason: 'not-a-diff' };
+          // Not a diff at all: GitHub's sign-in or SSO page (signing in fixes it), else an interstitial or an
+          // error page served as 200.
+          result = { ok: false, reason: looksLikeSignInPage(text) ? 'signed-out' : 'not-a-diff' };
         } else {
           result = { ok: true, files: parseUnifiedDiff(text) };
           await recordSuccess();
@@ -273,6 +305,9 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   } catch (error) {
     result = { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
   }
+  // A page github.com served in the diff's place (signed out, an SSO prompt, an interstitial) never reached the
+  // diff host: the slot goes back, so signing in and reloading gets fresh answers at once.
+  if (!result.ok && !servedByDiffHost && (result.reason === 'signed-out' || result.reason === 'not-a-diff')) await refundTurn(turn.stamp);
   recordDiagnostic({
     kind: 'fetch',
     subject,
