@@ -16,7 +16,10 @@ import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { popupMaxHeight, popupNeedsScroll } from '../../src/ui/popup-size';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { svgFromString } from '../../src/github/dom';
+import { describePage } from '../../src/github/page';
+import type { PageKind } from '../../src/github/page';
 import { ICON_BEAKER, ICON_EYE_CLOSED } from '../../src/github/ui/icons';
+import { wireFeedbackLink } from '../../src/ui/feedback-link';
 
 interface ActiveTab {
   readonly id: number;
@@ -457,6 +460,16 @@ async function main(): Promise<void> {
 
   const tab = await activeGitHubTab(allHosts(settings));
   let repo: string | null = tab === null ? null : repoFromPathname(tab.url.pathname);
+  // The feedback form's "Where" field: the kind of page, never its URL.
+  const PAGE_WORDS: Readonly<Record<PageKind, string>> = {
+    'pull-files': 'pull request files',
+    'pull-conversation': 'pull request conversation',
+    'pull-other': 'pull request',
+    commit: 'commit',
+    compare: 'compare',
+    other: tab === null ? '' : /\/pulls\b|\/issues\b/.test(tab.url.pathname) ? 'pull request list' : 'other GitHub page',
+  };
+  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), tab === null ? null : PAGE_WORDS[describePage(tab.url).kind]);
 
   async function refreshContext(): Promise<void> {
     if (tab === null) return;

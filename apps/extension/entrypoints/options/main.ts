@@ -52,6 +52,7 @@ import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syn
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
 import { categoryIcon } from '../../src/github/ui/icons';
+import { wireFeedbackLink } from '../../src/ui/feedback-link';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
@@ -1223,4 +1224,5 @@ async function main(): Promise<void> {
 }
 
 polyfillCornerShape();
+wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement));
 void main();
