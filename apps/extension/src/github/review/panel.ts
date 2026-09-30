@@ -718,9 +718,9 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
 }
 
 /**
- * An open round: people's reviews first, then its threads under two
- * headings — unresolved first, resolved after — then its bot comments and
- * (by push) its commits, all as rows that open one at a time (`openSubKey`: a comment's anchor or an
+ * An open round: people's reviews first, then its bot comments, then its
+ * threads under two headings — unresolved first, resolved after — and (by
+ * push) its commits, all as rows that open one at a time (`openSubKey`: a comment's anchor or an
  * item key). Returns the nested slot and what is open in it.
  */
 export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openItem: ReviewItem | null; readonly openComment: string | null; readonly commitsSlot: HTMLElement | null } {
@@ -773,13 +773,10 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
       }
     }
   }
-  const unresolved = batch.items.filter((item) => isOpenStatus(item.status));
-  const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
-  section(plural(unresolved.length, 'unresolved thread'), unresolved);
-  section(plural(resolved.length, 'resolved thread'), resolved);
   if (batch.comments.length > 0) {
-    // The round's other bot comments (run summaries, deploy notes), after the work, as lines that open one at a
-    // time — right there, not behind another toggle: a round is already two clicks in.
+    // The round's bot comments (run summaries, deploy notes) before its threads, as lines that open one at a
+    // time — right there, not behind another toggle: a round is already two clicks in. A run's summary says what
+    // the threads below it are about, as a person's review does.
     list.append(subhead(plural(batch.comments.length, 'bot comment'), ICON_COMMENT));
     for (const entry of batch.comments) {
       const { row, open } = entryRow(entry, model, handlers);
@@ -792,6 +789,10 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
       }
     }
   }
+  const unresolved = batch.items.filter((item) => isOpenStatus(item.status));
+  const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
+  section(plural(unresolved.length, 'unresolved thread'), unresolved);
+  section(plural(resolved.length, 'resolved thread'), resolved);
   if (byPush && batch.commits.length > 0) {
     // The push itself, last: its commit rows unfold under a heading like the bot comments do.
     const open = model.openCommits.has(batch.key);
