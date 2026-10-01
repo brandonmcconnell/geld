@@ -2814,9 +2814,15 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   display: none !important;
 }
 
+/* The card's own 16px indent would add to the chat's gutter (the holder of the message, `.edit-comment-hide`,
+ * carries that one): without it the body starts under the byline's name like every other comment's. */
+.geld-review__chat .minimized-comment > details > .review-comment {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 .geld-review__chat .minimized-comment .review-comment-contents {
   margin: 0 !important;
-  padding: 0 !important;
 }
 
 .geld-review__empty {
