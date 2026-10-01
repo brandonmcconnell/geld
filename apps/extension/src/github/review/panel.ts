@@ -215,6 +215,8 @@ export interface PanelModel {
   readonly grouping: 'type' | 'batch';
   /** Rounds whose commit rows are unfolded (batch grouping). */
   readonly openCommits: ReadonlySet<string>;
+  /** Rounds whose Previews line is unfolded into the per-preview list. */
+  readonly openPreviews: ReadonlySet<string>;
   /** Where the in-browser AI stands for this pull request: the control in the Geld row and its notices. */
   readonly ai: AiState;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
@@ -272,6 +274,7 @@ export interface PanelHandlers {
   readonly onToggleArchivedPreviews: () => void;
   /** Unfold or fold a round's commit rows (batch grouping). */
   readonly onToggleCommits: (batchKey: string) => void;
+  readonly onTogglePreviews: (batchKey: string) => void;
   /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -747,10 +750,27 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   let openComment: string | null = null;
   let commitsSlot: HTMLElement | null = null;
   const byPush = model.grouping === 'batch';
-  // The previews this push deployed (or failed to), as pills: a host's comment is its preview, never a bot comment line.
+  // The previews this round deployed (or failed to), as the Previews row has them: the pills on one line that
+  // unfolds into a line per preview (status, picture, name, host and state, Open, Inspect, when). A host's comment
+  // is its preview, never a bot comment line.
   if (batch.previews.length > 0) {
-    list.append(subhead(plural(batch.previews.length, 'preview'), ICON_ROCKET));
-    list.append(createElement('li', { class: `${PANEL_CLASS}__deploy-strip` }, batch.previews.map((entry) => previewPill(entry, model))));
+    const open = model.openPreviews.has(batch.key);
+    const toggle = (): void => handlers.onTogglePreviews(batch.key);
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `previews:${batch.key}`, 'aria-label': plural(batch.previews.length, 'preview') }, [
+      createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, batch.previews.map((entry) => previewPill(entry, model))),
+    ]);
+    mainClickToggles(main, toggle);
+    const health = previewHealth(batch.previews);
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--status ${PANEL_CLASS}__row--previews`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
+      rowLabel('Previews', 'Previews'),
+      main,
+      createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, toggle)]),
+    ]);
+    if (open) row.setAttribute('data-open', '');
+    rowClickToggles(row, toggle);
+    list.append(row);
+    if (open) for (const entry of batch.previews) list.append(previewLine(entry, model));
   }
   const section = (label: string, items: readonly ReviewItem[]): void => {
     if (items.length === 0) return;
@@ -1515,6 +1535,7 @@ function signatureOf(model: PanelModel): string {
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
+    openPreviews: [...model.openPreviews].sort(),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,

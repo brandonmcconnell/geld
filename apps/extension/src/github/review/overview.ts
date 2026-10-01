@@ -67,6 +67,7 @@ interface VisitState {
   archivedPreviewsOpen: boolean;
   /** Rounds whose commit rows are unfolded (batch grouping). */
   openCommits: Set<string>;
+  openPreviews: Set<string>;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -108,6 +109,7 @@ const visit: VisitState = {
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
+  openPreviews: new Set<string>(),
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -1596,6 +1598,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.sourcesShown = new Set<string>();
     visit.archivedPreviewsOpen = false;
     visit.openCommits = new Set<string>();
+    visit.openPreviews = new Set<string>();
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -1752,6 +1755,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     previews: latestPreviews(allPreviews),
     grouping: settings.reviewGrouping,
     openCommits: visit.openCommits,
+    openPreviews: visit.openPreviews,
     ai: aiStateFor(meta, rawComments, settings),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
@@ -1875,6 +1879,13 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       keepInPlace(`commits:${batchKey}`, () => {
         if (visit.openCommits.has(batchKey)) visit.openCommits.delete(batchKey);
         else visit.openCommits.add(batchKey);
+        reapply();
+      });
+    },
+    onTogglePreviews: (batchKey) => {
+      keepInPlace(`previews:${batchKey}`, () => {
+        if (visit.openPreviews.has(batchKey)) visit.openPreviews.delete(batchKey);
+        else visit.openPreviews.add(batchKey);
         reapply();
       });
     },
