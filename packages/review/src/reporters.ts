@@ -8,13 +8,29 @@
 
 export type ReportState = 'failed' | 'passed' | 'info';
 
-/** What a reporter's comment says, read from its text. */
+/**
+ * One piece of a report's short form on its pill: a few words, with a glyph
+ * and tone when the piece is a count of one kind among others ("✗ 2 ✓ 41").
+ */
+export interface ReportPart {
+  readonly text: string;
+  readonly glyph?: 'x' | 'check' | 'dot';
+  readonly tone?: 'bad' | 'good' | 'warn' | 'muted';
+}
+
+/** What a reporter's comment or status says, read from its text. */
 export interface ReportReading {
   readonly state: ReportState;
-  /** The report in a few words ("2 test failures"), as the pill and the line say it. */
+  /** The report in the service's own words ("4 visual changes need review"), as the line says it. */
   readonly headline: string;
   /** How many of the thing the report counts, when it counts something. */
   readonly count?: number;
+  /**
+   * The pill's short form ("4 changes"; "✗ 2 ✓ 41"): the numbers without the sentence, since the state light says
+   * the rest and the line has the words. Empty when the headline is only a verdict ("Quality Gate failed"), so the
+   * pill is the service and its light.
+   */
+  readonly short?: readonly ReportPart[];
 }
 
 export interface Reporter {
@@ -52,9 +68,9 @@ export const REPORTERS: readonly Reporter[] = [
       const failures = /\bfound (\d+) (?:test )?failures?\b/i.exec(body);
       if (failures !== null) {
         const count = Number(failures[1]);
-        return { state: 'failed', headline: plural(count, 'test failure'), count };
+        return { state: 'failed', headline: plural(count, 'test failure'), count, short: [{ text: plural(count, 'failure') }] };
       }
-      if (/\b(?:all tests passed|no (?:test )?failures)\b/i.test(body)) return { state: 'passed', headline: 'Tests passed' };
+      if (/\b(?:all tests passed|no (?:test )?failures)\b/i.test(body)) return { state: 'passed', headline: 'Tests passed', short: [] };
       return null;
     },
   },
@@ -130,6 +146,20 @@ export interface CheckReporter {
   readonly project: (name: string) => string | null;
   /** A status of this service that reports nothing a reviewer needs (Chromatic's "Storybook Publish"). */
   readonly ignore?: (name: string) => boolean;
+  /** The pill's short form from GitHub's description (see `ReportReading.short`); absent, the pill shows the headline. */
+  readonly short?: (description: string) => readonly ReportPart[];
+}
+
+/** "N <noun>" from the first number in the words, or nothing to say. */
+function counted(words: string, noun: string): readonly ReportPart[] {
+  const match = /(\d+)/.exec(words);
+  return match === null ? [] : [{ text: plural(Number(match[1]), noun) }];
+}
+
+/** The first percentage in the words, with a parenthesised change right after it when there is one ("80.12% (+0.03%)"). */
+function percent(words: string): readonly ReportPart[] {
+  const match = /(\d+(?:\.\d+)?%)(\s*\([+−-]\d+(?:\.\d+)?%\))?/.exec(words);
+  return match === null ? [] : [{ text: `${match[1]}${match[2] === undefined ? '' : ` ${match[2].trim()}`}` }];
 }
 
 /** "service/project" and "service/project (extra)": the part after the service's slash, or null. */
@@ -152,6 +182,8 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     project: (name) => /^UI (?:Tests|Review)(?::\s*(.+))?$/i.exec(name)?.[1]?.trim() ?? null,
     // "Storybook Publish: project — 624 stories published" says the build uploaded, not what the tests found.
     ignore: (name) => /^Storybook Publish\b/i.test(name),
+    // "3 changes must be accepted" → "3 changes"; "Failed test" / "Passed" → the light alone.
+    short: (words) => counted(words, 'change'),
   },
   {
     // Visual review: "percy/project — 4 visual changes need review" / "— Visual review automatically approved".
@@ -159,6 +191,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Percy',
     hosts: ['percy.io'],
     project: afterSlash(/^percy\//i),
+    short: (words) => counted(words, 'change'),
   },
   {
     // Coverage: "codecov/project — 80.12% (+0.03%) compared to abc1234", "codecov/patch — 62.50% of diff hit (target 80.00%)";
@@ -167,6 +200,8 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Codecov',
     hosts: ['codecov.io'],
     project: afterSlash(/^codecov\//i),
+    // "62.50% of diff hit (target 80.00%)" → "62.50%"; "80.12% (+0.03%) compared to abc" → "80.12% (+0.03%)".
+    short: percent,
   },
   {
     // "SonarCloud Code Analysis" / "SonarQube Cloud Code Analysis" — "Quality Gate passed" / "Quality Gate failed".
@@ -174,6 +209,8 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Sonar',
     hosts: ['sonarcloud.io', 'sonarqube.com', 'sonarqube.io', 'sonarsource.com'],
     project: () => null,
+    // "Quality Gate passed" / "failed": the light says it.
+    short: () => [],
   },
   {
     // "security/snyk - package.json (org)" / "license/snyk - …" — "No new issues" / "2 new issues (1 high)".
@@ -181,6 +218,15 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Snyk',
     hosts: ['snyk.io'],
     project: afterSlash(/^(?:security|license|code)\/snyk\s*-\s*/i),
+    // "2 new issues (1 high, 1 medium)" → "2 issues" and a red-dotted count of the high ones; "No new issues" → the light.
+    short: (words) => {
+      const issues = /(\d+) new issues?/i.exec(words);
+      if (issues === null) return [];
+      const parts: ReportPart[] = [{ text: plural(Number(issues[1]), 'issue') }];
+      const high = /(\d+) (?:high|critical)/i.exec(words);
+      if (high !== null) parts.push({ text: high[1] ?? '', glyph: 'dot', tone: 'bad' });
+      return parts;
+    },
   },
   {
     // "Cypress Cloud" — "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" with the run's dashboard link.
@@ -188,6 +234,21 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Cypress Cloud',
     hosts: ['cypress.io'],
     project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
+    // "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" → "✗ 2 ✓ 41" (a pending count with a dot; zeros and skips left out).
+    short: (words) => {
+      const read = (key: string): number | null => {
+        const match = new RegExp(`${key}:?\\s*(\\d+)`, 'i').exec(words);
+        return match === null ? null : Number(match[1]);
+      };
+      const parts: ReportPart[] = [];
+      const failed = read('failed');
+      const passed = read('passed');
+      const pending = read('pending');
+      if (failed !== null && failed > 0) parts.push({ text: String(failed), glyph: 'x', tone: 'bad' });
+      if (passed !== null && passed > 0) parts.push({ text: String(passed), glyph: 'check', tone: 'good' });
+      if (pending !== null && pending > 0) parts.push({ text: String(pending), glyph: 'dot', tone: 'warn' });
+      return parts;
+    },
   },
   {
     // "argos" — "3 changes, waiting for your decision" / "No change detected".
@@ -195,6 +256,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Argos',
     hosts: ['argos-ci.com'],
     project: afterSlash(/^argos\//i),
+    short: (words) => counted(words, 'change'),
   },
   {
     // "happo" / "happo/project" — "2 diffs" / "No diffs".
@@ -202,6 +264,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Happo',
     hosts: ['happo.io'],
     project: afterSlash(/^happo\//i),
+    short: (words) => counted(words, 'diff'),
   },
   {
     // Applitools Eyes — "3 unresolved diffs" / "All tests passed".
@@ -209,6 +272,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Applitools',
     hosts: ['applitools.com'],
     project: afterSlash(/^(?:applitools|eyes)\//i),
+    short: (words) => counted(words, 'diff'),
   },
   {
     // "lost-pixel" — "N differences found".
@@ -216,6 +280,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Lost Pixel',
     hosts: ['lost-pixel.com'],
     project: afterSlash(/^lost-pixel\//i),
+    short: (words) => counted(words, 'diff'),
   },
   {
     // Lighthouse CI's public report viewer lives on GitHub Pages, so the path is checked as well as the host; a
@@ -225,6 +290,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     hosts: ['googlechrome.github.io'],
     path: /\/lighthouse-ci\//i,
     project: afterSlash(/^lhci\//i),
+    short: (words) => counted(words, 'assertion'),
   },
 ];
 
@@ -264,7 +330,11 @@ export function readCheckReport(check: CheckForReport): Report | null {
   if (/^(?:skipped|cancelled|neutral|stale)$/.test(conclusion)) return null;
   const state: ReportState = check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : 'info';
   const project = reporter.project(check.name);
-  return { reporter: reporter.id, title: reporter.title, anchor: `check:${check.name}`, author: '', state, headline: headlineOf(check.description, state), ...(project === null ? {} : { project }), url: check.detailsUrl };
+  const headline = headlineOf(check.description, state);
+  // The short form reads GitHub's words, not the fallback verdict; a verdict alone leaves the light to say it.
+  const words = (check.description ?? '').replace(/^[\s—–-]+/, '').trim();
+  const short = reporter.short === undefined ? undefined : reporter.short(words);
+  return { reporter: reporter.id, title: reporter.title, anchor: `check:${check.name}`, author: '', state, headline, ...(project === null ? {} : { project }), ...(short === undefined ? {} : { short }), url: check.detailsUrl };
 }
 
 export function reportsFromChecks(checks: readonly CheckForReport[]): readonly Report[] {

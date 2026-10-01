@@ -77,3 +77,30 @@ describe('check reporters catalog', () => {
     expect(read('lost-pixel', 'https://app.lost-pixel.com/app/project/1', '5 differences found')).toMatchObject({ reporter: 'lost-pixel' });
   });
 });
+
+describe('report short forms', () => {
+  const short = (name: string, detailsUrl: string, description: string, conclusion = 'failure') => readCheckReport({ name, status: 'completed', conclusion, detailsUrl, description })?.short;
+
+  it('keeps the numbers and drops the sentence', () => {
+    expect(short('percy/app', 'https://percy.io/o/app/builds/1', '4 visual changes need review')).toEqual([{ text: '4 changes' }]);
+    expect(short('UI Tests: mint', 'https://www.chromatic.com/test?id=1', '— 3 changes must be accepted')).toEqual([{ text: '3 changes' }]);
+    expect(short('codecov/patch', 'https://codecov.io/gh/o/r', '62.50% of diff hit (target 80.00%)')).toEqual([{ text: '62.50%' }]);
+    expect(short('codecov/project', 'https://codecov.io/gh/o/r', '80.12% (+0.03%) compared to abc1234', 'success')).toEqual([{ text: '80.12% (+0.03%)' }]);
+    expect(short('happo', 'https://happo.io/a/1', '2 diffs')).toEqual([{ text: '2 diffs' }]);
+  });
+
+  it('shows counts of several kinds with their own glyphs', () => {
+    expect(short('Cypress Cloud', 'https://cloud.cypress.io/p/1', 'Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1')).toEqual([
+      { text: '2', glyph: 'x', tone: 'bad' },
+      { text: '41', glyph: 'check', tone: 'good' },
+    ]);
+    expect(short('security/snyk - package.json', 'https://snyk.io/p/1', '2 new issues (1 high, 1 medium)')).toEqual([{ text: '2 issues' }, { text: '1', glyph: 'dot', tone: 'bad' }]);
+  });
+
+  it('says nothing beside the light when the words are only a verdict', () => {
+    expect(short('SonarCloud Code Analysis', 'https://sonarcloud.io/d?id=x', 'Quality Gate failed')).toEqual([]);
+    expect(short('UI Tests: mint', 'https://www.chromatic.com/test?id=1', '— Failed test')).toEqual([]);
+    expect(short('security/snyk - package.json', 'https://snyk.io/p/1', 'No new issues', 'success')).toEqual([]);
+    expect(readReport({ author: 'blacksmith-sh[bot]', body: 'Found 2 test failures on Blacksmith runners:', anchor: 'c' })?.short).toEqual([{ text: '2 failures' }]);
+  });
+});

@@ -5093,6 +5093,39 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-weight: 400;
 }
 
+/* A short-form piece: its glyph in its tone (a failed count red, a passed one green, a pending one amber), the words
+ * in the pill's quiet grey. */
+.geld-review__report-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.geld-review__report-glyph {
+  display: inline-flex;
+}
+
+.geld-review__report-glyph > .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__report-glyph[data-tone='bad'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__report-glyph[data-tone='good'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__report-glyph[data-tone='warn'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__report-glyph[data-tone='muted'] {
+  color: var(--geld-review-muted);
+}
+
 .geld-review__health[data-report-state='failed'],
 .geld-review__status--verdict[data-report-state='failed'] {
   color: var(--geld-review-danger-fg);

@@ -9,7 +9,7 @@
  * itself is hidden — its content is this.
  */
 
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReportPart, ReviewItem } from '@geld/review';
 import { previewHostById, reportsHealth } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
@@ -1395,7 +1395,10 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const avatar = reportAvatar(entry, model);
   if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [subject]));
-  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
+  // The pill says the numbers ("4 changes", "✗ 2 ✓ 41"), the line under it the service's sentence; with only a
+  // verdict to say, the state light says it alone.
+  if (entry.short === undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
+  else for (const part of entry.short) children.push(reportPart(part));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
   const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label }, children);
   pill.addEventListener('click', (event) => {
@@ -1403,6 +1406,16 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
     handlers.onOpenReport(entry.anchor);
   });
   return pill;
+}
+
+const PART_GLYPH: Readonly<Record<NonNullable<ReportPart['glyph']>, string>> = { x: ICON_X_CIRCLE_FILL, check: ICON_CHECK_CIRCLE_FILL, dot: ICON_DOT_FILL };
+
+/** One piece of a pill's short form: its glyph in its tone, then the words. */
+function reportPart(part: ReportPart): HTMLElement {
+  const children: Node[] = [];
+  if (part.glyph !== undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__report-glyph`, 'data-tone': part.tone ?? 'muted', 'aria-hidden': 'true' }, [icon(PART_GLYPH[part.glyph])]));
+  children.push(createElement('span', {}, [part.text]));
+  return createElement('span', { class: `${PANEL_CLASS}__bot-detail ${PANEL_CLASS}__report-part`, ...(part.tone === undefined ? {} : { 'data-tone': part.tone }) }, children);
 }
 
 /**
@@ -1675,7 +1688,7 @@ function signatureOf(model: PanelModel): string {
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
-    reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}`),
+    reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
