@@ -245,6 +245,13 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
     recordDiagnostic({ kind: 'fetch', subject, outcome: cached.ok ? 'memory-hit' : `memory-hit:${cached.reason}` });
     return cached;
   }
+  // A diff this worker already found too large stays too large (a pull request's `.diff` URL serves its current
+  // head, so it is asked again only on a new push, and a page revisited within the session asks again anyway):
+  // answer from memory rather than download the limit again on every pass. Session storage outlives the worker.
+  if (await knownTooLarge(parsed.toString())) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: 'memory-hit:too-large' });
+    return { ok: false, reason: 'too-large' };
+  }
   const state = await loadThrottle();
   // A rate-limit block holds for everyone. A busy pause (GitHub answered 5xx to a burst of rows) holds the rows;
   // the page's own subject is one request and goes through as the probe, and a 5xx to it only extends the pause.
@@ -324,7 +331,25 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   if (result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404')) {
     writeCache(parsed.toString(), result);
   }
+  if (!result.ok && result.reason === 'too-large') await rememberTooLarge(parsed.toString());
   return result;
+}
+
+/** Diff URLs this session found too large, with when: a pull request's `.diff` is its head's, asked again after a push. */
+const tooLargeItem = storage.defineItem<Record<string, number>>('session:diffTooLarge', { fallback: {} });
+const TOO_LARGE_TTL_MS = 60 * 60 * 1000;
+
+async function knownTooLarge(url: string): Promise<boolean> {
+  const known = await tooLargeItem.getValue();
+  const at = known[url];
+  return at !== undefined && Date.now() - at < TOO_LARGE_TTL_MS;
+}
+
+async function rememberTooLarge(url: string): Promise<void> {
+  const known = await tooLargeItem.getValue();
+  const now = Date.now();
+  const kept = Object.fromEntries(Object.entries(known).filter(([, at]) => now - at < TOO_LARGE_TTL_MS));
+  await tooLargeItem.setValue({ ...kept, [url]: now });
 }
 
 /** Public raw files on github.com: `raw.githubusercontent.com/owner/repo/HEAD/path`. */

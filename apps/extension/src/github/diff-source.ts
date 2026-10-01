@@ -38,6 +38,8 @@ const BUSY_MAX_WAITS = 6;
  * host answers or `BUSY_MAX_WAITS` is spent.
  */
 const PAGE_BUSY_RETRY_MS: readonly number[] = [1500, 3000, 6000, 12000];
+/** Waits between attempts at GitHub's files-tab summaries after a 5xx (it times out computing a huge pull request's). */
+const SUMMARIES_RETRY_MS: readonly number[] = [3000, 8000, 20000];
 
 /**
  * Failures that will not change by asking again on this page. Sign-in
@@ -58,12 +60,14 @@ function isDefinitive(reason: string): boolean {
  * The page's own pull request has a second source: the files tab's JSON
  * (`diffSummariesUrl`), served by github.com itself with the session cookie.
  * The patch-diff host answers 503 for a minute or more to a pull request
- * whose `.diff` nobody has asked for yet (a freshly opened one), so the
- * moment the diff request comes back anything but ok, the summaries are
- * fetched and shown as `provisional` counts. The diff keeps retrying behind
- * them and replaces them when it lands, with what only a diff knows (binary
- * files, whitespace and comment-only lines); nothing provisional is written
- * to the on-disk cache.
+ * whose `.diff` nobody has asked for yet (a freshly opened one), and takes
+ * seconds to serve a huge one, so the summaries are asked for alongside the
+ * diff and shown as `provisional` counts until it lands. The diff replaces
+ * them with what only a diff knows (binary files, whitespace and comment-only
+ * lines). Nothing provisional is written to the on-disk cache, with one
+ * exception: a diff the background calls too large (over its 20 MB limit)
+ * will never land for that head, so its summaries are kept under the head's
+ * key and the next visit shows them with the page.
  */
 export class DiffSource {
   /** Keyed by cache key when the commit is known (so a new push is a new entry), else by URL. */
@@ -76,10 +80,18 @@ export class DiffSource {
   private readonly retryAttempts = new Map<string, number>();
   /** Pauses waited per key while GitHub answered 5xx. */
   private readonly busyWaits = new Map<string, number>();
-  /** Files from the files tab's summaries, per key, standing in until the diff lands. */
+  /**
+   * Files from the files tab's summaries, by diff URL, standing in until the diff lands. By URL, not key: the
+   * page asks for its diff before it knows the head SHA and again once it does, and the summaries (GitHub's view
+   * of that same head) serve both, fetched once.
+   */
   private readonly provisional = new Map<string, readonly FileStats[]>();
-  /** Keys whose summaries were asked for this page (once is enough: they change only with a push, which is a new key). */
+  /** Diff URLs whose summaries were asked for this page (once is enough: they change only with a push, which is a new key). */
   private readonly summariesAsked = new Set<string>();
+  /** The diff URL behind each key, for the summaries lookup. */
+  private readonly urlOfKey = new Map<string, string>();
+  /** Per diff URL the background called too large: the on-disk keys the summaries stand in for, for good. */
+  private readonly tooLarge = new Map<string, Set<string>>();
   private cacheReady = false;
   private inFlight = 0;
 
@@ -98,7 +110,8 @@ export class DiffSource {
   private stateOf(key: string): DiffFetchState {
     const current = this.memory.get(key) ?? { status: 'idle' };
     if (current.status === 'ready') return current;
-    const files = this.provisional.get(key);
+    const url = this.urlOfKey.get(key);
+    const files = url === undefined ? undefined : this.provisional.get(url);
     return files === undefined ? current : { status: 'ready', files, provisional: true };
   }
 
@@ -116,6 +129,7 @@ export class DiffSource {
    */
   request(diffUrl: string, sha: string | null = null, priority: DiffPriority = sha === null ? 'background' : 'page'): DiffFetchState {
     const key = this.keyFor(diffUrl, sha);
+    this.urlOfKey.set(key, diffUrl);
     const current = this.memory.get(key) ?? { status: 'idle' };
     if (current.status !== 'idle') return this.stateOf(key);
 
@@ -146,6 +160,10 @@ export class DiffSource {
     if (priority === 'page') this.queue.unshift(item);
     else this.queue.push(item);
     this.pump();
+    // The page's own pull request asks GitHub's files-tab data at the same time, not after the diff fails: the
+    // summaries take GitHub seconds on a big pull request, and that wait used to start only once a diff attempt
+    // had come back (a 20 MB download called too large, or a 503). Whichever lands first shows; the diff wins.
+    if (priority === 'page') this.askSummaries(diffUrl, key);
     return this.stateOf(key);
   }
 
@@ -179,7 +197,7 @@ export class DiffSource {
       const response: unknown = await browser.runtime.sendMessage(request);
       if (isFetchDiffResponse(response) && response.ok) {
         this.memory.set(key, { status: 'ready', files: response.files });
-        this.provisional.delete(key);
+        this.provisional.delete(diffUrl);
         this.retryAttempts.delete(key);
         this.busyWaits.delete(key);
         this.revalidating.delete(key);
@@ -200,6 +218,15 @@ export class DiffSource {
     }
     // The page's own pull request need not wait for the patch-diff host: GitHub's own files-tab data has the counts.
     if (priority === 'page') this.askSummaries(diffUrl, key);
+    // A diff too large to fetch will never land for this head: the summaries are the best this SHA gets, and are
+    // kept on disk so the next visit shows them at once instead of downloading the limit again.
+    if (reason === 'too-large' && persistKey !== null) {
+      const keys = this.tooLarge.get(diffUrl) ?? new Set<string>();
+      keys.add(persistKey);
+      this.tooLarge.set(diffUrl, keys);
+      const files = this.provisional.get(diffUrl);
+      if (files !== undefined) this.persistent.set(persistKey, files);
+    }
     // GitHub answering 5xx pauses everyone briefly; a row waits through a few
     // such pauses as "loading" before it is called unavailable.
     if (reason === 'busy') {
@@ -247,16 +274,30 @@ export class DiffSource {
 
   private askSummaries(diffUrl: string, key: string): void {
     const url = diffSummariesUrl(diffUrl);
-    if (url === null || this.summariesAsked.has(key)) return;
-    this.summariesAsked.add(key);
-    void fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
-      .then(async (response) => (response.ok ? parseDiffSummaries(await response.json()) : null))
-      .then((files) => {
-        // The diff may have landed meanwhile; it says everything the summaries say and more.
-        if (files === null || this.memory.get(key)?.status === 'ready') return;
-        this.provisional.set(key, files);
-        this.onChange();
-      })
-      .catch(() => undefined);
+    if (url === null || this.summariesAsked.has(diffUrl)) return;
+    this.summariesAsked.add(diffUrl);
+    const attempt = (tries: number): void => {
+      void fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(async (response) => {
+          if (response.ok) return parseDiffSummaries(await response.json());
+          // GitHub computes the summaries on request and gives up on a huge pull request with a 504 (seen on one of
+          // 3000 files); it usually has them a moment later. Anything else (401, 404) will not change by asking again.
+          return response.status >= 500 ? 'retry' : null;
+        })
+        .catch(() => 'retry' as const)
+        .then((files) => {
+          if (files === 'retry') {
+            const delay = SUMMARIES_RETRY_MS[tries];
+            if (delay !== undefined && this.memory.get(key)?.status !== 'ready') setTimeout(() => attempt(tries + 1), delay);
+            return;
+          }
+          // The diff may have landed meanwhile; it says everything the summaries say and more.
+          if (files === null || this.memory.get(key)?.status === 'ready') return;
+          this.provisional.set(diffUrl, files);
+          for (const persistKey of this.tooLarge.get(diffUrl) ?? []) this.persistent.set(persistKey, files);
+          this.onChange();
+        });
+    };
+    attempt(0);
   }
 }
