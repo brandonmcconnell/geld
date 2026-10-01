@@ -47,6 +47,43 @@ function commitsAfter(event: HTMLElement): boolean {
   return false;
 }
 
+/**
+ * The checks of a commit as GitHub's commit rows show them: a `details` with
+ * the glyph for a summary that opens a popover GitHub fills on open from
+ * `/owner/repo/commit/<sha>/status-details?popover=true` (its
+ * `js-dropdown-details` + `data-deferred-details-content-url` behaviour,
+ * which acts on this markup wherever it is). The merge commit's checks are
+ * the merge's checks, so the merge row gets the same control. Null when no
+ * commit row on the page offers the markup to copy (the loading skeleton and
+ * GitHub's nonce come from there).
+ */
+function statusPopover(commitHref: string, headSha: string | null, state: 'success' | 'failure', label: string, children: readonly Node[]): HTMLElement | null {
+  const model = document.querySelector<HTMLDetailsElement>('details.commit-build-statuses[data-deferred-details-content-url]');
+  const match = /^(https?:\/\/[^/]+)?(\/[^/]+\/[^/]+\/commit\/)([0-9a-f]{7,40})/i.exec(commitHref.replace(location.origin, ''));
+  if (model === null || match?.[2] === undefined || match[3] === undefined) return null;
+  const details = model.cloneNode(true);
+  if (!(details instanceof HTMLDetailsElement)) return null;
+  details.removeAttribute('open');
+  details.classList.add('geld-review__event-checks-popover');
+  details.setAttribute('data-deferred-details-content-url', `${match[2]}${headSha ?? match[3]}/status-details?popover=true`);
+  // The commit rows open theirs westward from the row's right edge; this one sits mid-row and opens below, to the right.
+  const menu = details.querySelector('.dropdown-menu');
+  if (menu !== null) {
+    menu.classList.remove('dropdown-menu-w', 'dropdown-menu-sw', 'dropdown-menu-e', 'dropdown-menu-ne', 'dropdown-menu-s');
+    menu.classList.add('dropdown-menu-se');
+  }
+  const summary = details.querySelector('summary');
+  if (summary === null) return null;
+  summary.className = 'geld-review__event-checks geld-review__event-checks--button';
+  summary.setAttribute('data-state', state);
+  summary.setAttribute('aria-label', `${label}. Show the checks`);
+  summary.setAttribute('title', 'Show the checks');
+  summary.replaceChildren(...children);
+  // Clicks inside stay inside: the row around it toggles on click.
+  details.addEventListener('click', (event) => event.stopPropagation());
+  return details;
+}
+
 /** "68 of 69 checks passed", "18 checks passed", "1 check failed": what GitHub writes under a merge. */
 function checksOf(text: string): { readonly passed: number; readonly total: number } | null {
   const partial = /(\d+) of (\d+) checks? passed/i.exec(text);
@@ -120,23 +157,13 @@ function compactEvents(list: HTMLElement, headSha: string | null): void {
           const passed = checks.passed === checks.total;
           // The glyph and counts open the checks, as the commit rows' glyph does: GitHub's "View details" toggle
           // for the merge is the control; this presses it and mirrors its state.
-          const toggle = body.querySelector<HTMLElement>('.js-details-target');
           const label = `${checks.passed} of ${checks.total} checks passed`;
           const children = [svgFromString(passed ? ICON_CHECK : ICON_X), createElement('span', {}, [`${checks.passed} / ${checks.total}`])];
-          if (toggle === null) {
-            line.append(createElement('span', { class: 'geld-review__event-checks', 'data-state': passed ? 'success' : 'failure', role: 'img', 'aria-label': label }, children));
-          } else {
-            const container = toggle.closest('.js-details-container, .Details');
-            const isOpen = (): boolean => container?.classList.contains('open') === true;
-            const button = createElement('button', { type: 'button', class: 'geld-review__event-checks geld-review__event-checks--button', 'data-state': passed ? 'success' : 'failure', 'aria-expanded': String(isOpen()), 'aria-label': `${label}. Show the checks`, title: 'Show the checks' }, children);
-            button.addEventListener('click', (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              toggle.click();
-              button.setAttribute('aria-expanded', String(isOpen()));
-            });
-            line.append(button);
-          }
+          // The checks GitHub counts here are the head commit's at merge time (a squash or merge commit on the
+          // base has its own, later ones), so the popover is the head's when the head is known.
+          const popover = sha === null ? null : statusPopover(sha.href, headSha, passed ? 'success' : 'failure', label, children);
+          if (popover !== null) line.append(popover);
+          else line.append(createElement('span', { class: 'geld-review__event-checks', 'data-state': passed ? 'success' : 'failure', role: 'img', 'aria-label': label }, children));
         }
       } else if (kind === 'deleted' || kind === 'restored') {
         const branch = ref(body.querySelector('.commit-ref, .branch-name, code'));

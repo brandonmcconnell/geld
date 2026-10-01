@@ -4566,6 +4566,22 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   white-space: nowrap;
 }
 
+/* The popover's anchor; GitHub's dropdown positions itself against it (`details-overlay`). The commit rows'
+ * `hx_dropdown-fullscreen` lets the menu take the screen on narrow viewports; the same markup here does too. */
+.geld-review__event-checks-popover {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__event-checks-popover > summary {
+  list-style: none;
+}
+
+.geld-review__event-checks-popover > summary::-webkit-details-marker {
+  display: none;
+}
+
 /* As a button: no chrome of its own, the row's hover tint on hover, the text brightening as a link would. */
 .geld-review__event-checks--button {
   height: 22px;
