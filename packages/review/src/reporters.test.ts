@@ -51,3 +51,29 @@ describe('check reporters', () => {
     expect(latestReports(all).latest.map((entry) => `${entry.project}:${entry.state}:${entry.headline}`)).toEqual(['mint:failed:Failed test', 'widget:passed:Passed']);
   });
 });
+
+describe('check reporters catalog', () => {
+  const read = (name: string, detailsUrl: string, description: string, conclusion = 'failure') => readCheckReport({ name, status: 'completed', conclusion, detailsUrl, description });
+
+  it('reads Percy, Codecov, Snyk and Cypress statuses with their project or facet', () => {
+    expect(read('percy/my-app', 'https://percy.io/org/my-app/builds/42', '4 visual changes need review')).toMatchObject({ reporter: 'percy', project: 'my-app', headline: '4 visual changes need review', state: 'failed' });
+    expect(read('codecov/patch', 'https://app.codecov.io/gh/o/r/pull/1', '62.50% of diff hit (target 80.00%)')).toMatchObject({ reporter: 'codecov', project: 'patch', headline: '62.50% of diff hit (target 80.00%)' });
+    expect(read('codecov/project/ui', 'https://codecov.io/gh/o/r', '80.12% (+0.03%) compared to abc1234', 'success')).toMatchObject({ reporter: 'codecov', project: 'project/ui', state: 'passed' });
+    expect(read('security/snyk - package.json (acme)', 'https://app.snyk.io/org/acme/project/1', '2 new issues (1 high)')).toMatchObject({ reporter: 'snyk', project: 'package.json', headline: '2 new issues (1 high)' });
+    expect(read('Cypress Cloud', 'https://cloud.cypress.io/projects/abc/runs/7', 'Failed: 2 • Passed: 41')).toMatchObject({ reporter: 'cypress', headline: 'Failed: 2 • Passed: 41' });
+    expect(read('Cypress Cloud', 'https://cloud.cypress.io/projects/abc/runs/7', 'Failed: 2')?.project).toBeUndefined();
+  });
+
+  it('reads Sonar by host alone, Lighthouse CI only on its viewer path, and knows a GitHub Pages site is not Lighthouse', () => {
+    expect(read('SonarCloud Code Analysis', 'https://sonarcloud.io/dashboard?id=x', 'Quality Gate failed')).toMatchObject({ reporter: 'sonar', title: 'Sonar', headline: 'Quality Gate failed' });
+    expect(read('lhci/performance', 'https://googlechrome.github.io/lighthouse-ci/viewer/?jsonurl=…', 'Assertions failed')).toMatchObject({ reporter: 'lighthouse', project: 'performance' });
+    expect(read('pages', 'https://googlechrome.github.io/samples/', 'Deployed')).toBeNull();
+  });
+
+  it('reads the visual services', () => {
+    expect(read('argos', 'https://app.argos-ci.com/acme/web/builds/9', '3 changes, waiting for your decision')).toMatchObject({ reporter: 'argos', headline: '3 changes, waiting for your decision' });
+    expect(read('happo/web', 'https://happo.io/a/1/compare/x', '2 diffs')).toMatchObject({ reporter: 'happo', project: 'web' });
+    expect(read('Applitools', 'https://eyes.applitools.com/app/batches/1', '3 unresolved diffs')).toMatchObject({ reporter: 'applitools' });
+    expect(read('lost-pixel', 'https://app.lost-pixel.com/app/project/1', '5 differences found')).toMatchObject({ reporter: 'lost-pixel' });
+  });
+});

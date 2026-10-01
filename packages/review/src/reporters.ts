@@ -122,22 +122,109 @@ export function latestReports(all: readonly Report[]): { readonly latest: readon
 export interface CheckReporter {
   readonly id: string;
   readonly title: string;
-  /** Hosts of the Details link, matched on the URL's hostname (with or without `www.`). */
+  /** Hosts of the Details link, matched on the URL's hostname (with or without `www.`, subdomains included). */
   readonly hosts: readonly string[];
-  /** The project the check is about, from its name ("UI Tests: mint" → "mint"); null leaves the name as the project. */
+  /** When the host alone is too broad (a shared pages host), the Details path must match this too. */
+  readonly path?: RegExp;
+  /** The project or facet the check is about, from its name ("UI Tests: mint" → "mint", "codecov/patch" → "patch"); null for none. */
   readonly project: (name: string) => string | null;
   /** A status of this service that reports nothing a reviewer needs (Chromatic's "Storybook Publish"). */
   readonly ignore?: (name: string) => boolean;
 }
 
+/** "service/project" and "service/project (extra)": the part after the service's slash, or null. */
+const afterSlash =
+  (service: RegExp) =>
+  (name: string): string | null => {
+    const match = service.exec(name);
+    if (match === null) return null;
+    const rest = name.slice(match[0].length).replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return rest === '' ? null : rest;
+  };
+
+/** Services that report through a status or check with Details on their own site. */
 export const CHECK_REPORTERS: readonly CheckReporter[] = [
   {
+    // Visual tests per Storybook project: "UI Tests: project — Failed test" / "— 3 changes must be accepted".
     id: 'chromatic',
     title: 'Chromatic',
     hosts: ['chromatic.com'],
     project: (name) => /^UI (?:Tests|Review)(?::\s*(.+))?$/i.exec(name)?.[1]?.trim() ?? null,
     // "Storybook Publish: project — 624 stories published" says the build uploaded, not what the tests found.
     ignore: (name) => /^Storybook Publish\b/i.test(name),
+  },
+  {
+    // Visual review: "percy/project — 4 visual changes need review" / "— Visual review automatically approved".
+    id: 'percy',
+    title: 'Percy',
+    hosts: ['percy.io'],
+    project: afterSlash(/^percy\//i),
+  },
+  {
+    // Coverage: "codecov/project — 80.12% (+0.03%) compared to abc1234", "codecov/patch — 62.50% of diff hit (target 80.00%)";
+    // flags add a third segment ("codecov/project/ui"). The facet after "codecov/" is the project here.
+    id: 'codecov',
+    title: 'Codecov',
+    hosts: ['codecov.io'],
+    project: afterSlash(/^codecov\//i),
+  },
+  {
+    // "SonarCloud Code Analysis" / "SonarQube Cloud Code Analysis" — "Quality Gate passed" / "Quality Gate failed".
+    id: 'sonar',
+    title: 'Sonar',
+    hosts: ['sonarcloud.io', 'sonarqube.com', 'sonarqube.io', 'sonarsource.com'],
+    project: () => null,
+  },
+  {
+    // "security/snyk - package.json (org)" / "license/snyk - …" — "No new issues" / "2 new issues (1 high)".
+    id: 'snyk',
+    title: 'Snyk',
+    hosts: ['snyk.io'],
+    project: afterSlash(/^(?:security|license|code)\/snyk\s*-\s*/i),
+  },
+  {
+    // "Cypress Cloud" — "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" with the run's dashboard link.
+    id: 'cypress',
+    title: 'Cypress Cloud',
+    hosts: ['cypress.io'],
+    project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
+  },
+  {
+    // "argos" — "3 changes, waiting for your decision" / "No change detected".
+    id: 'argos',
+    title: 'Argos',
+    hosts: ['argos-ci.com'],
+    project: afterSlash(/^argos\//i),
+  },
+  {
+    // "happo" / "happo/project" — "2 diffs" / "No diffs".
+    id: 'happo',
+    title: 'Happo',
+    hosts: ['happo.io'],
+    project: afterSlash(/^happo\//i),
+  },
+  {
+    // Applitools Eyes — "3 unresolved diffs" / "All tests passed".
+    id: 'applitools',
+    title: 'Applitools',
+    hosts: ['applitools.com'],
+    project: afterSlash(/^(?:applitools|eyes)\//i),
+  },
+  {
+    // "lost-pixel" — "N differences found".
+    id: 'lost-pixel',
+    title: 'Lost Pixel',
+    hosts: ['lost-pixel.com'],
+    project: afterSlash(/^lost-pixel\//i),
+  },
+  {
+    // Lighthouse CI's public report viewer lives on GitHub Pages, so the path is checked as well as the host; a
+    // self-hosted LHCI server has no host to know, and is left to the check's name.
+    id: 'lighthouse',
+    title: 'Lighthouse CI',
+    hosts: ['googlechrome.github.io'],
+    path: /\/lighthouse-ci\//i,
+    project: afterSlash(/^lhci\//i),
   },
 ];
 
@@ -150,13 +237,14 @@ export interface CheckForReport {
 }
 
 function checkReporterFor(url: string): CheckReporter | null {
-  let host: string;
+  let parsed: URL;
   try {
-    host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    parsed = new URL(url);
   } catch {
     return null;
   }
-  return CHECK_REPORTERS.find((reporter) => reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`))) ?? null;
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  return CHECK_REPORTERS.find((reporter) => reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`)) && (reporter.path === undefined || reporter.path.test(parsed.pathname))) ?? null;
 }
 
 /** GitHub's description for a status ("— Failed test", "Failing after 6m") as the report's headline. */
@@ -175,8 +263,8 @@ export function readCheckReport(check: CheckForReport): Report | null {
   // A skipped or cancelled run reported nothing; a neutral one is the service standing aside.
   if (/^(?:skipped|cancelled|neutral|stale)$/.test(conclusion)) return null;
   const state: ReportState = check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : 'info';
-  const project = reporter.project(check.name) ?? check.name;
-  return { reporter: reporter.id, title: reporter.title, anchor: `check:${check.name}`, author: '', state, headline: headlineOf(check.description, state), project, url: check.detailsUrl };
+  const project = reporter.project(check.name);
+  return { reporter: reporter.id, title: reporter.title, anchor: `check:${check.name}`, author: '', state, headline: headlineOf(check.description, state), ...(project === null ? {} : { project }), url: check.detailsUrl };
 }
 
 export function reportsFromChecks(checks: readonly CheckForReport[]): readonly Report[] {
