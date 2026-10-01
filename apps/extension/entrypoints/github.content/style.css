@@ -2279,7 +2279,9 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 .geld-review__row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* One grid for every row kind: glyph at 16px, 10px, then the picture or the words at 42px. The status rows, the
+   * sub-lists and the thread rows all sat on it; the round and fold rows were two pixels in from it. */
+  gap: 10px;
   min-height: 40px;
   padding: 0 8px 0 16px;
   background: var(--geld-review-bg);
