@@ -4166,6 +4166,67 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-weight: 600;
 }
 
+/* Posted through an App: the picture with the App's mark on its lower right corner, as GitHub's timeline draws it. */
+.geld-review__chat-byline > .geld-review__chat-avatar-pair {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  width: var(--geld-chat-avatar);
+  height: var(--geld-chat-avatar);
+}
+
+.geld-review__chat-avatar-pair > .geld-review__avatar {
+  width: var(--geld-chat-avatar);
+  height: var(--geld-chat-avatar);
+}
+
+.geld-review__chat-via {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--geld-review-bg);
+}
+
+/* GitHub's "Author" label, said beside the name instead of inside the comment. */
+.geld-review__chat-author {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 10px;
+  color: var(--geld-review-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+/* The compact card's own label (Author, Member, Bot) sits beside its header; the byline says it instead. */
+.geld-review__chat [data-geld-message] > .Label {
+  display: none !important;
+}
+
+/* The "via" line Geld adds to a person's hovercard: the App's mark and name, a link to the App. */
+.geld-review__via-line {
+  gap: 6px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-review__via-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__via-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
 /* The holder of a lone message is whatever wraps it: GitHub's comments holder for a thread comment, the chat body
  * itself when a review body or remark was moved in whole. */
 .geld-review__chat-body:has(> [data-geld-message][data-geld-lone]),

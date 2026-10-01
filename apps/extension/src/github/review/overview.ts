@@ -39,6 +39,8 @@ import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './pane
 import { installedBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import type { ChatByline } from './chat';
+import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { applyHold, holdRow, releaseHold, watchPanelForHold } from './hold';
@@ -1195,6 +1197,26 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
   return null;
 }
 
+/** The pull request's author, from the page header (the description card when the header is not there). */
+function prAuthorLogin(): string | null {
+  const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"]');
+  const login = header === null ? null : (header.textContent ?? '').trim().replace(/^@/, '');
+  if (login !== null && login !== '') return login;
+  const card = document.querySelector('[data-geld-attached]');
+  return card === null ? null : (authorOf(card)?.login ?? null);
+}
+
+/** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
+function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
+  const author = prAuthorLogin();
+  const via = anchor === null ? null : viaBotOf(timelineRootOf(anchor));
+  return {
+    ...byline,
+    ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
+    ...(via === null ? {} : { via }),
+  };
+}
+
 /** Chat handlers shared by an item opened on its own and inside its round. */
 function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatHandlers {
   return {
@@ -1988,7 +2010,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         const report = view.openComment === null ? null : (model.reports.latest.find((entry) => entry.anchor === view.openComment) ?? null);
         const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? timelineRootOf(view.openComment));
         if (view.nested !== null && report !== null && commentNode !== null) {
-          const byline = { login: report.author, bot: true, avatarSrc: model.avatarForAnchor(report.anchor), time: model.timeFor(report.anchor) };
+          const byline = dressByline({ login: report.author, bot: true, avatarSrc: model.avatarForAnchor(report.anchor), time: model.timeFor(report.anchor) }, report.anchor);
           renderCommentChat(view.nested, commentNode, byline);
         } else if (visit.openSubKey !== null && commentNode === null) {
           visit.openSubKey = null;
@@ -2008,7 +2030,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
             renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply));
           } else if (view.nested !== null && commentNode !== null) {
-            const byline = openEntry === null ? null : { login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time };
+            const byline = openEntry === null ? null : dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor);
             // The threads the review came with, by file, leading to their rows.
             const links = (openEntry?.threads ?? []).map((thread) => {
               const root = threadRootOf(thread.anchor);
@@ -2030,7 +2052,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         const group = groups.find((entry) => foldKey(entry.key) === visit.openKey);
         const comment = group?.nodes[0];
         if (group !== undefined && comment !== undefined) {
-          const byline = { login: group.author ?? '', bot: false, avatarSrc: avatarSrcOf(comment), time: timeTextOf(comment, group.closure?.commentAnchor ?? null) };
+          const byline = dressByline({ login: group.author ?? '', bot: false, avatarSrc: avatarSrcOf(comment), time: timeTextOf(comment, group.closure?.commentAnchor ?? null) }, group.closure?.commentAnchor ?? null);
           renderCommentChat(mounted.slot, comment, byline);
         } else {
           renderQuickView(mounted.slot, nodes);

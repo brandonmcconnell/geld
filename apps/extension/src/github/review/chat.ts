@@ -20,6 +20,8 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { onRestore, teleportInto } from './teleport';
+import { armViaHovercard } from './via';
+import type { ViaBot } from './via';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
@@ -131,6 +133,10 @@ export interface ChatByline {
   readonly bot: boolean;
   readonly avatarSrc: string | null;
   readonly time: string;
+  /** The pull request's author: GitHub's "Author" label, said beside the name. */
+  readonly author?: boolean;
+  /** The App the comment was posted through: its mark on the picture's corner, named in the hovercard. */
+  readonly via?: ViaBot;
 }
 
 /** A thread a review came with, for the line under the review's bubble that leads to it. */
@@ -159,8 +165,19 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
   if (byline !== null) {
     const who = byline.login === '' ? {} : byline.bot && /\[bot\]$/i.test(byline.login) ? { [ATTR_WHO]: byline.login } : { 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(byline.login)}/hovercard` };
     const line = createElement('div', { class: 'geld-review__chat-byline' });
-    if (byline.avatarSrc !== null) line.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': byline.bot ? 'bot' : 'user', src: byline.avatarSrc, alt: '', width: '24', height: '24', ...who }));
-    line.append(createElement('span', { class: 'geld-review__chat-byline-name', ...who }, [byline.bot ? byline.login.replace(/\[bot\]$/i, '') : byline.login]));
+    const name = createElement('span', { class: 'geld-review__chat-byline-name', ...who }, [byline.bot ? byline.login.replace(/\[bot\]$/i, '') : byline.login]);
+    if (byline.avatarSrc !== null) {
+      const avatar = createElement('img', { class: 'geld-review__avatar', 'data-kind': byline.bot ? 'bot' : 'user', src: byline.avatarSrc, alt: '', width: '24', height: '24', ...who });
+      if (byline.via === undefined) line.append(avatar);
+      else {
+        // Posted through an App: its mark on the picture's corner, as GitHub's timeline draws it; the hovercard names it.
+        line.append(createElement('span', { class: 'geld-review__chat-avatar-pair', title: `via ${byline.via.name}` }, [avatar, createElement('img', { class: 'geld-review__chat-via', src: byline.via.src, alt: '', width: '14', height: '14' })]));
+        armViaHovercard(avatar, byline.login, byline.via);
+        armViaHovercard(name, byline.login, byline.via);
+      }
+    }
+    line.append(name);
+    if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
     if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time' }, [byline.time]));
     chat.append(line);
   }
