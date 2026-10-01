@@ -3426,9 +3426,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   max-width: 100%;
   min-width: 0;
   margin: 0 !important;
-  /* Two more pixels above the text than below: the message actions straddle the top edge, and this keeps them
-   * off the first line's glyphs. */
-  padding: 10px 12px 8px !important;
+  /* The same above the text as below, so a one-line message sits centred in its bubble. The message actions
+   * straddle the top edge 12px deep; 9px of padding plus the line's half-leading keeps them off the glyphs. */
+  padding: 9px 12px !important;
   border: 1px solid var(--geld-review-border-muted);
   border-radius: var(--geld-chat-radius);
   background: var(--geld-review-subtle);
