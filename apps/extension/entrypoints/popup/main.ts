@@ -390,7 +390,9 @@ async function main(): Promise<void> {
    */
   function renderRepoConfig(config: TabRepoConfig | null): void {
     repoConfigHost.replaceChildren();
-    if (config === null || config.mode === 'never' || (config.files.length === 0 && !config.loading)) {
+    // Nothing found, or still looking: nothing to say. A lookup can be under way whenever the page re-applies (the
+    // cache runs out after 30 min), and a "Looking for…" box appearing mid-visit only moved everything below it.
+    if (config === null || config.mode === 'never' || config.files.length === 0) {
       repoConfigHost.hidden = true;
       return;
     }
@@ -407,11 +409,7 @@ async function main(): Promise<void> {
     eyebrow.className = 'geld-eyebrow';
     const text = document.createElement('p');
     text.className = 'geld-alert__text';
-    if (config.files.length === 0) {
-      eyebrow.textContent = 'Repository config';
-      text.textContent = 'Looking for a repository config…';
-      title.dataset.tone = 'muted';
-    } else if (config.decision === 'use') {
+    if (config.decision === 'use') {
       eyebrow.textContent = usable.length > 0 ? 'Using repository config' : 'Repository config';
       const brokenNames = broken.map((file) => file.path).join(' and ');
       text.textContent =
