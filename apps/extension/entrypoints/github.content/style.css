@@ -3776,6 +3776,18 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   position: relative;
 }
 
+/* The menu's caret is 16px tall and GitHub hangs the menu 4px under its trigger, so the caret reached 12px up into
+ * the round button and, above the backdrop, took the pointer over the dots: no hover, no click to close. The menu
+ * hangs its caret's height down so the tip meets the button's edge, and the caret never takes the pointer. */
+.geld-review__msg-actions > details > .dropdown-menu {
+  margin-top: 16px !important;
+}
+
+.geld-review__msg-actions > details > .dropdown-menu::before,
+.geld-review__msg-actions > details > .dropdown-menu::after {
+  pointer-events: none;
+}
+
 /* The ⋯ menu of a message on the right opens toward the bubble (GitHub's default opens south-west, off the panel). */
 .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw {
   right: auto;
