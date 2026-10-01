@@ -160,11 +160,14 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
     /\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking))* (?:issues|bugs|findings|problems)\b/i.test(text) ||
     /\b(?:looks good|lgtm|all clean|no bugs found)\b/i.test(text) ||
     (count === 0 && score === null);
-  const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(text)
+  // A severity word under a negation is not a severity: "no established behavioral blocker", "no critical issues",
+  // "without security risk". The denied phrase goes before the words are weighed.
+  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
+  const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed)
     ? 'high'
-    : /\bmedium(?: severity)?\b/i.test(text)
+    : /\bmedium(?: severity| risk)?\b/i.test(affirmed)
       ? 'medium'
-      : /\blow(?: severity)?\b/i.test(text)
+      : /\blow(?: severity| risk)?\b/i.test(affirmed)
         ? 'low'
         : null;
   return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity };

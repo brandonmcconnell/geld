@@ -234,6 +234,9 @@ describe('bots + prompts', () => {
     expect(looksLikeBotLogin('cursor[bot]')).toBe(true);
     expect(parseBotBody('Greptile 4/5. Found 1 issue.', 'greptile')).toEqual({ count: 1, score: 4, clean: false, severity: null });
     expect(parseBotBody('1 high severity bug found.', 'bugbot').severity).toBe('high');
+    // A denied severity word is not a severity: Greptile's "[Medium risk] ... no established behavioral blocker" is medium, not high.
+    expect(parseBotBody('Confidence Score: 4/5 [Medium risk] The implementation has no established behavioral blocker, but tests are required.', 'greptile')).toEqual({ count: null, score: 4, clean: false, severity: 'medium' });
+    expect(parseBotBody('No critical issues. 2 issues found.', 'bugbot').severity).toBeNull();
     // A deploy bot's comment is not a review verdict.
     expect(verdictsFrom([], [{ author: 'vercel[bot]', body: 'Deployment ready', anchor: 'issuecomment-5' }], 'aaa')).toEqual([]);
     expect(verdictsFrom([], [{ author: 'acme[bot]', body: 'Found 2 issues', anchor: 'issuecomment-6' }], 'aaa', ['acme[bot]'])[0]?.count).toBe(2);
