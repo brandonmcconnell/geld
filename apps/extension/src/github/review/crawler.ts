@@ -584,7 +584,18 @@ export function crawlCheckRuns(root: ParentNode = document, headSha = ''): reado
     const state = glyph === null ? null : checkStateOfGlyph(glyph.getAttribute('class') ?? '');
     if (state === null) continue;
     seen.add(name);
-    out.push({ name, status: state.status, conclusion: state.conclusion, sha: headSha });
+    // Where the check's title (React) or "Details" (classic) leads, and GitHub's one-line description: a status an
+    // external service posted links to that service, which the check reporters are known by.
+    const details = row.querySelector<HTMLAnchorElement>('[class*="StatusCheckRow"] h4 a[href], .merge-status-item a.status-actions[href], .merge-status-item a[href]:not([href^="#"])');
+    const description = (row.querySelector('[class*="titleDescription"], [class*="StatusCheckRow"] [class*="description" i], .merge-status-item .status-meta, .merge-status-item .text-small')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    out.push({
+      name,
+      status: state.status,
+      conclusion: state.conclusion,
+      sha: headSha,
+      ...(details === null ? {} : { detailsUrl: details.href }),
+      ...(description === '' ? {} : { description }),
+    });
   }
   return out;
 }

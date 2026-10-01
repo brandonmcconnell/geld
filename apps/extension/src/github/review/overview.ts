@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -1239,6 +1239,16 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
   return null;
 }
 
+/** The avatar GitHub draws beside a merge box check row (the service's App mark), by the check's name. */
+function checkAvatarOf(name: string): string | null {
+  for (const row of document.querySelectorAll<HTMLElement>('li:has([class*="StatusCheckRow"]), .merge-status-item')) {
+    const title = (row.querySelector('[class*="StatusCheckRow"] h4 a span, [class*="StatusCheckRow"] h4 a, .merge-status-item strong, .merge-status-item .text-emphasized')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (title !== name) continue;
+    return row.querySelector<HTMLImageElement>('img[data-testid="github-avatar"], img.avatar')?.getAttribute('src') ?? null;
+  }
+  return null;
+}
+
 /** The pull request's author, from the page header (the description card when the header is not there). */
 function prAuthorLogin(): string | null {
   const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"]');
@@ -1744,7 +1754,11 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const comments = pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor))]);
   const allPreviews = previewsOn(crawledDom, meta);
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
-  const allReports = reportsFrom(crawledDom.comments.filter((entry) => entry.author.bot).map((entry) => ({ author: entry.author.login, body: entry.comment.body, anchor: entry.comment.anchor, ...(entry.comment.createdAt === '' ? {} : { createdAt: entry.comment.createdAt }) })));
+  // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
+  const allReports = [
+    ...reportsFrom(crawledDom.comments.filter((entry) => entry.author.bot).map((entry) => ({ author: entry.author.login, body: entry.comment.body, anchor: entry.comment.anchor, ...(entry.comment.createdAt === '' ? {} : { createdAt: entry.comment.createdAt }) }))),
+    ...reportsFromChecks(crawlCheckRuns(document, headSha)),
+  ];
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
     for (const item of meta.items) foldTargets.push({ key: itemKey(item.id), label: item.title, author: null, nodes: itemNodes(item) });
@@ -1841,6 +1855,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     ai: aiStateFor(meta, rawComments, settings),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
+    checkAvatarFor: (name) => checkAvatarOf(name),
     checksRing,
     comments,
     openSubKey: visit.openSubKey,

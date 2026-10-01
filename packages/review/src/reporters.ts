@@ -28,9 +28,13 @@ export interface Reporter {
 export interface Report extends ReportReading {
   readonly reporter: string;
   readonly title: string;
+  /** The comment the report is (a reporter bot's), or the check's name (a check reporter's): its identity on the page. */
   readonly anchor: string;
   readonly author: string;
   readonly createdAt?: string;
+  /** A report posted as a check or commit status rather than a comment: the project it is about, and where its details are. */
+  readonly project?: string;
+  readonly url?: string;
 }
 
 function plural(count: number, noun: string): string {
@@ -99,11 +103,87 @@ export function reportsFrom(comments: readonly ReportSource[]): readonly Report[
  * the earlier ones stay in their rounds.
  */
 export function latestReports(all: readonly Report[]): { readonly latest: readonly Report[]; readonly archived: readonly Report[] } {
-  const latestByReporter = new Map<string, Report>();
-  for (const entry of all) latestByReporter.set(entry.reporter, entry);
-  const latest = [...latestByReporter.values()];
-  const archived = all.filter((entry) => latestByReporter.get(entry.reporter) !== entry).reverse();
+  const key = (entry: Report): string => `${entry.reporter}:${entry.project ?? ''}`;
+  const latestByKey = new Map<string, Report>();
+  for (const entry of all) latestByKey.set(key(entry), entry);
+  const latest = [...latestByKey.values()];
+  const archived = all.filter((entry) => latestByKey.get(key(entry)) !== entry).reverse();
   return { latest, archived };
+}
+
+/**
+ * Check reporters: services that report through a commit status or check
+ * run whose Details lead to their site (Chromatic's "UI Tests: project" with
+ * a chromatic.com link). GitHub lists them among the CI checks, where a
+ * failed visual test reads like any failed job; the Reports row names the
+ * service, what it found and where to look. Known by the Details host, not
+ * the check's name, which the repository chooses.
+ */
+export interface CheckReporter {
+  readonly id: string;
+  readonly title: string;
+  /** Hosts of the Details link, matched on the URL's hostname (with or without `www.`). */
+  readonly hosts: readonly string[];
+  /** The project the check is about, from its name ("UI Tests: mint" → "mint"); null leaves the name as the project. */
+  readonly project: (name: string) => string | null;
+  /** A status of this service that reports nothing a reviewer needs (Chromatic's "Storybook Publish"). */
+  readonly ignore?: (name: string) => boolean;
+}
+
+export const CHECK_REPORTERS: readonly CheckReporter[] = [
+  {
+    id: 'chromatic',
+    title: 'Chromatic',
+    hosts: ['chromatic.com'],
+    project: (name) => /^UI (?:Tests|Review)(?::\s*(.+))?$/i.exec(name)?.[1]?.trim() ?? null,
+    // "Storybook Publish: project — 624 stories published" says the build uploaded, not what the tests found.
+    ignore: (name) => /^Storybook Publish\b/i.test(name),
+  },
+];
+
+export interface CheckForReport {
+  readonly name: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly detailsUrl?: string;
+  readonly description?: string;
+}
+
+function checkReporterFor(url: string): CheckReporter | null {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+  return CHECK_REPORTERS.find((reporter) => reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`))) ?? null;
+}
+
+/** GitHub's description for a status ("— Failed test", "Failing after 6m") as the report's headline. */
+function headlineOf(description: string | undefined, state: ReportState): string {
+  const words = (description ?? '').replace(/^[\s—–-]+/, '').replace(/\.$/, '').trim();
+  if (words !== '' && !/^(?:failing|successful|in progress|queued|pending)\b/i.test(words)) return words;
+  return state === 'failed' ? 'Failed' : state === 'passed' ? 'Passed' : 'Running';
+}
+
+/** The report a check is, when its Details lead to a known reporter and it has something to say. */
+export function readCheckReport(check: CheckForReport): Report | null {
+  if (check.detailsUrl === undefined) return null;
+  const reporter = checkReporterFor(check.detailsUrl);
+  if (reporter === null || reporter.ignore?.(check.name) === true) return null;
+  const conclusion = (check.conclusion ?? '').toLowerCase();
+  // A skipped or cancelled run reported nothing; a neutral one is the service standing aside.
+  if (/^(?:skipped|cancelled|neutral|stale)$/.test(conclusion)) return null;
+  const state: ReportState = check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : 'info';
+  const project = reporter.project(check.name) ?? check.name;
+  return { reporter: reporter.id, title: reporter.title, anchor: `check:${check.name}`, author: '', state, headline: headlineOf(check.description, state), project, url: check.detailsUrl };
+}
+
+export function reportsFromChecks(checks: readonly CheckForReport[]): readonly Report[] {
+  return checks.flatMap((check) => {
+    const report = readCheckReport(check);
+    return report === null ? [] : [report];
+  });
 }
 
 export function reportsHealth(reports: readonly Report[]): 'bad' | 'good' | 'pending' {

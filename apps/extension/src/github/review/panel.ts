@@ -221,6 +221,8 @@ export interface PanelModel {
   readonly openPreviews: ReadonlySet<string>;
   /** Where the in-browser AI stands for this pull request: the control in the Geld row and its notices. */
   readonly ai: AiState;
+  /** The avatar GitHub shows beside the check named `name` in the merge box (the service's App), or null. */
+  readonly checkAvatarFor: (name: string) => string | null;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
   readonly avatarForAnchor: (anchor: string) => string | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
@@ -1387,11 +1389,12 @@ const REPORT_STATE_LABEL: Readonly<Record<Report['state'], string>> = {
  * opens its line in the round.
  */
 function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): HTMLElement {
-  const label = `${entry.title} · ${entry.headline} · ${REPORT_STATE_LABEL[entry.state]}`;
+  const subject = entry.project === undefined ? entry.title : `${entry.title} · ${entry.project}`;
+  const label = `${subject} · ${entry.headline} · ${REPORT_STATE_LABEL[entry.state]}`;
   const children: Node[] = [];
-  const avatar = model.avatarForAnchor(entry.anchor);
+  const avatar = reportAvatar(entry, model);
   if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
-  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.title]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [subject]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
   const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label }, children);
@@ -1433,10 +1436,25 @@ function reportsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLEl
  * (`openSubKey` is its anchor) the comment stands under it as a one-bubble chat.
  */
 function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
-  const open = model.openSubKey === entry.anchor;
-  const avatar = model.avatarForAnchor(entry.anchor);
-  const act = (): void => handlers.onToggleSub(entry.anchor);
+  const avatar = reportAvatar(entry, model);
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]);
+  const picture = avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: entry.author }], entry.title, true);
+  // A report posted as a check has no comment to open: the line names the service and project, and Open leads to
+  // the service's page for it (the check's Details), as a preview line's Open leads to the deployment.
+  if (entry.url !== undefined) {
+    const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, [
+      createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.title]),
+      ...(entry.project === undefined ? [] : [createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [entry.project])]),
+      createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.headline]),
+    ]);
+    const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` }, [
+      createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]),
+    ]);
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report ${PANEL_CLASS}__row--preview`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [lead, picture, main, right]);
+    return { row, open: false };
+  }
+  const open = model.openSubKey === entry.anchor;
+  const act = (): void => handlers.onToggleSub(entry.anchor);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, [
     createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.title]),
     createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.headline]),
@@ -1446,16 +1464,16 @@ function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const time = model.timeFor(entry.anchor);
   if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
   right.append(controlSlot(entry.anchor, true), chevron(open, act));
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [
-    lead,
-    avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: entry.author }], entry.title, true),
-    main,
-    right,
-  ]);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [lead, picture, main, right]);
   if (open) row.setAttribute('data-open', '');
   if (model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
   rowClickToggles(row, act);
   return { row, open };
+}
+
+/** The reporter's mark: the comment's avatar for a bot's report, the check's avatar (the service's App) for a check's. */
+function reportAvatar(entry: Report, model: PanelModel): string | null {
+  return entry.url === undefined ? model.avatarForAnchor(entry.anchor) : model.checkAvatarFor(entry.anchor.replace(/^check:/, ''));
 }
 
 /** The Reports row's list: one line per latest report; the open one's comment renders in the returned slot. */
@@ -1657,7 +1675,7 @@ function signatureOf(model: PanelModel): string {
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
-    reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}`),
+    reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,

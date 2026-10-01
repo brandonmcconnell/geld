@@ -178,6 +178,10 @@ export interface RawCheckRun {
   readonly status: string;
   readonly conclusion: string | null;
   readonly sha: string;
+  /** Where the check's "Details" lead (an external service's page for a status it posted), when known. */
+  readonly detailsUrl?: string;
+  /** The check's one-line description as GitHub shows it ("Failing after 6m", "— 3 changes must be accepted"). */
+  readonly description?: string;
 }
 
 export interface DerivedBotVerdict {

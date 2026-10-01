@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestReports, readReport, reportsFrom, reportsHealth } from './reporters';
+import { latestReports, readCheckReport, readReport, reportsFrom, reportsFromChecks, reportsHealth } from './reporters';
 
 describe('reporters', () => {
   it('reads Blacksmith test failures as a failed report with the count', () => {
@@ -27,5 +27,27 @@ describe('reporters', () => {
     expect(latest.map((entry) => entry.anchor)).toEqual(['c']);
     expect(archived.map((entry) => entry.anchor)).toEqual(['a']);
     expect(reportsHealth(latest)).toBe('bad');
+  });
+});
+
+describe('check reporters', () => {
+  it('reads a Chromatic status by its Details host, with the project and GitHub words as the headline', () => {
+    const report = readCheckReport({ name: 'UI Tests: mint', status: 'completed', conclusion: 'failure', detailsUrl: 'https://www.chromatic.com/test?appId=1&id=2', description: '— Failed test' });
+    expect(report).toMatchObject({ reporter: 'chromatic', title: 'Chromatic', project: 'mint', state: 'failed', headline: 'Failed test', url: 'https://www.chromatic.com/test?appId=1&id=2', anchor: 'check:UI Tests: mint' });
+  });
+
+  it('skips a skipped build, a check without details, and a GitHub Actions job named Chromatic', () => {
+    expect(readCheckReport({ name: 'UI Tests: widget', status: 'completed', conclusion: 'skipped', detailsUrl: 'https://www.chromatic.com/build?x', description: '— Skipped build.' })).toBeNull();
+    expect(readCheckReport({ name: 'UI Tests: widget', status: 'completed', conclusion: 'failure' })).toBeNull();
+    expect(readCheckReport({ name: 'Chromatic Client / chromatic-client (pull_request)', status: 'completed', conclusion: 'failure', detailsUrl: 'https://github.com/o/r/actions/runs/1/job/2', description: 'Failing after 6m' })).toBeNull();
+    expect(readCheckReport({ name: 'Storybook Publish: mint', status: 'completed', conclusion: 'success', detailsUrl: 'https://www.chromatic.com/build?id=3', description: '— 624 stories published' })).toBeNull();
+  });
+
+  it('keeps one report per reporter and project', () => {
+    const all = reportsFromChecks([
+      { name: 'UI Tests: mint', status: 'completed', conclusion: 'failure', detailsUrl: 'https://www.chromatic.com/test?id=1', description: '— Failed test' },
+      { name: 'UI Tests: widget', status: 'completed', conclusion: 'success', detailsUrl: 'https://www.chromatic.com/build?id=2', description: '— Passed' },
+    ]);
+    expect(latestReports(all).latest.map((entry) => `${entry.project}:${entry.state}:${entry.headline}`)).toEqual(['mint:failed:Failed test', 'widget:passed:Passed']);
   });
 });
