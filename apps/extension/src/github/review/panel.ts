@@ -1089,8 +1089,9 @@ function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | nu
   for (const choice of choices) {
     // One line per action; what it posts is the tooltip. Choosing it is the confirmation.
     const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice ${PANEL_CLASS}__menu-item--line`, role: 'menuitem', title: choice.hint });
+    // Each bot wears its own mark; "all" wears the re-run glyph in the same square.
     if (choice.iconSrc !== null) item.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: choice.iconSrc, alt: '', width: '16', height: '16' }));
-    else item.append(createElement('span', { class: `${PANEL_CLASS}__bot-icon`, 'aria-hidden': 'true' }));
+    else item.append(createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--all`, 'aria-hidden': 'true' }, [icon(ICON_SYNC)]));
     item.append(createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [choice.label]));
     item.addEventListener('click', (event) => {
       event.stopPropagation();
