@@ -163,7 +163,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
   const body = createElement('div', { class: 'geld-review__chat-body' });
   chat.append(body);
   if (threads.length > 0 && onOpenThread !== null) {
-    const list = createElement('div', { class: 'geld-review__chat-threads', role: 'list', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} from this review` });
+    const list = createElement('div', { class: 'geld-review__chat-threads', role: 'list', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} from this comment` });
     list.append(createElement('span', { class: 'geld-review__chat-threads-label' }, [threads.length === 1 ? '1 thread' : `${threads.length} threads`]));
     const fileOf = (thread: ChatThreadLink): string => thread.path.split('/').pop() ?? thread.path;
     for (const thread of threads) {

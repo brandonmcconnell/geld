@@ -126,7 +126,7 @@ export interface ReviewEntry {
   readonly lane?: CommentLane;
   /** A review thread posted as part of a person's review: that review's anchor. The line is listed under it. */
   readonly parent?: string;
-  /** A review verdict: the threads it was posted with. The line counts them; each is a row of its own in the round. */
+  /** A review verdict's threads, or a bot run summary's findings in its round. The line counts them; each is a row of its own in the round. */
   readonly threads?: readonly ReviewThreadRef[];
 }
 
@@ -1471,8 +1471,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
   else if (entry.state === 'awaiting') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, ['awaiting review']));
   if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
-  // How many threads the review came with: they are rows of their own in its round, this is the count.
-  if (isVerdict(entry) && threadCount > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(threadCount, 'thread')]));
+  // How many threads the review (or a bot's run summary) came with: they are rows of their own in its round, this is the count.
+  if ((isVerdict(entry) || entry.state === 'comment') && threadCount > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(threadCount, 'thread')]));
   const focusKey = goes ? `main:ptr:${entry.anchor}` : `main:sub:${entry.anchor}`;
   const main =
     opens || goes
@@ -1532,7 +1532,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),

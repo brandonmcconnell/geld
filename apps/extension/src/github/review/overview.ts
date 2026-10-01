@@ -962,6 +962,14 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const firstNode = first === null ? null : document.getElementById(first);
     // CI is read from the last commit row; a force-push event carries none.
     const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
+    // The round's threads by the bot that wrote the comment: a run summary leads to its findings as a person's
+    // review leads to its threads (same count on the line, same chips under the opened bubble).
+    const sameBot = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase() || (resolveBotId(a) !== null && resolveBotId(a) === resolveBotId(b));
+    const threadsBy = (author: string): ReviewThreadRef[] =>
+      round.items.flatMap((item) => {
+        const source = item.sources.find((candidate) => candidate.kind === 'thread' && sameBot(candidate.author, author)) ?? item.sources.find((candidate) => sameBot(candidate.author, author));
+        return source === undefined ? [] : [{ anchor: source.anchor, done: !isOpenStatus(item.status) }];
+      });
     return {
       key: batchKey(identity(round, position)),
       index: position + 1,
@@ -971,19 +979,23 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       // Findings first: what the author must act on, before verdicts and reports.
       comments: [...round.comments]
         .sort((a, b) => Number(b.lane === 'finding') - Number(a.lane === 'finding'))
-        .map((comment) => ({
-          anchor: comment.anchor,
-          author: comment.author,
-          avatarSrc: comment.avatar,
-          state: 'comment',
-          preview: firstSentence(comment.body),
-          time: timeTextOf(comment.node, comment.anchor),
-          hasBody: true,
-          done: false,
-          replies: 0,
-          myReaction: null,
-          ...(comment.lane === null ? {} : { lane: comment.lane }),
-        })),
+        .map((comment) => {
+          const threads = threadsBy(comment.author);
+          return {
+            anchor: comment.anchor,
+            author: comment.author,
+            avatarSrc: comment.avatar,
+            state: 'comment' as const,
+            preview: firstSentence(comment.body),
+            time: timeTextOf(comment.node, comment.anchor),
+            hasBody: true,
+            done: false,
+            replies: 0,
+            myReaction: null,
+            ...(comment.lane === null ? {} : { lane: comment.lane }),
+            ...(threads.length === 0 ? {} : { threads }),
+          };
+        }),
       reviews: round.reviews,
       commits: round.commits,
       commitCount: round.commits.filter((row) => !pushRoots.has(row)).length,
