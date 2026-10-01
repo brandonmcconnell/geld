@@ -1633,17 +1633,11 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
   /* Summary strip: the meter only once there is something to measure. */
   const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']), progressMeter(doneCount, total, 'review item')]);
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
-  // GitHub's revision marker, said here instead of as a timeline row: what landed since the reader last opened
-  // this page, linking to that diff (the marker's own "View changes" URL).
+  // GitHub's revision marker, said here instead of as a timeline row: a button to that diff (the marker's own
+  // "View changes" URL), the same small button the timeline's Compare and Details are; the count is its tooltip.
   if (model.sinceLastVisit !== null) {
-    const words = model.sinceLastVisit.commits > 0 ? `${plural(model.sinceLastVisit.commits, 'new commit')} since your last visit` : 'New changes since your last visit';
-    summary.append(
-      createElement('a', { class: `${PANEL_CLASS}__chip ${PANEL_CLASS}__chip--link`, 'data-tone': 'attention', href: model.sinceLastVisit.href, title: 'View the changes since you last viewed this pull request', [ATTR_FOCUS]: 'since-last-visit' }, [
-        icon(ICON_FILE_DIFF),
-        createElement('span', { class: `${PANEL_CLASS}__label-long` }, [words]),
-        createElement('span', { class: `${PANEL_CLASS}__label-short`, 'aria-hidden': 'true' }, [model.sinceLastVisit.commits > 0 ? `${model.sinceLastVisit.commits} new` : 'New']),
-      ]),
-    );
+    const title = model.sinceLastVisit.commits > 0 ? `${plural(model.sinceLastVisit.commits, 'new commit')} since you last viewed this pull request` : 'New changes since you last viewed this pull request';
+    summary.append(createElement('a', { class: `btn btn-sm ${PANEL_CLASS}__since-visit`, href: model.sinceLastVisit.href, title, 'aria-label': title, [ATTR_FOCUS]: 'since-last-visit' }, [icon(ICON_FILE_DIFF), createElement('span', {}, ['New changes'])]));
   }
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
