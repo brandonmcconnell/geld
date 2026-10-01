@@ -313,7 +313,8 @@ export function applyHeaderStats(
     }
   }
 
-  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown);
+  // The header's counts end the line at the page column's edge: the box hangs flush with that edge.
+  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown, 'end');
   syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), hidden.totals.files > 0, visible, () => breakdown);
 }
 
@@ -352,7 +353,7 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
   mirror.hidden = group.host.getClientRects().length > 0;
   if (provider === null) detachBreakdownTooltip(mirror);
-  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider);
+  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, 'end');
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {

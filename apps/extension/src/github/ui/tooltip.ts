@@ -10,6 +10,8 @@ type BreakdownProvider = () => StatsBreakdown | null;
 interface TooltipBinding {
   readonly anchor: HTMLElement;
   readonly provider: BreakdownProvider;
+  /** `end`: the box's right edge sits on the host's right edge (the PR header's counts end at the page column's edge); default centred on the anchor. */
+  readonly align?: 'end';
 }
 
 const providers = new WeakMap<HTMLElement, TooltipBinding>();
@@ -100,7 +102,8 @@ function position(host: HTMLElement): void {
     return;
   }
   const element = ensureTooltip();
-  const boundAnchor = providers.get(host)?.anchor;
+  const binding = providers.get(host);
+  const boundAnchor = binding?.anchor;
   const anchor = boundAnchor?.isConnected === true ? boundAnchor : host;
   const anchorRect = anchor.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth;
@@ -109,7 +112,10 @@ function position(host: HTMLElement): void {
   const tipRect = element.getBoundingClientRect();
   const anchorCentre = anchorRect.left + anchorRect.width / 2;
   const bounds = horizontalBounds(host, tipRect.width, viewportWidth);
-  const left = Math.max(bounds.left, Math.min(anchorCentre - tipRect.width / 2, bounds.right - tipRect.width));
+  // Centred on the underlined count, or, for a host that ends a line (the PR header's counts), flush with its
+  // right edge so the box hangs under the numbers it explains rather than past them.
+  const wanted = binding?.align === 'end' ? host.getBoundingClientRect().right - tipRect.width : anchorCentre - tipRect.width / 2;
+  const left = Math.max(bounds.left, Math.min(wanted, bounds.right - tipRect.width));
   let top = anchorRect.bottom + HOST_GAP;
   let placement = 'below';
   if (top + tipRect.height > viewportHeight - VIEWPORT_MARGIN) {
@@ -303,11 +309,11 @@ function describe(host: HTMLElement, on: boolean): void {
  * Show a breakdown tooltip while hovering or focusing `host`. Calling this
  * again for the same host simply swaps the data provider.
  */
-export function attachBreakdownTooltip(host: HTMLElement, anchor: HTMLElement, provider: BreakdownProvider): void {
+export function attachBreakdownTooltip(host: HTMLElement, anchor: HTMLElement, provider: BreakdownProvider, align?: 'end'): void {
   const previous = providers.get(host);
   const alreadyBound = previous !== undefined;
   if (previous?.anchor !== anchor) previous?.anchor.removeAttribute(TOOLTIP_ANCHOR_ATTRIBUTE);
-  providers.set(host, { anchor, provider });
+  providers.set(host, { anchor, provider, ...(align === undefined ? {} : { align }) });
   anchor.setAttribute(TOOLTIP_ANCHOR_ATTRIBUTE, '');
   if (alreadyBound) {
     if (activeHost === host) show(host);
