@@ -82,6 +82,9 @@ interface PendingReveal {
 
 /** Virtualised view: passes to wait for GitHub's navigation to mount the row before asking again. */
 const VIRTUAL_NAVIGATION_PASSES = 4;
+/** How long a revealed file is held aligned at the top while diffs above it load: a plain list, and a virtualised one. */
+const ALIGN_MS = 1500;
+const VIRTUAL_ALIGN_MS = 8000;
 
 interface ClassifiedEntry extends Classified {
   readonly entry: DiffEntry;
@@ -1157,7 +1160,9 @@ export class GeldController {
       root.setAttribute(ATTR_FLASH, '');
       setTimeout(() => live()?.removeAttribute(ATTR_FLASH), 1600);
       if (entry.anchor !== null) history.replaceState(history.state, '', `#${entry.anchor}`);
-      if (scroll) this.keepAligned(live);
+      // A virtualised list keeps measuring rows above the target for seconds after it lands (a 9000px diff mounting
+      // at its estimated height first), each time moving the target; the alignment holds longer there.
+      if (scroll) this.keepAligned(live, view.virtualized ? VIRTUAL_ALIGN_MS : ALIGN_MS, !view.virtualized);
     });
   }
 
@@ -1167,11 +1172,11 @@ export class GeldController {
    * settles, but stop as soon as the user scrolls on their own. `live` names
    * the target's current element (a virtualised row can be remounted meanwhile).
    */
-  private keepAligned(live: () => HTMLElement | null): void {
+  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean): void {
     const first = live();
     if (first === null) return;
     const scrollMargin = Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0;
-    const deadline = performance.now() + 1500;
+    const deadline = performance.now() + holdMs;
     let stableChecks = 0;
     let userScrolled = false;
     const stop = (): void => {
@@ -1197,7 +1202,9 @@ export class GeldController {
         // Correct by the drift itself rather than re-running scrollIntoView, so
         // a virtualised list settling above us does not cause visible jumps.
         window.scrollBy({ top: drift, behavior: 'instant' });
-      } else if ((stableChecks += 1) >= 3) {
+      } else if (settleWhenStable && (stableChecks += 1) >= 3) {
+        // A plain list is settled once it has stayed put; a virtualised one mounts more rows above at any moment
+        // until the hold ends, so a quiet half-second there proves nothing.
         return;
       }
       setTimeout(check, 150);
