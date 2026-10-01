@@ -1209,7 +1209,9 @@ function prAuthorLogin(): string | null {
 /** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
 function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   const author = prAuthorLogin();
-  const via = anchor === null ? null : viaBotOf(timelineRootOf(anchor));
+  // An App's own comment carries the App as its "via" too (GitHub pairs the avatar with itself and hides the pair);
+  // only a person's comment posted through an App wears the mark.
+  const via = anchor === null || byline.bot ? null : viaBotOf(timelineRootOf(anchor));
   return {
     ...byline,
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),

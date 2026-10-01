@@ -171,8 +171,10 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
       if (byline.via === undefined) line.append(avatar);
       else {
         // Posted through an App: its mark on the picture's corner, as GitHub's timeline draws it; the hovercard names it.
-        line.append(createElement('span', { class: 'geld-review__chat-avatar-pair', title: `via ${byline.via.name}` }, [avatar, createElement('img', { class: 'geld-review__chat-via', src: byline.via.src, alt: '', width: '14', height: '14' })]));
-        armViaHovercard(avatar, byline.login, byline.via);
+        // The pair carries the person's card too, so the mark's overhang past the picture opens it as the picture does.
+        const pair = createElement('span', { class: 'geld-review__chat-avatar-pair', title: `via ${byline.via.name}`, ...who }, [avatar, createElement('img', { class: 'geld-review__chat-via', src: byline.via.src, alt: '', width: '14', height: '14' })]);
+        line.append(pair);
+        armViaHovercard(pair, byline.login, byline.via);
         armViaHovercard(name, byline.login, byline.via);
       }
     }

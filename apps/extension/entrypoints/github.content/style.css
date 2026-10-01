@@ -4189,6 +4189,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   height: 14px;
   border-radius: 3px;
   box-shadow: 0 0 0 2px var(--geld-review-bg);
+  /* The mark is a badge on the picture, not a target of its own: the pointer over it is over the picture, so the
+   * person's hovercard opens from either. */
+  pointer-events: none;
 }
 
 /* GitHub's "Author" label, said beside the name instead of inside the comment. */
