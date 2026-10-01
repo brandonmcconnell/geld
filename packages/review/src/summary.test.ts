@@ -4,7 +4,7 @@ import type { RawPullRequest } from './build';
 import { parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, botsTriggeredBy, isStatusLineComment, looksLikeBotLogin, parseBotBody, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, botTitle, isStatusLineComment, looksLikeBotLogin, parseBotBody, resolveBotId, verdictsFrom } from './bots';
 import type { DerivedBotVerdict } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
@@ -366,6 +366,12 @@ describe('bots + prompts', () => {
     const scored = verdictsFrom([], [...replies, { author: 'replicas-connector[bot]', body: 'Code Review\n\nReview score: 4/5\n\nFound 1 issue: the retry loop never backs off.', anchor: 'c3' }], 'aaa');
     expect(scored[0]).toMatchObject({ id: 'replicas', verdict: 'findings', score: 4, count: 1, sourceId: 'c3' });
     expect(botByTrigger('/replicas run code-review')?.id).toBe('replicas');
+  });
+
+  it('knows Capy by its App login and its review trigger', () => {
+    expect(resolveBotId('capy-ai[bot]')).toBe('capy');
+    expect(botByTrigger('@capy review')?.id).toBe('capy');
+    expect(botTitle('capy', 'capy-ai[bot]')).toBe('Capy');
   });
 
   it('drops unknown ids from model output', () => {

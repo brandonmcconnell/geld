@@ -78,6 +78,18 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     configFiles: [],
   },
   {
+    // Capy (capy.ai, GitHub App "Capy AI" by Scrapybara): a review agent that posts findings at or above the
+    // repository's severity threshold as inline review comments and resolves their threads as they are fixed;
+    // `@capy review` on the PR starts a round (trailing words are its instructions). Verified against the App
+    // registry and docs.capy.ai/review in Oct 2026; no check run documented.
+    id: 'capy',
+    title: 'Capy',
+    logins: ['capy-ai[bot]', 'capy[bot]'],
+    checkNames: ['Capy AI', 'Capy Review', 'Capy'],
+    triggers: ['@capy review'],
+    configFiles: ['.capy/'],
+  },
+  {
     // Replicas (replicas.dev): cloud coding agents with a "Code Review" automation that posts an X/5 review score
     // on PR open and sync; `/replicas run code-review` runs it on demand, `@tryreplicas` addresses the agent.
     id: 'replicas',
