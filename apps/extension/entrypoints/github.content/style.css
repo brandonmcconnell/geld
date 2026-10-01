@@ -5051,8 +5051,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   flex: 0 0 auto;
 }
 
+/* The same room above the first commit row as below the last, so a single row sits centred under its heading. */
 .geld-review__slot--sub[data-kind='commits'] .geld-review__commits-body {
-  padding: 4px 16px 8px 16px;
+  padding: 6px 16px;
 }
 
 .geld-review__notes-btn--commits {
