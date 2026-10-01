@@ -9,12 +9,12 @@
  * itself is hidden — its content is this.
  */
 
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, ReviewItem } from '@geld/review';
-import { previewHostById } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReviewItem } from '@geld/review';
+import { previewHostById, reportsHealth } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -209,6 +209,8 @@ export interface PanelModel {
   readonly requiredFailing: boolean | null;
   /** Preview deployments: the latest per project, and the ones they superseded. */
   readonly previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] };
+  /** Reporter bots' reports (test failures, coverage): the latest per reporter, the earlier ones left in their rounds. */
+  readonly reports: { readonly latest: readonly Report[]; readonly archived: readonly Report[] };
   /** Whether the archived previews are unfolded inside the Previews row. */
   readonly archivedPreviewsOpen: boolean;
   /** How the main list is arranged (`reviewGrouping`). */
@@ -275,6 +277,8 @@ export interface PanelHandlers {
   /** Unfold or fold a round's commit rows (batch grouping). */
   readonly onToggleCommits: (batchKey: string) => void;
   readonly onTogglePreviews: (batchKey: string) => void;
+  /** Open the Reports row to the report at `anchor` (its comment opens under its line). */
+  readonly onOpenReport: (anchor: string) => void;
   /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -301,6 +305,10 @@ export const CHECKS_KEY = 'checks';
 export const REVIEWS_KEY = 'reviews';
 /** Row key for the Previews row; its slot lists every preview deployment. */
 export const PREVIEWS_KEY = 'previews';
+/** Row key for the Reports row; its slot lists the reporter bots' latest reports, each opening in place. */
+export const REPORTS_KEY = 'reports';
+/** The Reports row's label, long and short. */
+export const REPORTS_LABEL: readonly [string, string] = ['Reports', 'Reports'];
 const NUDGE_CLASS = 'geld-review-nudge';
 
 function icon(markup: string): SVGElement {
@@ -1258,6 +1266,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(REVIEWS_KEY, null, 'list'));
   }
   if (model.previews.latest.length > 0) rows.append(...previewsRow(model, handlers));
+  if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
   return rows.childElementCount === 0 ? null : rows;
 }
 
@@ -1355,6 +1364,117 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
     main,
     right,
   ]);
+}
+
+/* ---- Reports: reporter bots' latest reports ------------------------------- */
+
+const REPORT_GLYPH: Readonly<Record<Report['state'], string>> = {
+  failed: ICON_X_CIRCLE_FILL,
+  passed: ICON_CHECK_CIRCLE_FILL,
+  info: ICON_DOT_FILL,
+};
+
+const REPORT_STATE_LABEL: Readonly<Record<Report['state'], string>> = {
+  failed: 'Failed',
+  passed: 'Passed',
+  info: 'Reported',
+};
+
+/**
+ * One report as a pill: the reporter's mark, its title, the headline in its
+ * own words ("2 test failures") and the state glyph. Clicking it opens the
+ * row to that report's line (the comment opens under it), as a bot chip
+ * opens its line in the round.
+ */
+function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): HTMLElement {
+  const label = `${entry.title} · ${entry.headline} · ${REPORT_STATE_LABEL[entry.state]}`;
+  const children: Node[] = [];
+  const avatar = model.avatarForAnchor(entry.anchor);
+  if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.title]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
+  const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label }, children);
+  pill.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onOpenReport(entry.anchor);
+  });
+  return pill;
+}
+
+/**
+ * The Reports row, shown only when a reporter has posted: a pill per
+ * reporter's latest report, red while one reports failures; open, one line
+ * per report that opens the comment in place, so the failing tests and
+ * their logs are right there.
+ */
+function reportsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
+  const open = model.openKey === REPORTS_KEY;
+  const health: Health = reportsHealth(model.reports.latest);
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REPORTS_KEY}`, 'aria-label': plural(model.reports.latest.length, 'report') }, [
+    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, model.reports.latest.map((entry) => reportPill(entry, model, handlers))),
+  ]);
+  mainClickToggles(main, () => handlers.onToggle(REPORTS_KEY));
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_REPORT)]),
+    rowLabel(REPORTS_LABEL[0], REPORTS_LABEL[1]),
+    main,
+    createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, () => handlers.onToggle(REPORTS_KEY))]),
+  ]);
+  if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, () => handlers.onToggle(REPORTS_KEY));
+  if (!open) return [row];
+  return [row, slotRow(REPORTS_KEY, null, 'list')];
+}
+
+/**
+ * One report as a line: state glyph, the reporter's picture, its title and
+ * headline, the time, the comment's own ⋯ and a chevron; open
+ * (`openSubKey` is its anchor) the comment stands under it as a one-bubble chat.
+ */
+function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
+  const open = model.openSubKey === entry.anchor;
+  const avatar = model.avatarForAnchor(entry.anchor);
+  const act = (): void => handlers.onToggleSub(entry.anchor);
+  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]);
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, [
+    createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.title]),
+    createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.headline]),
+  ]);
+  mainClickToggles(main, act);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  const time = model.timeFor(entry.anchor);
+  if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
+  right.append(controlSlot(entry.anchor, true), chevron(open, act));
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [
+    lead,
+    avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: entry.author }], entry.title, true),
+    main,
+    right,
+  ]);
+  if (open) row.setAttribute('data-open', '');
+  if (model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
+  rowClickToggles(row, act);
+  return { row, open };
+}
+
+/** The Reports row's list: one line per latest report; the open one's comment renders in the returned slot. */
+export function renderReportsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openComment: string | null } {
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  let nested: HTMLElement | null = null;
+  let openComment: string | null = null;
+  for (const entry of model.reports.latest) {
+    const { row, open } = reportLine(entry, model, handlers);
+    list.append(row);
+    if (open) {
+      const sub = nestedSlot();
+      list.append(sub.item);
+      nested = sub.body;
+      openComment = entry.anchor;
+    }
+  }
+  slot.replaceChildren(list);
+  return { nested, openComment };
 }
 
 function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
@@ -1537,6 +1657,7 @@ function signatureOf(model: PanelModel): string {
     grouping: model.grouping,
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
+    reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,

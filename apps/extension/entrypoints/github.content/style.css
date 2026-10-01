@@ -4948,6 +4948,40 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--geld-review-muted);
 }
 
+/* ---- reports: reporter bots' latest reports --------------------------------
+ * The same pill as a preview's, a button that opens the row to the report's line; its light is the report's state. */
+.geld-review__report {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.geld-review__report:hover {
+  border-color: var(--geld-review-muted);
+  background: var(--geld-review-subtle);
+}
+
+.geld-review__report > .geld-review__bot-detail {
+  color: var(--geld-review-muted);
+  font-weight: 400;
+}
+
+.geld-review__health[data-report-state='failed'],
+.geld-review__status--verdict[data-report-state='failed'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__health[data-report-state='passed'],
+.geld-review__status--verdict[data-report-state='passed'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__health[data-report-state='info'],
+.geld-review__status--verdict[data-report-state='info'] {
+  color: var(--geld-review-muted);
+}
+
 /* A skipped deployment's pill: there is nothing to visit, so the pill fades and says so on hover; the line below keeps its Inspect. */
 .geld-review__deploy[data-status='skipped'] {
   opacity: 0.55;

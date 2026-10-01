@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, parsePreviews, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -27,7 +27,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, WhoCard } from './hovercard';
@@ -1535,7 +1535,7 @@ function subjectOf(): MarkdownSubject | null {
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
   // The Reviews and Previews rows render their own lists; the panel itself stands in for "something to show".
-  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key.startsWith('batch:')) return [document.documentElement];
+  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
     if (section === null) return [];
@@ -1676,6 +1676,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
   const comments = pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor))]);
   const allPreviews = previewsOn(crawledDom, meta);
+  // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
+  const allReports = reportsFrom(crawledDom.comments.filter((entry) => entry.author.bot).map((entry) => ({ author: entry.author.login, body: entry.comment.body, anchor: entry.comment.anchor, ...(entry.comment.createdAt === '' ? {} : { createdAt: entry.comment.createdAt }) })));
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
     for (const item of meta.items) foldTargets.push({ key: itemKey(item.id), label: item.title, author: null, nodes: itemNodes(item) });
@@ -1765,6 +1767,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
     previews: latestPreviews(allPreviews),
+    reports: latestReports(allReports),
     grouping: settings.reviewGrouping,
     openCommits: visit.openCommits,
     openPreviews: visit.openPreviews,
@@ -1894,6 +1897,16 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         reapply();
       });
     },
+    onOpenReport: (anchor) => {
+      keepInPlace(`main:${REPORTS_KEY}`, () => {
+        // The pill of the report already open closes it; any other opens the row to that report.
+        const wasOpen = visit.openKey === REPORTS_KEY && visit.openSubKey === anchor;
+        visit.openKey = REPORTS_KEY;
+        visit.openSubKey = wasOpen ? null : anchor;
+        reapply();
+      });
+      revealRow(`main:sub:${anchor}`);
+    },
     onTogglePreviews: (batchKey) => {
       keepInPlace(`previews:${batchKey}`, () => {
         if (visit.openPreviews.has(batchKey)) visit.openPreviews.delete(batchKey);
@@ -1969,6 +1982,17 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       if (visit.openKey === REVIEWS_KEY) {
         // An index of people's reviews; each line points at the round where its conversation opens.
         renderCommentsList(mounted.slot, model, panelHandlers);
+      } else if (visit.openKey === REPORTS_KEY) {
+        // The reporters' latest reports; the open line's comment stands under it as a one-bubble chat.
+        const view = renderReportsList(mounted.slot, model, panelHandlers);
+        const report = view.openComment === null ? null : (model.reports.latest.find((entry) => entry.anchor === view.openComment) ?? null);
+        const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? timelineRootOf(view.openComment));
+        if (view.nested !== null && report !== null && commentNode !== null) {
+          const byline = { login: report.author, bot: true, avatarSrc: model.avatarForAnchor(report.anchor), time: model.timeFor(report.anchor) };
+          renderCommentChat(view.nested, commentNode, byline);
+        } else if (visit.openSubKey !== null && commentNode === null) {
+          visit.openSubKey = null;
+        }
       } else if (visit.openKey.startsWith('batch:')) {
         const batch = batches.find((entry) => entry.key === visit.openKey);
         if (batch !== undefined) {
