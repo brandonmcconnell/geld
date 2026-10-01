@@ -2844,9 +2844,10 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   max-width: none !important;
 }
 
-/* "X reviewed 2 hours ago · View reviewed changes": the round's row already says who and when. A review request
- * ("X requested review from Y") wears the same eye but is a timeline event (`event-N`) and stays listed. */
-.geld-review__qv .TimelineItem:has(> .TimelineItem-badge > .octicon-eye):not([id^='event-']) {
+/* "X reviewed 2 hours ago · View reviewed changes": the round's row already says who and when. Named by the review
+ * it heads (`pullrequestreview-N` inside), so a review request ("X requested review from Y"), which wears the same
+ * eye but is a timeline event, stays listed whether its id sits on the item or on the wrapper around it. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge > .octicon-eye):has([id^='pullrequestreview-']) {
   display: none !important;
 }
 
@@ -3003,9 +3004,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
+/* The badge's glyph at the panel's glyph size (16px, as every row's `__status`), and the badge-to-body gap at the
+ * row's 8px rather than GitHub's 10px, so an opened list's glyphs and pictures sit on the same columns as the row
+ * above them: glyph centres on glyph, picture on picture. */
 .geld-review__qv .TimelineItem-badge .octicon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
+}
+
+.geld-review__qv .TimelineItem {
+  /* GitHub sets the gap with a weight a plain rule does not beat. */
+  column-gap: 8px !important;
 }
 
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body {
@@ -3203,7 +3212,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__chat-body .js-timeline-item::before,
 .geld-review__chat-body .TimelineItem-avatar,
 .geld-review__chat-body .avatar-parent-child,
-.geld-review__chat-body .TimelineItem:has(> .TimelineItem-badge > .octicon-eye):not([id^='event-']) {
+.geld-review__chat-body .TimelineItem:has(> .TimelineItem-badge > .octicon-eye):has([id^='pullrequestreview-']) {
   display: none !important;
 }
 
@@ -4555,6 +4564,23 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--geld-review-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* As a button: no chrome of its own, the row's hover tint on hover, the text brightening as a link would. */
+.geld-review__event-checks--button {
+  height: 22px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-review__event-checks--button:hover {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
 }
 
 .geld-review__event-checks > .octicon {

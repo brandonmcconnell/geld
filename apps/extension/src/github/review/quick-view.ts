@@ -118,12 +118,25 @@ function compactEvents(list: HTMLElement, headSha: string | null): void {
         const checks = checksOf(text);
         if (checks !== null) {
           const passed = checks.passed === checks.total;
-          line.append(
-            createElement('span', { class: 'geld-review__event-checks', 'data-state': passed ? 'success' : 'failure', role: 'img', 'aria-label': `${checks.passed} of ${checks.total} checks passed` }, [
-              svgFromString(passed ? ICON_CHECK : ICON_X),
-              createElement('span', {}, [`${checks.passed} / ${checks.total}`]),
-            ]),
-          );
+          // The glyph and counts open the checks, as the commit rows' glyph does: GitHub's "View details" toggle
+          // for the merge is the control; this presses it and mirrors its state.
+          const toggle = body.querySelector<HTMLElement>('.js-details-target');
+          const label = `${checks.passed} of ${checks.total} checks passed`;
+          const children = [svgFromString(passed ? ICON_CHECK : ICON_X), createElement('span', {}, [`${checks.passed} / ${checks.total}`])];
+          if (toggle === null) {
+            line.append(createElement('span', { class: 'geld-review__event-checks', 'data-state': passed ? 'success' : 'failure', role: 'img', 'aria-label': label }, children));
+          } else {
+            const container = toggle.closest('.js-details-container, .Details');
+            const isOpen = (): boolean => container?.classList.contains('open') === true;
+            const button = createElement('button', { type: 'button', class: 'geld-review__event-checks geld-review__event-checks--button', 'data-state': passed ? 'success' : 'failure', 'aria-expanded': String(isOpen()), 'aria-label': `${label}. Show the checks`, title: 'Show the checks' }, children);
+            button.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggle.click();
+              button.setAttribute('aria-expanded', String(isOpen()));
+            });
+            line.append(button);
+          }
         }
       } else if (kind === 'deleted' || kind === 'restored') {
         const branch = ref(body.querySelector('.commit-ref, .branch-name, code'));
