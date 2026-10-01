@@ -395,6 +395,19 @@ body {
   color: var(--foreground);
 }
 
+/* "Saved" shows for a moment in place of the links on the left (How it works, Feedback): with three links the footer
+ * is already as wide as the popup, so the status cannot take a column of its own without pushing All settings out. */
+.popup__footer {
+  position: relative;
+}
+
 .popup__footer .geld-status {
-  flex: 1;
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+}
+
+.popup__footer:has(.geld-status[data-tone]) .popup__footer-links {
+  visibility: hidden;
 }
