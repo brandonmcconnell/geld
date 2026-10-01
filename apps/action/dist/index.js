@@ -18906,9 +18906,9 @@ var STATUS_RANK = {
   open: 0,
   "needs-reply": 1,
   addressed: 2,
-  "done-manual": 3,
-  resolved: 4,
-  outdated: 5
+  outdated: 3,
+  "done-manual": 4,
+  resolved: 5
 };
 var BOT_VERDICTS = ["clean", "findings", "failed", "running"];
 var REVIEWER_STATES = ["approved", "changes_requested", "commented", "pending"];
@@ -19085,7 +19085,7 @@ function itemIdFor(anchors, ruleId) {
   if (ruleId !== void 0 && ruleId !== "") parts.push(`rule:${ruleId}`);
   return `ri_${fnv1aHex(parts.join("|"))}`;
 }
-var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed"]);
+var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed", "outdated"]);
 function isOpenStatus(status) {
   return OPEN_STATUSES.has(status);
 }
@@ -19571,7 +19571,8 @@ function itemFromAtom(atom) {
     title: atom.title,
     rewritten: false,
     severity: severityOf(atom),
-    status: atom.outdated ? "outdated" : atom.resolved ? "resolved" : "open",
+    // Resolved is the conversation's state and wins; outdated is a badge on an open one.
+    status: atom.resolved ? "resolved" : atom.outdated ? "outdated" : "open",
     sources: atom.sources,
     ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}
   };

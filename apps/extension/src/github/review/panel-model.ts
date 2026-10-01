@@ -70,9 +70,9 @@ const ORDER: Readonly<Record<ReviewItemStatus, number>> = {
   'needs-reply': 0,
   open: 1,
   addressed: 2,
-  'done-manual': 3,
-  resolved: 4,
-  outdated: 5,
+  outdated: 3,
+  'done-manual': 4,
+  resolved: 5,
 };
 
 /** Waiting-on-you first, then open, then addressed; done items keep their relative order. */

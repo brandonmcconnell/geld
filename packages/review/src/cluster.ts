@@ -185,7 +185,8 @@ function itemFromAtom(atom: Atom): ReviewItem {
     title: atom.title,
     rewritten: false,
     severity: severityOf(atom),
-    status: atom.outdated ? 'outdated' : atom.resolved ? 'resolved' : 'open',
+    // Resolved is the conversation's state and wins; outdated is a badge on an open one.
+    status: atom.resolved ? 'resolved' : atom.outdated ? 'outdated' : 'open',
     sources: atom.sources,
     ...(atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}),
   };

@@ -35,9 +35,9 @@ export const STATUS_RANK: Readonly<Record<ReviewItemStatus, number>> = {
   open: 0,
   'needs-reply': 1,
   addressed: 2,
-  'done-manual': 3,
-  resolved: 4,
-  outdated: 5,
+  outdated: 3,
+  'done-manual': 4,
+  resolved: 5,
 };
 
 export const BOT_VERDICTS = ['clean', 'findings', 'failed', 'running'] as const;
@@ -390,7 +390,13 @@ export function itemIdFor(anchors: readonly string[], ruleId?: string): string {
   return `ri_${fnv1aHex(parts.join('|'))}`;
 }
 
-const OPEN_STATUSES: ReadonlySet<ReviewItemStatus> = new Set(['open', 'needs-reply', 'addressed']);
+/**
+ * Statuses that still want something of someone. `outdated` is among them:
+ * GitHub says it of the code the thread was on, not of the conversation,
+ * which stays open (its button still reads Resolve) until a person resolves
+ * it; the digest shows the badge and counts the thread as open.
+ */
+const OPEN_STATUSES: ReadonlySet<ReviewItemStatus> = new Set(['open', 'needs-reply', 'addressed', 'outdated']);
 
 export function isOpenStatus(status: ReviewItemStatus): boolean {
   return OPEN_STATUSES.has(status);
