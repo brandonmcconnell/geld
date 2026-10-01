@@ -1228,7 +1228,8 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 /* "New changes": GitHub's small button, the size the timeline's Compare and Details take in the quick view. */
 .geld-review__since-visit,
 .geld-review__since-visit:visited {
-  display: inline-flex;
+  /* GitHub's .btn sets its own display; a flex row is what centres the glyph on the words. */
+  display: inline-flex !important;
   align-items: center;
   gap: 4px;
   height: 24px;
