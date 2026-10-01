@@ -3396,6 +3396,16 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-weight: 400;
 }
 
+/* The time is a permalink: grey at rest like the other quiet links, the link blue on hover and focus like them. */
+.geld-review__chat [data-geld-part='meta'] .js-timestamp:hover,
+.geld-review__chat [data-geld-part='meta'] .js-timestamp:focus-visible,
+.geld-review__chat [data-geld-part='meta'] .js-timestamp:hover relative-time,
+.geld-review__chat [data-geld-part='meta'] .js-timestamp:focus-visible relative-time,
+.geld-review__chat [data-geld-part='meta'] a:hover > relative-time,
+.geld-review__chat [data-geld-part='meta'] a:focus-visible > relative-time {
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da)) !important;
+}
+
 /* "Author", "Contributor", "Bot": the pills GitHub hangs on the name are a header's chrome, not a chat's. */
 .geld-review__chat [data-geld-part='meta'] .Label,
 .geld-review__chat [data-geld-part='meta'] .tooltipped,
