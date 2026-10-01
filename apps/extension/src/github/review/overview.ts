@@ -70,6 +70,8 @@ interface VisitState {
   /** Rounds whose commit rows are unfolded (batch grouping). */
   openCommits: Set<string>;
   openPreviews: Set<string>;
+  /** The row a click elsewhere landed on, while its flash runs (`stampFlash`). */
+  flash: { readonly key: string; readonly startedAt: number } | null;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -112,6 +114,7 @@ const visit: VisitState = {
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
   openPreviews: new Set<string>(),
+  flash: null,
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -835,6 +838,45 @@ function revealRow(focusKey: string): void {
   if (rect.top < sticky || rect.bottom > window.innerHeight) scrollRowTo(rect.top + window.scrollY);
   else revealOpened(row);
   holdRow(focusKey);
+  visit.flash = { key: focusKey, startedAt: performance.now() };
+  stampFlash();
+}
+
+const ATTR_FLASH = 'data-geld-flash';
+/** The flash animation's length (style.css `geld-review-flash`). */
+const FLASH_MS = 1600;
+
+/**
+ * A click on one row that lands the reader on another (a pointer line, a
+ * report pill, a thread chip) tints the destination row and lets the tint
+ * fade, the way GitHub lights a targeted comment and chat apps a linked
+ * message, so the eye finds where the panel went. The attribute drives a
+ * CSS animation. The panel is rebuilt a few times right after a row opens
+ * (the chat's loans land), each time with new row elements, so the flash is
+ * remembered on the visit and stamped again after every mount for as long
+ * as it runs, picking the animation up where it was.
+ */
+function stampFlash(): void {
+  const flash = visit.flash;
+  if (flash === null) return;
+  const elapsed = performance.now() - flash.startedAt;
+  if (elapsed >= FLASH_MS) {
+    visit.flash = null;
+    return;
+  }
+  const control = document.querySelector(`[data-geld-focus="${flash.key}"]`);
+  const row = control instanceof HTMLElement ? (control.closest<HTMLElement>('li') ?? control) : null;
+  if (row === null || row.hasAttribute(ATTR_FLASH)) return;
+  row.style.animationDelay = `-${Math.round(elapsed)}ms`;
+  row.setAttribute(ATTR_FLASH, '');
+  row.addEventListener(
+    'animationend',
+    () => {
+      row.removeAttribute(ATTR_FLASH);
+      row.style.removeProperty('animation-delay');
+    },
+    { once: true },
+  );
 }
 
 /**
@@ -1635,6 +1677,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.archivedPreviewsOpen = false;
     visit.openCommits = new Set<string>();
     visit.openPreviews = new Set<string>();
+    visit.flash = null;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -1992,6 +2035,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (mounted !== null) {
     watchLoans(mounted.root);
     watchPanelForHold(mounted.root);
+    stampFlash();
   } else {
     unwatchLoans();
     releaseHold();

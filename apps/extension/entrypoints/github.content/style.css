@@ -2308,6 +2308,31 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   background: var(--geld-review-subtle);
 }
 
+/* The row a click elsewhere landed on (overview.ts `flashRow`): an accent tint over its surface that fades, so
+ * the eye finds where the panel went. An inset shadow rather than the background, which the row's state owns.
+ * Under reduced motion the tint shows plainly for a moment and goes, no fade. */
+@keyframes geld-review-flash {
+  0%,
+  25% {
+    box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--geld-review-accent) 22%, transparent);
+  }
+
+  100% {
+    box-shadow: inset 0 0 0 100vmax transparent;
+  }
+}
+
+.geld-review__row[data-geld-flash] {
+  animation: geld-review-flash 1.6s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-review__row[data-geld-flash] {
+    animation-timing-function: steps(1, end);
+    animation-duration: 1.2s;
+  }
+}
+
 /* A row that opens on click is a pointer everywhere: its blank space, its glyph, its time. Nested controls (pills,
  * chips, menus, the resolve glyph) keep their own hover to say they do something else. */
 .geld-review__row[data-toggles],
