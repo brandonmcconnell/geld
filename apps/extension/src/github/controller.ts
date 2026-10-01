@@ -19,7 +19,7 @@ import { DiffSource } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
-import { detectHeadSha, shaFromCommitUrl } from './head-sha';
+import { detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText, restoreHeaderStats } from './header-stats';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
@@ -290,6 +290,10 @@ export class GeldController {
   private headerDirty = true;
   /** The head SHA read from the page, per page state; the read parses GitHub's embedded JSON payload. */
   private headShaCache: { readonly stateKey: string; readonly sha: string | null } | null = null;
+  /** Stops watching for the files view's in-place refresh (head-sha.ts `watchFilesRefresh`). */
+  private unwatchFilesRefresh: (() => void) | null = null;
+  /** The refresh the files view is on, so an answer to an earlier ask is not taken for the latest. */
+  private filesRefreshes = 0;
 
   constructor(
     settings: GeldSettings,
@@ -335,6 +339,8 @@ export class GeldController {
       // `data-resolved`: a review thread resolved through the digest panel (its control lives in the folded timeline).
       attributeFilter: ['aria-pressed', 'aria-checked', 'aria-label', 'data-file-user-viewed', 'hidden', 'data-is-hidden', 'data-resolved'],
     });
+    // The files view reloading its data in place ("new changes" refresh): the head read at load is stale then.
+    this.unwatchFilesRefresh = watchFilesRefresh(() => this.onFilesRefresh());
     // Legacy checkboxes change without any attribute mutation.
     document.addEventListener('change', this.onChangeEvent, true);
     // GitHub hides the header diffstat by container width; the mirror beside
@@ -356,6 +362,8 @@ export class GeldController {
     this.stopped = true;
     document.removeEventListener('change', this.onChangeEvent, true);
     window.removeEventListener('resize', this.onResize);
+    this.unwatchFilesRefresh?.();
+    this.unwatchFilesRefresh = null;
     document.removeEventListener('mousedown', this.onUserClick, true);
     document.removeEventListener('keydown', this.onUserKey, true);
     window.removeEventListener('hashchange', this.onHashChange);
@@ -599,7 +607,7 @@ export class GeldController {
     const url = new URL(window.location.href);
     const page = describePage(url);
     if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
-    const state = this.diffSource.request(page.diffUrl, detectHeadSha(), 'page');
+    const state = this.diffSource.request(page.diffUrl, this.headShaFor(page, url), 'page');
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
@@ -1311,6 +1319,31 @@ export class GeldController {
     const sha = detectHeadSha();
     this.headShaCache = { stateKey: page.stateKey, sha };
     return sha;
+  }
+
+  /**
+   * GitHub refetched the files view's data: a push landed and the reader took
+   * the refresh. The page's static payload still names the old head, so the
+   * head is asked of GitHub's commits data; a new one re-keys the diff (the
+   * `.diff` URL is the same, the SHA tells the entries apart) and the next
+   * pass fetches it, header and tree counts following.
+   */
+  private onFilesRefresh(): void {
+    const page = this.currentPage;
+    if (page === null || !page.kind.startsWith('pull')) return;
+    const match = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(window.location.pathname);
+    if (match === null) return;
+    const generation = (this.filesRefreshes += 1);
+    const stateKey = page.stateKey;
+    void fetchHeadSha(match[0]).then((sha) => {
+      if (sha === null || generation !== this.filesRefreshes || this.currentPage?.stateKey !== stateKey) return;
+      if (this.headShaCache?.stateKey === stateKey && this.headShaCache.sha === sha) return;
+      this.headShaCache = { stateKey, sha };
+      // Header counts come from the diff of that head and nothing else; the settled value belongs to the old one.
+      this.settledHeader = null;
+      this.headerDirty = true;
+      this.schedule();
+    });
   }
 
   private applyHeader(groups: readonly HeaderStatGroup[], hidden: HiddenBreakdown, categories: readonly HiddenCategory[]): void {
