@@ -270,6 +270,8 @@ export function applyHeaderStats(
   group: HeaderStatGroup,
   hidden: HiddenBreakdown,
   activeCategories: readonly HiddenCategory[],
+  /** The diff's file count, when the header's own numbers carry none (a pull request header: lines only). */
+  files = 0,
 ): void {
   // Nothing that could be hidden: GitHub's own numbers are right, so leave the header alone (no "0 hidden").
   if (group.original === null || activeCategories.length === 0) {
@@ -283,7 +285,7 @@ export function applyHeaderStats(
     syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
     return;
   }
-  const all = group.original;
+  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   const breakdown = statsBreakdown(all, hidden, nounPlural, activeCategories);
   const { visible } = breakdown;
 

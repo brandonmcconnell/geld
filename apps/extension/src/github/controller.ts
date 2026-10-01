@@ -278,6 +278,8 @@ export class GeldController {
     readonly sha: string | null;
     readonly hidden: HiddenBreakdown;
     readonly categories: readonly HiddenCategory[];
+    /** How many files the diff has (the header itself gives only lines), for the tooltip's Essential and Total rows. */
+    readonly files: number;
   } | null = null;
   private headerGroups: Array<{ readonly group: HeaderStatGroup; readonly additionsText: string | null }> = [];
   /**
@@ -1258,7 +1260,9 @@ export class GeldController {
       if (state.status === 'ready') {
         const fromDiff = breakdownFromFiles(state.files, matcher, this.settings.hideCommentLines, view?.filteredPaths ?? null);
         headerHidden = fromDiff.hidden;
-        allTotals ??= fromDiff.all;
+        // GitHub's header gives the line counts but no file count (that is on the Files tab); the diff knows it, so
+        // the tooltip's Essential and Total rows can say "N files" like the category rows between them.
+        allTotals = allTotals === null ? fromDiff.all : allTotals.files === 0 ? { ...allTotals, files: fromDiff.all.files } : allTotals;
       } else if (state.status === 'failed' && domIsComplete) {
         headerHidden = hidden ?? EMPTY_BREAKDOWN;
       }
@@ -1266,8 +1270,8 @@ export class GeldController {
       headerHidden = hidden ?? EMPTY_BREAKDOWN;
     }
     if (headerHidden !== null) {
-      this.settledHeader = { stateKey: page.stateKey, sha, hidden: headerHidden, categories: matcher.activeCategories };
-      this.applyHeader(groups, headerHidden, matcher.activeCategories);
+      this.settledHeader = { stateKey: page.stateKey, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
+      this.applyHeader(groups, headerHidden, matcher.activeCategories, allTotals?.files ?? 0);
     } else {
       // A new head commit (or another page) invalidates what we settled on.
       if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.sha !== sha)) {
@@ -1346,8 +1350,8 @@ export class GeldController {
     });
   }
 
-  private applyHeader(groups: readonly HeaderStatGroup[], hidden: HiddenBreakdown, categories: readonly HiddenCategory[]): void {
-    for (const group of groups) applyHeaderStats(group, hidden, categories);
+  private applyHeader(groups: readonly HeaderStatGroup[], hidden: HiddenBreakdown, categories: readonly HiddenCategory[], files = 0): void {
+    for (const group of groups) applyHeaderStats(group, hidden, categories, files);
     this.headerGroups = groups.map((group) => ({ group, additionsText: group.additions?.textContent ?? null }));
   }
 
@@ -1366,7 +1370,7 @@ export class GeldController {
     if (!stale) return;
     const groups = this.currentPage === null ? findHeaderStatGroups() : this.headerGroupsFor(this.currentPage);
     if (groups.length === 0) return;
-    this.applyHeader(groups, settled.hidden, settled.categories);
+    this.applyHeader(groups, settled.hidden, settled.categories, settled.files);
   }
 
   private publish(state: TabState): void {
