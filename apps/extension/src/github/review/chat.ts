@@ -34,6 +34,10 @@ const BODY_SELECTOR = '.comment-body, .js-comment-body, [data-testid="comment-bo
 const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"]';
 const META_SELECTOR = '.timeline-comment-header, .timeline-comment-actions, [data-testid="comment-header"], h3, a.author, a[data-testid="author-link"]';
 const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"]';
+/** GitHub's wrapper round a minimized comment (its <details> holds the notice and the comment). */
+const MINIMIZED_WRAPPER = '.minimized-comment, .js-minimized-comment';
+/** The compact comment card GitHub renders inside a minimized comment: header (h4) and body as siblings in here. */
+const COMPACT_CARD = '.review-comment-contents';
 /** The signed-in login, from GitHub's own meta tag (empty when signed out: then nothing is "mine"). */
 export function viewerLogin(): string {
   return document.querySelector<HTMLMetaElement>('meta[name="user-login"]')?.content.trim() ?? '';
@@ -406,7 +410,13 @@ function loadDeferredReplies(thread: HTMLElement): void {
 function messagesIn(root: HTMLElement, thread: boolean): readonly HTMLElement[] {
   const selector = thread ? '[id^="discussion_r"], [data-testid="review-thread-comment"]' : MESSAGE_SELECTOR;
   const candidates = [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll<HTMLElement>(selector)];
-  const all = candidates.filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null);
+  // A minimized comment is wrapped in a `.minimized-comment.js-comment` holding a <details> (the "This comment has
+  // been minimized" summary, then the comment proper): the wrapper would be the outermost match, with the details
+  // as its bubble and the header inside unmarked. The comment proper is GitHub's compact card, whose header and
+  // body are only siblings inside `.review-comment-contents`, so that is the message; the stylesheet drops the
+  // summary and the card's picture and ⋯ holder left outside it.
+  const compact = [...root.querySelectorAll<HTMLElement>(COMPACT_CARD)];
+  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !node.matches(MINIMIZED_WRAPPER) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
   return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
 }
 

@@ -2765,11 +2765,43 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   box-shadow: none !important;
 }
 
-/* A minimized comment shows its contents in the quick view; GitHub's "has been minimized" bar stays in the timeline. */
+/* A minimized comment shows its contents in the quick view and the chat (opening it is the reader's choice);
+ * GitHub's "has been minimized" bar stays in the timeline. */
 .geld-review__qv .minimized-comment > details > summary,
 .geld-review__qv details.minimized-comment > summary,
-.geld-review__qv .minimized-comment .minimized-comment-summary {
+.geld-review__qv .minimized-comment .minimized-comment-summary,
+.geld-review__chat .minimized-comment > details > summary,
+.geld-review__chat details.minimized-comment > summary,
+.geld-review__chat .minimized-comment .minimized-comment-summary {
   display: none !important;
+}
+
+/* In a chat the comment inside is the message, with its own bubble: the wrapper's frame and the comment's rule
+ * under the summary would be a second box round it. */
+.geld-review__chat .minimized-comment,
+.geld-review__chat .minimized-comment > details {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+}
+
+.geld-review__chat .minimized-comment > details > .review-comment {
+  border-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* The compact card's picture and ⋯ holder sit beside the message (`.review-comment-contents`), not in it: the chat's
+ * byline and the row above already carry both. */
+.geld-review__chat .minimized-comment .edit-comment-hide > a.float-left,
+.geld-review__chat .minimized-comment .edit-comment-hide > .timeline-comment-actions {
+  display: none !important;
+}
+
+.geld-review__chat .minimized-comment .review-comment-contents {
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .geld-review__empty {
