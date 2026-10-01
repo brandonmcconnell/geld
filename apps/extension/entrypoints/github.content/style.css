@@ -1101,6 +1101,8 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 .geld-review {
   container-type: inline-size;
   container-name: geld-review;
+  /* The commit rows' time column: wide enough for "16 minutes ago" at 12px. */
+  --geld-time-col: 96px;
   --geld-review-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
   --geld-review-border-muted: var(--borderColor-muted, var(--color-border-muted, #d8dee4));
   --geld-review-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
@@ -3325,12 +3327,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-size: 11px;
 }
 
-/* The messages: a column, one author's run close together, a change of author with room between. */
+/* The messages: a column, one author's run close together (4px), a change of author with room between. */
 .geld-review__chat-body :has(> [data-geld-message]) {
   display: flex !important;
   flex-direction: column;
   align-items: stretch;
-  gap: 2px;
+  gap: 4px;
   padding: 12px;
   container-type: inline-size;
 }
@@ -3351,9 +3353,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   box-shadow: none !important;
 }
 
+/* A change of author: 12px with the column's 4px gap, as before the run gap doubled. */
 .geld-review__chat [data-geld-message][data-geld-run='first'],
 .geld-review__chat [data-geld-message][data-geld-run='only'] {
-  margin-top: 10px !important;
+  margin-top: 8px !important;
 }
 
 .geld-review__chat :has(> [data-geld-message]) > [data-geld-message]:first-child {
@@ -4583,9 +4586,30 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 /* A commit's message keeps to its line: the time column takes width the message used to wrap into. GitHub's
  * `pr-1 flex-auto min-width-0` cell is the one that can shrink; the message ellipsizes inside it. */
 .geld-review__qv .TimelineItem .pr-1.flex-auto.min-width-0 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   overflow: hidden;
   white-space: nowrap;
+}
+
+/* The message gives way; GitHub's "…" expander after it (the rest of the message) stays whole and in reach. */
+.geld-review__qv .TimelineItem .pr-1.flex-auto.min-width-0 > code {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.geld-review__qv .TimelineItem .pr-1.flex-auto.min-width-0 > .hidden-text-expander {
+  flex: 0 0 auto;
+}
+
+/* The cells' own flex row (`d-flex flex-auto`) is a flex item with `min-width: auto`, whose min-content is the whole
+ * unwrapped message: a long message pushed the row past the time column, and the SHA under the time. Letting the
+ * row shrink is what lets the message cell above ellipsize. */
+.geld-review__qv .TimelineItem .flex-md-row > .d-flex.flex-auto {
+  min-width: 0;
 }
 
 /* ---- timeline events, set like the commit rows (quick-view.ts: compactEvents) ---- */
@@ -4717,10 +4741,16 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 /* A row that keeps GitHub's words (labels, assignees, review requests): the words stay inline and centred, the time
- * moves off the sentence into the column. */
+ * moves off the sentence into the column. The column fits the longest relative time ("16 minutes ago") at 12px,
+ * so a long one never runs into the SHA before it. */
 .geld-review__qv .TimelineItem-body:has(> .geld-review__event--time-only) {
   position: relative;
-  padding-right: calc(6.5em + 8px);
+  padding-right: calc(var(--geld-time-col) + 8px);
+}
+
+/* A long commit message ends in GitHub's "…" expander; it keeps clear of the Verified badge after it. */
+.geld-review__qv .TimelineItem-body .flex-auto.min-width-0:has(> .hidden-text-expander) {
+  padding-right: 12px !important;
 }
 
 .geld-review__event--time-only {
@@ -4735,7 +4765,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
  * same place and the times read down as a column. GitHub's commit rows carry no time of their own. */
 .geld-review__commit-time {
   flex: 0 0 auto;
-  min-width: 6.5em;
+  min-width: var(--geld-time-col);
   margin-left: 8px;
   color: var(--geld-review-muted);
   font-size: 12px;
