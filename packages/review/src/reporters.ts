@@ -191,6 +191,13 @@ export interface CheckReporter {
   readonly title: string;
   /** Hosts of the Details link, matched on the URL's hostname (with or without `www.`, subdomains included). */
   readonly hosts: readonly string[];
+  /**
+   * The names the service gives its check runs ("Socket Security: Pull Request Alerts", "codecov/patch"). Read only
+   * when the row's link is GitHub's own checks tab (`/pull/N/checks?check_run_id=`), where a GitHub App's check run
+   * leads in the React merge box: the App named it, not the repository. A GitHub Actions job links to
+   * `/actions/runs/…` and never matches by name, whatever it is called.
+   */
+  readonly checkNames?: RegExp;
   /** When the host alone is too broad (a shared pages host), the Details path must match this too. */
   readonly path?: RegExp;
   /** The project or facet the check is about, from its name ("UI Tests: mint" → "mint", "codecov/patch" → "patch"); null for none. */
@@ -260,6 +267,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'percy',
     title: 'Percy',
     hosts: ['percy.io'],
+    checkNames: /^percy\//i,
     project: afterSlash(/^percy\//i),
     short: (words) => counted(words, 'change', CHANGES),
   },
@@ -269,6 +277,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'codecov',
     title: 'Codecov',
     hosts: ['codecov.io'],
+    checkNames: /^codecov\//i,
     project: afterSlash(/^codecov\//i),
     // "62.50% of diff hit (target 80.00%)" → "62.50%"; "80.12% (+0.03%) compared to abc" → "80.12% (+0.03%)".
     short: percent,
@@ -278,6 +287,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'sonar',
     title: 'Sonar',
     hosts: ['sonarcloud.io', 'sonarqube.com', 'sonarqube.io', 'sonarsource.com'],
+    checkNames: /^Sonar(?:Cloud|Qube)\b/i,
     project: () => null,
     // "Quality Gate passed" / "failed": the light says it.
     short: () => [],
@@ -287,6 +297,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'snyk',
     title: 'Snyk',
     hosts: ['snyk.io'],
+    checkNames: /\bsnyk\b/i,
     project: afterSlash(/^(?:security|license|code)\/snyk\s*-\s*/i),
     // "2 new issues (1 high, 1 medium)" → "2 issues" and a red-dotted count of the high ones; "No new issues" → the light.
     short: (words) => {
@@ -303,6 +314,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'cypress',
     title: 'Cypress Cloud',
     hosts: ['cypress.io'],
+    checkNames: /^Cypress(?: Cloud)?\b/i,
     project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
     // "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" → "✗ 2 ✓ 41" (a pending count with a dot; zeros and skips left out).
     short: (words) => {
@@ -325,6 +337,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'argos',
     title: 'Argos',
     hosts: ['argos-ci.com'],
+    checkNames: /^argos\b/i,
     project: afterSlash(/^argos\//i),
     short: (words) => counted(words, 'change', CHANGES),
   },
@@ -333,6 +346,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'happo',
     title: 'Happo',
     hosts: ['happo.io'],
+    checkNames: /^happo\b/i,
     project: afterSlash(/^happo\//i),
     short: (words) => counted(words, 'diff', DIFFS),
   },
@@ -341,6 +355,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'applitools',
     title: 'Applitools',
     hosts: ['applitools.com'],
+    checkNames: /^(?:applitools|eyes)\b/i,
     project: afterSlash(/^(?:applitools|eyes)\//i),
     short: (words) => counted(words, 'diff', DIFFS),
   },
@@ -349,6 +364,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'lost-pixel',
     title: 'Lost Pixel',
     hosts: ['lost-pixel.com'],
+    checkNames: /^lost-pixel\b/i,
     project: afterSlash(/^lost-pixel\//i),
     short: (words) => counted(words, 'diff', DIFFS),
   },
@@ -370,6 +386,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'socket',
     title: 'Socket',
     hosts: ['socket.dev'],
+    checkNames: /^Socket Security\b/i,
     project: () => null,
     // "Skipped": the pull request changes no dependency, so there is nothing to report.
     ignore: (name, description) => /\bProject Report\b/i.test(name) || /\bAlerts:\s*Skipped\b/i.test(description),
@@ -382,6 +399,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'gitguardian',
     title: 'GitGuardian',
     hosts: ['gitguardian.com'],
+    checkNames: /^GitGuardian\b/i,
     project: () => null,
     short: (words) => {
       const match = /(\d+) (secrets?|policy breaks?|incidents?)\b/i.exec(words);
@@ -395,6 +413,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'semgrep',
     title: 'Semgrep',
     hosts: ['semgrep.dev'],
+    checkNames: /^Semgrep\b/i,
     project: afterSlash(/^Semgrep(?: OSS| Code| Cloud Platform)?\s*[/:-]\s*/i),
     short: (words) => counted(words, 'finding', /(\d+) (?:new |blocking )?findings?\b/i),
   },
@@ -404,6 +423,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'aikido',
     title: 'Aikido',
     hosts: ['aikido.dev'],
+    checkNames: /^Aikido\b/i,
     project: afterSlash(/^Aikido(?: Security)?\s*[/:-]\s*/i),
     short: (words) => counted(words, 'issue', /(\d+) (?:new )?(?:issues?|vulnerabilit(?:y|ies))\b/i),
   },
@@ -412,18 +432,18 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     id: 'gecko',
     title: 'Gecko',
     hosts: ['gecko.security'],
+    checkNames: /^Gecko Security\b/i,
     project: () => null,
     short: (words) => counted(words, 'vulnerability', /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i),
   },
   {
-    // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): Details is a plain `github.com/…/runs/N`,
-    // so the words identify it — "No new alerts in code changed by this pull request" / "2 new alerts including 1
+    // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): its row links to GitHub's own checks tab and
+    // its Details is a plain `github.com/…/runs/N`, so the words identify it — "No new alerts in code changed by this pull request" / "2 new alerts including 1
     // high severity security vulnerability". The tool's name is the project. The check passes unless an alert reaches
     // the repository's failure threshold, so the state is read from the count.
     id: 'code-scanning',
     title: 'Code scanning',
-    hosts: ['github.com'],
-    path: /\/runs\/\d+/,
+    hosts: [],
     description: /\bcode changed by this pull request\b/i,
     project: (name) => (name.trim() === '' ? null : name.trim()),
     state: (words, fromConclusion) => (/\b([1-9]\d*) new alerts?\b/i.test(words) ? 'failed' : fromConclusion),
@@ -446,7 +466,16 @@ export interface CheckForReport {
   readonly description?: string;
 }
 
-function checkReporterFor(url: string, description: string): CheckReporter | null {
+/**
+ * A link into GitHub's own checks tab for one check run (`/pull/N/checks?check_run_id=…`, the React merge box's
+ * link for a GitHub App's check) or a run's page (`/…/runs/N`, code scanning's Details): the check is an App's,
+ * named by the App. A GitHub Actions job links to `/actions/runs/…` instead.
+ */
+function isCheckRunLink(parsed: URL): boolean {
+  return (/\/pull\/\d+\/checks\/?$/.test(parsed.pathname) && parsed.searchParams.has('check_run_id')) || /\/runs\/\d+\/?$/.test(parsed.pathname);
+}
+
+function checkReporterFor(url: string, name: string, description: string): CheckReporter | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -454,14 +483,15 @@ function checkReporterFor(url: string, description: string): CheckReporter | nul
     return null;
   }
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-  return (
-    CHECK_REPORTERS.find(
-      (reporter) =>
-        reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`)) &&
-        (reporter.path === undefined || reporter.path.test(parsed.pathname)) &&
-        (reporter.description === undefined || reporter.description.test(description)),
-    ) ?? null
-  );
+  const byHost = (reporter: CheckReporter): boolean =>
+    reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`)) &&
+    (reporter.path === undefined || reporter.path.test(parsed.pathname)) &&
+    (reporter.description === undefined || reporter.description.test(description));
+  // A commit status links to the service's site; an App's check run links to GitHub's checks tab, so the App's own
+  // name for it (or, for code scanning, its words) says whose it is.
+  const byCheckRun = (reporter: CheckReporter): boolean =>
+    isCheckRunLink(parsed) && (reporter.checkNames === undefined ? reporter.hosts.length === 0 && reporter.description !== undefined && reporter.description.test(description) : reporter.checkNames.test(name));
+  return CHECK_REPORTERS.find((reporter) => byHost(reporter) || byCheckRun(reporter)) ?? null;
 }
 
 /** GitHub's description for a status ("— Failed test", "Failing after 6m") as the report's headline. */
@@ -474,8 +504,12 @@ function headlineOf(description: string | undefined, state: ReportState): string
 /** The report a check is, when its Details lead to a known reporter and it has something to say. */
 export function readCheckReport(check: CheckForReport): Report | null {
   if (check.detailsUrl === undefined) return null;
-  const rawWords = (check.description ?? '').replace(/^[\s—–-]+/, '').trim();
-  const reporter = checkReporterFor(check.detailsUrl, rawWords);
+  // GitHub's merge box prefixes a check run's own words with its timing ("Failing after 7s — Pull Request #12 Alerts: …").
+  const rawWords = (check.description ?? '')
+    .replace(/^(?:failing|successful|in progress|queued|pending|completed|skipped|cancelled)\b[^—–-]*[—–-]\s*/i, '')
+    .replace(/^[\s—–-]+/, '')
+    .trim();
+  const reporter = checkReporterFor(check.detailsUrl, check.name, rawWords);
   if (reporter === null || reporter.ignore?.(check.name, rawWords) === true) return null;
   const conclusion = (check.conclusion ?? '').toLowerCase();
   // A skipped or cancelled run reported nothing; a neutral one is the service standing aside.

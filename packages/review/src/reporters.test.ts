@@ -170,3 +170,21 @@ describe('security reporters', () => {
     expect(readCheckReport({ name: 'Semgrep OSS', status: 'completed', conclusion: 'failure', detailsUrl: 'https://semgrep.dev/orgs/o/findings?repo=r', description: '3 findings' })).toMatchObject({ reporter: 'semgrep', short: [{ text: '3 findings' }] });
   });
 });
+
+describe('check runs linked to the checks tab', () => {
+  const tab = (name: string, description: string, conclusion = 'failure') => readCheckReport({ name, status: 'completed', conclusion, detailsUrl: 'https://github.com/o/r/pull/12/checks?check_run_id=107052807422', description });
+
+  it('reads an App check run by the App\'s own name, with the merge box\'s timing prefix stripped', () => {
+    expect(tab('Socket Security: Pull Request Alerts', 'Failing after 7s — Pull Request #1231 Alerts: Complete with warnings')).toMatchObject({ reporter: 'socket', state: 'failed', headline: 'Complete with warnings' });
+    expect(tab('Socket Security: Project Report', 'Successful in 3s — Project Report: Success', 'success')).toBeNull();
+    expect(tab('codecov/patch', 'Successful in 1s — 62.50% of diff hit (target 80.00%)', 'success')).toMatchObject({ reporter: 'codecov', project: 'patch', short: [{ text: '62.50%' }] });
+    expect(tab('GitGuardian Security Checks', 'Failing after 4s — 1 secret detected')).toMatchObject({ reporter: 'gitguardian', short: [{ text: '1 secret' }] });
+    expect(tab('CodeQL', 'Successful in 2m — 2 new alerts in code changed by this pull request', 'success')).toMatchObject({ reporter: 'code-scanning', project: 'CodeQL', state: 'failed' });
+  });
+
+  it('never reads a GitHub Actions job by its name, nor an unknown App check', () => {
+    expect(readCheckReport({ name: 'Socket Security', status: 'completed', conclusion: 'failure', detailsUrl: 'https://github.com/o/r/actions/runs/1/job/2?pr=12', description: 'Failing after 6m' })).toBeNull();
+    expect(tab('Vercel Preview Comments', 'Successful in 1s', 'success')).toBeNull();
+    expect(tab('build', 'Successful in 2m', 'success')).toBeNull();
+  });
+});
