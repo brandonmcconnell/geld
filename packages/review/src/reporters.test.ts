@@ -100,6 +100,7 @@ describe('report short forms', () => {
   it('says nothing beside the light when the words are only a verdict', () => {
     expect(short('SonarCloud Code Analysis', 'https://sonarcloud.io/d?id=x', 'Quality Gate failed')).toEqual([]);
     expect(short('UI Tests: mint', 'https://www.chromatic.com/test?id=1', '— Failed test')).toEqual([]);
+    expect(short('UI Tests: mint', 'https://www.chromatic.com/test?id=1', '— 411 tests unchanged', 'success')).toEqual([]);
     expect(short('security/snyk - package.json', 'https://snyk.io/p/1', 'No new issues', 'success')).toEqual([]);
     expect(readReport({ author: 'blacksmith-sh[bot]', body: 'Found 2 test failures on Blacksmith runners:', anchor: 'c' })?.short).toEqual([{ text: '2 failures' }]);
   });

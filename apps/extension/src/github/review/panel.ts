@@ -1394,7 +1394,9 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const children: Node[] = [];
   const avatar = reportAvatar(entry, model);
   if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
-  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [subject]));
+  // The mark says who, as a preview pill's does: the pill names the project (when the report has one) and the
+  // numbers; the service's name is on the line under it and in the pill's tooltip.
+  if (entry.project !== undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
   // The pill says the numbers ("4 changes", "✗ 2 ✓ 41"), the line under it the service's sentence; with only a
   // verdict to say, the state light says it alone.
   if (entry.short === undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));

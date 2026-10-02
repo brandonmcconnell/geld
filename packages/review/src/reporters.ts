@@ -150,11 +150,17 @@ export interface CheckReporter {
   readonly short?: (description: string) => readonly ReportPart[];
 }
 
-/** "N <noun>" from the first number in the words, or nothing to say. */
-function counted(words: string, noun: string): readonly ReportPart[] {
-  const match = /(\d+)/.exec(words);
-  return match === null ? [] : [{ text: plural(Number(match[1]), noun) }];
+/**
+ * "N <noun>" when the words count that thing ("3 changes must be accepted", "2 unresolved diffs"), or nothing
+ * to say: "411 tests unchanged" counts tests that did not change, which is the light's job, not a number's.
+ */
+function counted(words: string, noun: string, pattern: RegExp): readonly ReportPart[] {
+  const match = pattern.exec(words);
+  return match?.[1] === undefined ? [] : [{ text: plural(Number(match[1]), noun) }];
 }
+
+const CHANGES = /(\d+) (?:visual |ui )?changes?\b/i;
+const DIFFS = /(\d+) (?:unresolved |visual |new )?(?:diffs?|differences?)\b/i;
 
 /** The first percentage in the words, with a parenthesised change right after it when there is one ("80.12% (+0.03%)"). */
 function percent(words: string): readonly ReportPart[] {
@@ -182,8 +188,8 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     project: (name) => /^UI (?:Tests|Review)(?::\s*(.+))?$/i.exec(name)?.[1]?.trim() ?? null,
     // "Storybook Publish: project — 624 stories published" says the build uploaded, not what the tests found.
     ignore: (name) => /^Storybook Publish\b/i.test(name),
-    // "3 changes must be accepted" → "3 changes"; "Failed test" / "Passed" → the light alone.
-    short: (words) => counted(words, 'change'),
+    // "3 changes must be accepted" → "3 changes"; "Failed test" / "Passed" / "411 tests unchanged" → the light alone.
+    short: (words) => counted(words, 'change', CHANGES),
   },
   {
     // Visual review: "percy/project — 4 visual changes need review" / "— Visual review automatically approved".
@@ -191,7 +197,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Percy',
     hosts: ['percy.io'],
     project: afterSlash(/^percy\//i),
-    short: (words) => counted(words, 'change'),
+    short: (words) => counted(words, 'change', CHANGES),
   },
   {
     // Coverage: "codecov/project — 80.12% (+0.03%) compared to abc1234", "codecov/patch — 62.50% of diff hit (target 80.00%)";
@@ -256,7 +262,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Argos',
     hosts: ['argos-ci.com'],
     project: afterSlash(/^argos\//i),
-    short: (words) => counted(words, 'change'),
+    short: (words) => counted(words, 'change', CHANGES),
   },
   {
     // "happo" / "happo/project" — "2 diffs" / "No diffs".
@@ -264,7 +270,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Happo',
     hosts: ['happo.io'],
     project: afterSlash(/^happo\//i),
-    short: (words) => counted(words, 'diff'),
+    short: (words) => counted(words, 'diff', DIFFS),
   },
   {
     // Applitools Eyes — "3 unresolved diffs" / "All tests passed".
@@ -272,7 +278,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Applitools',
     hosts: ['applitools.com'],
     project: afterSlash(/^(?:applitools|eyes)\//i),
-    short: (words) => counted(words, 'diff'),
+    short: (words) => counted(words, 'diff', DIFFS),
   },
   {
     // "lost-pixel" — "N differences found".
@@ -280,7 +286,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     title: 'Lost Pixel',
     hosts: ['lost-pixel.com'],
     project: afterSlash(/^lost-pixel\//i),
-    short: (words) => counted(words, 'diff'),
+    short: (words) => counted(words, 'diff', DIFFS),
   },
   {
     // Lighthouse CI's public report viewer lives on GitHub Pages, so the path is checked as well as the host; a
@@ -290,7 +296,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     hosts: ['googlechrome.github.io'],
     path: /\/lighthouse-ci\//i,
     project: afterSlash(/^lhci\//i),
-    short: (words) => counted(words, 'assertion'),
+    short: (words) => counted(words, 'assertion', /(\d+) (?:failed )?assertions?\b/i),
   },
 ];
 
