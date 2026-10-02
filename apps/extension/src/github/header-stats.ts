@@ -313,8 +313,9 @@ export function applyHeaderStats(
     }
   }
 
-  // The header's counts end the line at the page column's edge: the box hangs flush with that edge.
-  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown, 'end');
+  // The header's counts end the line at the page column's edge, right above the tab bar: the box hangs flush with
+  // that edge and from that bar (its top border on the bar's, top corners square), as a drawer out of the header.
+  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown, { align: 'end', flush: true });
   syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), hidden.totals.files > 0, visible, () => breakdown);
 }
 
@@ -353,7 +354,7 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
   mirror.hidden = group.host.getClientRects().length > 0;
   if (provider === null) detachBreakdownTooltip(mirror);
-  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, 'end');
+  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, { align: 'end' });
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {

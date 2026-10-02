@@ -822,6 +822,13 @@
   display: none;
 }
 
+/* Hanging from the PR header's tab bar (tooltip.ts `flush`): the top border lies on the bar's own, so the two read as
+ * one line and the top corners come to the bar's square ends; the bottom keeps the usual rounding. */
+.geld-tooltip[data-flush] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 /*
  * The caret is two stacked triangles, the border colour under the surface
  * colour. Both bases sit on the padding edge (`top`/`bottom: 0` is the
