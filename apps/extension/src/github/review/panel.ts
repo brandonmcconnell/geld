@@ -23,7 +23,7 @@ import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { reclaimOrphans, restoreAll } from './teleport';
-import { ATTR_WHO, rehostHoverCard } from './hovercard';
+import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import { shapeMark } from './mark-shape';
 import { inlineText } from './inline-text';
 
@@ -1428,7 +1428,8 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   if (entry.short === undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
   else for (const part of entry.short) children.push(reportPart(part));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
-  const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label };
+  // The pill's hover card (hovercard.ts, `ATTR_REPORT`) says who reported and what; a native title would open beside it.
+  const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, [ATTR_REPORT]: entry.anchor };
   // A link pill is a link and nothing else, as a preview pill is: the click opens the service's page in its tab
   // and leaves the row as it was (`mainClickToggles` and `rowClickToggles` ignore clicks on links for the same reason).
   if (entry.url !== undefined) return createElement('a', { ...attrs, href: entry.url, target: '_blank', rel: 'noreferrer' }, children);

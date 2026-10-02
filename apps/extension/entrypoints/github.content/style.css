@@ -2145,6 +2145,56 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   text-decoration: underline;
 }
 
+/* A report pill's card: the identity card's head and login, then what the report says in its state's colour, then
+ * (for a comment report) the comment itself, clamped like a row card's. */
+.geld-review-hovercard--report .geld-review-hovercard__head {
+  margin-bottom: 2px;
+}
+
+.geld-review-hovercard--report .geld-review-hovercard__avatar[data-shape='round'] {
+  border-radius: 50%;
+}
+
+.geld-review-hovercard__report {
+  margin-top: 4px;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+}
+
+.geld-review-hovercard__state {
+  font-weight: 600;
+}
+
+.geld-review-hovercard__report[data-state='failed'] .geld-review-hovercard__state {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review-hovercard__report[data-state='passed'] .geld-review-hovercard__state {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review-hovercard__project {
+  font-weight: 600;
+}
+
+.geld-review-hovercard--report .geld-review-hovercard__body {
+  margin-top: 8px;
+}
+
+.geld-review-hovercard--report .geld-review-hovercard__foot {
+  justify-content: flex-start;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.geld-review-hovercard--report a.geld-review-hovercard__open {
+  text-decoration: none;
+}
+
+.geld-review-hovercard--report a.geld-review-hovercard__open:hover {
+  text-decoration: underline;
+}
+
 .geld-review-nudge a {
   color: inherit;
   text-decoration: underline;

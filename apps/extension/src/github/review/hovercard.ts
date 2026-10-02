@@ -24,6 +24,8 @@ export const TRIANGLE_GRACE_MS = 600;
 const CARD_OFFSET = 14;
 /** On an element whose hover shows an identity card; the value is the login. */
 export const ATTR_WHO = 'data-geld-who';
+/** On a report pill; the value is the report's anchor (its comment's id, or `check:<name>`). */
+export const ATTR_REPORT = 'data-geld-report-card';
 let leaveTimer: number | null = null;
 const CARD_CLASS = 'geld-review-hovercard';
 
@@ -53,11 +55,42 @@ export interface WhoCard {
   readonly href: string | null;
 }
 
+/**
+ * A report pill's card: who reported (the reporter, as its identity card
+ * would say it) and what - the report's words, its state, and for a comment
+ * report a clamped copy of the comment, so the pill's numbers can be read
+ * without opening the row.
+ */
+export interface ReportCard {
+  readonly avatarSrc: string | null;
+  /** Whether the mark is drawn round (a disc, see mark-shape.ts). */
+  readonly round: boolean;
+  readonly name: string;
+  /** The reporter's login (a comment report's author); empty for a check. */
+  readonly login: string;
+  readonly time: string;
+  /** The project or facet the report is about, when it has one. */
+  readonly project: string | null;
+  /** The report in the service's own words. */
+  readonly headline: string;
+  readonly state: 'failed' | 'passed' | 'info';
+  /** The comment's rendered body, already cloned; shown clamped. Null for a check. */
+  readonly body: HTMLElement | null;
+  /** The service's page for this report (a check's Details). */
+  readonly href: string | null;
+  /** The App's page. */
+  readonly appHref: string | null;
+  /** Open the Reports row to this report's line. */
+  readonly onOpen: () => void;
+}
+
 export type HoverProvider = (row: HTMLElement) => HoverPreview | null;
 export type WhoProvider = (login: string, host: HTMLElement) => WhoCard | null;
+export type ReportProvider = (anchor: string, host: HTMLElement) => ReportCard | null;
 
 let provider: HoverProvider | null = null;
 let whoProvider: WhoProvider | null = null;
+let reportProvider: ReportProvider | null = null;
 let card: HTMLElement | null = null;
 let timer: number | null = null;
 let current: HTMLElement | null = null;
@@ -109,6 +142,11 @@ export function setWhoProvider(next: WhoProvider | null): void {
   install();
 }
 
+export function setReportProvider(next: ReportProvider | null): void {
+  reportProvider = next;
+  install();
+}
+
 function rowKey(row: Element): string | null {
   return row.getAttribute('data-geld-item') ?? row.getAttribute('data-geld-fold') ?? row.getAttribute('data-geld-sub');
 }
@@ -124,7 +162,7 @@ function rowOf(target: EventTarget | null): HTMLElement | null {
 /** What the pointer is resting on: an identity host first (it sits inside rows), else a collapsed row. */
 function hostOf(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
-  const who = target.closest<HTMLElement>(`[${ATTR_WHO}]`);
+  const who = target.closest<HTMLElement>(`[${ATTR_WHO}], [${ATTR_REPORT}]`);
   if (who !== null) return who;
   // A person's avatar shows GitHub's card; no row preview under it.
   if (target.closest('[data-hovercard-url]') !== null && rowOf(target) !== null) return null;
@@ -155,9 +193,16 @@ function stay(): void {
   clearTriangle();
 }
 
+/** Hosts whose card hangs under them (a chip, a pill), as opposed to a row, whose card sits beside the pointer. */
+function hangsCard(host: HTMLElement): boolean {
+  return host.hasAttribute(ATTR_WHO) || host.hasAttribute(ATTR_REPORT);
+}
+
 function show(host: HTMLElement): void {
   const login = host.getAttribute(ATTR_WHO);
+  const report = host.getAttribute(ATTR_REPORT);
   if (login !== null) showWho(host, login);
+  else if (report !== null) showReport(host, report);
   else showRow(host);
 }
 
@@ -190,6 +235,49 @@ function showWho(host: HTMLElement, login: string): void {
   }
   card = createElement('div', { class: `${CARD_CLASS} ${CARD_CLASS}--who`, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, children);
   mount(host, card, 240);
+}
+
+const REPORT_STATE_WORD: Readonly<Record<ReportCard['state'], string>> = { failed: 'Failed', passed: 'Passed', info: 'Reported' };
+
+function showReport(host: HTMLElement, anchor: string): void {
+  const report = reportProvider?.(anchor, host) ?? null;
+  if (report === null) return;
+  hide();
+  current = host;
+  const head = createElement('div', { class: `${CARD_CLASS}__head` });
+  if (report.avatarSrc !== null) {
+    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': 'bot', ...(report.round ? { 'data-shape': 'round' } : {}), src: report.avatarSrc, alt: '', width: '20', height: '20' }));
+  }
+  head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [report.name]), createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
+  if (report.time !== '') head.append(createElement('span', { class: `${CARD_CLASS}__time` }, [report.time]));
+  const lines = createElement('div', { class: `${CARD_CLASS}__who` });
+  if (report.login !== '' && report.login !== report.name) lines.append(createElement('div', { class: `${CARD_CLASS}__login` }, [report.login]));
+  // What it says: the state in its colour, the project when there is one, then the service's words.
+  const said = createElement('div', { class: `${CARD_CLASS}__report`, 'data-state': report.state }, [
+    createElement('span', { class: `${CARD_CLASS}__state` }, [REPORT_STATE_WORD[report.state]]),
+    ...(report.project === null ? [] : [' · ', createElement('span', { class: `${CARD_CLASS}__project` }, [report.project])]),
+    ' · ',
+    createElement('span', {}, [report.headline]),
+  ]);
+  const children: Node[] = [head, lines, said];
+  let body: HTMLElement | null = null;
+  if (report.body !== null) {
+    body = createElement('div', { class: `${CARD_CLASS}__body` }, [report.body]);
+    children.push(body);
+  }
+  const foot = createElement('div', { class: `${CARD_CLASS}__foot` });
+  const open = createElement('button', { type: 'button', class: `${CARD_CLASS}__open` }, [report.body === null ? 'Show in Reports' : 'See full report']);
+  open.addEventListener('click', () => {
+    hide();
+    report.onOpen();
+  });
+  foot.append(open);
+  if (report.href !== null) foot.append(createElement('a', { class: `${CARD_CLASS}__open`, href: report.href, target: '_blank', rel: 'noreferrer' }, [`Open on ${report.name}`]));
+  else if (report.appHref !== null) foot.append(createElement('a', { class: `${CARD_CLASS}__open`, href: report.appHref }, ['View the App']));
+  children.push(foot);
+  card = createElement('div', { class: `${CARD_CLASS} ${CARD_CLASS}--report`, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, children);
+  mount(host, card, report.body === null ? 300 : 380);
+  if (body !== null && body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
 }
 
 function showRow(row: HTMLElement): void {
@@ -245,7 +333,9 @@ export function rehostHoverCard(): void {
     under !== null &&
     (current.hasAttribute(ATTR_WHO)
       ? under.getAttribute(ATTR_WHO) === current.getAttribute(ATTR_WHO)
-      : rowKey(under) === rowKey(current));
+      : current.hasAttribute(ATTR_REPORT)
+        ? under.getAttribute(ATTR_REPORT) === current.getAttribute(ATTR_REPORT)
+        : rowKey(under) === rowKey(current));
   if (!same || under === null) {
     hide();
     return;
@@ -261,8 +351,8 @@ function place(host: HTMLElement, node: HTMLElement, width: number): void {
   }
   const rect = host.getBoundingClientRect();
   node.style.width = `${width}px`;
-  if (host.hasAttribute(ATTR_WHO) || pointer === null) {
-    // Under an avatar or chip the card hangs from the host.
+  if (hangsCard(host) || pointer === null) {
+    // Under an avatar, chip or pill the card hangs from the host.
     node.style.left = `${Math.max(8, Math.min(rect.left - 8, window.innerWidth - width - 8))}px`;
     const height = node.getBoundingClientRect().height;
     const below = rect.bottom + 6;
@@ -345,7 +435,7 @@ function install(): void {
       if (timer !== null) window.clearTimeout(timer);
       timer = null;
       if (current === host) {
-        if (card !== null && !host.hasAttribute(ATTR_WHO)) {
+        if (card !== null && !hangsCard(host)) {
           // A row's card sits beside the pointer: leaving the row toward it crosses other rows. The triangle from
           // here to the card's near edge keeps the card; the pointer resting off the path this long lets it go.
           leavePoint = { x: event.clientX, y: event.clientY };

@@ -29,8 +29,9 @@ import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
 import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
-import { hideHoverCard, setHoverProvider, setWhoProvider } from './hovercard';
-import type { HoverPreview, WhoCard } from './hovercard';
+import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
+import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
+import { knownMarkShape } from './mark-shape';
 import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
@@ -1590,6 +1591,42 @@ function blockTextOf(node: HTMLElement): string {
 const HOVER_BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
 
 /** What the hover card shows for a collapsed row: its first comment, clamped, plus a way to reply. */
+/**
+ * A report pill's card: the reporter as its mark and name, the report's
+ * state, project and words, and for a comment report a clamped copy of the
+ * comment itself (the alerts table, the failing tests); a check report has
+ * no comment, and the card leads to the service's page instead.
+ */
+function reportCardFor(anchor: string, model: PanelModel, handlers: PanelHandlers): ReportCard | null {
+  const report = model.reports.latest.find((entry) => entry.anchor === anchor) ?? null;
+  if (report === null) return null;
+  const check = report.url !== undefined;
+  const avatar = check ? checkAvatarOf(anchor.replace(/^check:/, '')) : null;
+  const avatarSrc = avatar?.src ?? model.avatarForAnchor(anchor) ?? (report.author === '' ? null : avatarSrcForLogin(report.author));
+  const node = check ? null : document.getElementById(anchor);
+  const bodyNode = node?.querySelector(HOVER_BODY_SELECTOR) ?? null;
+  const body = bodyNode instanceof HTMLElement ? bodyNode.cloneNode(true) : null;
+  if (body instanceof HTMLElement) {
+    body.removeAttribute('id');
+    for (const child of body.querySelectorAll('[id]')) child.removeAttribute('id');
+  }
+  const slug = report.author.replace(/\[bot\]$/i, '');
+  return {
+    avatarSrc,
+    round: avatar?.round ?? (avatarSrc !== null && knownMarkShape(avatarSrc) === 'round'),
+    name: report.title,
+    login: report.author,
+    time: model.timeFor(anchor),
+    project: report.project ?? null,
+    headline: report.headline,
+    state: report.state,
+    body: body instanceof HTMLElement ? body : null,
+    href: report.url ?? null,
+    appHref: slug === '' ? null : `/apps/${slug}`,
+    onOpen: () => handlers.onOpenReport(anchor),
+  };
+}
+
 function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly FoldGroup[], handlers: PanelHandlers): HoverPreview | null {
   const itemId = row.getAttribute('data-geld-item');
   const foldId = row.getAttribute('data-geld-fold');
@@ -2206,6 +2243,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   }
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
+  setReportProvider((anchor) => reportCardFor(anchor, model, panelHandlers));
   applyFolds(foldTargets, new Set());
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
@@ -2260,6 +2298,7 @@ export function teardownReviewOverview(): void {
   releaseHold();
   setHoverProvider(null);
   setWhoProvider(null);
+  setReportProvider(null);
   unwatchLoans();
   visit.settling = null;
   unmountPanel();
