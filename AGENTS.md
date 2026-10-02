@@ -28,7 +28,8 @@ catalog/             patterns.json + patterns.sig: the signed pattern catalog in
 scripts/             catalog-build.ts (generate/check), catalog-sign.mjs, catalog-keygen.mjs.
 .cursor/plans/       Plan documents for larger pieces of work.
 .cursor/ideas/       Parked ideas, one file each (status, why, why not yet, how), so a thought not acted
-                     on now is easy to find later. Current: a Security row beside Reports.
+                     on now is easy to find later. Current: a Security row beside Reports; a person's
+                     top-level comment that is waiting on the reader (needs-reply items for comments).
 ```
 
 Store publishing (`.github/workflows/publish.yml`) runs after every CI release on `main`, every six hours and on demand: it submits the latest release to Chrome, Edge, Firefox and Safari, skipping a store that already has that version or has a submission under review (Chrome/Edge cannot cancel reviews via API; Apple can and the Safari job withdraws a waiting submission). The pattern catalog is signed and committed by CI on push (`GELD_CATALOG_PRIVATE_KEY` to sign, `CATALOG_DEPLOY_KEY` — a write deploy key — to push, with "Deploy keys" on the ruleset bypass list). Zips built by CI carry a four-part version (`package.json` version + run number, via `GELD_BUILD_NUMBER` in `wxt.config.ts`), so no bump commit is needed between store releases. Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
