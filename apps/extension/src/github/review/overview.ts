@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botById, botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -1259,6 +1259,15 @@ function checkAvatarOf(name: string): CheckAvatar | null {
   return null;
 }
 
+/** Any avatar the page shows beside one of the bot's logins (a review comment of its own, a reviewer entry, a hovercard link). */
+function botAvatarByLogin(botId: string): string | null {
+  for (const login of botById(botId)?.logins ?? []) {
+    const src = avatarSrcForLogin(login);
+    if (src !== null) return src;
+  }
+  return null;
+}
+
 /** The pull request's author, from the page header (the description card when the header is not there). */
 function prAuthorLogin(): string | null {
   const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"]');
@@ -1854,7 +1863,10 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     batches,
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
-    botIconFor: (botId) => iconByBot.get(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? ''),
+    // A bot's mark, from wherever the page shows it: an avatar captioned with one of its logins (Bugbot's review
+    // comments are by cursor[bot]; unambiguous, so first), its run summary's avatar, else the App avatar nearest
+    // its `/apps/<slug>` link or check row (`installedBots`).
+    botIconFor: (botId) => botAvatarByLogin(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? '') ?? iconByBot.get(botId) ?? null,
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
     previews: latestPreviews(allPreviews),

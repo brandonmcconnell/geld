@@ -1099,7 +1099,10 @@ function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | nu
   summary.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' });
   const choices: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[]; readonly hint: string; readonly iconSrc: string | null }> = [
-    ...model.requestable.map((bot) => ({ label: `Re-run ${bot.label}`, ids: [bot.id], hint: `Posts “${bot.trigger}”`, iconSrc: bot.iconSrc })),
+    // The same mark the bot's chip wears: `botIconFor` looks beyond the `/apps/` link `installedBots` saw (the run
+    // summary's avatar, a review comment of the bot's), so a bot without that link does not fall back to the
+    // re-run glyph and read as "all".
+    ...model.requestable.map((bot) => ({ label: `Re-run ${bot.label}`, ids: [bot.id], hint: `Posts “${bot.trigger}”`, iconSrc: model.botIconFor(bot.id) })),
     ...(model.requestable.length > 1 ? [{ label: 'Re-run all', ids: model.requestable.map((bot) => bot.id), hint: `Posts ${model.requestable.length} comments`, iconSrc: null }] : []),
   ];
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']));
@@ -1727,7 +1730,7 @@ function signatureOf(model: PanelModel): string {
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
     reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
-    requestable: model.requestable.map((bot) => `${bot.id}:${bot.iconSrc ?? ''}`),
+    requestable: model.requestable.map((bot) => `${bot.id}:${model.botIconFor(bot.id) ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
     previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),

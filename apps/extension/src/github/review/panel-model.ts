@@ -15,6 +15,24 @@ export interface InstalledBot {
 }
 
 /**
+ * The picture's URL when it is an App's mark. GitHub serves App avatars
+ * from `/in/<id>` (OAuth Apps `/oa/<id>`) and people's from `/u/<id>`; the
+ * image nearest an `/apps/<slug>` link is sometimes the person who posted
+ * through the App ("via Cursor" beside their comment), and a face on the
+ * bot's menu line is worse than no mark.
+ */
+function appAvatarSrc(img: HTMLImageElement | null | undefined): string | null {
+  const src = img?.currentSrc || img?.getAttribute('src') || '';
+  if (src === '') return null;
+  try {
+    const path = new URL(src, 'https://github.com').pathname;
+    return /^\/(?:in|oa)\//.test(path) ? normalizeAvatarSrc(src) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Bots present on this pull request that a comment can re-run: every
  * registered bot the page links to as `/apps/<slug>` (comments, the checks
  * list, the reviewers box), those the payload knows from verdicts or item
@@ -41,9 +59,8 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode, comments: reado
     const bot = botByAppSlug(slug);
     if (bot === null) continue;
     const img = link.querySelector('img') ?? link.parentElement?.querySelector('img') ?? link.closest('.TimelineItem, .js-timeline-item, li, tr')?.querySelector('img');
-    const src = img?.currentSrc || img?.getAttribute('src') || null;
     // One URL per picture whatever size the link near the app happens to show (see `normalizeAvatarSrc`).
-    add(bot.id, `${slug}[bot]`, src === null || src === '' ? null : normalizeAvatarSrc(src));
+    add(bot.id, `${slug}[bot]`, appAvatarSrc(img));
   }
   for (const bot of meta.bots) add(bot.id, bot.login, null);
   for (const item of meta.items) {
@@ -54,9 +71,7 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode, comments: reado
     const bot = botByCheckName((link.textContent ?? '').trim());
     if (bot === null) continue;
     const row = link.closest('li, .merge-status-item, [class*="StatusCheckRow"], [class*="ListItem"]');
-    const img = row?.querySelector('img');
-    const src = img?.currentSrc || img?.getAttribute('src') || null;
-    add(bot.id, bot.logins[0] ?? `${bot.id}[bot]`, src === null || src === '' ? null : normalizeAvatarSrc(src));
+    add(bot.id, bot.logins[0] ?? `${bot.id}[bot]`, appAvatarSrc(row?.querySelector('img')));
   }
   for (const comment of comments) {
     const bot = botByTrigger(comment.body);
