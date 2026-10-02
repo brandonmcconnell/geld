@@ -96,6 +96,8 @@ function render(breakdown: StatsBreakdown): void {
 const VIEWPORT_MARGIN = 8;
 /** Gap between the host and the tooltip; the bordered caret is 7px tall. */
 const HOST_GAP = 8;
+/** How far the underlined count may end before the host's right edge and still count as sitting at its end (the PR header's "+N −M" follows it). */
+const END_SLACK = 160;
 /**
  * Place the tooltip next to `host`, inside the viewport. The tooltip is
  * `position: fixed`, so the coordinates are viewport coordinates and the box
@@ -127,9 +129,13 @@ function position(host: HTMLElement): void {
   const anchorCentre = anchorRect.left + anchorRect.width / 2;
   const bounds = horizontalBounds(host, tipRect.width, viewportWidth);
   // Centred on the underlined count, or, for a host that ends a line (the PR header's counts), flush with its
-  // right edge so the box hangs under the numbers it explains rather than past them.
+  // right edge so the box hangs under the numbers it explains rather than past them. End alignment is asked for
+  // per host kind, but only holds when the underlined count really sits at the host's end: the classic compare
+  // and commit headers make the whole "Showing 29 changed files with 5 hidden, …" line the host, and aligning to
+  // its right edge put the box at the far side of the page with the caret left behind on the count.
   const hostRect = host.getBoundingClientRect();
-  const wanted = binding?.align === 'end' ? hostRect.right - tipRect.width : anchorCentre - tipRect.width / 2;
+  const endAligned = binding?.align === 'end' && hostRect.right - anchorRect.right <= END_SLACK;
+  const wanted = endAligned ? hostRect.right - tipRect.width : anchorCentre - tipRect.width / 2;
   const left = Math.max(bounds.left, Math.min(wanted, bounds.right - tipRect.width));
   let top = anchorRect.bottom + HOST_GAP;
   let placement = 'below';
@@ -140,7 +146,7 @@ function position(host: HTMLElement): void {
   // On a bar: the box's top border is laid exactly over the bar's bottom border (same colour, one line), its top
   // corners squared. Only below the host, and only while the bar still runs right under it (a narrow layout moves
   // the counts off the bar, and the box floats as elsewhere).
-  const bar = binding?.flush === true && placement === 'below' ? barUnder(binding, host, hostRect) : null;
+  const bar = endAligned && binding?.flush === true && placement === 'below' ? barUnder(binding, host, hostRect) : null;
   let flush = false;
   if (bar !== null) {
     const barRect = bar.getBoundingClientRect();
