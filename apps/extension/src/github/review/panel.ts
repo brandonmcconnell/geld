@@ -286,12 +286,8 @@ export interface PanelHandlers {
   /** Unfold or fold a round's commit rows (batch grouping). */
   readonly onToggleCommits: (batchKey: string) => void;
   readonly onTogglePreviews: (batchKey: string) => void;
-  /**
-   * Open the Reports row to the report at `anchor` (its comment or detail opens under its line). The pill of the
-   * report already open closes it again, unless `stay`: a pill that is also a link to the service never closes the
-   * line its click just opened.
-   */
-  readonly onOpenReport: (anchor: string, stay: boolean) => void;
+  /** Open the Reports row to the report at `anchor` (its comment opens under its line); the pill of the report already open closes it. */
+  readonly onOpenReport: (anchor: string) => void;
   /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -1409,9 +1405,10 @@ function markImg(src: string, roundOnPage: boolean): HTMLElement {
  * One report as a pill: the reporter's mark, its title, the headline in its
  * own words ("2 test failures") and the state glyph. Clicking it opens the
  * row to that report's line (the comment opens under it), as a bot chip
- * opens its line in the round; a report posted as a check is a link too, so
- * the click also opens the service's page for it, as a preview pill opens
- * the deployment.
+ * opens its line in the round. A report posted as a check has no comment:
+ * its pill is a link to the service's page for it, as a preview pill is to
+ * the deployment, and like that one it only opens the link; the row opens
+ * from its chevron or its blank space.
  */
 function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const subject = entry.project === undefined ? entry.title : `${entry.title} · ${entry.project}`;
@@ -1428,11 +1425,13 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   else for (const part of entry.short) children.push(reportPart(part));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
   const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label };
-  // The link opens in its tab as the browser does it; the panel opens to the line in the same click.
-  const pill = entry.url === undefined ? createElement('button', { type: 'button', ...attrs }, children) : createElement('a', { ...attrs, href: entry.url, target: '_blank', rel: 'noreferrer' }, children);
+  // A link pill is a link and nothing else, as a preview pill is: the click opens the service's page in its tab
+  // and leaves the row as it was (`mainClickToggles` and `rowClickToggles` ignore clicks on links for the same reason).
+  if (entry.url !== undefined) return createElement('a', { ...attrs, href: entry.url, target: '_blank', rel: 'noreferrer' }, children);
+  const pill = createElement('button', { type: 'button', ...attrs }, children);
   pill.addEventListener('click', (event) => {
     event.stopPropagation();
-    handlers.onOpenReport(entry.anchor, entry.url !== undefined);
+    handlers.onOpenReport(entry.anchor);
   });
   return pill;
 }

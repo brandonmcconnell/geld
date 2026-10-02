@@ -1989,13 +1989,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         reapply();
       });
     },
-    onOpenReport: (anchor, stay) => {
+    onOpenReport: (anchor) => {
       keepInPlace(`main:${REPORTS_KEY}`, () => {
-        // The pill of the report already open closes it; any other opens the row to that report. A pill that is a
-        // link too only ever opens: its click just opened the service's page, and the line should be there on return.
+        // The pill of the report already open closes it; any other opens the row to that report.
         const wasOpen = visit.openKey === REPORTS_KEY && visit.openSubKey === anchor;
         visit.openKey = REPORTS_KEY;
-        visit.openSubKey = wasOpen && !stay ? null : anchor;
+        visit.openSubKey = wasOpen ? null : anchor;
         reapply();
       });
       revealRow(`main:sub:${anchor}`);
