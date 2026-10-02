@@ -1863,11 +1863,10 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   background: var(--geld-review-hover);
 }
 
-/* A mark GitHub draws round (a user's, an OAuth App's): a circle with no frame, so its transparent corners show nothing. */
+/* A mark GitHub draws round (a user's, an OAuth App's): a circle, with the same faint ring the square marks wear, which
+ * follows the circle, and nothing left at the corners. */
 .geld-review__bot-icon[data-shape='round'] {
   border-radius: 50%;
-  background: none;
-  outline: none;
 }
 
 .geld-review__bot-name {
