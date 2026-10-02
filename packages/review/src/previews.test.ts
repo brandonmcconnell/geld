@@ -137,6 +137,8 @@ describe('Vercel rendered table, as the page shows it', () => {
     };
     const found = parsePreviews(doc);
     expect(found.find((entry) => entry.project === 'ui')?.status).toBe('skipped');
+    // Ignored keeps its Preview link (the branch's last deployment) and says why it is still worth opening.
+    expect(found.find((entry) => entry.project === 'ui')).toMatchObject({ url: 'https://ui-git-x.vercel.app', reason: 'Unchanged for this project, the previous preview still serves' });
     expect(found.find((entry) => entry.project === 'dashboard')?.status).toBe('ready');
     expect(found.find((entry) => entry.project === 'api')?.status).toBe('ready');
     expect(found.find((entry) => entry.project === 'api')?.inspectUrl).toBe('https://vercel.com/team/api/dep3');

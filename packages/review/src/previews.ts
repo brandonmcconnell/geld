@@ -205,7 +205,11 @@ function parseVercel(doc: PreviewDoc): readonly Preview[] {
     const visit = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
     // A row that offers a preview to visit but states no status is a deployment that is up.
     if (status === 'unknown' && visit !== undefined) status = 'ready';
-    out.push(preview('vercel', doc, name, status, visit?.href ?? null, inspector?.href ?? null));
+    const entry = preview('vercel', doc, name, status, visit?.href ?? null, inspector?.href ?? null);
+    // "Ignored" is Vercel's Ignored Build Step: nothing changed for this project, so no build ran, and the Preview
+    // link it still offers is the branch's last deployment. "Skipped" offers no link. Both are `skipped` here; the
+    // reason says why one is still worth opening.
+    out.push(inspector !== undefined && /^ignored$/i.test(inspector.text.trim()) ? { ...entry, reason: 'Unchanged for this project, the previous preview still serves' } : entry);
   }
   if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
     const team = /to the \*{0,2}([^*\n]+?)\*{0,2} Team/i.exec(doc.text)?.[1] ?? 'Vercel';

@@ -1364,7 +1364,7 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
   const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
   if (entry.url !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
   // With a reason the link is the host's remedy (add the member, request access), not a build log.
-  if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.reason !== undefined ? 'Fix' : entry.status === 'failed' ? 'Logs' : 'Inspect']));
+  if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.status === 'failed' ? (entry.reason !== undefined ? 'Fix' : 'Logs') : 'Inspect']));
   if (model.timeFor(entry.anchor) !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [model.timeFor(entry.anchor)]));
   return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': entry.status }, [
     lead,

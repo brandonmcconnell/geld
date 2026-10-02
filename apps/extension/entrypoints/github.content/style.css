@@ -5148,8 +5148,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--geld-review-muted);
 }
 
-/* A skipped deployment's pill: there is nothing to visit, so the pill fades and says so on hover; the line below keeps its Inspect. */
-.geld-review__deploy[data-status='skipped'] {
+/* A skipped deployment with nothing to visit: the pill fades and says so on hover; the line below keeps its Inspect.
+ * One that still links somewhere (Vercel's "Ignored": the branch's last deployment) stays a plain link. */
+.geld-review__deploy[data-status='skipped']:not(a) {
   opacity: 0.55;
   cursor: not-allowed;
 }
