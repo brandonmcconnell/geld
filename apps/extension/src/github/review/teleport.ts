@@ -28,9 +28,75 @@ interface Moved {
   readonly root: Element | null;
   readonly hadFolded: string | null;
   readonly hadHidden: string | null;
+  /** The `is-dirty` mark standing in for the loan at home while the reader interacts with it (see `syncInteractionMarks`). */
+  mark: HTMLElement | null;
 }
 
 const moved = new Map<HTMLElement, Moved>();
+
+/* ---- interactions GitHub must see --------------------------------------------- */
+
+/**
+ * GitHub refreshes a timeline item in place when the pull request changes
+ * (`.js-updatable-content`: a socket message makes it fetch the item's
+ * partial and `replaceWith` the whole container), unless the reader is in
+ * the middle of something there. Its guard (`hasInteractions` in GitHub's
+ * `updatable-content`) looks *inside the container* for the focused element,
+ * an open `details` under the last mousedown, a dirty form or input, or an
+ * `.is-dirty` class, and skips the refresh with "Failed to update content
+ * with interactions". A node on loan to the panel takes those interactions
+ * with it: the reader opens a comment's ⋯ menu in the chat, GitHub's guard
+ * sees an empty home, the next socket message (on a busy pull request, one
+ * every few seconds) replaces the container, and the menu the reader just
+ * opened is gone with the node it belonged to. So while a loan has the
+ * interactions GitHub would respect, a hidden `.is-dirty` mark stands beside
+ * its placeholder at home - the one signal the guard reads that can be set
+ * from outside the container - and the refresh waits, as it does for GitHub's
+ * own markup. The mark goes as soon as the interaction ends, so the item
+ * still refreshes when the reader is done.
+ */
+const MARK_ATTRIBUTE = 'data-geld-interaction';
+
+function dirtyField(node: Element): boolean {
+  for (const field of node.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) {
+    if (field instanceof HTMLTextAreaElement && field.value !== field.defaultValue) return true;
+    if (field instanceof HTMLInputElement && (field.type === 'checkbox' || field.type === 'radio' ? field.checked !== field.defaultChecked : field.type !== 'hidden' && field.value !== field.defaultValue)) return true;
+  }
+  return false;
+}
+
+/** What GitHub's guard would count as the reader being busy inside `node`, were it still at home. */
+function hasInteractions(node: HTMLElement): boolean {
+  const active = document.activeElement;
+  if (active !== null && active !== document.body && node.contains(active)) return true;
+  if (node.matches('details[open]') || node.querySelector('details[open]') !== null) return true;
+  return dirtyField(node);
+}
+
+function syncInteractionMarks(): void {
+  for (const entry of moved.values()) {
+    const busy = entry.placeholder.parentNode !== null && hasInteractions(entry.node);
+    if (busy && entry.mark === null) {
+      entry.mark = document.createElement('span');
+      entry.mark.className = 'is-dirty';
+      entry.mark.hidden = true;
+      entry.mark.setAttribute(MARK_ATTRIBUTE, '');
+      entry.placeholder.after(entry.mark);
+    } else if (!busy && entry.mark !== null) {
+      entry.mark.remove();
+      entry.mark = null;
+    }
+  }
+}
+
+let marksInstalled = false;
+
+function installInteractionMarks(): void {
+  if (marksInstalled) return;
+  marksInstalled = true;
+  // `toggle` does not bubble; a capturing listener on the document still sees every details open and close.
+  for (const type of ['toggle', 'focusin', 'focusout', 'input', 'change']) document.addEventListener(type, syncInteractionMarks, true);
+}
 
 export function isTeleported(node: Element): boolean {
   return node.hasAttribute(ATTR_TELEPORTED);
@@ -72,7 +138,7 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
     const placeholder = document.createComment(PLACEHOLDER_PREFIX + token);
     const root = reactRootOf(node);
     node.replaceWith(placeholder);
-    moved.set(node, { node, placeholder, parent, root, hadFolded: node.getAttribute('data-geld-folded'), hadHidden: node.getAttribute('hidden') });
+    moved.set(node, { node, placeholder, parent, root, hadFolded: node.getAttribute('data-geld-folded'), hadHidden: node.getAttribute('hidden'), mark: null });
     if (root !== null) tell(parent, 'geld:portal-lend');
     node.removeAttribute('data-geld-folded');
     // A folded row carries hidden="until-found"; away from the timeline it must render.
@@ -80,6 +146,9 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
     node.setAttribute(ATTR_TELEPORTED, token);
     slot.append(node);
   }
+  installInteractionMarks();
+  // A menu moved while open (a chat rebuilt under it) is busy from the start.
+  syncInteractionMarks();
 }
 
 const restoreHooks: (() => void)[] = [];
@@ -94,6 +163,7 @@ export function forgetLoan(node: HTMLElement): void {
   const entry = moved.get(node);
   if (entry === undefined) return;
   moved.delete(node);
+  entry.mark?.remove();
   entry.placeholder.remove();
   node.remove();
   if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
@@ -132,6 +202,7 @@ export function restoreAll(keep?: (node: HTMLElement) => boolean): void {
     if (keep?.(entry.node) === true) continue;
     // A placeholder that is gone means another party already sent the node home (a newer Geld
     // instance reclaiming it) or React removed it; either way it is not ours to touch any more.
+    entry.mark?.remove();
     if (entry.placeholder.parentNode !== null) {
       entry.node.removeAttribute(ATTR_TELEPORTED);
       if (entry.hadFolded !== null) entry.node.setAttribute('data-geld-folded', entry.hadFolded);
