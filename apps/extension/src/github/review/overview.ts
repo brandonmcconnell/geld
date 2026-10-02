@@ -1989,12 +1989,13 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         reapply();
       });
     },
-    onOpenReport: (anchor) => {
+    onOpenReport: (anchor, stay) => {
       keepInPlace(`main:${REPORTS_KEY}`, () => {
-        // The pill of the report already open closes it; any other opens the row to that report.
+        // The pill of the report already open closes it; any other opens the row to that report. A pill that is a
+        // link too only ever opens: its click just opened the service's page, and the line should be there on return.
         const wasOpen = visit.openKey === REPORTS_KEY && visit.openSubKey === anchor;
         visit.openKey = REPORTS_KEY;
-        visit.openSubKey = wasOpen ? null : anchor;
+        visit.openSubKey = wasOpen && !stay ? null : anchor;
         reapply();
       });
       revealRow(`main:sub:${anchor}`);
@@ -2076,14 +2077,16 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
         // An index of people's reviews; each line points at the round where its conversation opens.
         renderCommentsList(mounted.slot, model, panelHandlers);
       } else if (visit.openKey === REPORTS_KEY) {
-        // The reporters' latest reports; the open line's comment stands under it as a one-bubble chat.
+        // The reporters' latest reports; the open line's comment stands under it as a one-bubble chat (a check's
+        // report has no comment: the list shows its detail itself).
         const view = renderReportsList(mounted.slot, model, panelHandlers);
         const report = view.openComment === null ? null : (model.reports.latest.find((entry) => entry.anchor === view.openComment) ?? null);
         const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? timelineRootOf(view.openComment));
         if (view.nested !== null && report !== null && commentNode !== null) {
           const byline = dressByline({ login: report.author, bot: true, avatarSrc: model.avatarForAnchor(report.anchor), time: model.timeFor(report.anchor) }, report.anchor);
           renderCommentChat(view.nested, commentNode, byline);
-        } else if (visit.openSubKey !== null && commentNode === null) {
+        } else if (visit.openSubKey !== null && (view.openComment !== null || !model.reports.latest.some((entry) => entry.anchor === visit.openSubKey))) {
+          // A comment that left the page, or a report no longer among the latest: nothing to keep open.
           visit.openSubKey = null;
         }
       } else if (visit.openKey.startsWith('batch:')) {

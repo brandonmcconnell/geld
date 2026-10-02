@@ -1863,7 +1863,8 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   background: var(--geld-review-hover);
 }
 
-/* A mark GitHub draws round (a user's, an OAuth App's): a circle, with the same faint ring the square marks wear, which
+/* A mark that is a disc (the page draws it round, or its own pixels are a circle on transparent corners, as
+ * Chromatic's - GitHub squares it all the same): a circle, with the same faint ring the square marks wear, which
  * follows the circle, and nothing left at the corners. */
 .geld-review__bot-icon[data-shape='round'] {
   border-radius: 50%;
@@ -2535,6 +2536,11 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 
 .geld-review__avatar[data-kind='bot'] {
   border-radius: 4px;
+}
+
+/* A bot's mark that is itself a disc (read from its pixels, see mark-shape.ts): framed as a circle, ring and all. */
+.geld-review__avatar[data-shape='round'] {
+  border-radius: 50%;
 }
 
 .geld-review__row {
@@ -5145,6 +5151,14 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-review__health[data-report-state='info'],
 .geld-review__status--verdict[data-report-state='info'] {
   color: var(--geld-review-muted);
+}
+
+/* A check's report, open: the service's whole sentence, which the line cuts short. */
+.geld-review__report-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* A skipped deployment with nothing to visit: the pill fades and says so on hover; the line below keeps its Inspect.

@@ -24,6 +24,7 @@ import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { reclaimOrphans, restoreAll } from './teleport';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
+import { shapeMark } from './mark-shape';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -285,8 +286,12 @@ export interface PanelHandlers {
   /** Unfold or fold a round's commit rows (batch grouping). */
   readonly onToggleCommits: (batchKey: string) => void;
   readonly onTogglePreviews: (batchKey: string) => void;
-  /** Open the Reports row to the report at `anchor` (its comment opens under its line). */
-  readonly onOpenReport: (anchor: string) => void;
+  /**
+   * Open the Reports row to the report at `anchor` (its comment or detail opens under its line). The pill of the
+   * report already open closes it again, unless `stay`: a pill that is also a link to the service never closes the
+   * line its click just opened.
+   */
+  readonly onOpenReport: (anchor: string, stay: boolean) => void;
   /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -1316,7 +1321,7 @@ function previewPill(entry: Preview, model: PanelModel): HTMLElement {
   const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}${entry.reason === undefined ? '' : ` · ${entry.reason}`}`;
   const children: Node[] = [];
   const avatar = model.avatarForAnchor(entry.anchor);
-  if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
+  if (avatar !== null) children.push(markImg(avatar, false));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
   children.push(previewGlyph(entry.status));
   const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': entry.status, 'aria-label': label, title: label };
@@ -1389,19 +1394,31 @@ const REPORT_STATE_LABEL: Readonly<Record<Report['state'], string>> = {
 };
 
 /**
+ * A service's mark in a pill, framed in the shape of its picture: GitHub
+ * squares every App's avatar, but a disc on transparent corners (Chromatic's)
+ * showed that square frame around a circle, so the picture itself decides
+ * (`shapeMark`), the page's own rounding (a person's) taken as read.
+ */
+function markImg(src: string, roundOnPage: boolean): HTMLElement {
+  const img = createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src, alt: '', width: '16', height: '16' });
+  shapeMark(img, src, roundOnPage);
+  return img;
+}
+
+/**
  * One report as a pill: the reporter's mark, its title, the headline in its
  * own words ("2 test failures") and the state glyph. Clicking it opens the
  * row to that report's line (the comment opens under it), as a bot chip
- * opens its line in the round.
+ * opens its line in the round; a report posted as a check is a link too, so
+ * the click also opens the service's page for it, as a preview pill opens
+ * the deployment.
  */
 function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const subject = entry.project === undefined ? entry.title : `${entry.title} · ${entry.project}`;
   const label = `${subject} · ${entry.headline} · ${REPORT_STATE_LABEL[entry.state]}`;
   const children: Node[] = [];
   const avatar = reportAvatar(entry, model);
-  // A mark GitHub draws round (an OAuth App's, as Chromatic's) stays round here: squared, its transparent corners
-  // showed the pill's square frame around a circle.
-  if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar.src, alt: '', width: '16', height: '16', ...(avatar.round ? { 'data-shape': 'round' } : {}) }));
+  if (avatar !== null) children.push(markImg(avatar.src, avatar.round));
   // The mark says who, as a preview pill's does: the pill names the project (when the report has one) and the
   // numbers; the service's name is on the line under it and in the pill's tooltip.
   if (entry.project !== undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
@@ -1410,10 +1427,12 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   if (entry.short === undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
   else for (const part of entry.short) children.push(reportPart(part));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
-  const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label }, children);
+  const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy ${PANEL_CLASS}__report`, 'data-state': entry.state, 'aria-label': label, title: label };
+  // The link opens in its tab as the browser does it; the panel opens to the line in the same click.
+  const pill = entry.url === undefined ? createElement('button', { type: 'button', ...attrs }, children) : createElement('a', { ...attrs, href: entry.url, target: '_blank', rel: 'noreferrer' }, children);
   pill.addEventListener('click', (event) => {
     event.stopPropagation();
-    handlers.onOpenReport(entry.anchor);
+    handlers.onOpenReport(entry.anchor, entry.url !== undefined);
   });
   return pill;
 }
@@ -1456,43 +1475,43 @@ function reportsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLEl
 /**
  * One report as a line: state glyph, the reporter's picture, its title and
  * headline, the time, the comment's own ⋯ and a chevron; open
- * (`openSubKey` is its anchor) the comment stands under it as a one-bubble chat.
+ * (`openSubKey` is its anchor) the comment stands under it as a one-bubble
+ * chat. A report posted as a check has no comment: its line names the
+ * service and project, Open leads to the service's page for it (the check's
+ * Details), as a preview line's Open leads to the deployment, and open it
+ * shows the service's whole sentence, which the line cuts short.
  */
 function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
   const avatar = reportAvatar(entry, model);
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]);
-  // A round mark renders as a person's would (a circle); a square one as a bot's.
   const picture = avatarStack(avatar === null ? [] : [{ src: avatar.src, bot: !avatar.round, login: entry.author }], entry.title, true);
-  // A report posted as a check has no comment to open: the line names the service and project, and Open leads to
-  // the service's page for it (the check's Details), as a preview line's Open leads to the deployment.
-  if (entry.url !== undefined) {
-    const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, [
-      createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.title]),
-      ...(entry.project === undefined ? [] : [createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [entry.project])]),
-      createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.headline]),
-    ]);
-    const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` }, [
-      createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]),
-    ]);
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report ${PANEL_CLASS}__row--preview`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [lead, picture, main, right]);
-    return { row, open: false };
-  }
+  // The picture takes the shape of its mark, as the pill's does.
+  const pictureImg = picture.querySelector('img');
+  if (avatar !== null && pictureImg !== null) shapeMark(pictureImg, avatar.src, avatar.round);
   const open = model.openSubKey === entry.anchor;
   const act = (): void => handlers.onToggleSub(entry.anchor);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, [
     createElement('span', { class: `${PANEL_CLASS}__name` }, [entry.title]),
+    ...(entry.url !== undefined && entry.project !== undefined ? [createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [entry.project])] : []),
     createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.headline]),
   ]);
   mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  if (entry.url !== undefined) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
   const time = model.timeFor(entry.anchor);
   if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
-  right.append(controlSlot(entry.anchor, true), chevron(open, act));
+  if (entry.url === undefined) right.append(controlSlot(entry.anchor, true));
+  right.append(chevron(open, act));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [lead, picture, main, right]);
   if (open) row.setAttribute('data-open', '');
   if (model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
   rowClickToggles(row, act);
   return { row, open };
+}
+
+/** What a check's report says in full, under its line: the service's sentence (the line's Open is the way to its page). */
+function reportDetail(entry: Report): HTMLElement {
+  return createElement('p', { class: `${PANEL_CLASS}__report-detail` }, [entry.headline]);
 }
 
 /** The reporter's mark: the comment's avatar (a bot's, square) for a bot's report, the check's avatar in its shape for a check's. */
@@ -1502,7 +1521,11 @@ function reportAvatar(entry: Report, model: PanelModel): CheckAvatar | null {
   return src === null ? null : { src, round: false };
 }
 
-/** The Reports row's list: one line per latest report; the open one's comment renders in the returned slot. */
+/**
+ * The Reports row's list: one line per latest report. An open check report
+ * shows its detail here; an open comment report's comment renders in the
+ * returned slot (`openComment` names it; null when the open line is a check's).
+ */
 export function renderReportsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openComment: string | null } {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   let nested: HTMLElement | null = null;
@@ -1510,9 +1533,12 @@ export function renderReportsList(slot: HTMLElement, model: PanelModel, handlers
   for (const entry of model.reports.latest) {
     const { row, open } = reportLine(entry, model, handlers);
     list.append(row);
-    if (open) {
-      const sub = nestedSlot();
-      list.append(sub.item);
+    if (!open) continue;
+    const sub = nestedSlot();
+    list.append(sub.item);
+    if (entry.url !== undefined) {
+      sub.body.append(reportDetail(entry));
+    } else {
       nested = sub.body;
       openComment = entry.anchor;
     }
