@@ -217,7 +217,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'hideWhitespace',
         label: 'Hide whitespace changes',
         description:
-          "Uses GitHub's own “hide whitespace” option (the ?w=1 view) on every diff you open, so indentation-only changes never clutter a review. GitHub does not remember it, so Geld adds it on your way in.",
+          "Uses GitHub's own “hide whitespace” option (the ?w=1 view) on every diff you open, so indentation-only changes never clutter a review. GitHub does not remember it, so Geld adds it on your way in. Turn it off in GitHub's diff settings on a pull request and Geld leaves that one alone until you turn it back on there.",
         popup: false,
       },
       {

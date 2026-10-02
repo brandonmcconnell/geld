@@ -11,7 +11,7 @@ import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, des
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
 import type { RepoConfigChoices } from '../lib/local-state';
-import { repoConfigChoicesItem, whitespacePersistedItem } from '../lib/local-state';
+import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
@@ -252,7 +252,7 @@ export class GeldController {
     this.applyHeaderNow();
     this.schedule();
   });
-  private readonly whitespace = new WhitespaceRedirector(false, () => persist(whitespacePersistedItem.setValue(true)));
+  private readonly whitespace = new WhitespaceRedirector({}, (optOuts) => persist(whitespaceOptOutsItem.setValue(optOuts)));
   /** Repository-provided configs (`.github/geld.yml`, org defaults, `.gitattributes`); see `repo-config-source.ts`. */
   private readonly repoConfigs: RepoConfigSource;
   /** Per-repository answers when `repoConfigs` is `ask` (device-local). */
@@ -310,7 +310,7 @@ export class GeldController {
     this.repoRules = compileRepoRules(settings.repoRules);
     this.authorRules = compileAuthorRules(settings.hiddenAuthors);
     this.repoConfigs = new RepoConfigSource(() => this.onRepoConfigChange(), catalog);
-    void whitespacePersistedItem.getValue().then((persisted) => this.whitespace.setPersisted(persisted));
+    void whitespaceOptOutsItem.getValue().then((optOuts) => this.whitespace.setOptOuts(optOuts));
     void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices));
   }
 
@@ -1046,11 +1046,13 @@ export class GeldController {
   /**
    * GitHub hides whitespace-only changes when the URL carries `?w=1`. Rewrite
    * the "Files changed" links so navigation lands there directly, and redirect
-   * once when a diff page was opened without it.
+   * once when a diff page was opened without it (the content script already
+   * did so at `document_start` when it could; this catches SPA navigations
+   * and records the reader's `?w=0` opt-outs).
    */
   private applyWhitespace(page: PageInfo, view: DiffView | null, url: URL): void {
     if (!this.settings.hideWhitespace) return;
-    rewriteFilesLinksForWhitespace();
+    rewriteFilesLinksForWhitespace((pageKey) => this.whitespace.isOptedOut(pageKey));
     if (view === null) return;
     if (page.kind !== 'pull-files' && page.kind !== 'commit' && page.kind !== 'compare') return;
     this.whitespace.ensure(url, page.stateKey);

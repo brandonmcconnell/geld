@@ -6,10 +6,11 @@ import { storage } from 'wxt/utils/storage';
  */
 
 /**
- * Set once GitHub has stored the "hide whitespace" preference for the signed-in
- * user, so pages without the diff-settings form stop redirecting to `?w=1`.
+ * Diff pages the reader turned "Hide whitespace" off on (GitHub's menu wrote
+ * `?w=0` there), by page key: Geld adds `?w=1` everywhere else and leaves
+ * these alone. See `WhitespaceRedirector`.
  */
-export const whitespacePersistedItem = storage.defineItem<boolean>('local:whitespacePersisted', { fallback: false });
+export const whitespaceOptOutsItem = storage.defineItem<Readonly<Record<string, number>>>('local:whitespaceOptOuts', { fallback: {} });
 
 /** The user's answer per repository when `repoConfigs` is `ask`: use its config, or ignore it. */
 export type RepoConfigChoice = 'use' | 'ignore';

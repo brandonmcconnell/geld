@@ -4,8 +4,9 @@ import { GeldController } from '../../src/github/controller';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
-import { repoConfigChoicesItem } from '../../src/lib/local-state';
+import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
+import { redirectEarly } from '../../src/github/whitespace-viewed';
 import './style.css';
 
 export default defineContentScript({
@@ -26,7 +27,11 @@ export default defineContentScript({
     };
     document.addEventListener(TAKEOVER, () => retire(), { once: true });
 
-    const settings = await settingsItem.getValue();
+    const [settings, whitespaceOptOuts] = await Promise.all([settingsItem.getValue(), whitespaceOptOutsItem.getValue()]);
+    if (retired) return;
+    // A diff page opened without GitHub's "hide whitespace" parameter goes to its `?w=1` form now, while the
+    // document is still streaming, so the page is never seen without it (the controller handles later navigations).
+    if (settings.hideWhitespace && window.top === window && redirectEarly(new URL(window.location.href), whitespaceOptOuts)) return;
     const catalog = await loadCatalog();
     if (retired) return;
     let showBadge = settings.showBadge;
