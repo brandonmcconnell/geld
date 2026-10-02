@@ -159,7 +159,8 @@ function counted(words: string, noun: string, pattern: RegExp): readonly ReportP
   return match?.[1] === undefined ? [] : [{ text: plural(Number(match[1]), noun) }];
 }
 
-const CHANGES = /(\d+) (?:visual |ui )?changes?\b/i;
+// Chromatic also writes "1 visual and accessibility change must be accepted as baseline".
+const CHANGES = /(\d+) (?:visual |ui )?(?:and accessibility )?changes?\b/i;
 const DIFFS = /(\d+) (?:unresolved |visual |new )?(?:diffs?|differences?)\b/i;
 
 /** The first percentage in the words, with a parenthesised change right after it when there is one ("80.12% (+0.03%)"). */

@@ -84,6 +84,7 @@ describe('report short forms', () => {
   it('keeps the numbers and drops the sentence', () => {
     expect(short('percy/app', 'https://percy.io/o/app/builds/1', '4 visual changes need review')).toEqual([{ text: '4 changes' }]);
     expect(short('UI Tests: mint', 'https://www.chromatic.com/test?id=1', '— 3 changes must be accepted')).toEqual([{ text: '3 changes' }]);
+    expect(short('UI Tests: mint', 'https://www.chromatic.com/build?appId=1&number=2', 'Waiting for status to be reported — 1 visual and accessibility change must be accepted as baseline', 'pending')).toEqual([{ text: '1 change' }]);
     expect(short('codecov/patch', 'https://codecov.io/gh/o/r', '62.50% of diff hit (target 80.00%)')).toEqual([{ text: '62.50%' }]);
     expect(short('codecov/project', 'https://codecov.io/gh/o/r', '80.12% (+0.03%) compared to abc1234', 'success')).toEqual([{ text: '80.12% (+0.03%)' }]);
     expect(short('happo', 'https://happo.io/a/1', '2 diffs')).toEqual([{ text: '2 diffs' }]);
