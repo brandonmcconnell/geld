@@ -74,6 +74,51 @@ export const REPORTERS: readonly Reporter[] = [
       return null;
     },
   },
+  {
+    // Socket (socket.dev): supply-chain security. Its bot keeps one comment per pull request current: with alerts,
+    // "Review the following alerts detected in dependencies" over a table whose rows start with the policy action
+    // (Block / Warn / Monitor); once fixed or ignored, "All alerts resolved"; and, when the policy says so, an
+    // overview "New and removed dependencies detected" with a table of the new packages.
+    id: 'socket',
+    title: 'Socket',
+    logins: ['socket-security[bot]', 'socket-security-staging[bot]'],
+    read: (body) => {
+      if (/\breview the following alerts\b/i.test(body)) {
+        // One row per alert, led by the policy's action in bold: `<strong>Block</strong>` in the raw Markdown, `**Block**`
+        // once the page's text is read back (the preamble's `**"Block"**` has quotes and does not count).
+        const rows = body.match(/(?:\*\*|<strong>)(Block|Warn|Monitor|Ignore)(?:\*\*|<\/strong>)/g) ?? [];
+        const count = rows.length;
+        const blocked = rows.filter((row) => /Block/.test(row)).length;
+        const parts: ReportPart[] = count > 0 ? [{ text: plural(count, 'alert') }] : [];
+        if (blocked > 0) parts.push({ text: String(blocked), glyph: 'dot', tone: 'bad' });
+        return { state: 'failed', headline: count > 0 ? `${plural(count, 'alert')} in dependencies` : 'Alerts in dependencies', ...(count > 0 ? { count } : {}), short: parts };
+      }
+      if (/\ball alerts resolved\b/i.test(body)) return { state: 'passed', headline: 'All alerts resolved', short: [] };
+      if (/\bnew and removed dependencies detected\b/i.test(body) || /\bnew dependencies detected\b/i.test(body)) {
+        // One table row per new package, "npm/name@version" first in the row (linked in the raw Markdown, bare in the
+        // page's text); the removed ones are listed after "Removed packages:" on one line and are not rows.
+        const added = (body.match(/^(?:\|\s*\[)?(?:npm|pypi|golang|go|github|maven|cargo|gem|rubygems|nuget|huggingface|chrome|vscode|actions)\/[^\s@\]|]+@/gim) ?? []).length;
+        return { state: 'info', headline: 'New and removed dependencies detected', ...(added > 0 ? { count: added } : {}), short: added > 0 ? [{ text: plural(added, 'new package') }] : [] };
+      }
+      return null;
+    },
+  },
+  {
+    // GitGuardian: secrets. "GitGuardian has uncovered 1 secret following the scan of your pull request" with a
+    // table of incidents; the same comment is edited to say the secret was revoked or ignored.
+    id: 'gitguardian',
+    title: 'GitGuardian',
+    logins: ['gitguardian[bot]'],
+    read: (body) => {
+      const found = /\buncovered (\d+) (?:hardcoded )?secrets?\b/i.exec(body);
+      if (found !== null) {
+        const count = Number(found[1]);
+        return { state: 'failed', headline: `${plural(count, 'secret')} in the changes`, count, short: [{ text: plural(count, 'secret') }] };
+      }
+      if (/\bno secrets? (?:have been |were )?(?:found|detected)\b/i.test(body)) return { state: 'passed', headline: 'No secrets found', short: [] };
+      return null;
+    },
+  },
 ];
 
 const LOGIN_INDEX = new Map<string, Reporter>();
@@ -121,7 +166,13 @@ export function reportsFrom(comments: readonly ReportSource[]): readonly Report[
 export function latestReports(all: readonly Report[]): { readonly latest: readonly Report[]; readonly archived: readonly Report[] } {
   const key = (entry: Report): string => `${entry.reporter}:${entry.project ?? ''}`;
   const latestByKey = new Map<string, Report>();
-  for (const entry of all) latestByKey.set(key(entry), entry);
+  for (const entry of all) {
+    // A service that both comments and sets a check (Socket) is shown once, as its comment: the comment holds the
+    // details and opens in place, the check only points at the site. Among comments, the later one wins.
+    const current = latestByKey.get(key(entry));
+    if (current !== undefined && current.url === undefined && entry.url !== undefined) continue;
+    latestByKey.set(key(entry), entry);
+  }
   const latest = [...latestByKey.values()];
   const archived = all.filter((entry) => latestByKey.get(key(entry)) !== entry).reverse();
   return { latest, archived };
@@ -144,10 +195,22 @@ export interface CheckReporter {
   readonly path?: RegExp;
   /** The project or facet the check is about, from its name ("UI Tests: mint" → "mint", "codecov/patch" → "patch"); null for none. */
   readonly project: (name: string) => string | null;
-  /** A status of this service that reports nothing a reviewer needs (Chromatic's "Storybook Publish"). */
-  readonly ignore?: (name: string) => boolean;
+  /** A status of this service that reports nothing a reviewer needs (Chromatic's "Storybook Publish", Socket's "Alerts: Skipped" when no dependency changed). */
+  readonly ignore?: (name: string, description: string) => boolean;
   /** The pill's short form from GitHub's description (see `ReportReading.short`); absent, the pill shows the headline. */
   readonly short?: (description: string) => readonly ReportPart[];
+  /**
+   * When the host alone says nothing (GitHub's own code scanning links to `github.com/…/runs/N`), the description
+   * must match this too: the words are the service's, whatever the check is called.
+   */
+  readonly description?: RegExp;
+  /** The description with the service's preamble taken off ("Pull Request #12 Alerts: " before Socket's verdict). */
+  readonly rephrase?: (description: string) => string;
+  /**
+   * The state read from the words rather than the conclusion, when they disagree: code scanning passes a check with
+   * "2 new alerts" when none reaches the failure threshold, and a reviewer still wants to see them.
+   */
+  readonly state?: (description: string, fromConclusion: ReportState) => ReportState;
 }
 
 /**
@@ -299,6 +362,80 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     project: afterSlash(/^lhci\//i),
     short: (words) => counted(words, 'assertion', /(\d+) (?:failed )?assertions?\b/i),
   },
+  {
+    // Socket's checks: "Socket Security: Pull Request Alerts — Pull Request #12 Alerts: Success | Skipped | Complete
+    // with warnings" (Details: socket.dev) and "Socket Security: Project Report — Project Report: Success", which is
+    // about every dependency in the project, not this pull request. When Socket also commented, the comment is shown
+    // instead (`latestReports`).
+    id: 'socket',
+    title: 'Socket',
+    hosts: ['socket.dev'],
+    project: () => null,
+    // "Skipped": the pull request changes no dependency, so there is nothing to report.
+    ignore: (name, description) => /\bProject Report\b/i.test(name) || /\bAlerts:\s*Skipped\b/i.test(description),
+    rephrase: (words) => words.replace(/^Pull Request #\d+ Alerts:\s*/i, ''),
+    // "Complete with warnings" / "Success" / "Skipped": the light says it.
+    short: () => [],
+  },
+  {
+    // "GitGuardian Security Checks — 2 policy breaks detected" / "No policy breaks detected" (Details: dashboard.gitguardian.com).
+    id: 'gitguardian',
+    title: 'GitGuardian',
+    hosts: ['gitguardian.com'],
+    project: () => null,
+    short: (words) => {
+      const match = /(\d+) (secrets?|policy breaks?|incidents?)\b/i.exec(words);
+      if (match?.[1] === undefined) return [];
+      const noun = /^policy/i.test(match[2] ?? '') ? 'policy break' : /^incident/i.test(match[2] ?? '') ? 'incident' : 'secret';
+      return [{ text: plural(Number(match[1]), noun) }];
+    },
+  },
+  {
+    // "Semgrep OSS" / "Semgrep Code" / "Semgrep Cloud Platform" — "N findings" (Details: semgrep.dev).
+    id: 'semgrep',
+    title: 'Semgrep',
+    hosts: ['semgrep.dev'],
+    project: afterSlash(/^Semgrep(?: OSS| Code| Cloud Platform)?\s*[/:-]\s*/i),
+    short: (words) => counted(words, 'finding', /(\d+) (?:new |blocking )?findings?\b/i),
+  },
+  {
+    // "Aikido Security: check code" / "check dependencies" — "Scan completed" (Details: app.aikido.dev); the facet after
+    // the colon is the project, the conclusion says whether it found anything.
+    id: 'aikido',
+    title: 'Aikido',
+    hosts: ['aikido.dev'],
+    project: afterSlash(/^Aikido(?: Security)?\s*[/:-]\s*/i),
+    short: (words) => counted(words, 'issue', /(\d+) (?:new )?(?:issues?|vulnerabilit(?:y|ies))\b/i),
+  },
+  {
+    // "Gecko Security Review" — "No vulnerabilities found" / "N vulnerabilities found" (Details: app.gecko.security).
+    id: 'gecko',
+    title: 'Gecko',
+    hosts: ['gecko.security'],
+    project: () => null,
+    short: (words) => counted(words, 'vulnerability', /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i),
+  },
+  {
+    // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): Details is a plain `github.com/…/runs/N`,
+    // so the words identify it — "No new alerts in code changed by this pull request" / "2 new alerts including 1
+    // high severity security vulnerability". The tool's name is the project. The check passes unless an alert reaches
+    // the repository's failure threshold, so the state is read from the count.
+    id: 'code-scanning',
+    title: 'Code scanning',
+    hosts: ['github.com'],
+    path: /\/runs\/\d+/,
+    description: /\bcode changed by this pull request\b/i,
+    project: (name) => (name.trim() === '' ? null : name.trim()),
+    state: (words, fromConclusion) => (/\b([1-9]\d*) new alerts?\b/i.test(words) ? 'failed' : fromConclusion),
+    short: (words) => {
+      const alerts = /\b(\d+) new alerts?\b/i.exec(words);
+      if (alerts?.[1] === undefined || Number(alerts[1]) === 0) return [];
+      const parts: ReportPart[] = [{ text: plural(Number(alerts[1]), 'alert') }];
+      const severe = /\b(\d+) (?:critical|high)\b/i.exec(words);
+      if (severe?.[1] !== undefined) parts.push({ text: severe[1], glyph: 'dot', tone: 'bad' });
+      return parts;
+    },
+  },
 ];
 
 export interface CheckForReport {
@@ -309,7 +446,7 @@ export interface CheckForReport {
   readonly description?: string;
 }
 
-function checkReporterFor(url: string): CheckReporter | null {
+function checkReporterFor(url: string, description: string): CheckReporter | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -317,7 +454,14 @@ function checkReporterFor(url: string): CheckReporter | null {
     return null;
   }
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-  return CHECK_REPORTERS.find((reporter) => reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`)) && (reporter.path === undefined || reporter.path.test(parsed.pathname))) ?? null;
+  return (
+    CHECK_REPORTERS.find(
+      (reporter) =>
+        reporter.hosts.some((known) => host === known || host.endsWith(`.${known}`)) &&
+        (reporter.path === undefined || reporter.path.test(parsed.pathname)) &&
+        (reporter.description === undefined || reporter.description.test(description)),
+    ) ?? null
+  );
 }
 
 /** GitHub's description for a status ("— Failed test", "Failing after 6m") as the report's headline. */
@@ -330,16 +474,18 @@ function headlineOf(description: string | undefined, state: ReportState): string
 /** The report a check is, when its Details lead to a known reporter and it has something to say. */
 export function readCheckReport(check: CheckForReport): Report | null {
   if (check.detailsUrl === undefined) return null;
-  const reporter = checkReporterFor(check.detailsUrl);
-  if (reporter === null || reporter.ignore?.(check.name) === true) return null;
+  const rawWords = (check.description ?? '').replace(/^[\s—–-]+/, '').trim();
+  const reporter = checkReporterFor(check.detailsUrl, rawWords);
+  if (reporter === null || reporter.ignore?.(check.name, rawWords) === true) return null;
   const conclusion = (check.conclusion ?? '').toLowerCase();
   // A skipped or cancelled run reported nothing; a neutral one is the service standing aside.
   if (/^(?:skipped|cancelled|neutral|stale)$/.test(conclusion)) return null;
-  const state: ReportState = check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : 'info';
+  const words = reporter.rephrase === undefined ? rawWords : reporter.rephrase(rawWords);
+  const fromConclusion: ReportState = check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : 'info';
+  const state = reporter.state === undefined ? fromConclusion : reporter.state(words, fromConclusion);
   const project = reporter.project(check.name);
-  const headline = headlineOf(check.description, state);
+  const headline = headlineOf(words, state);
   // The short form reads GitHub's words, not the fallback verdict; a verdict alone leaves the light to say it.
-  const words = (check.description ?? '').replace(/^[\s—–-]+/, '').trim();
   const short = reporter.short === undefined ? undefined : reporter.short(words);
   return { reporter: reporter.id, title: reporter.title, anchor: `check:${check.name}`, author: '', state, headline, ...(project === null ? {} : { project }), ...(short === undefined ? {} : { short }), url: check.detailsUrl };
 }
