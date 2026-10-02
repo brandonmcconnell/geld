@@ -106,14 +106,19 @@ function bodyElementOf(root: Element): HTMLElement | null {
 
 const BLOCK = /^(P|DIV|H[1-6]|LI|PRE|BLOCKQUOTE|TR|DETAILS|SUMMARY|SECTION|ARTICLE|UL|OL|TABLE|HR|BR|BUTTON)$/;
 
+/** Inline markup written back as the Markdown it came from, so a title keeps its `code` and **emphasis**. */
+const INLINE_MARK: Readonly<Record<string, string>> = { CODE: '`', STRONG: '**', B: '**', EM: '*', I: '*', DEL: '~~', S: '~~', STRIKE: '~~' };
+
 /**
  * Text with the line breaks the markup implies. `textContent` glues a
  * heading to the paragraph after it ("Greptile SummaryScore 4/5"), and
- * `innerText` needs layout, which hidden nodes do not have.
+ * `innerText` needs layout, which hidden nodes do not have. Inline code and
+ * emphasis come back as Markdown marks (`inline-markdown.ts` reads them),
+ * except inside `<pre>`, whose text is a block of its own.
  */
 export function blockText(root: Element): string {
   const parts: string[] = [];
-  const walk = (node: Node): void => {
+  const walk = (node: Node, inPre: boolean): void => {
     if (node.nodeType === Node.TEXT_NODE) {
       parts.push(node.nodeValue ?? '');
       return;
@@ -121,15 +126,35 @@ export function blockText(root: Element): string {
     if (!(node instanceof Element)) return;
     const block = BLOCK.test(node.tagName);
     if (block) parts.push('\n');
-    for (const child of node.childNodes) walk(child);
+    const mark = inPre ? undefined : INLINE_MARK[node.tagName];
+    if (mark !== undefined) {
+      const inner: string[] = [];
+      const start = parts.length;
+      for (const child of node.childNodes) walk(child, inPre);
+      inner.push(...parts.splice(start));
+      parts.push(wrapInline(inner.join(''), mark));
+    } else {
+      for (const child of node.childNodes) walk(child, inPre || node.tagName === 'PRE');
+    }
     if (block) parts.push('\n');
   };
-  walk(root);
+  walk(root, false);
   return parts
     .join('')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** `mark` around `text`, with surrounding whitespace kept outside and code that holds a backtick fenced by two. */
+function wrapInline(text: string, mark: string): string {
+  const core = text.trim();
+  if (core === '' || core.includes('\n')) return text;
+  const lead = text.slice(0, text.length - text.trimStart().length);
+  const trail = text.slice(text.trimEnd().length);
+  const fence = mark === '`' && core.includes('`') ? '``' : mark;
+  const padded = mark === '`' && core.includes('`') ? ` ${core} ` : core;
+  return `${lead}${fence}${padded}${fence}${trail}`;
 }
 
 function textOf(body: HTMLElement | null): string {

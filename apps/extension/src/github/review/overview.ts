@@ -72,6 +72,15 @@ interface VisitState {
   openPreviews: Set<string>;
   /** The row a click elsewhere landed on, while its flash runs (`stampFlash`). */
   flash: { readonly key: string; readonly startedAt: number } | null;
+  /**
+   * Since when the open line's conversation has been missing from the crawl.
+   * GitHub swaps a thread's node when a reply posts (classic: a Turbo
+   * replacement), and a pass that runs between the old node leaving and the
+   * new one landing sees no thread; closing the line on that pass shut the
+   * conversation the reader had just written into. The line is kept for a
+   * grace period and only given up once the conversation stays gone.
+   */
+  openSubMissingSince: number | null;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -115,6 +124,7 @@ const visit: VisitState = {
   openCommits: new Set<string>(),
   openPreviews: new Set<string>(),
   flash: null,
+  openSubMissingSince: null,
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -270,6 +280,22 @@ function reseatOpenLine(batches: readonly Batch[]): void {
   if (current !== undefined && holds(current)) return;
   const home = batches.find(holds);
   if (home !== undefined) visit.openKey = home.key;
+}
+
+/** How long an open line's conversation may be absent from the crawl before the line is given up. */
+const OPEN_LINE_GRACE_MS = 5000;
+
+/** Note the open line's conversation as missing this pass; true once it has been missing for the whole grace period. */
+function openLineStillMissing(): boolean {
+  const now = Date.now();
+  visit.openSubMissingSince ??= now;
+  if (now - visit.openSubMissingSince < OPEN_LINE_GRACE_MS) {
+    // Another look shortly: the swapped-in node is usually there within a frame or two.
+    reapplySoon();
+    return false;
+  }
+  visit.openSubMissingSince = null;
+  return true;
 }
 
 /** After a thread changed state under the reader: close the item once it is done, and its round once nothing in it is open. */
@@ -1707,6 +1733,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     visit.openCommits = new Set<string>();
     visit.openPreviews = new Set<string>();
     visit.flash = null;
+    visit.openSubMissingSince = null;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -2081,8 +2108,11 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
     if (nodes.length === 0) {
-      visit.openKey = null;
-      restoreAll();
+      // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
+      if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
+        visit.openKey = null;
+        restoreAll();
+      }
     } else if (slotNeedsRender(mounted.slot)) {
       if (visit.openKey === REVIEWS_KEY) {
         // An index of people's reviews; each line points at the round where its conversation opens.
@@ -2127,7 +2157,9 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
             const item = view.openItem;
             renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply));
           } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
-            visit.openSubKey = null;
+            if (openLineStillMissing()) visit.openSubKey = null;
+          } else {
+            visit.openSubMissingSince = null;
           }
         }
       } else if (visit.openKey === CHECKS_KEY) {
@@ -2185,7 +2217,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${subFocus ?? visit.openKey}"]`);
     if (row instanceof HTMLElement && hidingTimeline) {
       scrollRowTo(row.getBoundingClientRect().top + window.scrollY);
-      holdRow(`main:${subFocus ?? visit.openKey}`);
+      const focusKey = `main:${subFocus ?? visit.openKey}`;
+      holdRow(focusKey);
+      // The panel opened this row on its own (a permalink, the comment the reader just posted elsewhere): the same
+      // tint a click that lands elsewhere gets, so the eye finds what opened.
+      visit.flash = { key: focusKey, startedAt: performance.now() };
+      stampFlash();
     }
     if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
   }
@@ -2238,7 +2275,12 @@ export function teardownReviewOverview(): void {
 export function onReviewHashChange(settings: GeldSettings): void {
   if (describePage(new URL(window.location.href)).kind !== 'pull-conversation') return;
   const anchor = sourceAnchorFromHash(location.hash);
-  if (anchor !== null) {
+  // Posting a comment makes GitHub point the URL at it. When the new comment already stands inside the open row
+  // (the reply box the reader just used is in its chat, so the comment landed there), the reader is looking at
+  // it: nothing to seek, open or scroll to — seating it afresh closed the round around it and reopened a row
+  // under the pointer. The pass below only moves the target ring onto it.
+  const node = anchor === null ? null : document.getElementById(anchor);
+  if (anchor !== null && !(node !== null && node.closest('.geld-review') !== null)) {
     visit.loadMoreTries = 0;
     visit.pendingAnchor = anchor;
   }

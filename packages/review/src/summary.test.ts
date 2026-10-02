@@ -119,6 +119,22 @@ describe('render / parse round trip', () => {
     if (parsed.ok) expect(parsed.value.headSha).toBe(meta.headSha);
   });
 
+  it('keeps a title\u2019s inline marks as Markdown and escapes the rest', () => {
+    const base = buildMeta(fixturePr(), { producer: { ...PRODUCER, ai: true }, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const bot = base.items.find((item) => item.sources.every((source) => source.bot !== undefined));
+    expect(bot).toBeDefined();
+    if (bot === undefined) return;
+    const meta = buildMeta(fixturePr(), {
+      producer: { ...PRODUCER, ai: true },
+      generatedAt: '2026-09-18T12:00:00.000Z',
+      rewritten: [{ id: bot.id, title: 'Rename `a*b` to **resolveConfig** [sic] *now*', context: 'See `x` and **y**' }],
+    });
+    const body = renderSummary(meta, { owner: 'acme', repo: 'widgets', number: 123 });
+    expect(body).toContain('**Rename `a*b` to resolveConfig \\[sic\\] *now***');
+    expect(body).toContain('See `x` and **y**');
+    expect(body).not.toContain('\\`');
+  });
+
   it('round-trips context, fixes and the TL;DR', () => {
     const base = buildMeta(fixturePr(), { producer: { ...PRODUCER, ai: true }, generatedAt: '2026-09-18T12:00:00.000Z' });
     const bot = base.items.find((item) => item.sources.every((source) => source.bot !== undefined));

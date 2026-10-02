@@ -17,6 +17,7 @@ import {
   openItemCount,
 } from './model';
 import { botTitle } from './bots';
+import { parseInlineMarkdown } from './inline-markdown';
 
 const STATUS_LABEL: Readonly<Record<ReviewItem['status'], string>> = {
   open: 'Open',
@@ -29,6 +30,29 @@ const STATUS_LABEL: Readonly<Record<ReviewItem['status'], string>> = {
 
 function escapeMd(text: string): string {
   return text.replace(/([\\`*_[\]<>])/g, '\\$1');
+}
+
+/**
+ * One line of comment text as Markdown again: its own `code`, **bold**,
+ * *italic* and ~~struck~~ marks are kept (normalised), everything else is
+ * escaped. Inside a bold head, a bold run is already bold and takes no marks.
+ */
+function inlineMd(text: string, inBold = false): string {
+  return parseInlineMarkdown(text)
+    .map((run) => {
+      if (run.marks.includes('code')) {
+        const fence = run.text.includes('`') ? '``' : '`';
+        return run.text.includes('`') ? `${fence} ${run.text} ${fence}` : `${fence}${run.text}${fence}`;
+      }
+      let out = escapeMd(run.text);
+      for (const mark of [...run.marks].reverse()) {
+        if (mark === 'strong' && !inBold) out = `**${out}**`;
+        else if (mark === 'em') out = `*${out}*`;
+        else if (mark === 'del') out = `~~${out}~~`;
+      }
+      return out;
+    })
+    .join('');
 }
 
 function locationOf(item: ReviewItem): string {
@@ -54,9 +78,9 @@ function sourcesOf(item: ReviewItem): string {
 
 function itemLine(item: ReviewItem, checked: boolean): string {
   const box = checked ? '- [x]' : '- [ ]';
-  const head = `${box} **${escapeMd(item.title)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item)}`;
+  const head = `${box} **${inlineMd(item.title, true)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item)}`;
   const extra: string[] = [];
-  if (item.context !== undefined) extra.push(`  ${escapeMd(item.context)}`);
+  if (item.context !== undefined) extra.push(`  ${inlineMd(item.context)}`);
   if (item.fix !== undefined) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', '  ```suggestion', ...item.fix.text.split('\n').map((line) => `  ${line}`), '  ```', '', '  </details>');
   return [head, ...extra].join('\n');
 }

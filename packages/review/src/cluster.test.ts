@@ -128,7 +128,8 @@ describe('clusterComments', () => {
 
 describe('firstSentence / severity', () => {
   it('strips headings and code fences', () => {
-    expect(firstSentence('## Bug\n\nNull check missing in `parseDiff`.\n```ts\nx\n```')).toBe('Null check missing in parseDiff.');
+    expect(firstSentence('## Bug\n\nNull check missing in `parseDiff`.\n```ts\nx\n```')).toBe('Null check missing in `parseDiff`.');
+    expect(firstSentence('Rename `config.resolve` to **resolveConfig** first')).toBe('Rename `config.resolve` to **resolveConfig** first');
   });
 
   it('classifies blocking vs nit vs question', () => {

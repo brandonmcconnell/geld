@@ -43,8 +43,13 @@ export function ruleIdOf(body: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
+/**
+ * The first line worth showing, kept to one sentence. Fenced blocks go;
+ * inline marks (`code`, **bold**, *italic*, ~~struck~~) stay, so a title
+ * renders the identifier or emphasis its author wrote (`inline-markdown.ts`).
+ */
 export function firstSentence(body: string): string {
-  const withoutCode = body.replace(/```[\s\S]*?```/g, ' ').replace(/`([^`]+)`/g, '$1');
+  const withoutCode = body.replace(/```[\s\S]*?```/g, ' ');
   const line = withoutCode
     .split('\n')
     .map((entry) => entry.trim())
@@ -53,8 +58,19 @@ export function firstSentence(body: string): string {
     .find((entry) => entry !== '') ?? '';
   const cleaned = line.replace(/\s+/g, ' ').trim();
   if (cleaned === '') return 'Comment';
-  const sentence = /^(.{1,160}?(?:[.!?]|$))/.exec(cleaned)?.[1] ?? cleaned.slice(0, 160);
+  // The sentence ends at the first terminator outside a code span, so `a.b` in code does not cut it short.
+  const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
+}
+
+function sentenceOf(text: string, limit: number): string {
+  let inCode = false;
+  for (let index = 0; index < text.length && index < limit; index += 1) {
+    const char = text[index];
+    if (char === '`') inCode = !inCode;
+    else if (!inCode && (char === '.' || char === '!' || char === '?')) return text.slice(0, index + 1);
+  }
+  return text.slice(0, limit);
 }
 
 export function guessSeverity(body: string, bot: boolean, humanQuestion: boolean): ReviewSeverity {

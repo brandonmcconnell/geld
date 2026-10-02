@@ -25,6 +25,7 @@ import { headlineText } from './fold';
 import { reclaimOrphans, restoreAll } from './teleport';
 import { ATTR_WHO, rehostHoverCard } from './hovercard';
 import { shapeMark } from './mark-shape';
+import { inlineText } from './inline-text';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -534,7 +535,7 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
   const pending = model.aiPending.has(item.id);
   // A pointer row's focus key differs from the canonical row's, so a reveal or a focus restore lands on the latter.
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, ...(pointer ? {} : { 'aria-expanded': String(open) }), [ATTR_FOCUS]: pointer ? `main:ptr:${key}` : `main:${key}` }, [
-    createElement('span', { class: `${PANEL_CLASS}__title`, ...(pending ? { 'data-pending': '', title: 'Geld is consolidating this item' } : {}) }, [item.title]),
+    createElement('span', { class: `${PANEL_CLASS}__title`, ...(pending ? { 'data-pending': '', title: 'Geld is consolidating this item' } : {}) }, inlineText(item.title)),
     createElement('span', { class: `${PANEL_CLASS}__detail` }, [detailBits.join(' · ')]),
   ]);
   const anchorOfItem = first?.anchor ?? null;
@@ -595,7 +596,7 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
       ? [
           createElement('span', { class: `${PANEL_CLASS}__name` }, [fold.author ?? '']),
           createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [`${fold.closure.kind} this`]),
-          ...(fold.closure.preview === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__preview` }, [fold.closure.preview])]),
+          ...(fold.closure.preview === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(fold.closure.preview))]),
         ]
       : headline !== undefined
         ? [
@@ -1661,7 +1662,7 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   };
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
   // A verdict without words shows only the name: the glyph already says approved / requested changes.
-  if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, [entry.preview]));
+  if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(entry.preview)));
   else if (entry.state === 'awaiting') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, ['awaiting review']));
   if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
   // How many threads the review (or a bot's run summary) came with: they are rows of their own in its round, this is the count.

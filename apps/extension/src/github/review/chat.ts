@@ -20,6 +20,7 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { onRestore, teleportInto } from './teleport';
+import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
 
@@ -195,7 +196,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
       const chip = createElement('button', { type: 'button', class: 'geld-review__chat-thread', role: 'listitem', 'data-state': thread.done ? 'done' : 'open', title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` }, [
         icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE),
         createElement('code', {}, [thread.line === undefined ? file : `${file}:${thread.line}`]),
-        ...(shared && thread.preview !== '' ? [createElement('span', { class: 'geld-review__chat-thread-words' }, [thread.preview])] : []),
+        ...(shared && thread.preview !== '' ? [createElement('span', { class: 'geld-review__chat-thread-words' }, inlineText(thread.preview))] : []),
         icon(ICON_CHEVRON_RIGHT),
       ]);
       chip.addEventListener('click', () => onOpenThread(thread.anchor));
@@ -225,7 +226,7 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
   const children: Node[] = [createElement('span', { class: 'geld-review__chat-pin-glyph', 'aria-hidden': 'true' }, [icon(ICON_PIN)])];
   if (source.avatarSrc !== null) children.push(createElement('img', { class: 'geld-review__avatar', 'data-kind': source.bot ? 'bot' : 'user', src: source.avatarSrc, alt: '', width: '20', height: '20' }));
   children.push(createElement('span', { class: 'geld-review__chat-pin-label' }, [source.label]));
-  if (source.preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, [source.preview]));
+  if (source.preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, inlineText(source.preview)));
   children.push(icon(ICON_CHEVRON_DOWN));
   const button = createElement('button', { type: 'button', class: 'geld-review__chat-pin', 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(thread) }, children);
   button.addEventListener('click', () => handlers.onToggleSource(thread));

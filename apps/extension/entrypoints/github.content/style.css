@@ -2561,7 +2561,10 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 .geld-review__main {
   display: flex;
   flex: 1 1 auto;
-  align-items: baseline;
+  /* Centred, not `baseline`: an ellipsised span is a scroll container, which WebKit gives no text baseline (it
+   * aligns its bottom edge instead), so the 14px title and the 13px path beside it sat on different lines. With
+   * one line box height for both, centring puts them within half a pixel of a shared baseline everywhere. */
+  align-items: center;
   gap: 8px;
   min-width: 0;
   min-height: 40px;
@@ -2590,6 +2593,31 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 .geld-review__title--plain {
   max-width: none;
   font-weight: 400;
+}
+
+/*
+ * Titles and previews are one line of a comment and keep its inline formatting (inline-text.ts): code in the
+ * monospace at a size that sits in the line, bold as 600 (a bold title is simply bold), italic and struck as such.
+ * Nothing block-level is ever rendered here.
+ */
+.geld-review__title code,
+.geld-review__preview code,
+.geld-review__chat-pin-preview code,
+.geld-review__chat-thread-words code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)));
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 0.875em;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.geld-review__title strong,
+.geld-review__preview strong,
+.geld-review__chat-pin-preview strong,
+.geld-review__chat-thread-words strong {
+  font-weight: 600;
 }
 
 /* A round's row: "Round N", the meter, the comments chip — centred on the row, natural widths. */
@@ -3564,11 +3592,18 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 /* A lone message is the whole view (its byline and picture are the chat's own, outside the message), so the ring
- * goes round the chat: the comment box, not its contents. */
-.geld-review__chat:has([data-geld-message][data-geld-lone]:is(:target, :has(:target))),
-.geld-review__chat:has(:target:is([id^='issuecomment-'], [id^='pullrequestreview-'], [id^='discussion_r']) [data-geld-message][data-geld-lone]) {
+ * goes round the box it sits in — the slot, the white area under its row — not round the chat's content, which
+ * stops short of the slot's padding and ran the ring across the picture. */
+.geld-review__slot:has(.geld-review__chat [data-geld-message][data-geld-lone]:is(:target, :has(:target))),
+.geld-review__slot:has(.geld-review__chat :target:is([id^='issuecomment-'], [id^='pullrequestreview-'], [id^='discussion_r']) [data-geld-message][data-geld-lone]) {
   outline: 1px solid var(--fgColor-accent, var(--color-accent-fg));
   outline-offset: -1px;
+}
+
+/* When the row the URL points at wears its 2px ring around row and slot together, that ring says it: no second one. */
+.geld-review__row[data-viewing] + .geld-review__slot:has(.geld-review__chat [data-geld-message][data-geld-lone]),
+.geld-review__row[data-viewing] + .geld-review__slot:has(.geld-review__chat [data-geld-message][data-geld-lone]) .geld-review__chat {
+  outline: none;
 }
 
 .geld-review__chat [data-geld-run='first'] > [data-geld-part='bubble'] {
