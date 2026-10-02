@@ -136,6 +136,12 @@ export interface ReviewThreadRef {
   readonly done: boolean;
 }
 
+/** A check row's avatar: GitHub rounds a user's or an OAuth App's, squares a GitHub App's or an organisation's. */
+export interface CheckAvatar {
+  readonly src: string;
+  readonly round: boolean;
+}
+
 /** A person's verdict on the changes (not a thread, a plain comment or a pending request). */
 export function isVerdict(entry: ReviewEntry): boolean {
   return entry.state === 'approved' || entry.state === 'changes_requested' || entry.state === 'commented' || entry.state === 'dismissed';
@@ -221,8 +227,8 @@ export interface PanelModel {
   readonly openPreviews: ReadonlySet<string>;
   /** Where the in-browser AI stands for this pull request: the control in the Geld row and its notices. */
   readonly ai: AiState;
-  /** The avatar GitHub shows beside the check named `name` in the merge box (the service's App), or null. */
-  readonly checkAvatarFor: (name: string) => string | null;
+  /** The avatar GitHub shows beside the check named `name` in the merge box (the service's mark) and its shape, or null. */
+  readonly checkAvatarFor: (name: string) => CheckAvatar | null;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
   readonly avatarForAnchor: (anchor: string) => string | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
@@ -1393,7 +1399,9 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const label = `${subject} · ${entry.headline} · ${REPORT_STATE_LABEL[entry.state]}`;
   const children: Node[] = [];
   const avatar = reportAvatar(entry, model);
-  if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar, alt: '', width: '16', height: '16' }));
+  // A mark GitHub draws round (an OAuth App's, as Chromatic's) stays round here: squared, its transparent corners
+  // showed the pill's square frame around a circle.
+  if (avatar !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: avatar.src, alt: '', width: '16', height: '16', ...(avatar.round ? { 'data-shape': 'round' } : {}) }));
   // The mark says who, as a preview pill's does: the pill names the project (when the report has one) and the
   // numbers; the service's name is on the line under it and in the pill's tooltip.
   if (entry.project !== undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
@@ -1453,7 +1461,8 @@ function reportsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLEl
 function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
   const avatar = reportAvatar(entry, model);
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]);
-  const picture = avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: entry.author }], entry.title, true);
+  // A round mark renders as a person's would (a circle); a square one as a bot's.
+  const picture = avatarStack(avatar === null ? [] : [{ src: avatar.src, bot: !avatar.round, login: entry.author }], entry.title, true);
   // A report posted as a check has no comment to open: the line names the service and project, and Open leads to
   // the service's page for it (the check's Details), as a preview line's Open leads to the deployment.
   if (entry.url !== undefined) {
@@ -1486,9 +1495,11 @@ function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   return { row, open };
 }
 
-/** The reporter's mark: the comment's avatar for a bot's report, the check's avatar (the service's App) for a check's. */
-function reportAvatar(entry: Report, model: PanelModel): string | null {
-  return entry.url === undefined ? model.avatarForAnchor(entry.anchor) : model.checkAvatarFor(entry.anchor.replace(/^check:/, ''));
+/** The reporter's mark: the comment's avatar (a bot's, square) for a bot's report, the check's avatar in its shape for a check's. */
+function reportAvatar(entry: Report, model: PanelModel): CheckAvatar | null {
+  if (entry.url !== undefined) return model.checkAvatarFor(entry.anchor.replace(/^check:/, ''));
+  const src = model.avatarForAnchor(entry.anchor);
+  return src === null ? null : { src, round: false };
 }
 
 /** The Reports row's list: one line per latest report; the open one's comment renders in the returned slot. */

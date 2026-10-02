@@ -35,7 +35,7 @@ import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent,
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
-import type { Avatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
+import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import { installedBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
@@ -1239,12 +1239,22 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
   return null;
 }
 
-/** The avatar GitHub draws beside a merge box check row (the service's App mark), by the check's name. */
-function checkAvatarOf(name: string): string | null {
+/**
+ * The avatar GitHub draws beside a merge box check row, by the check's name,
+ * and its shape: GitHub squares the marks of GitHub Apps and organisations
+ * (`data-square` on the React avatar, no `avatar-user` on the classic one)
+ * and rounds those of users and OAuth Apps (Chromatic's statuses come from
+ * one). The page is the only place that knows which.
+ */
+function checkAvatarOf(name: string): CheckAvatar | null {
   for (const row of document.querySelectorAll<HTMLElement>('li:has([class*="StatusCheckRow"]), .merge-status-item')) {
     const title = (row.querySelector('[class*="StatusCheckRow"] h4 a span, [class*="StatusCheckRow"] h4 a, .merge-status-item strong, .merge-status-item .text-emphasized')?.textContent ?? '').replace(/\s+/g, ' ').trim();
     if (title !== name) continue;
-    return row.querySelector<HTMLImageElement>('img[data-testid="github-avatar"], img.avatar')?.getAttribute('src') ?? null;
+    const img = row.querySelector<HTMLImageElement>('img[data-testid="github-avatar"], img.avatar');
+    const src = img?.getAttribute('src') ?? null;
+    if (img === null || src === null) return null;
+    const square = img.hasAttribute('data-square') || (img.classList.contains('avatar') && !img.classList.contains('avatar-user'));
+    return { src, round: !square };
   }
   return null;
 }
