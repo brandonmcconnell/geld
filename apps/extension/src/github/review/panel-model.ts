@@ -5,7 +5,7 @@
 
 import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
-import { botByAppSlug, botByCheckName, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
+import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
 
 /**
  * How Geld knows a bot is available on this pull request, best first:
@@ -104,9 +104,17 @@ export function requestableBots(meta: GeldPrMeta, doc: ParentNode, comments: rea
     if (trigger === null) continue;
     const login = bot.logins[0] ?? `${bot.id}[bot]`;
     const configFile = hint.configured.get(bot.id);
-    if (hint.declared?.includes(bot.id) === true) found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc: null, presence: 'declared' });
-    else if (configFile !== undefined) found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc: null, presence: 'configured', configFile });
-    else found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc: null, presence: 'other' });
+    const iconSrc = botAppAvatar(bot);
+    if (hint.declared?.includes(bot.id) === true) found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc, presence: 'declared' });
+    else if (configFile !== undefined) found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc, presence: 'configured', configFile });
+    else found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc, presence: 'other' });
+  }
+  // A bot seen on the page but without a picture there (a check row, a trigger comment): GitHub's mark for the App.
+  for (const [id, bot] of found) {
+    if (bot.iconSrc !== null) continue;
+    const known = botById(id);
+    const fallback = known === null ? null : botAppAvatar(known);
+    if (fallback !== null) found.set(id, { ...bot, iconSrc: fallback });
   }
   // Alphabetical: the page's link order changes as nodes move into the panel, and buttons must not shuffle.
   return [...found.values()].sort((a, b) => a.label.localeCompare(b.label));

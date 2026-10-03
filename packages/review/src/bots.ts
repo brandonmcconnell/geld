@@ -18,6 +18,14 @@ export interface ReviewBot {
   readonly triggers: readonly string[];
   readonly configFiles: readonly string[];
   /**
+   * The GitHub App's id, which is where its mark lives
+   * (`avatars.githubusercontent.com/in/<id>`): the fallback picture for a bot
+   * the page shows no image of (offered before it has run here). Read from
+   * `GET /users/<login>` in Oct 2026; `avatars.githubusercontent.com/<login>`
+   * serves an identicon for App logins, not the mark.
+   */
+  readonly appId?: number;
+  /**
    * A coding agent that also reviews: most of its comments are replies and
    * progress notes (to a person, or to another bot's review), so only a
    * comment shaped like a review (a score, a findings count, "no issues")
@@ -30,6 +38,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'bugbot',
     title: 'Bugbot',
+    appId: 1210556,
     logins: ['cursor[bot]', 'cursor-bugs[bot]', 'bugbot[bot]', 'cursor-com[bot]'],
     checkNames: ['Cursor Bugbot', 'Bugbot'],
     triggers: ['bugbot run', 'cursor review', '@cursor review'],
@@ -38,6 +47,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'greptile',
     title: 'Greptile',
+    appId: 867647,
     logins: ['greptile-apps[bot]', 'greptile[bot]'],
     checkNames: ['Greptile'],
     triggers: ['@greptileai', '@greptile', '@greptileai review'],
@@ -46,6 +56,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'devin',
     title: 'Devin',
+    appId: 811515,
     logins: ['devin-ai-integration[bot]', 'devin[bot]'],
     checkNames: ['Devin'],
     triggers: ['/devin review', '@devin review', '@devin'],
@@ -54,6 +65,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'codex',
     title: 'Codex',
+    appId: 1144995,
     logins: ['chatgpt-codex-connector[bot]', 'openai-codex[bot]', 'codex[bot]'],
     checkNames: ['Codex'],
     triggers: ['@codex review', '@codex'],
@@ -62,6 +74,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'copilot',
     title: 'Copilot',
+    appId: 946600,
     logins: ['copilot-pull-request-reviewer[bot]', 'copilot[bot]'],
     checkNames: ['Copilot code review', 'Copilot'],
     triggers: ['@copilot'],
@@ -70,6 +83,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'coderabbit',
     title: 'CodeRabbit',
+    appId: 347564,
     logins: ['coderabbitai[bot]'],
     checkNames: ['CodeRabbit'],
     triggers: ['@coderabbitai review', '@coderabbitai full review', '@coderabbitai'],
@@ -78,6 +92,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
     id: 'gemini',
     title: 'Gemini Code Assist',
+    appId: 956858,
     logins: ['gemini-code-assist[bot]'],
     checkNames: ['Gemini Code Assist', 'gemini-code-assist'],
     triggers: ['@gemini-code-assist'],
@@ -91,6 +106,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     // registry and docs.capy.ai/review in Oct 2026; no check run documented.
     id: 'capy',
     title: 'Capy',
+    appId: 1915919,
     logins: ['capy-ai[bot]', 'capy[bot]'],
     checkNames: ['Capy AI', 'Capy Review', 'Capy'],
     triggers: ['@capy review'],
@@ -101,6 +117,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     // on PR open and sync; `/replicas run code-review` runs it on demand, `@tryreplicas` addresses the agent.
     id: 'replicas',
     title: 'Replicas',
+    appId: 2176876,
     logins: ['replicas-connector[bot]', 'replicas-dev[bot]', 'tryreplicas[bot]'],
     checkNames: ['Replicas'],
     triggers: ['/replicas run code-review', '@tryreplicas review', '@tryreplicas', '@replicas'],
@@ -445,6 +462,11 @@ export function botsTriggeredBy(body: string, extraLogins: readonly string[] = [
 }
 
 /** First configured re-run trigger for a bot id, if any. */
+/** The bot's mark as GitHub serves it, for a page that shows none (`null` for a bot without a known App id). */
+export function botAppAvatar(bot: ReviewBot, size = 64): string | null {
+  return bot.appId === undefined ? null : `https://avatars.githubusercontent.com/in/${bot.appId}?s=${size}&v=4`;
+}
+
 export function rerunTriggerFor(botId: string): string | null {
   const bot = botById(botId);
   return bot?.triggers[0] ?? null;
