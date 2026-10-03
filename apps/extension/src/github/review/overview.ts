@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botById, botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -1466,6 +1466,20 @@ function checkAvatarOf(name: string): CheckAvatar | null {
 }
 
 /** Any avatar the page shows beside one of the bot's logins (a review comment of its own, a reviewer entry, a hovercard link). */
+/** The avatar of the bot's run summary, only when that comment is the bot's own (not a person's trigger). */
+function botSourceAvatar(botId: string, meta: GeldPrMeta): string | null {
+  const sourceId = meta.bots.find((bot) => bot.id === botId)?.sourceId;
+  if (sourceId === undefined) return null;
+  const facts = sourceFacts.get(sourceId);
+  if (facts === undefined || !facts.bot || resolveBotId(facts.login) !== botId) return null;
+  return avatarSrcFor(sourceId);
+}
+
+function botAppAvatarFor(botId: string): string | null {
+  const bot = botById(botId);
+  return bot === null ? null : botAppAvatar(bot);
+}
+
 function botAvatarByLogin(botId: string): string | null {
   for (const login of botById(botId)?.logins ?? []) {
     const src = avatarSrcForLogin(login);
@@ -2160,9 +2174,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A bot's mark, from wherever the page shows it: an avatar captioned with one of its logins (Bugbot's review
-    // comments are by cursor[bot]; unambiguous, so first), its run summary's avatar, else the App avatar nearest
-    // its `/apps/<slug>` link or check row (`requestableBots`).
-    botIconFor: (botId) => botAvatarByLogin(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? '') ?? iconByBot.get(botId) ?? null,
+    // comments are by cursor[bot]; unambiguous, so first), its run summary's avatar when the summary is the bot's
+    // own comment (a `running` verdict's source is the trigger comment, whose avatar is the person who asked),
+    // the App avatar nearest its `/apps/<slug>` link or check row (`requestableBots`), else GitHub's mark for the
+    // App, by its id.
+    botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
     previews: latestPreviews(allPreviews),
