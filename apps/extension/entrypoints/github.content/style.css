@@ -5610,3 +5610,176 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     flex-wrap: wrap;
   }
 }
+
+/* ---- stacked rows (design prototype) -------------------------------------------
+ * Every row is a card whose bottom corners are rounded by the standard row height (40px; 36px in a sub-list), and
+ * never more on a taller row, with the card below showing through the cut corners, so a list reads as a stack of
+ * cards rather than a table. No box moves for this. A row's box stays square and paints the *next* card's surface
+ * (`--geld-stack-under`, chosen with `:has(+ …)` from the next sibling's own state, hover and tone included, so a
+ * hovered row tints the corners of the row above it as well); the row's own surface moves to a `::before` under
+ * its content, with the radius and the hairline, which therefore follows the curve instead of cutting straight
+ * across the cut corners. Every list child is its own stacking context so that `::before` sits above the row's
+ * box and under its content; the open row and the row with an open menu already were (z-index 3 and 4), and a
+ * slot holding an open menu joins them so GitHub's own dropdowns still clear the rows below. The open row keeps
+ * square corners (its card continues into its slot, which rounds at the end), and a group heading is a band, not a
+ * card. Reduce or remove this section to go back to the table.
+ */
+
+.geld-review .geld-review__rows > :is(.geld-review__row, .geld-review__slot, .geld-review__group, .geld-review__subhead) {
+  --geld-stack-r: 0px;
+  --geld-stack-surface: var(--geld-review-bg);
+  position: relative;
+  isolation: isolate;
+  border-top: 0;
+  /* The hairline lives on the surface now, inside the box; keep the row's height and the words off the line. */
+  padding-bottom: 1px;
+  background: var(--geld-stack-under, transparent);
+}
+
+.geld-review .geld-review__rows > :is(.geld-review__row, .geld-review__slot, .geld-review__group, .geld-review__subhead)::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  border-radius: 0 0 var(--geld-stack-r) var(--geld-stack-r);
+  background: var(--geld-stack-surface);
+  pointer-events: none;
+}
+
+/* The rail and the target ring follow the card's curve. */
+.geld-review .geld-review__rows > :is(.geld-review__row, .geld-review__slot)::after {
+  border-radius: 0 0 var(--geld-stack-r) var(--geld-stack-r);
+}
+
+/* The radius: a row's standard height, the sub-list's for its rows; an open row runs on into its slot. */
+.geld-review .geld-review__rows > :is(.geld-review__row, .geld-review__slot) {
+  --geld-stack-r: 40px;
+}
+
+.geld-review .geld-review__rows--sub > :is(.geld-review__row, .geld-review__slot) {
+  --geld-stack-r: 36px;
+}
+
+.geld-review .geld-review__rows > .geld-review__row[data-open] {
+  --geld-stack-r: 0px;
+}
+
+/* The card's own surface, state by state (the same colours the rows painted directly before). */
+.geld-review .geld-review__rows > .geld-review__row:hover,
+.geld-review .geld-review__rows > .geld-review__row[data-open] {
+  --geld-stack-surface: var(--geld-review-subtle);
+}
+
+.geld-review .geld-review__rows > .geld-review__row[data-tone] {
+  --geld-stack-surface: linear-gradient(90deg, var(--geld-tone-strong), var(--geld-tone-faint));
+}
+
+.geld-review .geld-review__rows > .geld-review__row[data-tone]:hover,
+.geld-review .geld-review__rows > .geld-review__row[data-tone][data-open] {
+  --geld-stack-surface: var(--geld-tone-flat);
+}
+
+.geld-review .geld-review__rows > .geld-review__row--preview,
+.geld-review .geld-review__rows > .geld-review__row--preview:hover {
+  --geld-stack-surface: var(--geld-review-bg);
+}
+
+.geld-review .geld-review__rows > .geld-review__group {
+  --geld-stack-surface: var(--geld-review-subtle);
+}
+
+/* What shows through the corners: the next card's surface, in the next card's state. */
+.geld-review .geld-review__rows > :has(+ :is(.geld-review__row, .geld-review__slot, .geld-review__subhead)) {
+  --geld-stack-under: var(--geld-review-bg);
+}
+
+.geld-review .geld-review__rows > :has(+ .geld-review__group),
+.geld-review .geld-review__rows > :has(+ .geld-review__row:hover),
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-open]) {
+  --geld-stack-under: var(--geld-review-subtle);
+}
+
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-tone='good']) {
+  --geld-stack-under-bg: var(--geld-review-done);
+  --geld-stack-under-fg: var(--geld-review-done-fg);
+}
+
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-tone='warn']) {
+  --geld-stack-under-bg: var(--geld-review-attention-bg);
+  --geld-stack-under-fg: var(--geld-review-attention-fg);
+}
+
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-tone='bad']) {
+  --geld-stack-under-bg: var(--geld-review-danger-bg);
+  --geld-stack-under-fg: var(--geld-review-danger-fg);
+}
+
+/* The tone's gradient and flat, as the tone rules above compute them, from the next row's tone. */
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-tone]) {
+  --geld-stack-under: linear-gradient(
+    90deg,
+    light-dark(color-mix(in srgb, var(--geld-stack-under-bg) 45%, var(--geld-review-bg)), color-mix(in srgb, var(--geld-stack-under-fg) 22%, var(--geld-review-bg))),
+    light-dark(color-mix(in srgb, var(--geld-stack-under-bg) 10%, var(--geld-review-bg)), color-mix(in srgb, var(--geld-stack-under-fg) 6%, var(--geld-review-bg)))
+  );
+}
+
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-tone]:hover),
+.geld-review .geld-review__rows > :has(+ .geld-review__row[data-tone][data-open]) {
+  --geld-stack-under: light-dark(var(--geld-stack-under-bg), color-mix(in srgb, var(--geld-stack-under-fg) 28%, var(--geld-review-bg)));
+}
+
+.geld-review .geld-review__rows > :has(+ .geld-review__row--preview),
+.geld-review .geld-review__rows > :has(+ .geld-review__row--preview:hover) {
+  --geld-stack-under: var(--geld-review-bg);
+}
+
+/* Across lists: the last status row's corners show the main list's first child. */
+.geld-review .geld-review__rows--status:has(+ .geld-review__rows > .geld-review__group:first-child) > :last-child {
+  --geld-stack-under: var(--geld-review-subtle);
+}
+
+.geld-review .geld-review__rows--status:has(+ .geld-review__rows > .geld-review__row:first-child) > :last-child {
+  --geld-stack-under: var(--geld-review-bg);
+}
+
+/* The last card before the timeline bar flows into it. */
+.geld-review .geld-review__rows:has(+ .geld-review__timeline) > :last-child {
+  --geld-stack-under: var(--geld-review-subtle);
+}
+
+/* Hairlines: every card closes itself, so nothing else draws one between neighbours. The last card before the
+ * panel's own edge, and the last line of a sub-list (its slot closes it), draw none. */
+.geld-review .geld-review__rows--status {
+  border-bottom: 0;
+}
+
+.geld-review .geld-review__timeline {
+  border-top: 0;
+}
+
+.geld-review > .geld-review__rows:last-child > :last-child::before,
+.geld-review .geld-review__rows--sub > :last-child::before {
+  border-bottom: 0;
+}
+
+/* The flash tints the card's surface, not the square box under it. */
+.geld-review .geld-review__rows > .geld-review__row[data-geld-flash] {
+  animation: none;
+}
+
+.geld-review .geld-review__rows > .geld-review__row[data-geld-flash]::before {
+  animation: geld-review-flash 1.6s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-review .geld-review__rows > .geld-review__row[data-geld-flash]::before {
+    animation-timing-function: steps(1, end);
+    animation-duration: 1.2s;
+  }
+}
+
+/* A slot is a stacking context now too: one holding an open GitHub menu lifts above the rows below, as a row does. */
+.geld-review .geld-review__rows > .geld-review__slot:has(details[open]) {
+  z-index: 4;
+}
