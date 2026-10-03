@@ -27,12 +27,29 @@ export { diffCacheKey, latestCacheKey } from './diff-cache-map';
 
 const cacheItem = storage.defineItem<CacheMap>('local:diffCache', { fallback: {} });
 
+/**
+ * How long entries are gathered before one write stores them all. A list page
+ * produces a dozen diffs within a second or two; one write per diff meant a
+ * dozen storage writes and a dozen `onChanged` deliveries to every other
+ * GitHub tab, each of which rebuilt its copy of the whole map.
+ */
+const WRITE_DELAY_MS = 250;
+
 export class DiffCache {
   private loaded: Promise<void> | null = null;
   private map: CacheMap = {};
-  /** Writes are serialised so two quick `set`s cannot race each other's read-merge-write. */
+  /** Writes are serialised so two flushes cannot race each other's read-merge-write. */
   private writing: Promise<void> = Promise.resolve();
+  /** Entries set since the last flush, in order; one read-merge-write stores them all. */
+  private pendingWrites = new Map<string, CachedDiff>();
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private unwatch: (() => void) | null = null;
+  /**
+   * Another tab's write that arrived while this tab was hidden. Rebuilding the
+   * map is work nobody in a hidden tab is waiting for; the latest version is
+   * kept and taken up by the first read after the tab shows again.
+   */
+  private deferred: CacheMap | null = null;
 
   /** Load once; subsequent calls are instant. */
   async ready(): Promise<void> {
@@ -44,14 +61,30 @@ export class DiffCache {
         // this tab neither re-fetches what that tab just counted nor, on its
         // own next write, overwrites it with a snapshot from before.
         this.unwatch ??= cacheItem.watch((next) => {
-          if (next !== null) this.map = cleanMap(next);
+          if (next === null) return;
+          if (typeof document !== 'undefined' && document.hidden) {
+            this.deferred = next;
+            return;
+          }
+          this.deferred = null;
+          this.map = cleanMap(next);
         });
       });
     }
     await this.loaded;
   }
 
+  /** Take up a write deferred while hidden, with this tab's own unflushed entries kept on top. */
+  private settle(): void {
+    if (this.deferred === null) return;
+    let map = cleanMap(this.deferred);
+    this.deferred = null;
+    for (const [key, entry] of this.pendingWrites) map = writeEntry(map, key, entry);
+    this.map = map;
+  }
+
   get(key: string): readonly FileStats[] | null {
+    this.settle();
     const entry = this.map[key];
     if (entry === undefined) return null;
     if (isLatest(key) && Date.now() - entry.at > LATEST_MAX_AGE_MS) return null;
@@ -60,28 +93,50 @@ export class DiffCache {
 
   /** Whether an entry can be shown without a background refresh (SHA-keyed entries always can). */
   isFresh(key: string): boolean {
+    this.settle();
     const entry = this.map[key];
     return entry !== undefined && (!isLatest(key) || Date.now() - entry.at <= LATEST_FRESH_MS);
   }
 
   set(key: string, files: readonly FileStats[]): void {
     if (files.length > MAX_FILES_PER_ENTRY) return;
+    this.settle();
     const entry: CachedDiff = { files, at: Date.now() };
     // Visible to this tab at once...
     this.map = writeEntry(this.map, key, entry);
-    // ...and merged into what is *stored* now, not into this tab's snapshot of
-    // it: writing the snapshot back used to drop every entry other tabs had
-    // added since it was taken, so counts kept getting fetched again.
+    // ...and stored shortly, together with whatever else lands meanwhile.
+    this.pendingWrites.set(key, entry);
+    this.flushTimer ??= setTimeout(() => {
+      this.flushTimer = null;
+      this.flush();
+    }, WRITE_DELAY_MS);
+  }
+
+  /**
+   * One write for every entry gathered, merged into what is *stored* now, not
+   * into this tab's snapshot of it: writing the snapshot back used to drop
+   * every entry other tabs had added since it was taken, so counts kept
+   * getting fetched again.
+   */
+  private flush(): void {
+    const batch = this.pendingWrites;
+    if (batch.size === 0) return;
+    this.pendingWrites = new Map();
     this.writing = this.writing
       .then(async () => {
-        const stored = cleanMap(await cacheItem.getValue());
-        await cacheItem.setValue(writeEntry(stored, key, entry));
+        let stored = cleanMap(await cacheItem.getValue());
+        for (const [key, entry] of batch) stored = writeEntry(stored, key, entry);
+        await cacheItem.setValue(stored);
       })
       .catch(() => undefined);
     persist(this.writing);
   }
 
   async clear(): Promise<void> {
+    if (this.flushTimer !== null) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    this.pendingWrites = new Map();
+    this.deferred = null;
     this.map = {};
     await cacheItem.setValue({});
   }

@@ -117,9 +117,18 @@ async function loadThrottle(): Promise<Throttle> {
   return throttleLoading;
 }
 
+/** Storage writes are gathered: a list page claims a dozen slots within a second, and the worker reads from memory anyway. */
+const THROTTLE_WRITE_DELAY_MS = 250;
+let throttleWrite: ReturnType<typeof setTimeout> | null = null;
+
 function saveThrottle(next: Throttle): void {
   throttle = next;
-  void throttleItem.setValue(next).catch(() => undefined);
+  // The stored copy only matters to the next worker, which starts well after this timer fires (the worker is kept
+  // for ~30 s of idleness), so the latest state is written once per burst rather than once per claim.
+  throttleWrite ??= setTimeout(() => {
+    throttleWrite = null;
+    if (throttle !== null) void throttleItem.setValue(throttle).catch(() => undefined);
+  }, THROTTLE_WRITE_DELAY_MS);
 }
 
 /**
