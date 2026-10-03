@@ -4614,12 +4614,14 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--geld-review-muted);
 }
 
+/* 24px tall with a 1px border, a 12px glyph: 5px above and below it, so 5px on the left too — the state circle
+   is always the first thing in the chip, and it sits concentric with the chip's rounded end. */
 .geld-review__chat-thread {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 24px;
-  padding: 0 6px 0 8px;
+  padding: 0 6px 0 5px;
   border: 1px solid var(--geld-review-border);
   border-radius: 12px;
   background: var(--geld-review-bg);
