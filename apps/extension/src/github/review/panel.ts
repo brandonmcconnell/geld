@@ -1829,14 +1829,19 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: entry.anchor }, [entry.time]));
+  // The times read as one column: a line with fewer squares after its time than a sibling leaves the missing
+  // ones blank. In a round an opening line has a ⋯ and a chevron (two squares); in the Reviews index every line
+  // that goes somewhere has one chevron and nothing else.
+  const spacer = (): HTMLElement => createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' });
+  const siblingSquares = reserveChevron ? (pointer ? 1 : 2) : 0;
   if (goes) {
+    // A verdict with threads beside reviews with comments: the ⋯ square stays blank, the chevron lines up.
+    if (siblingSquares === 2) right.append(spacer());
     right.append(pointerChevron(act));
   } else if (entry.hasBody) {
     right.append(controlSlot(entry.anchor, true), chevron(open, act));
-  } else if (reserveChevron) {
-    // A bare verdict beside reviews with comments: their time is followed by a ⋯ and a chevron, so this one gets
-    // both squares' worth of space and the times read as one column.
-    right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }), createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
+  } else {
+    for (let square = 0; square < siblingSquares; square += 1) right.append(spacer());
   }
   const row = createElement(
     'li',
