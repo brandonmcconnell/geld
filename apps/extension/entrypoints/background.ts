@@ -493,10 +493,15 @@ async function contentHosts(): Promise<Set<string>> {
   return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
 }
 
-/** Put Geld into a tab that should have it but does not (installed/updated while open, etc.). */
-async function ensureTab(tabId: number, url: string | undefined): Promise<EnsureContentResponse> {
-  if (hostOf(url, await contentHosts()) === null) return { injected: false };
-  return { injected: await ensureContentScript(tabId) };
+/**
+ * Put Geld into a tab that should have it but does not (installed/updated
+ * while open, etc.). A tab still loading is left alone: the browser injects
+ * the declared content script with the document, and a copy injected here
+ * on top of it would only make the first one retire (github.content/index.ts).
+ */
+async function ensureTab(tab: { readonly id?: number | undefined; readonly url?: string | undefined; readonly status?: string | undefined }): Promise<EnsureContentResponse> {
+  if (tab.id === undefined || tab.status === 'loading' || hostOf(tab.url, await contentHosts()) === null) return { injected: false };
+  return { injected: await ensureContentScript(tab.id) };
 }
 
 /** Keyboard shortcut: ask the active GitHub tab to toggle its hidden files. */
@@ -536,7 +541,7 @@ export default defineBackground(() => {
     if (isEnsureContentMessage(message)) {
       void browser.tabs
         .get(message.tabId)
-        .then((tab) => ensureTab(message.tabId, tab.url))
+        .then(ensureTab)
         .catch((): EnsureContentResponse => ({ injected: false }))
         .then(sendResponse);
       return true;
@@ -613,7 +618,7 @@ export default defineBackground(() => {
   browser.tabs.onActivated.addListener(({ tabId }) => {
     void browser.tabs
       .get(tabId)
-      .then((tab) => ensureTab(tabId, tab.url))
+      .then(ensureTab)
       .catch(() => undefined);
   });
 

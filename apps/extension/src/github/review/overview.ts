@@ -826,8 +826,12 @@ let fetchedFragments = new Map<string, readonly Node[]>();
 let fragmentsInFlight = new Set<string>();
 let failedFragments = new Map<string, number>();
 let eagerFragments = 0;
+/** Cancels the fetches in flight: an answer for a page that is gone, or for a copy of this script that retired, is not wanted. */
+let fragmentAbort = new AbortController();
 
 function resetFragments(): void {
+  fragmentAbort.abort();
+  fragmentAbort = new AbortController();
   eagerFragments = 0;
   fetchedFragments = new Map();
   fragmentsInFlight = new Set();
@@ -914,7 +918,12 @@ let fragmentRenderTimer: number | null = null;
 let fragmentRenderSince = 0;
 
 function fragmentLanded(): void {
-  if (lastSettings !== null && lastSettings.compactTimeline !== 'off' && !visit.fullTimeline) loadMinimizedReviews();
+  // Torn down since the fetch began (the reader left the conversation, or a newer copy of this script took the
+  // page over): nothing to render, and asking for more fragments would start the whole cycle again — a retired
+  // copy used to keep fetching and remounting its own panel over the live one's for as long as fragments
+  // remained, and the two panels, each rebuilt from its own memory of what was open, took turns on the page.
+  if (lastSettings === null) return;
+  if (lastSettings.compactTimeline !== 'off' && !visit.fullTimeline) loadMinimizedReviews();
   const now = Date.now();
   if (fragmentRenderTimer !== null) {
     // The burst has gone on long enough: let the pending render happen.
@@ -931,8 +940,9 @@ function fragmentLanded(): void {
 }
 
 async function fetchFragment(fragment: Element, src: string): Promise<void> {
+  const { signal } = fragmentAbort;
   try {
-    const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
+    const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin', signal });
     if (!response.ok) {
       failedFragments.set(src, Date.now());
       return;
@@ -946,6 +956,8 @@ async function fetchFragment(fragment: Element, src: string): Promise<void> {
     failedFragments.delete(src);
     fetchedFragments.set(src, nodes);
   } catch {
+    // Cancelled (see `resetFragments`): not a failure of the fetch, and nobody is waiting for it.
+    if (signal.aborted) return;
     // Left as GitHub's own lazy fragment; it still loads when the reader scrolls to it in the full timeline.
     failedFragments.set(src, Date.now());
   }
@@ -974,15 +986,17 @@ export function takeReviewDeferred(): boolean {
 
 /** The pass itself, unless nobody is looking (then it is noted for the catch-up). */
 function reapplyNow(): void {
+  if (lastSettings === null) return;
   if (document.hidden) {
     deferredWhileHidden = true;
     return;
   }
-  if (lastSettings !== null) applyReviewOverview(lastSettings);
+  applyReviewOverview(lastSettings);
 }
 
 /** Another pass shortly (fetched markup arrived), coalesced. */
 function reapplySoon(): void {
+  if (lastSettings === null) return;
   if (document.hidden) {
     deferredWhileHidden = true;
     return;
@@ -994,6 +1008,14 @@ function reapplySoon(): void {
   }, 150);
 }
 
+/**
+ * The settings of the pass that mounted the overview, and the sign that it
+ * is mounted at all: `null` from `teardownReviewOverview` on. Every
+ * re-apply that an asynchronous answer asks for (a fetched fragment, Jev, a
+ * Resolve round trip, the AI run) checks it first, so a torn-down overview
+ * — the controller stopped because a newer copy of the content script took
+ * the page over, or the reader left the conversation — stays torn down.
+ */
 let lastSettings: GeldSettings | null = null;
 
 /** Open the row `key` names; an item opens inside its round, `sub` names a line inside a round, and the section holding either unfolds. */
@@ -2016,6 +2038,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (visit.pageKey !== '') teardownReviewOverview();
     return;
   }
+  lastSettings = settings;
   if (visit.pageKey !== page.stateKey) {
     restoreAll();
     visit.pageKey = page.stateKey;
@@ -2049,7 +2072,6 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
     loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
-  lastSettings = settings;
   const crawledDom = phase('crawl', crawlConversation);
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot }]));
@@ -2226,7 +2248,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     aiPending: aiPending(),
     fixFor,
   };
-  const reapply = (): void => applyReviewOverview(settings);
+  // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
+  const reapply = (): void => reapplyNow();
   const panelHandlers: PanelHandlers = {
     onToggle: (key) => {
       keepInPlace(`main:${key}`, () => {
@@ -2601,6 +2624,15 @@ function alignRevealWithLanding(node: Element, anchor: string, focusKey: string)
 }
 
 export function teardownReviewOverview(): void {
+  // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
+  // and every later callback finds the overview unmounted (`lastSettings`).
+  lastSettings = null;
+  deferredWhileHidden = false;
+  if (reapplyTimer !== null) window.clearTimeout(reapplyTimer);
+  reapplyTimer = null;
+  if (fragmentRenderTimer !== null) window.clearTimeout(fragmentRenderTimer);
+  fragmentRenderTimer = null;
+  resetFragments();
   hideHoverCard();
   releaseHold();
   setHoverProvider(null);

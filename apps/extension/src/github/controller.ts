@@ -229,7 +229,8 @@ function setInlineIcon(row: HTMLElement, category: HiddenCategory | null): void 
   original.insertAdjacentElement('beforebegin', icon);
 }
 
-const IDLE_STATE: TabState = {
+/** A tab Geld has nothing to say about yet (or any more): what the popup gets before the first pass and from a retired copy. */
+export const IDLE_STATE: TabState = {
   repo: null,
   repoConfig: null,
   allowed: true,
