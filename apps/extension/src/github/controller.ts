@@ -10,6 +10,7 @@ import type { RepoRule } from '@geld/core';
 import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
+import { cancelIdle, whenIdle } from '../lib/idle';
 import { count as perfCount, phase } from '../lib/perf';
 import type { RepoConfigChoices } from '../lib/local-state';
 import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
@@ -452,6 +453,8 @@ export class GeldController {
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    cancelIdle('commit-hover');
+    cancelIdle('diffstat');
     this.teardown();
   }
 
@@ -873,22 +876,18 @@ export class GeldController {
       const surfaces = surfacesOf(this.catalog);
       phase('chips', () => {
         this.applyListChips(surfaces);
-        this.applyCommitTooltips();
         applyAuthorHiding(this.authorRules, surfaces);
+      });
+      // Nothing on screen waits for these: the commit tooltip re-arms on the next hover, and a hovercard's
+      // diffstat is rewritten before anyone reads it. A newer pass replaces a request still waiting.
+      whenIdle('commit-hover', () => {
+        if (!this.stopped) phase('commit-hover', () => this.applyCommitTooltips());
+      });
+      whenIdle('diffstat', () => {
+        if (!this.stopped) phase('diffstat', () => this.applyDiffstatSurfacesNow());
       });
     }
     if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths());
-    if (!skipChips) {
-      phase('diffstat', () =>
-        applyDiffstatSurfaces({
-          catalog: this.catalog,
-          matcherFor: (repo) => this.matcherFor(repo),
-          repoRules: this.repoRules,
-          diffSource: this.diffSource,
-          hideCommentLines: this.settings.hideCommentLines,
-        }),
-      );
-    }
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
@@ -930,6 +929,17 @@ export class GeldController {
       repoRules: this.repoRules,
       diffSource: this.diffSource,
       onRowVisible: () => this.schedule(),
+    });
+  }
+
+  private applyDiffstatSurfacesNow(): void {
+    if (!this.settings.enabled) return;
+    applyDiffstatSurfaces({
+      catalog: this.catalog,
+      matcherFor: (repo) => this.matcherFor(repo),
+      repoRules: this.repoRules,
+      diffSource: this.diffSource,
+      hideCommentLines: this.settings.hideCommentLines,
     });
   }
 

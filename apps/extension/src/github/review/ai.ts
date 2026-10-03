@@ -10,6 +10,7 @@
  */
 
 import type { GeldSettings } from '@geld/core';
+import { whenIdle } from '../../lib/idle';
 import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, Preview, PreviewStatusInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
 import {
   applyAddressed,
@@ -457,7 +458,11 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
     if (status !== undefined) previewStatus.set(previewDecisionKey(entry.preview), status);
     else if (known === undefined && !asked.has(hash)) missingPreviews.push({ hash, entry });
   }
-  if (missingComments.length + missingThreads.length + missingPreviews.length > 0) void classify(settings, missingComments, missingThreads, missingPreviews, onProgress);
+  // The submission waits for an idle moment: passes come in bursts while a page loads, and the last one of the
+  // burst knows every comment; an earlier request still waiting is replaced, so the batch goes out once.
+  if (missingComments.length + missingThreads.length + missingPreviews.length > 0) {
+    whenIdle('jev-submit', () => void classify(settings, missingComments, missingThreads, missingPreviews, onProgress));
+  }
   return { lanes, done, previewStatus };
 }
 
