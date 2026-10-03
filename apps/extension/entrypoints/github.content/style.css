@@ -2695,7 +2695,9 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   color: var(--geld-review-done-fg);
 }
 
-.geld-review__row:not([data-state='done']) .geld-review__status:hover {
+/* Only the glyph that resolves (a button) previews the resolved colour under the pointer; a state glyph (closed,
+ * merged, a verdict) is a picture of what is, and keeps its colour. */
+.geld-review__row:not([data-state='done']) button.geld-review__status:hover {
   color: var(--geld-review-done-fg);
 }
 
@@ -4589,6 +4591,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__chat[data-geld-chat='comment'] .geld-review__chat-body:has(> [data-geld-message][data-geld-lone]),
 .geld-review__chat[data-geld-chat='comment'] .geld-review__chat-body :has(> [data-geld-message][data-geld-lone]) {
   padding: 0 0 0 var(--geld-chat-gutter);
+}
+
+/* No byline (a closure's comment, whose row is its header): nothing to indent under, so no gutter. */
+.geld-review__chat[data-geld-chat='comment'][data-geld-headless] .geld-review__chat-body:has(> [data-geld-message][data-geld-lone]),
+.geld-review__chat[data-geld-chat='comment'][data-geld-headless] .geld-review__chat-body :has(> [data-geld-message][data-geld-lone]) {
+  padding: 0;
 }
 
 /* Not a chat: one comment under its author is the comment itself, no bubble, no frame. */

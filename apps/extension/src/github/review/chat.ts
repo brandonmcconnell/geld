@@ -274,7 +274,8 @@ export interface ChatThreadLink {
  * The comment's own header stays hidden: its ⋯ is worn by the row above.
  */
 export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null): void {
-  const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment' });
+  // Without a byline the row above is the header, and the body needs no gutter to sit under a name.
+  const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment', ...(byline === null ? { 'data-geld-headless': '' } : {}) });
   if (byline !== null) {
     const who = byline.login === '' ? {} : byline.bot && /\[bot\]$/i.test(byline.login) ? { [ATTR_WHO]: byline.login } : { 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(byline.login)}/hovercard` };
     const line = createElement('div', { class: 'geld-review__chat-byline' });

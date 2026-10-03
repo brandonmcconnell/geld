@@ -65,6 +65,8 @@ export interface FoldRow {
   readonly firstAnchor: string | null;
   /** When the fold holds one comment: its time, as the page shows it. */
   readonly time: string;
+  /** The id whose clock `time` was read from (the headline event's, else the first node's), so the cell can follow the clock's ticks. */
+  readonly timeAnchor: string | null;
   /** The timeline events' state change (fold.ts `EventHeadline`): the row reads "merged into main" with who did it. */
   readonly headline?: EventHeadline;
   /** A state change paired with its comment (fold.ts `Closure`): the row reads "X closed this" with the comment's first line. */
@@ -638,15 +640,17 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
 function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const key = foldKey(fold.key);
   const open = model.openKey === key;
-  // A state change reads as a line: who did what, then the first words of the comment they left with it. The
-  // timeline events row reads its state change the same way (who merged, into what), the count beside it.
+  // A state change reads as a line: who, then the first words of the comment they left with it. The glyph on the
+  // left says what they did (closed, merged, reopened), so the words "closed this" are for screen readers alone,
+  // where the button's name would otherwise be a login and a quote. The timeline events row reads its state change
+  // in words (who merged, into what), the count beside it.
   const headline = fold.headline;
   const asLine = fold.closure !== undefined || headline !== undefined;
   const mainChildren: Node[] =
     fold.closure !== undefined
       ? [
           createElement('span', { class: `${PANEL_CLASS}__name` }, [fold.author ?? '']),
-          createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [`${fold.closure.kind} this`]),
+          createElement('span', { class: 'geld-sr-only' }, [` ${fold.closure.kind} this `]),
           ...(fold.closure.preview === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(fold.closure.preview))]),
         ]
       : headline !== undefined
@@ -660,12 +664,13 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   const toggle = (): void => handlers.onToggle(key);
   mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [fold.time]));
+  if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, ...(fold.timeAnchor === null ? {} : { [ATTR_TIME_FOR]: fold.timeAnchor }) }, [fold.time]));
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
-    // A single comment wears GitHub's own ⋯ (Copy link, Quote reply, Edit, Hide, Delete) with Show in timeline added;
-    // Geld's small menu stands in until it arrives, and for groups.
-    if (fold.count === 1 && fold.avatarSrc !== null) right.append(controlSlot(anchor));
+    // A single comment (a closure's is one: the event beside it has no menu) wears GitHub's own ⋯ (Copy link,
+    // Quote reply, Edit, Hide, Delete) with Show in timeline added; Geld's small menu stands in until it arrives,
+    // and for groups.
+    if ((fold.count === 1 || fold.closure !== undefined) && fold.avatarSrc !== null) right.append(controlSlot(anchor));
     right.append(menu([{ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(anchor) }, { label: 'Copy link', onSelect: () => handlers.onCopyLink(anchor) }], key));
   } else {
     // Keeps the times of rows without a menu in line with those that have one.
@@ -2078,7 +2083,8 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: 
     const appendFolds = (folds: readonly FoldRow[]): void => {
       for (const fold of folds) {
         rows.append(foldRowEl(fold, model, handlers));
-        if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 ? 'solo' : null));
+        // One comment under its row (a closure's too: its event is the row): the row is the header, the slot the body.
+        if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 || fold.closure !== undefined ? 'solo' : null));
       }
     };
     if (other.length > 0) {

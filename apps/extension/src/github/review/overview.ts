@@ -621,6 +621,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       author: group.author,
       firstAnchor,
       time: headlineNode === null ? timeTextOf(group.nodes[0] ?? null, firstAnchor) : timeTextOf(headlineNode, headlineNode.id),
+      timeAnchor: headlineNode === null ? firstAnchor : headlineNode.id,
       ...(group.closure === undefined ? {} : { closure: group.closure }),
       ...(group.headline === undefined ? {} : { headline: group.headline }),
     };
@@ -1832,9 +1833,13 @@ function timeTextOf(node: Element | null, knownAnchor: string | null = null): st
  * crawl, no model, no signature. GitHub's `relative-time` ticks inside its
  * shadow root, which no observer of the page sees, so the panel's copies of
  * those words went stale until some other change happened to re-render the
- * row; `scheduleTimeRefresh` runs this once a minute while the tab is shown
- * (the cadence of the clocks themselves), and a light-DOM clock tick (older
- * markup, `time-ago`) reaches it straight from the controller.
+ * row; `scheduleTimeRefresh` runs this every few seconds while the tab is
+ * shown — the clocks tick once a minute, each at its own second, and a fixed
+ * minute between reads left a cell a whole minute behind the clock it
+ * copies (the page said "17 minutes ago" under a row still saying 16); the
+ * pass is a handful of text reads, so a short cadence costs nothing. A
+ * light-DOM clock tick (older markup, `time-ago`) reaches it straight from
+ * the controller.
  */
 export function refreshReviewTimes(): number {
   let changed = 0;
@@ -1849,10 +1854,10 @@ export function refreshReviewTimes(): number {
   return changed;
 }
 
-const TIME_REFRESH_MS = 60_000;
+const TIME_REFRESH_MS = 10_000;
 let timeRefreshTimer: number | null = null;
 
-/** Keep the cells current while the panel is up; a hidden tab skips the minute (its return re-renders anyway). */
+/** Keep the cells current while the panel is up; a hidden tab skips the pass (its return re-renders anyway). */
 function scheduleTimeRefresh(): void {
   timeRefreshTimer ??= window.setInterval(() => {
     if (!document.hidden) refreshReviewTimes();
@@ -2712,12 +2717,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       } else if (visit.openKey === CHECKS_KEY) {
         renderQuickView(mounted.slot, nodes);
       } else if (visit.openKey.startsWith(foldKey('closure:'))) {
-        // The comment left with the change, as a one-comment chat; the event row itself is the panel row.
+        // The comment left with the change, as a one-comment chat without a byline: the row above is its header
+        // (who, when, GitHub's ⋯), as with any other single comment; the event itself is that row.
         const group = groups.find((entry) => foldKey(entry.key) === visit.openKey);
         const comment = group?.nodes[0];
         if (group !== undefined && comment !== undefined) {
-          const byline = dressByline({ login: group.author ?? '', bot: false, avatarSrc: avatarSrcOf(comment), time: timeTextOf(comment, group.closure?.commentAnchor ?? null) }, group.closure?.commentAnchor ?? null);
-          renderCommentChat(mounted.slot, comment, byline);
+          renderCommentChat(mounted.slot, comment, null);
         } else {
           renderQuickView(mounted.slot, nodes);
         }
