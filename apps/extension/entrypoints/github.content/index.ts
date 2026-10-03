@@ -2,7 +2,9 @@ import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController } from '../../src/github/controller';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
-import { isGetTabStateMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
+import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
+import type { PerfSnapshot } from '../../src/lib/perf';
+import { snapshot as perfSnapshot } from '../../src/lib/perf';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
 import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
@@ -80,7 +82,13 @@ export default defineContentScript({
       quietly(unwatchChoices);
     };
 
-    const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState) => void): boolean | undefined => {
+    const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState | PerfSnapshot) => void): boolean | undefined => {
+      if (isPerfReportMessage(message)) {
+        // Only the top frame counts: the page is what the reader sees, and frames would answer in its place.
+        if (window.top !== window) return undefined;
+        sendResponse(perfSnapshot());
+        return undefined;
+      }
       if (isToggleHiddenMessage(message)) {
         controller.toggleHidden();
         sendResponse(controller.getTabState());

@@ -12,6 +12,7 @@ import { botById, botTitle, clusterComments, firstSentence, isOpenStatus, isTrig
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
+import { phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
@@ -1819,6 +1820,10 @@ function slotNeedsRender(slot: HTMLElement): boolean {
 }
 
 export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null): void {
+  phase('review', () => applyReviewOverviewPass(settings, paths));
+}
+
+function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string[] | null): void {
   if (paths !== undefined) diffPaths = paths;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
@@ -1858,17 +1863,16 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
   lastSettings = settings;
-  const crawledDom = crawlConversation();
+  const crawledDom = phase('crawl', crawlConversation);
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot }]));
-  const found = findSummaryComment(document);
+  const found = phase('summary', () => findSummaryComment(document));
   hideSummary(found?.root ?? null);
-  const headSha = detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA;
+  const headSha = phase('head-sha', () => detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA);
   // Jev first, from its cache: what it has said about the top-level comments decides what is a trigger below.
   const topLevel: CommentToClassify[] = crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => ({ anchor: entry.comment.anchor, author: entry.author.login, bot: entry.author.bot, body: entry.comment.body }));
-  jevNow = jevDecisionsFor(settings, topLevel, [], reapplySoon);
-  const crawled = buildFromComments(crawledDom, settings, headSha, visit.generatedAt);
-  const composed = composeMeta(found, crawled);
+  jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, [], reapplySoon));
+  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt)));
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items
@@ -1876,13 +1880,15 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     .map((item) => ({ itemId: item.id, ...(item.path === undefined ? {} : { path: item.path }), comments: item.sources.map((source) => bodies.get(source.anchor) ?? { author: source.author, body: '' }) }));
   // Previews whose status the parser left unknown are asked about with the same request.
   const docText = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, entry.previewDoc.text] as const));
-  const unknownPreviews: PreviewToClassify[] = crawledDom.comments
-    .filter((entry) => entry.author.bot)
-    .flatMap((entry) => parsePreviews(entry.previewDoc))
-    .filter((entry) => entry.status === 'unknown')
-    .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' }));
-  jevNow = jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews);
-  const meta = withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done)));
+  const unknownPreviews: PreviewToClassify[] = phase('preview-parse', () =>
+    crawledDom.comments
+      .filter((entry) => entry.author.bot)
+      .flatMap((entry) => parsePreviews(entry.previewDoc))
+      .filter((entry) => entry.status === 'unknown')
+      .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' })),
+  );
+  jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews));
+  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done))));
 
   const viewingAnchor = sourceAnchorFromHash(location.hash);
   if (viewingAnchor !== null && document.getElementById(viewingAnchor) === null && visit.loadMoreTries < MAX_LOAD_MORE) {
@@ -1891,8 +1897,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const compacting = settings.compactTimeline !== 'off';
   const hidingTimeline = compacting && !visit.fullTimeline;
   // "X closed this" with the comment X left as they did: one row, the comment its content.
-  const closures = hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() };
-  const groups = [...foldGroups(meta, settings, crawledDom, closures.paired), ...closures.groups];
+  const closures = phase('closures', () => (hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() }));
+  const groups = phase('folds', () => [...foldGroups(meta, settings, crawledDom, closures.paired), ...closures.groups]);
   // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
@@ -1900,18 +1906,18 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
-  const reviews = crawlReviews();
+  const reviews = phase('reviews', crawlReviews);
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
-  const awaiting = awaitingReviewers();
+  const awaiting = phase('awaiting', awaitingReviewers);
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
-  const comments = pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor))]);
-  const allPreviews = previewsOn(crawledDom, meta);
+  const comments = phase('entries', () => pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor))]));
+  const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
-  const allReports = [
+  const allReports = phase('reports', () => [
     ...reportsFrom(crawledDom.comments.filter((entry) => entry.author.bot).map((entry) => ({ author: entry.author.login, body: entry.comment.body, anchor: entry.comment.anchor, ...(entry.comment.createdAt === '' ? {} : { createdAt: entry.comment.createdAt }) }))),
     ...reportsFromChecks(crawlCheckRuns(document, headSha)),
-  ];
+  ]);
   const foldTargets: FoldGroup[] = [...groups];
   if (hidingTimeline) {
     for (const item of meta.items) foldTargets.push({ key: itemKey(item.id), label: item.title, author: null, nodes: itemNodes(item) });
@@ -1929,7 +1935,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
-  const leftoverList = crawlLeftovers(claimed);
+  const leftoverList = phase('leftovers', () => crawlLeftovers(claimed));
   if (hidingTimeline) {
     const leftovers = groupLeftovers(leftoverList);
     groups.push(...leftovers);
@@ -1939,10 +1945,12 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   // GitHub lists no commits, only "force-pushed from a to b"). Bot run summaries belong to their round rather than to rows of their own.
   const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
-  const batches = buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, comments, allPreviews).map((batch) => {
-    const pinnedComments = pinOpenEntry(batch.comments);
-    return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
-  });
+  const batches = phase('batches', () =>
+    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, comments, allPreviews).map((batch) => {
+      const pinnedComments = pinOpenEntry(batch.comments);
+      return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
+    }),
+  );
   settleAfterResolve(meta, batches);
   reseatOpenLine(batches);
   // A round's bot comment lines and its preview pills both stand for their comments: neither needs a fold row too.
@@ -1966,6 +1974,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const fixFor = (item: ReviewItem): SuggestedFix | null => (fixVisible(item.fix, settings.suggestedFixes) ? item.fix : null);
   // An item lives inside its round's row: opening it opens the round and the item within.
   const openRowLocal = (key: string, sub: string | null = null): void => openRow(key, batches, settings.reviewGrouping, sub);
+  const modelStart = performance.now();
   const subject = subjectOf();
   const boxText = mergeBoxText();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
@@ -1980,7 +1989,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   const awaited = new Set(awaiting.map((entry) => entry.author.toLowerCase()));
   const reviewers = latestReviewers(reviews).filter((entry) => !awaited.has(entry.login.toLowerCase()));
   for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
-  const requestable = installedBots(meta, document, rawComments);
+  const requestable = phase('bots', () => installedBots(meta, document, rawComments));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
   const model: PanelModel = {
@@ -2202,7 +2211,8 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
       revealRow(`main:${seat.sub === null ? (visit.openSubKey ?? visit.openKey) : `sub:${seat.sub}`}`);
     },
   };
-  const mounted = mountPanel(model, panelHandlers);
+  phaseSince('model', modelStart);
+  const mounted = phase('panel', () => mountPanel(model, panelHandlers));
   scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
@@ -2213,6 +2223,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     releaseHold();
   }
 
+  const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
     if (nodes.length === 0) {
@@ -2304,18 +2315,21 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   } else {
     restoreAll();
   }
+  phaseSince('slots', slotsStart);
   if (mounted !== null) {
-    wearControls(mounted.root, panelHandlers);
-    wearGear(mounted.root);
-    // Spinners rendered into the slot after the mount (preview lines, a round's CI glyph) join the same phase.
-    syncSpinners(mounted.root);
-    // Commit rows on loan get their dates once those land (the slot itself is not rebuilt for that).
-    timeCommitRows(mounted.root, reapplySoon);
+    phase('dress', () => {
+      wearControls(mounted.root, panelHandlers);
+      wearGear(mounted.root);
+      // Spinners rendered into the slot after the mount (preview lines, a round's CI glyph) join the same phase.
+      syncSpinners(mounted.root);
+      // Commit rows on loan get their dates once those land (the slot itself is not rebuilt for that).
+      timeCommitRows(mounted.root, reapplySoon);
+    });
   }
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
   setReportProvider((anchor) => reportCardFor(anchor, model, panelHandlers));
-  applyFolds(foldTargets, new Set());
+  phase('apply-folds', () => applyFolds(foldTargets, new Set()));
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
   // holds it, once, instantly, just under GitHub's sticky header rather than
@@ -2335,6 +2349,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     }
     if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
   }
+  const tailStart = performance.now();
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
@@ -2342,7 +2357,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   markSeen();
   // The row the reader opened stays put under whatever this pass moved above it.
   applyHold();
-
+  phaseSince('tail', tailStart);
 }
 
 /**

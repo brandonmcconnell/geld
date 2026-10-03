@@ -60,6 +60,11 @@ export interface GetTabStateMessage {
   readonly type: 'geld:get-tab-state';
 }
 
+/** Options page → content script: what Geld has cost on this tab so far (`lib/perf.ts`), for Copy diagnostics. */
+export interface PerfReportMessage {
+  readonly type: 'geld:perf-report';
+}
+
 /** Hash the popup's "go to file" navigates with when the diffs are on another tab of the PR. */
 export const REVEAL_HASH_PREFIX = '#geld-reveal=';
 
@@ -217,6 +222,10 @@ export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMess
 
 export function isGetTabStateMessage(value: unknown): value is GetTabStateMessage {
   return isRecord(value) && value.type === 'geld:get-tab-state';
+}
+
+export function isPerfReportMessage(value: unknown): value is PerfReportMessage {
+  return isRecord(value) && value.type === 'geld:perf-report';
 }
 
 export function isRevealFileMessage(value: unknown): value is RevealFileMessage {

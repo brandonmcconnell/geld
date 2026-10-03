@@ -10,6 +10,7 @@ import type { RepoRule } from '@geld/core';
 import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
+import { count as perfCount, phase } from '../lib/perf';
 import type { RepoConfigChoices } from '../lib/local-state';
 import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
@@ -346,13 +347,16 @@ export class GeldController {
     this.stopped = false;
     this.observer = new MutationObserver((records) => {
       if (isIgnorableMutation(records)) return;
+      perfCount('batches');
       // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
       if (document.hidden) {
         this.hiddenDirty = true;
+        perfCount('hidden-deferred');
         return;
       }
       if (isClockTick(records)) {
-        refreshReviewTimes();
+        perfCount('clock-ticks');
+        phase('clocks', refreshReviewTimes);
         return;
       }
       // Header first, synchronously: this callback runs before the browser
@@ -600,6 +604,7 @@ export class GeldController {
   private deferWhileHidden(): boolean {
     if (!document.hidden) return false;
     this.hiddenDirty = true;
+    perfCount('hidden-deferred');
     return true;
   }
 
@@ -736,6 +741,10 @@ export class GeldController {
 
   private apply(): void {
     if (this.stopped || this.deferWhileHidden()) return;
+    phase('pass', () => this.runPass());
+  }
+
+  private runPass(): void {
     // The extension was reloaded, updated or removed while this tab was open:
     // this copy is orphaned (a newer one takes over, or nothing should run).
     if (!extensionAlive()) {
@@ -772,7 +781,7 @@ export class GeldController {
     this.virtualSection = null;
     if (view !== null) {
       renderedEntryCount = view.entries.length;
-      const result = this.applyView(view, page.stateKey, matcher);
+      const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
       hidden = result.breakdown;
       expanded = result.expanded;
       this.consumeRevealHash(page.stateKey);
@@ -781,7 +790,7 @@ export class GeldController {
       this.teardownView();
     }
 
-    const header = this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden);
+    const header = phase('header', () => this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden));
     const headerHidden = header.hidden;
     const allTotals = header.all;
     if (this.virtualSection !== null) this.renderVirtualSection(page.stateKey, matcher, this.virtualSection, headerHidden ?? hidden ?? EMPTY_BREAKDOWN, expanded);
@@ -793,17 +802,21 @@ export class GeldController {
 
     applySurfaceStyles(this.catalog);
     const surfaces = surfacesOf(this.catalog);
-    this.applyListChips(surfaces);
-    this.applyCommitTooltips();
-    applyAuthorHiding(this.authorRules, surfaces);
-    applyReviewOverview(this.settings, this.pageDiffPaths());
-    applyDiffstatSurfaces({
-      catalog: this.catalog,
-      matcherFor: (repo) => this.matcherFor(repo),
-      repoRules: this.repoRules,
-      diffSource: this.diffSource,
-      hideCommentLines: this.settings.hideCommentLines,
+    phase('chips', () => {
+      this.applyListChips(surfaces);
+      this.applyCommitTooltips();
+      applyAuthorHiding(this.authorRules, surfaces);
     });
+    applyReviewOverview(this.settings, this.pageDiffPaths());
+    phase('diffstat', () =>
+      applyDiffstatSurfaces({
+        catalog: this.catalog,
+        matcherFor: (repo) => this.matcherFor(repo),
+        repoRules: this.repoRules,
+        diffSource: this.diffSource,
+        hideCommentLines: this.settings.hideCommentLines,
+      }),
+    );
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
@@ -1381,7 +1394,7 @@ export class GeldController {
     const repo = repoFromPathname(url.pathname);
     if (repo !== null && !decideRepo(this.repoRules, repo).allowed) return;
     this.currentPage = page;
-    this.applyHeaderTotals(page, url, this.matcherFor(repo), null, 0, null);
+    phase('header-now', () => this.applyHeaderTotals(page, url, this.matcherFor(repo), null, 0, null));
     this.observer?.takeRecords();
   }
 

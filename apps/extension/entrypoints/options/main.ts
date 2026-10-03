@@ -23,6 +23,7 @@ import {
   normalizeHost,
   parsePatternList,
   actionsFor,
+  allHosts,
   authorRuleProblem,
   pluralize,
   sectionsFor,
@@ -42,6 +43,7 @@ import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
+import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
 import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
@@ -1149,7 +1151,8 @@ async function main(): Promise<void> {
       maintenanceStatus('Cached diffs and repository configs cleared; open pages recount on reload', 'success');
     },
     'copy-diagnostics': async () => {
-      const text = formatDiagnostics(await readDiagnostics(), browser.runtime.getManifest().version);
+      const [events, perf] = await Promise.all([readDiagnostics(), collectTabPerf(allHosts(settings))]);
+      const text = [formatDiagnostics(events, browser.runtime.getManifest().version), ...perf].join('\n\n');
       try {
         await navigator.clipboard.writeText(text);
         maintenanceStatus('Diagnostics copied to the clipboard', 'success');
