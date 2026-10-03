@@ -35,6 +35,7 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
+import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
@@ -373,6 +374,8 @@ export class GeldController {
       if (document.hidden) {
         this.hiddenDirty = true;
         perfCount('hidden-deferred');
+        // No look at the records either: the catch-up pass reads every comment afresh.
+        resetCrawlCache();
         return;
       }
       if (isClockTick(records)) {
@@ -387,6 +390,7 @@ export class GeldController {
         return;
       }
       for (const region of regions) this.pendingScope.add(region);
+      markCrawlDirty(records);
       // Header first, synchronously: this callback runs before the browser
       // paints, so a (re-)rendered header never shows GitHub's number when the
       // filtered one is already known or cached.

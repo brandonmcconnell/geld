@@ -8,7 +8,8 @@
 
 import type { PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { looksLikeSummaryBody } from '@geld/review';
-import { closestAtHome, compareHome, wornPiecesOf } from './teleport';
+import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
+import { count as perfCount } from '../../lib/perf';
 
 const ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+)$/;
 const COMMENT_SELECTOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]';
@@ -310,70 +311,197 @@ function createdAtOf(node: Element): string {
   return find(node, 'relative-time, time-ago, time')?.getAttribute('datetime') ?? '';
 }
 
-export function crawlConversation(root: ParentNode = document): {
-  readonly comments: readonly CrawledComment[];
-  readonly events: readonly CrawledEvent[];
-} {
-  const comments: CrawledComment[] = [];
-  const seen = new Set<string>();
+/* ---- what was read last time ---------------------------------------------- */
 
-  for (const container of root.querySelectorAll(THREAD_SELECTOR)) {
-    const nodes = [...container.querySelectorAll('[id^="discussion_r"]')].filter(usable);
-    const first = nodes[0];
-    if (first === undefined) continue;
-    const peers: ThreadPeer[] = [];
-    for (const node of nodes) {
-      seen.add(node.id);
-      const author = authorOf(node);
-      if (author === null) continue;
-      peers.push({ anchor: node.id, kind: 'thread', author: author.login, body: textOf(bodyElementOf(node)) });
-    }
-    const author = authorOf(first);
-    const lead = peers[0];
-    if (author === null || lead === undefined) continue;
-    const base: RawComment = {
-      anchor: first.id,
-      kind: 'thread',
-      author: author.login,
-      body: lead.body,
-      createdAt: createdAtOf(first),
-      isResolved: isResolvedThread(container),
-      isOutdated: isOutdatedThread(container),
-      threadAnchors: peers,
-    };
-    const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
-    comments.push({
+/**
+ * The derived reading of a comment node, a thread container or an event
+ * row, kept on the element itself (a WeakMap) between passes. Reading a
+ * comment means finding its body through the pieces a panel row wears,
+ * its author, its avatar, its path, and turning its body into text and a
+ * preview document; on a long conversation that is most of the crawl, and
+ * on the usual pass nothing about the comment has changed. A node is read
+ * again only after a mutation batch touched it (`markCrawlDirty`, called
+ * by the controller with every batch, through loans: a piece worn by a
+ * panel row counts for the comment it came from) or when the whole cache
+ * was dropped (a batch too large to look at, a hidden tab's catch-up).
+ * Nothing here outlives the elements; a node GitHub replaces is simply
+ * read afresh.
+ */
+interface ThreadReading {
+  /** Every `discussion_r` id inside the container, usable or not, so the comment loop skips them. */
+  readonly ids: readonly string[];
+  readonly crawled: CrawledComment | null;
+}
+
+interface CommentReading {
+  /** A rendered comment with an author (what `usable` says), listed or not. */
+  readonly usable: boolean;
+  readonly crawled: CrawledComment | null;
+}
+
+interface EventReading {
+  readonly event: CrawledEvent | null;
+}
+
+const threadReadings = new WeakMap<Element, ThreadReading>();
+const commentReadings = new WeakMap<Element, CommentReading>();
+const eventReadings = new WeakMap<Element, EventReading>();
+let dirty = new Set<Element>();
+/** Drop every reading at the next crawl (also the state before the first crawl). */
+let allDirty = true;
+
+/** Batches larger than this are page loads: the whole cache goes rather than a look at each record. */
+const MAX_MARKED = 300;
+
+/** Note which comments, threads and events a mutation batch touched; the next crawl reads only those again. */
+export function markCrawlDirty(records: readonly MutationRecord[]): void {
+  if (allDirty) return;
+  if (records.length > MAX_MARKED) {
+    allDirty = true;
+    return;
+  }
+  for (const record of records) {
+    const target = record.target instanceof Element ? record.target : record.target.parentElement;
+    if (target === null) continue;
+    markUp(target, COMMENT_SELECTOR);
+    markUp(target, THREAD_SELECTOR);
+    markUp(target, EVENT_SELECTOR);
+  }
+}
+
+/**
+ * Mark every element above `target` (through loans) that `selector` names:
+ * GitHub repeats a comment's id on a group and the comment inside it, and
+ * the reading is kept on whichever comes first in document order.
+ */
+function markUp(target: Element, selector: string): void {
+  let cursor = closestAtHome(target, selector);
+  while (cursor !== null) {
+    dirty.add(cursor);
+    const home = homeOf(cursor);
+    const parent = home instanceof Element ? home.parentElement : null;
+    cursor = parent === null ? null : closestAtHome(parent, selector);
+  }
+}
+
+/** Forget every reading: the next crawl reads the page in full. */
+export function resetCrawlCache(): void {
+  allDirty = true;
+}
+
+function readThread(container: Element): ThreadReading {
+  const all = [...container.querySelectorAll('[id^="discussion_r"]')];
+  const ids = all.map((node) => node.id);
+  const nodes = all.filter(usable);
+  const first = nodes[0];
+  if (first === undefined) return { ids, crawled: null };
+  const peers: ThreadPeer[] = [];
+  for (const node of nodes) {
+    const author = authorOf(node);
+    if (author === null) continue;
+    peers.push({ anchor: node.id, kind: 'thread', author: author.login, body: textOf(bodyElementOf(node)) });
+  }
+  const author = authorOf(first);
+  const lead = peers[0];
+  if (author === null || lead === undefined) return { ids, crawled: null };
+  const base: RawComment = {
+    anchor: first.id,
+    kind: 'thread',
+    author: author.login,
+    body: lead.body,
+    createdAt: createdAtOf(first),
+    isResolved: isResolvedThread(container),
+    isOutdated: isOutdatedThread(container),
+    threadAnchors: peers,
+  };
+  const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
+  return {
+    ids,
+    crawled: {
       comment: withLocation(base, pathLineOf(container)),
       root: timelineNode instanceof HTMLElement ? timelineNode : first,
       author,
       avatarSrc: avatarSrcOf(first),
       previewDoc: previewDocOf(first, author.login, first.id),
-    });
+    },
+  };
+}
+
+function readComment(node: Element): CommentReading {
+  if (!usable(node)) return { usable: false, crawled: null };
+  const author = authorOf(node);
+  if (author === null) return { usable: true, crawled: null };
+  const body = textOf(bodyElementOf(node));
+  if (looksLikeSummaryBody(body)) return { usable: true, crawled: null };
+  const base: RawComment = { anchor: node.id, kind: kindOf(node.id), author: author.login, body, createdAt: createdAtOf(node) };
+  return { usable: true, crawled: { comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id) } };
+}
+
+function readEvent(node: Element): EventReading {
+  if (!/^event-\d+$/.test(node.id) || node.closest(THREAD_SELECTOR) !== null) return { event: null };
+  // A force-push is a push, not an event: it opens a round like a run of commits does (crawlLeftovers lists it).
+  if (isForcePushRow(node)) return { event: null };
+  return { event: { anchor: node.id, root: timelineRootOf(node) } };
+}
+
+/** The reading kept for `node`, or a fresh one when it was touched since (or never read). */
+function reading<T>(store: WeakMap<Element, T>, node: Element, fresh: boolean, read: (node: Element) => T): T {
+  const kept = fresh || dirty.has(node) ? undefined : store.get(node);
+  if (kept !== undefined) {
+    perfCount('crawl:kept');
+    return kept;
+  }
+  perfCount('crawl:read');
+  const value = read(node);
+  store.set(node, value);
+  return value;
+}
+
+export function crawlConversation(root: ParentNode = document): {
+  readonly comments: readonly CrawledComment[];
+  readonly events: readonly CrawledEvent[];
+} {
+  const fresh = allDirty;
+  allDirty = false;
+  const touched = dirty;
+  dirty = new Set<Element>();
+  const comments: CrawledComment[] = [];
+  const seen = new Set<string>();
+
+  for (const container of root.querySelectorAll(THREAD_SELECTOR)) {
+    const read = reading(threadReadings, container, fresh || touched.has(container), readThread);
+    for (const id of read.ids) seen.add(id);
+    if (read.crawled !== null) comments.push(read.crawled);
   }
 
   for (const node of root.querySelectorAll(COMMENT_SELECTOR)) {
     // GitHub repeats a comment's id on the group and the comment inside; document order gives the outermost first.
-    if (!usable(node) || seen.has(node.id)) continue;
+    if (seen.has(node.id)) continue;
+    const read = reading(commentReadings, node, fresh || touched.has(node), readComment);
+    if (!read.usable) continue;
     seen.add(node.id);
-    const author = authorOf(node);
-    if (author === null) continue;
-    const body = textOf(bodyElementOf(node));
-    if (looksLikeSummaryBody(body)) continue;
-    const base: RawComment = { anchor: node.id, kind: kindOf(node.id), author: author.login, body, createdAt: createdAtOf(node) };
-    comments.push({ comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id) });
+    if (read.crawled !== null) comments.push(read.crawled);
   }
 
   const events: CrawledEvent[] = [];
   for (const node of root.querySelectorAll(EVENT_SELECTOR)) {
-    if (!/^event-\d+$/.test(node.id) || node.closest(THREAD_SELECTOR) !== null) continue;
-    // A force-push is a push, not an event: it opens a round like a run of commits does (crawlLeftovers lists it).
-    if (isForcePushRow(node)) continue;
-    events.push({ anchor: node.id, root: timelineRootOf(node) });
+    const read = reading(eventReadings, node, fresh || touched.has(node), readEvent);
+    if (read.event !== null) events.push(read.event);
   }
-  // Timeline order, not document order: a node shown in the panel is above the timeline right now.
+  // Timeline order, not document order: a node shown in the panel is above the timeline right now. One lookup per
+  // anchor, not two per comparison.
+  const homes = new Map<string, Element | null>();
+  const homeOfAnchor = (anchor: string): Element | null => {
+    let home = homes.get(anchor);
+    if (home === undefined) {
+      home = root.querySelector(`[id="${anchor}"]`);
+      homes.set(anchor, home);
+    }
+    return home;
+  };
   const byHome = (a: string, b: string): number => {
-    const x = root.querySelector(`[id="${a}"]`);
-    const y = root.querySelector(`[id="${b}"]`);
+    const x = homeOfAnchor(a);
+    const y = homeOfAnchor(b);
     return x === null || y === null ? 0 : compareHome(x, y);
   };
   comments.sort((a, b) => byHome(a.comment.anchor, b.comment.anchor));
