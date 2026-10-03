@@ -1833,7 +1833,7 @@ function signatureOf(model: PanelModel): string {
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
     reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
-    requestable: model.requestable.map((bot) => `${bot.id}:${model.botIconFor(bot.id) ?? ''}`),
+    requestable: model.requestable.map((bot) => `${bot.id}:${bot.presence}:${model.botIconFor(bot.id) ?? ''}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
     previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
