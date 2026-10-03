@@ -33,6 +33,18 @@ export const ATTR_PANEL = 'data-geld-review-panel';
 export const ATTR_ATTACHED = 'data-geld-attached';
 const ATTR_SIG = 'data-geld-review-sig';
 const ATTR_SLOT = 'data-geld-slot';
+/**
+ * On a time cell: the anchor whose `relative-time` it repeats, so the cells
+ * can be refreshed on their own when the clocks tick (`refreshReviewTimes`)
+ * without a crawl or a render.
+ */
+export const ATTR_TIME_FOR = 'data-geld-time-for';
+
+/** A row's time cell for `anchor`, or null when the page shows no time for it. */
+function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
+  const time = model.timeFor(anchor);
+  return time === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [time]);
+}
 
 export type GroupId = 'open' | 'done' | 'hidden' | 'activity' | 'pushes';
 
@@ -554,8 +566,8 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
   const badge = statusBadge(item.status);
   if (badge !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__pill`, 'data-badge': item.status }, [badge]));
   if (first !== undefined) {
-    const time = model.timeFor(first.anchor);
-    if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
+    const time = timeCell(model, first.anchor);
+    if (time !== null) right.append(time);
   }
   const entries: MenuEntry[] = [];
   const resolvable = model.resolvable(item);
@@ -1370,7 +1382,8 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
   if (entry.url !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
   // With a reason the link is the host's remedy (add the member, request access), not a build log.
   if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.status === 'failed' ? (entry.reason !== undefined ? 'Fix' : 'Logs') : 'Inspect']));
-  if (model.timeFor(entry.anchor) !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [model.timeFor(entry.anchor)]));
+  const previewTime = timeCell(model, entry.anchor);
+  if (previewTime !== null) right.append(previewTime);
   return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': entry.status }, [
     lead,
     avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: '' }], host?.title ?? '', true),
@@ -1502,8 +1515,8 @@ function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (entry.url !== undefined) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
-  const time = model.timeFor(entry.anchor);
-  if (time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [time]));
+  const time = timeCell(model, entry.anchor);
+  if (time !== null) right.append(time);
   if (entry.url === undefined) right.append(controlSlot(entry.anchor, true));
   right.append(chevron(open, act));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--report`, 'data-geld-sub': entry.anchor, 'data-state': entry.state }, [lead, picture, main, right]);
@@ -1675,7 +1688,7 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [entry.time]));
+  if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: entry.anchor }, [entry.time]));
   if (goes) {
     right.append(pointerChevron(act));
   } else if (entry.hasBody) {

@@ -19,6 +19,7 @@ import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
+import { ATTR_TIME_FOR } from './panel';
 import { onRestore, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
@@ -134,6 +135,8 @@ export interface ChatByline {
   readonly bot: boolean;
   readonly avatarSrc: string | null;
   readonly time: string;
+  /** The anchor `time` was read from, when known: the cell is then refreshed with the clocks (`ATTR_TIME_FOR`). */
+  readonly timeAnchor?: string;
   /** The pull request's author: GitHub's "Author" label, said beside the name. */
   readonly author?: boolean;
   /** The App the comment was posted through: its mark on the picture's corner, named in the hovercard. */
@@ -181,7 +184,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     }
     line.append(name);
     if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
-    if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time' }, [byline.time]));
+    if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
     chat.append(line);
   }
   const body = createElement('div', { class: 'geld-review__chat-body' });

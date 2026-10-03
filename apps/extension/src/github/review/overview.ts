@@ -27,7 +27,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -196,6 +196,8 @@ function touchesThreadState(record: MutationRecord): boolean {
   const target = record.target instanceof Element ? record.target : record.target.parentElement;
   if (target === null) return false;
   if (target.closest('form, textarea, [contenteditable]') !== null) return false;
+  // A clock ticking in the light DOM (`time-ago`, older markup) is words, not state.
+  if (record.type !== 'attributes' && target.closest('relative-time, time-ago, time') !== null) return false;
   if (record.type === 'attributes') {
     if (record.attributeName === 'data-resolved') return true;
     return target.closest(`${THREAD_SELECTOR}, ${THREAD_STATE}`) !== null && (record.attributeName === 'aria-pressed' || record.attributeName === 'aria-label' || record.attributeName === 'hidden');
@@ -205,6 +207,8 @@ function touchesThreadState(record: MutationRecord): boolean {
   for (const node of [...record.addedNodes, ...record.removedNodes]) {
     if (node instanceof Element && (node.hasAttribute('data-geld-teleported') || node.closest(LOAN_VIEWS) === null)) continue;
     if (node instanceof Element && node.hasAttribute('data-geld-ui')) continue;
+    // Text the panel writes into its own cells (a time refreshed) is not GitHub's doing either.
+    if (!(node instanceof Element) && target.closest('[data-geld-teleported]') === null) continue;
     return true;
   }
   return false;
@@ -1340,6 +1344,7 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   const via = anchor === null || byline.bot ? null : viaBotOf(timelineRootOf(anchor));
   return {
     ...byline,
+    ...(anchor === null ? {} : { timeAnchor: anchor }),
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
     ...(via === null ? {} : { via }),
   };
@@ -1423,6 +1428,43 @@ function timeTextOf(node: Element | null, knownAnchor: string | null = null): st
     return read;
   }
   return anchor === null ? '' : (timeByAnchor.get(anchor) ?? '');
+}
+
+/**
+ * Rewrite the panel's time cells from the page's clocks, and nothing else: no
+ * crawl, no model, no signature. GitHub's `relative-time` ticks inside its
+ * shadow root, which no observer of the page sees, so the panel's copies of
+ * those words went stale until some other change happened to re-render the
+ * row; `scheduleTimeRefresh` runs this once a minute while the tab is shown
+ * (the cadence of the clocks themselves), and a light-DOM clock tick (older
+ * markup, `time-ago`) reaches it straight from the controller.
+ */
+export function refreshReviewTimes(): number {
+  let changed = 0;
+  for (const cell of document.querySelectorAll<HTMLElement>(`[${ATTR_TIME_FOR}]`)) {
+    const anchor = cell.getAttribute(ATTR_TIME_FOR);
+    if (anchor === null) continue;
+    const text = timeTextOf(document.getElementById(anchor), anchor);
+    if (text === '' || text === cell.textContent) continue;
+    cell.textContent = text;
+    changed += 1;
+  }
+  return changed;
+}
+
+const TIME_REFRESH_MS = 60_000;
+let timeRefreshTimer: number | null = null;
+
+/** Keep the cells current while the panel is up; a hidden tab skips the minute (its return re-renders anyway). */
+function scheduleTimeRefresh(): void {
+  timeRefreshTimer ??= window.setInterval(() => {
+    if (!document.hidden) refreshReviewTimes();
+  }, TIME_REFRESH_MS);
+}
+
+function stopTimeRefresh(): void {
+  if (timeRefreshTimer !== null) window.clearInterval(timeRefreshTimer);
+  timeRefreshTimer = null;
 }
 
 /** GitHub's absolute renderings ("on Sep 20, 2026, 10:18 AM", commit rows): the panel speaks in relative time throughout. */
@@ -2161,6 +2203,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
     },
   };
   const mounted = mountPanel(model, panelHandlers);
+  scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
     watchPanelForHold(mounted.root);
@@ -2328,6 +2371,7 @@ export function teardownReviewOverview(): void {
   setWhoProvider(null);
   setReportProvider(null);
   unwatchLoans();
+  stopTimeRefresh();
   visit.settling = null;
   unmountPanel();
   hideSummary(null);

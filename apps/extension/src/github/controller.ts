@@ -32,7 +32,7 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
-import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
@@ -136,6 +136,25 @@ function isIgnorableMutation(records: readonly MutationRecord[]): boolean {
     if (record.type !== 'childList') return false;
     const nodes = [...record.addedNodes, ...record.removedNodes];
     return nodes.length > 0 && nodes.every((node) => isOwnElement(node));
+  });
+}
+
+const CLOCK_ELEMENTS = 'relative-time, time-ago, time';
+
+/**
+ * Is this batch only clocks ticking? A time element rewriting its words
+ * ("4 minutes ago" → "5 minutes ago") changes nothing Geld classifies, so it
+ * refreshes the panel's time cells and nothing else. Current github.com
+ * ticks inside `relative-time`'s shadow root, which this observer does not
+ * see at all; `time-ago` and older markup tick in the light DOM, as text
+ * replaced under the element or rewritten in place.
+ */
+function isClockTick(records: readonly MutationRecord[]): boolean {
+  return records.every((record) => {
+    if (record.type === 'attributes') return false;
+    if (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].some((node) => node.nodeType !== Node.TEXT_NODE)) return false;
+    const target = record.target instanceof Element ? record.target : record.target.parentElement;
+    return target !== null && target.closest(CLOCK_ELEMENTS) !== null;
   });
 }
 
@@ -330,6 +349,10 @@ export class GeldController {
       // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
       if (document.hidden) {
         this.hiddenDirty = true;
+        return;
+      }
+      if (isClockTick(records)) {
+        refreshReviewTimes();
         return;
       }
       // Header first, synchronously: this callback runs before the browser
@@ -556,7 +579,11 @@ export class GeldController {
   private readonly onVisibilityChange = (): void => {
     if (document.hidden || this.stopped) return;
     const deferred = takeReviewDeferred();
-    if (!this.hiddenDirty && !deferred) return;
+    if (!this.hiddenDirty && !deferred) {
+      // Nothing to redo, but the clocks moved on while the tab was away.
+      refreshReviewTimes();
+      return;
+    }
     this.hiddenDirty = false;
     // The mutation batches skipped while hidden may have (re)mounted a header stat group.
     this.headerDirty = true;
