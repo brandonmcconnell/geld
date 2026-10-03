@@ -15,8 +15,12 @@ import { checkBooleanMap, checkCategoryPatterns, checkCustomCategories, describe
  *
  * The vocabulary is the settings document's own (`categories`, `groups`,
  * `categoryPatterns`, `customCategories`) and the same strict validator
- * checks it. Personal settings (`enabled`, `repoRules`, layout, …) have no
- * place in a repository config and are reported as problems.
+ * checks it, plus one key of the repository's own: `reviewBots`, the review
+ * bots installed on it (ids from `@geld/review`'s registry, passed in by the
+ * caller as `knownBots`), so the "Request a review" menu can offer them on a
+ * pull request none of them has run on yet. Personal settings (`enabled`,
+ * `repoRules`, layout, …) have no place in a repository config and are
+ * reported as problems.
  *
  * Hiding is Geld's whole point, which makes a repository config an attack
  * surface (a `*.ts` pattern in a compromised repository hides a backdoor from
@@ -31,14 +35,20 @@ export const REPO_CONFIG_PATH = '.github/geld.yml';
 export const ORG_CONFIG_REPO = '.github';
 export const ORG_CONFIG_PATHS: readonly string[] = ['geld.yml', '.github/geld.yml'];
 
-/** The part of a settings document a repository is allowed to provide. */
-export type RepoConfig = Pick<GeldSettings, 'categories' | 'groups' | 'categoryPatterns' | 'customCategories'>;
+/** The part of a settings document a repository is allowed to provide, plus what it declares about itself. */
+export interface RepoConfig extends Pick<GeldSettings, 'categories' | 'groups' | 'categoryPatterns' | 'customCategories'> {
+  /** Review bots installed on the repository, by registry id (`bugbot`, `coderabbit`, …), in the file's order. */
+  readonly reviewBots: readonly string[];
+}
 
-export const EMPTY_REPO_CONFIG: RepoConfig = { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [] };
+export const EMPTY_REPO_CONFIG: RepoConfig = { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [], reviewBots: [] };
 
 export type RepoConfigParse = { readonly ok: true; readonly config: RepoConfig } | { readonly ok: false; readonly issues: readonly SettingsIssue[] };
 
-const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'customCategories'] as const;
+const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'customCategories', 'reviewBots'] as const;
+
+/** The shape of a bot id: the registry's ids are lowercase words with dashes. */
+const BOT_ID = /^[a-z][a-z0-9-]*$/;
 
 /** Settings keys that only make sense per person; a repository naming them is a mistake worth pointing out. */
 const PERSONAL_KEYS = [
@@ -63,17 +73,43 @@ const PERSONAL_KEYS = [
   'compactTimeline',
   'reviewGrouping',
   'collapseDescription',
-  'reviewBots',
   'aiBaseUrl',
   'aiModel',
   'suggestedFixes',
 ] as const;
 
 /**
+ * `reviewBots`: a list of registry ids. With `knownBots` the ids are checked
+ * against it (the extension passes the registry; an unknown id is a typo or
+ * a bot Geld does not know yet, either way worth saying); without it only
+ * the shape is checked.
+ */
+function checkReviewBots(issues: SettingsIssue[], path: string, value: unknown, knownBots: readonly string[] | null): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: `Expected a list of review bot ids, got ${describeValue(value)}.` });
+    return;
+  }
+  const allowed = knownBots === null ? '' : ` Known bots: ${knownBots.map((id) => `"${id}"`).join(', ')}.`;
+  value.forEach((entry: unknown, index) => {
+    const at = `${path}[${index}]`;
+    if (typeof entry !== 'string') {
+      issues.push({ path: at, message: `Expected a review bot id, got ${describeValue(entry)}.${allowed}` });
+      return;
+    }
+    if (!BOT_ID.test(entry)) {
+      issues.push({ path: at, message: `"${entry}" is not a review bot id (lowercase letters, digits and dashes).${allowed}` });
+      return;
+    }
+    if (knownBots !== null && !knownBots.includes(entry)) issues.push({ path: at, message: `"${entry}" is not a review bot Geld knows.${allowed}` });
+  });
+}
+
+/**
  * Every problem in a parsed repository config. Unknown keys are ignored (a
  * newer Geld may understand more), personal settings are reported.
  */
-export function collectRepoConfigIssues(value: unknown, catalog: Catalog = BUNDLED_CATALOG, path = '$'): readonly SettingsIssue[] {
+export function collectRepoConfigIssues(value: unknown, catalog: Catalog = BUNDLED_CATALOG, path = '$', knownBots: readonly string[] | null = null): readonly SettingsIssue[] {
   const issues: SettingsIssue[] = [];
   if (value === null || value === undefined) return issues;
   if (!isRecord(value)) {
@@ -93,11 +129,24 @@ export function collectRepoConfigIssues(value: unknown, catalog: Catalog = BUNDL
   checkBooleanMap(issues, at('groups'), value.groups, catalogGroupKeys(catalog), (key) => isGroupKey(key, catalog) || isWellFormedGroupKey(key), 'pattern group');
   checkCategoryPatterns(issues, at('categoryPatterns'), value.categoryPatterns);
   checkCustomCategories(issues, at('customCategories'), value.customCategories);
+  checkReviewBots(issues, at('reviewBots'), value.reviewBots, knownBots);
   return issues;
 }
 
-/** Parse and validate the text of a `geld.yml`. An empty file is a valid, empty config. */
-export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG): RepoConfigParse {
+/** The `reviewBots` list of a validated document: each id once, in the file's order. */
+function reviewBotsOf(value: Record<string, unknown>): readonly string[] {
+  if (!Array.isArray(value.reviewBots)) return [];
+  const ids: string[] = [];
+  for (const entry of value.reviewBots) if (typeof entry === 'string' && !ids.includes(entry)) ids.push(entry);
+  return ids;
+}
+
+/**
+ * Parse and validate the text of a `geld.yml`. An empty file is a valid,
+ * empty config. `knownBots` is the review-bot registry's ids (see
+ * {@link collectRepoConfigIssues}).
+ */
+export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG, knownBots: readonly string[] | null = null): RepoConfigParse {
   const doc = parseDocument(text, { prettyErrors: true, uniqueKeys: true });
   if (doc.errors.length > 0) {
     return {
@@ -111,9 +160,9 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
     };
   }
   const value: unknown = doc.toJS();
-  const issues = collectRepoConfigIssues(value, catalog);
+  const issues = collectRepoConfigIssues(value, catalog, '$', knownBots);
   if (issues.length > 0) return { ok: false, issues };
-  if (value === null || value === undefined) return { ok: true, config: EMPTY_REPO_CONFIG };
+  if (value === null || value === undefined || !isRecord(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
   const normalized = normalizeSettings(value);
   return {
     ok: true,
@@ -122,6 +171,7 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
       groups: normalized.groups,
       categoryPatterns: normalized.categoryPatterns,
       customCategories: normalized.customCategories,
+      reviewBots: reviewBotsOf(value),
     },
   };
 }
@@ -132,8 +182,16 @@ export function isEmptyRepoConfig(config: RepoConfig): boolean {
     Object.keys(config.categories).length === 0 &&
     Object.keys(config.groups).length === 0 &&
     Object.values(config.categoryPatterns).every((lines) => lines === undefined || lines.length === 0) &&
-    config.customCategories.length === 0
+    config.customCategories.length === 0 &&
+    config.reviewBots.length === 0
   );
+}
+
+/** The review bots every config in `configs` declares, each once, organisation's first. */
+export function declaredReviewBots(configs: readonly RepoConfig[]): readonly string[] {
+  const ids: string[] = [];
+  for (const config of configs) for (const id of config.reviewBots) if (!ids.includes(id)) ids.push(id);
+  return ids;
 }
 
 /** Pattern lines are scoped by `[owner/repo]` headers; this one returns to "everywhere" before appended lines. */
@@ -220,5 +278,6 @@ export function describeRepoConfig(config: RepoConfig): string {
   if (groups > 0) parts.push(`${groups} ${groups === 1 ? 'group' : 'groups'}`);
   const patterns = Object.values(config.categoryPatterns).reduce((sum, lines) => sum + (lines?.length ?? 0), 0) + config.customCategories.reduce((sum, custom) => sum + custom.patterns.length, 0);
   if (patterns > 0) parts.push(`${patterns} ${patterns === 1 ? 'pattern' : 'patterns'}`);
+  if (config.reviewBots.length > 0) parts.push(`${config.reviewBots.length} review ${config.reviewBots.length === 1 ? 'bot' : 'bots'}`);
   return parts.length === 0 ? 'no changes' : parts.join(', ');
 }
