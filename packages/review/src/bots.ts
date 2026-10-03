@@ -2,6 +2,12 @@
  * Known review bots: logins, check-run names, re-run triggers, and the
  * config files that mean "this bot is installed". Extra logins from the
  * user's `reviewBots` setting are treated as unnamed bots.
+ *
+ * `configFiles` are paths whose presence in a repository is a fair sign the
+ * bot reviews there (a trailing slash names a directory): the extension
+ * checks them through GitHub's directory listing and offers such a bot on a
+ * pull request it has not run on. Only a bot's *own* file counts; AGENTS.md
+ * is read by Codex but written for every agent, so it says nothing.
  */
 
 export interface ReviewBot {
@@ -35,7 +41,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     logins: ['greptile-apps[bot]', 'greptile[bot]'],
     checkNames: ['Greptile'],
     triggers: ['@greptileai', '@greptile', '@greptileai review'],
-    configFiles: ['.greptile.yml', '.greptile.yaml'],
+    configFiles: ['greptile.json', '.greptile.yml', '.greptile.yaml'],
   },
   {
     id: 'devin',
@@ -51,7 +57,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     logins: ['chatgpt-codex-connector[bot]', 'openai-codex[bot]', 'codex[bot]'],
     checkNames: ['Codex'],
     triggers: ['@codex review', '@codex'],
-    configFiles: ['.codex/', 'AGENTS.md'],
+    configFiles: ['.codex/'],
   },
   {
     id: 'copilot',
@@ -75,7 +81,8 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     logins: ['gemini-code-assist[bot]'],
     checkNames: ['Gemini Code Assist', 'gemini-code-assist'],
     triggers: ['@gemini-code-assist'],
-    configFiles: [],
+    // Gemini Code Assist on GitHub reads `.gemini/config.yaml` and `.gemini/styleguide.md`.
+    configFiles: ['.gemini/'],
   },
   {
     // Capy (capy.ai, GitHub App "Capy AI" by Scrapybara): a review agent that posts findings at or above the
