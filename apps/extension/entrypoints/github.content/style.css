@@ -5421,9 +5421,16 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-weight: 400;
 }
 
+/* "Vercel · skipped" (a report line's project): whole, on one line. Without a rule it was a default flex item that
+   shrank and wrapped alongside the reason, so "Vercel ·" / "skipped" stacked while the reason still had room. */
+.geld-review__deploy-host {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* Why a preview has nothing to open, in the host's words, after "Vercel · failed"; it is the part that gives way. */
 .geld-review__deploy-reason {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--geld-review-muted);
