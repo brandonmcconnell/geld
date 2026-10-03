@@ -28,7 +28,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -833,6 +833,11 @@ let reapplyTimer: number | null = null;
  * and re-applies before the tab paints.
  */
 let deferredWhileHidden = false;
+
+/** The panel's current render signature plus what is open, for the harness's scope check (`GeldController.checkScope`). */
+export function reviewSignature(): string {
+  return `${panelSignature()}|${visit.openKey ?? ''}|${visit.openSubKey ?? ''}`;
+}
 
 /** Whether a pass was deferred while hidden; clears the flag. */
 export function takeReviewDeferred(): boolean {
@@ -1843,7 +1848,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (paths !== undefined) diffPaths = paths;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
-    teardownReviewOverview();
+    // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
+    if (visit.pageKey !== '') teardownReviewOverview();
     return;
   }
   if (visit.pageKey !== page.stateKey) {

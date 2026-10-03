@@ -40,6 +40,11 @@ const ATTR_SLOT = 'data-geld-slot';
  */
 export const ATTR_TIME_FOR = 'data-geld-time-for';
 
+/** The mounted panel's render signature (what `mountPanel` compared last), or '' without a panel: for the harness's scope check. */
+export function panelSignature(): string {
+  return document.querySelector(`[${ATTR_SIG}]`)?.getAttribute(ATTR_SIG) ?? '';
+}
+
 /** A row's time cell for `anchor`, or null when the page shows no time for it. */
 function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
   const time = model.timeFor(anchor);

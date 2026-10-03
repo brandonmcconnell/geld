@@ -75,3 +75,10 @@ export interface AiRunRecord {
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;
+
+/**
+ * Development only: after every region-scoped pass the controller runs the
+ * full pass too and logs a `[geld] scope disagreement` when the two differ
+ * (tab state or panel signature). Set from the harness; never from the UI.
+ */
+export const debugScopesItem = storage.defineItem<boolean>('local:debugScopes', { fallback: false });

@@ -12,7 +12,7 @@ import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
 import { count as perfCount, phase } from '../lib/perf';
 import type { RepoConfigChoices } from '../lib/local-state';
-import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
+import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
@@ -27,13 +27,15 @@ import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
 import { describePage } from './page';
+import type { Region } from './regions';
+import { regionsOf, scopeWithin } from './regions';
 import { applyCommitHover, removeCommitHover } from './commit-hover';
 import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
-import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
@@ -322,6 +324,22 @@ export class GeldController {
   private hiddenDirty = false;
   /** A `reapply` (settings or catalog change) arrived while hidden: the catch-up pass starts from a bare page. */
   private hiddenTeardown = false;
+  /**
+   * The regions the batches since the last pass touched (`regions.ts`). The
+   * debounced pass redoes only the subsystems that read them; `unknown` (or
+   * any caller asking for a pass outright) means the whole page.
+   */
+  private readonly pendingScope = new Set<Region>();
+  /** The page state the last pass ran for: a different one is always a full pass. */
+  private lastPassKey: string | null = null;
+  /** What the last files-view pass found, reused by a pass that skips the files view. */
+  private lastFiles: { readonly view: DiffView | null; readonly breakdown: HiddenBreakdown | null; readonly expanded: boolean; readonly renderedEntryCount: number } = {
+    view: null,
+    breakdown: null,
+    expanded: false,
+    renderedEntryCount: 0,
+  };
+  private debugScopes = false;
   /** The head SHA read from the page, per page state; the read parses GitHub's embedded JSON payload. */
   private headShaCache: { readonly stateKey: string; readonly sha: string | null } | null = null;
   /** Stops watching for the files view's in-place refresh (head-sha.ts `watchFilesRefresh`). */
@@ -341,6 +359,9 @@ export class GeldController {
     this.repoConfigs = new RepoConfigSource(() => this.onRepoConfigChange(), catalog);
     void whitespaceOptOutsItem.getValue().then((optOuts) => this.whitespace.setOptOuts(optOuts));
     void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices));
+    void debugScopesItem.getValue().then((on) => {
+      this.debugScopes = on;
+    });
   }
 
   start(): void {
@@ -359,6 +380,13 @@ export class GeldController {
         phase('clocks', refreshReviewTimes);
         return;
       }
+      const regions = regionsOf(records);
+      // The document head, the global navigation, the footer, a tooltip: nothing Geld reads.
+      if (scopeWithin(regions, ['chrome'])) {
+        perfCount('chrome-skipped');
+        return;
+      }
+      for (const region of regions) this.pendingScope.add(region);
       // Header first, synchronously: this callback runs before the browser
       // paints, so a (re-)rendered header never shows GitHub's number when the
       // filtered one is already known or cached.
@@ -371,7 +399,7 @@ export class GeldController {
       // Likewise before paint: chips whose row GitHub just re-rendered come
       // straight back from the in-memory diff states, so no frame lacks them.
       if (chipRemoved(records)) this.applyListChips();
-      this.schedule();
+      this.schedule(false);
     });
     this.observer.observe(document.documentElement, {
       childList: true,
@@ -718,12 +746,36 @@ export class GeldController {
     return matcher;
   }
 
-  private schedule(): void {
+  /** A pass after the debounce. Every caller but the observer asks for the whole page; the observer has said which regions changed. */
+  private schedule(full = true): void {
+    if (full) this.pendingScope.add('unknown');
     if (this.stopped || this.timer !== null || this.deferWhileHidden()) return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.apply();
+      this.applyScoped();
     }, APPLY_DEBOUNCE_MS);
+  }
+
+  /** The debounced pass: scoped to the regions the batches touched, the whole page when any was unknown. */
+  private applyScoped(): void {
+    if (this.stopped || this.deferWhileHidden()) return;
+    const scope = new Set(this.pendingScope);
+    this.pendingScope.clear();
+    if (scope.has('unknown') || scope.size === 0) {
+      phase('pass', () => this.runPass(null));
+      return;
+    }
+    perfCount('scoped-passes');
+    phase('pass', () => this.runPass(scope));
+    if (this.debugScopes) this.checkScope(scope);
+  }
+
+  /** Harness only: the full pass must agree with the scoped one that just ran. */
+  private checkScope(scope: ReadonlySet<Region>): void {
+    const before = `${this.lastStateJson}|${reviewSignature()}`;
+    this.runPass(null);
+    const after = `${this.lastStateJson}|${reviewSignature()}`;
+    if (before !== after) console.warn('[geld] scope disagreement', [...scope].join('+'), { before, after });
   }
 
   private isDiffExpanded(key: string, everythingHidden: boolean): boolean {
@@ -739,12 +791,14 @@ export class GeldController {
     this.apply();
   }
 
+  /** The whole page, now. */
   private apply(): void {
     if (this.stopped || this.deferWhileHidden()) return;
-    phase('pass', () => this.runPass());
+    this.pendingScope.clear();
+    phase('pass', () => this.runPass(null));
   }
 
-  private runPass(): void {
+  private runPass(scope: ReadonlySet<Region> | null): void {
     // The extension was reloaded, updated or removed while this tab was open:
     // this copy is orphaned (a newer one takes over, or nothing should run).
     if (!extensionAlive()) {
@@ -769,54 +823,68 @@ export class GeldController {
       return;
     }
 
+    // Another page state (a navigation) is always the whole page, whatever the batches said.
+    const full = scope === null || this.lastPassKey !== page.stateKey;
+    this.lastPassKey = page.stateKey;
+    const within = (regions: readonly Region[]): boolean => !full && scopeWithin(scope, regions);
+    const skipFiles = within(['conversation']);
+    const skipReview = within(['files']);
+    const skipChips = within(['files', 'header']);
+    if (skipFiles) perfCount('skipped:files');
+    if (skipReview) perfCount('skipped:review');
+    if (skipChips) perfCount('skipped:chips');
+
     const matcher = this.matcherFor(repo);
-    this.loadDiffFacts(page, url, matcher);
-    const view = legacyAdapter.read() ?? reactAdapter.read();
-    this.currentView = view;
-
-    let hidden: HiddenBreakdown | null = null;
-    let renderedEntryCount = 0;
-    let expanded = false;
-
     this.virtualSection = null;
-    if (view !== null) {
-      renderedEntryCount = view.entries.length;
-      const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
-      hidden = result.breakdown;
-      expanded = result.expanded;
-      this.consumeRevealHash(page.stateKey);
-      this.continuePendingReveal(view, page.stateKey);
-    } else {
-      this.teardownView();
+    if (!skipFiles) {
+      this.loadDiffFacts(page, url, matcher);
+      const view = phase('read', () => legacyAdapter.read() ?? reactAdapter.read());
+      this.currentView = view;
+      if (view !== null) {
+        const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
+        this.lastFiles = { view, breakdown: result.breakdown, expanded: result.expanded, renderedEntryCount: view.entries.length };
+        this.consumeRevealHash(page.stateKey);
+        this.continuePendingReveal(view, page.stateKey);
+      } else {
+        this.teardownView();
+        this.lastFiles = { view: null, breakdown: null, expanded: false, renderedEntryCount: 0 };
+      }
     }
+    const { view, breakdown: hidden, expanded, renderedEntryCount } = this.lastFiles;
 
     const header = phase('header', () => this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden));
     const headerHidden = header.hidden;
     const allTotals = header.all;
     if (this.virtualSection !== null) this.renderVirtualSection(page.stateKey, matcher, this.virtualSection, headerHidden ?? hidden ?? EMPTY_BREAKDOWN, expanded);
 
-    this.applyWhitespace(page, view, url);
-    if (view !== null && this.settings.expandLargeDiffs) {
-      expandLargeDiffs(view.entries, (entry) => entry.root.getAttribute(ATTR_ENTRY) === 'hidden');
+    if (!skipFiles) {
+      this.applyWhitespace(page, view, url);
+      if (view !== null && this.settings.expandLargeDiffs) {
+        expandLargeDiffs(view.entries, (entry) => entry.root.getAttribute(ATTR_ENTRY) === 'hidden');
+      }
     }
 
-    applySurfaceStyles(this.catalog);
-    const surfaces = surfacesOf(this.catalog);
-    phase('chips', () => {
-      this.applyListChips(surfaces);
-      this.applyCommitTooltips();
-      applyAuthorHiding(this.authorRules, surfaces);
-    });
-    applyReviewOverview(this.settings, this.pageDiffPaths());
-    phase('diffstat', () =>
-      applyDiffstatSurfaces({
-        catalog: this.catalog,
-        matcherFor: (repo) => this.matcherFor(repo),
-        repoRules: this.repoRules,
-        diffSource: this.diffSource,
-        hideCommentLines: this.settings.hideCommentLines,
-      }),
-    );
+    if (!skipChips) {
+      applySurfaceStyles(this.catalog);
+      const surfaces = surfacesOf(this.catalog);
+      phase('chips', () => {
+        this.applyListChips(surfaces);
+        this.applyCommitTooltips();
+        applyAuthorHiding(this.authorRules, surfaces);
+      });
+    }
+    if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths());
+    if (!skipChips) {
+      phase('diffstat', () =>
+        applyDiffstatSurfaces({
+          catalog: this.catalog,
+          matcherFor: (repo) => this.matcherFor(repo),
+          repoRules: this.repoRules,
+          diffSource: this.diffSource,
+          hideCommentLines: this.settings.hideCommentLines,
+        }),
+      );
+    }
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
@@ -1497,6 +1565,7 @@ export class GeldController {
     removeTreeSection(document);
     removeSidebarLayout(document);
     this.currentView = null;
+    this.lastFiles = { view: null, breakdown: null, expanded: false, renderedEntryCount: 0 };
   }
 
   private readonly onHashChange = (): void => {
