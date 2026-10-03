@@ -282,6 +282,13 @@ export interface BotComment {
   readonly resolved?: boolean;
   /** When it was posted, ISO; lets a status line age (see `STATUS_LINE_STALE_MS`). */
   readonly createdAt?: string;
+  /**
+   * When it was last edited, ISO, when the reader of the page knows. A bot
+   * that reports a re-run by rewriting its summary in place (Greptile's
+   * "Reviews (2)", a new confidence score) posts nothing new, so the edit is
+   * the only sign the run it was asked for has ended.
+   */
+  readonly editedAt?: string;
 }
 
 /**
@@ -348,8 +355,14 @@ export function verdictsFrom(
   /** Bots whose latest comment so far is a status line (the run it announced has not reported), with that line. */
   const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
+  /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
+  const lastEditBy = new Map<string, number>();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
+    if (id !== null && comment.editedAt !== undefined) {
+      const edited = Date.parse(comment.editedAt);
+      if (!Number.isNaN(edited) && edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
+    }
     if (id === null) {
       // A person asking a bot to run ("bugbot run", "@greptileai") starts a run as surely as the bot's own
       // "Starting" line does: that bot is running until it speaks (or the line ages, or its check says).
@@ -402,6 +415,10 @@ export function verdictsFrom(
   // check to go by the bot is running until it says more.
   for (const [id, { login, anchor, at }] of statusOnly) {
     const existing = byId.get(id);
+    // The bot rewrote its summary after the run was asked for: that is the report, and the summary's verdict (read
+    // above, from its words as they are now) stands. Greptile re-reviews into the same comment.
+    const edited = lastEditBy.get(id);
+    if (existing !== undefined && at !== null && edited !== undefined && edited > at) continue;
     // Announced long ago, nothing since, no check to say how it went: the run never reported. What the bot said
     // before that stands (from that earlier run); a bot that never said anything else did not review this.
     const stale = at !== null && now - at > STATUS_LINE_STALE_MS;

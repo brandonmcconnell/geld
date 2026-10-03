@@ -326,6 +326,14 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([], [...before, { author: 'someone', body: 'bugbot run @greptileai', anchor: 'c', createdAt: at(1) }], 'aaa', [], now).map((bot) => `${bot.id}:${bot.verdict}`).sort()).toEqual(['bugbot:running', 'greptile:running']);
     expect(byId(verdictsFrom([], [...before, { author: 'someone', body: '@greptileai', anchor: 'c', createdAt: at(120) }], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
     expect(botsTriggeredBy('/devin review').map((bot) => bot.id)).toEqual(['devin']);
+    // Greptile answers a re-run by rewriting its summary in place ("Reviews (2)", a new score), posting nothing new:
+    // the summary edited after the request is the run's report, with the verdict its words now say.
+    const request = { author: 'brandonmcconnell', body: '@greptileai', anchor: 'issuecomment-3', createdAt: at(1) };
+    const rewritten = [{ author: 'greptile-apps[bot]', body: 'Confidence Score: 3/5\nFound 2 issues.\nReviews (2)', anchor: 'issuecomment-1', createdAt: at(60), editedAt: at(0.5) }, request];
+    expect(byId(verdictsFrom([], rewritten, 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'findings', score: 3, count: 2, sourceId: 'issuecomment-1' });
+    // Edited before the request (the first review's own touch-up): still running.
+    const touchedUp = [{ author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.', anchor: 'issuecomment-1', createdAt: at(60), editedAt: at(59) }, request];
+    expect(byId(verdictsFrom([], touchedUp, 'aaa', [], now), 'greptile')?.verdict).toBe('running');
   });
 
   it('does not keep a bot running on a status line that aged with nothing after it', () => {

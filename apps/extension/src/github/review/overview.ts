@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -23,6 +23,7 @@ import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, 
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
+import { editedAt, resetEditTimes } from './edit-times';
 import { relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
@@ -394,20 +395,53 @@ function unique<T>(values: readonly T[]): T[] {
 
 type Crawled = ReturnType<typeof crawlConversation>;
 
+/**
+ * The bots a run is waiting on, with when it was asked for: a person's trigger comment ("@greptileai", "bugbot
+ * run") or the bot's own "Starting…" line, read in timeline order so the latest ask per bot wins. Only such a
+ * bot's earlier summary is worth asking the edit log about (edit-times.ts): a bot that reports a re-run by
+ * rewriting that summary posts nothing new, and the edit after the ask is the report.
+ */
+function runsAskedFor(comments: readonly RawComment[], extraLogins: readonly string[]): ReadonlyMap<string, number> {
+  const asked = new Map<string, number>();
+  for (const comment of comments) {
+    if (comment.kind === 'thread') continue;
+    const at = Date.parse(comment.createdAt);
+    if (Number.isNaN(at)) continue;
+    const bot = resolveBotId(comment.author, extraLogins);
+    if (bot === null) {
+      if (isTriggerComment(comment.body, extraLogins)) for (const entry of botsTriggeredBy(comment.body, extraLogins)) asked.set(entry.id, at);
+    } else if (isStatusLineComment(comment.body)) {
+      asked.set(bot, at);
+    } else {
+      asked.delete(bot);
+    }
+  }
+  return asked;
+}
+
 function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string): GeldPrMeta {
   const comments = crawled.comments.map((entry) => entry.comment);
   const items = clusterComments(comments, settings.reviewBots);
+  const asked = runsAskedFor(comments, settings.reviewBots);
   // The merge box's check rows, as the Action would read them from the API: a bot whose run finished green and
   // that flagged nothing is clean, whatever its opening comment said.
   const bots = verdictsFrom(
     crawlCheckRuns(document, headSha),
-    comments.map((comment) => ({
-      author: comment.author,
-      body: comment.body,
-      anchor: comment.anchor,
-      ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
-      ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
-    })),
+    crawled.comments.map(({ comment, author }) => {
+      const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
+      const askedAt = bot === null ? undefined : asked.get(bot);
+      // A bot summary posted before a run was asked for: its edit time says whether that run has reported into it.
+      const node = comment.kind !== 'thread' && askedAt !== undefined && Date.parse(comment.createdAt) < askedAt ? document.getElementById(comment.anchor) : null;
+      const edited = node === null ? null : editedAt(node, reapplySoon);
+      return {
+        author: comment.author,
+        body: comment.body,
+        anchor: comment.anchor,
+        ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
+        ...(edited === null ? {} : { editedAt: edited }),
+        ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
+      };
+    }),
     headSha,
     settings.reviewBots,
   );
@@ -2187,6 +2221,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.autoLoads = 0;
     resetFragments();
     forgetThreads();
+    resetEditTimes();
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
