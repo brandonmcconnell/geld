@@ -7,7 +7,7 @@ import { createMatcher } from '@geld/core';
 import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/messages';
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
-import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, describeRepoConfig, repoFromPathname } from '@geld/core';
+import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, describeRepoConfig, repoFromPathname } from '@geld/core';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
 import { cancelIdle, whenIdle } from '../lib/idle';
@@ -37,6 +37,7 @@ import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surf
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
+import type { RepoBotsHint } from './review/panel-model';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
@@ -733,6 +734,22 @@ export class GeldController {
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
+  /**
+   * What the repository says about its review bots, for the Request a review
+   * menu on the conversation tab: the ids its config declares (only once the
+   * config applies, so `null` while it loads or when the reader has not
+   * allowed configs here) and the bots whose own config file it holds (read
+   * whatever the setting says: that is a look at the repository, not a
+   * change applied from it). Both lookups start here and re-run the pass
+   * when they land.
+   */
+  private repoBotsHint(page: PageInfo, repo: string | null): RepoBotsHint | undefined {
+    if (page.kind !== 'pull-conversation' || repo === null || !this.settings.prOverview) return undefined;
+    const resolved = this.resolvedConfig(repo);
+    const declared = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? declaredReviewBots(validConfigs(resolved)) : null;
+    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found };
+  }
+
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
@@ -887,7 +904,7 @@ export class GeldController {
         if (!this.stopped) phase('diffstat', () => this.applyDiffstatSurfacesNow());
       });
     }
-    if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths());
+    if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({

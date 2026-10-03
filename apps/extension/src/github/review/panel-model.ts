@@ -5,14 +5,33 @@
 
 import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
-import { botByAppSlug, botByCheckName, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor } from '@geld/review';
+import { botByAppSlug, botByCheckName, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
+
+/**
+ * How Geld knows a bot is available on this pull request, best first:
+ * `seen` on the page itself, `declared` by the repository's `.github/geld.yml`
+ * (`reviewBots`), `configured` by one of the bot's own config files in the
+ * repository, or `other`: in the registry, with no sign of it here.
+ */
+export type BotPresence = 'seen' | 'declared' | 'configured' | 'other';
 
 export interface InstalledBot {
   readonly id: string;
   readonly label: string;
   readonly trigger: string;
   readonly iconSrc: string | null;
+  readonly presence: BotPresence;
+  /** For `configured`: the path that was found. */
+  readonly configFile?: string;
 }
+
+/** What the repository says about its bots: the declared list (`null` while its config is still loading or not applied) and the config files found. */
+export interface RepoBotsHint {
+  readonly declared: readonly string[] | null;
+  readonly configured: ReadonlyMap<string, string>;
+}
+
+export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map() };
 
 /**
  * The picture's URL when it is an App's mark. GitHub serves App avatars
@@ -33,15 +52,17 @@ function appAvatarSrc(img: HTMLImageElement | null | undefined): string | null {
 }
 
 /**
- * Bots present on this pull request that a comment can re-run: every
- * registered bot the page links to as `/apps/<slug>` (comments, the checks
- * list, the reviewers box), those the payload knows from verdicts or item
- * sources, those with a check run in the merge box (a bot that found nothing
- * may post no comment at all and leave only its check), and those a person
- * has asked for with a trigger comment. Icons come from the page's own
- * `<img>` next to the link or the check row.
+ * Every registry bot a comment can ask for, with how it is known here.
+ * `seen`: the page links to it as `/apps/<slug>` (comments, the checks
+ * list, the reviewers box), the payload knows it from verdicts or item
+ * sources, it has a check run in the merge box (a bot that found nothing
+ * may post no comment at all and leave only its check), or a person asked
+ * for it with a trigger comment. Then the repository's word (`hint`):
+ * declared in its config, or one of the bot's config files is there. The
+ * rest is the registry, offered behind a disclosure. Icons come from the
+ * page's own `<img>` next to the link or the check row.
  */
-export function installedBots(meta: GeldPrMeta, doc: ParentNode, comments: readonly RawComment[] = []): readonly InstalledBot[] {
+export function requestableBots(meta: GeldPrMeta, doc: ParentNode, comments: readonly RawComment[] = [], hint: RepoBotsHint = NO_REPO_BOTS): readonly InstalledBot[] {
   const found = new Map<string, InstalledBot>();
   const add = (id: string, login: string, iconSrc: string | null): void => {
     const trigger = rerunTriggerFor(id);
@@ -51,7 +72,7 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode, comments: reado
       if (existing.iconSrc === null && iconSrc !== null) found.set(id, { ...existing, iconSrc });
       return;
     }
-    found.set(id, { id, label: botTitle(id, login), trigger, iconSrc });
+    found.set(id, { id, label: botTitle(id, login), trigger, iconSrc, presence: 'seen' });
   };
   for (const link of doc.querySelectorAll<HTMLAnchorElement>('a[href^="/apps/"], a[href*="github.com/apps/"]')) {
     const slug = /\/apps\/([\w.-]+)/.exec(link.getAttribute('href') ?? '')?.[1];
@@ -77,8 +98,23 @@ export function installedBots(meta: GeldPrMeta, doc: ParentNode, comments: reado
     const bot = botByTrigger(comment.body);
     if (bot !== null) add(bot.id, bot.logins[0] ?? `${bot.id}[bot]`, null);
   }
+  for (const bot of REVIEW_BOTS) {
+    if (found.has(bot.id)) continue;
+    const trigger = rerunTriggerFor(bot.id);
+    if (trigger === null) continue;
+    const login = bot.logins[0] ?? `${bot.id}[bot]`;
+    const configFile = hint.configured.get(bot.id);
+    if (hint.declared?.includes(bot.id) === true) found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc: null, presence: 'declared' });
+    else if (configFile !== undefined) found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc: null, presence: 'configured', configFile });
+    else found.set(bot.id, { id: bot.id, label: botTitle(bot.id, login), trigger, iconSrc: null, presence: 'other' });
+  }
   // Alphabetical: the page's link order changes as nodes move into the panel, and buttons must not shuffle.
   return [...found.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** The bots with a sign of being here (seen, declared or configured): what the menu lists before "Other bots". */
+export function presentBots(bots: readonly InstalledBot[]): readonly InstalledBot[] {
+  return bots.filter((bot) => bot.presence !== 'other');
 }
 
 const ORDER: Readonly<Record<ReviewItemStatus, number>> = {

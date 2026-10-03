@@ -38,7 +38,8 @@ import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
-import { installedBots } from './panel-model';
+import type { RepoBotsHint } from './panel-model';
+import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline } from './chat';
@@ -1839,13 +1840,17 @@ function slotNeedsRender(slot: HTMLElement): boolean {
   return [...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0);
 }
 
-export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null): void {
-  phase('review', () => applyReviewOverviewPass(settings, paths));
+/** What the repository says about its review bots (declared in its config, config files found), from the controller. */
+let repoBots: RepoBotsHint = NO_REPO_BOTS;
+
+export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null, bots?: RepoBotsHint): void {
+  phase('review', () => applyReviewOverviewPass(settings, paths, bots));
 }
 
-function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string[] | null): void {
+function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string[] | null, bots?: RepoBotsHint): void {
   reviewPass += 1;
   if (paths !== undefined) diffPaths = paths;
+  if (bots !== undefined) repoBots = bots;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
@@ -2011,7 +2016,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const awaited = new Set(awaiting.map((entry) => entry.author.toLowerCase()));
   const reviewers = latestReviewers(reviews).filter((entry) => !awaited.has(entry.login.toLowerCase()));
   for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
-  const requestable = phase('bots', () => installedBots(meta, document, rawComments));
+  const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
   const model: PanelModel = {
@@ -2030,7 +2035,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A bot's mark, from wherever the page shows it: an avatar captioned with one of its logins (Bugbot's review
     // comments are by cursor[bot]; unambiguous, so first), its run summary's avatar, else the App avatar nearest
-    // its `/apps/<slug>` link or check row (`installedBots`).
+    // its `/apps/<slug>` link or check row (`requestableBots`).
     botIconFor: (botId) => botAvatarByLogin(botId) ?? avatarSrcFor(meta.bots.find((bot) => bot.id === botId)?.sourceId ?? '') ?? iconByBot.get(botId) ?? null,
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
