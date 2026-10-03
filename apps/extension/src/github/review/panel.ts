@@ -247,7 +247,7 @@ export interface PanelModel {
   /** Where the in-browser AI stands for this pull request: the control in the Geld row and its notices. */
   readonly ai: AiState;
   /** The avatar GitHub shows beside the check named `name` in the merge box (the service's mark) and its shape, or null. */
-  readonly checkAvatarFor: (name: string) => CheckAvatar | null;
+  readonly checkAvatarFor: (reporterId: string, name: string) => CheckAvatar | null;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
   readonly avatarForAnchor: (anchor: string) => string | null;
   /** GitHub's own status ring from the merge box, cloned, when it has one. */
@@ -1621,7 +1621,7 @@ function reportDetail(entry: Report): HTMLElement {
 
 /** The reporter's mark: the comment's avatar (a bot's, square) for a bot's report, the check's avatar in its shape for a check's. */
 function reportAvatar(entry: Report, model: PanelModel): CheckAvatar | null {
-  if (entry.url !== undefined) return model.checkAvatarFor(entry.anchor.replace(/^check:/, ''));
+  if (entry.url !== undefined) return model.checkAvatarFor(entry.reporter, entry.anchor.replace(/^check:/, ''));
   const src = model.avatarForAnchor(entry.anchor);
   return src === null ? null : { src, round: false };
 }

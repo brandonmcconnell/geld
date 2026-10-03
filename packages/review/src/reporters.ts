@@ -6,6 +6,8 @@
  * in the panel's Reports row, where the comment opens in place.
  */
 
+import { REVIEW_BOTS } from './bots';
+
 export type ReportState = 'failed' | 'passed' | 'info';
 
 /**
@@ -37,6 +39,8 @@ export interface Reporter {
   readonly id: string;
   readonly title: string;
   readonly logins: readonly string[];
+  /** The GitHub App's id, where its mark lives (`avatars.githubusercontent.com/in/<id>`); read from `GET /users/<login>` in Oct 2026. */
+  readonly appId?: number;
   /** Read a comment by this reporter; null when the comment is not a report (a reply, a notice). */
   readonly read: (body: string) => ReportReading | null;
 }
@@ -57,6 +61,25 @@ function plural(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
 
+/**
+ * GitHub's mark for a bot login known to either registry (review bots or
+ * reporters), or `null`. `avatars.githubusercontent.com/<login>` serves an
+ * identicon for App logins, so the App's id is the only route to the mark.
+ */
+/** GitHub's mark for a check reporter's App, or `null` when the service has no App Geld knows. */
+export function checkReporterAvatar(reporterId: string, size = 64): string | null {
+  const appId = CHECK_REPORTERS.find((entry) => entry.id === reporterId)?.appId;
+  return appId === undefined ? null : `https://avatars.githubusercontent.com/in/${appId}?s=${size}&v=4`;
+}
+
+export function appAvatarForLogin(login: string, size = 64): string | null {
+  const wanted = login.toLowerCase();
+  const bot = REVIEW_BOTS.find((entry) => entry.logins.some((candidate) => candidate.toLowerCase() === wanted));
+  const reporter = REPORTERS.find((entry) => entry.logins.some((candidate) => candidate.toLowerCase() === wanted));
+  const appId = bot?.appId ?? reporter?.appId;
+  return appId === undefined ? null : `https://avatars.githubusercontent.com/in/${appId}?s=${size}&v=4`;
+}
+
 export const REPORTERS: readonly Reporter[] = [
   {
     // Blacksmith (blacksmith.sh): CI runners; its bot posts "Found N test failures on Blacksmith runners:" with the
@@ -64,6 +87,7 @@ export const REPORTERS: readonly Reporter[] = [
     id: 'blacksmith',
     title: 'Blacksmith',
     logins: ['blacksmith-sh[bot]', 'blacksmith[bot]'],
+    appId: 807020,
     read: (body) => {
       const failures = /\bfound (\d+) (?:test )?failures?\b/i.exec(body);
       if (failures !== null) {
@@ -82,6 +106,7 @@ export const REPORTERS: readonly Reporter[] = [
     id: 'socket',
     title: 'Socket',
     logins: ['socket-security[bot]', 'socket-security-staging[bot]'],
+    appId: 156372,
     read: (body) => {
       if (/\breview the following alerts\b/i.test(body)) {
         // One row per alert, led by the policy's action in bold: `<strong>Block</strong>` in the raw Markdown, `**Block**`
@@ -109,6 +134,7 @@ export const REPORTERS: readonly Reporter[] = [
     id: 'gitguardian',
     title: 'GitGuardian',
     logins: ['gitguardian[bot]'],
+    appId: 46505,
     read: (body) => {
       const found = /\buncovered (\d+) (?:hardcoded )?secrets?\b/i.exec(body);
       if (found !== null) {
@@ -189,6 +215,13 @@ export function latestReports(all: readonly Report[]): { readonly latest: readon
 export interface CheckReporter {
   readonly id: string;
   readonly title: string;
+  /**
+   * The service's GitHub App id, where its mark lives. The merge box row's
+   * own picture is the account that posted the status, which for a service
+   * connected through a person's authorization is that person, so a bot's
+   * pill would wear a face; the App's mark is used instead.
+   */
+  readonly appId?: number;
   /** Hosts of the Details link, matched on the URL's hostname (with or without `www.`, subdomains included). */
   readonly hosts: readonly string[];
   /**
@@ -255,6 +288,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // Visual tests per Storybook project: "UI Tests: project — Failed test" / "— 3 changes must be accepted".
     id: 'chromatic',
     title: 'Chromatic',
+    appId: 47100,
     hosts: ['chromatic.com'],
     project: (name) => /^UI (?:Tests|Review)(?::\s*(.+))?$/i.exec(name)?.[1]?.trim() ?? null,
     // "Storybook Publish: project — 624 stories published" says the build uploaded, not what the tests found.
@@ -266,6 +300,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // Visual review: "percy/project — 4 visual changes need review" / "— Visual review automatically approved".
     id: 'percy',
     title: 'Percy',
+    appId: 398,
     hosts: ['percy.io'],
     checkNames: /^percy\//i,
     project: afterSlash(/^percy\//i),
@@ -276,6 +311,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // flags add a third segment ("codecov/project/ui"). The facet after "codecov/" is the project here.
     id: 'codecov',
     title: 'Codecov',
+    appId: 254,
     hosts: ['codecov.io'],
     checkNames: /^codecov\//i,
     project: afterSlash(/^codecov\//i),
@@ -286,6 +322,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "SonarCloud Code Analysis" / "SonarQube Cloud Code Analysis" — "Quality Gate passed" / "Quality Gate failed".
     id: 'sonar',
     title: 'Sonar',
+    appId: 12526,
     hosts: ['sonarcloud.io', 'sonarqube.com', 'sonarqube.io', 'sonarsource.com'],
     checkNames: /^Sonar(?:Cloud|Qube)\b/i,
     project: () => null,
@@ -296,6 +333,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "security/snyk - package.json (org)" / "license/snyk - …" — "No new issues" / "2 new issues (1 high)".
     id: 'snyk',
     title: 'Snyk',
+    appId: 372950,
     hosts: ['snyk.io'],
     checkNames: /\bsnyk\b/i,
     project: afterSlash(/^(?:security|license|code)\/snyk\s*-\s*/i),
@@ -313,6 +351,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "Cypress Cloud" — "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" with the run's dashboard link.
     id: 'cypress',
     title: 'Cypress Cloud',
+    appId: 9078,
     hosts: ['cypress.io'],
     checkNames: /^Cypress(?: Cloud)?\b/i,
     project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
@@ -336,6 +375,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "argos" — "3 changes, waiting for your decision" / "No change detected".
     id: 'argos',
     title: 'Argos',
+    appId: 57576,
     hosts: ['argos-ci.com'],
     checkNames: /^argos\b/i,
     project: afterSlash(/^argos\//i),
@@ -345,6 +385,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "happo" / "happo/project" — "2 diffs" / "No diffs".
     id: 'happo',
     title: 'Happo',
+    appId: 9959,
     hosts: ['happo.io'],
     checkNames: /^happo\b/i,
     project: afterSlash(/^happo\//i),
@@ -363,6 +404,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "lost-pixel" — "N differences found".
     id: 'lost-pixel',
     title: 'Lost Pixel',
+    appId: 166555,
     hosts: ['lost-pixel.com'],
     checkNames: /^lost-pixel\b/i,
     project: afterSlash(/^lost-pixel\//i),
@@ -373,6 +415,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // self-hosted LHCI server has no host to know, and is left to the check's name.
     id: 'lighthouse',
     title: 'Lighthouse CI',
+    appId: 45298,
     hosts: ['googlechrome.github.io'],
     path: /\/lighthouse-ci\//i,
     project: afterSlash(/^lhci\//i),
@@ -385,6 +428,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // instead (`latestReports`).
     id: 'socket',
     title: 'Socket',
+    appId: 156372,
     hosts: ['socket.dev'],
     checkNames: /^Socket Security\b/i,
     project: () => null,
@@ -398,6 +442,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "GitGuardian Security Checks — 2 policy breaks detected" / "No policy breaks detected" (Details: dashboard.gitguardian.com).
     id: 'gitguardian',
     title: 'GitGuardian',
+    appId: 46505,
     hosts: ['gitguardian.com'],
     checkNames: /^GitGuardian\b/i,
     project: () => null,
@@ -412,6 +457,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "Semgrep OSS" / "Semgrep Code" / "Semgrep Cloud Platform" — "N findings" (Details: semgrep.dev).
     id: 'semgrep',
     title: 'Semgrep',
+    appId: 60555,
     hosts: ['semgrep.dev'],
     checkNames: /^Semgrep\b/i,
     project: afterSlash(/^Semgrep(?: OSS| Code| Cloud Platform)?\s*[/:-]\s*/i),
@@ -422,6 +468,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // the colon is the project, the conclusion says whether it found anything.
     id: 'aikido',
     title: 'Aikido',
+    appId: 242558,
     hosts: ['aikido.dev'],
     checkNames: /^Aikido\b/i,
     project: afterSlash(/^Aikido(?: Security)?\s*[/:-]\s*/i),
@@ -431,6 +478,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // "Gecko Security Review" — "No vulnerabilities found" / "N vulnerabilities found" (Details: app.gecko.security).
     id: 'gecko',
     title: 'Gecko',
+    appId: 1047747,
     hosts: ['gecko.security'],
     checkNames: /^Gecko Security\b/i,
     project: () => null,
@@ -443,6 +491,7 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     // the repository's failure threshold, so the state is read from the count.
     id: 'code-scanning',
     title: 'Code scanning',
+    appId: 57789,
     hosts: [],
     description: /\bcode changed by this pull request\b/i,
     project: (name) => (name.trim() === '' ? null : name.trim()),

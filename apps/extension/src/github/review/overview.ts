@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
-import { botAppAvatar, botById, botTitle, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -1452,17 +1452,37 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
  * and rounds those of users and OAuth Apps (Chromatic's statuses come from
  * one). The page is the only place that knows which.
  */
-function checkAvatarOf(name: string): CheckAvatar | null {
+/**
+ * The mark for a check report: the service's App mark when the registry knows
+ * it, else the merge box row's picture unless that is a person's. The row
+ * shows the account that posted the status, which for a service connected
+ * through someone's authorization (Chromatic, Vercel, Codecov as OAuth Apps)
+ * is that person, and a bot's pill must never wear a face.
+ */
+function checkAvatarOf(reporterId: string, name: string): CheckAvatar | null {
+  const mark = checkReporterAvatar(reporterId);
+  if (mark !== null) return { src: mark, round: false };
   for (const row of document.querySelectorAll<HTMLElement>('li:has([class*="StatusCheckRow"]), .merge-status-item')) {
     const title = (row.querySelector('[class*="StatusCheckRow"] h4 a span, [class*="StatusCheckRow"] h4 a, .merge-status-item strong, .merge-status-item .text-emphasized')?.textContent ?? '').replace(/\s+/g, ' ').trim();
     if (title !== name) continue;
     const img = row.querySelector<HTMLImageElement>('img[data-testid="github-avatar"], img.avatar');
     const src = img?.getAttribute('src') ?? null;
     if (img === null || src === null) return null;
+    if (isPersonAvatar(src, img)) return null;
     const square = img.hasAttribute('data-square') || (img.classList.contains('avatar') && !img.classList.contains('avatar-user'));
     return { src, round: !square };
   }
   return null;
+}
+
+/** GitHub serves people's avatars from `/u/<id>` (Apps from `/in/`, OAuth Apps from `/oa/`); `avatar-user` is its class for them. */
+function isPersonAvatar(src: string, img: Element): boolean {
+  if (img.classList.contains('avatar-user')) return true;
+  try {
+    return /^\/u\//.test(new URL(src, 'https://github.com').pathname);
+  } catch {
+    return false;
+  }
 }
 
 /** Any avatar the page shows beside one of the bot's logins (a review comment of its own, a reviewer entry, a hovercard link). */
@@ -1832,7 +1852,7 @@ function reportCardFor(anchor: string, model: PanelModel, handlers: PanelHandler
   const report = model.reports.latest.find((entry) => entry.anchor === anchor) ?? null;
   if (report === null) return null;
   const check = report.url !== undefined;
-  const avatar = check ? checkAvatarOf(anchor.replace(/^check:/, '')) : null;
+  const avatar = check ? checkAvatarOf(report.reporter, anchor.replace(/^check:/, '')) : null;
   const avatarSrc = avatar?.src ?? model.avatarForAnchor(anchor) ?? (report.author === '' ? null : avatarSrcForLogin(report.author));
   const node = check ? null : document.getElementById(anchor);
   const bodyNode = node?.querySelector(HOVER_BODY_SELECTOR) ?? null;
@@ -2189,7 +2209,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     ai: aiStateFor(meta, rawComments, settings),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
-    checkAvatarFor: (name) => checkAvatarOf(name),
+    checkAvatarFor: (reporterId, name) => checkAvatarOf(reporterId, name),
     checksRing,
     comments,
     openSubKey: visit.openSubKey,

@@ -7,7 +7,7 @@
  */
 
 import type { PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
-import { looksLikeSummaryBody } from '@geld/review';
+import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
 import { count as perfCount } from '../../lib/perf';
 
@@ -190,17 +190,62 @@ export function normalizeAvatarSrc(src: string): string {
   }
 }
 
+/** Places inside a comment where a picture is somebody else's: the body (people mentioned, a "requested by" line), forms (the reply box shows the reader), reactions. */
+const NOT_THE_AUTHOR = 'form, .comment-body, .js-comment-body, .markdown-body, [data-testid="markdown-body"], [data-testid="comment-body"], .js-reactions-container, .js-comment-reactions, .reactions, [data-testid="comment-reactions"]';
+
+function srcOfImage(img: Element | null): string | null {
+  const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
+  return src === '' ? null : normalizeAvatarSrc(src);
+}
+
+/**
+ * The avatar of a comment's author, bound to the author rather than to
+ * whatever picture comes first: a report comment's body carries the faces of
+ * the people it mentions, and a comment on loan with its header worn by a
+ * row leaves its home row's first picture to the reply box, which shows the
+ * reader. So: the picture captioned with the author's login (in the node or
+ * its row, through worn pieces), then for a bot GitHub's mark for its App
+ * (the registries know the id), and only then the first avatar outside
+ * bodies, forms and reactions.
+ */
 export function avatarSrcOf(node: Element | null): string | null {
   if (node === null) return null;
   const scopes: Element[] = [node];
   const row = closestAtHome(node, '.TimelineItem, .js-timeline-item, [data-testid="timeline-row"]');
   if (row !== null && row !== node) scopes.push(row);
+  const author = authorOf(node);
+  if (author !== null) {
+    const bare = author.login.replace(/\[bot\]$/i, '');
+    const captioned = [`img[alt="@${bare}"]`, `img[alt="${bare}"]`, `a[href="/${bare}"] img`, `a[href$="/${bare}"][data-hovercard-type] img`, `a[href="/apps/${bare}"] img`];
+    for (const scope of scopes) {
+      for (const selector of captioned) {
+        const src = srcOfImage(find(scope, selector));
+        if (src !== null) return src;
+      }
+    }
+    if (author.bot) {
+      const mark = appAvatarForLogin(author.login);
+      if (mark !== null) return mark;
+    }
+  }
   for (const scope of scopes) {
-    const img = find(scope, AVATAR_SELECTOR);
-    const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
-    if (src !== '') return normalizeAvatarSrc(src);
+    for (const img of findAll(scope, AVATAR_SELECTOR)) {
+      if (img.closest(NOT_THE_AUTHOR) !== null) continue;
+      const src = srcOfImage(img);
+      if (src !== null) return src;
+    }
   }
   return null;
+}
+
+/** Every match of `selector` under `root` and the pieces a panel row wears for it, in that order. */
+function findAll(root: Element, selector: string): Element[] {
+  const out = [...root.querySelectorAll(selector)];
+  for (const piece of wornPiecesOf(root)) {
+    if (piece.matches(selector)) out.push(piece);
+    out.push(...piece.querySelectorAll(selector));
+  }
+  return out;
 }
 
 export function avatarSrcFor(anchor: string): string | null {
