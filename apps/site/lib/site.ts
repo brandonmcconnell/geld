@@ -43,6 +43,7 @@ export interface NavLink {
 export const NAV_LINKS: readonly NavLink[] = [
   { href: '/how-it-works', label: 'How it works', inHeader: true },
   { href: '/patterns', label: 'Patterns', inHeader: true },
+  { href: '/repo-config', label: 'Repository config', inHeader: false },
   { href: '/faq', label: 'FAQ', inHeader: true },
   { href: '/privacy', label: 'Privacy', inHeader: false },
 ];

@@ -2210,6 +2210,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
       void postTopLevelComments(triggers);
     },
+    onRequestMenuClosed: () => reapplySoon(),
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
         visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
