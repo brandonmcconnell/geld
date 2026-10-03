@@ -1678,6 +1678,32 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   height: 12px;
 }
 
+/*
+ * "Still reading the timeline": GitHub's in-progress ring, small and muted,
+ * after a status row's content while the conversation's fragments are on
+ * their way. What stands before it is complete (the sidebar's verdicts);
+ * what follows the mark — comments, counts, lines — is still arriving.
+ */
+.geld-review__ingesting {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__ingesting .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__empty--ingesting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 @keyframes geld-spin {
   to {
     transform: rotate(360deg);

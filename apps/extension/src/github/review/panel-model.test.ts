@@ -149,4 +149,22 @@ describe('reviewer groups', () => {
       ['awaiting', ['kyle']],
     ]);
   });
+
+  it("takes the sidebar's word on a reviewer over the timeline's, and the timeline's for anyone else", async () => {
+    const { reviewerGroups } = await import('./panel');
+    const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    // The timeline has only ana's early comment so far (her approval sits behind "Load more"); the sidebar already
+    // says she approved. Kyle's dismissed review is nobody's verdict. Bots belong to their own row. Max is the
+    // timeline's alone.
+    const sidebar = [
+      { login: 'Ana', avatarSrc: 'https://avatars.githubusercontent.com/u/1?s=80&v=4', state: 'approved' as const, bot: false },
+      { login: 'kyle', avatarSrc: null, state: 'dismissed' as const, bot: false },
+      { login: 'cursor[bot]', avatarSrc: null, state: 'commented' as const, bot: true },
+    ];
+    const groups = reviewerGroups([line('ana', 'commented'), line('kyle', 'approved'), line('max', 'changes_requested')], sidebar);
+    expect(groups.map((group) => [group.state, group.reviewers.map((reviewer) => `${reviewer.login}|${reviewer.src}`)])).toEqual([
+      ['approved', ['Ana|https://avatars.githubusercontent.com/u/1?s=80&v=4']],
+      ['changes_requested', ['max|']],
+    ]);
+  });
 });

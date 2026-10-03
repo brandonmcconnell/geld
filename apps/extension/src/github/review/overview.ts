@@ -7,7 +7,7 @@
 
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
@@ -16,19 +16,19 @@ import { phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
-import type { CrawledComment, CrawledReview } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
-import { clickLoadMore, fragmentHeaders, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -163,16 +163,55 @@ function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
 /**
  * The reviewers GitHub is still waiting on, from the sidebar's "Awaiting
  * requested review from X" controls (the merge box only says "2 pending
- * reviews" behind a collapsed group). Lines with nothing to open.
+ * reviews" behind a collapsed group). Lines with nothing to open. Read from
+ * the sidebar block first; the bare controls are the fallback for a sidebar
+ * whose rows the block read did not recognise.
  */
-function awaitingReviewers(): ReviewEntry[] {
-  const out: ReviewEntry[] = [];
+function awaitingReviewers(sidebar: readonly SidebarReviewer[]): ReviewEntry[] {
+  const out: ReviewEntry[] = sidebar.filter((reviewer) => reviewer.state === 'awaiting').map((reviewer) => sidebarEntry(reviewer, 'awaiting'));
   for (const control of document.querySelectorAll<HTMLElement>('[aria-label^="Awaiting requested review from" i]')) {
     const login = /from\s+(\S+)/i.exec(control.getAttribute('aria-label') ?? '')?.[1] ?? '';
     if (login === '' || out.some((entry) => entry.author === login)) continue;
     const item = control.closest('.d-flex, li, [data-testid]') ?? control.parentElement;
     const image = item?.querySelector<HTMLImageElement>('img.avatar, img[class*="avatar"]') ?? null;
     out.push({ anchor: `awaiting:${login}`, author: login, avatarSrc: image === null ? avatarSrcForLogin(login) : normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || ''), state: 'awaiting', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null });
+  }
+  return out;
+}
+
+/** A person's verdict as the sidebar states it, for the approvals count; null for a bot, an awaited reviewer or a dismissed review. */
+function sidebarVerdict(reviewer: SidebarReviewer): ReviewerState | null {
+  if (reviewer.bot) return null;
+  switch (reviewer.state) {
+    case 'approved':
+    case 'changes_requested':
+    case 'commented':
+      return reviewer.state;
+    default:
+      return null;
+  }
+}
+
+/** A line made from the sidebar alone: who, their picture, the verdict's glyph; no words, no time, nothing to open. */
+function sidebarEntry(reviewer: SidebarReviewer, state: ReviewEntryState): ReviewEntry {
+  return { anchor: `${state === 'awaiting' ? 'awaiting' : 'sidebar'}:${reviewer.login}`, author: reviewer.login, avatarSrc: reviewer.avatarSrc, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null };
+}
+
+/**
+ * The verdicts the sidebar knows that the timeline has not shown yet: a line
+ * per such reviewer, so the open Reviews row says "X approved" the moment
+ * the page is up rather than after the review's row has been fetched from
+ * the end of a long conversation. The timeline's own line for the same
+ * verdict replaces it as it lands (words, time, threads and all); a
+ * dismissed review is nothing to list.
+ */
+function provisionalReviewLines(sidebar: readonly SidebarReviewer[], entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
+  const out: ReviewEntry[] = [];
+  for (const reviewer of sidebar) {
+    if (reviewer.bot || reviewer.state === 'awaiting' || reviewer.state === 'dismissed') continue;
+    const login = reviewer.login.toLowerCase();
+    if (entries.some((entry) => entry.author.toLowerCase() === login && entry.state === reviewer.state)) continue;
+    out.push(sidebarEntry(reviewer, reviewer.state));
   }
   return out;
 }
@@ -856,6 +895,21 @@ function fragmentSatisfied(src: string): boolean {
  * crawler sees every thread.
  */
 function loadMinimizedReviews(): void {
+  for (const { fragment, src } of deferredFragments()) {
+    if (eagerFragments >= MAX_EAGER_FRAGMENTS || fragmentsInFlight.size >= FRAGMENT_CONCURRENCY) break;
+    if (!fragmentWanted(fragment, src)) continue;
+    requestedFragments.add(fragment);
+    fragmentsInFlight.add(src);
+    eagerFragments += 1;
+    void fetchFragment(fragment, src).finally(() => {
+      fragmentsInFlight.delete(src);
+      fragmentLanded();
+    });
+  }
+}
+
+/** The timeline's lazy fragments that hold conversation (threads' comments, minimized reviews and comments), in timeline order. */
+function deferredFragments(): readonly { readonly fragment: Element; readonly src: string }[] {
   const pending: { readonly fragment: Element; readonly src: string }[] = [];
   const timeline = document.querySelector('.js-discussion, .pull-discussion-timeline') ?? document;
   // Threads first (they are the items), then minimized reviews and comments.
@@ -874,18 +928,30 @@ function loadMinimizedReviews(): void {
     const comment = fragment.closest('.js-comment, [id^="discussion_r"], [id^="issuecomment-"], [id^="pullrequestreview-"]');
     if (src !== null && !(minimized !== null && comment !== null && minimized.contains(comment))) pending.push({ fragment, src });
   }
-  for (const { fragment, src } of pending) {
-    if (eagerFragments >= MAX_EAGER_FRAGMENTS || fragmentsInFlight.size >= FRAGMENT_CONCURRENCY) break;
-    // Panel-made nodes never hold GitHub fragments; a thread on loan to the panel still does.
-    if (requestedFragments.has(fragment) || fragmentSatisfied(src) || (fragment.closest('.geld-review') !== null && fragment.closest('[data-geld-teleported]') === null)) continue;
-    requestedFragments.add(fragment);
-    fragmentsInFlight.add(src);
-    eagerFragments += 1;
-    void fetchFragment(fragment, src).finally(() => {
-      fragmentsInFlight.delete(src);
-      fragmentLanded();
-    });
-  }
+  return pending;
+}
+
+/** Whether `fragment` still needs fetching: not asked for, not in the page, not in flight or failed a moment ago. */
+function fragmentWanted(fragment: Element, src: string): boolean {
+  // Panel-made nodes never hold GitHub fragments; a thread on loan to the panel still does.
+  return !requestedFragments.has(fragment) && !fragmentSatisfied(src) && !(fragment.closest('.geld-review') !== null && fragment.closest('[data-geld-teleported]') === null);
+}
+
+/**
+ * Whether the timeline is still being read: fragments on their way or yet
+ * to be asked for, or a "Load more" this visit will still press. While it
+ * is, the Reviews row's heading comes from the sidebar (complete from the
+ * start) and its lines fill in; the row says so with a small in-progress
+ * mark instead of a count it does not have yet. Only the compact timeline
+ * fetches everything; with it off the lazy fragments stay GitHub's, and
+ * nothing here is "still coming".
+ */
+function timelineIngesting(hidingTimeline: boolean): boolean {
+  if (fragmentsInFlight.size > 0) return true;
+  if (!hidingTimeline) return false;
+  if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) return true;
+  if (eagerFragments >= MAX_EAGER_FRAGMENTS) return false;
+  return deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
 }
 
 /**
@@ -1912,7 +1978,7 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     // A comment line: a bot's run summary, a person's review or remark. Its card opens the line, or, for a line in
     // the Reviews index, goes where the line points; a bare verdict (nothing to open, the state name is the row's
     // text) has no card.
-    if (subAnchor.startsWith('awaiting:')) return null;
+    if (subAnchor.startsWith('awaiting:') || subAnchor.startsWith('sidebar:')) return null;
     const pointer = row.hasAttribute('data-pointer');
     if (!pointer && row.querySelector('[aria-expanded]') === null) return null;
     anchor = subAnchor;
@@ -2117,9 +2183,16 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = phase('reviews', crawlReviews);
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
-  const awaiting = phase('awaiting', awaitingReviewers);
+  // The sidebar's Reviewers block: every reviewer's latest verdict from the first paint, while the timeline's
+  // reviews are still being fetched from its end (see `timelineIngesting`).
+  const sidebar = phase('sidebar', crawlSidebarReviewers);
+  const awaiting = phase('awaiting', () => awaitingReviewers(sidebar));
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
-  const comments = phase('entries', () => pinOpenEntry([...awaiting, ...reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor))]));
+  const timelineEntries = phase('entries', () => reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor)));
+  // The rounds are the timeline's; the sidebar's provisional lines (no row behind them yet) are the Reviews row's alone.
+  const roundEntries = [...awaiting, ...timelineEntries];
+  const comments = pinOpenEntry([...roundEntries, ...provisionalReviewLines(sidebar, timelineEntries)]);
+  const ingesting = timelineIngesting(hidingTimeline);
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
@@ -2155,7 +2228,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
   const batches = phase('batches', () =>
-    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, comments, allPreviews).map((batch) => {
+    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, roundEntries, allPreviews).map((batch) => {
       const pinnedComments = pinOpenEntry(batch.comments);
       return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
     }),
@@ -2196,8 +2269,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // A re-requested reviewer is awaited again: GitHub sets their earlier verdict aside (the merge box stops saying
   // "changes requested"), and so does the row, for the tint and the count alike.
   const awaited = new Set(awaiting.map((entry) => entry.author.toLowerCase()));
-  const reviewers = latestReviewers(reviews).filter((entry) => !awaited.has(entry.login.toLowerCase()));
-  for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
+  // The sidebar's verdicts first — GitHub's own latest-per-reviewer, complete from the start — then the
+  // timeline's and the payload's for anyone the sidebar does not list.
+  const reviewers: ReviewerRecord[] = sidebar.flatMap((reviewer) => {
+    const state = sidebarVerdict(reviewer);
+    return state === null ? [] : [{ login: reviewer.login, state }];
+  });
+  const settled = new Set(sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => reviewer.login.toLowerCase()));
+  for (const record of latestReviewers(reviews)) if (!awaited.has(record.login.toLowerCase()) && !settled.has(record.login.toLowerCase())) reviewers.push(record);
+  for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !settled.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
@@ -2234,6 +2314,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     checkAvatarFor: (reporterId, name) => checkAvatarOf(reporterId, name),
     checksRing,
     comments,
+    reviewerGroups: reviewerGroups(comments, sidebar),
+    ingesting,
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
     refsVersion: refsVersion(),

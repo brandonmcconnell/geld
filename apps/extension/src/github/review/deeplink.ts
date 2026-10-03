@@ -48,6 +48,12 @@ const PRESS_TIMEOUT_MS = 15_000;
  * submit nobody prevented is stopped here and fetched the same way GitHub
  * would, the form replaced with what comes back.
  */
+/** Whether the timeline still ends in a "Load more" that can be pressed. */
+export function hasLoadMore(root: ParentNode = document): boolean {
+  const button = root.querySelector<HTMLButtonElement>(LOAD_MORE);
+  return button !== null && !button.disabled;
+}
+
 export function clickLoadMore(root: ParentNode = document): boolean {
   if (document.readyState !== 'complete') return false;
   const button = root.querySelector<HTMLButtonElement>(LOAD_MORE);

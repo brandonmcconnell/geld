@@ -161,6 +161,11 @@ export interface CheckAvatar {
   readonly round: boolean;
 }
 
+/** A verdict line made from the sidebar before the timeline showed the review (`sidebar:<login>`): a fact with no row behind it yet. */
+export function isProvisional(entry: ReviewEntry): boolean {
+  return entry.anchor.startsWith('sidebar:');
+}
+
 /** A person's verdict on the changes (not a thread, a plain comment or a pending request). */
 export function isVerdict(entry: ReviewEntry): boolean {
   return entry.state === 'approved' || entry.state === 'changes_requested' || entry.state === 'commented' || entry.state === 'dismissed';
@@ -184,17 +189,36 @@ export interface ReviewerGroup {
   readonly reviewers: readonly Avatar[];
 }
 
+/** What the sidebar's Reviewers block says of one reviewer (crawler.ts's `SidebarReviewer`, as the heading needs it). */
+export interface SidebarVerdict {
+  readonly login: string;
+  readonly avatarSrc: string | null;
+  readonly state: ReviewerGroupState | 'dismissed';
+  readonly bot: boolean;
+}
+
 /**
  * Each reviewer once, by their latest verdict: a later comment-only review
  * does not withdraw an approval or a request for changes (as GitHub counts
  * them), a re-request puts them back among the awaited. People's top-level
- * comments are not reviews and stay off the heading.
+ * comments are not reviews and stay off the heading. The sidebar's word on a
+ * reviewer is final — it is GitHub's own latest-per-reviewer, there from the
+ * first paint, while the timeline's reviews are still being fetched — and
+ * the timeline only adds reviewers the sidebar does not list.
  */
-export function reviewerGroups(entries: readonly ReviewEntry[]): readonly ReviewerGroup[] {
+export function reviewerGroups(entries: readonly ReviewEntry[], sidebar: readonly SidebarVerdict[] = []): readonly ReviewerGroup[] {
   const latest = new Map<string, { state: ReviewerGroupState; avatar: Avatar }>();
+  const settled = new Set<string>();
+  for (const reviewer of sidebar) {
+    if (reviewer.bot) continue;
+    const key = reviewer.login.toLowerCase();
+    settled.add(key);
+    if (reviewer.state !== 'dismissed') latest.set(key, { state: reviewer.state, avatar: { src: reviewer.avatarSrc ?? '', bot: false, login: reviewer.login } });
+  }
   for (const entry of entries) {
     if (entry.state === 'thread' || entry.state === 'comment' || entry.state === 'dismissed') continue;
     const key = entry.author.toLowerCase();
+    if (settled.has(key)) continue;
     const current = latest.get(key);
     // Awaited again (re-requested) sets any earlier verdict aside; a comment-only review sets nothing aside.
     if (current?.state === 'awaiting') continue;
@@ -255,6 +279,14 @@ export interface PanelModel {
   readonly reviews: RequiredReviews | null;
   /** Review verdicts, threads and people's comments, in timeline order, for the Reviews row's list. */
   readonly comments: readonly ReviewEntry[];
+  /** The Reviews row's heading: each reviewer once, by latest verdict, the sidebar's word first (`reviewerGroups`). */
+  readonly reviewerGroups: readonly ReviewerGroup[];
+  /**
+   * The timeline is still being read (fragments on their way, a "Load more"
+   * still to press): the heading is complete — it comes from the sidebar —
+   * but the lines and the comment count are not yet, and the row says so.
+   */
+  readonly ingesting: boolean;
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
@@ -702,6 +734,16 @@ function progressMeter(done: number, total: number, noun: string): HTMLElement {
 /** A small pill with the comment glyph and a count, as the Reviews row wears. */
 function countChip(count: number, label: string): HTMLElement {
   return createElement('span', { class: `${PANEL_CLASS}__count-chip`, title: label }, [icon(ICON_COMMENT_DISCUSSION), createElement('span', {}, [String(count)])]);
+}
+
+/**
+ * GitHub's own in-progress mark (the spinning ring the CI breakdown uses),
+ * small, after a row's content: what is shown is real, more is on its way.
+ * Not a skeleton — the sidebar's verdicts are the page's from the start —
+ * and not a bare spinner in the content's place either.
+ */
+function ingestingMark(label: string): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__ingesting`, role: 'img', 'aria-label': label, title: label }, [icon(ICON_IN_PROGRESS)]);
 }
 
 /**
@@ -1298,7 +1340,7 @@ function statusRow(label: [string, string], lead: Node, content: Node[], right: 
  */
 function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--status`, role: 'list' });
-  if (model.reviews !== null || model.comments.length > 0) {
+  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting) {
     const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
     const content: Node[] = [];
     // The words carry only what the reviewer groups cannot: how many approvals the repository asks for. Without
@@ -1315,7 +1357,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     }
     // Every reviewer, grouped by their latest verdict: the state's glyph, their avatars, how many (the words go on
     // narrow screens; the glyph says it).
-    for (const group of reviewerGroups(model.comments)) {
+    for (const group of model.reviewerGroups) {
       const names = group.reviewers.map((reviewer) => reviewer.login).join(', ');
       const label = `${group.reviewers.length} ${REVIEWER_GROUP_WORD[group.state]}`;
       content.push(
@@ -1327,10 +1369,12 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       );
     }
     const open = model.openKey === REVIEWS_KEY;
-    if (content.length === 0) content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet']));
+    if (content.length === 0) content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet']));
     // Only comments count here; a bare verdict is already in the approvals.
     const count = model.comments.filter((entry) => entry.hasBody).length;
     if (count > 0) content.push(countChip(count, `${plural(count, 'review comment')} from people`));
+    // The verdicts above are whole (the sidebar's); the comments are still arriving from the timeline.
+    if (model.ingesting) content.push(ingestingMark('Still reading the timeline: review comments are on their way'));
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
       createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
     ]);
@@ -1357,7 +1401,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       statusRow(
         ['Review bots', 'Bots'],
         icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
-        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet'])] : chips,
+        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet']), ...(model.ingesting ? [ingestingMark('Still reading the timeline: bot reviews are on their way')] : [])] : chips,
         menu === null ? [] : [menu],
         { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(alarmTone(model.meta.bots.length === 0 ? 'pending' : worst)) },
       ),
@@ -1720,8 +1764,10 @@ const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
 export function renderCommentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   const entries = orderEntries(model.comments.filter((entry) => entry.state !== 'thread'));
-  if (entries.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No reviews yet.']));
+  if (entries.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet.']));
   for (const entry of entries) list.append(entryRow(entry, model, handlers, true, 'pointer').row);
+  // Lines are still arriving from the timeline (the verdicts above are whole: the sidebar's).
+  if (model.ingesting && entries.length > 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty ${PANEL_CLASS}__empty--ingesting` }, [ingestingMark('Still reading the timeline'), 'Reading the rest of the timeline…']));
   slot.replaceChildren(list);
 }
 
@@ -1741,7 +1787,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   // (the others stand right beside it), so a review is never a dead line. A pending request is a fact, not a
   // conversation: nothing to open, nowhere to go.
   const opens = !pointer && entryOpens(entry);
-  const goes = entry.state !== 'awaiting' && (pointer || (!opens && isVerdict(entry) && threadCount > 0));
+  // A line the sidebar alone vouches for (the review's row is not on the page yet) has nowhere to go either.
+  const goes = entry.state !== 'awaiting' && !isProvisional(entry) && (pointer || (!opens && isVerdict(entry) && threadCount > 0));
   const open = opens && model.openSubKey === entry.anchor;
   const bot = /\[bot\]$/i.test(entry.author);
   const lead =
@@ -1846,6 +1893,8 @@ function signatureOf(model: PanelModel): string {
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
+    reviewerGroups: model.reviewerGroups.map((group) => `${group.state}:${group.reviewers.map((reviewer) => `${reviewer.login}${reviewer.src}`).join(',')}`),
+    ingesting: model.ingesting,
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,

@@ -764,6 +764,66 @@ export function latestReviewers(reviews: readonly CrawledReview[]): readonly Rev
   return [...latest].map(([login, state]) => ({ login, state }));
 }
 
+/** What the sidebar says of a reviewer: their latest verdict, or that GitHub is still waiting on them. */
+export type SidebarReviewerState = 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'awaiting';
+
+export interface SidebarReviewer {
+  readonly login: string;
+  readonly avatarSrc: string | null;
+  readonly state: SidebarReviewerState;
+  /** A GitHub App (`…[bot]`, linked to `/apps/…`): its reviews belong to the Review bots row, not to people's. */
+  readonly bot: boolean;
+}
+
+const SIDEBAR_REVIEWERS = 'form[id^="pull-request-reviewers-form"], form[aria-label="Select reviewers" i], [data-testid="sidebar-reviewers"], [data-testid="reviewers-section"]';
+
+/** "X approved these changes", "X requested changes", "X left review comments", "X's review was dismissed", "Awaiting requested review from X". */
+function sidebarReviewerState(text: string, glyph: Element | null): SidebarReviewerState | null {
+  if (/\bawaiting\b/i.test(text)) return 'awaiting';
+  if (/\bapproved\b/i.test(text)) return 'approved';
+  if (/\brequested changes\b/i.test(text)) return 'changes_requested';
+  if (/\bdismissed\b/i.test(text)) return 'dismissed';
+  if (/\breview comments?\b|\bcommented\b/i.test(text)) return 'commented';
+  const classes = glyph?.getAttribute('class') ?? '';
+  if (/octicon-dot-fill/.test(classes)) return 'awaiting';
+  if (/octicon-check/.test(classes)) return 'approved';
+  if (/octicon-file-diff/.test(classes)) return 'changes_requested';
+  if (/octicon-comment/.test(classes)) return 'commented';
+  return null;
+}
+
+/**
+ * The sidebar's Reviewers block: every reviewer with their latest verdict,
+ * as GitHub itself keeps it, there from the first paint. The timeline says
+ * the same once it is all on the page, which on a long conversation takes
+ * seconds of fetching — the reviews sit at its end, behind "Load more" and
+ * minimized groups — so the Reviews row reads its heading from here and
+ * fills the lines in from the timeline as it lands. Each row is a
+ * `[data-assignee-name]` with the picture and, beside it, the status
+ * control whose tooltip (or `aria-label`) says the sentence; the octicon's
+ * name is the fallback.
+ */
+export function crawlSidebarReviewers(root: ParentNode = document): readonly SidebarReviewer[] {
+  const block = root.querySelector(SIDEBAR_REVIEWERS);
+  if (block === null) return [];
+  const out: SidebarReviewer[] = [];
+  for (const who of block.querySelectorAll<HTMLElement>('[data-assignee-name]')) {
+    const login = who.getAttribute('data-assignee-name') ?? '';
+    if (login === '' || out.some((entry) => entry.login === login)) continue;
+    const row = who.parentElement ?? who;
+    const control = row.querySelector<HTMLElement>('[id^="review-status-"], [id^="awaiting-review-"], .reviewers-status-icon');
+    const labelledBy = control?.getAttribute('aria-labelledby') ?? '';
+    const tip = labelledBy === '' ? null : root.querySelector(`[id="${CSS.escape(labelledBy)}"]`);
+    const text = [tip?.textContent ?? '', control?.getAttribute('aria-label') ?? '', row.querySelector('tool-tip')?.textContent ?? ''].join(' ');
+    const state = sidebarReviewerState(text, row.querySelector('.reviewers-status-icon svg, .reviewers-status-icon .octicon'));
+    if (state === null) continue;
+    const link = who.querySelector('a[href]');
+    const bot = /\[bot\]$/i.test(login) || (link?.getAttribute('href') ?? '').startsWith('/apps/');
+    out.push({ login, avatarSrc: srcOfImage(who.querySelector('img')) ?? avatarSrcForLogin(login), state, bot });
+  }
+  return out;
+}
+
 /**
  * The merge box's check rows as check runs, read from each row's state
  * glyph (GitHub's octicon names its state) and name, wherever the rows are
