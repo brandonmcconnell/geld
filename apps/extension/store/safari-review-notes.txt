@@ -1,0 +1,46 @@
+Geld is a Safari Web Extension packaged in Apple’s required macOS containing app. The containing app reports whether the extension is enabled, explains setup, and opens Safari Settings. Geld’s core functionality appears inside Safari on GitHub diff pages.
+
+1. Physical-device recording
+
+Recording: {{VIDEO_URL}}
+
+Captured on {{TEST_DEVICE}}. The recording shows Geld {{VERSION}} (build {{BUILD}}) from launch through the complete setup and typical workflow: opening the containing app, enabling the Safari extension, granting github.com access, opening a public GitHub pull request, hiding and revealing test files, and using the toolbar popup and settings.
+
+Geld has no account registration, purchases, subscriptions, or user-generated content. Optional GitHub sign-in is not required for the core workflow and does not create a Geld account.
+
+2. Purpose and target audience
+
+Geld is a free developer utility for software engineers and code reviewers. It hides test files and other optionally selected review noise from GitHub diffs, updates the visible file and line counts, and keeps every hidden file available in a separate section. It helps reviewers understand the substantive code change first without modifying repository data.
+
+3. Setup and access instructions
+
+No login, credentials, payment, or sample file is required.
+
+a. Launch Geld from Applications.
+b. Click “Open Safari Settings.”
+c. In Safari Settings → Extensions, enable Geld.
+d. Grant Geld access to github.com when Safari requests it.
+e. Open this public pull request:
+   https://github.com/wxt-dev/wxt/pull/2544/files
+f. Geld hides the matching test files and shows a “test files hidden” row.
+g. Use that row, the Tests panel in the file tree, or the Geld toolbar popup to reveal the files.
+h. Open Geld’s settings from the toolbar popup to configure optional categories and custom patterns.
+
+Optional “Sign in with GitHub” synchronizes settings through a secret gist in the user’s own GitHub account. It is not required to test Geld and does not create a Geld account.
+
+4. External services, tools, and platforms
+
+- github.com: the website whose pull-request and commit diff interface Geld augments.
+- patch-diff.githubusercontent.com: GitHub’s raw diff host, used to calculate accurate file and line counts when the page does not contain every diff.
+- api.github.com: used to fetch Geld’s public signed pattern catalog and, only when the user opts in, for GitHub OAuth and gist synchronization.
+- GitHub OAuth device flow: optional; requests the “gist” scope only.
+
+Geld has no server or database and uses no analytics, advertising, payment processor, AI service, subscription, or in-app purchase. Repository content and diff classification are processed locally. Geld never receives repository content or user data. With optional synchronization enabled, settings are stored by GitHub in the user’s own secret gist.
+
+5. Regional differences
+
+Geld provides the same functionality in every region where GitHub and the Mac App Store are available. There are no region-specific features, payments, or content.
+
+6. Regulated services or protected third-party material
+
+Not applicable. Geld is a developer utility, does not operate in a regulated industry, and does not sell or redistribute GitHub content. The screenshots and review demonstration use a public GitHub repository and do not imply GitHub endorsement.
