@@ -569,6 +569,15 @@ function mergeBox(): HTMLElement | null {
 let checksSectionEl: HTMLElement | null = null;
 /** Where that section came from — the merge box — so its text can be read while the section is away. */
 let mergeHomeEl: HTMLElement | null = null;
+/**
+ * The pass in which the search last came up empty. A merged pull request
+ * has no checks heading at all, and the search by headings reads the text
+ * of every button, span, paragraph and div it looks at; the section is
+ * asked for several times per pass, so one miss answers for the whole pass
+ * and the next pass looks again.
+ */
+let checksMissedInPass = -1;
+let reviewPass = 0;
 
 /**
  * The merge box's checks section, located by its own headings ("1 in
@@ -579,6 +588,7 @@ let mergeHomeEl: HTMLElement | null = null;
  */
 function checksSection(): HTMLElement | null {
   if (checksSectionEl !== null && checksSectionEl.isConnected) return checksSectionEl;
+  if (checksMissedInPass === reviewPass) return null;
   // The React merge box labels its sections; nothing else on the page carries this label.
   const labelled = document.querySelector('section[aria-label="Checks"]');
   if (labelled instanceof HTMLElement && labelled.closest('.geld-review') === null) {
@@ -586,12 +596,17 @@ function checksSection(): HTMLElement | null {
     mergeHomeEl = mergeBox() ?? labelled.parentElement;
     return checksSectionEl;
   }
-  const headings = [...document.querySelectorAll<HTMLElement>('button, summary, h2, h3, h4, span, p, div')].filter(
+  const box = mergeBox();
+  // The headings live in the merge box when the page has one Geld recognises (the ancestor walk below stops there
+  // anyway); only a merge box in markup not seen before is searched for across the page.
+  const headings = [...(box ?? document).querySelectorAll<HTMLElement>('button, summary, h2, h3, h4, span, p, div')].filter(
     (node) => node.childElementCount <= 2 && CHECK_HEADING.test((node.textContent ?? '').replace(/\s+/g, ' ').trim()) && node.closest('.geld-review') === null,
   );
   const first = headings[0];
-  if (first === undefined) return null;
-  const box = mergeBox();
+  if (first === undefined) {
+    checksMissedInPass = reviewPass;
+    return null;
+  }
   let ancestor: HTMLElement | null = first.parentElement;
   while (ancestor !== null && ancestor !== box && ancestor !== document.body && !headings.every((heading) => ancestor?.contains(heading) === true)) {
     ancestor = ancestor.parentElement;
@@ -1824,6 +1839,7 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
 }
 
 function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string[] | null): void {
+  reviewPass += 1;
   if (paths !== undefined) diffPaths = paths;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
