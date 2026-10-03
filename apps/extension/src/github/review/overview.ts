@@ -16,12 +16,13 @@ import { phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
+import { commitTimes, isRewritten } from './commit-dates';
 import { relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
@@ -1180,6 +1181,50 @@ function stampFlash(): void {
  * people's reviews — is what landed for that push. Content before any commit
  * is round 1 with no commits. With no commits on the page there is one round.
  */
+/**
+ * A commit row stands in the timeline where GitHub lists it, and GitHub
+ * lists a pull request's commits by the push that put *the commit as it is
+ * now* on the branch. A rebase (or an amend, a cherry-pick) rewrites every
+ * commit, so after one the whole list stands at the rebase and the earlier
+ * pushes — which the reviews between them answered — have no row left in
+ * the timeline (mint#11561: a week of push-and-review cycles read as one
+ * round once the branch was rebased). The commit's authored date survives
+ * the rewrite (the Commits tab says both), so a rewritten commit is seated
+ * in the timeline's order where it was made: before the first entry dated
+ * after it. A commit made and pushed as it is keeps GitHub's position, which
+ * is the push itself; a force-push row is a dated boundary of its own. The
+ * dates arrive once per visit; until they do, every commit stands where
+ * GitHub put it.
+ */
+function seatRewrittenCommits<T extends { readonly node: Element; readonly kind: string }>(entries: T[], pushRoots: ReadonlySet<HTMLElement>): void {
+  const moved: { readonly entry: T; readonly at: number }[] = [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry === undefined || entry.kind !== 'commit' || (entry.node instanceof HTMLElement && pushRoots.has(entry.node))) continue;
+    const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(entry.node.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+    if (sha === undefined) continue;
+    const times = commitTimes(sha, reapplySoon);
+    if (times === null || !isRewritten(times)) continue;
+    moved.push({ entry, at: Date.parse(times.authored) });
+    entries.splice(index, 1);
+  }
+  if (moved.length === 0) return;
+  moved.sort((a, b) => a.at - b.at);
+  // Each entry's own date (a force-push row's, a comment's, a thread's first comment's); a commit row has none.
+  const dated = entries.map((entry) => (entry.kind === 'commit' && !(entry.node instanceof HTMLElement && pushRoots.has(entry.node)) ? Number.NaN : Date.parse(createdAtOf(entry.node))));
+  let cursor = 0;
+  for (const { entry, at } of moved) {
+    while (cursor < entries.length) {
+      const date = dated[cursor];
+      if (date !== undefined && !Number.isNaN(date) && date > at) break;
+      cursor += 1;
+    }
+    entries.splice(cursor, 0, entry);
+    dated.splice(cursor, 0, at);
+    cursor += 1;
+  }
+}
+
 function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[], pushRoots: ReadonlySet<HTMLElement>, reviewEntriesAll: readonly ReviewEntry[], previewsAll: readonly Preview[]): readonly Batch[] {
   const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
@@ -1225,6 +1270,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     place({ node: document.documentElement, kind: 'review', review }, entryNodes.get(review.anchor) ?? timelineRootOf(review.anchor));
   }
   entries.sort((a, b) => compareHome(a.node, b.node));
+  seatRewrittenCommits(entries, pushRoots);
   const rounds: Round[] = [];
   let current: Round | null = null;
   const fresh = (): Round => ({ commits: [], items: [], comments: [], previewComments: [], reviews: [] });

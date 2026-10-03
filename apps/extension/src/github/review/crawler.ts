@@ -352,7 +352,7 @@ function withLocation(base: RawComment, extra: { readonly path?: string; readonl
   return base;
 }
 
-function createdAtOf(node: Element): string {
+export function createdAtOf(node: Element): string {
   return find(node, 'relative-time, time-ago, time')?.getAttribute('datetime') ?? '';
 }
 

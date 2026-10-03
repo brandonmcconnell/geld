@@ -10,8 +10,14 @@
 
 const REFRESH_MS = 30_000;
 
+/** When a commit was made (`committed`: the last rewrite — rebase, amend, cherry-pick — `authored`: the original). */
+export interface CommitTimes {
+  readonly committed: string;
+  readonly authored: string;
+}
+
 interface CommitDates {
-  readonly byOid: Map<string, string>;
+  readonly byOid: Map<string, CommitTimes>;
   fetchedAt: number;
   pending: Promise<void> | null;
 }
@@ -29,7 +35,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Every `{ oid, committedDate | authoredDate }` object anywhere in the payload, whatever GitHub groups them under. */
-function collectCommits(value: unknown, into: Map<string, string>, depth = 0): void {
+function collectCommits(value: unknown, into: Map<string, CommitTimes>, depth = 0): void {
   if (depth > 8) return;
   if (Array.isArray(value)) {
     for (const entry of value) collectCommits(entry, into, depth + 1);
@@ -37,15 +43,16 @@ function collectCommits(value: unknown, into: Map<string, string>, depth = 0): v
   }
   if (!isRecord(value)) return;
   const oid = value.oid;
-  const date = value.committedDate ?? value.authoredDate;
-  if (typeof oid === 'string' && /^[0-9a-f]{40}$/.test(oid) && typeof date === 'string' && !Number.isNaN(Date.parse(date))) {
-    into.set(oid, date);
+  const committed = typeof value.committedDate === 'string' && !Number.isNaN(Date.parse(value.committedDate)) ? value.committedDate : null;
+  const authored = typeof value.authoredDate === 'string' && !Number.isNaN(Date.parse(value.authoredDate)) ? value.authoredDate : null;
+  if (typeof oid === 'string' && /^[0-9a-f]{40}$/.test(oid) && (committed !== null || authored !== null)) {
+    into.set(oid, { committed: committed ?? authored ?? '', authored: authored ?? committed ?? '' });
     return;
   }
   for (const child of Object.values(value)) collectCommits(child, into, depth + 1);
 }
 
-async function fetchDates(pull: string, into: Map<string, string>): Promise<void> {
+async function fetchDates(pull: string, into: Map<string, CommitTimes>): Promise<void> {
   try {
     const response = await fetch(new URL(`${pull}/commits`, location.href), {
       credentials: 'same-origin',
@@ -65,13 +72,18 @@ async function fetchDates(pull: string, into: Map<string, string>): Promise<void
  * not say.
  */
 export function commitDate(sha: string, onChange: () => void): string | null {
+  return commitTimes(sha, onChange)?.committed ?? null;
+}
+
+/** Both dates of commit `sha`, on the same terms as {@link commitDate}. */
+export function commitTimes(sha: string, onChange: () => void): CommitTimes | null {
   const pull = pullPathOf();
   if (pull === null) return null;
   if (known === null || known.pull !== pull) known = { pull, dates: { byOid: new Map(), fetchedAt: 0, pending: null } };
   const dates = known.dates;
   const lower = sha.toLowerCase();
-  for (const [oid, date] of dates.byOid) {
-    if (oid.startsWith(lower)) return date;
+  for (const [oid, times] of dates.byOid) {
+    if (oid.startsWith(lower)) return times;
   }
   if (dates.pending === null && Date.now() - dates.fetchedAt >= REFRESH_MS) {
     dates.pending = fetchDates(pull, dates.byOid).finally(() => {
@@ -82,3 +94,16 @@ export function commitDate(sha: string, onChange: () => void): string | null {
   }
   return null;
 }
+
+/**
+ * Whether the commit was rewritten after it was made — rebased, amended,
+ * cherry-picked: its committed date is well after its authored date. A
+ * commit made and pushed as it is carries the same second in both.
+ */
+export function isRewritten(times: CommitTimes): boolean {
+  const committed = Date.parse(times.committed);
+  const authored = Date.parse(times.authored);
+  return !Number.isNaN(committed) && !Number.isNaN(authored) && committed - authored >= REWRITE_GAP_MS;
+}
+
+const REWRITE_GAP_MS = 60_000;
