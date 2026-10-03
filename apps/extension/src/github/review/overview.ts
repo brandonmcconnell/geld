@@ -65,6 +65,9 @@ interface VisitState {
   loadMoreTries: number;
   /** A permalink (or find-in-page hit) still to be honoured: open its row and land on it once. */
   pendingAnchor: string | null;
+  /** The anchor this visit already landed on, and the row it landed in: the browser revealing it again (`beforematch`) must not move the page. */
+  landedAnchor: string | null;
+  landedFocusKey: string | null;
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
@@ -121,6 +124,8 @@ const visit: VisitState = {
   generatedAt: '',
   loadMoreTries: 0,
   pendingAnchor: null,
+  landedAnchor: null,
+  landedFocusKey: null,
   openSubKey: null,
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
@@ -708,17 +713,49 @@ function revealOpened(control: HTMLElement): void {
  * header will do at a destination, so the two candidate destinations - under
  * the header, or at the top with no header - are tried where they hold.
  */
-function scrollRowTo(rowTop: number): void {
+function scrollRowTo(rowTop: number): number {
+  const destination = rowDestination(rowTop);
+  window.scrollTo({ top: destination, behavior: 'instant' });
+  return destination;
+}
+
+/** The scroll position that puts a row whose document top is `rowTop` just under the sticky header (see `scrollRowTo`). */
+function rowDestination(rowTop: number): number {
   const gap = 8;
   const withHeader = rowTop - stickyHeaderBottomAt(rowTop) - gap;
-  if (stickyHeaderBottomAt(withHeader) > 0) {
-    window.scrollTo({ top: withHeader, behavior: 'instant' });
-    return;
-  }
+  if (stickyHeaderBottomAt(withHeader) > 0) return withHeader;
   const bare = rowTop - gap;
   // No header at either destination: the row goes to the top edge. The header would appear only at the bare
   // destination: stop short of it, where the row sits a header's height down and nothing covers it.
-  window.scrollTo({ top: stickyHeaderBottomAt(bare) > 0 ? withHeader : bare, behavior: 'instant' });
+  return stickyHeaderBottomAt(bare) > 0 ? withHeader : bare;
+}
+
+/**
+ * Make the browser's own fragment scroll agree with ours. Until the document
+ * has finished loading, Chrome keeps scrolling the URL's `#anchor` element to
+ * the top edge on every layout (its fragment anchor is dismissed only by the
+ * reader scrolling or the load ending). That element is the carrier of the
+ * id Chrome found when the page was navigated to, before the panel existed:
+ * GitHub repeats a review's id on its `js-updatable-content` shell and the
+ * comment group inside it, and after the landing the group is on loan in
+ * the row's chat while the shell stays home, so each of Chrome's scrolls
+ * moved the page to one of them and the hold moved it back: the page
+ * ping-ponged for as long as it kept loading, ten or twenty seconds on a
+ * long conversation. A `scroll-margin-top` on every carrier of exactly its
+ * distance from the landing (negative when it sits above, which CSS allows)
+ * makes Chrome's scroll land where the row's landing does, so its repeats
+ * are no-ops. Re-measured every pass while loading, since content landing
+ * above moves the carriers; a hidden carrier has no box and is skipped
+ * (`alignRevealWithLanding` handles the one Chrome is about to reveal).
+ */
+function alignAnchorCarriers(anchor: string, focusKey: string): void {
+  const row = document.querySelector(`[data-geld-focus="${focusKey}"]`);
+  if (!(row instanceof HTMLElement)) return;
+  const destination = rowDestination(row.getBoundingClientRect().top + window.scrollY);
+  for (const carrier of document.querySelectorAll(`[id="${CSS.escape(anchor)}"]`)) {
+    if (!(carrier instanceof HTMLElement) || carrier.getClientRects().length === 0) continue;
+    carrier.style.scrollMarginTop = `${Math.round(carrier.getBoundingClientRect().top + window.scrollY - destination)}px`;
+  }
 }
 
 /**
@@ -862,6 +899,37 @@ function liveFragmentFor(fragment: Element, src: string): Element | null {
   return document.querySelector(`include-fragment[src="${CSS.escape(src)}"]`);
 }
 
+/**
+ * A fetched fragment is in the page. The next fetches start at once (the
+ * queue used to move only when a pass ran), and the render waits for the
+ * burst to settle: dozens of threads land a few hundred milliseconds apart
+ * on a long conversation, and a rebuild per landing sent the open chat
+ * home and back each time, which read as the page flickering for the
+ * first seconds. One render per {@link FRAGMENT_SETTLE_MS} of quiet, and
+ * at least one every {@link FRAGMENT_RENDER_MAX_MS} while they keep coming.
+ */
+const FRAGMENT_SETTLE_MS = 400;
+const FRAGMENT_RENDER_MAX_MS = 1500;
+let fragmentRenderTimer: number | null = null;
+let fragmentRenderSince = 0;
+
+function fragmentLanded(): void {
+  if (lastSettings !== null && lastSettings.compactTimeline !== 'off' && !visit.fullTimeline) loadMinimizedReviews();
+  const now = Date.now();
+  if (fragmentRenderTimer !== null) {
+    // The burst has gone on long enough: let the pending render happen.
+    if (now - fragmentRenderSince >= FRAGMENT_RENDER_MAX_MS) return;
+    window.clearTimeout(fragmentRenderTimer);
+  } else {
+    fragmentRenderSince = now;
+  }
+  const wait = Math.min(FRAGMENT_SETTLE_MS, Math.max(0, fragmentRenderSince + FRAGMENT_RENDER_MAX_MS - now));
+  fragmentRenderTimer = window.setTimeout(() => {
+    fragmentRenderTimer = null;
+    reapplyNow();
+  }, wait);
+}
+
 async function fetchFragment(fragment: Element, src: string): Promise<void> {
   try {
     const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
@@ -908,37 +976,6 @@ export function takeReviewDeferred(): boolean {
 function reapplyNow(): void {
   if (document.hidden) {
     deferredWhileHidden = true;
-/**
- * A fetched fragment is in the page. The next fetches start at once (the
- * queue used to move only when a pass ran), and the render waits for the
- * burst to settle: dozens of threads land a few hundred milliseconds apart
- * on a long conversation, and a rebuild per landing sent the open chat
- * home and back each time, which read as the page flickering for the
- * first seconds. One render per {@link FRAGMENT_SETTLE_MS} of quiet, and
- * at least one every {@link FRAGMENT_RENDER_MAX_MS} while they keep coming.
- */
-const FRAGMENT_SETTLE_MS = 400;
-const FRAGMENT_RENDER_MAX_MS = 1500;
-let fragmentRenderTimer: number | null = null;
-let fragmentRenderSince = 0;
-
-function fragmentLanded(): void {
-  if (lastSettings !== null && lastSettings.compactTimeline !== 'off' && !visit.fullTimeline) loadMinimizedReviews();
-  const now = Date.now();
-  if (fragmentRenderTimer !== null) {
-    // The burst has gone on long enough: let the pending render happen.
-    if (now - fragmentRenderSince >= FRAGMENT_RENDER_MAX_MS) return;
-    window.clearTimeout(fragmentRenderTimer);
-  } else {
-    fragmentRenderSince = now;
-  }
-  const wait = Math.min(FRAGMENT_SETTLE_MS, Math.max(0, fragmentRenderSince + FRAGMENT_RENDER_MAX_MS - now));
-  fragmentRenderTimer = window.setTimeout(() => {
-    fragmentRenderTimer = null;
-    reapplyNow();
-  }, wait);
-}
-
     return;
   }
   if (lastSettings !== null) applyReviewOverview(lastSettings);
@@ -1954,6 +1991,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.fullTimeline = false;
     visit.loadMoreTries = 0;
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
+    visit.landedAnchor = null;
+    visit.landedFocusKey = null;
     visit.openSubKey = null;
     visit.sourcesShown = new Set<string>();
     visit.archivedPreviewsOpen = false;
@@ -2453,9 +2492,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (visit.pendingAnchor !== null && mounted !== null && ((pendingKey !== null && (visit.openKey === pendingKey || visit.openSubKey === pendingKey)) || visit.loadMoreTries >= MAX_LOAD_MORE)) {
     const subFocus = visit.openSubKey === null ? null : visit.openSubKey.startsWith('item:') ? visit.openSubKey : `sub:${visit.openSubKey}`;
     const row = visit.openKey === null ? null : mounted.root.querySelector(`[data-geld-focus="main:${subFocus ?? visit.openKey}"]`);
-    if (row instanceof HTMLElement && hidingTimeline) {
+    // Landed once per anchor: the browser revealing the same anchor again (`beforematch`, when a live update put
+    // the comment home into a folded row for a moment) opens the row but must not move a page the reader may
+    // have scrolled since.
+    if (row instanceof HTMLElement && hidingTimeline && visit.landedAnchor !== visit.pendingAnchor) {
+      visit.landedAnchor = visit.pendingAnchor;
       scrollRowTo(row.getBoundingClientRect().top + window.scrollY);
       const focusKey = `main:${subFocus ?? visit.openKey}`;
+      visit.landedFocusKey = focusKey;
+      alignAnchorCarriers(visit.pendingAnchor, focusKey);
       holdRow(focusKey);
       // The panel opened this row on its own (a permalink, the comment the reader just posted elsewhere): the same
       // tint a click that lands elsewhere gets, so the eye finds what opened.
@@ -2464,6 +2509,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
     if (row !== null || document.getElementById(visit.pendingAnchor) !== null || visit.loadMoreTries >= MAX_LOAD_MORE) visit.pendingAnchor = null;
   }
+  // While the page still loads, Chrome's fragment anchor is alive: keep its scroll pointed at the landing.
+  if (visit.landedAnchor !== null && visit.landedFocusKey !== null && document.readyState !== 'complete') alignAnchorCarriers(visit.landedAnchor, visit.landedFocusKey);
   const tailStart = performance.now();
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
@@ -2489,9 +2536,30 @@ export function onReviewBeforeMatch(event: Event, settings: GeldSettings): void 
   if (describePage(new URL(window.location.href)).kind !== 'pull-conversation') return;
   const anchor = node.id !== '' ? node.id : node.querySelector('[id^="discussion_r"], [id^="issuecomment-"], [id^="pullrequestreview-"], [id^="event-"]')?.id ?? null;
   if (anchor === null) return;
+  // The browser revealing the home row of an anchor this visit already landed on: its fragment anchor (bound to
+  // this row when the page was navigated to, before the panel existed; GitHub repeats a review's id on the row
+  // and the comment inside) is about to scroll the row into view. Point that scroll at the landing instead.
+  if (anchor === visit.landedAnchor && visit.landedFocusKey !== null) alignRevealWithLanding(node, anchor, visit.landedFocusKey);
   visit.pendingAnchor = anchor;
   visit.loadMoreTries = MAX_LOAD_MORE;
   applyReviewOverview(settings);
+}
+
+/**
+ * Chrome's fragment anchor scrolls so that its element's top, less the
+ * element's `scroll-margin-top`, meets the viewport's top. The element here
+ * is a folded timeline row about to be revealed; measured with its `hidden`
+ * lifted (the browser lifts it right after this event anyway), the margin
+ * that maps that scroll onto the landed row's position is its distance from
+ * the landing (negative when the row sits below it, which CSS allows). The
+ * pass that follows folds the row again; the browser's scroll then lands
+ * where the reader already is, and nothing moves.
+ */
+function alignRevealWithLanding(node: Element, anchor: string, focusKey: string): void {
+  // Measured with the row revealed (the browser lifts `hidden` right after this event anyway); the pass that
+  // follows folds it again, and the browser's scroll then lands where the reader already is.
+  node.removeAttribute('hidden');
+  alignAnchorCarriers(anchor, focusKey);
 }
 
 export function teardownReviewOverview(): void {
@@ -2524,6 +2592,8 @@ export function onReviewHashChange(settings: GeldSettings): void {
   if (anchor !== null && !(node !== null && node.closest('.geld-review') !== null)) {
     visit.loadMoreTries = 0;
     visit.pendingAnchor = anchor;
+    // The reader asked for it (a click on a permalink): it lands even if this visit landed on it before.
+    if (visit.landedAnchor === anchor) visit.landedAnchor = null;
   }
   applyReviewOverview(settings);
 }

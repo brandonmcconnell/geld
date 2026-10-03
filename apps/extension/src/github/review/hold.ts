@@ -24,11 +24,17 @@ let hold: Hold | null = null;
 let installed = false;
 let frame: number | null = null;
 let panelObserver: ResizeObserver | null = null;
+/** The last correction and how many times in a row it has been the same one (see `applyHold`). */
+let lastDelta = 0;
+let repeats = 0;
+/** The same correction this many times in a row means something else keeps scrolling the page: let it. */
+const MAX_REPEATS = 3;
 
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 
 function release(): void {
   hold = null;
+  repeats = 0;
 }
 
 function install(): void {
@@ -61,6 +67,7 @@ export function holdRow(key: string): void {
     return;
   }
   hold = { key, top: element.getBoundingClientRect().top };
+  repeats = 0;
 }
 
 /**
@@ -79,7 +86,21 @@ export function applyHold(): void {
       return;
     }
     const delta = element.getBoundingClientRect().top - hold.top;
-    if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'instant' });
+    if (Math.abs(delta) <= 1) return;
+    // The same correction again and again means another scroller (the browser's fragment anchor while the page
+    // loads, a script of GitHub's) insists on its position: a tug of war the reader sees as the page jumping.
+    // It wins; the hold ends.
+    if (Math.abs(delta - lastDelta) <= 2) {
+      repeats += 1;
+      if (repeats >= MAX_REPEATS) {
+        release();
+        return;
+      }
+    } else {
+      repeats = 0;
+    }
+    lastDelta = delta;
+    window.scrollBy({ top: delta, behavior: 'instant' });
   });
 }
 
