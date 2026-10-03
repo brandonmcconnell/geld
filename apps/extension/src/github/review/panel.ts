@@ -293,6 +293,8 @@ export interface PanelHandlers {
   readonly onFullTimeline: () => void;
   /** Post the trigger comment of each bot, in order. */
   readonly onRequest: (botIds: readonly string[]) => void;
+  /** The Request a review menu closed: the panel may have held back a rebuild while it was open. */
+  readonly onRequestMenuClosed: () => void;
   /** Show the comment at `anchor` where the reader is: inside compact view when it is folded there, else in the timeline. */
   readonly onOpenAnchor: (anchor: string) => void;
   /** Leave compact view for the full timeline and jump to `anchor` there. */
@@ -1104,40 +1106,121 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   return createElement('span', { class: `${PANEL_CLASS}__bot`, ...who, ...(current ? {} : { 'data-current': 'false' }) }, children);
 }
 
-/** Re-run menu: one entry per installed bot plus All; choosing one posts its trigger comment at once. */
-function rerunMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+/** What a bot's line in the request menu says about its last run here, and whether it is ticked to begin with. */
+interface BotRunState {
+  readonly health: Health | null;
+  readonly word: string;
+  /** Ticked when the menu opens: a failed run, or one on an earlier commit. */
+  readonly preselect: boolean;
+}
+
+function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
+  const record = model.meta.bots.find((entry) => entry.id === bot.id);
+  if (record === undefined) return { health: null, word: 'Not run', preselect: false };
+  const health = botHealth(record);
+  if (health === 'pending') return { health, word: 'Running', preselect: false };
+  if (!isCurrent(record, model.meta.headSha)) return { health, word: 'Earlier commit', preselect: true };
+  const word = health === 'bad' ? 'Failed' : health === 'warn' ? 'Findings' : 'Passed';
+  return { health, word, preselect: health === 'bad' };
+}
+
+/** How Geld knows the bot is here, for the line's tooltip. */
+function presenceWords(bot: InstalledBot): string {
+  switch (bot.presence) {
+    case 'seen':
+      return 'Active on this pull request';
+    case 'declared':
+      return 'Declared in .github/geld.yml';
+    case 'configured':
+      return `Configured in the repository (${bot.configFile ?? ''})`;
+    case 'other':
+      return 'Not seen on this repository';
+  }
+}
+
+/**
+ * Request a review: a checkbox per bot, with what its last run here said
+ * (failed, findings, passed, running, on an earlier commit, not run), so
+ * the reader can run only the ones that need it. Failed and stale runs
+ * start ticked. Bots with a sign of being here (active on the page,
+ * declared by the repository, configured in it) are listed first; the rest
+ * of the registry waits behind "Other bots", since a trigger for a bot that
+ * is not installed is a public comment with a handle in it. Run posts one
+ * trigger comment per ticked bot; Cancel, Escape or a click outside closes.
+ */
+function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (model.requestable.length === 0) return null;
   installMenuDismissal();
-  const details = createElement('details', { class: `${PANEL_CLASS}__menu` });
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__request` });
   const summary = createElement(
     'summary',
     { class: `${PANEL_CLASS}__icon${model.running ? ` ${PANEL_CLASS}__icon--spin` : ''}`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
     [icon(ICON_SYNC)],
   );
   summary.addEventListener('click', (event) => event.stopPropagation());
-  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list`, role: 'menu' });
-  const choices: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[]; readonly hint: string; readonly iconSrc: string | null }> = [
-    // The same mark the bot's chip wears: `botIconFor` looks beyond the `/apps/` link `installedBots` saw (the run
-    // summary's avatar, a review comment of the bot's), so a bot without that link does not fall back to the
-    // re-run glyph and read as "all".
-    ...model.requestable.map((bot) => ({ label: `Re-run ${bot.label}`, ids: [bot.id], hint: `Posts “${bot.trigger}”`, iconSrc: model.botIconFor(bot.id) })),
-    ...(model.requestable.length > 1 ? [{ label: 'Re-run all', ids: model.requestable.map((bot) => bot.id), hint: `Posts ${model.requestable.length} comments`, iconSrc: null }] : []),
-  ];
+  // Closed by Run, Cancel, Escape or a click outside: whatever changed meanwhile renders now.
+  details.addEventListener('toggle', () => {
+    if (!details.open) handlers.onRequestMenuClosed();
+  });
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__request-list` });
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']));
-  for (const choice of choices) {
-    // One line per action; what it posts is the tooltip. Choosing it is the confirmation.
-    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice ${PANEL_CLASS}__menu-item--line`, role: 'menuitem', title: choice.hint });
-    // Each bot wears its own mark; "all" wears the re-run glyph in the same square.
-    if (choice.iconSrc !== null) item.append(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: choice.iconSrc, alt: '', width: '16', height: '16' }));
-    else item.append(createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--all`, 'aria-hidden': 'true' }, [icon(ICON_SYNC)]));
-    item.append(createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [choice.label]));
-    item.addEventListener('click', (event) => {
-      event.stopPropagation();
-      details.removeAttribute('open');
-      handlers.onRequest(choice.ids);
-    });
-    list.append(item);
+
+  const checks = new Map<string, HTMLInputElement>();
+  const run = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__request-run` }, ['Run']);
+  const syncRun = (): void => {
+    const picked = [...checks.values()].filter((input) => input.checked).length;
+    run.textContent = picked === 0 ? 'Run' : picked === 1 ? `Run ${model.requestable.find((bot) => checks.get(bot.id)?.checked === true)?.label ?? ''}` : `Run ${picked} bots`;
+    run.toggleAttribute('disabled', picked === 0);
+  };
+  const line = (bot: InstalledBot): HTMLElement => {
+    const state = botRunState(bot, model);
+    const input = createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': `${bot.label}, ${state.word.toLowerCase()}` });
+    input.checked = state.preselect;
+    checks.set(bot.id, input);
+    input.addEventListener('change', syncRun);
+    // The same mark the bot's chip wears: `botIconFor` looks beyond the `/apps/` link `requestableBots` saw (the run
+    // summary's avatar, a review comment of the bot's); a bot with no picture on the page gets an empty square.
+    const iconSrc = model.botIconFor(bot.id) ?? bot.iconSrc;
+    const mark = iconSrc !== null ? createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
+    const stateNode = createElement('span', { class: `${PANEL_CLASS}__request-state`, ...(state.health === null ? {} : { 'data-health': state.health }) }, [
+      ...(state.health === null ? [] : [createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': state.health, 'aria-hidden': 'true' }, [icon(HEALTH_ICON[state.health])])]),
+      state.word,
+    ]);
+    const label = createElement('label', { class: `${PANEL_CLASS}__request-item`, title: `Posts \u201c${bot.trigger}\u201d · ${presenceWords(bot)}`, 'data-presence': bot.presence }, [input, mark, createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [bot.label]), stateNode]);
+    label.addEventListener('click', (event) => event.stopPropagation());
+    return label;
+  };
+
+  const present = model.requestable.filter((bot) => bot.presence !== 'other');
+  const others = model.requestable.filter((bot) => bot.presence === 'other');
+  for (const bot of present) list.append(line(bot));
+  if (others.length > 0) {
+    if (present.length === 0) {
+      // Nothing points at any bot here: the registry is the list.
+      for (const bot of others) list.append(line(bot));
+    } else {
+      const more = createElement('details', { class: `${PANEL_CLASS}__request-more` });
+      const moreSummary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), `Other bots (${others.length})`]);
+      moreSummary.addEventListener('click', (event) => event.stopPropagation());
+      more.append(moreSummary, ...others.map(line));
+      list.append(more);
+    }
   }
+
+  list.append(createElement('div', { class: `${PANEL_CLASS}__request-sep`, role: 'separator' }));
+  const cancel = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__request-cancel` }, ['Cancel']);
+  run.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const ids = model.requestable.filter((bot) => checks.get(bot.id)?.checked === true).map((bot) => bot.id);
+    details.removeAttribute('open');
+    if (ids.length > 0) handlers.onRequest(ids);
+  });
+  cancel.addEventListener('click', (event) => {
+    event.stopPropagation();
+    details.removeAttribute('open');
+  });
+  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [run, cancel]));
+  syncRun();
   details.append(summary, list);
   return details;
 }
@@ -1213,7 +1296,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   if (model.meta.bots.length > 0 || model.requestable.length > 0) {
     const worst: Health = model.meta.bots.map(botHealth).reduce<Health>((acc, health) => (acc === 'bad' || health === 'bad' ? 'bad' : acc === 'warn' || health === 'warn' ? 'warn' : acc === 'pending' || health === 'pending' ? 'pending' : 'good'), 'good');
     const chips = model.meta.bots.map((bot) => botChip(bot, model, handlers));
-    const menu = rerunMenu(model, handlers);
+    const menu = requestMenu(model, handlers);
     rows.append(
       statusRow(
         ['Review bots', 'Bots'],
@@ -1816,6 +1899,8 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
     const active = document.activeElement;
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
+    // The Request a review menu is open with boxes ticked: a rebuild would close it and lose the picks. Wait.
+    if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
   }
   const card = descriptionCard();
   if (card === null) return null;

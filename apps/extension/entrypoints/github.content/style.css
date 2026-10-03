@@ -1444,28 +1444,138 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   flex-direction: column;
 }
 
-/* A one-line action (the re-run items): icon and label centred on the line; "Re-run all" keeps the icon's space. */
-.geld-review__menu-list > .geld-review__menu-item--line {
-  align-items: center;
+/* A bot with no picture on the page: an empty square where the others wear their mark, so the names line up. */
+.geld-review__bot-icon--blank {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1px dashed var(--geld-review-border);
+  border-radius: 4px;
+  box-sizing: border-box;
 }
 
-.geld-review__menu-item--line > .geld-review__bot-icon {
+/* ---- Request a review: a checkbox per bot, its last run's state, Other bots, Run and Cancel ---- */
+
+.geld-review__menu-list.geld-review__request-list {
+  min-width: 300px;
+}
+
+.geld-review__request-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font: inherit;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.geld-review__request-item:hover {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__request-item > .geld-review__bot-icon {
   flex: 0 0 auto;
   width: 16px;
   height: 16px;
+  margin-right: 0;
 }
 
-/* "Re-run all": the re-run glyph where the other lines wear a bot's mark, on the same square. */
-.geld-review__bot-icon--all {
+.geld-review__request-item > .geld-review__menu-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__request-check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--geld-review-accent);
+  cursor: pointer;
+}
+
+/* The last run's word, coloured like the chip's glyph (grey when it says nothing yet). */
+.geld-review__request-state {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
   color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.geld-review__bot-icon--all > .octicon {
+.geld-review__request-state[data-health='bad'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__request-state[data-health='warn'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__request-state[data-health='good'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__request-state > .geld-review__health > .octicon {
   width: 12px;
   height: 12px;
+}
+
+/* The rest of the registry, behind a disclosure in the menu's own type. */
+.geld-review__request-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.geld-review__request-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__request-more > summary:hover {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__request-more > summary > .octicon {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease-out;
+}
+
+.geld-review__request-more[open] > summary > .octicon {
+  transform: rotate(90deg);
+}
+
+.geld-review__request-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--geld-review-border);
+}
+
+.geld-review__request-footer {
+  display: flex;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.geld-review__request-run[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .geld-review__menu-hint {
