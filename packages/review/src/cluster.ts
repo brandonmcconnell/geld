@@ -20,6 +20,8 @@ export interface RawComment {
   readonly isOutdated?: boolean;
   /** Other comments that already belong to the same GitHub thread. */
   readonly threadAnchors?: readonly ThreadPeer[];
+  /** Who reacted to the comment, by login, when the page says (a bot's 👍 on a trigger is its acknowledgement). */
+  readonly reactedBy?: readonly string[];
 }
 
 export interface ThreadPeer {

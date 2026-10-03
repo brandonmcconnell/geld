@@ -4438,6 +4438,83 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-weight: 600;
 }
 
+/*
+ * Rerun, on the byline's right. The byline's words stand 8px under the slot's top edge; the chat column is inset
+ * 16px from the slot's right edge, so the control reaches 8px past the column to stand 8px from that edge too —
+ * the same distance from the corner both ways (measured against the text, not the picture, which is taller). The
+ * glyph leads the words; running, the glyph spins and the words stay, so nothing shifts.
+ */
+.geld-review__rerun-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
+  margin-right: -8px;
+}
+
+.geld-review__rerun {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.geld-review__rerun .octicon {
+  width: 14px;
+  height: 14px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__rerun:hover {
+  border-color: var(--geld-review-muted);
+  background: var(--geld-review-subtle);
+}
+
+/* Running: the frame goes transparent (never away, so the box keeps its size), the control fades, the glyph spins
+   and the pointer is the ordinary one — the click still lands, and asks before posting again. */
+.geld-review__rerun[data-running] {
+  border-color: transparent;
+  background: none;
+  opacity: 0.6;
+  cursor: default;
+}
+
+.geld-review__rerun[data-running] .octicon {
+  animation: geld-spin-ccw 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-review__rerun[data-running] .octicon {
+    animation: none;
+  }
+}
+
+/* A bot's own re-trigger badge inside its comment: Geld's Rerun stands for it (chat.ts, `AGENT_RERUN_CONTROLS`). */
+.geld-review__chat [data-geld-agent-rerun] {
+  display: none !important;
+}
+
+.geld-review__dialog-text {
+  margin: 0;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 /* Posted through an App: the picture with the App's mark on its lower right corner, as GitHub's timeline draws it. */
 .geld-review__chat-byline > .geld-review__chat-avatar-pair {
   position: relative;

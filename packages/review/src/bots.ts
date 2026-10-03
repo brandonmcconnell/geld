@@ -32,7 +32,20 @@ export interface ReviewBot {
    * counts as its verdict.
    */
   readonly conversational?: boolean;
+  /**
+   * How the bot says it has picked a trigger comment up. `reaction`: it
+   * reacts to the comment (Greptile's 👍) the moment it takes the job, so a
+   * trigger it has not reacted to after `ACK_GRACE_MS` was never seen — the
+   * bot is not running, whatever the comment asked (seen on mintlify/mint
+   * #12546: a bare "@greptileai" with no reaction and no review for half an
+   * hour, the next one reacted to within seconds and reviewed). Unset for
+   * bots that start silently: their trigger counts until it ages.
+   */
+  readonly acknowledges?: 'reaction';
 }
+
+/** A bot that acknowledges triggers with a reaction has this long to do so; past it an unreacted trigger is not a run. */
+export const ACK_GRACE_MS = 3 * 60 * 1000;
 
 export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
@@ -52,6 +65,7 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     checkNames: ['Greptile'],
     triggers: ['@greptileai', '@greptile', '@greptileai review'],
     configFiles: ['greptile.json', '.greptile.yml', '.greptile.yaml'],
+    acknowledges: 'reaction',
   },
   {
     id: 'devin',
@@ -283,6 +297,13 @@ export interface BotComment {
   /** When it was posted, ISO; lets a status line age (see `STATUS_LINE_STALE_MS`). */
   readonly createdAt?: string;
   /**
+   * Who reacted to it, by login, when the reader of the page knows. A bot
+   * that acknowledges a trigger with a reaction (`ReviewBot.acknowledges`)
+   * is running once its login is here; without it, past `ACK_GRACE_MS`,
+   * the trigger was never picked up.
+   */
+  readonly reactedBy?: readonly string[];
+  /**
    * When it was last edited, ISO, when the reader of the page knows. A bot
    * that reports a re-run by rewriting its summary in place (Greptile's
    * "Reviews (2)", a new confidence score) posts nothing new, so the edit is
@@ -369,6 +390,8 @@ export function verdictsFrom(
       if (comment.resolved === undefined && isTriggerComment(comment.body, extraLogins)) {
         const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
         for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
+          // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
+          if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -456,6 +479,13 @@ export function verdictsFrom(
   }
 
   return [...byId.values()];
+}
+
+/** Whether the bot `id` is among a comment's reactors (any of its logins, with or without `[bot]`). */
+function reactedBy(comment: BotComment, id: string): boolean {
+  const bot = botById(id);
+  const logins = new Set((bot?.logins ?? []).flatMap((login) => [login.toLowerCase(), login.toLowerCase().replace(/\[bot\]$/, '')]));
+  return (comment.reactedBy ?? []).some((login) => logins.has(login.toLowerCase()) || logins.has(login.toLowerCase().replace(/\[bot\]$/, '')));
 }
 
 /**

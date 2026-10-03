@@ -116,6 +116,12 @@ interface VisitState {
    * the words it opened with until it closes.
    */
   pinnedEntry: { readonly anchor: string; readonly preview: string; readonly time: string; readonly avatarSrc: string | null } | null;
+  /**
+   * Bots asked to run again from a chat's Rerun button, with when: the
+   * button spins from the click, before the trigger comment is on the page
+   * and the crawl reads the bot as running (see `RERUN_PENDING_MS`).
+   */
+  rerunPending: Map<string, number>;
 }
 
 const visit: VisitState = {
@@ -142,7 +148,11 @@ const visit: VisitState = {
   manualDone: new Set(),
   settling: null,
   pinnedEntry: null,
+  rerunPending: new Map(),
 };
+
+/** A Rerun click shows as running for this long on its own; by then the trigger comment is on the page or the post failed. */
+const RERUN_PENDING_MS = 30_000;
 
 /** The open comment line wears the words it opened with (see `VisitState.pinnedEntry`). */
 function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
@@ -438,6 +448,7 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
         body: comment.body,
         anchor: comment.anchor,
         ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
+        ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
         ...(edited === null ? {} : { editedAt: edited }),
         ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
       };
@@ -1693,6 +1704,35 @@ function prAuthorLogin(): string | null {
   return card === null ? null : (authorOf(card)?.login ?? null);
 }
 
+/**
+ * A review bot's run summary gets Geld's Rerun control on its byline (a bot
+ * with a trigger phrase only): the one place to ask for another run from
+ * the comment, where Greptile puts its own Retrigger badge — which the chat
+ * hides, so there is one control and it behaves like the request menu's.
+ * Running (the bot's verdict, or a click a moment ago) is shown on the
+ * button itself; a click then asks before posting a second trigger.
+ */
+function withRerun(byline: ChatByline, author: string, meta: GeldPrMeta, settings: GeldSettings, reapply: () => void): ChatByline {
+  if (!byline.bot) return byline;
+  const id = resolveBotId(author, settings.reviewBots);
+  const trigger = id === null ? null : rerunTriggerFor(id);
+  if (id === null || trigger === null) return byline;
+  const pending = visit.rerunPending.get(id);
+  const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running') || (pending !== undefined && Date.now() - pending < RERUN_PENDING_MS);
+  return {
+    ...byline,
+    rerun: {
+      bot: botTitle(id, author),
+      running,
+      onRerun: () => {
+        visit.rerunPending.set(id, Date.now());
+        void postTopLevelComments([trigger]).then(() => reapplySoon());
+        reapply();
+      },
+    },
+  };
+}
+
 /** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
 function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   const author = prAuthorLogin();
@@ -2223,6 +2263,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     forgetThreads();
     resetEditTimes();
     visit.manualDone = new Set();
+    visit.rerunPending = new Map();
     checksSectionEl = null;
     mergeHomeEl = null;
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
@@ -2651,7 +2692,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
             renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply));
           } else if (view.nested !== null && commentNode !== null) {
-            const byline = openEntry === null ? null : dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor);
+            const byline = openEntry === null ? null : withRerun(dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor), openEntry.author, meta, settings, reapply);
             // The threads the review came with, by file, leading to their rows.
             const links = (openEntry?.threads ?? []).map((thread) => {
               const root = threadRootOf(thread.anchor);

@@ -334,6 +334,15 @@ describe('bots + prompts', () => {
     // Edited before the request (the first review's own touch-up): still running.
     const touchedUp = [{ author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.', anchor: 'issuecomment-1', createdAt: at(60), editedAt: at(59) }, request];
     expect(byId(verdictsFrom([], touchedUp, 'aaa', [], now), 'greptile')?.verdict).toBe('running');
+    // Greptile reacts (👍) the moment it takes a trigger. A trigger it has not reacted to after the grace was never
+    // seen: the earlier verdict stands and the reader can ask again. Within the grace it is given the benefit.
+    const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.', anchor: 'issuecomment-1', createdAt: at(60) };
+    const ignored = { author: 'brandonmcconnell', body: '@greptileai', anchor: 'issuecomment-3', createdAt: at(5) };
+    expect(byId(verdictsFrom([], [summary, ignored], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
+    expect(byId(verdictsFrom([], [summary, { ...ignored, reactedBy: ['greptile-apps[bot]'] }], 'aaa', [], now), 'greptile')?.verdict).toBe('running');
+    expect(byId(verdictsFrom([], [summary, { ...ignored, createdAt: at(1) }], 'aaa', [], now), 'greptile')?.verdict).toBe('running');
+    // Bugbot starts silently: its trigger counts until it ages, reaction or not.
+    expect(byId(verdictsFrom([], [{ author: 'cursor[bot]', body: 'Bugbot reviewed your changes and found no new issues!', anchor: 'issuecomment-2', createdAt: at(60) }, { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-3', createdAt: at(5) }], 'aaa', [], now), 'bugbot')?.verdict).toBe('running');
   });
 
   it('does not keep a bot running on a status line that aged with nothing after it', () => {

@@ -525,8 +525,35 @@ function readComment(node: Element): CommentReading {
   if (author === null) return { usable: true, crawled: null };
   const body = textOf(bodyElementOf(node));
   if (looksLikeSummaryBody(body)) return { usable: true, crawled: null };
-  const base: RawComment = { anchor: node.id, kind: kindOf(node.id), author: author.login, body, createdAt: createdAtOf(node) };
+  const reactors = reactorsOf(node);
+  const base: RawComment = { anchor: node.id, kind: kindOf(node.id), author: author.login, body, createdAt: createdAtOf(node), ...(reactors.length === 0 ? {} : { reactedBy: reactors }) };
   return { usable: true, crawled: { comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id) } };
+}
+
+/**
+ * Who reacted to the comment, from GitHub's reaction buttons: each one is
+ * described by a `tool-tip` ("greptile-apps[bot] reacted with thumbs up
+ * emoji", "alice, bob and 3 more reacted with eyes emoji"). Only the
+ * comment's own reactions (a review's node holds its threads' comments too),
+ * from wherever quick view has put its pieces; "N more" are not names.
+ */
+export function reactorsOf(node: Element): readonly string[] {
+  const out = new Set<string>();
+  for (const scope of [node, ...wornPiecesOf(node)]) {
+    for (const container of scope.querySelectorAll('.js-reactions-container, .comment-reactions, [data-testid="comment-reactions"]')) {
+      const owner = container.closest('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]');
+      if (owner !== null && owner.id !== node.id) continue;
+      for (const tip of container.querySelectorAll('tool-tip, [role="tooltip"]')) {
+        const match = /^\s*(.+?)\s+reacted with\b/i.exec(tip.textContent ?? '');
+        if (match?.[1] === undefined) continue;
+        for (const name of match[1].split(/,\s*|\s+and\s+/)) {
+          const login = name.trim();
+          if (login !== '' && !/^\d+\s+(?:more|others?)$/i.test(login)) out.add(login);
+        }
+      }
+    }
+  }
+  return [...out];
 }
 
 function readEvent(node: Element): EventReading {

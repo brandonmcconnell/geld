@@ -17,7 +17,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN } from '../ui/icons';
+import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_TIME_FOR } from './panel';
 import { onRestore, teleportInto } from './teleport';
@@ -141,6 +141,115 @@ export interface ChatByline {
   readonly author?: boolean;
   /** The App the comment was posted through: its mark on the picture's corner, named in the hovercard. */
   readonly via?: ViaBot;
+  /** A review bot's run summary: Geld's Rerun control on the byline's right (see `rerunControl`). */
+  readonly rerun?: ChatRerun;
+}
+
+export interface ChatRerun {
+  /** The bot's name as the chip says it ("Greptile"), for the tooltip and the confirmation. */
+  readonly bot: string;
+  /** The bot is running (its verdict, or a Rerun a moment ago): the control spins and asks before posting again. */
+  readonly running: boolean;
+  /** Post the bot's trigger comment. */
+  readonly onRerun: () => void;
+}
+
+/**
+ * Re-trigger controls review bots put inside their own comments: hidden in
+ * the chat, where Geld's Rerun stands for them (one control, one behaviour,
+ * the request menu's). Each is a markdown badge link, so the heading or
+ * paragraph that holds only it goes too. The nodes are GitHub's and go home
+ * untouched: the hiding is a mark the chat's own CSS reads.
+ */
+const AGENT_RERUN_CONTROLS = ['a[href*="app.greptile.com/api/retrigger"]'];
+const ATTR_AGENT_RERUN = 'data-geld-agent-rerun';
+
+function hideAgentRerunControls(body: HTMLElement): void {
+  for (const link of body.querySelectorAll<HTMLElement>(AGENT_RERUN_CONTROLS.join(', '))) {
+    const holder = link.closest<HTMLElement>('h1, h2, h3, h4, p, div');
+    const target = holder !== null && (holder.textContent ?? '').trim() === '' && holder.querySelectorAll('a, img').length <= 2 ? holder : link;
+    target.setAttribute(ATTR_AGENT_RERUN, '');
+  }
+}
+
+let rerunIds = 0;
+
+/**
+ * "Rerun" with the sync glyph, on the byline's right. Running: the glyph
+ * spins, the words stay (so nothing shifts), the border goes transparent,
+ * the pointer is the default one and GitHub's tooltip says "<bot> is
+ * running"; a click then asks, in GitHub's own dialog, before posting the
+ * trigger again. A click while idle posts at once and the control takes
+ * the running look itself, ahead of the pass that reads the comment.
+ */
+function rerunControl(rerun: ChatRerun): HTMLElement {
+  rerunIds += 1;
+  const id = `geld-rerun-${rerunIds}`;
+  const wrap = createElement('span', { class: 'geld-review__rerun-wrap' });
+  const button = createElement('button', { type: 'button', id, class: 'geld-review__rerun', ...(rerun.running ? { 'data-running': '', 'aria-describedby': `${id}-tip` } : { 'aria-label': `Rerun ${rerun.bot}` }) }, [icon(ICON_SYNC), createElement('span', {}, ['Rerun'])]);
+  // GitHub's own tooltip element (the page defines `tool-tip`; an element made here is upgraded like its own), so
+  // the words come up in GitHub's style. Without the definition (an Enterprise version before it) it stays sr-only.
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip', ...(rerun.running ? {} : { hidden: '' }) })) tip.setAttribute(name, value);
+  tip.textContent = `${rerun.bot} is running`;
+  const setRunning = (): void => {
+    button.setAttribute('data-running', '');
+    button.setAttribute('aria-describedby', `${id}-tip`);
+    button.removeAttribute('aria-label');
+    tip.removeAttribute('hidden');
+  };
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!button.hasAttribute('data-running')) {
+      setRunning();
+      rerun.onRerun();
+      return;
+    }
+    confirmRerun(rerun.bot, () => rerun.onRerun());
+  });
+  wrap.append(button, tip);
+  return wrap;
+}
+
+/**
+ * GitHub's own small dialog (Primer's `Overlay`, as the page's "Verified"
+ * and saved-replies dialogs are built), asking whether to trigger a bot that
+ * is already running. `onConfirm` runs on Rerun; Cancel, Escape and a click
+ * on the backdrop close it.
+ */
+function confirmRerun(bot: string, onConfirm: () => void): void {
+  rerunIds += 1;
+  const titleId = `geld-rerun-${rerunIds}-title`;
+  const dialog = createElement('dialog', { class: 'Overlay Overlay-whenNarrow Overlay--size-small-portrait Overlay--motion-scaleFade geld-review__dialog', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
+  const close = createElement('button', { type: 'button', class: 'close-button Overlay-closeButton', 'aria-label': 'Close' }, [icon(ICON_X)]);
+  const cancel = createElement('button', { type: 'button', class: 'btn' }, ['Cancel']);
+  const confirm = createElement('button', { type: 'button', class: 'btn btn-primary' }, ['Rerun anyway']);
+  dialog.append(
+    createElement('div', { class: 'Overlay-header' }, [
+      createElement('div', { class: 'Overlay-headerContentWrap' }, [createElement('div', { class: 'Overlay-titleWrap' }, [createElement('h1', { class: 'Overlay-title', id: titleId }, [`${bot} is already running`])]), createElement('div', { class: 'Overlay-actionWrap' }, [close])]),
+    ]),
+    createElement('div', { class: 'Overlay-body' }, [createElement('p', { class: 'geld-review__dialog-text' }, [`${bot} is reviewing this pull request right now. Asking again posts another trigger comment and may start a second review.`])]),
+    createElement('div', { class: 'Overlay-footer Overlay-footer--alignEnd Overlay-footer--divided' }, [cancel, confirm]),
+  );
+  const dismiss = (): void => {
+    if (dialog.open) dialog.close();
+    dialog.remove();
+  };
+  close.addEventListener('click', dismiss);
+  cancel.addEventListener('click', dismiss);
+  confirm.addEventListener('click', () => {
+    dismiss();
+    onConfirm();
+  });
+  // A click on the backdrop lands on the dialog element itself, outside its children.
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dismiss();
+  });
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  // The safe answer has focus: Enter closes without posting.
+  cancel.focus();
 }
 
 /** A thread a review came with, for the line under the review's bubble that leads to it. */
@@ -185,6 +294,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     line.append(name);
     if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
     if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
+    if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
     chat.append(line);
   }
   const body = createElement('div', { class: 'geld-review__chat-body' });
@@ -215,6 +325,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
   }
   openMinimized(body);
   annotateMessages(messagesIn(node, false), viewerLogin(), true);
+  if (byline?.rerun !== undefined) hideAgentRerunControls(body);
 }
 
 /**
