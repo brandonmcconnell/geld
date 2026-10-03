@@ -297,8 +297,11 @@ sandbox/
               <p>
                 The file uses the same keys as the settings document: <code>categories</code> switches categories on or off, <code>groups</code>{' '}
                 built-in pattern groups, <code>categoryPatterns</code> adds patterns to a built-in category and <code>customCategories</code> defines
-                new ones. Personal settings (<code>enabled</code>, <code>repoRules</code>, layout) are rejected. Repositories that mark files{' '}
-                <code>linguist-generated</code> in <code>.gitattributes</code> feed the Generated category the same way, for free.
+                new ones. One key is the repository&apos;s own: <code>reviewBots</code> names the review bots installed on it, so the panel&apos;s
+                Request a review menu offers them on a pull request none has run on yet. Personal settings (<code>enabled</code>,{' '}
+                <code>repoRules</code>, layout) are rejected. Repositories that mark files <code>linguist-generated</code> in{' '}
+                <code>.gitattributes</code> feed the Generated category the same way, for free. Every key and every valid value is on the{' '}
+                <Link href="/repo-config">Repository config</Link> page.
               </p>
               <pre>
                 <code>{`# .github/geld.yml
@@ -314,7 +317,9 @@ customCategories:
     title: Fixtures
     icon: package
     patterns:
-      - fixtures/**`}</code>
+      - fixtures/**
+reviewBots:                     # offered in Request a review on every PR
+  - coderabbit`}</code>
               </pre>
               <p>
                 Because hiding is the whole point, a repository config is treated with care. Files it hides are counted and listed exactly like the

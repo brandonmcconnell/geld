@@ -355,7 +355,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'repoConfigs',
         label: 'Repository configs',
         description:
-          'A repository can ship a `.github/geld.yml` (and an organisation its defaults in its `.github` repository) that adds categories and patterns for everyone reviewing it. Repository-provided rules are counted and listed like your own; the popup says whose config is in use.',
+          'A repository can ship a `.github/geld.yml` (and an organisation its defaults in its `.github` repository) that adds categories and patterns for everyone reviewing it, and names the review bots installed on it (`reviewBots`) so Request a review offers them on every pull request. Repository-provided rules are counted and listed like your own; the popup says whose config is in use. Every key: geld.sh/repo-config',
         popup: false,
         options: [
           { value: 'always', label: 'Always', description: 'Use every repository config without asking.' },
