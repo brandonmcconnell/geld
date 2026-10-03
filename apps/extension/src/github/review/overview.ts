@@ -771,11 +771,40 @@ function measureHidden(element: HTMLElement, read: () => number, property: 'disp
 
 const MAX_EAGER_FRAGMENTS = 200;
 const FRAGMENT_CONCURRENCY = 4;
+/** A fetch that failed (a 5xx, a blip) is tried again after this long, not on the next pass. */
+const FRAGMENT_RETRY_MS = 30_000;
 const requestedFragments = new WeakSet<Element>();
-/** Each URL once per visit: a fetched fragment can carry a fragment of its own. */
-let requestedUrls = new Set<string>();
-let fragmentsInFlight = 0;
+/**
+ * What each fetched URL put in the page. A URL is fetched again only once
+ * none of those nodes is in the document any more: GitHub replaces every
+ * timeline item from its partial on the next socket message about the pull
+ * request (`js-updatable-content`), and the partial carries a resolved
+ * thread as its header with the comments deferred behind the same URL, so
+ * the thread the crawl had just read vanishes until that URL is fetched
+ * once more. Keyed by URL rather than "once per visit", which also keeps a
+ * fragment that carries a fragment of its own from looping: what it put in
+ * the page is connected, so the URL stays satisfied.
+ */
+let fetchedFragments = new Map<string, readonly Node[]>();
+let fragmentsInFlight = new Set<string>();
+let failedFragments = new Map<string, number>();
 let eagerFragments = 0;
+
+function resetFragments(): void {
+  eagerFragments = 0;
+  fetchedFragments = new Map();
+  fragmentsInFlight = new Set();
+  failedFragments = new Map();
+}
+
+/** Whether `src` is in the page right now: fetched and still standing, in flight, or failed too recently to try again. */
+function fragmentSatisfied(src: string): boolean {
+  if (fragmentsInFlight.has(src)) return true;
+  const failedAt = failedFragments.get(src);
+  if (failedAt !== undefined && Date.now() - failedAt < FRAGMENT_RETRY_MS) return true;
+  const nodes = fetchedFragments.get(src);
+  return nodes !== undefined && nodes.some((node) => node.isConnected);
+}
 
 /**
  * GitHub minimizes reviews it marked as resolved and leaves their contents —
@@ -792,37 +821,65 @@ function loadMinimizedReviews(): void {
   for (const thread of timeline.querySelectorAll('review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container')) {
     const fragment = thread.querySelector('include-fragment');
     const src = thread.getAttribute('data-deferred-content-url');
-    // A thread whose first comment shows still defers its replies behind the same fragment.
-    if (fragment !== null && src !== null && fragment.getAttribute('src') === null && fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') === null) pending.push({ fragment, src });
+    // A thread whose first comment shows still defers its replies behind the same fragment. GitHub's element sets
+    // the fragment's `src` when the pointer rests on the header (preload); lazy, it then waits to be scrolled into
+    // view, which a folded thread never is, so a fragment with a `src` still needs fetching here.
+    if (fragment !== null && src !== null && fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') === null) pending.push({ fragment, src });
   }
   for (const fragment of timeline.querySelectorAll('.minimized-comment include-fragment[src]')) {
     const src = fragment.getAttribute('src');
-    if (src !== null) pending.push({ fragment, src });
+    // Inside a comment that has loaded, the fragments left are its edit form and saved replies, not the comment.
+    const minimized = fragment.closest('.minimized-comment');
+    const comment = fragment.closest('.js-comment, [id^="discussion_r"], [id^="issuecomment-"], [id^="pullrequestreview-"]');
+    if (src !== null && !(minimized !== null && comment !== null && minimized.contains(comment))) pending.push({ fragment, src });
   }
   for (const { fragment, src } of pending) {
-    if (eagerFragments >= MAX_EAGER_FRAGMENTS || fragmentsInFlight >= FRAGMENT_CONCURRENCY) break;
+    if (eagerFragments >= MAX_EAGER_FRAGMENTS || fragmentsInFlight.size >= FRAGMENT_CONCURRENCY) break;
     // Panel-made nodes never hold GitHub fragments; a thread on loan to the panel still does.
-    if (requestedFragments.has(fragment) || requestedUrls.has(src) || (fragment.closest('.geld-review') !== null && fragment.closest('[data-geld-teleported]') === null)) continue;
+    if (requestedFragments.has(fragment) || fragmentSatisfied(src) || (fragment.closest('.geld-review') !== null && fragment.closest('[data-geld-teleported]') === null)) continue;
     requestedFragments.add(fragment);
-    requestedUrls.add(src);
+    fragmentsInFlight.add(src);
     eagerFragments += 1;
-    fragmentsInFlight += 1;
     void fetchFragment(fragment, src).finally(() => {
-      fragmentsInFlight -= 1;
+      fragmentsInFlight.delete(src);
       reapplySoon();
     });
   }
 }
 
+/**
+ * The fragment standing for `src` right now: the one asked for, or, when
+ * GitHub replaced its container while the answer was on its way, the fresh
+ * one in the replacement (a deferred thread's `include-fragment`, or a
+ * minimized comment's).
+ */
+function liveFragmentFor(fragment: Element, src: string): Element | null {
+  if (fragment.isConnected) return fragment;
+  for (const container of document.querySelectorAll(`[data-deferred-content-url="${CSS.escape(src)}"]`)) {
+    const inner = container.querySelector('include-fragment');
+    if (inner !== null && inner.closest('.geld-review__qv, .geld-review__chat') === null) return inner;
+  }
+  return document.querySelector(`include-fragment[src="${CSS.escape(src)}"]`);
+}
+
 async function fetchFragment(fragment: Element, src: string): Promise<void> {
   try {
     const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
-    if (!response.ok) return;
+    if (!response.ok) {
+      failedFragments.set(src, Date.now());
+      return;
+    }
     const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
-    if (!fragment.isConnected) return;
-    fragment.replaceWith(...[...parsed.body.childNodes].map((node) => document.adoptNode(node)));
+    const target = liveFragmentFor(fragment, src);
+    // Gone, and nothing stands in its place: GitHub's own load got there first, or the container is on its way.
+    if (target === null) return;
+    const nodes = [...parsed.body.childNodes].map((node) => document.adoptNode(node));
+    target.replaceWith(...nodes);
+    failedFragments.delete(src);
+    fetchedFragments.set(src, nodes);
   } catch {
     // Left as GitHub's own lazy fragment; it still loads when the reader scrolls to it in the full timeline.
+    failedFragments.set(src, Date.now());
   }
 }
 
@@ -1881,8 +1938,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
-    eagerFragments = 0;
-    requestedUrls = new Set();
+    resetFragments();
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;
