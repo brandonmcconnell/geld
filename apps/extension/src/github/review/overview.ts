@@ -2370,7 +2370,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
-    watchPanelForHold(mounted.root);
+    watchPanelForHold(mounted.root, () => {
+      if (visit.landedAnchor !== null && visit.landedFocusKey !== null && document.readyState !== 'complete') alignAnchorCarriers(visit.landedAnchor, visit.landedFocusKey);
+    });
     stampFlash();
   } else {
     unwatchLoans();

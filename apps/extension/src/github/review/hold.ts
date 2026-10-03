@@ -104,10 +104,21 @@ export function applyHold(): void {
   });
 }
 
-/** Watch `panel` for size changes (late content inside a slot) and correct the held row after each. */
-export function watchPanelForHold(panel: Element): void {
+let onPanelResize: (() => void) | null = null;
+
+/**
+ * Watch `panel` for size changes (late content inside a slot) and correct the
+ * held row after each; `onResize` runs first, in the same callback, for work
+ * that must see the new layout before the correction (the permalink's anchor
+ * margins, which the browser reads on its very next layout).
+ */
+export function watchPanelForHold(panel: Element, onResize: (() => void) | null = null): void {
   if (typeof ResizeObserver === 'undefined') return;
-  panelObserver ??= new ResizeObserver(() => applyHold());
+  onPanelResize = onResize;
+  panelObserver ??= new ResizeObserver(() => {
+    onPanelResize?.();
+    applyHold();
+  });
   panelObserver.disconnect();
   panelObserver.observe(panel);
 }
