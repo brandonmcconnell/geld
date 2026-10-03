@@ -1890,12 +1890,27 @@ function movePreservingState(node: HTMLElement, target: HTMLElement): void {
   target.replaceWith(node);
 }
 
-export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedPanel | null {
+/** On the panel root: what was open when it was built, so a held rebuild can tell a click from late content. */
+const ATTR_OPEN = 'data-geld-review-open';
+
+export interface MountOptions {
+  /**
+   * Content is still landing in bursts (deferred threads, four fetches at a
+   * time): keep the panel that stands while the open row is the same, and
+   * rebuild once the burst has settled. A rebuild per landing sent the open
+   * chat home and back every few hundred milliseconds.
+   */
+  readonly holdRebuild?: boolean;
+}
+
+export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
+  const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}`;
   if (existing !== null && existing.isConnected) {
     const slot = existing.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`);
     if (existing.getAttribute(ATTR_SIG) === signature) return { root: existing, slot };
+    if (options.holdRebuild === true && existing.getAttribute(ATTR_OPEN) === openNow) return { root: existing, slot };
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
     const active = document.activeElement;
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
@@ -2017,7 +2032,7 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers): MountedP
     }
   }
 
-  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, 'aria-label': 'Geld review digest' }, [
+  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, [ATTR_OPEN]: openNow, 'aria-label': 'Geld review digest' }, [
     head,
     ...(aiNote === null ? [] : [aiNote]),
     ...(status === null ? [] : [status]),

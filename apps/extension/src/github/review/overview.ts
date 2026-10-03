@@ -842,7 +842,7 @@ function loadMinimizedReviews(): void {
     eagerFragments += 1;
     void fetchFragment(fragment, src).finally(() => {
       fragmentsInFlight.delete(src);
-      reapplySoon();
+      fragmentLanded();
     });
   }
 }
@@ -908,6 +908,37 @@ export function takeReviewDeferred(): boolean {
 function reapplyNow(): void {
   if (document.hidden) {
     deferredWhileHidden = true;
+/**
+ * A fetched fragment is in the page. The next fetches start at once (the
+ * queue used to move only when a pass ran), and the render waits for the
+ * burst to settle: dozens of threads land a few hundred milliseconds apart
+ * on a long conversation, and a rebuild per landing sent the open chat
+ * home and back each time, which read as the page flickering for the
+ * first seconds. One render per {@link FRAGMENT_SETTLE_MS} of quiet, and
+ * at least one every {@link FRAGMENT_RENDER_MAX_MS} while they keep coming.
+ */
+const FRAGMENT_SETTLE_MS = 400;
+const FRAGMENT_RENDER_MAX_MS = 1500;
+let fragmentRenderTimer: number | null = null;
+let fragmentRenderSince = 0;
+
+function fragmentLanded(): void {
+  if (lastSettings !== null && lastSettings.compactTimeline !== 'off' && !visit.fullTimeline) loadMinimizedReviews();
+  const now = Date.now();
+  if (fragmentRenderTimer !== null) {
+    // The burst has gone on long enough: let the pending render happen.
+    if (now - fragmentRenderSince >= FRAGMENT_RENDER_MAX_MS) return;
+    window.clearTimeout(fragmentRenderTimer);
+  } else {
+    fragmentRenderSince = now;
+  }
+  const wait = Math.min(FRAGMENT_SETTLE_MS, Math.max(0, fragmentRenderSince + FRAGMENT_RENDER_MAX_MS - now));
+  fragmentRenderTimer = window.setTimeout(() => {
+    fragmentRenderTimer = null;
+    reapplyNow();
+  }, wait);
+}
+
     return;
   }
   if (lastSettings !== null) applyReviewOverview(lastSettings);
@@ -2296,7 +2327,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
   };
   phaseSince('model', modelStart);
-  const mounted = phase('panel', () => mountPanel(model, panelHandlers));
+  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null }));
   scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
