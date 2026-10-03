@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20260928,
+  "version": 20261003,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -259,8 +259,9 @@
           "description": "Schema snapshots and journals Drizzle writes next to your migrations. The migrations stay visible.",
           "patterns": [
             "**/meta/_journal.json",
-            "**/meta/*_snapshot.json",
-            "**/[0-9]*_*/snapshot.json"
+            "**/meta/[0-9]*_snapshot.json",
+            "**/meta/_snapshot.json",
+            "**/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/snapshot.json"
           ]
         }
       ]

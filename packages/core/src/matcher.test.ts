@@ -88,13 +88,15 @@ describe('migration snapshots (Generated)', () => {
 
   it.each([
     // drizzle-kit 0.x: meta/ inside the configurable `out` folder, snapshots
-    // prefixed like the migration (index, timestamp, unix or none)
+    // prefixed like the migration (index, unix, timestamp or none)
     'drizzle/meta/_journal.json',
     'drizzle/meta/0000_snapshot.json',
+    'drizzle/meta/1724428800_snapshot.json',
     'drizzle/meta/20240823160430_snapshot.json',
     'drizzle/meta/_snapshot.json',
     'apps/api/src/db/migrations/meta/0012_snapshot.json',
-    // drizzle-kit 1.0: one folder per migration, no journal
+    // drizzle-kit 1.0: one folder per migration, named by a 14-digit UTC
+    // timestamp, no journal
     'drizzle/20240823160430_public_electro/snapshot.json',
   ])('hides %s', (path) => {
     expect(generated.categorize(path)?.id).toBe('generated');
@@ -106,7 +108,11 @@ describe('migration snapshots (Generated)', () => {
     'drizzle/schema.ts',
     'drizzle/relations.ts',
     'src/meta/config.json',
+    'src/meta/entity_aliases_snapshot.json',
     'data/snapshot.json',
+    '3rd_party/snapshot.json',
+    'reports/2024_q3/snapshot.json',
+    'backups/2024082316043_nightly/snapshot.json',
   ])('keeps %s', (path) => {
     expect(generated.categorize(path)).toBeNull();
   });
