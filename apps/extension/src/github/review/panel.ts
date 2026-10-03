@@ -1291,42 +1291,13 @@ function statusRow(label: [string, string], lead: Node, content: Node[], right: 
   ]);
 }
 
+/**
+ * The status rows, in the order a reader triages a pull request: who has
+ * reviewed (people), what the review bots said, what the reporters found,
+ * whether CI passed, and where the previews are.
+ */
 function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--status`, role: 'list' });
-  if (model.meta.bots.length > 0 || model.requestable.length > 0) {
-    const worst: Health = model.meta.bots.map(botHealth).reduce<Health>((acc, health) => (acc === 'bad' || health === 'bad' ? 'bad' : acc === 'warn' || health === 'warn' ? 'warn' : acc === 'pending' || health === 'pending' ? 'pending' : 'good'), 'good');
-    const chips = model.meta.bots.map((bot) => botChip(bot, model, handlers));
-    const menu = requestMenu(model, handlers);
-    rows.append(
-      statusRow(
-        ['Review bots', 'Bots'],
-        icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
-        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet'])] : chips,
-        menu === null ? [] : [menu],
-        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(alarmTone(model.meta.bots.length === 0 ? 'pending' : worst)) },
-      ),
-    );
-  }
-  if (model.checks !== null) {
-    const health = checksHealth(model.checks);
-    const open = model.openKey === CHECKS_KEY;
-    // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
-    mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
-      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
-      rowLabel('CI checks', 'CI'),
-      main,
-      createElement('span', { class: `${PANEL_CLASS}__right` }, [
-        createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
-        chevron(open, () => handlers.onToggle(CHECKS_KEY)),
-      ]),
-    ]);
-    if (open) row.setAttribute('data-open', '');
-    rowClickToggles(row, () => handlers.onToggle(CHECKS_KEY));
-    rows.append(row);
-    if (open) rows.append(slotRow(CHECKS_KEY, null, 'checks'));
-  }
   if (model.reviews !== null || model.comments.length > 0) {
     const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
     const content: Node[] = [];
@@ -1378,8 +1349,42 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     rows.append(row);
     if (open) rows.append(slotRow(REVIEWS_KEY, null, 'list'));
   }
-  if (model.previews.latest.length > 0) rows.append(...previewsRow(model, handlers));
+  if (model.meta.bots.length > 0 || model.requestable.length > 0) {
+    const worst: Health = model.meta.bots.map(botHealth).reduce<Health>((acc, health) => (acc === 'bad' || health === 'bad' ? 'bad' : acc === 'warn' || health === 'warn' ? 'warn' : acc === 'pending' || health === 'pending' ? 'pending' : 'good'), 'good');
+    const chips = model.meta.bots.map((bot) => botChip(bot, model, handlers));
+    const menu = requestMenu(model, handlers);
+    rows.append(
+      statusRow(
+        ['Review bots', 'Bots'],
+        icon(HEALTH_ICON[model.meta.bots.length === 0 ? 'pending' : worst]),
+        chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, ['No reviews yet'])] : chips,
+        menu === null ? [] : [menu],
+        { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(alarmTone(model.meta.bots.length === 0 ? 'pending' : worst)) },
+      ),
+    );
+  }
   if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
+  if (model.checks !== null) {
+    const health = checksHealth(model.checks);
+    const open = model.openKey === CHECKS_KEY;
+    // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
+    mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
+      rowLabel('CI checks', 'CI'),
+      main,
+      createElement('span', { class: `${PANEL_CLASS}__right` }, [
+        createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
+        chevron(open, () => handlers.onToggle(CHECKS_KEY)),
+      ]),
+    ]);
+    if (open) row.setAttribute('data-open', '');
+    rowClickToggles(row, () => handlers.onToggle(CHECKS_KEY));
+    rows.append(row);
+    if (open) rows.append(slotRow(CHECKS_KEY, null, 'checks'));
+  }
+  if (model.previews.latest.length > 0) rows.append(...previewsRow(model, handlers));
   return rows.childElementCount === 0 ? null : rows;
 }
 
