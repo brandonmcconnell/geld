@@ -69,6 +69,25 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "::notice title=Catalog::Published patterns ${version}."
+      # Pull requests from this repository: sign the catalog in the workspace so
+      # the checks below validate a current signature instead of the branch's
+      # committed one, which is necessarily stale once a pull request changes
+      # the patterns (only the push to main above can commit a new one, and no
+      # extension ever fetches a branch's). Nothing is committed here; the key
+      # is the same secret the push step already reads. A fork's pull request
+      # gets no secrets, so a fork changing patterns still shows the stale
+      # signature, as before.
+      - name: Sign the pattern catalog for this check
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GELD_CATALOG_PRIVATE_KEY" ]; then
+            echo "::notice title=Catalog::GELD_CATALOG_PRIVATE_KEY is not available to this run; checking the committed signature instead."
+            exit 0
+          fi
+          pnpm catalog:build --auto-version
+          pnpm catalog:sign
       # Typechecks and unit tests for every workspace package (core + extension),
       # plus lint and a production build of the site.
       - run: pnpm check
