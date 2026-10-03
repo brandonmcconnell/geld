@@ -260,7 +260,7 @@ function reapplyAfterResolve(itemKeyHint: string | null, resolving: boolean): vo
   visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000, wasOpen: resolving };
   for (const delay of [300, 900, 2000, 4000]) {
     window.setTimeout(() => {
-      if (lastSettings !== null && visit.settling !== null) applyReviewOverview(lastSettings);
+      if (visit.settling !== null) reapplyNow();
     }, delay);
   }
 }
@@ -806,12 +806,40 @@ async function fetchFragment(fragment: Element, src: string): Promise<void> {
 }
 
 let reapplyTimer: number | null = null;
+/**
+ * A pass was asked for while the tab was hidden (a fragment landed, a loaned
+ * thread changed, a Resolve round trip answered). Nothing runs in a hidden
+ * tab; the controller's catch-up pass on `visibilitychange` takes this flag
+ * and re-applies before the tab paints.
+ */
+let deferredWhileHidden = false;
+
+/** Whether a pass was deferred while hidden; clears the flag. */
+export function takeReviewDeferred(): boolean {
+  const was = deferredWhileHidden;
+  deferredWhileHidden = false;
+  return was;
+}
+
+/** The pass itself, unless nobody is looking (then it is noted for the catch-up). */
+function reapplyNow(): void {
+  if (document.hidden) {
+    deferredWhileHidden = true;
+    return;
+  }
+  if (lastSettings !== null) applyReviewOverview(lastSettings);
+}
+
 /** Another pass shortly (fetched markup arrived), coalesced. */
 function reapplySoon(): void {
+  if (document.hidden) {
+    deferredWhileHidden = true;
+    return;
+  }
   if (reapplyTimer !== null) return;
   reapplyTimer = window.setTimeout(() => {
     reapplyTimer = null;
-    if (lastSettings !== null) applyReviewOverview(lastSettings);
+    reapplyNow();
   }, 150);
 }
 

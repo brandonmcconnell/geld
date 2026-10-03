@@ -481,6 +481,10 @@ function install(): void {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') hide();
   });
+  // A hidden tab has no pointer over anything: the card goes, and with it its timers.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hide();
+  });
 }
 
 export function hideHoverCard(): void {

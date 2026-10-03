@@ -32,7 +32,7 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
-import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
@@ -293,6 +293,15 @@ export class GeldController {
    */
   private headerScan: { readonly stateKey: string; readonly groups: readonly HeaderStatGroup[] } | null = null;
   private headerDirty = true;
+  /**
+   * Something changed while the tab was hidden. A background tab does no
+   * work at all (GitHub keeps mutating it: relative-time ticks, live socket
+   * updates, status polls), and the first `visibilitychange` back runs one
+   * full pass synchronously, before the browser paints the tab.
+   */
+  private hiddenDirty = false;
+  /** A `reapply` (settings or catalog change) arrived while hidden: the catch-up pass starts from a bare page. */
+  private hiddenTeardown = false;
   /** The head SHA read from the page, per page state; the read parses GitHub's embedded JSON payload. */
   private headShaCache: { readonly stateKey: string; readonly sha: string | null } | null = null;
   /** Stops watching for the files view's in-place refresh (head-sha.ts `watchFilesRefresh`). */
@@ -318,6 +327,11 @@ export class GeldController {
     this.stopped = false;
     this.observer = new MutationObserver((records) => {
       if (isIgnorableMutation(records)) return;
+      // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
+      if (document.hidden) {
+        this.hiddenDirty = true;
+        return;
+      }
       // Header first, synchronously: this callback runs before the browser
       // paints, so a (re-)rendered header never shows GitHub's number when the
       // filtered one is already known or cached.
@@ -359,6 +373,7 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.apply();
   }
 
@@ -367,6 +382,7 @@ export class GeldController {
     this.stopped = true;
     document.removeEventListener('change', this.onChangeEvent, true);
     window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.unwatchFilesRefresh?.();
     this.unwatchFilesRefresh = null;
     document.removeEventListener('mousedown', this.onUserClick, true);
@@ -474,6 +490,11 @@ export class GeldController {
     this.inlineTouched.clear();
     this.shownCommentRuns.clear();
     this.pendingReveal = null;
+    // A settings change reaches every tab; the hidden ones tear down and rebuild when they are next shown.
+    if (this.deferWhileHidden()) {
+      this.hiddenTeardown = true;
+      return;
+    }
     this.teardown();
     this.apply();
   }
@@ -525,6 +546,35 @@ export class GeldController {
   private readonly onResize = (): void => {
     this.schedule();
   };
+
+  /**
+   * Back in view: everything deferred while hidden happens in one pass, here,
+   * before the tab's first paint, so the page is already current when it
+   * shows (no header flicker, no chips arriving late). A pass pending from
+   * just before the tab went hidden is folded into it.
+   */
+  private readonly onVisibilityChange = (): void => {
+    if (document.hidden || this.stopped) return;
+    const deferred = takeReviewDeferred();
+    if (!this.hiddenDirty && !deferred) return;
+    this.hiddenDirty = false;
+    // The mutation batches skipped while hidden may have (re)mounted a header stat group.
+    this.headerDirty = true;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    if (this.hiddenTeardown) {
+      this.hiddenTeardown = false;
+      this.teardown();
+    }
+    this.apply();
+  };
+
+  /** While hidden, work is noted rather than done; `onVisibilityChange` picks it up. */
+  private deferWhileHidden(): boolean {
+    if (!document.hidden) return false;
+    this.hiddenDirty = true;
+    return true;
+  }
 
   private readonly onChangeEvent = (event: Event): void => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox' && !isOwnElement(event.target)) this.schedule();
@@ -637,7 +687,7 @@ export class GeldController {
   }
 
   private schedule(): void {
-    if (this.stopped || this.timer !== null) return;
+    if (this.stopped || this.timer !== null || this.deferWhileHidden()) return;
     this.timer = setTimeout(() => {
       this.timer = null;
       this.apply();
@@ -658,7 +708,7 @@ export class GeldController {
   }
 
   private apply(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.deferWhileHidden()) return;
     // The extension was reloaded, updated or removed while this tab was open:
     // this copy is orphaned (a newer one takes over, or nothing should run).
     if (!extensionAlive()) {
@@ -1293,7 +1343,7 @@ export class GeldController {
 
   /** Header-only pass for the pre-paint paths; the full apply() follows debounced. */
   private applyHeaderNow(): void {
-    if (this.stopped || !this.settings.enabled) return;
+    if (this.stopped || !this.settings.enabled || this.deferWhileHidden()) return;
     if (!extensionAlive()) {
       this.stop();
       return;

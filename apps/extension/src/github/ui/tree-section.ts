@@ -587,6 +587,12 @@ class SidebarSizer {
               this.width = entry.contentRect.width;
             }
           }
+          // A hidden tab is not measured: the frame below is held by the browser until
+          // the tab shows again, and the first one then reads the settled layout.
+          if (document.hidden) {
+            this.schedule(full);
+            return;
+          }
           // Layout is clean inside a resize callback, so measure here rather than on a
           // frame the page will have dirtied again by the time it runs.
           this.cancelPending();

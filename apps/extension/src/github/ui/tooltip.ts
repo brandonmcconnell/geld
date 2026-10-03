@@ -261,6 +261,11 @@ function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Escape') hideTooltip();
 }
 
+/** A hidden tab has no pointer over anything: close, which also stops the host watcher. */
+function onVisibilityChange(): void {
+  if (document.hidden) hideTooltip();
+}
+
 /** A single line in place of the breakdown when the counts cannot be had. */
 function renderMessage(message: string): void {
   ensureTooltip().replaceChildren(createElement('div', { class: 'geld-tooltip__message' }, [message]));
@@ -311,6 +316,7 @@ function present(host: HTMLElement, content: TooltipContent): void {
     window.addEventListener('scroll', follow, { capture: true, passive: true });
     window.addEventListener('resize', follow, { passive: true });
     document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     watchHost();
   }
   if (activeHost !== null && activeHost !== host) describe(activeHost, false);
@@ -357,6 +363,7 @@ export function hideTooltip(): void {
     window.removeEventListener('scroll', follow, { capture: true });
     window.removeEventListener('resize', follow);
     document.removeEventListener('keydown', onKeyDown, true);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     unwatchHost();
     describe(activeHost, false);
   }
