@@ -4593,10 +4593,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   padding: 0 0 0 var(--geld-chat-gutter);
 }
 
-/* No byline (a closure's comment, whose row is its header): nothing to indent under, so no gutter. */
+/* No byline (a closure's comment, whose row is its header): the words start under the row's name, as a comment's
+ * do under its byline's. The row's name stands at 72px (16px inset, 16px glyph, 10px, 20px picture, 10px); the
+ * slot's body is already inset 16px. */
 .geld-review__chat[data-geld-chat='comment'][data-geld-headless] .geld-review__chat-body:has(> [data-geld-message][data-geld-lone]),
 .geld-review__chat[data-geld-chat='comment'][data-geld-headless] .geld-review__chat-body :has(> [data-geld-message][data-geld-lone]) {
-  padding: 0;
+  padding: 0 0 0 calc(72px - 16px);
 }
 
 /* Not a chat: one comment under its author is the comment itself, no bubble, no frame. */
