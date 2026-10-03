@@ -1989,6 +1989,12 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   text-decoration: none;
 }
 
+/* A pill with nowhere to go — a bot known only from its check run, a skipped deployment, a report with no page —
+   is a span, not a link or a button; its border is dotted so it never reads as the clickable pill beside it. */
+.geld-review__bot:not(a, button) {
+  border-style: dotted;
+}
+
 /* A pill that ends in words ("2 previews") needs more room on the right than one ending in a round glyph, whose own
    whitespace reads as padding; the same 5px looked tight against text. */
 .geld-review__bot:has(> .geld-review__bot-name:last-child) {
