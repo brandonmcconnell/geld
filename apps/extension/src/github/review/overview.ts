@@ -16,7 +16,7 @@ import { phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
@@ -267,15 +267,18 @@ function touchesThreadState(record: MutationRecord): boolean {
  * a swap GitHub made counts: the panel's own moves take a loan out without
  * putting a stranger in its place.
  */
-function adoptReplacements(records: readonly MutationRecord[]): void {
+function adoptReplacements(records: readonly MutationRecord[]): boolean {
+  let adopted = false;
   for (const record of records) {
     if (record.type !== 'childList' || !(record.target instanceof Element) || record.target.closest(LOAN_VIEWS) === null) continue;
     const gone = [...record.removedNodes].find((node): node is HTMLElement => node instanceof HTMLElement && node.hasAttribute('data-geld-teleported'));
     const came = [...record.addedNodes].find((node): node is HTMLElement => node instanceof HTMLElement && !node.hasAttribute('data-geld-teleported') && !node.hasAttribute('data-geld-ui'));
     if (gone === undefined || came === undefined || !adoptReplacement(gone, came)) continue;
+    adopted = true;
     // The composer's Resolve form swapped for a fresh one: it arrives in GitHub's words and is dressed where it stands.
     if (came.matches('form') && came.closest('.geld-review__composer-side') !== null) redressComposer(came);
   }
+  return adopted;
 }
 
 function watchLoans(root: Element): void {
@@ -283,8 +286,13 @@ function watchLoans(root: Element): void {
   loanWatcher?.disconnect();
   loanWatched = root;
   loanWatcher ??= new MutationObserver((records) => {
-    adoptReplacements(records);
-    if (!records.some(touchesThreadState)) return;
+    // A swap GitHub made of a loaned node *is* the thread changing state (the classic Resolve answers with the
+    // whole thread, resolved, in a fresh `<turbo-frame>`). Adoption hands the loan token to the newcomer, and
+    // `touchesThreadState` reads a token as the panel's own move — so the adoption itself has to say "changed";
+    // judged after it, the record read as nothing, and the resolved thread sat open in the row until a rebuild
+    // for some other reason sent the loan home (mint#12367).
+    const swapped = adoptReplacements(records);
+    if (!swapped && !records.some(touchesThreadState)) return;
     // Only a thread that was open a moment ago can settle: opening an already-resolved thread also mutates its
     // loaned node (GitHub finishes rendering it), and that must not close the row the reader just opened.
     const key = visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null;
@@ -2178,6 +2186,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.checksExpanded = false;
     visit.autoLoads = 0;
     resetFragments();
+    forgetThreads();
     visit.manualDone = new Set();
     checksSectionEl = null;
     mergeHomeEl = null;

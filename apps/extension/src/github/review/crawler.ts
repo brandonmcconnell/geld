@@ -432,6 +432,37 @@ function markUp(target: Element, selector: string): void {
 /** Forget every reading: the next crawl reads the page in full. */
 export function resetCrawlCache(): void {
   allDirty = true;
+  forgetThreads();
+}
+
+/**
+ * The last full reading of each thread, by the URL its comments load from
+ * and by each comment's id. GitHub answers a Resolve with the thread's
+ * resolved partial: its header, `data-resolved`, the ids of the comments
+ * it holds (`data-hidden-comment-ids`) and the comments themselves behind
+ * a lazy fragment again. Until that fragment is fetched once more the
+ * container holds no comment, and the thread — read moments ago — would
+ * vanish from the digest for a second and come back resolved. It is the
+ * same thread, so the reading stands, with the state the new container
+ * says. (An unresolved thread rendered in full carries no URL, so the
+ * comment ids are what connect it to its resolved partial.)
+ */
+const rememberedThreads = new Map<string, ThreadReading>();
+
+/** The keys a container's thread is remembered under: its deferred URL, and `discussion_r<id>` for each comment it names or holds. */
+function threadKeys(container: Element, ids: readonly string[]): readonly string[] {
+  const keys = [...ids];
+  const url = container.getAttribute('data-deferred-content-url');
+  if (url !== null) keys.push(url);
+  for (const id of (container.getAttribute('data-hidden-comment-ids') ?? '').split(',')) {
+    if (/^\d+$/.test(id.trim())) keys.push(`discussion_r${id.trim()}`);
+  }
+  return keys;
+}
+
+/** Forget the remembered threads (a new page). */
+export function forgetThreads(): void {
+  rememberedThreads.clear();
 }
 
 function readThread(container: Element): ThreadReading {
@@ -439,7 +470,21 @@ function readThread(container: Element): ThreadReading {
   const ids = all.map((node) => node.id);
   const nodes = all.filter(usable);
   const first = nodes[0];
-  if (first === undefined) return { ids, crawled: null };
+  if (first === undefined) {
+    const known = threadKeys(container, ids).map((key) => rememberedThreads.get(key)).find((entry) => entry?.crawled != null);
+    if (known === undefined || known.crawled === null) return { ids, crawled: null };
+    // Read again next pass: the comments land in this container, and nothing else marks a node the panel holds.
+    dirty.add(container);
+    const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
+    return {
+      ids: known.ids,
+      crawled: {
+        ...known.crawled,
+        comment: { ...known.crawled.comment, isResolved: isResolvedThread(container), isOutdated: isOutdatedThread(container) },
+        root: timelineNode instanceof HTMLElement ? timelineNode : known.crawled.root,
+      },
+    };
+  }
   const peers: ThreadPeer[] = [];
   for (const node of nodes) {
     const author = authorOf(node);
@@ -460,7 +505,7 @@ function readThread(container: Element): ThreadReading {
     threadAnchors: peers,
   };
   const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
-  return {
+  const read: ThreadReading = {
     ids,
     crawled: {
       comment: withLocation(base, pathLineOf(container)),
@@ -470,6 +515,8 @@ function readThread(container: Element): ThreadReading {
       previewDoc: previewDocOf(first, author.login, first.id),
     },
   };
+  for (const key of threadKeys(container, ids)) rememberedThreads.set(key, read);
+  return read;
 }
 
 function readComment(node: Element): CommentReading {
