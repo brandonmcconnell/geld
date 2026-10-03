@@ -1,0 +1,8 @@
+# Review automation config is owner-only: Bugbot reads its file from the default
+# branch, but Greptile reads greptile.json from the PR's source branch, and
+# BUGBOT.md steers what reviewers look for.
+/.cursor/BUGBOT.md       @brandonmcconnell
+/.cursor/config/         @brandonmcconnell
+/greptile.json           @brandonmcconnell
+/.github/CODEOWNERS      @brandonmcconnell
+/.github/workflows/      @brandonmcconnell
