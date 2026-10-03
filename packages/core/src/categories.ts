@@ -93,7 +93,7 @@ export interface Catalog {
  * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20260924;
+export const CATALOG_VERSION = 20261003;
 
 /**
  * The oldest extension version that can read this catalog. Raise it (with
@@ -189,6 +189,17 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
           'schema.graphql.json',
           'graphql.schema.json',
           '*.tsbuildinfo',
+        ],
+      },
+      {
+        id: 'migration-snapshots',
+        label: 'Migration snapshots',
+        description: 'Schema snapshots and journals Drizzle writes next to your migrations. The migrations stay visible.',
+        patterns: [
+          '**/meta/_journal.json',
+          '**/meta/[0-9]*_snapshot.json',
+          '**/meta/_snapshot.json',
+          '**/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/snapshot.json',
         ],
       },
     ],
