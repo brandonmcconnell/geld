@@ -12,6 +12,8 @@ import { isTabState } from './messages';
 
 const CONTENT_JS = '/content-scripts/github.js';
 const CONTENT_CSS = '/content-scripts/github.css';
+/** The page-world half of quick view (entrypoints/portal.content.ts); optional where MAIN-world injection is unsupported. */
+const PORTAL_JS = '/content-scripts/portal.js';
 
 /** Is the content script already running in this tab? */
 export async function hasContentScript(tabId: number): Promise<boolean> {
@@ -44,6 +46,11 @@ async function inject(tabId: number): Promise<void> {
   if (import.meta.env.MANIFEST_VERSION === 3) {
     await browser.scripting.insertCSS({ target: { tabId }, files: [CONTENT_CSS] });
     await browser.scripting.executeScript({ target: { tabId }, files: [CONTENT_JS] });
+    try {
+      await browser.scripting.executeScript({ target: { tabId }, files: [PORTAL_JS], world: 'MAIN' });
+    } catch {
+      // No MAIN-world injection here (older Firefox): quick view still works, React's own controls inside it do not.
+    }
     return;
   }
   const tabs = legacyTabs();

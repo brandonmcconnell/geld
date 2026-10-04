@@ -20,106 +20,36 @@ import { persist } from '../lib/context';
  * A SHA-keyed write refreshes the `latest` entry too, so opening a pull
  * request keeps its row exact.
  */
-interface CachedDiff {
-  readonly files: readonly FileStats[];
-  readonly at: number;
-}
-
-type CacheMap = Record<string, CachedDiff>;
-
-const MAX_ENTRIES = 400;
-const MAX_FILES_PER_ENTRY = 2000;
-/** A list row's counts are shown from disk without a refresh for this long... */
-const LATEST_FRESH_MS = 30 * 60 * 1000;
-/** ...and shown at all (while a refresh runs) for this long. */
-const LATEST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const LATEST = 'latest';
+export type { CachedDiff, CacheMap } from './diff-cache-map';
+import type { CachedDiff, CacheMap } from './diff-cache-map';
+import { cleanMap, isLatest, LATEST_FRESH_MS, LATEST_MAX_AGE_MS, MAX_FILES_PER_ENTRY, writeEntry } from './diff-cache-map';
+export { diffCacheKey, latestCacheKey } from './diff-cache-map';
 
 const cacheItem = storage.defineItem<CacheMap>('local:diffCache', { fallback: {} });
 
-function isCachedDiff(value: unknown): value is CachedDiff {
-  if (typeof value !== 'object' || value === null) return false;
-  const record: Record<string, unknown> = { ...value };
-  return Array.isArray(record.files) && typeof record.at === 'number';
-}
-
-const PULL_DIFF = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\.diff$/;
-const COMMIT_DIFF = /^\/([^/]+)\/([^/]+)\/commit\/[0-9a-f]+\.diff$/i;
-
 /**
- * Cache key for a diff URL pinned to a commit, or `null` when the URL is not
- * something we cache (compare ranges have no single head commit).
+ * How long entries are gathered before one write stores them all. A list page
+ * produces a dozen diffs within a second or two; one write per diff meant a
+ * dozen storage writes and a dozen `onChanged` deliveries to every other
+ * GitHub tab, each of which rebuilt its copy of the whole map.
  */
-export function diffCacheKey(diffUrl: string, sha: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(diffUrl);
-  } catch {
-    return null;
-  }
-  const provider = url.hostname === 'github.com' ? 'github' : `github@${url.hostname}`;
-  const pull = PULL_DIFF.exec(url.pathname);
-  if (pull !== null) return `${provider}:${pull[1]}:${pull[2]}:${pull[3]}:${sha.toLowerCase()}`;
-  const commit = COMMIT_DIFF.exec(url.pathname);
-  if (commit !== null) return `${provider}:${commit[1]}:${commit[2]}:commit:${sha.toLowerCase()}`;
-  return null;
-}
-
-/** The `…:{pull}:latest` key for a pull request diff URL, or `null` for anything else (compare ranges, commits). */
-export function latestCacheKey(diffUrl: string): string | null {
-  const key = diffCacheKey(diffUrl, LATEST);
-  return key !== null && !key.includes(':commit:') ? key : null;
-}
-
-/** Everything before the SHA: entries sharing it describe the same pull request. */
-function subjectOf(key: string): string {
-  return key.slice(0, key.lastIndexOf(':'));
-}
-
-function isLatest(key: string): boolean {
-  return key.endsWith(`:${LATEST}`);
-}
-
-/** Drop malformed and pre-format entries; the rest is the map as stored. */
-function cleanMap(value: CacheMap): CacheMap {
-  const clean: CacheMap = {};
-  for (const [key, entry] of Object.entries(value)) if (key.startsWith('github') && isCachedDiff(entry)) clean[key] = entry;
-  return clean;
-}
-
-/**
- * Write `entry` into a map: a list row's `latest` replaces only a previous
- * `latest`; a SHA-keyed entry replaces every entry of the same pull request
- * and refreshes its `latest`. Oldest entries go when the map is full.
- */
-function writeEntry(map: CacheMap, key: string, entry: CachedDiff): CacheMap {
-  const next: CacheMap = { ...map };
-  const subject = subjectOf(key);
-  if (isLatest(key)) {
-    next[key] = entry;
-  } else {
-    for (const existing of Object.keys(next)) {
-      if (existing !== key && subjectOf(existing) === subject) delete next[existing];
-    }
-    next[key] = entry;
-    if (!key.includes(':commit:')) next[`${subject}:${LATEST}`] = entry;
-  }
-  const keys = Object.keys(next);
-  if (keys.length > MAX_ENTRIES) {
-    keys
-      .sort((a, b) => (next[a]?.at ?? 0) - (next[b]?.at ?? 0))
-      .slice(0, keys.length - MAX_ENTRIES)
-      .forEach((stale) => delete next[stale]);
-  }
-  return next;
-}
+const WRITE_DELAY_MS = 250;
 
 export class DiffCache {
   private loaded: Promise<void> | null = null;
   private map: CacheMap = {};
-  /** Writes are serialised so two quick `set`s cannot race each other's read-merge-write. */
+  /** Writes are serialised so two flushes cannot race each other's read-merge-write. */
   private writing: Promise<void> = Promise.resolve();
+  /** Entries set since the last flush, in order; one read-merge-write stores them all. */
+  private pendingWrites = new Map<string, CachedDiff>();
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private unwatch: (() => void) | null = null;
+  /**
+   * Another tab's write that arrived while this tab was hidden. Rebuilding the
+   * map is work nobody in a hidden tab is waiting for; the latest version is
+   * kept and taken up by the first read after the tab shows again.
+   */
+  private deferred: CacheMap | null = null;
 
   /** Load once; subsequent calls are instant. */
   async ready(): Promise<void> {
@@ -131,14 +61,30 @@ export class DiffCache {
         // this tab neither re-fetches what that tab just counted nor, on its
         // own next write, overwrites it with a snapshot from before.
         this.unwatch ??= cacheItem.watch((next) => {
-          if (next !== null) this.map = cleanMap(next);
+          if (next === null) return;
+          if (typeof document !== 'undefined' && document.hidden) {
+            this.deferred = next;
+            return;
+          }
+          this.deferred = null;
+          this.map = cleanMap(next);
         });
       });
     }
     await this.loaded;
   }
 
+  /** Take up a write deferred while hidden, with this tab's own unflushed entries kept on top. */
+  private settle(): void {
+    if (this.deferred === null) return;
+    let map = cleanMap(this.deferred);
+    this.deferred = null;
+    for (const [key, entry] of this.pendingWrites) map = writeEntry(map, key, entry);
+    this.map = map;
+  }
+
   get(key: string): readonly FileStats[] | null {
+    this.settle();
     const entry = this.map[key];
     if (entry === undefined) return null;
     if (isLatest(key) && Date.now() - entry.at > LATEST_MAX_AGE_MS) return null;
@@ -147,28 +93,50 @@ export class DiffCache {
 
   /** Whether an entry can be shown without a background refresh (SHA-keyed entries always can). */
   isFresh(key: string): boolean {
+    this.settle();
     const entry = this.map[key];
     return entry !== undefined && (!isLatest(key) || Date.now() - entry.at <= LATEST_FRESH_MS);
   }
 
   set(key: string, files: readonly FileStats[]): void {
     if (files.length > MAX_FILES_PER_ENTRY) return;
+    this.settle();
     const entry: CachedDiff = { files, at: Date.now() };
     // Visible to this tab at once...
     this.map = writeEntry(this.map, key, entry);
-    // ...and merged into what is *stored* now, not into this tab's snapshot of
-    // it: writing the snapshot back used to drop every entry other tabs had
-    // added since it was taken, so counts kept getting fetched again.
+    // ...and stored shortly, together with whatever else lands meanwhile.
+    this.pendingWrites.set(key, entry);
+    this.flushTimer ??= setTimeout(() => {
+      this.flushTimer = null;
+      this.flush();
+    }, WRITE_DELAY_MS);
+  }
+
+  /**
+   * One write for every entry gathered, merged into what is *stored* now, not
+   * into this tab's snapshot of it: writing the snapshot back used to drop
+   * every entry other tabs had added since it was taken, so counts kept
+   * getting fetched again.
+   */
+  private flush(): void {
+    const batch = this.pendingWrites;
+    if (batch.size === 0) return;
+    this.pendingWrites = new Map();
     this.writing = this.writing
       .then(async () => {
-        const stored = cleanMap(await cacheItem.getValue());
-        await cacheItem.setValue(writeEntry(stored, key, entry));
+        let stored = cleanMap(await cacheItem.getValue());
+        for (const [key, entry] of batch) stored = writeEntry(stored, key, entry);
+        await cacheItem.setValue(stored);
       })
       .catch(() => undefined);
     persist(this.writing);
   }
 
   async clear(): Promise<void> {
+    if (this.flushTimer !== null) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    this.pendingWrites = new Map();
+    this.deferred = null;
     this.map = {};
     await cacheItem.setValue({});
   }

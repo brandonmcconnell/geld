@@ -15,7 +15,7 @@ body {
 }
 
 .popup__header {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -65,8 +65,10 @@ body {
   white-space: nowrap;
 }
 
+/* Chrome caps an action popup at 600 CSS px, so the sections keep to a 10px rhythm: on a pull request tab the header,
+ * the tab context, three settings, the Hide grid, the experiment and the footer must all fit in that. */
 .popup__section {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -76,10 +78,14 @@ body {
 
 /* Current-tab context ------------------------------------------------------- */
 
-/* The stats row carries its own leading; shave the top so the block reads centred. */
 .popup__context {
-  padding: 9px 16px 14px;
   background: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+
+/* The stats row carries its own leading; with it showing, shave the top so the block reads centred. A lone
+ * line ("Open a GitHub repo…", "No diff on this page.") keeps the section's even padding. */
+.popup__context:has(> .popup__files:not([hidden])) {
+  padding: 7px 16px 12px;
 }
 
 .popup__context-line {
@@ -175,7 +181,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 /* Repository config ----------------------------------------------------------- */
@@ -288,10 +294,61 @@ body {
   margin-bottom: 8px;
 }
 
+/* The section word with its glyph before it: the glyph is centred in a checkbox-sized box, spaced like a
+ * checkbox from its label, so it sits on the column of checkboxes below and the word on their labels. */
+.popup__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.popup__eyebrow-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.popup__eyebrow-icon > svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
 .popup__categories-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 12px;
+  gap: 2px 12px;
+}
+
+/* Experiments: one per row, shaped like a Hide row (checkbox in the Hide grid's left column, then the title
+ * across the rest of the width); the description is the row's tooltip. */
+.popup__experiments {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popup__experiments > .popup__categories-title {
+  margin-bottom: 4px;
+}
+
+.popup__experiment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 24px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.popup__experiment-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .popup__category {
@@ -338,6 +395,19 @@ body {
   color: var(--foreground);
 }
 
+/* "Saved" shows for a moment in place of the links on the left (How it works, Feedback): with three links the footer
+ * is already as wide as the popup, so the status cannot take a column of its own without pushing All settings out. */
+.popup__footer {
+  position: relative;
+}
+
 .popup__footer .geld-status {
-  flex: 1;
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+}
+
+.popup__footer:has(.geld-status[data-tone]) .popup__footer-links {
+  visibility: hidden;
 }

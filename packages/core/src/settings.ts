@@ -90,13 +90,82 @@ export interface GeldSettings {
    * one-time decision per repository, made in the popup.
    */
   readonly repoConfigs: RepoConfigMode;
+  /**
+   * On pull request conversation pages, render the Geld review panel (digest,
+   * bot verdicts, timeline compaction). Off: leave the conversation tab alone.
+   */
+  readonly prOverview: boolean;
+  /**
+   * How far to fold the PR timeline. `off` only shows the panel. `compact`
+   * (default) folds bot review comments and low-signal events. `minimal` also
+   * folds human comments that belong to done items, and may collapse the
+   * description when {@link collapseDescription} is on.
+   */
+  readonly compactTimeline: CompactTimelineMode;
+  /**
+   * How the digest's main list is arranged: by `type` (bots, CI, reviews,
+   * rounds, activity — the default) or by `batch` (every push as one row
+   * holding what landed since the previous one).
+   */
+  readonly reviewGrouping: ReviewGrouping;
+  /** In `minimal` mode, collapse the PR description to its first paragraph. */
+  readonly collapseDescription: boolean;
+  /**
+   * Extra bot logins to treat as review bots (one per line). Built-in bots
+   * (Bugbot, Greptile, Copilot, …) are always recognised.
+   */
+  readonly reviewBots: readonly string[];
+  /**
+   * The master switch for every AI feature. Off, the gateway settings below
+   * stay as they are and nothing is ever requested; on, they take effect once
+   * a gateway URL, key and model are all set (otherwise it behaves as off).
+   */
+  readonly aiEnabled: boolean;
+  /** OpenAI-compatible gateway origin for optional in-browser rewrites. Empty means unset. */
+  readonly aiBaseUrl: string;
+  /** Model id at that gateway for the prose work (consolidation, TL;DR, fixes). Never an evaluation model. */
+  readonly aiModel: string;
+  /**
+   * Use TypeSafe's Jev (a System One evaluation model: typed, probabilistic
+   * answers, no prose) for the decisions in front of the prose model - which
+   * items report the same problem, what a folded comment is. Through the
+   * gateway when it offers Jev, else with the user's own TypeSafe key.
+   */
+  readonly aiJev: boolean;
+  /**
+   * Suggested fixes on review items. `bots`: show the fix a review bot
+   * attached (a ```suggestion block). `ai`: only fixes the consolidation
+   * model proposes. `all`: both. `off`: never show one.
+   */
+  readonly suggestedFixes: SuggestedFixMode;
+}
+
+export const SUGGESTED_FIX_MODES = ['all', 'bots', 'ai', 'off'] as const;
+export type SuggestedFixMode = (typeof SUGGESTED_FIX_MODES)[number];
+
+export function isSuggestedFixMode(value: unknown): value is SuggestedFixMode {
+  return typeof value === 'string' && SUGGESTED_FIX_MODES.some((mode) => mode === value);
 }
 
 export const REPO_CONFIG_MODES = ['always', 'ask', 'never'] as const;
 export type RepoConfigMode = (typeof REPO_CONFIG_MODES)[number];
 
+export const REVIEW_GROUPINGS = ['type', 'batch'] as const;
+export type ReviewGrouping = (typeof REVIEW_GROUPINGS)[number];
+
+export function isReviewGrouping(value: unknown): value is ReviewGrouping {
+  return typeof value === 'string' && REVIEW_GROUPINGS.some((mode) => mode === value);
+}
+
+export const COMPACT_TIMELINE_MODES = ['off', 'compact', 'minimal'] as const;
+export type CompactTimelineMode = (typeof COMPACT_TIMELINE_MODES)[number];
+
 export function isRepoConfigMode(value: unknown): value is RepoConfigMode {
   return typeof value === 'string' && REPO_CONFIG_MODES.some((mode) => mode === value);
+}
+
+export function isCompactTimelineMode(value: unknown): value is CompactTimelineMode {
+  return typeof value === 'string' && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
 
 export const DEFAULT_SETTINGS: GeldSettings = {
@@ -119,7 +188,32 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   autoUpdatePatterns: true,
   enterpriseHosts: [],
   repoConfigs: 'ask',
+  prOverview: true,
+  compactTimeline: 'compact',
+  reviewGrouping: 'type',
+  collapseDescription: false,
+  reviewBots: [],
+  aiEnabled: false,
+  aiBaseUrl: '',
+  aiModel: '',
+  aiJev: false,
+  suggestedFixes: 'bots',
 };
+
+/**
+ * A gateway URL as the user pasted it, reduced to its origin-plus-path base:
+ * trailing slashes and a versioned tail (`/v1`, `/v2`, or the `/typesafe`
+ * compatibility prefix) come off, since every request adds its own
+ * `/v1/...` path. `https://ai-gateway.vercel.sh/v1/` and
+ * `https://openrouter.ai/api/v1` both become usable bases.
+ */
+export function normalizeAiBaseUrl(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/(?:v\d+|typesafe)$/i, '')
+    .replace(/\/+$/, '');
+}
 
 export const SETTINGS_STORAGE_KEY = 'sync:settings' as const;
 
@@ -317,6 +411,16 @@ export function normalizeSettings(value: unknown): GeldSettings {
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
+    prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
+    compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
+    collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
+    aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
+    aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
+    aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
+    aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
+    suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
   };
 }
 

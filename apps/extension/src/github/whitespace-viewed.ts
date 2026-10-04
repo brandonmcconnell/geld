@@ -1,104 +1,144 @@
 import { OWN_UI_ATTRIBUTE } from './dom';
+import { describePage } from './page';
 
 /**
- * GitHub-native "hide whitespace changes" is just `?w=1` on diff pages. We
- * redirect once per page load when a diff page was opened without it, and
- * back off if GitHub strips the parameter (which would otherwise loop).
+ * Diff pages the reader has turned "Hide whitespace" off on, by page key
+ * (`/owner/repo/pull/N`, a commit's or a compare's path): when they were
+ * opted out. Kept on this device; the oldest fall off past `OPT_OUT_CAP`.
+ */
+export type WhitespaceOptOuts = Readonly<Record<string, number>>;
+const OPT_OUT_CAP = 300;
+
+const DIFF_KINDS = new Set(['pull-files', 'commit', 'compare']);
+const SESSION_PREFIX = 'geld:whitespace:';
+/** A page that started loading this soon after our redirect is the redirect's result. */
+const LOOP_WINDOW_MS = 4000;
+/** How long a path GitHub stripped the parameter from is left alone before one more try (a stray hit on the loop guard costs a minute, not the session). */
+const UNSUPPORTED_MS = 60_000;
+
+/**
+ * GitHub's "Hide whitespace changes" is URL state: `?w=1` on a diff page
+ * hides them, `?w=0` is what its diff-settings menu writes when the reader
+ * unchecks the option, and nothing is remembered between pull requests (the
+ * React files view used to persist the preference; it no longer does, so a
+ * flag that said "GitHub remembers it, never re-apply" switched Geld off for
+ * good). So Geld adds `?w=1` to every diff page opened without a `w` - at
+ * `document_start`, before anything renders, when it can (`redirectEarly`),
+ * else once the view is there - unless the reader has opted that page out:
+ * a `?w=0` on a page records the opt-out, a `?w=1` on an opted-out page
+ * (which only the reader can produce, since Geld neither redirects nor
+ * rewrites links there) clears it. The legacy view's own diff-settings form
+ * is submitted instead when it is there, since GitHub persists that one.
+ * A redirect GitHub strips the parameter from is not repeated for the session.
  */
 export class WhitespaceRedirector {
-  private static readonly KEY_PREFIX = 'geld:whitespace:';
-  /** A page that started loading this soon after our redirect is the redirect's result. */
-  private static readonly LOOP_WINDOW_MS = 4000;
-  private redirected = false;
-
-  constructor(
-    /** Whether GitHub already remembers the preference for this signed-in user. */
-    private persisted: boolean,
-    private readonly onPersisted: () => void,
-  ) {}
-
-  setPersisted(value: boolean): void {
-    this.persisted = value;
-  }
-
-  private menuAttempted = false;
+  /** Pages this document has already redirected or submitted for: never twice in one document. */
+  private readonly handled = new Set<string>();
   /** The embedded preference belongs to the document's first page; SPA navigations leave it stale. */
   private initialPage: string | null = null;
   private embeddedAtLoad: boolean | null = null;
 
+  constructor(
+    private optOuts: WhitespaceOptOuts,
+    private readonly onOptOuts: (next: WhitespaceOptOuts) => void,
+  ) {}
+
+  setOptOuts(value: WhitespaceOptOuts): void {
+    this.optOuts = value;
+  }
+
+  isOptedOut(pageKey: string): boolean {
+    return pageKey in this.optOuts;
+  }
+
   ensure(url: URL, pageKey: string): void {
-    if (this.redirected || url.searchParams.get('w') === '1') return;
-    const signedIn = document.body.classList.contains('logged-in') || document.querySelector('meta[name="user-login"][content]:not([content=""])') !== null;
+    const w = url.searchParams.get('w');
+    if (w === '0') {
+      this.optOut(pageKey);
+      return;
+    }
+    if (w === '1') {
+      if (this.isOptedOut(pageKey)) this.optIn(pageKey);
+      return;
+    }
+    if (w !== null || this.isOptedOut(pageKey) || this.handled.has(pageKey)) return;
 
     if (this.initialPage === null) {
       this.initialPage = pageKey;
-      this.embeddedAtLoad = readEmbeddedIgnoreWhitespace();
+      this.embeddedAtLoad = readEmbeddedHideWhitespace();
     }
-    const embedded = this.initialPage === pageKey ? this.embeddedAtLoad : null;
+    // A persisted preference GitHub still honours (its payload carries one): already on, nothing to add.
+    if (this.initialPage === pageKey && this.embeddedAtLoad === true) return;
 
-    // React views embed the user's persisted diff preference. Already on: done.
-    if (embedded === true) {
-      if (signedIn && !this.persisted) this.markPersisted();
-      return;
-    }
-    // GitHub remembers the preference for signed-in users; never re-apply it.
-    if (signedIn && this.persisted) return;
-
-    if (embedded === false && signedIn && !this.menuAttempted) {
-      // Flip GitHub's own "Hide whitespace" setting through its diff-settings
-      // menu, which GitHub persists and applies without a reload. Falls back to
-      // the URL parameter if the menu cannot be driven.
-      this.menuAttempted = true;
-      void toggleWhitespaceViaMenu().then((done) => {
-        if (done) this.markPersisted();
-        else this.ensure(new URL(window.location.href), pageKey);
-      });
-      return;
-    }
-
-    // GitHub's own "Diff settings" form (legacy view). Its checkbox reflects
-    // the effective state, and submitting it is exactly "Apply and reload",
-    // which GitHub persists for signed-in users.
+    // GitHub's own "Diff settings" form (legacy view). Its checkbox reflects the effective state, and
+    // submitting it is exactly "Apply and reload", which GitHub persists for signed-in users.
     const checkbox = document.querySelector<HTMLInputElement>('form[action$="/diffview"] input[type="checkbox"][name="w"]');
     if (checkbox !== null) {
-      if (checkbox.checked) {
-        if (signedIn && !this.persisted) this.markPersisted();
-        return;
-      }
+      if (checkbox.checked) return;
+      const signedIn = document.body.classList.contains('logged-in') || document.querySelector('meta[name="user-login"][content]:not([content=""])') !== null;
       const form = checkbox.form;
       if (signedIn && form !== null) {
-        this.redirected = true;
+        this.handled.add(pageKey);
         checkbox.checked = true;
-        this.markPersisted();
         form.requestSubmit();
         return;
       }
     }
 
-    // No form (React view) and no menu: fall back to the URL parameter.
-    const key = `${WhitespaceRedirector.KEY_PREFIX}${url.pathname}`;
-    const previous = safeSessionGet(key);
-    if (previous === 'unsupported') return;
-    const last = Number.parseInt(previous ?? '0', 10);
-    const navigationStart = performance.timeOrigin;
-    if (Number.isFinite(last) && last > 0 && navigationStart - last < WhitespaceRedirector.LOOP_WINDOW_MS && navigationStart >= last) {
-      // This document is the one our redirect produced, yet the parameter is
-      // gone: GitHub dropped it, so stop trying on this path for the session.
-      safeSessionSet(key, 'unsupported');
-      return;
-    }
-    this.redirected = true;
-    safeSessionSet(key, String(Date.now()));
-    const target = new URL(url.toString());
-    target.searchParams.set('w', '1');
-    window.location.replace(target.toString());
+    if (redirectWithWhitespaceHidden(url)) this.handled.add(pageKey);
   }
 
-  private markPersisted(): void {
-    if (this.persisted) return;
-    this.persisted = true;
-    this.onPersisted();
+  private optOut(pageKey: string): void {
+    if (this.isOptedOut(pageKey)) return;
+    const entries = Object.entries(this.optOuts).sort((a, b) => a[1] - b[1]);
+    while (entries.length >= OPT_OUT_CAP) entries.shift();
+    entries.push([pageKey, Date.now()]);
+    this.optOuts = Object.fromEntries(entries);
+    this.onOptOuts(this.optOuts);
   }
+
+  private optIn(pageKey: string): void {
+    const next = { ...this.optOuts };
+    delete next[pageKey];
+    this.optOuts = next;
+    this.onOptOuts(this.optOuts);
+  }
+}
+
+/**
+ * The `document_start` redirect: a diff page opened without a `w`, with the
+ * setting on and the page not opted out, is replaced by its `?w=1` form
+ * before GitHub has rendered anything, so the reader never sees the page
+ * twice. Returns whether a redirect was issued.
+ */
+export function redirectEarly(url: URL, optOuts: WhitespaceOptOuts): boolean {
+  const page = describePage(url);
+  if (!DIFF_KINDS.has(page.kind) || url.searchParams.has('w') || page.stateKey in optOuts) return false;
+  return redirectWithWhitespaceHidden(url);
+}
+
+/** Replace the page with its `?w=1` form, unless this document is already that redirect's result without it. */
+function redirectWithWhitespaceHidden(url: URL): boolean {
+  const key = `${SESSION_PREFIX}${url.pathname}`;
+  const previous = safeSessionGet(key) ?? '';
+  const now = Date.now();
+  if (previous.startsWith('unsupported:')) {
+    if (now - Number.parseInt(previous.slice('unsupported:'.length), 10) < UNSUPPORTED_MS) return false;
+  } else {
+    const last = Number.parseInt(previous || '0', 10);
+    const navigationStart = performance.timeOrigin;
+    if (Number.isFinite(last) && last > 0 && navigationStart - last < LOOP_WINDOW_MS && navigationStart >= last) {
+      // This document is the one our redirect produced, yet the parameter is
+      // gone: GitHub dropped it, so leave this path alone for a while.
+      safeSessionSet(key, `unsupported:${now}`);
+      return false;
+    }
+  }
+  safeSessionSet(key, String(now));
+  const target = new URL(url.toString());
+  target.searchParams.set('w', '1');
+  window.location.replace(target.toString());
+  return true;
 }
 
 function safeSessionGet(key: string): string | null {
@@ -117,10 +157,16 @@ function safeSessionSet(key: string, value: string): void {
   }
 }
 
-const FILES_TAB = /\/pull\/\d+\/(?:files|changes)\/?$/;
+/** The Files tab and its per-commit forms: `/files`, `/changes`, `/files/<sha>`, `/changes/<base>..<head>`. */
+const FILES_TAB = /^(\/[^/]+\/[^/]+\/pull\/\d+)\/(?:files|changes)(?:\/[^/]+)?\/?$/;
 
-/** Point "Files changed" links at `?w=1` so navigating there needs no redirect. */
-export function rewriteFilesLinksForWhitespace(): void {
+/**
+ * Point "Files changed" links (the tab, "View reviewed changes", a review's
+ * commit range) at `?w=1`, so navigating there needs no redirect. Links into
+ * a pull request the reader opted out of are left alone: following one would
+ * read as opting back in.
+ */
+export function rewriteFilesLinksForWhitespace(optedOut: (pageKey: string) => boolean): void {
   for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"][href*="/files"], a[href*="/pull/"][href*="/changes"]')) {
     if (link.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
     let url: URL;
@@ -129,8 +175,11 @@ export function rewriteFilesLinksForWhitespace(): void {
     } catch {
       continue;
     }
-    if (url.origin !== window.location.origin || !FILES_TAB.test(url.pathname)) continue;
-    if (url.searchParams.get('w') === '1') continue;
+    if (url.origin !== window.location.origin) continue;
+    const match = FILES_TAB.exec(url.pathname);
+    const pageKey = match?.[1];
+    if (pageKey === undefined || optedOut(pageKey)) continue;
+    if (url.searchParams.has('w')) continue;
     url.searchParams.set('w', '1');
     link.setAttribute('href', `${url.pathname}${url.search}${url.hash}`);
   }
@@ -208,80 +257,15 @@ function accessibleName(element: HTMLElement): string {
   return (element.textContent ?? '').trim();
 }
 
-/** `"ignoreWhitespace": true|false` from the React app's embedded payload, if present. */
-function readEmbeddedIgnoreWhitespace(): boolean | null {
+/**
+ * The persisted whitespace preference in the React app's embedded payload,
+ * if it carries one: `"viewSettings":{"hideWhitespace":…}` today,
+ * `"ignoreWhitespace":…` in the earlier payload.
+ */
+function readEmbeddedHideWhitespace(): boolean | null {
   for (const script of document.querySelectorAll('script[type="application/json"]')) {
-    const match = /"ignoreWhitespace"\s*:\s*(true|false)/.exec(script.textContent ?? '');
+    const match = /"(?:hideWhitespace|ignoreWhitespace)"\s*:\s*(true|false)/.exec(script.textContent ?? '');
     if (match !== null) return match[1] === 'true';
   }
   return null;
-}
-
-const MENU_TIMEOUT_MS = 1500;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitFor<T>(probe: () => T | null, timeoutMs: number): Promise<T | null> {
-  const deadline = performance.now() + timeoutMs;
-  while (performance.now() < deadline) {
-    const value = probe();
-    if (value !== null) return value;
-    await wait(50);
-  }
-  return null;
-}
-
-function findDiffSettingsButton(): HTMLButtonElement | null {
-  for (const button of document.querySelectorAll<HTMLButtonElement>('button')) {
-    if (button.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    if (/diff (view )?settings/i.test(accessibleName(button))) return button;
-  }
-  return null;
-}
-
-function findWhitespaceMenuItem(): HTMLElement | null {
-  const candidates = document.querySelectorAll<HTMLElement>(
-    '[role="menuitemcheckbox"], [role="checkbox"], [role="switch"], input[type="checkbox"], [role="menuitem"]',
-  );
-  for (const candidate of candidates) {
-    if (candidate.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    if (candidate instanceof HTMLInputElement && candidate.name === 'w') continue; // legacy form, handled separately
-    if (/whitespace/i.test(accessibleName(candidate))) return candidate;
-  }
-  return null;
-}
-
-function isChecked(element: HTMLElement): boolean {
-  if (element instanceof HTMLInputElement) return element.checked;
-  return element.getAttribute('aria-checked') === 'true';
-}
-
-function closeMenus(): void {
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
-  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
-}
-
-/**
- * Turn on GitHub's "Hide whitespace" through its own diff-settings menu.
- * Resolves `true` when the setting is on afterwards (or already was).
- */
-async function toggleWhitespaceViaMenu(): Promise<boolean> {
-  const gear = findDiffSettingsButton();
-  if (gear === null) return false;
-  gear.click();
-  const item = await waitFor(findWhitespaceMenuItem, MENU_TIMEOUT_MS);
-  if (item === null) {
-    closeMenus();
-    return false;
-  }
-  if (!isChecked(item)) {
-    item.click();
-    await wait(150);
-  }
-  closeMenus();
-  await wait(50);
-  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-  return true;
 }
