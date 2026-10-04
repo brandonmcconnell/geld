@@ -24,6 +24,8 @@ import { onRestore, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
+import type { RevisionView } from './edit-times';
+import { relativeTimeElement } from './time';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
@@ -59,6 +61,16 @@ export interface ChatSource {
   readonly avatarSrc: string | null;
   readonly login: string;
   readonly bot: boolean;
+  /**
+   * For a bot's thread: how the comment read when the thread was opened
+   * (`edit-times.ts` `revisionAsOf`). Bots rewrite their summaries run after
+   * run, so the page's node may now describe a later run; `revision` shows
+   * the one this thread came from, `loading` while it is on its way, and
+   * `current` means the node is that reading.
+   */
+  readonly revision?: RevisionView;
+  /** When the comment is from an earlier run than the thread (the bot posted no summary with this one): its time, said on the strip. */
+  readonly earlier?: string;
 }
 
 export interface ChatHandlers {
@@ -334,14 +346,23 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
  * its author's picture, "CodeRabbit's run summary", the first line. Open,
  * that comment stands under the strip as one bubble, moved here like the
  * thread (so it is in one place at a time: its own row is closed while this
- * one is open). The reader's choice is kept across rebuilds by the caller.
+ * one is open). A bot's summary that has been rewritten since the thread
+ * was opened stands here as it read then instead (`source.revision`: a
+ * rendered copy from GitHub's edit history, not the live node), with a line
+ * under it saying so and when it was last edited; its first line on the
+ * closed strip is that reading's too. The reader's choice is kept across
+ * rebuilds by the caller.
  */
 function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHandlers, viewer: string): HTMLElement {
   const open = handlers.sourceOpen(thread);
+  const revision = source.revision?.state === 'revision' ? source.revision : null;
+  const preview = revision === null ? source.preview : firstLineOf(revision.body) || source.preview;
   const children: Node[] = [createElement('span', { class: 'geld-review__chat-pin-glyph', 'aria-hidden': 'true' }, [icon(ICON_PIN)])];
   if (source.avatarSrc !== null) children.push(createElement('img', { class: 'geld-review__avatar', 'data-kind': source.bot ? 'bot' : 'user', src: source.avatarSrc, alt: '', width: '20', height: '20' }));
   children.push(createElement('span', { class: 'geld-review__chat-pin-label' }, [source.label]));
-  if (source.preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, inlineText(source.preview)));
+  // A summary from before this run ("Bugbot's run summary · 2 days ago"): the bot wrote none for this one.
+  if (source.earlier !== undefined) children.push(relativeTimeElement(source.earlier, 'geld-review__chat-pin-when'));
+  if (preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, inlineText(preview)));
   children.push(icon(ICON_CHEVRON_DOWN));
   const button = createElement('button', { type: 'button', class: 'geld-review__chat-pin', 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(thread) }, children);
   button.addEventListener('click', () => handlers.onToggleSource(thread));
@@ -349,13 +370,35 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
   if (open) {
     const body = createElement('div', { class: 'geld-review__chat-context-body' });
     wrap.append(body);
-    teleportInto(body, [source.node]);
-    openMinimized(body);
-    const messages = messagesIn(source.node, false);
-    annotateMessages(messages, viewer, true);
-    for (const message of messages) hoistMenu(message);
+    if (revision !== null) {
+      body.setAttribute('data-geld-revision', '');
+      // The bot's own re-run badge is a control, and a stale one here; the byline's Rerun is the control.
+      hideAgentRerunControls(revision.body);
+      body.append(createElement('div', { class: 'geld-review__chat-then' }, [revision.body]));
+      // "As it read when this thread was opened · edited 3 times since, last 2 days ago": the live comment is the
+      // bot's current word, which its own row shows; this is the word these threads answered.
+      const since = revision.editsSince === 1 ? 'edited once since' : `edited ${revision.editsSince} times since`;
+      body.append(createElement('p', { class: 'geld-review__chat-then-note' }, ['As it read when this thread was opened · ', since, ', last ', relativeTimeElement(revision.editedAt, 'geld-review__chat-then-time')]));
+    } else if (source.revision?.state === 'loading') {
+      body.append(createElement('p', { class: 'geld-review__chat-then-note' }, ['Reading how it read when this thread was opened…']));
+    } else {
+      teleportInto(body, [source.node]);
+      openMinimized(body);
+      const messages = messagesIn(source.node, false);
+      annotateMessages(messages, viewer, true);
+      for (const message of messages) hoistMenu(message);
+    }
   }
   return wrap;
+}
+
+/** The first line of a rendered body, for a strip's preview: its first block's text, whitespace collapsed. */
+function firstLineOf(body: HTMLElement): string {
+  for (const block of body.children) {
+    const text = (block.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (text !== '') return text;
+  }
+  return (body.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
 const REPLY_AREA = '.review-thread-reply, .js-inline-comment-form-container';

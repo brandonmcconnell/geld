@@ -4378,6 +4378,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   white-space: nowrap;
 }
 
+/* "· yesterday" after the label: the pinned summary is an earlier run's, this run having posted none. */
+.geld-review__chat-pin-when {
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+  white-space: nowrap;
+}
+
+.geld-review__chat-pin-when::before {
+  content: '· ';
+}
+
 .geld-review__chat-pin-preview {
   flex: 1 1 0;
   min-width: 0;
@@ -4708,6 +4719,35 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__chat-context-body [data-geld-lone] > [data-geld-part='bubble'] .comment-body,
 .geld-review__chat-context-body [data-geld-lone] > [data-geld-part='bubble'] .markdown-body {
   font-size: 13px;
+}
+
+/* The pinned comment as it read when the thread was opened: a rendered copy from GitHub's edit history, set like
+ * the live comment's bubble (same box, same type), with a line under it saying it is that reading. */
+.geld-review__chat-context-body[data-geld-revision] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 12px;
+}
+
+.geld-review__chat-then {
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--geld-review-border-muted);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  overflow-wrap: anywhere;
+}
+
+.geld-review__chat-then > .markdown-body {
+  font-size: 13px;
+}
+
+.geld-review__chat-then-note {
+  margin: 0;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 /* ---- rounds --------------------------------------------------------------- */

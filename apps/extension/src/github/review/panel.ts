@@ -295,6 +295,8 @@ export interface PanelModel {
   readonly openSources: ReadonlySet<string>;
   /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
   readonly refsVersion: number;
+  /** Bumps when a comment's edit history or an old revision lands, so an open chat's pinned source is rebuilt with it. */
+  readonly editsVersion: number;
   /** A review bot is still running: the re-run control spins. */
   readonly running: boolean;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
@@ -1908,6 +1910,7 @@ function signatureOf(model: PanelModel): string {
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,
+    edits: model.editsVersion,
     running: model.running,
     icons: model.meta.bots.map((bot) => model.botIconFor(bot.id) ?? ''),
   });

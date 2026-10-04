@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -23,7 +23,7 @@ import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, 
 import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
-import { editedAt, resetEditTimes } from './edit-times';
+import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
@@ -1596,23 +1596,75 @@ interface SourceFacts {
   readonly avatarSrc: string | null;
   readonly login: string;
   readonly bot: boolean;
+  readonly createdAt: string;
+  /** The review bot the comment is by, when it is one's. */
+  readonly botId: string | null;
+  /** A bot's report of a run (its summary or review body): not a status line, not a trigger, not a thread. */
+  readonly summary: boolean;
 }
 
 let sourceFacts = new Map<string, SourceFacts>();
 
 /**
+ * A bot posts its run summary and its threads moments apart, in either
+ * order (Greptile's summary leads its review by seconds; CodeRabbit's
+ * walkthrough follows); a summary this long after a thread is the next
+ * run's.
+ */
+const SUMMARY_LAG_MS = 10 * 60 * 1000;
+/** A bot finishes writing its summary in the moments after it posts the run's threads; edits this soon after count as the run's reading. */
+const RUN_SETTLE_MS = 5 * 60 * 1000;
+
+/**
+ * The bot's run summary a thread came from: the bot's latest summary written
+ * by the thread's time (give or take the lag above). Bots rewrite that one
+ * comment run after run, so a thread from an earlier run has a summary that
+ * may since say something else — `revisionAsOf` reads it as it was.
+ */
+function botSummaryFor(botId: string, threadAt: number): { readonly anchor: string; readonly facts: SourceFacts } | null {
+  let best: { readonly anchor: string; readonly facts: SourceFacts } | null = null;
+  for (const [anchor, facts] of sourceFacts) {
+    if (facts.botId !== botId || !facts.summary) continue;
+    const at = Date.parse(facts.createdAt);
+    if (Number.isNaN(at) || (!Number.isNaN(threadAt) && at > threadAt + SUMMARY_LAG_MS)) continue;
+    if (best === null || at > Date.parse(best.facts.createdAt)) best = { anchor, facts };
+  }
+  return best;
+}
+
+/**
  * The comment a thread was posted from: the body of the review that holds
- * it ("Bugbot reviewed … found 3 issues"), else the bot's run summary for
- * this pull request. Pinned at the top of the thread's chat: the strip
- * names it and shows its first line, and unfolds it in place on request.
+ * it ("Bugbot reviewed … found 3 issues"), else the bot's run summary in
+ * effect when the thread was opened. Pinned at the top of the thread's
+ * chat: the strip names it and shows its first line, and unfolds it in
+ * place on request. A bot's source carries how it read at the thread's time
+ * (`ChatSource.revision`): bots edit their summaries between runs, and the
+ * page's node may by now report a later run.
  */
 function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): ChatSource | null {
   const source = item?.sources[0];
   const bot = source?.bot;
   const who = bot !== undefined ? botTitle(bot, source?.author ?? '') : source?.author ?? 'the reviewer';
+  const firstComment = thread.querySelector('[id^="discussion_r"], [id^="issuecomment-"]') ?? thread;
+  const threadAt = Date.parse(createdAtOf(firstComment));
   const describe = (node: HTMLElement, anchor: string, label: string): ChatSource => {
     const facts = sourceFacts.get(anchor);
-    return { node, anchor, label, preview: facts?.preview ?? '', avatarSrc: facts?.avatarSrc ?? avatarSrcOf(node), login: facts?.login ?? source?.author ?? '', bot: facts?.bot ?? bot !== undefined };
+    const isBot = facts?.bot ?? bot !== undefined;
+    const revision = isBot && !Number.isNaN(threadAt) ? revisionAsOf(node, anchor, threadAt, RUN_SETTLE_MS, reapplySoon) : null;
+    // A bot's summary from well before the thread is an earlier run's (this run posted none): the strip says when.
+    const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
+    const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
+    return {
+      node,
+      anchor,
+      label,
+      preview: facts?.preview ?? '',
+      avatarSrc: facts?.avatarSrc ?? avatarSrcOf(node),
+      login: facts?.login ?? source?.author ?? '',
+      bot: isBot,
+      ...(revision === null ? {} : { revision }),
+      ...(earlier === null ? {} : { earlier }),
+    };
   };
   // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
   // copy at home and read the comment from the DOM there, not from a map keyed by that id.
@@ -1624,9 +1676,11 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
   }
   const reviewNode = review === null ? null : reviewCommentOf(review);
   if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, `${who}'s review`);
-  const summaryAnchor = bot === undefined ? null : (meta.bots.find((record) => record.id === bot)?.sourceId ?? null);
+  if (bot === undefined) return null;
+  // The bot's summary as of the thread (by time), else the bot's latest word when it is not itself a thread: a bot
+  // that writes no review body has a thread comment for its "summary", and that is a thread, not a source.
+  const summaryAnchor = botSummaryFor(bot, threadAt)?.anchor ?? meta.bots.find((record) => record.id === bot)?.sourceId ?? null;
   const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
-  // A bot that writes no review body has a thread comment for its "summary"; that is a thread, not a source.
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
   const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
   if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, `${who}'s run summary`);
@@ -2276,7 +2330,19 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   const crawledDom = phase('crawl', crawlConversation);
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
-  sourceFacts = new Map(crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot }]));
+  sourceFacts = new Map(
+    crawledDom.comments
+      .filter((entry) => entry.comment.kind !== 'thread')
+      .map((entry) => {
+        const botId = entry.author.bot ? resolveBotId(entry.author.login, settings.reviewBots) : null;
+        // What `verdictsFrom` counts as a bot's report: not a status line or a trigger, and from a coding agent that
+        // also chats (Replicas) only a review-shaped comment.
+        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId);
+        const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || parsed.count !== null || parsed.score !== null || parsed.clean;
+        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots);
+        return [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot, createdAt: entry.comment.createdAt, botId, summary }];
+      }),
+  );
   const found = phase('summary', () => findSummaryComment(document));
   hideSummary(found?.root ?? null);
   const headSha = phase('head-sha', () => detectHeadSha() ?? found?.meta.headSha ?? ZERO_SHA);
@@ -2455,6 +2521,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
     refsVersion: refsVersion(),
+    editsVersion: editsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
