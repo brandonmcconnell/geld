@@ -2028,6 +2028,22 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   font-weight: 400;
 }
 
+/*
+ * Pills short of room (`fit-chips.ts` measures the row and sets the step): the names go first — the mark says
+ * who, and "clean", "5/5", "patch 62.50%" still say how — then the details, leaving mark and light. The pill
+ * closes up around what is left.
+ */
+.geld-review__status-content[data-geld-fit='names'] .geld-review__bot-name,
+.geld-review__status-content[data-geld-fit='details'] .geld-review__bot-name,
+.geld-review__status-content[data-geld-fit='details'] .geld-review__bot-detail {
+  display: none;
+}
+
+.geld-review__status-content[data-geld-fit='names'] .geld-review__bot,
+.geld-review__status-content[data-geld-fit='details'] .geld-review__bot {
+  gap: 4px;
+}
+
 .geld-review__health {
   display: inline-flex;
   align-items: center;
@@ -5717,8 +5733,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 /* ---- narrow layouts ----------------------------------------------------------
  * Below ~640px of panel width the rows keep what says something and drop what only repeats it: the round's
  * name (its avatars and meter say it), timestamps, the word "resolved", the check labels (their glyphs
- * say it), the bots' names and details (their icons and lights say it), and the long labels. A settled
- * round drops its meter too — the check in front of it already says it is done. */
+ * say it), and the long labels. A settled round drops its meter too — the check in front of it already says
+ * it is done. The bots' and reports' pills are not on this breakpoint: they give way to their own row's room,
+ * names first, then details (`fit-chips.ts`). */
 .geld-review__label-short {
   display: none;
 }
@@ -5727,10 +5744,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__row--batch .geld-review__title,
   .geld-review__progress-word,
   .geld-review__check-label,
-  .geld-review__bot-name:not(.geld-review__deploy-name),
   .geld-review__deploy-sum-text,
   .geld-review__push-compare > span,
-  .geld-review__bot-detail,
   .geld-review__label-long,
   .geld-review__reviewers-text,
   .geld-review__row .geld-review__time {
@@ -5751,10 +5766,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
   .geld-review__label {
     min-width: 0;
-  }
-
-  .geld-review__bot {
-    gap: 4px;
   }
 
   /* Compare keeps its icon only, square. */

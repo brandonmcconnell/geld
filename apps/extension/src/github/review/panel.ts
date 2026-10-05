@@ -40,6 +40,15 @@ const ATTR_SLOT = 'data-geld-slot';
  */
 export const ATTR_TIME_FOR = 'data-geld-time-for';
 
+/**
+ * A row of pills that gives way in two steps when the row is short of room
+ * (`fit-chips.ts`): first every pill's name (the mark says who), then its
+ * detail (the light says how it went). The bots row and the reports row;
+ * the previews row keeps its names, which are the deployments' and say what
+ * the mark cannot.
+ */
+export const ATTR_FIT = 'data-geld-fit';
+
 /** The mounted panel's render signature (what `mountPanel` compared last), or '' without a panel: for the harness's scope check. */
 export function panelSignature(): string {
   return document.querySelector(`[${ATTR_SIG}]`)?.getAttribute(ATTR_SIG) ?? '';
@@ -1331,11 +1340,11 @@ function alarmTone(health: Health): Tone | null {
   return toneOf(health) === 'bad' ? 'bad' : null;
 }
 
-function statusRow(label: [string, string], lead: Node, content: Node[], right: Node[], extra: Readonly<Record<string, string>> = {}): HTMLElement {
+function statusRow(label: [string, string], lead: Node, content: Node[], right: Node[], extra: Readonly<Record<string, string>> = {}, fit = false): HTMLElement {
   return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, ...extra }, [
     createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [lead]),
     rowLabel(label[0], label[1]),
-    createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+    createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(fit ? { [ATTR_FIT]: '' } : {}) }, content),
     createElement('span', { class: `${PANEL_CLASS}__right` }, right),
   ]);
 }
@@ -1411,6 +1420,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         chips.length === 0 ? [createElement('span', { class: `${PANEL_CLASS}__status-text` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet']), ...(model.ingesting ? [ingestingMark('Still reading the timeline: bot reviews are on their way')] : [])] : chips,
         menu === null ? [] : [menu],
         { 'data-health': model.meta.bots.length === 0 ? 'pending' : worst, ...toneAttr(alarmTone(model.meta.bots.length === 0 ? 'pending' : worst)) },
+        chips.length > 0,
       ),
     );
   }
@@ -1562,14 +1572,25 @@ function markImg(src: string, roundOnPage: boolean): HTMLElement {
   return img;
 }
 
+/** The one word a report pill says when its words are only a verdict ("Quality Gate passed"): the state, as a bot chip says "clean". */
+const REPORT_STATE_WORD: Readonly<Record<Report['state'], string>> = {
+  failed: 'failed',
+  passed: 'passed',
+  info: 'reported',
+};
+
 /**
- * One report as a pill: the reporter's mark, its title, the headline in its
- * own words ("2 test failures") and the state glyph. Clicking it opens the
- * row to that report's line (the comment opens under it), as a bot chip
- * opens its line in the round. A report posted as a check has no comment:
- * its pill is a link to the service's page for it, as a preview pill is to
- * the deployment, and like that one it only opens the link; the row opens
- * from its chevron or its blank space.
+ * One report as a pill, shaped like a bot chip: the reporter's mark, its
+ * name, then the project (when the report has one) and the numbers in its
+ * own words ("Codecov patch 62.50%", "Chromatic mint 3 changes") or the
+ * state word when the words are only a verdict ("Socket passed"), and the
+ * state glyph. Clicking it opens the row to that report's line (the comment
+ * opens under it), as a bot chip opens its line in the round. A report
+ * posted as a check has no comment: its pill is a link to the service's
+ * page for it, as a preview pill is to the deployment, and like that one it
+ * only opens the link; the row opens from its chevron or its blank space.
+ * Short of room the name goes first and the detail after it (`fitChips`),
+ * so two Codecov pills still read "patch 62.50%" and "project 80.12%".
  */
 function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const subject = entry.project === undefined ? entry.title : `${entry.title} · ${entry.project}`;
@@ -1577,12 +1598,12 @@ function reportPill(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const children: Node[] = [];
   const avatar = reportAvatar(entry, model);
   if (avatar !== null) children.push(markImg(avatar.src, avatar.round));
-  // The mark says who, as a preview pill's does: the pill names the project (when the report has one) and the
-  // numbers; the service's name is on the line under it and in the pill's tooltip.
-  if (entry.project !== undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [entry.title]));
+  if (entry.project !== undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail ${PANEL_CLASS}__report-project` }, [entry.project]));
   // The pill says the numbers ("4 changes", "✗ 2 ✓ 41"), the line under it the service's sentence; with only a
-  // verdict to say, the state light says it alone.
+  // verdict to say, the state's word says it beside the light.
   if (entry.short === undefined) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [entry.headline]));
+  else if (entry.short.length === 0) children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [REPORT_STATE_WORD[entry.state]]));
   else for (const part of entry.short) children.push(reportPart(part));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]));
   // The pill's hover card (hovercard.ts, `ATTR_REPORT`) says who reported and what; a native title would open beside it.
@@ -1618,7 +1639,7 @@ function reportsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLEl
   const open = model.openKey === REPORTS_KEY;
   const health: Health = reportsHealth(model.reports.latest);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REPORTS_KEY}`, 'aria-label': plural(model.reports.latest.length, 'report') }, [
-    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, model.reports.latest.map((entry) => reportPill(entry, model, handlers))),
+    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys`, [ATTR_FIT]: '' }, model.reports.latest.map((entry) => reportPill(entry, model, handlers))),
   ]);
   mainClickToggles(main, () => handlers.onToggle(REPORTS_KEY));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [

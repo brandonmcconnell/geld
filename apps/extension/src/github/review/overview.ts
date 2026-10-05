@@ -48,6 +48,7 @@ import type { ChatByline } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
+import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
@@ -2822,6 +2823,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       wearGear(mounted.root);
       // Spinners rendered into the slot after the mount (preview lines, a round's CI glyph) join the same phase.
       syncSpinners(mounted.root);
+      // The bots' and reports' pills give way to the room the row has (names first, then details).
+      fitChips(mounted.root);
       // Commit rows on loan get their dates once those land (the slot itself is not rebuilt for that).
       timeCommitRows(mounted.root, reapplySoon);
     });
@@ -2926,6 +2929,7 @@ export function teardownReviewOverview(): void {
   unwatchLoans();
   stopTimeRefresh();
   visit.settling = null;
+  stopFittingChips();
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());
