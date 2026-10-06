@@ -153,4 +153,34 @@ describe('loadPullRequest', () => {
     expect(pr.threads[0]?.comments.map((entry) => entry.author)).toEqual(['cursor', 'alice', 'bob']);
     expect(calls).toHaveLength(3);
   });
+
+  it('reads the head commit\u2019s check contexts past the first page', async () => {
+    const run = (name: string) => ({ __typename: 'CheckRun', name, status: 'COMPLETED', conclusion: 'SUCCESS' });
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      if (String(body.query).includes('GeldCheckContexts')) {
+        expect(body.variables.cursor).toBe('k1');
+        return new Response(JSON.stringify({ data: { repository: { object: { statusCheckRollup: { contexts: { pageInfo: page, nodes: [run('Cursor Bugbot'), { __typename: 'StatusContext', context: 'codecov/patch', state: 'PENDING' }] } } } } } }));
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                number: 7,
+                headRefOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                reviewThreads: { pageInfo: page, nodes: [] },
+                comments: { pageInfo: page, nodes: [] },
+                reviews: { pageInfo: page, nodes: [] },
+                commits: { nodes: [{ commit: { oid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', statusCheckRollup: { contexts: { pageInfo: { hasNextPage: true, endCursor: 'k1' }, nodes: [run('build')] } } } }] },
+              },
+            },
+          },
+        }),
+      );
+    };
+    const pr = await loadPullRequest({ token: 't', fetch: fetchImpl }, 'acme', 'widgets', 7);
+    expect(pr.checks.map((check) => check.name)).toEqual(['build', 'Cursor Bugbot', 'codecov/patch']);
+    expect(pr.checks[2]).toMatchObject({ status: 'in_progress', conclusion: null });
+  });
 });

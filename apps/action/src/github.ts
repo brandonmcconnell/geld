@@ -84,6 +84,7 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
             oid
             statusCheckRollup {
               contexts: contexts(first: 100) {
+                pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
                   ... on CheckRun { name status conclusion }
@@ -183,6 +184,20 @@ interface GqlReview {
   readonly commit: { readonly oid: string } | null;
 }
 
+interface GqlCheckContext {
+  readonly __typename: string;
+  readonly name?: string;
+  readonly status?: string;
+  readonly conclusion?: string | null;
+  readonly context?: string;
+  readonly state?: string;
+}
+
+interface GqlCheckContexts {
+  readonly pageInfo: PageInfo;
+  readonly nodes: readonly GqlCheckContext[];
+}
+
 interface GqlPr {
   readonly number: number;
   readonly headRefOid: string;
@@ -193,21 +208,73 @@ interface GqlPr {
     readonly nodes: readonly {
       readonly commit: {
         readonly oid: string;
-        readonly statusCheckRollup: {
-          readonly contexts: {
-            readonly nodes: readonly {
-              readonly __typename: string;
-              readonly name?: string;
-              readonly status?: string;
-              readonly conclusion?: string | null;
-              readonly context?: string;
-              readonly state?: string;
-            }[];
-          };
-        } | null;
+        readonly statusCheckRollup: { readonly contexts: GqlCheckContexts } | null;
       };
     }[];
   };
+}
+
+/**
+ * The rest of the head commit's check contexts, for a pull request with
+ * more than the first query's page of them (large monorepos run hundreds of
+ * jobs). A review bot's check run past that page would otherwise be missing
+ * from the digest's verdicts.
+ */
+const CHECK_CONTEXTS_QUERY = `
+query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit {
+        statusCheckRollup {
+          contexts(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              __typename
+              ... on CheckRun { name status conclusion }
+              ... on StatusContext { context state }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`;
+
+interface GeldCheckContextsQuery {
+  readonly repository: { readonly object: { readonly statusCheckRollup: { readonly contexts: GqlCheckContexts } | null } | null } | null;
+}
+
+function assertCheckContextsQuery(value: unknown): asserts value is GeldCheckContextsQuery {
+  if (!isRecord(value) || !('repository' in value)) throw new Error('GitHub GraphQL returned an unexpected shape for the check contexts.');
+}
+
+async function remainingCheckContexts(client: GithubClient, owner: string, repo: string, oid: string, first: GqlCheckContexts): Promise<readonly GqlCheckContext[]> {
+  const nodes = [...first.nodes];
+  let cursor = first.pageInfo.endCursor;
+  let more = first.pageInfo.hasNextPage;
+  while (more && cursor !== null) {
+    const data = await graphql(client, CHECK_CONTEXTS_QUERY, { owner, name: repo, oid, cursor });
+    assertCheckContextsQuery(data);
+    const contexts = data.repository?.object?.statusCheckRollup?.contexts;
+    if (contexts === undefined) break;
+    nodes.push(...contexts.nodes);
+    more = contexts.pageInfo.hasNextPage;
+    cursor = contexts.pageInfo.endCursor;
+  }
+  return nodes;
+}
+
+function checkRunOf(node: GqlCheckContext, sha: string): RawCheckRun | null {
+  if (node.__typename === 'CheckRun' && node.name !== undefined && node.status !== undefined) {
+    return { name: node.name, status: node.status.toLowerCase(), conclusion: node.conclusion?.toLowerCase() ?? null, sha };
+  }
+  if (node.__typename === 'StatusContext' && node.context !== undefined && node.state !== undefined) {
+    const state = node.state.toLowerCase();
+    const conclusion = state === 'success' ? 'success' : state === 'pending' ? null : 'failure';
+    return { name: node.context, status: state === 'pending' ? 'in_progress' : 'completed', conclusion, sha };
+  }
+  return null;
 }
 
 /** GraphQL names an App `cursor` with `__typename: Bot`; REST, the page and the extension know it as `cursor[bot]`. */
@@ -267,18 +334,12 @@ export async function loadPullRequest(client: GithubClient, owner: string, repo:
         commitOid: node.commit?.oid ?? null,
       });
     }
+    // The head commit's checks come with the first page and are the same on every later one; read them once, to
+    // their last page.
     const commit = pr.commits.nodes[0]?.commit;
-    if (commit?.statusCheckRollup !== undefined && commit.statusCheckRollup !== null) {
-      checks = [];
-      for (const node of commit.statusCheckRollup.contexts.nodes) {
-        if (node.__typename === 'CheckRun' && node.name !== undefined && node.status !== undefined) {
-          checks.push({ name: node.name, status: node.status.toLowerCase(), conclusion: node.conclusion?.toLowerCase() ?? null, sha: commit.oid });
-        } else if (node.__typename === 'StatusContext' && node.context !== undefined && node.state !== undefined) {
-          const state = node.state.toLowerCase();
-          const conclusion = state === 'success' ? 'success' : state === 'pending' ? null : 'failure';
-          checks.push({ name: node.context, status: state === 'pending' ? 'in_progress' : 'completed', conclusion, sha: commit.oid });
-        }
-      }
+    if (checks.length === 0 && commit?.statusCheckRollup !== undefined && commit.statusCheckRollup !== null) {
+      const contexts = await remainingCheckContexts(client, owner, repo, commit.oid, commit.statusCheckRollup.contexts);
+      checks = contexts.map((node) => checkRunOf(node, commit.oid)).filter((check): check is RawCheckRun => check !== null);
     }
     const moreThreads = pr.reviewThreads.pageInfo.hasNextPage;
     const moreComments = pr.comments.pageInfo.hasNextPage;

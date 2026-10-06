@@ -21118,6 +21118,7 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
             oid
             statusCheckRollup {
               contexts: contexts(first: 100) {
+                pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
                   ... on CheckRun { name status conclusion }
@@ -21160,6 +21161,55 @@ async function remainingThreadComments(client, threadId, first) {
     cursor = data.node.comments.pageInfo.endCursor;
   }
   return nodes;
+}
+var CHECK_CONTEXTS_QUERY = `
+query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit {
+        statusCheckRollup {
+          contexts(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              __typename
+              ... on CheckRun { name status conclusion }
+              ... on StatusContext { context state }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`;
+function assertCheckContextsQuery(value) {
+  if (!isRecord2(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
+}
+async function remainingCheckContexts(client, owner, repo, oid, first) {
+  const nodes = [...first.nodes];
+  let cursor = first.pageInfo.endCursor;
+  let more = first.pageInfo.hasNextPage;
+  while (more && cursor !== null) {
+    const data = await graphql(client, CHECK_CONTEXTS_QUERY, { owner, name: repo, oid, cursor });
+    assertCheckContextsQuery(data);
+    const contexts = data.repository?.object?.statusCheckRollup?.contexts;
+    if (contexts === void 0) break;
+    nodes.push(...contexts.nodes);
+    more = contexts.pageInfo.hasNextPage;
+    cursor = contexts.pageInfo.endCursor;
+  }
+  return nodes;
+}
+function checkRunOf(node2, sha2) {
+  if (node2.__typename === "CheckRun" && node2.name !== void 0 && node2.status !== void 0) {
+    return { name: node2.name, status: node2.status.toLowerCase(), conclusion: node2.conclusion?.toLowerCase() ?? null, sha: sha2 };
+  }
+  if (node2.__typename === "StatusContext" && node2.context !== void 0 && node2.state !== void 0) {
+    const state = node2.state.toLowerCase();
+    const conclusion = state === "success" ? "success" : state === "pending" ? null : "failure";
+    return { name: node2.context, status: state === "pending" ? "in_progress" : "completed", conclusion, sha: sha2 };
+  }
+  return null;
 }
 function loginOf(author) {
   const login = author?.login ?? "ghost";
@@ -21216,17 +21266,9 @@ async function loadPullRequest(client, owner, repo, number4) {
       });
     }
     const commit = pr.commits.nodes[0]?.commit;
-    if (commit?.statusCheckRollup !== void 0 && commit.statusCheckRollup !== null) {
-      checks = [];
-      for (const node2 of commit.statusCheckRollup.contexts.nodes) {
-        if (node2.__typename === "CheckRun" && node2.name !== void 0 && node2.status !== void 0) {
-          checks.push({ name: node2.name, status: node2.status.toLowerCase(), conclusion: node2.conclusion?.toLowerCase() ?? null, sha: commit.oid });
-        } else if (node2.__typename === "StatusContext" && node2.context !== void 0 && node2.state !== void 0) {
-          const state = node2.state.toLowerCase();
-          const conclusion = state === "success" ? "success" : state === "pending" ? null : "failure";
-          checks.push({ name: node2.context, status: state === "pending" ? "in_progress" : "completed", conclusion, sha: commit.oid });
-        }
-      }
+    if (checks.length === 0 && commit?.statusCheckRollup !== void 0 && commit.statusCheckRollup !== null) {
+      const contexts = await remainingCheckContexts(client, owner, repo, commit.oid, commit.statusCheckRollup.contexts);
+      checks = contexts.map((node2) => checkRunOf(node2, commit.oid)).filter((check2) => check2 !== null);
     }
     const moreThreads = pr.reviewThreads.pageInfo.hasNextPage;
     const moreComments = pr.comments.pageInfo.hasNextPage;
