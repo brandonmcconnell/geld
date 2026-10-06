@@ -307,13 +307,18 @@ function isBareRefusal(sentence: string): boolean {
  * about code carries one of those; a refusal has nothing to point at.
  */
 function isBareAdvice(body: string, text: string): boolean {
-  // A link is where the advice points ("Visit https://github.com/settings/installations"), not code.
+  // A link is where the advice points ("Visit https://github.com/settings/installations"), not code — unless
+  // it points at code: a file in a repository (`/blob/`, `/tree/`, a `#L12` line anchor) is a finding's evidence.
+  if (SOURCE_LINK.test(body)) return false;
   const unlinked = text.replace(/https?:\/\/\S+/g, '');
   if (unlinked.length > 200 || /`/.test(body)) return false;
   // The raw body, not the cleaned text: the cleanup strips underscores as emphasis marks.
   const raw = body.replace(/<!--[\s\S]*?-->/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/https?:\/\/\S+/g, '');
   return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
+
+/** A URL into a repository's files: `/blob/<ref>/…`, `/tree/<ref>/…`, a `/files` or `/changes` diff page, or a `#L<n>` anchor. */
+const SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/(?:files|changes)(?:[/?#]|$)|#L\d+)/;
 
 /** Words that may follow a bare refusal's phrase without making it about the code. */
 const BARE_REFUSAL_WORDS = new Set([

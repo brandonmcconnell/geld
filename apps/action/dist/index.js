@@ -19332,11 +19332,13 @@ function isBareRefusal(sentence) {
   return rest === "" || rest.split(/\s+/).every((word) => BARE_REFUSAL_WORDS.has(word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/gi, "")));
 }
 function isBareAdvice(body, text) {
+  if (SOURCE_LINK.test(body)) return false;
   const unlinked = text.replace(/https?:\/\/\S+/g, "");
   if (unlinked.length > 200 || /`/.test(body)) return false;
   const raw = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "");
   return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
+var SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/(?:files|changes)(?:[/?#]|$)|#L\d+)/;
 var BARE_REFUSAL_WORDS = /* @__PURE__ */ new Set([
   "the",
   "this",

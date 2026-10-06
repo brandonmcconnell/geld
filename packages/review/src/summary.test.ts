@@ -484,6 +484,9 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('Could not fetch repository. Check the token and retry.')).toBe('Could not fetch repository');
     expect(refusalReason('Permission denied. Install the app for this organization and run again.')).toBe('Permission denied');
     expect(refusalReason('Permission denied. Visit https://github.com/settings/installations to reconnect.')).toBe('Permission denied');
+    // A link into the repository's files is a finding's evidence, not advice.
+    expect(refusalReason('Cannot access repository. See https://github.com/org/repo/blob/main/src/auth.ts for the broken check.')).toBeNull();
+    expect(refusalReason('Cannot access repository. See https://github.com/org/repo/pull/7/files#diff-abc for the check.')).toBeNull();
     expect(refusalReason('Cannot access repository. The worker lacks the GITHUB_TOKEN scope.')).toBeNull();
     expect(refusalReason('Cannot access repository. See `fetch.ts` for the retry loop.')).toBeNull();
     expect(refusalReason('Unable to read config. The loader in src/config/load.ts swallows the error.')).toBeNull();
