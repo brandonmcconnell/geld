@@ -272,7 +272,7 @@ export function refusalReason(body: string): string | null {
   // describes a feature flag as readily as a bot, and a short review can say exactly that. The one exception is
   // a comment that is nothing but the refusal — "Permission denied.", "Unable to access repository." — a few
   // words with no subject before the phrase; a review of code names what it is about.
-  const bare = sentences.length === 1 && sentences[0] !== undefined && isBareRefusal(sentences[0]) ? sentences[0] : undefined;
+  const bare = sentences.length === 1 && sentences[0] !== undefined && !/`/.test(body) && isBareRefusal(sentences[0]) ? sentences[0] : undefined;
   const first = skipped ? sentences[0] : (bare ?? sentences.find((sentence) => REFUSAL_PHRASE.test(sentence) && REFUSAL_SUBJECT.test(sentence)));
   if (first === undefined) return null;
   // The first sentence, without the bot's own name as a prefix ("Skipping Bugbot: " → the explanation).
@@ -282,15 +282,29 @@ export function refusalReason(body: string): string | null {
 
 /**
  * A whole comment that is only the refusal: at most eight words, one
- * sentence, and the refusal phrase is where it begins (after an optional
- * "Sorry," / "Error:"), so nothing in it names a thing in the diff.
+ * sentence, the refusal phrase where it begins (after an optional "Sorry," /
+ * "Error:"), and nothing after the phrase but the words a refusal is made of
+ * — "the repository", "right now", "try again later". A word outside that
+ * vocabulary is a thing in the diff ("Cannot access foo from the worker"),
+ * and the comment is a finding, not a refusal.
  */
 function isBareRefusal(sentence: string): boolean {
   const lead = sentence.replace(/^(?:sorry|error|warning|note|oops|failed)\s*[:,!.-]?\s*/i, '').trim();
   if (lead.split(/\s+/).length > 8) return false;
   const match = REFUSAL_PHRASE.exec(lead);
-  return match !== null && match.index === 0;
+  if (match === null || match.index !== 0) return false;
+  const rest = lead.slice(match[0].length).replace(/[.!?,;:]+$/, '').trim();
+  return rest === '' || rest.split(/\s+/).every((word) => BARE_REFUSAL_WORDS.has(word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/gi, '')));
 }
+
+/** Words that may follow a bare refusal's phrase without making it about the code. */
+const BARE_REFUSAL_WORDS = new Set([
+  'the', 'this', 'that', 'your', 'our', 'a', 'an', 'to', 'of', 'for', 'on', 'in', 'at', 'by', 'and', 'or',
+  'repository', 'repositories', 'repo', 'repos', 'pull', 'request', 'pr', 'branch', 'commit', 'code', 'changes', 'diff', 'files', 'source',
+  'installation', 'app', 'token', 'credentials', 'account', 'organization', 'org', 'team', 'workspace', 'project',
+  'remaining', 'left', 'available', 'right', 'now', 'currently', 'moment', 'time', 'please', 'try', 'again', 'later', 'contact', 'support',
+  '',
+]);
 
 /** What a bot says when it will not run. */
 const REFUSAL_PHRASE = new RegExp(

@@ -476,6 +476,11 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('Permission denied.')).toBe('Permission denied');
     expect(refusalReason('Error: unable to access repository.')).toBe('Error: unable to access repository');
     expect(refusalReason('Unauthorized.')).toBe('Unauthorized');
+    expect(refusalReason('Could not clone the repository, please try again later.')).toBe('Could not clone the repository, please try again later');
+    // A thing from the diff after the phrase, or a code span anywhere, makes a short sentence a finding.
+    expect(refusalReason('Cannot access `foo` from the worker.')).toBeNull();
+    expect(refusalReason('Cannot access session from the worker.')).toBeNull();
+    expect(refusalReason('Failed to read `config.json` on startup.')).toBeNull();
     expect(refusalReason('Cannot access `foo` here because the parameter shadows it.')).toBeNull();
     expect(refusalReason('The flag is disabled.')).toBeNull();
     expect(refusalReason('Reviews are not enabled for this repository.')).toBe('Reviews are not enabled for this repository');
