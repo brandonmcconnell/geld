@@ -19450,7 +19450,6 @@ var REFUSAL_SUBJECT = new RegExp(
   [
     /\b(?:bot|reviews?|reviewer|reviewing|code review|analysis|scan)\b/,
     /\b(?:this|the|your)\s+(?:repo(?:sitory)?|org(?:anization)?|account|project|workspace|team|installation|app|plan|subscription|trial)\b/,
-    /\b(?:repositor(?:y|ies)|repos?|organi[sz]ation|installation|credentials)\b/,
     /\b(?:credits?|quota|billing|seats?)\b/,
     /\byou(?:r)?\b/,
     /\[bot\]/,

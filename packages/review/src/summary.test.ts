@@ -480,8 +480,11 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('Unable to access private repository.')).toBe('Unable to access private repository');
     expect(refusalReason('Permission denied: `token`.')).toBe('Permission denied: token');
     expect(refusalReason('Could not clone repository: invalid credentials, please check the installation.')).toBe('Could not clone repository: invalid credentials, please check the installation');
-    // A thing from the diff after the phrase makes a short sentence a finding, quoted or not.
+    // A thing from the diff after the phrase makes a short sentence a finding, quoted or not; and "repository"
+    // as a word in a finding ("repository secrets") is not the bot's subject — that needs "this"/"the"/"your".
     expect(refusalReason('Cannot access `foo` from the worker.')).toBeNull();
+    expect(refusalReason('Cannot access repository secrets from the worker.')).toBeNull();
+    expect(refusalReason('Unable to read repository config when the cache is cold.')).toBeNull();
     expect(refusalReason('Cannot access session from the worker.')).toBeNull();
     expect(refusalReason('Failed to read `config.json` on startup.')).toBeNull();
     expect(refusalReason('Cannot access `foo` here because the parameter shadows it.')).toBeNull();
