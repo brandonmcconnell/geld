@@ -323,7 +323,7 @@ function isBareAdvice(body: string, text: string): boolean {
  * anchor. Shaped to GitHub's paths, so a docs page that happens to say
  * `/changes/` in its path is still a link, not code.
  */
-const SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]\d+)*[.,;:)\]]*(?:\s|$))/;
+const SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]L?\d+)*[.,;:)\]]*(?:\s|$))/;
 
 /** Words that may follow a bare refusal's phrase without making it about the code. */
 const BARE_REFUSAL_WORDS = new Set([
