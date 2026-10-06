@@ -80,10 +80,12 @@ jobs:
           path: catalog/patterns.sig
           if-no-files-found: error
   check-and-pack:
-    needs: catalog-sign
+    needs: [catalog-build, catalog-sign]
     # Runs after the signing jobs on a same-repository pull request, and on its
-    # own (those jobs skipped) for pushes and forks.
-    if: ${{ !cancelled() && needs.catalog-sign.result != 'failure' }}
+    # own (those jobs skipped) for pushes and forks. A failed build or signing
+    # fails the check too: a skipped catalog-sign after a failed catalog-build
+    # must not read as "nothing to sign" and let the committed catalog stand in.
+    if: ${{ !cancelled() && needs.catalog-build.result != 'failure' && needs.catalog-sign.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       # The catalog step commits signed pattern updates back to main.
