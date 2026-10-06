@@ -23,7 +23,7 @@ import {
   summaryUserPrompt,
 } from '@geld/review';
 import type { AddressedOutputItem, ConsolidateInputItem, ConsolidateOutputItem, ProducerRecord, ReviewItem, ReviewSummary } from '@geld/review';
-import { filesChangedBetween, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit, upsertIssueComment } from './github';
+import { filesChangedBetween, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit, tokenLogin, upsertIssueComment } from './github';
 import type { GithubClient } from './github';
 
 const ACTION_VERSION = '0.2.0';
@@ -177,8 +177,9 @@ export async function run(env: Record<string, string | undefined> = process.env,
   const token = input('github-token') || env.INPUT_GITHUB_TOKEN || env.GITHUB_TOKEN || '';
   if (token === '') fail('A GitHub token is required (pass github-token or set GITHUB_TOKEN).');
   const client: GithubClient = { token, fetch: fetchImpl };
-  const loaded = await loadPullRequest(client, event.owner, event.repo, event.number);
-  const existing = findSummaryComment(loaded.comments);
+  const [loaded, self] = await Promise.all([loadPullRequest(client, event.owner, event.repo, event.number), tokenLogin(client)]);
+  // Only a comment this token can edit is ours to update; a participant's copy of the marker is not.
+  const existing = findSummaryComment(loaded.comments, self === null ? [] : [self]);
   const previous = existing?.meta ?? null;
   const laterPaths =
     previous !== null && previous.headSha.toLowerCase() !== loaded.headSha.toLowerCase()

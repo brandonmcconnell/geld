@@ -19171,6 +19171,11 @@ function geldPrUrl(owner, repo, number4, meta3) {
 function howItWorksUrl() {
   return `${SITE_ORIGIN}/how-it-works#summary`;
 }
+var ALLOWED_SUMMARY_AUTHORS = ["github-actions[bot]", "geld[bot]", "geld-sh[bot]"];
+function isAllowedSummaryAuthor(login, extra = []) {
+  const lower = login.toLowerCase();
+  return ALLOWED_SUMMARY_AUTHORS.some((allowed) => allowed.toLowerCase() === lower) || extra.some((allowed) => allowed.toLowerCase() === lower);
+}
 
 // ../../packages/review/src/bots.ts
 var ACK_GRACE_MS = 3 * 60 * 1e3;
@@ -21201,13 +21206,22 @@ async function loadPullRequest(client, owner, repo, number4) {
   }
   return { owner, repo, number: number4, headSha, threads, comments, reviews, checks };
 }
-function findSummaryComment(comments) {
+function findSummaryComment(comments, ownLogins = []) {
   for (const comment of comments) {
+    if (!isAllowedSummaryAuthor(comment.author, ownLogins)) continue;
     if (!looksLikeSummaryBody(comment.body)) continue;
     const parsed = parseSummaryBody(comment.body);
     return { commentId: comment.databaseId, body: comment.body, meta: parsed.ok ? parsed.value : null };
   }
   return null;
+}
+async function tokenLogin(client) {
+  try {
+    const body = await githubJson(client, `${API}/user`);
+    return isRecord2(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
+  } catch {
+    return null;
+  }
 }
 async function filesChangedBetween(client, owner, repo, fromSha, toSha) {
   if (fromSha === "" || toSha === "" || fromSha.toLowerCase() === toSha.toLowerCase()) return [];
@@ -21409,8 +21423,8 @@ async function run(env = process.env, fetchImpl = fetch) {
   const token = input2("github-token") || env.INPUT_GITHUB_TOKEN || env.GITHUB_TOKEN || "";
   if (token === "") fail("A GitHub token is required (pass github-token or set GITHUB_TOKEN).");
   const client = { token, fetch: fetchImpl };
-  const loaded = await loadPullRequest(client, event.owner, event.repo, event.number);
-  const existing = findSummaryComment(loaded.comments);
+  const [loaded, self] = await Promise.all([loadPullRequest(client, event.owner, event.repo, event.number), tokenLogin(client)]);
+  const existing = findSummaryComment(loaded.comments, self === null ? [] : [self]);
   const previous = existing?.meta ?? null;
   const laterPaths = previous !== null && previous.headSha.toLowerCase() !== loaded.headSha.toLowerCase() ? await filesChangedBetween(client, event.owner, event.repo, previous.headSha, loaded.headSha) : [];
   const pr = { ...loaded, changedPaths: laterPaths };

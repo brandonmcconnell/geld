@@ -3,7 +3,7 @@
  * pull request. Pagination is followed until the cursor is exhausted.
  */
 
-import { looksLikeSummaryBody, parseSummaryBody } from '@geld/review';
+import { isAllowedSummaryAuthor, looksLikeSummaryBody, parseSummaryBody } from '@geld/review';
 import type { GeldPrMeta } from '@geld/review';
 import type { RawCheckRun } from '@geld/review';
 import type { RawIssueComment, RawPullRequest, RawReview, RawThread } from '@geld/review';
@@ -247,13 +247,37 @@ export interface ExistingSummary {
   readonly meta: GeldPrMeta | null;
 }
 
-export function findSummaryComment(comments: readonly RawIssueComment[]): ExistingSummary | null {
+/**
+ * The summary comment this run should update: the first that reads like one
+ * *and* was written by an account the Action writes as (`isAllowedSummaryAuthor`:
+ * `github-actions[bot]`, the Geld Apps, plus the token's own login). Any
+ * participant can post the marker or the heading; adopting their comment
+ * would mean a PATCH on a comment the token does not own — a 403 instead of
+ * a digest — so such comments are passed over and the Action posts its own.
+ */
+export function findSummaryComment(comments: readonly RawIssueComment[], ownLogins: readonly string[] = []): ExistingSummary | null {
   for (const comment of comments) {
+    if (!isAllowedSummaryAuthor(comment.author, ownLogins)) continue;
     if (!looksLikeSummaryBody(comment.body)) continue;
     const parsed = parseSummaryBody(comment.body);
     return { commentId: comment.databaseId, body: comment.body, meta: parsed.ok ? parsed.value : null };
   }
   return null;
+}
+
+/**
+ * The login the token writes comments as. A personal or App user token
+ * answers `GET /user`; the workflow's own `GITHUB_TOKEN` answers 403 there
+ * ("Resource not accessible by integration") and writes as
+ * `github-actions[bot]`, which `isAllowedSummaryAuthor` already knows.
+ */
+export async function tokenLogin(client: GithubClient): Promise<string | null> {
+  try {
+    const body = await githubJson(client, `${API}/user`);
+    return isRecord(body) && typeof body.login === 'string' && body.login !== '' ? body.login : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Files touched between two commits. Used so "addressed" means a later push, not the original diff. */

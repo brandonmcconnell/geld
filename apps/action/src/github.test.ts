@@ -60,6 +60,18 @@ describe('findSummaryComment', () => {
     expect(found?.commentId).toBe(2);
     expect(found?.meta?.v).toBe(1);
   });
+
+  it('passes over a participant\u2019s comment that carries the marker, and takes the token\u2019s own login', () => {
+    const marker = '<!-- geld:summary:v1 -->\n### Geld review summary\n';
+    const comments = [
+      { databaseId: 1, author: 'mallory', body: marker, createdAt: '2026-09-18T10:00:00.000Z' },
+      { databaseId: 2, author: 'geld-ci-user', body: marker, createdAt: '2026-09-18T10:01:00.000Z' },
+      { databaseId: 3, author: 'github-actions[bot]', body: marker, createdAt: '2026-09-18T10:02:00.000Z' },
+    ];
+    expect(findSummaryComment(comments)?.commentId).toBe(3);
+    expect(findSummaryComment(comments, ['geld-ci-user'])?.commentId).toBe(2);
+    expect(findSummaryComment(comments.slice(0, 1))).toBeNull();
+  });
 });
 
 describe('filesChangedBetween', () => {
