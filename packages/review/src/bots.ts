@@ -272,7 +272,7 @@ export function refusalReason(body: string): string | null {
   // describes a feature flag as readily as a bot, and a short review can say exactly that. The one exception is
   // a comment that is nothing but the refusal — "Permission denied.", "Unable to access repository." — a few
   // words with no subject before the phrase; a review of code names what it is about.
-  const bare = sentences.length === 1 && sentences[0] !== undefined && isBareRefusal(sentences[0]) ? sentences[0] : undefined;
+  const bare = sentences[0] !== undefined && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text)) ? sentences[0] : undefined;
   const first = skipped ? sentences[0] : (bare ?? sentences.find((sentence) => REFUSAL_PHRASE.test(sentence) && REFUSAL_SUBJECT.test(sentence)));
   if (first === undefined) return null;
   // The first sentence, without the bot's own name as a prefix ("Skipping Bugbot: " → the explanation).
@@ -297,6 +297,20 @@ function isBareRefusal(sentence: string): boolean {
   if (match === null || match.index !== 0) return false;
   const rest = lead.slice(match[0].length).replace(/[.!?,;:]+$/, '').trim();
   return rest === '' || rest.split(/\s+/).every((word) => BARE_REFUSAL_WORDS.has(word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/gi, '')));
+}
+
+/**
+ * What may follow a bare refusal: a line or two of advice ("Check the token
+ * and retry.", "Install the app for this organization.") — short, and with
+ * nothing code-like anywhere in the comment: no code span, no path, no
+ * identifier (an underscore, a dot inside a word, camelCase). A finding
+ * about code carries one of those; a refusal has nothing to point at.
+ */
+function isBareAdvice(body: string, text: string): boolean {
+  if (text.length > 200 || /`/.test(body)) return false;
+  // The raw body, not the cleaned text: the cleanup strips underscores as emphasis marks.
+  const raw = body.replace(/<!--[\s\S]*?-->/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
 
 /** Words that may follow a bare refusal's phrase without making it about the code. */

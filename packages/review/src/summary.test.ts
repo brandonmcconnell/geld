@@ -480,6 +480,12 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('Unable to access private repository.')).toBe('Unable to access private repository');
     expect(refusalReason('Permission denied: `token`.')).toBe('Permission denied: token');
     expect(refusalReason('Could not clone repository: invalid credentials, please check the installation.')).toBe('Could not clone repository: invalid credentials, please check the installation');
+    // A bare refusal may be followed by a line of advice, as long as nothing in the comment points at code.
+    expect(refusalReason('Could not fetch repository. Check the token and retry.')).toBe('Could not fetch repository');
+    expect(refusalReason('Permission denied. Install the app for this organization and run again.')).toBe('Permission denied');
+    expect(refusalReason('Cannot access repository. The worker lacks the GITHUB_TOKEN scope.')).toBeNull();
+    expect(refusalReason('Cannot access repository. See `fetch.ts` for the retry loop.')).toBeNull();
+    expect(refusalReason('Unable to read config. The loader in src/config/load.ts swallows the error.')).toBeNull();
     // A thing from the diff after the phrase makes a short sentence a finding, quoted or not; and "repository"
     // as a word in a finding ("repository secrets") is not the bot's subject — that needs "this"/"the"/"your".
     expect(refusalReason('Cannot access `foo` from the worker.')).toBeNull();

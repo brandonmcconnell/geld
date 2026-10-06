@@ -19317,7 +19317,7 @@ function refusalReason(body) {
   if (text === "" || text.length > 400) return null;
   const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text);
   const sentences = text.split(/(?<=[.!?])\s+/);
-  const bare = sentences.length === 1 && sentences[0] !== void 0 && isBareRefusal(sentences[0]) ? sentences[0] : void 0;
+  const bare = sentences[0] !== void 0 && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text)) ? sentences[0] : void 0;
   const first = skipped ? sentences[0] : bare ?? sentences.find((sentence) => REFUSAL_PHRASE.test(sentence) && REFUSAL_SUBJECT.test(sentence));
   if (first === void 0) return null;
   const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, "");
@@ -19330,6 +19330,11 @@ function isBareRefusal(sentence) {
   if (match === null || match.index !== 0) return false;
   const rest = lead.slice(match[0].length).replace(/[.!?,;:]+$/, "").trim();
   return rest === "" || rest.split(/\s+/).every((word) => BARE_REFUSAL_WORDS.has(word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/gi, "")));
+}
+function isBareAdvice(body, text) {
+  if (text.length > 200 || /`/.test(body)) return false;
+  const raw = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
 var BARE_REFUSAL_WORDS = /* @__PURE__ */ new Set([
   "the",
