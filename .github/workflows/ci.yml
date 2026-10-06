@@ -8,7 +8,82 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Same-repository pull requests only (a fork's gets no secrets anyway): the
+  # pattern catalog is built from the branch here, in a job that holds no
+  # secret, and signed in the next one, which checks out the default branch
+  # and runs none of the branch's code. The signing key never shares a runner
+  # with pull request code: anything that runs there — the build, pnpm's
+  # scripts, a process left behind, a `node` put on $GITHUB_PATH — could read a
+  # secret given to a later step of the same job. The branch contributes data
+  # only (the generated JSON, its bumped categories.ts, its public key, which
+  # the signer reads with a regex to verify its own output), so a branch that
+  # rotates the public key still signs and checks consistently.
+  catalog-build:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm catalog:build --auto-version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geld-catalog-unsigned
+          path: |
+            catalog/patterns.json
+            packages/core/src/categories.ts
+            packages/core/src/catalog-key.ts
+          if-no-files-found: error
+  catalog-sign:
+    needs: catalog-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
+    steps:
+      # The default branch, not the pull request: the signer that runs with
+      # the key is the one already reviewed and merged.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-catalog-unsigned
+          path: .
+      # Plain node on the checked-out script: no install, no pnpm, nothing
+      # from the artifact is executed.
+      - id: sign
+        env:
+          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GELD_CATALOG_PRIVATE_KEY" ]; then
+            echo "::notice title=Catalog::GELD_CATALOG_PRIVATE_KEY is not available to this run; the committed signature is checked instead."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/catalog-sign.mjs
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - if: steps.sign.outputs.signed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: geld-catalog-signature
+          path: catalog/patterns.sig
+          if-no-files-found: error
   check-and-pack:
+    needs: catalog-sign
+    # Runs after the signing jobs on a same-repository pull request, and on its
+    # own (those jobs skipped) for pushes and forks.
+    if: ${{ !cancelled() && needs.catalog-sign.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       # The catalog step commits signed pattern updates back to main.
@@ -69,46 +144,19 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "::notice title=Catalog::Published patterns ${version}."
-      # Pull requests from this repository: sign the catalog in the workspace so
-      # the checks below validate a current signature instead of the branch's
-      # committed one, which is necessarily stale once a pull request changes
-      # the patterns (only the push to main above can commit a new one, and no
-      # extension ever fetches a branch's). Nothing is committed here. A fork's
-      # pull request gets no secrets, so a fork changing patterns still shows
-      # the stale signature, as before.
-      #
-      # The key never meets the pull request's code. Two steps: the first builds
-      # the catalog with the branch's own scripts and has no key in its
-      # environment; it also replaces the branch's copy of the signer with the
-      # default branch's (`git show`). The second step holds the key and runs
-      # that signer with plain `node`: nothing the branch controls executes
-      # there — the script imports Node built-ins alone, and `pnpm` (whose
-      # scripts the branch controls) is not involved. The signer reads the
-      # public key from the branch's `catalog-key.ts` and verifies its own
-      # output against it, so a branch swapping the public key fails the check
-      # rather than exfiltrating anything.
-      - name: Build the pattern catalog for this check
-        id: catalog-build
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          HAS_CATALOG_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY != '' }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          if [ "$HAS_CATALOG_KEY" != "true" ]; then
-            echo "::notice title=Catalog::GELD_CATALOG_PRIVATE_KEY is not available to this run; checking the committed signature instead."
-            exit 0
-          fi
-          pnpm catalog:build --auto-version
-          git fetch --depth=1 origin "$DEFAULT_BRANCH"
-          git show "FETCH_HEAD:scripts/catalog-sign.mjs" > scripts/catalog-sign.mjs
-          echo "sign=true" >> "$GITHUB_OUTPUT"
-      - name: Sign the pattern catalog for this check
-        if: steps.catalog-build.outputs.sign == 'true'
-        env:
-          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
-        run: |
-          node scripts/catalog-sign.mjs
-          git checkout -- scripts/catalog-sign.mjs
+      # Pull requests from this repository: use the catalog the two jobs above
+      # built and signed, so the checks below validate a current signature
+      # instead of the branch's committed one (necessarily stale once a pull
+      # request changes the patterns; only the push to main can commit a new
+      # one). Nothing is committed here. Without the secret, or on a fork's
+      # pull request, the committed signature is checked as before.
+      - name: Use the catalog signed for this check
+        if: needs.catalog-sign.outputs.signed == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: geld-catalog-*
+          merge-multiple: true
+          path: .
       # Typechecks and unit tests for every workspace package (core + extension),
       # plus lint and a production build of the site.
       - run: pnpm check
