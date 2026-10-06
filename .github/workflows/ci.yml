@@ -73,21 +73,42 @@ jobs:
       # the checks below validate a current signature instead of the branch's
       # committed one, which is necessarily stale once a pull request changes
       # the patterns (only the push to main above can commit a new one, and no
-      # extension ever fetches a branch's). Nothing is committed here; the key
-      # is the same secret the push step already reads. A fork's pull request
-      # gets no secrets, so a fork changing patterns still shows the stale
-      # signature, as before.
-      - name: Sign the pattern catalog for this check
+      # extension ever fetches a branch's). Nothing is committed here. A fork's
+      # pull request gets no secrets, so a fork changing patterns still shows
+      # the stale signature, as before.
+      #
+      # The key never meets the pull request's code. Two steps: the first builds
+      # the catalog with the branch's own scripts and has no key in its
+      # environment; it also replaces the branch's copy of the signer with the
+      # default branch's (`git show`). The second step holds the key and runs
+      # that signer with plain `node`: nothing the branch controls executes
+      # there — the script imports Node built-ins alone, and `pnpm` (whose
+      # scripts the branch controls) is not involved. The signer reads the
+      # public key from the branch's `catalog-key.ts` and verifies its own
+      # output against it, so a branch swapping the public key fails the check
+      # rather than exfiltrating anything.
+      - name: Build the pattern catalog for this check
+        id: catalog-build
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         env:
-          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
+          HAS_CATALOG_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY != '' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ -z "$GELD_CATALOG_PRIVATE_KEY" ]; then
+          if [ "$HAS_CATALOG_KEY" != "true" ]; then
             echo "::notice title=Catalog::GELD_CATALOG_PRIVATE_KEY is not available to this run; checking the committed signature instead."
             exit 0
           fi
           pnpm catalog:build --auto-version
-          pnpm catalog:sign
+          git fetch --depth=1 origin "$DEFAULT_BRANCH"
+          git show "FETCH_HEAD:scripts/catalog-sign.mjs" > scripts/catalog-sign.mjs
+          echo "sign=true" >> "$GITHUB_OUTPUT"
+      - name: Sign the pattern catalog for this check
+        if: steps.catalog-build.outputs.sign == 'true'
+        env:
+          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
+        run: |
+          node scripts/catalog-sign.mjs
+          git checkout -- scripts/catalog-sign.mjs
       # Typechecks and unit tests for every workspace package (core + extension),
       # plus lint and a production build of the site.
       - run: pnpm check
