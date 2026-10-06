@@ -472,6 +472,12 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('Rate limiting is not configured for the new endpoint; see `limits.ts`.')).toBeNull();
     expect(refusalReason('This handler cannot access the session when called from the worker, which will throw.')).toBeNull();
     expect(refusalReason('The CI check is disabled on this branch and `permission denied` is swallowed in `run.sh`.')).toBeNull();
+    // Nothing but the refusal, a few words with no subject before it, is a refusal even without naming anyone.
+    expect(refusalReason('Permission denied.')).toBe('Permission denied');
+    expect(refusalReason('Error: unable to access repository.')).toBe('Error: unable to access repository');
+    expect(refusalReason('Unauthorized.')).toBe('Unauthorized');
+    expect(refusalReason('Cannot access `foo` here because the parameter shadows it.')).toBeNull();
+    expect(refusalReason('The flag is disabled.')).toBeNull();
     expect(refusalReason('Reviews are not enabled for this repository.')).toBe('Reviews are not enabled for this repository');
     expect(refusalReason('CodeRabbit is currently paused for this organization. Resume it in the dashboard.')).toBe('CodeRabbit is currently paused for this organization');
   });

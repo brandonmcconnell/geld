@@ -19317,10 +19317,17 @@ function refusalReason(body) {
   if (text === "" || text.length > 400) return null;
   const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text);
   const sentences = text.split(/(?<=[.!?])\s+/);
-  const first = skipped ? sentences[0] : sentences.find((sentence) => REFUSAL_PHRASE.test(sentence) && REFUSAL_SUBJECT.test(sentence));
+  const bare = sentences.length === 1 && sentences[0] !== void 0 && isBareRefusal(sentences[0]) ? sentences[0] : void 0;
+  const first = skipped ? sentences[0] : bare ?? sentences.find((sentence) => REFUSAL_PHRASE.test(sentence) && REFUSAL_SUBJECT.test(sentence));
   if (first === void 0) return null;
   const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, "");
   return stripped.replace(/[.!?]\s*$/, "").trim() || first;
+}
+function isBareRefusal(sentence) {
+  const lead = sentence.replace(/^(?:sorry|error|warning|note|oops|failed)\s*[:,!.-]?\s*/i, "").trim();
+  if (lead.split(/\s+/).length > 8) return false;
+  const match = REFUSAL_PHRASE.exec(lead);
+  return match !== null && match.index === 0;
 }
 var REFUSAL_PHRASE = new RegExp(
   [
