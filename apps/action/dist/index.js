@@ -20068,7 +20068,7 @@ function botPhrase(bot, headSha) {
   const title = botTitle(bot.id, bot.login);
   const tag = freshness(bot, headSha);
   if (bot.verdict === "running") return `${title} running (${tag})`;
-  if (bot.verdict === "failed") return `${title} failed (${tag})`;
+  if (bot.verdict === "failed") return bot.reason === void 0 ? `${title} failed (${tag})` : `${title} skipped (${tag}): ${bot.reason}`;
   if (bot.verdict === "clean") return `${title} clean (${tag})`;
   if (bot.score !== void 0) return `${title} ${bot.score}/5 (${tag})`;
   if (bot.count !== void 0) return `${title} ${bot.count} issue${bot.count === 1 ? "" : "s"} (${tag})`;

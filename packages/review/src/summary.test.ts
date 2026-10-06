@@ -491,7 +491,13 @@ describe('a bot that refuses to run', () => {
   it('round-trips the reason through the payload', () => {
     const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const withReason = { ...meta, bots: [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'failed' as const, reviewedSha: meta.headSha, sourceId: 'issuecomment-3', reason: 'Bugbot is disabled for this repository' }] };
-    expect(parseSummaryBody(renderSummary(withReason))).toEqual({ ok: true, value: withReason });
+    const body = renderSummary(withReason);
+    expect(parseSummaryBody(body)).toEqual({ ok: true, value: withReason });
+    // Readers without the extension see the same word as readers with it, and why.
+    expect(body).toContain('Bugbot skipped (current): Bugbot is disabled for this repository');
+    expect(body).not.toContain('Bugbot failed');
+    const broke = { ...withReason, bots: [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'failed' as const, reviewedSha: meta.headSha }] };
+    expect(renderSummary(broke)).toContain('Bugbot failed (current)');
   });
 });
 
