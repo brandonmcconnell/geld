@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filesChangedBetween, findSummaryComment, parseActionEvent, shouldSkipSelfEdit } from './github';
+import { filesChangedBetween, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit } from './github';
 
 const BASE = {
   repository: { full_name: 'acme/widgets' },
@@ -115,5 +115,42 @@ describe('shouldSkipSelfEdit', () => {
     expect(event).not.toBeNull();
     if (event === null) return;
     expect(shouldSkipSelfEdit(event)).toBe(false);
+  });
+});
+
+describe('loadPullRequest', () => {
+  const page = { hasNextPage: false, endCursor: null };
+  const comment = (id: number, login = 'alice') => ({ databaseId: id, author: { login, __typename: 'User' }, body: `c${id}`, createdAt: '2026-09-18T10:00:00.000Z' });
+
+  it('reads a thread\u2019s comments past the first page', async () => {
+    const calls: unknown[] = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      calls.push(body.variables);
+      if (String(body.query).includes('GeldThreadComments')) {
+        // The thread's later pages, by cursor.
+        return new Response(JSON.stringify({ data: { node: { comments: body.variables.cursor === 'c1' ? { pageInfo: { hasNextPage: true, endCursor: 'c2' }, nodes: [comment(2)] } : { pageInfo: page, nodes: [comment(3, 'bob')] } } } }));
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                number: 7,
+                headRefOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                reviewThreads: { pageInfo: page, nodes: [{ id: 'T1', isResolved: false, isOutdated: false, path: 'a.ts', line: 1, comments: { pageInfo: { hasNextPage: true, endCursor: 'c1' }, nodes: [comment(1, 'cursor')] } }] },
+                comments: { pageInfo: page, nodes: [] },
+                reviews: { pageInfo: page, nodes: [] },
+                commits: { nodes: [{ commit: { oid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', statusCheckRollup: null } }] },
+              },
+            },
+          },
+        }),
+      );
+    };
+    const pr = await loadPullRequest({ token: 't', fetch: fetchImpl }, 'acme', 'widgets', 7);
+    expect(pr.threads).toHaveLength(1);
+    expect(pr.threads[0]?.comments.map((entry) => entry.author)).toEqual(['cursor', 'alice', 'bob']);
+    expect(calls).toHaveLength(3);
   });
 });

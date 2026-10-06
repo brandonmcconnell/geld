@@ -21093,11 +21093,13 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       reviewThreads(first: 50, after: $threadCursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
+          id
           isResolved
           isOutdated
           path
           line
-          comments(first: 50) {
+          comments(first: 100) {
+            pageInfo { hasNextPage endCursor }
             nodes { databaseId author { login __typename } body createdAt }
           }
         }
@@ -21130,6 +21132,35 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
   }
 }
 `;
+var THREAD_COMMENTS_QUERY = `
+query GeldThreadComments($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { databaseId author { login __typename } body createdAt }
+      }
+    }
+  }
+}
+`;
+function assertThreadCommentsQuery(value) {
+  if (!isRecord2(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
+}
+async function remainingThreadComments(client, threadId, first) {
+  const nodes = [...first.nodes];
+  let cursor = first.pageInfo.endCursor;
+  let more = first.pageInfo.hasNextPage;
+  while (more && cursor !== null) {
+    const data = await graphql(client, THREAD_COMMENTS_QUERY, { id: threadId, cursor });
+    assertThreadCommentsQuery(data);
+    if (data.node === null) break;
+    nodes.push(...data.node.comments.nodes);
+    more = data.node.comments.pageInfo.hasNextPage;
+    cursor = data.node.comments.pageInfo.endCursor;
+  }
+  return nodes;
+}
 function loginOf(author) {
   const login = author?.login ?? "ghost";
   return author?.__typename === "Bot" && !/\[bot\]$/i.test(login) ? `${login}[bot]` : login;
@@ -21157,12 +21188,13 @@ async function loadPullRequest(client, owner, repo, number4) {
     if (pr === null) throw new Error(`Pull request ${owner}/${repo}#${number4} was not found.`);
     headSha = pr.headRefOid;
     for (const thread of pr.reviewThreads.nodes) {
+      const threadComments = thread.comments.pageInfo.hasNextPage ? await remainingThreadComments(client, thread.id, thread.comments) : thread.comments.nodes;
       threads.push({
         path: thread.path,
         line: thread.line,
         isResolved: thread.isResolved,
         isOutdated: thread.isOutdated,
-        comments: thread.comments.nodes.map((node2) => ({
+        comments: threadComments.map((node2) => ({
           databaseId: node2.databaseId,
           author: loginOf(node2.author),
           body: node2.body,

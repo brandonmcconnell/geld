@@ -59,11 +59,13 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       reviewThreads(first: 50, after: $threadCursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
+          id
           isResolved
           isOutdated
           path
           line
-          comments(first: 50) {
+          comments(first: 100) {
+            pageInfo { hasNextPage endCursor }
             nodes { databaseId author { login __typename } body createdAt }
           }
         }
@@ -107,12 +109,62 @@ interface GqlAuthor {
   readonly __typename?: string;
 }
 
+interface GqlThreadComment {
+  readonly databaseId: number;
+  readonly author: GqlAuthor | null;
+  readonly body: string;
+  readonly createdAt: string;
+}
+
 interface GqlThread {
+  readonly id: string;
   readonly isResolved: boolean;
   readonly isOutdated: boolean;
   readonly path: string | null;
   readonly line: number | null;
-  readonly comments: { readonly nodes: readonly { readonly databaseId: number; readonly author: GqlAuthor | null; readonly body: string; readonly createdAt: string }[] };
+  readonly comments: { readonly pageInfo: PageInfo; readonly nodes: readonly GqlThreadComment[] };
+}
+
+/**
+ * The rest of one thread's comments, for a thread longer than the first
+ * query's page. A reply past that page is as much a part of the thread as
+ * the first — a person's answer there decides whether the item still needs
+ * one — so every thread is read to its end.
+ */
+const THREAD_COMMENTS_QUERY = `
+query GeldThreadComments($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { databaseId author { login __typename } body createdAt }
+      }
+    }
+  }
+}
+`;
+
+interface GeldThreadCommentsQuery {
+  readonly node: { readonly comments: { readonly pageInfo: PageInfo; readonly nodes: readonly GqlThreadComment[] } } | null;
+}
+
+function assertThreadCommentsQuery(value: unknown): asserts value is GeldThreadCommentsQuery {
+  if (!isRecord(value) || !('node' in value)) throw new Error('GitHub GraphQL returned an unexpected shape for the thread comments.');
+}
+
+async function remainingThreadComments(client: GithubClient, threadId: string, first: { readonly pageInfo: PageInfo; readonly nodes: readonly GqlThreadComment[] }): Promise<readonly GqlThreadComment[]> {
+  const nodes = [...first.nodes];
+  let cursor = first.pageInfo.endCursor;
+  let more = first.pageInfo.hasNextPage;
+  while (more && cursor !== null) {
+    const data = await graphql(client, THREAD_COMMENTS_QUERY, { id: threadId, cursor });
+    assertThreadCommentsQuery(data);
+    if (data.node === null) break;
+    nodes.push(...data.node.comments.nodes);
+    more = data.node.comments.pageInfo.hasNextPage;
+    cursor = data.node.comments.pageInfo.endCursor;
+  }
+  return nodes;
 }
 
 interface GqlComment {
@@ -188,12 +240,13 @@ export async function loadPullRequest(client: GithubClient, owner: string, repo:
     if (pr === null) throw new Error(`Pull request ${owner}/${repo}#${number} was not found.`);
     headSha = pr.headRefOid;
     for (const thread of pr.reviewThreads.nodes) {
+      const threadComments = thread.comments.pageInfo.hasNextPage ? await remainingThreadComments(client, thread.id, thread.comments) : thread.comments.nodes;
       threads.push({
         path: thread.path,
         line: thread.line,
         isResolved: thread.isResolved,
         isOutdated: thread.isOutdated,
-        comments: thread.comments.nodes.map((node) => ({
+        comments: threadComments.map((node) => ({
           databaseId: node.databaseId,
           author: loginOf(node.author),
           body: node.body,
