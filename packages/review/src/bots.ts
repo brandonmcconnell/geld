@@ -317,8 +317,13 @@ function isBareAdvice(body: string, text: string): boolean {
   return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
 
-/** A URL into a repository's files: `/blob/<ref>/…`, `/tree/<ref>/…`, a `/files` or `/changes` diff page, or a `#L<n>` anchor. */
-const SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/(?:files|changes)(?:[/?#]|$)|#L\d+)/;
+/**
+ * A URL into a repository's files: `/blob/<ref>/…`, `/tree/<ref>/…`, a pull
+ * request's `/pull/<n>/files` or `/changes` diff page, or a `#L<n>` line
+ * anchor. Shaped to GitHub's paths, so a docs page that happens to say
+ * `/changes/` in its path is still a link, not code.
+ */
+const SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]\d+)*(?:\s|$))/;
 
 /** Words that may follow a bare refusal's phrase without making it about the code. */
 const BARE_REFUSAL_WORDS = new Set([

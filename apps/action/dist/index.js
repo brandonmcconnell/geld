@@ -19338,7 +19338,7 @@ function isBareAdvice(body, text) {
   const raw = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "");
   return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
-var SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/(?:files|changes)(?:[/?#]|$)|#L\d+)/;
+var SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]\d+)*(?:\s|$))/;
 var BARE_REFUSAL_WORDS = /* @__PURE__ */ new Set([
   "the",
   "this",
