@@ -14,14 +14,25 @@ export const META_VERSION = 1 as const;
 export const SUMMARY_MARKER = '<!-- geld:summary:v1 -->';
 /** Visible heading; the extension matches this when the HTML comment is stripped. */
 export const SUMMARY_HEADING = 'Geld review summary';
-/** `<details>` summary GitHub shows for the payload fence. */
+/**
+ * The payload's carrier in the comment: an empty `<span>` whose `title`
+ * attribute holds `geld:` + the JSON, HTML-escaped. GitHub's sanitizer
+ * keeps `title` on a `span` and strips HTML comments, so this is the one
+ * place in a rendered comment that is invisible to everyone (an empty
+ * inline has no size, so no tooltip either) and still in the DOM for the
+ * extension to read. Verified against GitHub's own renderer (the
+ * `/markdown` API) in Oct 2026: the attribute round-trips byte for byte,
+ * including quotes, angle brackets, backticks and `@`/`#` sequences.
+ */
+export const PAYLOAD_ATTR_PREFIX = 'geld:';
+/** `<details>` summary older summaries showed for their payload fence (still read, never written). */
 export const DATA_SUMMARY = 'Geld data';
-/** Fence language GitHub renders as `<pre lang="geld">`. */
+/** Fence language older summaries used (`<pre lang="geld">`; still read, never written). */
 export const PAYLOAD_FENCE = 'geld';
 
 export const SITE_ORIGIN = 'https://www.geld.sh';
 
-/** Keep the JSON payload well under GitHub's 65,536-character comment cap. */
+/** Keep the payload, as written into its attribute (`encodePayloadAttribute`), well under GitHub's 65,536-character comment cap. */
 export const PAYLOAD_BUDGET = 40_000;
 
 export const SEVERITIES = ['blocking', 'bug', 'suggestion', 'question', 'nit', 'praise'] as const;
@@ -120,6 +131,8 @@ export interface BotVerdictRecord {
   readonly reviewedSha: string;
   readonly checkName?: string;
   readonly sourceId?: string;
+  /** For a `failed` verdict the bot explained: its own words for why it did not review ("Bugbot is disabled for this repository"). */
+  readonly reason?: string;
 }
 
 export interface ReviewerRecord {
@@ -226,6 +239,7 @@ export const botVerdictSchema = z.object({
   reviewedSha: sha,
   checkName: z.string().min(1).optional(),
   sourceId: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
 });
 
 export const reviewerSchema = z.object({
@@ -321,7 +335,8 @@ function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictReco
   const scored = value.score === undefined ? counted : { ...counted, score: value.score };
   const graded = value.severity === undefined ? scored : { ...scored, severity: value.severity };
   const named = value.checkName === undefined ? graded : { ...graded, checkName: value.checkName };
-  return value.sourceId === undefined ? named : { ...named, sourceId: value.sourceId };
+  const sourced = value.sourceId === undefined ? named : { ...named, sourceId: value.sourceId };
+  return value.reason === undefined ? sourced : { ...sourced, reason: value.reason };
 }
 
 function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
@@ -410,17 +425,30 @@ export function doneItemCount(items: readonly ReviewItem[]): number {
   return items.length - openItemCount(items);
 }
 
+/** The payload's size as the comment carries it: the JSON with `&`, `'`, `<`, `>` as entities (see `encodePayloadAttribute`). */
+function encodedPayloadLength(meta: GeldPrMeta): number {
+  const json = JSON.stringify(meta);
+  let extra = 0;
+  for (const char of json) {
+    if (char === '&') extra += 4;
+    else if (char === "'") extra += 4;
+    else if (char === '<' || char === '>') extra += 3;
+  }
+  return json.length + extra;
+}
+
 /**
- * Drop lowest-priority items until the JSON fits `budget`. Open items are
- * kept longest. Sets `truncated: true` whenever anything was dropped.
+ * Drop lowest-priority items until the payload, as written into the
+ * comment, fits `budget`. Open items are kept longest. Sets
+ * `truncated: true` whenever anything was dropped.
  */
 export function truncateMeta(meta: GeldPrMeta, budget: number = PAYLOAD_BUDGET): GeldPrMeta {
-  if (JSON.stringify(meta).length <= budget) return meta;
+  if (encodedPayloadLength(meta) <= budget) return meta;
   const ranked = [...meta.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
     const candidate: GeldPrMeta = { ...meta, items, truncated: true };
-    if (JSON.stringify(candidate).length <= budget) return candidate;
+    if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
   return { ...meta, items: [], truncated: true };

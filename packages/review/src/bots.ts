@@ -244,6 +244,40 @@ export interface DerivedBotVerdict {
   readonly reviewedSha: string;
   readonly checkName?: string;
   readonly sourceId?: string;
+  /** The bot's own words for a run it refused (`refusalReason`). */
+  readonly reason?: string;
+}
+
+/**
+ * A bot saying it did *not* review — the run was refused, not run: "Skipping
+ * Bugbot: Bugbot is disabled for this repository", "not enabled for this
+ * repo", "no credits remaining", "could not access the repository". Such a
+ * comment is a `failed` verdict carrying the bot's sentence as its reason,
+ * never findings (its words hold no count) and never a status line (nothing
+ * is under way). Short — a refusal is a sentence or two with a link to fix
+ * it — and shaped like one.
+ */
+export function refusalReason(body: string): string | null {
+  const text = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_>~#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text === '' || text.length > 400) return null;
+  const refused =
+    // "Skipping Bugbot: …", "Skipped review: …" — a skip of the run, not of something in the code under review.
+    /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text) ||
+    /\b(?:is|are|was|has been|have been)\s+(?:currently\s+)?(?:disabled|not enabled|not installed|not configured|not set up|not authori[sz]ed|unavailable|turned off|paused)\b/i.test(text) ||
+    /\b(?:no|out of|insufficient|exceeded|reached)\s+(?:your\s+)?(?:\w+\s+)?(?:credits?|quota|budget|limit|allowance)\b/i.test(text) ||
+    /\b(?:subscription|plan|trial|billing)\b[^.!?]*\b(?:expired|required|needed|inactive|ended|lapsed|upgrade)\b/i.test(text) ||
+    /\b(?:could not|couldn.t|cannot|can.t|unable to|failed to)\s+(?:access|read|clone|fetch|start|run|review|analy[sz]e)\b/i.test(text) ||
+    /\b(?:permission denied|access denied|not authorized|unauthorized|forbidden)\b/i.test(text);
+  if (!refused) return null;
+  // The first sentence, without the bot's own name as a prefix ("Skipping Bugbot: " → the explanation).
+  const first = text.split(/(?<=[.!?])\s+/)[0] ?? text;
+  const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, '');
+  return stripped.replace(/[.!?]\s*$/, '').trim() || first;
 }
 
 function withOptionalCount(base: DerivedBotVerdict, parsed: ParsedBotBody): DerivedBotVerdict {
@@ -408,6 +442,15 @@ export function verdictsFrom(
       continue;
     }
     if (isTriggerComment(comment.body, extraLogins)) continue;
+    const refusal = refusalReason(comment.body);
+    if (refusal !== null) {
+      // The bot said it would not review: the run that was asked for failed, whatever an earlier run found.
+      threadRuns.delete(id);
+      statusOnly.delete(id);
+      const existing = byId.get(id);
+      byId.set(id, { id, login: comment.author, verdict: 'failed', reviewedSha: headSha, ...(existing?.checkName === undefined ? {} : { checkName: existing.checkName }), sourceId: comment.anchor, reason: refusal });
+      continue;
+    }
     if (isStatusLineComment(comment.body)) {
       // A new run began: the threads so far belong to the run before it.
       threadRuns.delete(id);

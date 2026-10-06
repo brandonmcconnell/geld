@@ -168,7 +168,7 @@ export function allResolved(bot: BotVerdictRecord): boolean {
 export function verdictLabel(bot: BotVerdictRecord): string {
   const title = botTitle(bot.id, bot.login);
   if (bot.verdict === 'running') return `${title} running`;
-  if (bot.verdict === 'failed') return `${title} failed`;
+  if (bot.verdict === 'failed') return bot.reason === undefined ? `${title} failed` : `${title} skipped: ${bot.reason}`;
   return `${title} ${botDetail(bot)}`;
 }
 
@@ -272,7 +272,8 @@ export function botHealth(bot: BotVerdictRecord): Health {
 /** Short text beside the glyph: "4/5", "2 issues", "clean", "resolved", "running". */
 export function botDetail(bot: BotVerdictRecord): string {
   if (bot.verdict === 'running') return 'running';
-  if (bot.verdict === 'failed') return 'failed';
+  // A run the bot refused ("disabled for this repository") is skipped, in its word; a run that broke is failed.
+  if (bot.verdict === 'failed') return bot.reason === undefined ? 'failed' : 'skipped';
   // A scored run shows its score whatever became of its findings, and the open count beside it while threads are
   // open: "4/5 · 1 issue" amber, then "4/5" with the green check once all are resolved. Without a score the count
   // alone says it: "1 issue", then "resolved".

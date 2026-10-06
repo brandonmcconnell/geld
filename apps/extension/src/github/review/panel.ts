@@ -1129,8 +1129,8 @@ const HEALTH_ICON: Readonly<Record<Health, string>> = {
   pending: ICON_DOT_FILL,
 };
 
-function healthGlyph(health: Health, label: string): HTMLElement {
-  return createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(HEALTH_ICON[health])]);
+function healthGlyph(health: Health, label: string, glyph: string = HEALTH_ICON[health]): HTMLElement {
+  return createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(glyph)]);
 }
 
 function anchorLink(anchor: string, label: string, handlers: PanelHandlers, children: Node[], extra: Readonly<Record<string, string>>): HTMLElement {
@@ -1156,7 +1156,9 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   if (iconSrc !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [botTitle(bot.id, bot.login)]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [botDetail(bot)]));
-  const glyph = healthGlyph(health, label);
+  // A run that did not happen (refused, or broken) wears the warning triangle, not a verdict's light: nothing was
+  // reviewed, and the chip opens the bot's own words on why.
+  const glyph = healthGlyph(health, label, bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health]);
   glyph.removeAttribute('title');
   children.push(glyph);
   const who = whoAttributes(bot.login, true);
@@ -1178,6 +1180,9 @@ function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
   const health = botHealth(record);
   if (health === 'pending') return { health, word: 'Running', preselect: false };
   if (!isCurrent(record, model.meta.headSha)) return { health, word: 'Earlier commit', preselect: true };
+  // A refused run ("disabled for this repository") is Skipped, and not ticked: asking again changes nothing until
+  // the bot's setup does.
+  if (record.verdict === 'failed' && record.reason !== undefined) return { health, word: 'Skipped', preselect: false };
   const word = health === 'bad' ? 'Failed' : health === 'warn' ? 'Findings' : 'Passed';
   return { health, word, preselect: health === 'bad' };
 }

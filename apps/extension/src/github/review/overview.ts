@@ -1496,7 +1496,7 @@ function botTitleFor(login: string): string {
 /** The bot's verdict as a sentence for its card. */
 function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'running') return 'Reviewing this pull request now';
-  if (record.verdict === 'failed') return 'Its review of this pull request failed';
+  if (record.verdict === 'failed') return record.reason === undefined ? 'Its review of this pull request failed' : `Did not review this pull request: ${record.reason}`;
   const scored = record.score === undefined ? '' : `Scored this pull request ${record.score}/5`;
   if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
   if (allResolved(record)) return scored === '' ? 'Everything it found on this pull request is resolved' : `${scored}, everything it found is resolved`;

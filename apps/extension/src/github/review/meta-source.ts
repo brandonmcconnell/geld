@@ -4,7 +4,7 @@
  */
 
 import type { GeldPrMeta, ParseResult } from '@geld/review';
-import { ALLOWED_SUMMARY_AUTHORS, isAllowedSummaryAuthor, parseSummaryElement, SUMMARY_HEADING } from '@geld/review';
+import { ALLOWED_SUMMARY_AUTHORS, isAllowedSummaryAuthor, parseSummaryElement, PAYLOAD_CARRIER_SELECTOR, SUMMARY_HEADING } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { authorOf as crawlAuthor } from './crawler';
 
@@ -28,9 +28,9 @@ function authorOf(root: Element): string {
   return '';
 }
 
-function commentRootFrom(pre: Element): HTMLElement | null {
-  const root = pre.closest('.js-comment-container, .js-timeline-item, .TimelineItem, [id^="issuecomment-"]');
-  return root instanceof HTMLElement ? root : pre.parentElement;
+function commentRootFrom(carrier: Element): HTMLElement | null {
+  const root = carrier.closest('.js-comment-container, .js-timeline-item, .TimelineItem, [id^="issuecomment-"]');
+  return root instanceof HTMLElement ? root : carrier.parentElement;
 }
 
 function collectAnchors(meta: GeldPrMeta): readonly string[] {
@@ -46,9 +46,10 @@ function missingAnchorsOf(meta: GeldPrMeta, doc: Document): readonly string[] {
 }
 
 export function findSummaryComment(doc: Document = document): FoundSummary | null {
-  const pres = [...doc.querySelectorAll('pre[lang="geld"], [class*="highlight-source-geld"] pre')];
-  for (const pre of pres) {
-    const root = commentRootFrom(pre);
+  // The payload's carrier (an empty span's title), else the fence older summaries carried it in.
+  const carriers = [...doc.querySelectorAll(`${PAYLOAD_CARRIER_SELECTOR}, pre[lang="geld"], [class*="highlight-source-geld"] pre`)];
+  for (const carrier of carriers) {
+    const root = commentRootFrom(carrier);
     if (root === null) continue;
     const author = authorOf(root);
     if (!isAllowedSummaryAuthor(author)) {

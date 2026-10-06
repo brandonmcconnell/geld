@@ -1,13 +1,15 @@
 /**
  * GeldPrMeta → the one PR comment body. Deterministic; snapshot-tested.
- * The JSON lives in a collapsed `<details>` fenced as `geld` so GitHub
- * renders `<pre lang="geld">` the extension can read from the DOM.
+ * The JSON rides in the footer as an empty `<span title="geld:…">`
+ * (`PAYLOAD_ATTR_PREFIX`): GitHub strips HTML comments from what it
+ * renders but keeps `title`, and an empty inline has no size, so nobody
+ * sees the payload — not even as a collapsed block — while the extension
+ * reads it from the DOM. Summaries written before this carried it as a
+ * `<details>` with a `geld` fence; the parser still reads those.
  */
 
 import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord } from './model';
 import {
-  DATA_SUMMARY,
-  PAYLOAD_FENCE,
   SUMMARY_HEADING,
   SUMMARY_MARKER,
   doneItemCount,
@@ -18,6 +20,7 @@ import {
 } from './model';
 import { botTitle } from './bots';
 import { parseInlineMarkdown } from './inline-markdown';
+import { encodePayloadAttribute } from './summary-parse';
 
 const STATUS_LABEL: Readonly<Record<ReviewItem['status'], string>> = {
   open: 'Open',
@@ -177,16 +180,9 @@ export function renderSummary(
     lines.push('_List truncated; open the pull request with Geld to see the rest._');
     lines.push('');
   }
-  lines.push(`<details><summary>${DATA_SUMMARY}</summary>`);
-  lines.push('');
-  lines.push('```' + PAYLOAD_FENCE);
-  lines.push(JSON.stringify(meta));
-  lines.push('```');
-  lines.push('');
-  lines.push('</details>');
-  lines.push('');
   const openHref = subject === undefined ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta);
-  lines.push(`<sub>Maintained by Geld · <a href="${openHref}">Open in Geld</a> · <a href="${howItWorksUrl()}">what is this?</a></sub>`);
+  // The payload's carrier sits inside the footer's own line, so it adds no paragraph (an empty inline is sizeless).
+  lines.push(`<sub>Maintained by Geld · <a href="${openHref}">Open in Geld</a> · <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta))}'></span></sub>`);
   lines.push('');
   return lines.join('\n');
 }

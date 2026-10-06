@@ -10447,8 +10447,8 @@ var error43 = () => {
       case "not_multiple_of":
         return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
       case "unrecognized_keys": {
-        const plural = issue2.keys.length > 1 ? "s" : "";
-        return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+        const plural2 = issue2.keys.length > 1 ? "s" : "";
+        return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
       }
       case "invalid_key":
         return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -10590,8 +10590,8 @@ var error44 = () => {
       case "not_multiple_of":
         return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
       case "unrecognized_keys": {
-        const plural = issue2.keys.length > 1 ? "s" : "";
-        return `Chave${plural} inv\xE1lida${plural}: ${joinValues(issue2.keys, ", ")}`;
+        const plural2 = issue2.keys.length > 1 ? "s" : "";
+        return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
       }
       case "invalid_key":
         return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -18896,6 +18896,7 @@ function date4(params) {
 var META_VERSION = 1;
 var SUMMARY_MARKER = "<!-- geld:summary:v1 -->";
 var SUMMARY_HEADING = "Geld review summary";
+var PAYLOAD_ATTR_PREFIX = "geld:";
 var DATA_SUMMARY = "Geld data";
 var PAYLOAD_FENCE = "geld";
 var SITE_ORIGIN = "https://www.geld.sh";
@@ -18963,7 +18964,8 @@ var botVerdictSchema = external_exports.object({
   severity: external_exports.enum(FINDING_SEVERITIES).optional(),
   reviewedSha: sha,
   checkName: external_exports.string().min(1).optional(),
-  sourceId: external_exports.string().min(1).optional()
+  sourceId: external_exports.string().min(1).optional(),
+  reason: external_exports.string().min(1).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -19039,11 +19041,12 @@ function botVerdictFrom(value) {
     verdict: value.verdict,
     reviewedSha: value.reviewedSha
   };
-  const counted = value.count === void 0 ? record3 : { ...record3, count: value.count };
-  const scored = value.score === void 0 ? counted : { ...counted, score: value.score };
+  const counted2 = value.count === void 0 ? record3 : { ...record3, count: value.count };
+  const scored = value.score === void 0 ? counted2 : { ...counted2, score: value.score };
   const graded = value.severity === void 0 ? scored : { ...scored, severity: value.severity };
   const named = value.checkName === void 0 ? graded : { ...graded, checkName: value.checkName };
-  return value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
+  const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
+  return value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -19095,13 +19098,23 @@ function openItemCount(items) {
 function doneItemCount(items) {
   return items.length - openItemCount(items);
 }
+function encodedPayloadLength(meta3) {
+  const json2 = JSON.stringify(meta3);
+  let extra = 0;
+  for (const char of json2) {
+    if (char === "&") extra += 4;
+    else if (char === "'") extra += 4;
+    else if (char === "<" || char === ">") extra += 3;
+  }
+  return json2.length + extra;
+}
 function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
-  if (JSON.stringify(meta3).length <= budget) return meta3;
+  if (encodedPayloadLength(meta3) <= budget) return meta3;
   const ranked = [...meta3.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
     const candidate = { ...meta3, items, truncated: true };
-    if (JSON.stringify(candidate).length <= budget) return candidate;
+    if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
   return { ...meta3, items: [], truncated: true };
@@ -19160,10 +19173,12 @@ function howItWorksUrl() {
 }
 
 // ../../packages/review/src/bots.ts
+var ACK_GRACE_MS = 3 * 60 * 1e3;
 var REVIEW_BOTS = [
   {
     id: "bugbot",
     title: "Bugbot",
+    appId: 1210556,
     logins: ["cursor[bot]", "cursor-bugs[bot]", "bugbot[bot]", "cursor-com[bot]"],
     checkNames: ["Cursor Bugbot", "Bugbot"],
     triggers: ["bugbot run", "cursor review", "@cursor review"],
@@ -19172,14 +19187,17 @@ var REVIEW_BOTS = [
   {
     id: "greptile",
     title: "Greptile",
+    appId: 867647,
     logins: ["greptile-apps[bot]", "greptile[bot]"],
     checkNames: ["Greptile"],
     triggers: ["@greptileai", "@greptile", "@greptileai review"],
-    configFiles: [".greptile.yml", ".greptile.yaml"]
+    configFiles: ["greptile.json", ".greptile.yml", ".greptile.yaml"],
+    acknowledges: "reaction"
   },
   {
     id: "devin",
     title: "Devin",
+    appId: 811515,
     logins: ["devin-ai-integration[bot]", "devin[bot]"],
     checkNames: ["Devin"],
     triggers: ["/devin review", "@devin review", "@devin"],
@@ -19188,14 +19206,16 @@ var REVIEW_BOTS = [
   {
     id: "codex",
     title: "Codex",
+    appId: 1144995,
     logins: ["chatgpt-codex-connector[bot]", "openai-codex[bot]", "codex[bot]"],
     checkNames: ["Codex"],
     triggers: ["@codex review", "@codex"],
-    configFiles: [".codex/", "AGENTS.md"]
+    configFiles: [".codex/"]
   },
   {
     id: "copilot",
     title: "Copilot",
+    appId: 946600,
     logins: ["copilot-pull-request-reviewer[bot]", "copilot[bot]"],
     checkNames: ["Copilot code review", "Copilot"],
     triggers: ["@copilot"],
@@ -19204,6 +19224,7 @@ var REVIEW_BOTS = [
   {
     id: "coderabbit",
     title: "CodeRabbit",
+    appId: 347564,
     logins: ["coderabbitai[bot]"],
     checkNames: ["CodeRabbit"],
     triggers: ["@coderabbitai review", "@coderabbitai full review", "@coderabbitai"],
@@ -19212,16 +19233,32 @@ var REVIEW_BOTS = [
   {
     id: "gemini",
     title: "Gemini Code Assist",
+    appId: 956858,
     logins: ["gemini-code-assist[bot]"],
     checkNames: ["Gemini Code Assist", "gemini-code-assist"],
     triggers: ["@gemini-code-assist"],
-    configFiles: []
+    // Gemini Code Assist on GitHub reads `.gemini/config.yaml` and `.gemini/styleguide.md`.
+    configFiles: [".gemini/"]
+  },
+  {
+    // Capy (capy.ai, GitHub App "Capy AI" by Scrapybara): a review agent that posts findings at or above the
+    // repository's severity threshold as inline review comments and resolves their threads as they are fixed;
+    // `@capy review` on the PR starts a round (trailing words are its instructions). Verified against the App
+    // registry and docs.capy.ai/review in Oct 2026; no check run documented.
+    id: "capy",
+    title: "Capy",
+    appId: 1915919,
+    logins: ["capy-ai[bot]", "capy[bot]"],
+    checkNames: ["Capy AI", "Capy Review", "Capy"],
+    triggers: ["@capy review"],
+    configFiles: [".capy/"]
   },
   {
     // Replicas (replicas.dev): cloud coding agents with a "Code Review" automation that posts an X/5 review score
     // on PR open and sync; `/replicas run code-review` runs it on demand, `@tryreplicas` addresses the agent.
     id: "replicas",
     title: "Replicas",
+    appId: 2176876,
     logins: ["replicas-connector[bot]", "replicas-dev[bot]", "tryreplicas[bot]"],
     checkNames: ["Replicas"],
     triggers: ["/replicas run code-review", "@tryreplicas review", "@tryreplicas", "@replicas"],
@@ -19266,8 +19303,21 @@ function parseBotBody(body, botId) {
   const countMatch = botId === "greptile" ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text) : /(\d+)\s+(?:issue|finding|bug|problem)s?\b/i.exec(text);
   const count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
   const clean = /\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking))* (?:issues|bugs|findings|problems)\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found)\b/i.test(text) || count === 0 && score === null;
-  const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(text) ? "high" : /\bmedium(?: severity)?\b/i.test(text) ? "medium" : /\blow(?: severity)?\b/i.test(text) ? "low" : null;
+  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
+  const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
   return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity };
+}
+function refusalReason(body) {
+  const text = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
+  if (text === "" || text.length > 400) return null;
+  const refused = (
+    // "Skipping Bugbot: …", "Skipped review: …" — a skip of the run, not of something in the code under review.
+    /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text) || /\b(?:is|are|was|has been|have been)\s+(?:currently\s+)?(?:disabled|not enabled|not installed|not configured|not set up|not authori[sz]ed|unavailable|turned off|paused)\b/i.test(text) || /\b(?:no|out of|insufficient|exceeded|reached)\s+(?:your\s+)?(?:\w+\s+)?(?:credits?|quota|budget|limit|allowance)\b/i.test(text) || /\b(?:subscription|plan|trial|billing)\b[^.!?]*\b(?:expired|required|needed|inactive|ended|lapsed|upgrade)\b/i.test(text) || /\b(?:could not|couldn.t|cannot|can.t|unable to|failed to)\s+(?:access|read|clone|fetch|start|run|review|analy[sz]e)\b/i.test(text) || /\b(?:permission denied|access denied|not authorized|unauthorized|forbidden)\b/i.test(text)
+  );
+  if (!refused) return null;
+  const first = text.split(/(?<=[.!?])\s+/)[0] ?? text;
+  const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, "");
+  return stripped.replace(/[.!?]\s*$/, "").trim() || first;
 }
 function withOptionalCount(base, parsed) {
   return {
@@ -19315,12 +19365,18 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   const statusOnly = /* @__PURE__ */ new Map();
   const threadRuns = /* @__PURE__ */ new Map();
+  const lastEditBy = /* @__PURE__ */ new Map();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
+    if (id !== null && comment.editedAt !== void 0) {
+      const edited = Date.parse(comment.editedAt);
+      if (!Number.isNaN(edited) && edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
+    }
     if (id === null) {
       if (comment.resolved === void 0 && isTriggerComment(comment.body, extraLogins)) {
         const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
         for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
+          if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -19336,6 +19392,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (isTriggerComment(comment.body, extraLogins)) continue;
+    const refusal = refusalReason(comment.body);
+    if (refusal !== null) {
+      threadRuns.delete(id);
+      statusOnly.delete(id);
+      const existing2 = byId.get(id);
+      byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal });
+      continue;
+    }
     if (isStatusLineComment(comment.body)) {
       threadRuns.delete(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
@@ -19359,6 +19423,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   for (const [id, { login, anchor: anchor2, at }] of statusOnly) {
     const existing = byId.get(id);
+    const edited = lastEditBy.get(id);
+    if (existing !== void 0 && at !== null && edited !== void 0 && edited > at) continue;
     const stale = at !== null && now - at > STATUS_LINE_STALE_MS;
     if (existing === void 0) {
       byId.set(id, { id, login, verdict: stale ? "failed" : "running", reviewedSha: headSha, sourceId: anchor2 });
@@ -19390,6 +19456,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     byId.set(id, { id, login: run2.login, verdict: "findings", count: 0, ...scored, reviewedSha, ...named, sourceId: run2.lastAnchor });
   }
   return [...byId.values()];
+}
+function reactedBy(comment, id) {
+  const bot = botById(id);
+  const logins = new Set((bot?.logins ?? []).flatMap((login) => [login.toLowerCase(), login.toLowerCase().replace(/\[bot\]$/, "")]));
+  return (comment.reactedBy ?? []).some((login) => logins.has(login.toLowerCase()) || logins.has(login.toLowerCase().replace(/\[bot\]$/, "")));
 }
 function botsTriggeredBy(body, extraLogins = []) {
   const text = ` ${body.replace(/[`*_>~]/g, "").replace(/\s+/g, " ").trim().toLowerCase()} `;
@@ -19460,12 +19531,21 @@ function ruleIdOf(body) {
   return match?.[1]?.toLowerCase() ?? null;
 }
 function firstSentence(body) {
-  const withoutCode = body.replace(/```[\s\S]*?```/g, " ").replace(/`([^`]+)`/g, "$1");
+  const withoutCode = body.replace(/```[\s\S]*?```/g, " ");
   const line = withoutCode.split("\n").map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
-  const sentence = /^(.{1,160}?(?:[.!?]|$))/.exec(cleaned)?.[1] ?? cleaned.slice(0, 160);
+  const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
+}
+function sentenceOf(text, limit) {
+  let inCode = false;
+  for (let index = 0; index < text.length && index < limit; index += 1) {
+    const char = text[index];
+    if (char === "`") inCode = !inCode;
+    else if (!inCode && (char === "." || char === "!" || char === "?")) return text.slice(0, index + 1);
+  }
+  return text.slice(0, limit);
 }
 function guessSeverity(body, bot, humanQuestion) {
   const text = body.toLowerCase();
@@ -19751,9 +19831,167 @@ function fixVisible(fix, mode) {
   return fix.source !== "ai";
 }
 
+// ../../packages/review/src/inline-markdown.ts
+var DELIMITERS = [
+  { token: "**", mark: "strong" },
+  { token: "__", mark: "strong" },
+  { token: "~~", mark: "del" },
+  { token: "*", mark: "em" },
+  { token: "_", mark: "em" }
+];
+function isWordChar(char) {
+  return char !== void 0 && /[\p{L}\p{N}]/u.test(char);
+}
+function parseInlineMarkdown(text) {
+  const runs = [];
+  const push = (value, marks) => {
+    if (value === "") return;
+    const last = runs[runs.length - 1];
+    if (last !== void 0 && sameMarks(last.marks, marks)) runs[runs.length - 1] = { text: last.text + value, marks };
+    else runs.push({ text: value, marks });
+  };
+  const walk = (input3, marks) => {
+    let index = 0;
+    let plainStart = 0;
+    const flush = (end) => {
+      push(input3.slice(plainStart, end), marks);
+    };
+    while (index < input3.length) {
+      const char = input3[index] ?? "";
+      if (char === "`") {
+        const run2 = /^`+/.exec(input3.slice(index))?.[0] ?? "`";
+        const close = input3.indexOf(run2, index + run2.length);
+        if (close !== -1) {
+          flush(index);
+          const inner = input3.slice(index + run2.length, close);
+          const trimmed = inner.startsWith(" ") && inner.endsWith(" ") && inner.trim() !== "" ? inner.slice(1, -1) : inner;
+          push(trimmed, [...marks, "code"]);
+          index = close + run2.length;
+          plainStart = index;
+          continue;
+        }
+        index += run2.length;
+        continue;
+      }
+      const delimiter = DELIMITERS.find(({ token }) => input3.startsWith(token, index));
+      if (delimiter !== void 0 && !marks.includes(delimiter.mark)) {
+        const { token, mark } = delimiter;
+        const before = input3[index - 1];
+        const after = input3[index + token.length];
+        const opens = after !== void 0 && !/\s/.test(after) && after !== token[0] && !(token.startsWith("_") && isWordChar(before));
+        if (opens) {
+          const close = findClose(input3, index + token.length, token);
+          if (close !== -1) {
+            flush(index);
+            walk(input3.slice(index + token.length, close), [...marks, mark]);
+            index = close + token.length;
+            plainStart = index;
+            continue;
+          }
+        }
+        index += token.length;
+        continue;
+      }
+      index += 1;
+    }
+    flush(input3.length);
+  };
+  walk(text, []);
+  return runs;
+}
+function findClose(input3, from, token) {
+  let index = from;
+  while (index < input3.length) {
+    const char = input3[index] ?? "";
+    if (char === "`") {
+      const run2 = /^`+/.exec(input3.slice(index))?.[0] ?? "`";
+      const close = input3.indexOf(run2, index + run2.length);
+      index = close === -1 ? index + run2.length : close + run2.length;
+      continue;
+    }
+    if (input3.startsWith(token, index)) {
+      const before = input3[index - 1];
+      const after = input3[index + token.length];
+      const closes = before !== void 0 && !/\s/.test(before) && !(token.startsWith("_") && isWordChar(after));
+      if (closes) return index;
+    }
+    index += 1;
+  }
+  return -1;
+}
+function sameMarks(a, b) {
+  return a.length === b.length && a.every((mark, index) => mark === b[index]);
+}
+
+// ../../packages/review/src/summary-parse.ts
+var FENCE = new RegExp("```(?:" + PAYLOAD_FENCE + "|json)\\s*\\r?\\n([\\s\\S]*?)```", "i");
+var CARRIER = new RegExp("title='" + PAYLOAD_ATTR_PREFIX + "([^']*)'");
+function encodePayloadAttribute(json2) {
+  return PAYLOAD_ATTR_PREFIX + json2.replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function decodeEntities(text) {
+  return text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+function normaliseRenderedJson(text) {
+  return text.replace(/\u00a0/g, " ").replace(/\u2018|\u2019/g, "'").replace(/\u201c|\u201d/g, '"').replace(/\u2013|\u2014/g, "-").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+}
+function extractPayloadText(body) {
+  const carried = CARRIER.exec(body);
+  if (carried?.[1] !== void 0) return decodeEntities(carried[1]);
+  const normalised = normaliseRenderedJson(body);
+  const fenced = FENCE.exec(normalised);
+  if (fenced?.[1] !== void 0) return fenced[1].trim();
+  const trimmed = normalised.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+  return null;
+}
+function parseSummaryBody(body) {
+  const text = extractPayloadText(body);
+  if (text === null) return { ok: false, issues: ["$: No geld payload fence found."] };
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, issues: ["$: Payload is not valid JSON."] };
+  }
+  return parseGeldPrMeta(parsed);
+}
+function looksLikeSummaryBody(body) {
+  return body.includes(SUMMARY_MARKER) || body.includes(`### ${SUMMARY_HEADING}`) || body.includes(`title='${PAYLOAD_ATTR_PREFIX}`) || body.includes(`<summary>${DATA_SUMMARY}</summary>`);
+}
+var PAYLOAD_CARRIER_SELECTOR = `span[title^="${PAYLOAD_ATTR_PREFIX}"]`;
+function tickedItemIds(body, items) {
+  const ticked = /* @__PURE__ */ new Set();
+  const lines2 = body.split(/\r?\n/);
+  for (const item of items) {
+    const anchors = item.sources.map((source) => source.anchor);
+    const checked = lines2.some((line) => {
+      if (!/^\s*[-*]\s+\[[xX]\]/.test(line)) return false;
+      return anchors.some((anchor2) => line.includes(`#${anchor2}`));
+    });
+    if (checked) ticked.add(item.id);
+  }
+  return ticked;
+}
+
 // ../../packages/review/src/summary-render.ts
 function escapeMd(text) {
   return text.replace(/([\\`*_[\]<>])/g, "\\$1");
+}
+function inlineMd(text, inBold = false) {
+  return parseInlineMarkdown(text).map((run2) => {
+    if (run2.marks.includes("code")) {
+      const fence = run2.text.includes("`") ? "``" : "`";
+      return run2.text.includes("`") ? `${fence} ${run2.text} ${fence}` : `${fence}${run2.text}${fence}`;
+    }
+    let out = escapeMd(run2.text);
+    for (const mark of [...run2.marks].reverse()) {
+      if (mark === "strong" && !inBold) out = `**${out}**`;
+      else if (mark === "em") out = `*${out}*`;
+      else if (mark === "del") out = `~~${out}~~`;
+    }
+    return out;
+  }).join("");
 }
 function locationOf(item) {
   if (item.path === void 0) return "";
@@ -19775,9 +20013,9 @@ function sourcesOf(item) {
 }
 function itemLine(item, checked) {
   const box = checked ? "- [x]" : "- [ ]";
-  const head = `${box} **${escapeMd(item.title)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item)}`;
+  const head = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item)}`;
   const extra = [];
-  if (item.context !== void 0) extra.push(`  ${escapeMd(item.context)}`);
+  if (item.context !== void 0) extra.push(`  ${inlineMd(item.context)}`);
   if (item.fix !== void 0) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", "  ```suggestion", ...item.fix.text.split("\n").map((line) => `  ${line}`), "  ```", "", "  </details>");
   return [head, ...extra].join("\n");
 }
@@ -19860,59 +20098,10 @@ function renderSummary(meta3, subject) {
     lines2.push("_List truncated; open the pull request with Geld to see the rest._");
     lines2.push("");
   }
-  lines2.push(`<details><summary>${DATA_SUMMARY}</summary>`);
-  lines2.push("");
-  lines2.push("```" + PAYLOAD_FENCE);
-  lines2.push(JSON.stringify(meta3));
-  lines2.push("```");
-  lines2.push("");
-  lines2.push("</details>");
-  lines2.push("");
   const openHref = subject === void 0 ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta3);
-  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${openHref}">Open in Geld</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a></sub>`);
+  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${openHref}">Open in Geld</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta3))}'></span></sub>`);
   lines2.push("");
   return lines2.join("\n");
-}
-
-// ../../packages/review/src/summary-parse.ts
-var FENCE = new RegExp("```(?:" + PAYLOAD_FENCE + "|json)\\s*\\r?\\n([\\s\\S]*?)```", "i");
-function normaliseRenderedJson(text) {
-  return text.replace(/\u00a0/g, " ").replace(/\u2018|\u2019/g, "'").replace(/\u201c|\u201d/g, '"').replace(/\u2013|\u2014/g, "-").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-}
-function extractPayloadText(body) {
-  const normalised = normaliseRenderedJson(body);
-  const fenced = FENCE.exec(normalised);
-  if (fenced?.[1] !== void 0) return fenced[1].trim();
-  const trimmed = normalised.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  return null;
-}
-function parseSummaryBody(body) {
-  const text = extractPayloadText(body);
-  if (text === null) return { ok: false, issues: ["$: No geld payload fence found."] };
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { ok: false, issues: ["$: Payload is not valid JSON."] };
-  }
-  return parseGeldPrMeta(parsed);
-}
-function looksLikeSummaryBody(body) {
-  return body.includes(SUMMARY_MARKER) || body.includes(`### ${SUMMARY_HEADING}`) || body.includes(`<summary>${DATA_SUMMARY}</summary>`);
-}
-function tickedItemIds(body, items) {
-  const ticked = /* @__PURE__ */ new Set();
-  const lines2 = body.split(/\r?\n/);
-  for (const item of items) {
-    const anchors = item.sources.map((source) => source.anchor);
-    const checked = lines2.some((line) => {
-      if (!/^\s*[-*]\s+\[[xX]\]/.test(line)) return false;
-      return anchors.some((anchor2) => line.includes(`#${anchor2}`));
-    });
-    if (checked) ticked.add(item.id);
-  }
-  return ticked;
 }
 
 // ../../packages/review/src/prompts.ts
@@ -20205,7 +20394,7 @@ function parseVercel(doc) {
   const projectLinks = doc.links.filter((link) => /^https:\/\/vercel\.com\/[^/]+\/[^/?#]+\/?$/.test(link.href) && !VERCEL_NOT_A_PROJECT.test(link.href) && link.text.trim() !== "");
   for (const link of projectLinks) {
     const name = link.text.trim();
-    if (out.some((entry2) => entry2.project === name)) continue;
+    if (out.some((entry3) => entry3.project === name)) continue;
     const inspector = doc.links.find((candidate) => candidate.href.startsWith(`${link.href.replace(/\/$/, "")}/`) && candidate !== link);
     const row = tableRowFor(doc, name);
     let status = inspector === void 0 ? "unknown" : vercelStatus(inspector.text);
@@ -20217,7 +20406,8 @@ function parseVercel(doc) {
     const at = inspector === void 0 ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
     const visit2 = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
     if (status === "unknown" && visit2 !== void 0) status = "ready";
-    out.push(preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null));
+    const entry2 = preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null);
+    out.push(inspector !== void 0 && /^ignored$/i.test(inspector.text.trim()) ? { ...entry2, reason: "Unchanged for this project, the previous preview still serves" } : entry2);
   }
   if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
     const team = /to the \*{0,2}([^*\n]+?)\*{0,2} Team/i.exec(doc.text)?.[1] ?? "Vercel";
@@ -20550,6 +20740,316 @@ function buildMeta(pr, options) {
 function botOnlyForRewrite(items) {
   return items.filter(isBotOnly);
 }
+
+// ../../packages/review/src/reporters.ts
+function plural(count, noun) {
+  return `${count} ${count === 1 ? noun : `${noun}s`}`;
+}
+var REPORTERS = [
+  {
+    // Blacksmith (blacksmith.sh): CI runners; its bot posts "Found N test failures on Blacksmith runners:" with the
+    // failing tests and their logs, and a "Fix in [code]smith" call to action.
+    id: "blacksmith",
+    title: "Blacksmith",
+    logins: ["blacksmith-sh[bot]", "blacksmith[bot]"],
+    appId: 807020,
+    read: (body) => {
+      const failures = /\bfound (\d+) (?:test )?failures?\b/i.exec(body);
+      if (failures !== null) {
+        const count = Number(failures[1]);
+        return { state: "failed", headline: plural(count, "test failure"), count, short: [{ text: plural(count, "failure") }] };
+      }
+      if (/\b(?:all tests passed|no (?:test )?failures)\b/i.test(body)) return { state: "passed", headline: "Tests passed", short: [] };
+      return null;
+    }
+  },
+  {
+    // Socket (socket.dev): supply-chain security. Its bot keeps one comment per pull request current: with alerts,
+    // "Review the following alerts detected in dependencies" over a table whose rows start with the policy action
+    // (Block / Warn / Monitor); once fixed or ignored, "All alerts resolved"; and, when the policy says so, an
+    // overview "New and removed dependencies detected" with a table of the new packages.
+    id: "socket",
+    title: "Socket",
+    logins: ["socket-security[bot]", "socket-security-staging[bot]"],
+    appId: 156372,
+    read: (body) => {
+      if (/\breview the following alerts\b/i.test(body)) {
+        const rows = body.match(/(?:\*\*|<strong>)(Block|Warn|Monitor|Ignore)(?:\*\*|<\/strong>)/g) ?? [];
+        const count = rows.length;
+        const blocked = rows.filter((row) => /Block/.test(row)).length;
+        const parts = count > 0 ? [{ text: plural(count, "alert") }] : [];
+        if (blocked > 0) parts.push({ text: String(blocked), glyph: "dot", tone: "bad" });
+        return { state: "failed", headline: count > 0 ? `${plural(count, "alert")} in dependencies` : "Alerts in dependencies", ...count > 0 ? { count } : {}, short: parts };
+      }
+      if (/\ball alerts resolved\b/i.test(body)) return { state: "passed", headline: "All alerts resolved", short: [] };
+      if (/\bnew and removed dependencies detected\b/i.test(body) || /\bnew dependencies detected\b/i.test(body)) {
+        const added = (body.match(/^(?:\|\s*\[)?(?:npm|pypi|golang|go|github|maven|cargo|gem|rubygems|nuget|huggingface|chrome|vscode|actions)\/[^\s@\]|]+@/gim) ?? []).length;
+        return { state: "info", headline: "New and removed dependencies detected", ...added > 0 ? { count: added } : {}, short: added > 0 ? [{ text: plural(added, "new package") }] : [] };
+      }
+      return null;
+    }
+  },
+  {
+    // GitGuardian: secrets. "GitGuardian has uncovered 1 secret following the scan of your pull request" with a
+    // table of incidents; the same comment is edited to say the secret was revoked or ignored.
+    id: "gitguardian",
+    title: "GitGuardian",
+    logins: ["gitguardian[bot]"],
+    appId: 46505,
+    read: (body) => {
+      const found = /\buncovered (\d+) (?:hardcoded )?secrets?\b/i.exec(body);
+      if (found !== null) {
+        const count = Number(found[1]);
+        return { state: "failed", headline: `${plural(count, "secret")} in the changes`, count, short: [{ text: plural(count, "secret") }] };
+      }
+      if (/\bno secrets? (?:have been |were )?(?:found|detected)\b/i.test(body)) return { state: "passed", headline: "No secrets found", short: [] };
+      return null;
+    }
+  }
+];
+var LOGIN_INDEX2 = /* @__PURE__ */ new Map();
+for (const reporter of REPORTERS) {
+  for (const login of reporter.logins) LOGIN_INDEX2.set(login.toLowerCase(), reporter);
+}
+function counted(words, noun, pattern) {
+  const match = pattern.exec(words);
+  return match?.[1] === void 0 ? [] : [{ text: plural(Number(match[1]), noun) }];
+}
+var CHANGES = /(\d+) (?:visual |ui )?(?:and accessibility )?changes?\b/i;
+var DIFFS = /(\d+) (?:unresolved |visual |new )?(?:diffs?|differences?)\b/i;
+function percent(words) {
+  const match = /(\d+(?:\.\d+)?%)(\s*\([+−-]\d+(?:\.\d+)?%\))?/.exec(words);
+  return match === null ? [] : [{ text: `${match[1]}${match[2] === void 0 ? "" : ` ${match[2].trim()}`}` }];
+}
+var afterSlash = (service) => (name) => {
+  const match = service.exec(name);
+  if (match === null) return null;
+  const rest = name.slice(match[0].length).replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return rest === "" ? null : rest;
+};
+var CHECK_REPORTERS = [
+  {
+    // Visual tests per Storybook project: "UI Tests: project — Failed test" / "— 3 changes must be accepted".
+    id: "chromatic",
+    title: "Chromatic",
+    appId: 47100,
+    hosts: ["chromatic.com"],
+    project: (name) => /^UI (?:Tests|Review)(?::\s*(.+))?$/i.exec(name)?.[1]?.trim() ?? null,
+    // "Storybook Publish: project — 624 stories published" says the build uploaded, not what the tests found.
+    ignore: (name) => /^Storybook Publish\b/i.test(name),
+    // "3 changes must be accepted" → "3 changes"; "Failed test" / "Passed" / "411 tests unchanged" → the light alone.
+    short: (words) => counted(words, "change", CHANGES)
+  },
+  {
+    // Visual review: "percy/project — 4 visual changes need review" / "— Visual review automatically approved".
+    id: "percy",
+    title: "Percy",
+    appId: 398,
+    hosts: ["percy.io"],
+    checkNames: /^percy\//i,
+    project: afterSlash(/^percy\//i),
+    short: (words) => counted(words, "change", CHANGES)
+  },
+  {
+    // Coverage: "codecov/project — 80.12% (+0.03%) compared to abc1234", "codecov/patch — 62.50% of diff hit (target 80.00%)";
+    // flags add a third segment ("codecov/project/ui"). The facet after "codecov/" is the project here.
+    id: "codecov",
+    title: "Codecov",
+    appId: 254,
+    hosts: ["codecov.io"],
+    checkNames: /^codecov\//i,
+    project: afterSlash(/^codecov\//i),
+    // "62.50% of diff hit (target 80.00%)" → "62.50%"; "80.12% (+0.03%) compared to abc" → "80.12% (+0.03%)".
+    short: percent
+  },
+  {
+    // "SonarCloud Code Analysis" / "SonarQube Cloud Code Analysis" — "Quality Gate passed" / "Quality Gate failed".
+    id: "sonar",
+    title: "Sonar",
+    appId: 12526,
+    hosts: ["sonarcloud.io", "sonarqube.com", "sonarqube.io", "sonarsource.com"],
+    checkNames: /^Sonar(?:Cloud|Qube)\b/i,
+    project: () => null,
+    // "Quality Gate passed" / "failed": the light says it.
+    short: () => []
+  },
+  {
+    // "security/snyk - package.json (org)" / "license/snyk - …" — "No new issues" / "2 new issues (1 high)".
+    id: "snyk",
+    title: "Snyk",
+    appId: 372950,
+    hosts: ["snyk.io"],
+    checkNames: /\bsnyk\b/i,
+    project: afterSlash(/^(?:security|license|code)\/snyk\s*-\s*/i),
+    // "2 new issues (1 high, 1 medium)" → "2 issues" and a red-dotted count of the high ones; "No new issues" → the light.
+    short: (words) => {
+      const issues = /(\d+) new issues?/i.exec(words);
+      if (issues === null) return [];
+      const parts = [{ text: plural(Number(issues[1]), "issue") }];
+      const high = /(\d+) (?:high|critical)/i.exec(words);
+      if (high !== null) parts.push({ text: high[1] ?? "", glyph: "dot", tone: "bad" });
+      return parts;
+    }
+  },
+  {
+    // "Cypress Cloud" — "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" with the run's dashboard link.
+    id: "cypress",
+    title: "Cypress Cloud",
+    appId: 9078,
+    hosts: ["cypress.io"],
+    checkNames: /^Cypress(?: Cloud)?\b/i,
+    project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
+    // "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" → "✗ 2 ✓ 41" (a pending count with a dot; zeros and skips left out).
+    short: (words) => {
+      const read = (key) => {
+        const match = new RegExp(`${key}:?\\s*(\\d+)`, "i").exec(words);
+        return match === null ? null : Number(match[1]);
+      };
+      const parts = [];
+      const failed = read("failed");
+      const passed = read("passed");
+      const pending = read("pending");
+      if (failed !== null && failed > 0) parts.push({ text: String(failed), glyph: "x", tone: "bad" });
+      if (passed !== null && passed > 0) parts.push({ text: String(passed), glyph: "check", tone: "good" });
+      if (pending !== null && pending > 0) parts.push({ text: String(pending), glyph: "dot", tone: "warn" });
+      return parts;
+    }
+  },
+  {
+    // "argos" — "3 changes, waiting for your decision" / "No change detected".
+    id: "argos",
+    title: "Argos",
+    appId: 57576,
+    hosts: ["argos-ci.com"],
+    checkNames: /^argos\b/i,
+    project: afterSlash(/^argos\//i),
+    short: (words) => counted(words, "change", CHANGES)
+  },
+  {
+    // "happo" / "happo/project" — "2 diffs" / "No diffs".
+    id: "happo",
+    title: "Happo",
+    appId: 9959,
+    hosts: ["happo.io"],
+    checkNames: /^happo\b/i,
+    project: afterSlash(/^happo\//i),
+    short: (words) => counted(words, "diff", DIFFS)
+  },
+  {
+    // Applitools Eyes — "3 unresolved diffs" / "All tests passed".
+    id: "applitools",
+    title: "Applitools",
+    hosts: ["applitools.com"],
+    checkNames: /^(?:applitools|eyes)\b/i,
+    project: afterSlash(/^(?:applitools|eyes)\//i),
+    short: (words) => counted(words, "diff", DIFFS)
+  },
+  {
+    // "lost-pixel" — "N differences found".
+    id: "lost-pixel",
+    title: "Lost Pixel",
+    appId: 166555,
+    hosts: ["lost-pixel.com"],
+    checkNames: /^lost-pixel\b/i,
+    project: afterSlash(/^lost-pixel\//i),
+    short: (words) => counted(words, "diff", DIFFS)
+  },
+  {
+    // Lighthouse CI's public report viewer lives on GitHub Pages, so the path is checked as well as the host; a
+    // self-hosted LHCI server has no host to know, and is left to the check's name.
+    id: "lighthouse",
+    title: "Lighthouse CI",
+    appId: 45298,
+    hosts: ["googlechrome.github.io"],
+    path: /\/lighthouse-ci\//i,
+    project: afterSlash(/^lhci\//i),
+    short: (words) => counted(words, "assertion", /(\d+) (?:failed )?assertions?\b/i)
+  },
+  {
+    // Socket's checks: "Socket Security: Pull Request Alerts — Pull Request #12 Alerts: Success | Skipped | Complete
+    // with warnings" (Details: socket.dev) and "Socket Security: Project Report — Project Report: Success", which is
+    // about every dependency in the project, not this pull request. When Socket also commented, the comment is shown
+    // instead (`latestReports`).
+    id: "socket",
+    title: "Socket",
+    appId: 156372,
+    hosts: ["socket.dev"],
+    checkNames: /^Socket Security\b/i,
+    project: () => null,
+    // "Skipped": the pull request changes no dependency, so there is nothing to report.
+    ignore: (name, description) => /\bProject Report\b/i.test(name) || /\bAlerts:\s*Skipped\b/i.test(description),
+    rephrase: (words) => words.replace(/^Pull Request #\d+ Alerts:\s*/i, ""),
+    // "Complete with warnings" / "Success" / "Skipped": the light says it.
+    short: () => []
+  },
+  {
+    // "GitGuardian Security Checks — 2 policy breaks detected" / "No policy breaks detected" (Details: dashboard.gitguardian.com).
+    id: "gitguardian",
+    title: "GitGuardian",
+    appId: 46505,
+    hosts: ["gitguardian.com"],
+    checkNames: /^GitGuardian\b/i,
+    project: () => null,
+    short: (words) => {
+      const match = /(\d+) (secrets?|policy breaks?|incidents?)\b/i.exec(words);
+      if (match?.[1] === void 0) return [];
+      const noun = /^policy/i.test(match[2] ?? "") ? "policy break" : /^incident/i.test(match[2] ?? "") ? "incident" : "secret";
+      return [{ text: plural(Number(match[1]), noun) }];
+    }
+  },
+  {
+    // "Semgrep OSS" / "Semgrep Code" / "Semgrep Cloud Platform" — "N findings" (Details: semgrep.dev).
+    id: "semgrep",
+    title: "Semgrep",
+    appId: 60555,
+    hosts: ["semgrep.dev"],
+    checkNames: /^Semgrep\b/i,
+    project: afterSlash(/^Semgrep(?: OSS| Code| Cloud Platform)?\s*[/:-]\s*/i),
+    short: (words) => counted(words, "finding", /(\d+) (?:new |blocking )?findings?\b/i)
+  },
+  {
+    // "Aikido Security: check code" / "check dependencies" — "Scan completed" (Details: app.aikido.dev); the facet after
+    // the colon is the project, the conclusion says whether it found anything.
+    id: "aikido",
+    title: "Aikido",
+    appId: 242558,
+    hosts: ["aikido.dev"],
+    checkNames: /^Aikido\b/i,
+    project: afterSlash(/^Aikido(?: Security)?\s*[/:-]\s*/i),
+    short: (words) => counted(words, "issue", /(\d+) (?:new )?(?:issues?|vulnerabilit(?:y|ies))\b/i)
+  },
+  {
+    // "Gecko Security Review" — "No vulnerabilities found" / "N vulnerabilities found" (Details: app.gecko.security).
+    id: "gecko",
+    title: "Gecko",
+    appId: 1047747,
+    hosts: ["gecko.security"],
+    checkNames: /^Gecko Security\b/i,
+    project: () => null,
+    short: (words) => counted(words, "vulnerability", /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i)
+  },
+  {
+    // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): its row links to GitHub's own checks tab and
+    // its Details is a plain `github.com/…/runs/N`, so the words identify it — "No new alerts in code changed by this pull request" / "2 new alerts including 1
+    // high severity security vulnerability". The tool's name is the project. The check passes unless an alert reaches
+    // the repository's failure threshold, so the state is read from the count.
+    id: "code-scanning",
+    title: "Code scanning",
+    appId: 57789,
+    hosts: [],
+    description: /\bcode changed by this pull request\b/i,
+    project: (name) => name.trim() === "" ? null : name.trim(),
+    state: (words, fromConclusion) => /\b([1-9]\d*) new alerts?\b/i.test(words) ? "failed" : fromConclusion,
+    short: (words) => {
+      const alerts = /\b(\d+) new alerts?\b/i.exec(words);
+      if (alerts?.[1] === void 0 || Number(alerts[1]) === 0) return [];
+      const parts = [{ text: plural(Number(alerts[1]), "alert") }];
+      const severe = /\b(\d+) (?:critical|high)\b/i.exec(words);
+      if (severe?.[1] !== void 0) parts.push({ text: severe[1], glyph: "dot", tone: "bad" });
+      return parts;
+    }
+  }
+];
 
 // src/github.ts
 var API = "https://api.github.com";

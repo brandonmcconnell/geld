@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildMeta } from './build';
 import type { RawPullRequest } from './build';
-import { parseSummaryBody, parseSummaryElement } from './summary-parse';
+import { encodePayloadAttribute, extractPayloadText, looksLikeSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, botsTriggeredBy, botTitle, isStatusLineComment, looksLikeBotLogin, parseBotBody, resolveBotId, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, botTitle, isStatusLineComment, looksLikeBotLogin, parseBotBody, refusalReason, resolveBotId, verdictsFrom } from './bots';
 import type { DerivedBotVerdict } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
@@ -106,9 +106,28 @@ describe('render / parse round trip', () => {
     const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const body = renderSummary(meta, { owner: 'acme', repo: 'widgets', number: 123 });
     expect(body).toContain('<!-- geld:summary:v1 -->');
-    expect(body).toContain('```geld');
+    // The payload rides in an attribute, not a code block: nothing of it is visible in the rendered comment.
+    expect(body).toContain("<span title='geld:");
+    expect(body).not.toContain('```');
+    expect(body).not.toContain('<details>');
     const parsed = parseSummaryBody(body);
     expect(parsed).toEqual({ ok: true, value: meta });
+  });
+
+  it('escapes the payload for the attribute and reads it back exactly, entities and all', () => {
+    const json = JSON.stringify({ title: `Fix <b>x</b> & "y" &amp; 'z'`, n: 1 });
+    const attribute = encodePayloadAttribute(json);
+    expect(attribute).not.toMatch(/[<>']/);
+    expect(attribute.startsWith('geld:')).toBe(true);
+    const body = `<sub>Footer<span title='${attribute}'></span></sub>`;
+    expect(extractPayloadText(body)).toBe(json);
+    expect(looksLikeSummaryBody(body)).toBe(true);
+  });
+
+  it('still reads a summary written with the older fenced block', () => {
+    const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const legacy = '<!-- geld:summary:v1 -->\n### Geld review summary\n\n<details><summary>Geld data</summary>\n\n```geld\n' + JSON.stringify(meta) + '\n```\n\n</details>\n';
+    expect(parseSummaryBody(legacy)).toEqual({ ok: true, value: meta });
   });
 
   it('tolerates GitHub rendering (nbsp, smart quotes, pre lang wrapping)', () => {
@@ -157,6 +176,16 @@ describe('render / parse round trip', () => {
     expect(noFixes.items.find((entry) => entry.id === bot.id)?.fix).toBeUndefined();
   });
 
+  it('reads a QueryRoot the way GitHub renders the carrier span (title decoded by the browser)', () => {
+    const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const json = JSON.stringify(meta);
+    const parsed = parseSummaryElement({
+      textContent: 'Geld review summary … Maintained by Geld',
+      querySelector: (selector: string) => (selector.startsWith('span[title^=') ? { textContent: '', getAttribute: (name: string) => (name === 'title' ? `geld:${json}` : null) } : null),
+    });
+    expect(parsed).toEqual({ ok: true, value: meta });
+  });
+
   it('reads a QueryRoot the way GitHub renders <pre lang="geld">', () => {
     const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const withNbsp = JSON.stringify(meta).replace(/: /g, ':\u00a0');
@@ -186,7 +215,7 @@ describe('render / parse round trip', () => {
     const pr: RawPullRequest = { ...fixturePr(), threads };
     const built = buildMeta(pr, { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const body = renderSummary(built);
-    expect(JSON.stringify(built).length).toBeLessThanOrEqual(PAYLOAD_BUDGET);
+    expect(encodePayloadAttribute(JSON.stringify(built)).length).toBeLessThanOrEqual(PAYLOAD_BUDGET + 'geld:'.length);
     expect(body.length).toBeLessThan(65_536);
     if (built.truncated === true) {
       expect(built.items.some((item) => item.status === 'open')).toBe(true);
@@ -417,6 +446,42 @@ describe('bots + prompts', () => {
 
   it('rejects non-JSON model output', () => {
     expect(parseConsolidateOutput('not json', new Set(['a'])).ok).toBe(false);
+  });
+});
+
+describe('a bot that refuses to run', () => {
+  const skipping = 'Skipping Bugbot: Bugbot is disabled for this repository. Visit the [Bugbot dashboard](https://www.cursor.com/dashboard/bugbot) to update your settings.';
+
+  it('reads the refusal and its reason, without the bot naming itself', () => {
+    expect(refusalReason(skipping)).toBe('Bugbot is disabled for this repository');
+    expect(refusalReason('Greptile is not enabled for this repo. Enable it in the dashboard.')).toBe('Greptile is not enabled for this repo');
+    expect(refusalReason('You have no credits remaining. Upgrade your plan to continue.')).toBe('You have no credits remaining');
+    expect(refusalReason('Could not access the repository: permission denied.')).toBe('Could not access the repository: permission denied');
+  });
+
+  it('does not mistake a review, a status line or a question for a refusal', () => {
+    expect(refusalReason('Bugbot reviewed your changes and found 2 potential issues.')).toBeNull();
+    expect(refusalReason('Starting Devin Review.')).toBeNull();
+    expect(refusalReason('Skipping the test suite here is intentional, see the PR description — the limit is per file.')).toBeNull();
+    expect(refusalReason('No issues found; the subscription check in `billing.ts` could not be simpler.')).toBeNull();
+  });
+
+  it('is a failed verdict carrying the reason, sourced at the comment, after a trigger or an earlier run', () => {
+    const now = Date.UTC(2026, 9, 6, 6, 0);
+    const comments = [
+      { author: 'cursor[bot]', body: 'Cursor Bugbot has reviewed your changes and found no issues.', anchor: 'issuecomment-1', createdAt: '2026-10-05T10:00:00Z' },
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-2', createdAt: '2026-10-06T05:49:27Z' },
+      { author: 'cursor[bot]', body: skipping, anchor: 'issuecomment-3', createdAt: '2026-10-06T05:49:29Z' },
+    ];
+    const [bugbot] = verdictsFrom([], comments, 'aaa', [], now);
+    expect(bugbot).toMatchObject({ id: 'bugbot', verdict: 'failed', sourceId: 'issuecomment-3', reason: 'Bugbot is disabled for this repository' });
+    expect(bugbot?.count).toBeUndefined();
+  });
+
+  it('round-trips the reason through the payload', () => {
+    const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const withReason = { ...meta, bots: [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'failed' as const, reviewedSha: meta.headSha, sourceId: 'issuecomment-3', reason: 'Bugbot is disabled for this repository' }] };
+    expect(parseSummaryBody(renderSummary(withReason))).toEqual({ ok: true, value: withReason });
   });
 });
 
