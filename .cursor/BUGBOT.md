@@ -10,9 +10,13 @@ root is the authoritative description; this file lists what a reviewer must chec
   shims. Prefer type guards and `unknown`.
 - The content script moving, removing or re-parenting GitHub's own DOM nodes. Hiding is done with CSS
   `order`, attributes and `hidden`; GitHub's React view breaks otherwise.
-- The content script fetching `.diff` files or any GitHub API itself. Network goes through the
-  background worker (`entrypoints/background.ts`), which paces requests under GitHub's burst limit;
-  bypassing it gets users rate-limited.
+- The content script fetching `.diff` files or `api.github.com` itself. Those go through the
+  background worker (`entrypoints/background.ts`), which paces them under the diff host's burst limit
+  (~45 requests, then 429 to everything for a minute); bypassing it gets users rate-limited. The
+  page's *own* same-origin JSON is a different matter and is fetched from the content script on
+  purpose, once per page or head, as the page itself does on navigation: the files-tab summaries
+  (`/pull/N/changes?_json=1`), the Commits tab (`/pull/N/commits` with `Accept: application/json`),
+  directory listings and raw files for `.github/geld.yml`.
 - New or widened manifest permissions / host permissions. These disable the extension on update
   until every user re-approves.
 - A pattern or category change anywhere other than `packages/core/src/categories.ts` and
