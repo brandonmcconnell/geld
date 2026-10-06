@@ -150,13 +150,19 @@ jobs:
       # request changes the patterns; only the push to main can commit a new
       # one). Nothing is committed here. Without the secret, or on a fork's
       # pull request, the committed signature is checked as before.
-      - name: Use the catalog signed for this check
+      - name: Use the catalog built for this check
         if: needs.catalog-sign.outputs.signed == 'true'
         uses: actions/download-artifact@v7
         with:
-          pattern: geld-catalog-*
-          merge-multiple: true
+          name: geld-catalog-unsigned
           path: .
+      # A one-file artifact is stored flat, so this one lands by its directory.
+      - name: Use the signature made for this check
+        if: needs.catalog-sign.outputs.signed == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: geld-catalog-signature
+          path: catalog
       # Typechecks and unit tests for every workspace package (core + extension),
       # plus lint and a production build of the site.
       - run: pnpm check
