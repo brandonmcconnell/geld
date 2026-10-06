@@ -19315,15 +19315,34 @@ function parseBotBody(body, botId) {
 function refusalReason(body) {
   const text = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
   if (text === "" || text.length > 400) return null;
-  const refused = (
-    // "Skipping Bugbot: …", "Skipped review: …" — a skip of the run, not of something in the code under review.
-    /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text) || /\b(?:is|are|was|has been|have been)\s+(?:currently\s+)?(?:disabled|not enabled|not installed|not configured|not set up|not authori[sz]ed|unavailable|turned off|paused)\b/i.test(text) || /\b(?:no|out of|insufficient|exceeded|reached)\s+(?:your\s+)?(?:\w+\s+)?(?:credits?|quota|budget|limit|allowance)\b/i.test(text) || /\b(?:subscription|plan|trial|billing)\b[^.!?]*\b(?:expired|required|needed|inactive|ended|lapsed|upgrade)\b/i.test(text) || /\b(?:could not|couldn.t|cannot|can.t|unable to|failed to)\s+(?:access|read|clone|fetch|start|run|review|analy[sz]e)\b/i.test(text) || /\b(?:permission denied|access denied|not authorized|unauthorized|forbidden)\b/i.test(text)
-  );
-  if (!refused) return null;
-  const first = text.split(/(?<=[.!?])\s+/)[0] ?? text;
+  const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text);
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const first = skipped ? sentences[0] : sentences.find((sentence) => REFUSAL_PHRASE.test(sentence) && REFUSAL_SUBJECT.test(sentence));
+  if (first === void 0) return null;
   const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, "");
   return stripped.replace(/[.!?]\s*$/, "").trim() || first;
 }
+var REFUSAL_PHRASE = new RegExp(
+  [
+    /\b(?:is|are|was|has been|have been)\s+(?:currently\s+)?(?:disabled|not enabled|not installed|not configured|not set up|not authori[sz]ed|unavailable|turned off|paused)\b/,
+    /\b(?:no|out of|insufficient|exceeded|reached)\s+(?:your\s+)?(?:\w+\s+)?(?:credits?|quota|budget|limit|allowance)\b/,
+    /\b(?:subscription|plan|trial|billing)\b[^.!?]*\b(?:expired|required|needed|inactive|ended|lapsed|upgrade)\b/,
+    /\b(?:could not|couldn.t|cannot|can.t|unable to|failed to)\s+(?:access|read|clone|fetch|start|run|review|analy[sz]e)\b/,
+    /\b(?:permission denied|access denied|not authorized|unauthorized|forbidden)\b/
+  ].map((part) => part.source).join("|"),
+  "i"
+);
+var REFUSAL_SUBJECT = new RegExp(
+  [
+    /\b(?:bot|reviews?|reviewer|reviewing|code review|analysis|scan)\b/,
+    /\b(?:this|the|your)\s+(?:repo(?:sitory)?|org(?:anization)?|account|project|workspace|team|installation|app|plan|subscription|trial)\b/,
+    /\b(?:credits?|quota|billing|seats?)\b/,
+    /\byou(?:r)?\b/,
+    /\[bot\]/,
+    new RegExp(`\\b(?:${REVIEW_BOTS.flatMap((bot) => [bot.title, ...bot.logins.map((login) => login.replace(/\[bot\]$/i, ""))]).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`)
+  ].map((part) => part.source).join("|"),
+  "i"
+);
 function withOptionalCount(base, parsed) {
   return {
     ...base,

@@ -466,6 +466,16 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('No issues found; the subscription check in `billing.ts` could not be simpler.')).toBeNull();
   });
 
+  it('does not mistake a short review about the code for a refusal', () => {
+    // The code under review can be "disabled" or "not configured" too; a refusal says it about the bot or the review.
+    expect(refusalReason('The `retry` flag is disabled in production, so this branch never runs.')).toBeNull();
+    expect(refusalReason('Rate limiting is not configured for the new endpoint; see `limits.ts`.')).toBeNull();
+    expect(refusalReason('This handler cannot access the session when called from the worker, which will throw.')).toBeNull();
+    expect(refusalReason('The CI check is disabled on this branch and `permission denied` is swallowed in `run.sh`.')).toBeNull();
+    expect(refusalReason('Reviews are not enabled for this repository.')).toBe('Reviews are not enabled for this repository');
+    expect(refusalReason('CodeRabbit is currently paused for this organization. Resume it in the dashboard.')).toBe('CodeRabbit is currently paused for this organization');
+  });
+
   it('is a failed verdict carrying the reason, sourced at the comment, after a trigger or an earlier run', () => {
     const now = Date.UTC(2026, 9, 6, 6, 0);
     const comments = [
