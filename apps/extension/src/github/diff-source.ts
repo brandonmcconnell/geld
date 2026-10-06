@@ -86,8 +86,18 @@ export class DiffSource {
    * of that same head) serve both, fetched once.
    */
   private readonly provisional = new Map<string, readonly FileStats[]>();
-  /** Diff URLs whose summaries were asked for this page (once is enough: they change only with a push, which is a new key). */
-  private readonly summariesAsked = new Set<string>();
+  /**
+   * Per diff URL, the head the summaries were asked for: the SHA when the
+   * request knew one, null before the page did. The summaries are GitHub's
+   * view of the *current* head, so they are asked once per head: a request
+   * for the same URL under a new SHA (the files view's "new changes" refresh
+   * re-keys the diff without a reload) drops what was held for the old one
+   * and asks again. Asked without a SHA and then with one, the one set of
+   * summaries serves both — they were fetched for that same head.
+   */
+  private readonly summariesHead = new Map<string, string | null>();
+  /** Per diff URL, which ask is current; an answer to an earlier one (an old head's) is dropped. */
+  private readonly summariesAsk = new Map<string, number>();
   /** The diff URL behind each key, for the summaries lookup. */
   private readonly urlOfKey = new Map<string, string>();
   /** Per diff URL the background called too large: the on-disk keys the summaries stand in for, for good. */
@@ -274,8 +284,22 @@ export class DiffSource {
 
   private askSummaries(diffUrl: string, key: string): void {
     const url = diffSummariesUrl(diffUrl);
-    if (url === null || this.summariesAsked.has(diffUrl)) return;
-    this.summariesAsked.add(diffUrl);
+    if (url === null) return;
+    const sha = key === diffUrl ? null : key;
+    if (this.summariesHead.has(diffUrl)) {
+      const asked = this.summariesHead.get(diffUrl) ?? null;
+      // Asked already for this head, or before the head was known (the same head, named since): nothing to do.
+      if (sha === null || asked === null || asked === sha) {
+        if (sha !== null && asked === null) this.summariesHead.set(diffUrl, sha);
+        return;
+      }
+      // A new head under the same URL: the old head's summaries would show as this one's.
+      this.provisional.delete(diffUrl);
+      this.tooLarge.delete(diffUrl);
+    }
+    this.summariesHead.set(diffUrl, sha);
+    const ask = (this.summariesAsk.get(diffUrl) ?? 0) + 1;
+    this.summariesAsk.set(diffUrl, ask);
     const attempt = (tries: number): void => {
       void fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
         .then(async (response) => {
@@ -288,11 +312,13 @@ export class DiffSource {
         .then((files) => {
           if (files === 'retry') {
             const delay = SUMMARIES_RETRY_MS[tries];
-            if (delay !== undefined && this.memory.get(key)?.status !== 'ready') setTimeout(() => attempt(tries + 1), delay);
+            if (delay !== undefined && this.memory.get(key)?.status !== 'ready' && this.summariesAsk.get(diffUrl) === ask) setTimeout(() => attempt(tries + 1), delay);
             return;
           }
-          // The diff may have landed meanwhile; it says everything the summaries say and more.
+          // The diff may have landed meanwhile; it says everything the summaries say and more. And a newer head
+          // may have been asked about since: these summaries are the old head's, and not shown as the new one's.
           if (files === null || this.memory.get(key)?.status === 'ready') return;
+          if (this.summariesAsk.get(diffUrl) !== ask) return;
           this.provisional.set(diffUrl, files);
           for (const persistKey of this.tooLarge.get(diffUrl) ?? []) this.persistent.set(persistKey, files);
           this.onChange();
