@@ -477,7 +477,10 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('Error: unable to access repository.')).toBe('Error: unable to access repository');
     expect(refusalReason('Unauthorized.')).toBe('Unauthorized');
     expect(refusalReason('Could not clone the repository, please try again later.')).toBe('Could not clone the repository, please try again later');
-    // A thing from the diff after the phrase, or a code span anywhere, makes a short sentence a finding.
+    expect(refusalReason('Unable to access private repository.')).toBe('Unable to access private repository');
+    expect(refusalReason('Permission denied: `token`.')).toBe('Permission denied: token');
+    expect(refusalReason('Could not clone repository: invalid credentials, please check the installation.')).toBe('Could not clone repository: invalid credentials, please check the installation');
+    // A thing from the diff after the phrase makes a short sentence a finding, quoted or not.
     expect(refusalReason('Cannot access `foo` from the worker.')).toBeNull();
     expect(refusalReason('Cannot access session from the worker.')).toBeNull();
     expect(refusalReason('Failed to read `config.json` on startup.')).toBeNull();
