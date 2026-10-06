@@ -307,9 +307,11 @@ function isBareRefusal(sentence: string): boolean {
  * about code carries one of those; a refusal has nothing to point at.
  */
 function isBareAdvice(body: string, text: string): boolean {
-  if (text.length > 200 || /`/.test(body)) return false;
+  // A link is where the advice points ("Visit https://github.com/settings/installations"), not code.
+  const unlinked = text.replace(/https?:\/\/\S+/g, '');
+  if (unlinked.length > 200 || /`/.test(body)) return false;
   // The raw body, not the cleaned text: the cleanup strips underscores as emphasis marks.
-  const raw = body.replace(/<!--[\s\S]*?-->/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  const raw = body.replace(/<!--[\s\S]*?-->/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/https?:\/\/\S+/g, '');
   return !/(?:\w[\w-]*[./]\w|\b\w*_\w+\b|\b[a-z]+[A-Z]\w*\b)/.test(raw);
 }
 

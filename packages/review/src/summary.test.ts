@@ -483,6 +483,7 @@ describe('a bot that refuses to run', () => {
     // A bare refusal may be followed by a line of advice, as long as nothing in the comment points at code.
     expect(refusalReason('Could not fetch repository. Check the token and retry.')).toBe('Could not fetch repository');
     expect(refusalReason('Permission denied. Install the app for this organization and run again.')).toBe('Permission denied');
+    expect(refusalReason('Permission denied. Visit https://github.com/settings/installations to reconnect.')).toBe('Permission denied');
     expect(refusalReason('Cannot access repository. The worker lacks the GITHUB_TOKEN scope.')).toBeNull();
     expect(refusalReason('Cannot access repository. See `fetch.ts` for the retry loop.')).toBeNull();
     expect(refusalReason('Unable to read config. The loader in src/config/load.ts swallows the error.')).toBeNull();
