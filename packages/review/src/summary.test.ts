@@ -336,6 +336,28 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([{ name: 'Devin Review', status: 'in_progress', conclusion: null, sha: 'bbb' }], [{ author: 'devin-ai-integration[bot]', body: 'Found 1 issue.', anchor: 'a' }, { author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'b' }], 'bbb')[0]?.verdict).toBe('running');
   });
 
+  it('reads a run started from CI, with nothing said in the thread, from its check alone', () => {
+    const running = [
+      { name: 'Cursor Bugbot', status: 'in_progress', conclusion: null, sha: 'bbb' },
+      { name: 'Greptile Review', status: 'queued', conclusion: null, sha: 'bbb' },
+    ];
+    // A bot run by the repository's CI (or from its own site) posts nothing until it is done: its check is the
+    // only sign. With no comments at all, both are running.
+    expect(verdictsFrom(running, [], 'bbb').map((bot) => `${bot.id}:${bot.verdict}`).sort()).toEqual(['bugbot:running', 'greptile:running']);
+    // With the summary of an earlier run in the thread, the running check is the current run and wins; the
+    // earlier summary stays as what the chip opens.
+    const earlier = [
+      { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\nFound 2 issues.', anchor: 'issuecomment-1' },
+      { author: 'cursor[bot]', body: 'Bugbot reviewed your changes and found no new issues!', anchor: 'issuecomment-2' },
+    ];
+    const verdicts = verdictsFrom(running, earlier, 'bbb');
+    expect(verdicts.find((bot) => bot.id === 'greptile')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-1', checkName: 'Greptile Review' });
+    expect(verdicts.find((bot) => bot.id === 'bugbot')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-2', checkName: 'Cursor Bugbot' });
+    // Once the check completes, the comments say what the run found.
+    const done = running.map((check) => ({ ...check, status: 'completed', conclusion: 'success' }));
+    expect(verdictsFrom(done, earlier, 'bbb').map((bot) => `${bot.id}:${bot.verdict}`).sort()).toEqual(['bugbot:clean', 'greptile:findings']);
+  });
+
   it('starts a run when a person asks a bot to', () => {
     const now = Date.UTC(2026, 8, 29, 19, 0);
     const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();

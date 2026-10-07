@@ -640,6 +640,22 @@ export function verdictsFrom(
     }
     byId.set(id, { id, login: run.login, verdict: 'findings', count: 0, ...scored, reviewedSha, ...named, sourceId: run.lastAnchor });
   }
+  // A check still running on the head is the bot's current run, whatever its comments said: those are the run
+  // before (a bot run from CI, or asked for on its own site, posts nothing until it is done). The chip reads
+  // running and keeps the latest summary to open.
+  for (const [id, verdict] of checkVerdict) {
+    if (verdict !== 'running') continue;
+    const existing = byId.get(id);
+    if (existing === undefined || existing.verdict === 'running' || existing.verdict === 'loading') continue;
+    byId.set(id, {
+      id,
+      login: existing.login,
+      verdict: 'running',
+      reviewedSha: existing.reviewedSha,
+      ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }),
+      ...(existing.sourceId === undefined ? {} : { sourceId: existing.sourceId }),
+    });
+  }
 
   return [...byId.values()];
 }
