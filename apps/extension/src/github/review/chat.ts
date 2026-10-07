@@ -655,7 +655,11 @@ function placeControls(message: HTMLElement): void {
     side.append(actions);
     teleportInto(actions, [menu]);
     if (actions.childElementCount === 0) actions.remove();
-    else installMenuFlip();
+    else {
+      installMenuFlip();
+      // A menu still open when its chat is rebuilt goes home open; its watcher and mark go with the slot.
+      if (menu instanceof HTMLDetailsElement) onRestore(() => unwatchMenu(menu));
+    }
   }
   // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
   if (side.childElementCount === 0) {
@@ -671,6 +675,23 @@ const ATTR_MENU_UP = 'data-geld-menu-up';
 const MENU_CLEARANCE = 24;
 
 let menuFlipInstalled = false;
+/** The ⋯ menus open beside a bubble right now, each with the observer following its menu's height. */
+const openMenus = new Map<HTMLDetailsElement, { menu: HTMLElement; observer: ResizeObserver }>();
+
+function placeMenu(details: HTMLDetailsElement, menu: HTMLElement): void {
+  const button = details.getBoundingClientRect();
+  const need = menu.offsetHeight + MENU_CLEARANCE;
+  const below = window.innerHeight - button.bottom;
+  const above = button.top - stickyHeaderBottomAt(window.scrollY);
+  details.toggleAttribute(ATTR_MENU_UP, need > below && above > below);
+}
+
+/** Stop following `details`' menu and drop its mark (closed, or gone home). */
+function unwatchMenu(details: HTMLDetailsElement): void {
+  openMenus.get(details)?.observer.disconnect();
+  openMenus.delete(details);
+  details.removeAttribute(ATTR_MENU_UP);
+}
 
 /**
  * GitHub's ⋯ menu always drops down from its button (`dropdown-menu-sw`),
@@ -684,31 +705,19 @@ let menuFlipInstalled = false;
 function installMenuFlip(): void {
   if (menuFlipInstalled) return;
   menuFlipInstalled = true;
-  const watching = new Map<HTMLDetailsElement, ResizeObserver>();
-  const place = (details: HTMLDetailsElement, menu: HTMLElement): void => {
-    const button = details.getBoundingClientRect();
-    const need = menu.offsetHeight + MENU_CLEARANCE;
-    const below = window.innerHeight - button.bottom;
-    const above = button.top - stickyHeaderBottomAt(window.scrollY);
-    details.toggleAttribute(ATTR_MENU_UP, need > below && above > below);
-  };
   document.addEventListener(
     'toggle',
     (event) => {
       const details = event.target;
       if (!(details instanceof HTMLDetailsElement) || !details.matches('.geld-review__msg-actions > details')) return;
-      watching.get(details)?.disconnect();
-      watching.delete(details);
-      if (!details.open) {
-        details.removeAttribute(ATTR_MENU_UP);
-        return;
-      }
+      unwatchMenu(details);
+      if (!details.open) return;
       const menu = details.querySelector<HTMLElement>('.dropdown-menu');
       if (menu === null) return;
-      place(details, menu);
-      const observer = new ResizeObserver(() => place(details, menu));
+      placeMenu(details, menu);
+      const observer = new ResizeObserver(() => placeMenu(details, menu));
       observer.observe(menu);
-      watching.set(details, observer);
+      openMenus.set(details, { menu, observer });
     },
     true,
   );
