@@ -418,17 +418,21 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
   // A summary from before this run ("Bugbot's run summary · 2 days ago"): the bot wrote none for this one.
   if (source.earlier !== undefined) children.push(relativeTimeElement(source.earlier, 'geld-review__chat-pin-when'));
   if (preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, inlineText(preview)));
-  children.push(icon(ICON_CHEVRON_DOWN));
   const button = createElement('button', { type: 'button', class: 'geld-review__chat-pin', 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(thread) }, children);
   button.addEventListener('click', () => handlers.onToggleSource(thread));
-  const row = createElement('div', { class: 'geld-review__chat-pin-row' }, [button]);
+  // The expand/collapse chevron is the rightmost thing on the row, after any control (Rerun / See latest), so the
+  // control reads as the button and the chevron as the strip's own toggle. A pointer affordance only — the strip
+  // button carries the label and aria-expanded for the keyboard and screen readers.
+  const chevron = createElement('button', { type: 'button', class: 'geld-review__chat-pin-chevron', tabindex: '-1', 'aria-hidden': 'true' }, [icon(ICON_CHEVRON_DOWN)]);
+  chevron.addEventListener('click', () => handlers.onToggleSource(thread));
+  const row = createElement('div', { class: 'geld-review__chat-pin-row' }, [button, chevron]);
   const wrap = createElement('div', { class: 'geld-review__chat-context', 'data-open': String(open) }, [row]);
   if (open) {
     // On the strip's right, while the comment is in view: Rerun when this is the bot's latest word; "See latest"
     // when it is not — an earlier run's summary (`latestAnchor`), or an earlier reading of this one (the page's
     // node is the current reading, in the bot's own row). Nothing while the reading is still being decided.
     const control = sourceControl(source, revision !== null, handlers);
-    if (control !== null) row.append(control);
+    if (control !== null) chevron.before(control);
     const body = createElement('div', { class: 'geld-review__chat-context-body' });
     wrap.append(body);
     if (revision !== null) {

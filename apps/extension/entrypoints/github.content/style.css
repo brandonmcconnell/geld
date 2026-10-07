@@ -4476,7 +4476,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 .geld-review__chat-pin-row > .geld-review__rerun-wrap {
-  margin: 4px 12px 4px 0;
+  margin: 4px 0;
 }
 
 .geld-review__chat-pin {
@@ -4535,15 +4535,27 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   white-space: nowrap;
 }
 
-.geld-review__chat-pin > .octicon:last-child {
+/* The strip's expand/collapse toggle, at the row's right after the Rerun / See latest control. */
+.geld-review__chat-pin-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
+  margin: 0 12px 0 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+.geld-review__chat-pin-chevron .octicon {
   width: 12px;
   height: 12px;
-  margin-left: auto;
   transition: transform 120ms ease;
 }
 
-.geld-review__chat-context[data-open='true'] .geld-review__chat-pin > .octicon:last-child {
+.geld-review__chat-context[data-open='true'] .geld-review__chat-pin-chevron .octicon {
   transform: rotate(180deg);
 }
 
