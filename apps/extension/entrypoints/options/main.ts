@@ -1166,8 +1166,16 @@ async function main(): Promise<void> {
       }
     },
     'report-diagnostics': async () => {
-      // The issue form gets the report through the link; a long one is trimmed to what a URL carries, and the
-      // whole report is on the clipboard for pasting over it. Nothing is sent until the issue is submitted there.
+      // The tab is opened now, inside the click: gathering every GitHub tab's answer and writing the clipboard
+      // can outlast the click's activation, after which a browser blocks window.open as a pop-up. The report
+      // reaches the form through the link once it is built; a long one is trimmed to what a URL carries, and
+      // the whole report is on the clipboard for pasting over it. Nothing is posted until the issue is submitted.
+      const popup = window.open('about:blank', '_blank');
+      if (popup === null) {
+        maintenanceStatus('The browser blocked the new tab; allow pop-ups for this page and try again', 'error');
+        return;
+      }
+      popup.opener = null;
       const text = await diagnosticsReport();
       const { trimmed } = trimReportForUrl(text);
       let copied = true;
@@ -1177,7 +1185,7 @@ async function main(): Promise<void> {
         copied = false;
       }
       const url = diagnosticsReportUrl(text, browser.runtime.getManifest().version, navigator.userAgent, navigator.platform);
-      window.open(url.toString(), '_blank', 'noopener');
+      popup.location.href = url.toString();
       maintenanceStatus(
         trimmed ? (copied ? 'Opened a new issue with the report (trimmed to fit; the full report is on your clipboard)' : 'Opened a new issue with the report, trimmed to fit the link') : 'Opened a new issue with the report filled in',
         trimmed && !copied ? 'error' : 'success',
