@@ -637,9 +637,13 @@ function placeControls(message: HTMLElement): void {
   if (picker !== null && !isTeleported(picker)) {
     teleportInto(side, [picker]);
     // GitHub's tooltip opens under the button; here the ⋯ can stand right there (the two stack when the bubble
-    // takes the row), and a tooltip over it swallowed the click. Above, nothing of ours is in the way.
-    const tip = picker.querySelector<HTMLElement>('tool-tip[data-direction]');
+    // takes the row), and a tooltip over it swallowed the click. Above, nothing of ours is in the way. The
+    // tooltip is the one the button names (`reactions-menu` holds it; the older `details` alone has it as a
+    // sibling, which comes along so the stylesheet can hide it while the palette is open).
+    const button = picker.querySelector<HTMLElement>('summary[id]');
+    const tip = (button === null ? null : document.querySelector<HTMLElement>(`tool-tip[for="${CSS.escape(button.id)}"]`)) ?? picker.querySelector<HTMLElement>('tool-tip');
     if (tip !== null) {
+      if (!picker.contains(tip) && !isTeleported(tip)) teleportInto(side, [tip]);
       const direction = tip.getAttribute('data-direction');
       tip.setAttribute('data-direction', 'n');
       onRestore(() => {
