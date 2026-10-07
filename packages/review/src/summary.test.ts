@@ -553,7 +553,7 @@ describe('a bot that refuses to run', () => {
     ];
     expect(verdictsFrom([], repeated, 'aaa', [], now)[0]).toMatchObject({ id: 'bugbot', verdict: 'findings', count: 1 });
     // The bot's own "Starting" with no request, then a refusal: the threads before it stand too.
-    const started = [repeated[0], repeated[2], repeated[4]];
+    const started = repeated.filter((_, index) => index === 0 || index === 2 || index === 4);
     expect(verdictsFrom([], started, 'aaa', [], now)[0]).toMatchObject({ id: 'bugbot', verdict: 'findings', count: 1 });
   });
 
