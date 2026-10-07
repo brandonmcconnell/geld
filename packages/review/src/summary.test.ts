@@ -392,6 +392,13 @@ describe('bots + prompts', () => {
     expect(byId(quiet, 'greptile')?.count).toBeUndefined();
     const failedRun = verdictsFrom([{ ...bugbotCheck, conclusion: 'failure' }], earlier, 'bbb', [], later);
     expect(byId(failedRun, 'bugbot')?.verdict).toBe('failed');
+    // A coding agent's reply during the run is conversation, not its review: the report is still awaited.
+    const chat = [
+      { author: 'replicas-dev[bot]', body: 'Found 2 issues.', anchor: 'pullrequestreview-7', createdAt: at(60) },
+      { author: 'replicas-dev[bot]', body: 'Sure, I will look at the migration too.', anchor: 'issuecomment-8', createdAt: at(1) },
+    ];
+    const replicasCheck = { name: 'Replicas', status: 'completed', conclusion: 'success', sha: 'bbb', startedAt: at(5), completedAt: at(0.2) };
+    expect(byId(verdictsFrom([replicasCheck], chat, 'bbb', [], now), 'replicas')).toMatchObject({ verdict: 'running', runJudged: true });
     // A finished check whose start nobody saw cannot be judged: the comments decide as before, and say so.
     const undated = finished.map(({ startedAt: _s, completedAt: _c, ...check }) => check);
     expect(byId(verdictsFrom(undated, earlier, 'bbb', [], now), 'greptile')).toMatchObject({ verdict: 'findings', score: 4 });

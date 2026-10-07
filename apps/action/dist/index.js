@@ -19516,17 +19516,17 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const runsBeforeAsk = /* @__PURE__ */ new Map();
   const lastEditBy = /* @__PURE__ */ new Map();
   const lastWordBy = /* @__PURE__ */ new Map();
+  const reported = (id, comment) => {
+    for (const at of [comment.createdAt, comment.editedAt]) {
+      const time3 = at === void 0 ? NaN : Date.parse(at);
+      if (!Number.isNaN(time3) && time3 > (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastWordBy.set(id, time3);
+    }
+  };
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id !== null && comment.editedAt !== void 0) {
       const edited = Date.parse(comment.editedAt);
       if (!Number.isNaN(edited) && edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
-    }
-    if (id !== null && !isStatusLineComment(comment.body)) {
-      for (const at of [comment.createdAt, comment.editedAt]) {
-        const time3 = at === void 0 ? NaN : Date.parse(at);
-        if (!Number.isNaN(time3) && time3 > (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastWordBy.set(id, time3);
-      }
     }
     if (id === null) {
       if (comment.resolved === void 0 && isTriggerComment(comment.body, extraLogins)) {
@@ -19542,6 +19542,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (comment.resolved !== void 0) {
+      reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
       const run2 = threadRuns.get(id);
@@ -19553,6 +19554,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
+      reported(id, comment);
       statusOnly.delete(id);
       const existing2 = byId.get(id);
       const prior = runsBeforeAsk.get(id);
@@ -19572,6 +19574,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    reported(id, comment);
     threadRuns.delete(id);
     statusOnly.delete(id);
     runsBeforeAsk.delete(id);

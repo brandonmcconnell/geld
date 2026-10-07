@@ -535,19 +535,22 @@ export function verdictsFrom(
   const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
   const lastEditBy = new Map<string, number>();
-  /** When each bot last reported anything (a comment posted or rewritten, a thread) — its "Starting" lines aside. */
+  /**
+   * When each bot last reported: a comment that votes below (a thread, a refusal, a review-shaped summary) posted
+   * or rewritten. Its "Starting" lines and a coding agent's conversational replies are not reports.
+   */
   const lastWordBy = new Map<string, number>();
+  const reported = (id: string, comment: BotComment): void => {
+    for (const at of [comment.createdAt, comment.editedAt]) {
+      const time = at === undefined ? NaN : Date.parse(at);
+      if (!Number.isNaN(time) && time > (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastWordBy.set(id, time);
+    }
+  };
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id !== null && comment.editedAt !== undefined) {
       const edited = Date.parse(comment.editedAt);
       if (!Number.isNaN(edited) && edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
-    }
-    if (id !== null && !isStatusLineComment(comment.body)) {
-      for (const at of [comment.createdAt, comment.editedAt]) {
-        const time = at === undefined ? NaN : Date.parse(at);
-        if (!Number.isNaN(time) && time > (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastWordBy.set(id, time);
-      }
     }
     if (id === null) {
       // A person asking a bot to run ("bugbot run", "@greptileai") starts a run as surely as the bot's own
@@ -570,6 +573,7 @@ export function verdictsFrom(
     }
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
+      reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
       const run = threadRuns.get(id);
@@ -581,6 +585,7 @@ export function verdictsFrom(
     if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
+      reported(id, comment);
       // The bot said it would not review: the run that was asked for is answered (not running), and refused. A
       // review the bot did make earlier still stands — the chip shows the last real run, and `reviewedSha` says
       // whether it is behind the head — so the refusal is the verdict only for a bot that never reviewed here.
@@ -606,6 +611,7 @@ export function verdictsFrom(
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    reported(id, comment);
     threadRuns.delete(id);
     statusOnly.delete(id);
     // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
