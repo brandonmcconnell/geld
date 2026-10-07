@@ -4181,16 +4181,41 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   position: relative;
 }
 
-/* The menu's caret is 16px tall and GitHub hangs the menu 4px under its trigger, so the caret reached 12px up into
- * the round button and, above the backdrop, took the pointer over the dots: no hover, no click to close. The menu
- * hangs its caret's height down so the tip meets the button's edge, and the caret never takes the pointer. */
+/* The menu's caret is a 16px box whose lower half is the visible triangle, and GitHub hangs the menu 4px under its
+ * trigger, so the caret reached 12px up into the round button and, above the backdrop, took the pointer over the
+ * dots: no hover, no click to close. The menu hangs 12px down — the triangle's tip 4px off the button, its
+ * transparent half over the button's edge — and the caret never takes the pointer. */
 .geld-review__msg-actions > details > .dropdown-menu {
-  margin-top: 16px !important;
+  margin-top: 12px !important;
 }
 
 .geld-review__msg-actions > details > .dropdown-menu::before,
 .geld-review__msg-actions > details > .dropdown-menu::after {
   pointer-events: none;
+}
+
+/* The same menu opened upward (chat.ts `installMenuFlip`: when down would cut it off and up would not): anchored
+ * to the button's top with the same 4px to the caret's tip, the caret turned to point down. GitHub's carets are
+ * bordered boxes with one coloured side (the border, then the surface over it); the coloured side moves to the top. */
+.geld-review__msg-actions > details[data-geld-menu-up] > .dropdown-menu {
+  top: auto !important;
+  bottom: 100%;
+  margin-top: 0 !important;
+  margin-bottom: 12px;
+}
+
+.geld-review__msg-actions > details[data-geld-menu-up] > .dropdown-menu::before {
+  top: auto;
+  bottom: -16px;
+  border-top-color: var(--borderColor-default, var(--color-border-default));
+  border-bottom-color: transparent;
+}
+
+.geld-review__msg-actions > details[data-geld-menu-up] > .dropdown-menu::after {
+  top: auto;
+  bottom: -14px;
+  border-top-color: var(--overlay-bgColor, var(--color-canvas-overlay));
+  border-bottom-color: transparent;
 }
 
 /* The picker's tooltip ("Add or remove reactions") goes while its palette is open: the two would overlap. */

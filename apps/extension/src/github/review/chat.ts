@@ -26,6 +26,7 @@ import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
 import type { RevisionView } from './edit-times';
 import { absoluteTimeText, relativeFineText, relativeTimeElement } from './time';
+import { stickyHeaderBottomAt } from './sticky';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
@@ -654,6 +655,7 @@ function placeControls(message: HTMLElement): void {
     side.append(actions);
     teleportInto(actions, [menu]);
     if (actions.childElementCount === 0) actions.remove();
+    else installMenuFlip();
   }
   // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
   if (side.childElementCount === 0) {
@@ -661,6 +663,55 @@ function placeControls(message: HTMLElement): void {
     return;
   }
   onRestore(() => side.remove());
+}
+
+/** On a ⋯ `details` beside a bubble whose menu opens upward (see `installMenuFlip`). */
+const ATTR_MENU_UP = 'data-geld-menu-up';
+/** The menu's caret (16px) and the gap the stylesheet leaves under the button: what the menu needs beyond its own height. */
+const MENU_CLEARANCE = 24;
+
+let menuFlipInstalled = false;
+
+/**
+ * GitHub's ⋯ menu always drops down from its button (`dropdown-menu-sw`),
+ * even at the foot of the viewport where only its first items show. Each
+ * time one opens beside a bubble it is placed on the side with the room: down
+ * by default, up when down would cut it off and up would not (or cuts off
+ * less). The menu's items arrive after it opens (`details-menu[src]`), so its
+ * height is watched while it is open and the side re-decided as it grows.
+ * `toggle` does not bubble; a capturing listener on the document sees it.
+ */
+function installMenuFlip(): void {
+  if (menuFlipInstalled) return;
+  menuFlipInstalled = true;
+  const watching = new Map<HTMLDetailsElement, ResizeObserver>();
+  const place = (details: HTMLDetailsElement, menu: HTMLElement): void => {
+    const button = details.getBoundingClientRect();
+    const need = menu.offsetHeight + MENU_CLEARANCE;
+    const below = window.innerHeight - button.bottom;
+    const above = button.top - stickyHeaderBottomAt(window.scrollY);
+    details.toggleAttribute(ATTR_MENU_UP, need > below && above > below);
+  };
+  document.addEventListener(
+    'toggle',
+    (event) => {
+      const details = event.target;
+      if (!(details instanceof HTMLDetailsElement) || !details.matches('.geld-review__msg-actions > details')) return;
+      watching.get(details)?.disconnect();
+      watching.delete(details);
+      if (!details.open) {
+        details.removeAttribute(ATTR_MENU_UP);
+        return;
+      }
+      const menu = details.querySelector<HTMLElement>('.dropdown-menu');
+      if (menu === null) return;
+      place(details, menu);
+      const observer = new ResizeObserver(() => place(details, menu));
+      observer.observe(menu);
+      watching.set(details, observer);
+    },
+    true,
+  );
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
