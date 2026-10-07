@@ -213,3 +213,29 @@ describe('words', () => {
     expect([...names]).toEqual(['debounce', 'SearchBox', 'fetch_rows', 'parse', 'search-spinner', '--geld-gap']);
   });
 });
+
+describe('supporting hunks', () => {
+  it('sends a test hunk to the step that defines what it tests, hunk by hunk', () => {
+    const two: PlanInput = {
+      title: 'Two helpers',
+      body: null,
+      headSha: 'd'.repeat(40),
+      commits: [],
+      files: [
+        file('src/alpha.ts', [hunk(0, ['export function alphaHelper() {}'])]),
+        file('src/beta.ts', [hunk(0, ['export function betaHelper() {}'])]),
+        // One test file, two hunks, each about a different helper.
+        file('src/helpers.test.ts', [hunk(0, ["it('alpha', () => expect(alphaHelper()).toBe(1))"]), hunk(1, ["it('beta', () => expect(betaHelper()).toBe(2))"], [], 40)], { hidden: TESTS }),
+      ],
+      findings: [],
+    };
+    const proposals: StepProposal[] = [
+      { key: 'a', title: 'Alpha', kind: 'feature', gist: null, touches: [{ path: 'src/alpha.ts', hunk: 0 }], dependsOn: [], watch: [] },
+      { key: 'b', title: 'Beta', kind: 'feature', gist: null, touches: [{ path: 'src/beta.ts', hunk: 0 }], dependsOn: [], watch: [] },
+    ];
+    const plan = normalizePlan(two, proposals, { producer: 'ai', model: 'm', madeAt: 'now' });
+    expect(plan.steps.find((step) => step.title === 'Alpha')?.supporting).toEqual([{ path: 'src/helpers.test.ts', hunk: 0 }]);
+    expect(plan.steps.find((step) => step.title === 'Beta')?.supporting).toEqual([{ path: 'src/helpers.test.ts', hunk: 1 }]);
+    expect(plan.steps.some((step) => step.title === 'Tests')).toBe(false);
+  });
+});

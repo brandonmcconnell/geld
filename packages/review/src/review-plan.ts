@@ -712,14 +712,34 @@ export function normalizePlan(input: PlanInput, proposals: readonly StepProposal
     for (const ref of unassigned) claimed.add(refKey(ref));
   }
 
-  // Hidden files follow the step whose file they name; the rest form a trailing step.
+  // Hidden hunks follow the step they are about, one hunk at a time: first the step whose own added lines define a
+  // name the hunk mentions (a test for a function this step adds goes with this step, whatever file it sits in),
+  // then the step touching the file the hidden file names; the rest form a trailing step.
   const leftovers: HunkRef[] = [];
   const touchedPathsOf = (draft: Draft): readonly string[] => [...new Set(draft.touches.map((ref) => ref.path))];
+  const definedBy = new Map<Draft, ReadonlySet<string>>();
+  for (const draft of drafts) {
+    const names = new Set<string>();
+    for (const ref of draft.touches) for (const name of definedSymbols(files.get(ref.path)?.hunks[ref.hunk]?.added ?? [])) names.add(name);
+    definedBy.set(draft, names);
+  }
+  const bySymbol = (ref: HunkRef): Draft | undefined => {
+    const hunk = files.get(ref.path)?.hunks[ref.hunk];
+    if (hunk === undefined) return undefined;
+    const words = mentionedSymbols(hunk.added);
+    let best: { readonly draft: Draft; readonly hits: number } | null = null;
+    for (const draft of drafts) {
+      let hits = 0;
+      for (const name of definedBy.get(draft) ?? []) if (words.has(name)) hits += 1;
+      if (hits > 0 && (best === null || hits > best.hits)) best = { draft, hits };
+    }
+    return best?.draft;
+  };
   for (const ref of hiddenRefs.values()) {
     if (claimed.has(refKey(ref))) continue;
     const file = files.get(ref.path);
     const target = file === undefined ? null : supportTarget(file, drafts.flatMap(touchedPathsOf));
-    const owner = target === null ? undefined : drafts.find((draft) => touchedPathsOf(draft).includes(target));
+    const owner = bySymbol(ref) ?? (target === null ? undefined : drafts.find((draft) => touchedPathsOf(draft).includes(target)));
     if (owner === undefined) leftovers.push(ref);
     else owner.supporting.push(ref);
     claimed.add(refKey(ref));

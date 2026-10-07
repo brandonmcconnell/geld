@@ -73,6 +73,8 @@ interface Visit {
   rebuildAsked: boolean;
   /** Says when the borrowed sticky bar is stuck (`watchBar`). */
   barObserver: IntersectionObserver | null;
+  /** GitHub's sticky bar, found in the files layout once; on loan it is no longer there to find. */
+  toolbar: HTMLElement | null;
   settings: GeldSettings;
 }
 
@@ -132,7 +134,7 @@ export function applyReviewTab(context: ReviewTabContext): void {
   const key = reviewKey(page.stateKey);
   if (visit === null || visit.stateKey !== page.stateKey) {
     teardownReviewTab();
-    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, barObserver: null, settings };
+    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, barObserver: null, toolbar: null, settings };
     openPlanner(key, () => context.reapply());
     if (page.diffUrl !== null) dropOtherPages(page.diffUrl);
   }
@@ -206,7 +208,7 @@ export function applyReviewTab(context: ReviewTabContext): void {
       return category === null ? null : { id: category.id, title: category.title };
     },
     collapsedSections: current.collapsedSections,
-    toolbar: current.area === null ? null : stickyBarOf(current.area),
+    toolbar: toolbarOf(current),
     flagOpen: current.flagOpen,
     flagDraft: current.flagDraft,
     helpOpen: current.helpOpen,
@@ -247,6 +249,13 @@ function undress(node: HTMLElement): void {
   clearFoldedHunks(node);
   node.removeAttribute(ATTR_FILE_HEADER);
   for (const element of node.querySelectorAll(`[${ATTR_FILE_HEADER}]`)) element.removeAttribute(ATTR_FILE_HEADER);
+}
+
+/** The sticky bar for this visit: the one on loan while it lives, else looked for in the files layout. */
+function toolbarOf(current: Visit): HTMLElement | null {
+  if (current.toolbar !== null && !current.toolbar.isConnected) current.toolbar = null;
+  if (current.toolbar === null && current.area !== null) current.toolbar = stickyBarOf(current.area);
+  return current.toolbar;
 }
 
 /** GitHub's files by path: what the adapters see at home plus what is on loan to the current build. */
