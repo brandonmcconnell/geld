@@ -703,7 +703,8 @@ function unwatchMenu(details: HTMLDetailsElement): void {
  * time one opens beside a bubble it is placed on the side with the room: down
  * by default, up when down would cut it off and up would not (or cuts off
  * less). The menu's items arrive after it opens (`details-menu[src]`), so its
- * height is watched while it is open and the side re-decided as it grows.
+ * height is watched while it is open and the side re-decided as it grows, and
+ * again as the page scrolls or the viewport resizes under an open menu.
  * `toggle` does not bubble; a capturing listener on the document sees it.
  */
 function installMenuFlip(): void {
@@ -725,6 +726,11 @@ function installMenuFlip(): void {
     },
     true,
   );
+  const replaceOpen = (): void => {
+    for (const [details, { menu }] of openMenus) placeMenu(details, menu);
+  };
+  window.addEventListener('scroll', replaceOpen, { capture: true, passive: true });
+  window.addEventListener('resize', replaceOpen, { passive: true });
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
