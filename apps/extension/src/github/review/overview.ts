@@ -1389,10 +1389,27 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   // human on a bot's comment are not told apart (GitHub's log does not expose the editor here); that is rare and
   // its own fault. A round left with neither content nor commits by the move is dropped.
   if (rounds.length > 1) {
-    const startAt = rounds.map((round) => {
-      const times = round.commits.map((commit) => Date.parse(createdAtOf(commit))).filter((time) => !Number.isNaN(time));
-      return times.length === 0 ? Number.NEGATIVE_INFINITY : Math.min(...times);
-    });
+    // When the round started: its earliest commit's committed time (a commit row carries no timeline time, so it is
+    // read from the Commits tab via `commitTimes`, not `createdAtOf`), else the earliest time of what landed in it.
+    // Null when neither is known yet — such a round is not a move target, so a missing time never pulls a summary
+    // forward by mistake (the earlier `-Infinity` did exactly that for commit rows with no parseable date).
+    const startOf = (round: Round): number | null => {
+      let best: number | null = null;
+      for (const commit of round.commits) {
+        const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(commit.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+        const committed = sha === undefined ? null : commitTimes(sha, reapplySoon)?.committed ?? null;
+        const time = committed === null ? Number.NaN : Date.parse(committed);
+        if (!Number.isNaN(time)) best = best === null ? time : Math.min(best, time);
+      }
+      if (best !== null) return best;
+      const content = [
+        ...round.comments.map((comment) => Date.parse(createdAtOf(comment.node))),
+        ...round.reviews.map((review) => Date.parse(createdAtOf(document.getElementById(review.anchor) ?? document.documentElement))),
+        ...round.items.flatMap((item) => item.sources.map((source) => Date.parse(createdAtOf(document.getElementById(source.anchor) ?? document.documentElement)))),
+      ].filter((time) => !Number.isNaN(time));
+      return content.length === 0 ? null : Math.min(...content);
+    };
+    const starts = rounds.map(startOf);
     for (let from = 0; from < rounds.length; from += 1) {
       for (const comment of [...rounds[from]?.comments ?? []]) {
         const node = document.getElementById(comment.anchor);
@@ -1400,7 +1417,10 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
         const at = edited === null ? Number.NaN : Date.parse(edited);
         if (Number.isNaN(at)) continue;
         let target = from;
-        for (let round = from + 1; round < rounds.length; round += 1) if (startAt[round] !== undefined && (startAt[round] as number) <= at) target = round;
+        for (let round = from + 1; round < rounds.length; round += 1) {
+          const start = starts[round];
+          if (typeof start === 'number' && start <= at) target = round;
+        }
         if (target === from) continue;
         const source = rounds[from];
         const into = rounds[target];
