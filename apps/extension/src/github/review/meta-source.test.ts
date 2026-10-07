@@ -105,10 +105,12 @@ describe('withLiveRuns', () => {
     expect(withLiveRuns(settled, live).map((bot) => bot.id)).toEqual(['bugbot', 'greptile', 'devin']);
   });
 
-  it('lets a run the Action saw running end on the page, but not into loading', () => {
+  it('never ends a run the Action saw running from the page', () => {
+    // The page may be half loaded and read the summary from before this run as the bot's last word; the Action
+    // runs again when the bot finishes and will say so.
     const running: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'running', reviewedSha: sha }];
-    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha }])[0]?.verdict).toBe('clean');
-    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha }])[0]?.verdict).toBe('running');
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha }])).toEqual(running);
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha }])).toEqual(running);
   });
 
   it('leaves settled verdicts to the Action', () => {
