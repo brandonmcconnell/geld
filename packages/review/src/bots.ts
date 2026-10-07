@@ -529,8 +529,11 @@ export function verdictsFrom(
         for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
           // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
           if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
+          // Only the threads current at this request are what a refusal would bring back; a stash from an
+          // earlier request that the bot has since answered is stale.
           const prior = threadRuns.get(asked.id);
           if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
+          else runsBeforeAsk.delete(asked.id);
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -540,6 +543,7 @@ export function verdictsFrom(
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
       statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
       const run = threadRuns.get(id);
       const open = (run?.open ?? 0) + (comment.resolved ? 0 : 1);
       const openAnchor = run?.openAnchor ?? (comment.resolved ? null : comment.anchor);
@@ -573,6 +577,8 @@ export function verdictsFrom(
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
     threadRuns.delete(id);
     statusOnly.delete(id);
+    // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
+    runsBeforeAsk.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== undefined) {

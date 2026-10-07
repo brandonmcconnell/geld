@@ -19526,6 +19526,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
           if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
           const prior = threadRuns.get(asked.id);
           if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
+          else runsBeforeAsk.delete(asked.id);
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -19534,6 +19535,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     if (comment.resolved !== void 0) {
       statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
       const run2 = threadRuns.get(id);
       const open2 = (run2?.open ?? 0) + (comment.resolved ? 0 : 1);
       const openAnchor = run2?.openAnchor ?? (comment.resolved ? null : comment.anchor);
@@ -19562,6 +19564,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
     threadRuns.delete(id);
     statusOnly.delete(id);
+    runsBeforeAsk.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {

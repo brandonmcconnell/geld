@@ -532,6 +532,16 @@ describe('a bot that refuses to run', () => {
       { author: 'cursor[bot]', body: 'Skipping Bugbot: Bugbot could not find a matching SCM installation for this repository.', anchor: 'issuecomment-3', createdAt: '2026-10-06T05:49:29Z' },
     ];
     expect(verdictsFrom([], threads, 'aaa', [], now)[0]).toMatchObject({ id: 'bugbot', verdict: 'findings', count: 1 });
+    // Old threads, a request the bot answered with a new summary, then a refused request: the summary is the last
+    // real run, and the threads from before the answered request do not come back.
+    const rerun = [
+      { author: 'cursor[bot]', body: 'Possible null dereference here.', anchor: 'discussion_r1', createdAt: '2026-02-04T10:00:00Z', resolved: false },
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-2', createdAt: '2026-03-01T10:00:00Z' },
+      { author: 'cursor[bot]', body: 'Cursor Bugbot has reviewed your changes and found no issues.', anchor: 'issuecomment-3', createdAt: '2026-03-01T10:05:00Z' },
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-4', createdAt: '2026-10-06T05:49:27Z' },
+      { author: 'cursor[bot]', body: skipping, anchor: 'issuecomment-5', createdAt: '2026-10-06T05:49:29Z' },
+    ];
+    expect(verdictsFrom([], rerun, 'aaa', [], now)[0]).toMatchObject({ id: 'bugbot', verdict: 'clean', sourceId: 'issuecomment-3' });
   });
 
   it('is loading, not failed, when an old request is the only word and the timeline is still being read', () => {
