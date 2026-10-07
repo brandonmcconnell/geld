@@ -126,18 +126,77 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /**
+ * Hold the window at its current scroll until `release`, so posting through
+ * GitHub's comment box does not drag the reader to the bottom. GitHub focuses
+ * the field and scrolls the freshly posted comment into view; the reader only
+ * clicked a menu, so neither should move the page. Any scroll the reader makes
+ * by hand (wheel, touch, a scroll key) ends the hold — the same release hold.ts
+ * uses — so this never fights a reader who chooses to move.
+ */
+function pinScroll(): () => void {
+  const x = window.scrollX;
+  const y = window.scrollY;
+  let active = true;
+  const options: AddEventListenerOptions = { capture: true, passive: true };
+  const stop = (): void => {
+    if (!active) return;
+    active = false;
+    window.cancelAnimationFrame(frame);
+    window.removeEventListener('wheel', stop, options);
+    window.removeEventListener('touchstart', stop, options);
+    window.removeEventListener('mousedown', onMouse, options);
+    window.removeEventListener('keydown', onKey, options);
+  };
+  const onKey = (event: KeyboardEvent): void => {
+    if (SCROLL_KEYS.has(event.key) && !(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) stop();
+  };
+  // A mouse press ends the pin only when it is itself scroll or navigation: a drag on the scrollbar gutter (past the
+  // viewport's content edge), or a click on a link (a permalink changes the URL and should reach its target). An
+  // ordinary click on a control is not navigation and must not end the pin, or GitHub's scroll to the new comment
+  // would jump the page after it — the very thing the pin prevents.
+  const onMouse = (event: MouseEvent): void => {
+    const onScrollbar = event.clientX >= document.documentElement.clientWidth || event.clientY >= document.documentElement.clientHeight;
+    const onLink = event.target instanceof Element && event.target.closest('a[href]') !== null;
+    if (onScrollbar || onLink) stop();
+  };
+  const keep = (): void => {
+    if (!active) return;
+    if (window.scrollX !== x || window.scrollY !== y) window.scrollTo({ left: x, top: y, behavior: 'instant' });
+    frame = window.requestAnimationFrame(keep);
+  };
+  let frame = window.requestAnimationFrame(keep);
+  // A wheel, touch or scroll key is unambiguous scroll and ends the pin; a mouse press ends it only when it is a
+  // scrollbar drag or a link (see `onMouse`), so GitHub's post-scroll is still absorbed under an ordinary click.
+  window.addEventListener('wheel', stop, options);
+  window.addEventListener('touchstart', stop, options);
+  window.addEventListener('mousedown', onMouse, options);
+  window.addEventListener('keydown', onKey, options);
+  return stop;
+}
+
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
+
+/**
  * Post several trigger comments one after another: each bot wants its own
  * comment, and GitHub's form only accepts the next one once it has cleared.
+ * The whole run holds the reader's scroll (plus a short tail past the last
+ * insert), so the triggers post in the background without a jump.
  */
 export async function postTopLevelComments(bodies: readonly string[]): Promise<number> {
-  let posted = 0;
-  for (const body of bodies) {
-    if (!postTopLevelComment(body)) break;
-    posted += 1;
-    const cleared = await waitForCommentForm(6000);
-    if (!cleared) break;
+  const unpin = pinScroll();
+  try {
+    let posted = 0;
+    for (const body of bodies) {
+      if (!postTopLevelComment(body)) break;
+      posted += 1;
+      const cleared = await waitForCommentForm(6000);
+      if (!cleared) break;
+    }
+    return posted;
+  } finally {
+    // GitHub scrolls to the inserted comment a beat after the form clears; hold a moment longer, then let go.
+    window.setTimeout(unpin, 1200);
   }
-  return posted;
 }
 
 function waitForCommentForm(timeoutMs: number): Promise<boolean> {
