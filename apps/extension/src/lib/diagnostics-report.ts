@@ -1,14 +1,20 @@
 import { describeBrowser } from '../ui/feedback-link';
 
-/** Where a diagnostics report goes: the site's `/diagnostics`, which forwards to the issue form (see `apps/site/app/diagnostics/route.ts`). */
-export const DIAGNOSTICS_REPORT_URL = 'https://www.geld.sh/diagnostics';
+/**
+ * Where a diagnostics report goes: GitHub's new-issue page for the
+ * repository, with the `diagnostics.yml` form. Straight to GitHub, not
+ * through the site as the Feedback link goes: the report names pull
+ * requests (`owner/repo#N`, private ones included), and the link carries it
+ * in the query, so the only host that sees it is the one the issue is
+ * submitted to, and only when the reader opens the form.
+ */
+export const DIAGNOSTICS_REPORT_URL = 'https://github.com/brandonmcconnell/geld/issues/new?template=diagnostics.yml';
 
 /**
  * How much of the report the link may carry, measured encoded. GitHub's
  * `issues/new` reads its form fields from the query, and the request line
  * has to stay well under the 8 KB servers commonly refuse with 414; the
- * version and browser fields and the redirect through the site take some
- * of that too.
+ * template, version and browser fields take some of that too.
  */
 export const REPORT_URL_BUDGET = 6000;
 

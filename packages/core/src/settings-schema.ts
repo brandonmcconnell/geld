@@ -564,7 +564,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
             id: 'report-diagnostics',
             label: 'Report with diagnostics',
             description:
-              'Opens a new issue on GitHub with the same report filled in, plus a place to say what was happening. Nothing is sent until you submit it there; the report is also copied to the clipboard in case the link had to trim it.',
+              'Opens GitHub\'s new-issue form with the same report filled in, plus a place to say what was happening. The report goes to GitHub alone, as the form\'s prefilled text, and nothing is posted until you submit the issue there; it is also copied to the clipboard in case the link had to trim it.',
             surfaces: ['extension'],
           },
           {

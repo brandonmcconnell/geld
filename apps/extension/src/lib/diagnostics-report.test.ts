@@ -25,7 +25,8 @@ describe('diagnostics report link', () => {
 
   it('builds the link with the environment and the (trimmed) report', () => {
     const url = diagnosticsReportUrl(`${header}\nline`, '0.1.2', 'Mozilla/5.0 (Macintosh) Chrome/148.0.0.0 Safari/537.36', 'MacIntel');
-    expect(url.origin + url.pathname).toBe('https://www.geld.sh/diagnostics');
+    expect(url.origin + url.pathname).toBe('https://github.com/brandonmcconnell/geld/issues/new');
+    expect(url.searchParams.get('template')).toBe('diagnostics.yml');
     expect(url.searchParams.get('version')).toBe('0.1.2');
     expect(url.searchParams.get('browser')).toBe('Chrome 148 on macOS');
     expect(url.searchParams.get('diagnostics')).toBe(`${header}\nline`);
