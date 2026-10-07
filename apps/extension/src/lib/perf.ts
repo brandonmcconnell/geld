@@ -29,12 +29,26 @@ export interface PhaseSnapshot {
   readonly lastMinute: number;
 }
 
+/** One step of the content script's life on this tab: what happened and when, since the script started. */
+export interface TrailMark {
+  readonly atMs: number;
+  readonly event: string;
+}
+
 export interface PerfSnapshot {
   /** Milliseconds since the tab's script started counting. */
   readonly uptimeMs: number;
   readonly hidden: boolean;
   readonly phases: readonly PhaseSnapshot[];
   readonly counters: Readonly<Record<string, number>>;
+  /**
+   * The script's lifecycle on this tab, oldest first: `script-start`,
+   * `settings`, `catalog`, `controller-start`, the first `published`, and
+   * how it ended if it did (`retired:takeover`, `retired:invalidated`,
+   * `redirect-early`). A copy that never showed anything has a trail that
+   * stops where it stopped, which is the whole point of keeping one.
+   */
+  readonly trail: readonly TrailMark[];
 }
 
 const RECENT_MS = 60_000;
@@ -44,6 +58,9 @@ const MEASURES_KEPT = 500;
 const phases = new Map<string, PhaseStat>();
 const counters = new Map<string, number>();
 const startedAt = performance.now();
+/** Bounded: a long-lived tab repeats a few marks (every navigation publishes), and the first and last are what matter. */
+const TRAIL_KEPT = 40;
+const trail: TrailMark[] = [];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -61,6 +78,10 @@ function isPhaseSnapshot(value: unknown): value is PhaseSnapshot {
   );
 }
 
+function isTrailMark(value: unknown): value is TrailMark {
+  return isRecord(value) && typeof value.atMs === 'number' && typeof value.event === 'string';
+}
+
 export function isPerfSnapshot(value: unknown): value is PerfSnapshot {
   return (
     isRecord(value) &&
@@ -69,7 +90,9 @@ export function isPerfSnapshot(value: unknown): value is PerfSnapshot {
     Array.isArray(value.phases) &&
     value.phases.every(isPhaseSnapshot) &&
     isRecord(value.counters) &&
-    Object.values(value.counters).every((entry) => typeof entry === 'number')
+    Object.values(value.counters).every((entry) => typeof entry === 'number') &&
+    Array.isArray(value.trail) &&
+    value.trail.every(isTrailMark)
   );
 }
 
@@ -115,6 +138,13 @@ export function count(name: string, by = 1): void {
   counters.set(name, (counters.get(name) ?? 0) + by);
 }
 
+/** Note a step of the script's life on this tab (see `PerfSnapshot.trail`). */
+export function mark(event: string): void {
+  trail.push({ atMs: Math.round(performance.now() - startedAt), event });
+  // Keep the beginning (how the script came up) and the latest marks; the middle is navigations repeating.
+  if (trail.length > TRAIL_KEPT) trail.splice(TRAIL_KEPT / 2, 1);
+}
+
 export function snapshot(): PerfSnapshot {
   const now = performance.now();
   const cutoff = now - RECENT_MS;
@@ -130,6 +160,7 @@ export function snapshot(): PerfSnapshot {
       lastMinute: stat.recent.filter((at) => at >= cutoff).length,
     })),
     counters: Object.fromEntries(counters),
+    trail: [...trail],
   };
 }
 
@@ -149,5 +180,6 @@ export function formatPerf(label: string, perf: PerfSnapshot): string {
   }
   const counterNames = Object.keys(perf.counters).sort();
   if (counterNames.length > 0) lines.push(`  counters: ${counterNames.map((name) => `${name}=${perf.counters[name] ?? 0}`).join(' ')}`);
+  if (perf.trail.length > 0) lines.push(`  trail: ${perf.trail.map((entry) => `${entry.event}@${fixed(entry.atMs / 1000)}s`).join(' → ')}`);
   return lines.join('\n');
 }

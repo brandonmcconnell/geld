@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { recordDiagnostic, tabSubject } from './diagnostics';
 import type { GetTabStateMessage } from './messages';
 import { isTabState } from './messages';
 
@@ -65,12 +66,18 @@ async function inject(tabId: number): Promise<void> {
  * discarded tabs, missing permission) are swallowed: there is nothing useful
  * to do about them here.
  */
-export async function ensureContentScript(tabId: number): Promise<boolean> {
-  if (await hasContentScript(tabId)) return false;
+export async function ensureContentScript(tabId: number, why: { readonly reason: 'install' | 'activated' | 'popup'; readonly url?: string | undefined }): Promise<boolean> {
+  const subject = why.url === undefined ? undefined : tabSubject(why.url);
+  if (await hasContentScript(tabId)) {
+    recordDiagnostic({ kind: 'inject', subject, outcome: 'present', reason: why.reason });
+    return false;
+  }
   try {
     await inject(tabId);
+    recordDiagnostic({ kind: 'inject', subject, outcome: 'injected', reason: why.reason });
     return true;
   } catch {
+    recordDiagnostic({ kind: 'inject', subject, outcome: 'failed', reason: why.reason });
     return false;
   }
 }
@@ -82,11 +89,11 @@ export async function ensureContentScript(tabId: number): Promise<boolean> {
  * activation. Someone with many GitHub tabs parked should not have an
  * extension update touch each of them.
  */
-export async function tabsOnHosts(hosts: readonly string[]): Promise<number[]> {
+export async function tabsOnHosts(hosts: readonly string[]): Promise<ReadonlyArray<{ readonly id: number; readonly url: string | undefined }>> {
   if (hosts.length === 0) return [];
   try {
     const tabs = await browser.tabs.query({ url: hosts.map((host) => `https://${host}/*`), discarded: false });
-    return tabs.filter((tab) => tab.status !== 'unloaded').map((tab) => tab.id).filter((id): id is number => id !== undefined);
+    return tabs.filter((tab) => tab.status !== 'unloaded').flatMap((tab) => (tab.id === undefined ? [] : [{ id: tab.id, url: tab.url }]));
   } catch {
     return [];
   }

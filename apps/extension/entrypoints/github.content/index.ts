@@ -4,7 +4,7 @@ import { GeldController, IDLE_STATE } from '../../src/github/controller';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import type { PerfSnapshot } from '../../src/lib/perf';
-import { snapshot as perfSnapshot } from '../../src/lib/perf';
+import { mark, snapshot as perfSnapshot } from '../../src/lib/perf';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
 import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
@@ -28,15 +28,24 @@ export default defineContentScript({
     // A newer copy of this script (injected after an update) announces itself;
     // any older copy still running in the page must step aside first.
     const TAKEOVER = 'geld:takeover';
+    mark('script-start');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
     // Listen before the first await: a copy injected while this one still loads its settings
     // would otherwise be missed, and two copies would then fight over the page.
     let retired = false;
     let controller: GeldController | null = null;
-    let retire = (): void => {
+    // Retiring before the controller ran means this copy never showed anything on this tab; the trail says where
+    // it stopped, and the console says so too, since a page with no Geld on it is otherwise silent about why.
+    const retireEarly = (why: string): void => {
       retired = true;
+      mark(`retired:${why}`);
+      if (controller === null) console.warn(`[geld] stepped aside before starting on this tab (${why}); diagnostics on the options page have the trail.`);
     };
-    document.addEventListener(TAKEOVER, () => retire(), { once: true });
+    let retire = (why: string): void => retireEarly(why);
+    document.addEventListener(TAKEOVER, () => retire('takeover'), { once: true });
+    // Registered now rather than after the controller starts: an extension reload during the awaits below is
+    // otherwise not seen by this copy (`retire` is read when the event fires, so the full version applies later).
+    ctx.onInvalidated(() => retire('invalidated'));
 
     // The background asks "is Geld in this tab?" (`hasContentScript`, src/lib/inject.ts) when the tab is
     // activated or the popup opens, and injects another copy when nothing answers. So this copy answers from
@@ -56,6 +65,12 @@ export default defineContentScript({
     };
     const onMessage = (message: unknown, _sender: unknown, sendResponse: (response: TabState | PerfSnapshot) => void): boolean | undefined => {
       if (retired) {
+        // A retired copy still tells Copy diagnostics its trail, late, so a live copy's answer wins when there is
+        // one and the trail of the copy that stepped aside is what gets reported when there is not.
+        if (isPerfReportMessage(message) && window.top === window) {
+          setTimeout(() => quietly(() => sendResponse(perfSnapshot())), RETIRED_ANSWER_MS);
+          return true;
+        }
         if (!(isGetTabStateMessage(message) || isToggleHiddenMessage(message) || isRevealFileMessage(message))) return undefined;
         setTimeout(() => quietly(() => sendResponse(IDLE_STATE)), RETIRED_ANSWER_MS);
         return true;
@@ -85,18 +100,28 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener(onMessage);
 
     const [settings, whitespaceOptOuts] = await Promise.all([settingsItem.getValue(), whitespaceOptOutsItem.getValue()]);
+    mark('settings');
     if (retired) return;
     // A diff page opened without GitHub's "hide whitespace" parameter goes to its `?w=1` form now, while the
     // document is still streaming, so the page is never seen without it (the controller handles later navigations).
-    if (settings.hideWhitespace && window.top === window && redirectEarly(new URL(window.location.href), whitespaceOptOuts)) return;
+    if (settings.hideWhitespace && window.top === window && redirectEarly(new URL(window.location.href), whitespaceOptOuts)) {
+      mark('redirect-early');
+      return;
+    }
     const catalog = await loadCatalog();
+    mark('catalog');
     if (retired) return;
     let showBadge = settings.showBadge;
+    let published = false;
 
     const started = new GeldController(
       settings,
       {
         onTabState(state: TabState) {
+          if (!published) {
+            published = true;
+            mark('published');
+          }
           // Only the top frame drives the badge; the count is what the user sees on this tab.
           if (window.top !== window) return;
           const message: TabStateMessage = {
@@ -109,6 +134,7 @@ export default defineContentScript({
       catalog,
     );
     controller = started;
+    mark('controller-start');
     started.start();
 
     const unwatchSettings = settingsItem.watch((settings) => {
@@ -136,17 +162,15 @@ export default defineContentScript({
     ctx.addEventListener(document, 'turbo:render', () => started.requestRefresh());
     ctx.addEventListener(document, 'soft-nav:end', () => started.requestRefresh());
 
-    retire = (): void => {
+    retire = (why: string): void => {
       if (retired) return;
       retired = true;
+      mark(`retired:${why}`);
       unwatch();
       // The message listener stays: see `onMessage` above.
       started.stop();
       // This copy's background hears nothing more from the tab; its badge would keep this copy's last count.
       if (window.top === window) quietly(() => void browser.runtime.sendMessage({ type: 'geld:tab-state', state: IDLE_STATE } satisfies TabStateMessage).catch(() => undefined));
     };
-    // A newer copy took over (see TAKEOVER above, listened for from the start), or the
-    // extension was reloaded, updated or removed and this copy is orphaned.
-    ctx.onInvalidated(() => retire());
   },
 });
