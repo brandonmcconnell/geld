@@ -2929,11 +2929,6 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   transform: rotate(180deg);
 }
 
-/* A pointer row's chevron points right and, hovered with its row, nudges that way: the row goes somewhere, it does not open. */
-.geld-review__row[data-pointer]:hover .geld-review__chevron--pointer .octicon {
-  transform: translateX(2px);
-}
-
 /* Controls stay put: a row must read the same collapsed, hovered and open. Muted until hovered. */
 .geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__icon,
 .geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__menu:not([open]) {
