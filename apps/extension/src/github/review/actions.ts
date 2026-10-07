@@ -144,6 +144,7 @@ function pinScroll(): () => void {
     window.cancelAnimationFrame(frame);
     window.removeEventListener('wheel', stop, options);
     window.removeEventListener('touchstart', stop, options);
+    window.removeEventListener('mousedown', stop, options);
     window.removeEventListener('keydown', onKey, options);
   };
   const onKey = (event: KeyboardEvent): void => {
@@ -155,8 +156,11 @@ function pinScroll(): () => void {
     frame = window.requestAnimationFrame(keep);
   };
   let frame = window.requestAnimationFrame(keep);
+  // The same releases the row hold watches: a wheel, a touch, a mouse press (a scrollbar drag, or a click on a
+  // permalink, starts with one), or a scroll key — any hand-driven navigation ends the pin at once.
   window.addEventListener('wheel', stop, options);
   window.addEventListener('touchstart', stop, options);
+  window.addEventListener('mousedown', stop, options);
   window.addEventListener('keydown', onKey, options);
   return stop;
 }
