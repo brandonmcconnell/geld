@@ -905,6 +905,10 @@ export function crawlSidebarReviewers(root: ParentNode = document): readonly Sid
  * too: Devin reports through one, with no "Successful in" text, and its
  * verdict is the glyph. The Action reads these from the API; the browser
  * has only the page.
+ *
+ * A check that is running has no octicon: its leading visual is Primer's
+ * spinner (`CheckSpinner`), so the state is read from the leading visual
+ * alone — the row's only octicon is then its ⋯ menu, which is no state.
  */
 export function crawlCheckRuns(root: ParentNode = document, headSha = ''): readonly RawCheckRun[] {
   const out: RawCheckRun[] = [];
@@ -912,8 +916,14 @@ export function crawlCheckRuns(root: ParentNode = document, headSha = ''): reado
   for (const row of root.querySelectorAll<HTMLElement>('li:has([class*="StatusCheckRow"]), .merge-status-item')) {
     const name = (row.querySelector('[class*="StatusCheckRow"] h4 a span, [class*="StatusCheckRow"] h4 a, .merge-status-item strong, .merge-status-item .text-emphasized')?.textContent ?? '').replace(/\s+/g, ' ').trim();
     if (name === '' || seen.has(name)) continue;
-    const glyph = row.querySelector('[class*="LeadingVisual"] svg.octicon, .merge-status-icon svg.octicon, svg.octicon');
-    const state = glyph === null ? null : checkStateOfGlyph(glyph.getAttribute('class') ?? '');
+    const visual = row.querySelector('[class*="LeadingVisual"], .merge-status-icon') ?? row;
+    const glyph = visual.querySelector('svg.octicon:not(.octicon-kebab-horizontal)');
+    const state =
+      glyph !== null
+        ? checkStateOfGlyph(glyph.getAttribute('class') ?? '')
+        : visual.querySelector('[data-component="Spinner"], [class*="CheckSpinner"], .anim-rotate') !== null
+          ? { status: 'in_progress', conclusion: null }
+          : null;
     if (state === null) continue;
     seen.add(name);
     // Where the check's title (React) or "Details" (classic) leads, and GitHub's one-line description: a status an
