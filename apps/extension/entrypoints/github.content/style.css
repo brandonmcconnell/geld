@@ -4593,8 +4593,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__edited {
   display: inline-flex;
   align-items: center;
+  /* The byline aligns its children on the text baseline; the clock has none to share, so it centres on the line. */
+  align-self: center;
   flex: 0 0 auto;
-  margin-left: 4px;
+  /* Pull in from the byline's 8px gap: about half that reads as "beside the time", not a column of its own. */
+  margin-left: -5px;
   color: var(--geld-review-muted);
   cursor: help;
 }
