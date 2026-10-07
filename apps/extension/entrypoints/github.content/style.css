@@ -3244,29 +3244,48 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /* Event rows, without the rail. The badge sits in the status column (16px) and the text starts where the
- * rows' labels do (16 + 16 + 10); GitHub marks events condensed or not, so every badge is treated alike. */
+ * rows' labels do (16 + 16 + 10); GitHub marks events condensed or not, so every badge is treated alike. Every
+ * row's first line is 20px (the buttons on it are shrunk to that below), so a badge at the top is centred on the
+ * first line, picture beside glyph, however far the sentence wraps. */
 .geld-review__qv .TimelineItem--condensed,
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) {
   display: flex !important;
-  align-items: center !important;
+  align-items: flex-start !important;
   gap: 10px;
   padding: 4px 0 !important;
   font-size: 12px;
   line-height: 20px;
 }
 
-/* One 20px line: the avatar (GitHub gives it a 4px gap, the rows here use 8px) and the words, and a button GitHub
- * floats at the right ("View deployment", 28px in the timeline) shrunk to the line so nothing sits above centre. */
+/* GitHub's own actor-and-words layout (deployments, state changes): the avatar in its own column, so the words
+ * wrap under themselves, never under the picture; GitHub gives the column a 4px gap, the rows here use 8px. */
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body > .d-flex {
-  align-items: center;
+  align-items: flex-start;
 }
 
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .flex-shrink-0.mr-1 {
   margin-right: 8px !important;
 }
 
-.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .avatar {
-  vertical-align: middle;
+/* The picture's link as a flex box (over GitHub's `d-inline-block`): the picture fills the first line's 20px
+ * exactly, where an inline image sits a pixel low on its baseline. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body a:has(> .avatar) {
+  display: flex !important;
+  height: 20px;
+}
+
+/* The other layout GitHub uses (a title change): the avatar inline in the sentence. It takes the same column —
+ * out of the flow, the body indented past it — so the words start 8px after it, as in the rows above and below,
+ * and wrap to that indent. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body:has(> a > .avatar) {
+  position: relative;
+  padding-left: 28px;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body > a:has(> .avatar) {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 /* GitHub floats "View deployment" (28px in the timeline) to the right; here it follows its words, whole, the size
@@ -5265,12 +5284,6 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
-/* The badge sits on the row's middle line, so a wrapped sentence is centred on it; a merge with its checks list
- * unfolded (GitHub's `open`) keeps the badge at the top as the timeline does. */
-.geld-review__qv .TimelineItem:not(.open) {
-  align-items: center;
-}
-
 .geld-review__event {
   display: flex;
   flex-wrap: wrap;
@@ -5388,9 +5401,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin-left: auto;
 }
 
-/* A row that keeps GitHub's words (labels, assignees, review requests): the words stay inline and centred, the time
- * moves off the sentence into the column. The column fits the longest relative time ("16 minutes ago") at 12px,
- * so a long one never runs into the SHA before it. */
+/* A row that keeps GitHub's words (labels, assignees, review requests): the words stay inline, the time moves off
+ * the sentence into the column, on the first line (same size and leading, so the baselines meet). The column fits
+ * the longest relative time ("16 minutes ago") at 12px, so a long one never runs into the SHA before it. */
 .geld-review__qv .TimelineItem-body:has(> .geld-review__event--time-only) {
   position: relative;
   padding-right: calc(var(--geld-time-col) + 8px);
@@ -5403,10 +5416,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__event--time-only {
   position: absolute;
-  top: 50%;
+  top: 0;
   right: 0;
   min-height: 0;
-  transform: translateY(-50%);
 }
 
 /* When the commit (or push) was made: one right-aligned column after the SHAs, so every row's SHA ends at the
