@@ -499,9 +499,9 @@ async function contentHosts(): Promise<Set<string>> {
  * the declared content script with the document, and a copy injected here
  * on top of it would only make the first one retire (github.content/index.ts).
  */
-async function ensureTab(tab: { readonly id?: number | undefined; readonly url?: string | undefined; readonly status?: string | undefined }): Promise<EnsureContentResponse> {
+async function ensureTab(tab: { readonly id?: number | undefined; readonly url?: string | undefined; readonly status?: string | undefined }, reason: 'activated' | 'popup'): Promise<EnsureContentResponse> {
   if (tab.id === undefined || tab.status === 'loading' || hostOf(tab.url, await contentHosts()) === null) return { injected: false };
-  return { injected: await ensureContentScript(tab.id) };
+  return { injected: await ensureContentScript(tab.id, { reason, url: tab.url }) };
 }
 
 /** Keyboard shortcut: ask the active GitHub tab to toggle its hidden files. */
@@ -541,7 +541,7 @@ export default defineBackground(() => {
     if (isEnsureContentMessage(message)) {
       void browser.tabs
         .get(message.tabId)
-        .then(ensureTab)
+        .then((tab) => ensureTab(tab, 'popup'))
         .catch((): EnsureContentResponse => ({ injected: false }))
         .then(sendResponse);
       return true;
@@ -611,14 +611,14 @@ export default defineBackground(() => {
   // Tabs that were open before an install/update have no content script yet.
   browser.runtime.onInstalled.addListener(() => {
     void contentHosts().then(async (hosts) => {
-      for (const tabId of await tabsOnHosts([...hosts])) void ensureContentScript(tabId);
+      for (const tab of await tabsOnHosts([...hosts])) void ensureContentScript(tab.id, { reason: 'install', url: tab.url });
     });
   });
   // Switching to a GitHub tab that somehow lacks Geld (e.g. reinstalled while it was open).
   browser.tabs.onActivated.addListener(({ tabId }) => {
     void browser.tabs
       .get(tabId)
-      .then(ensureTab)
+      .then((tab) => ensureTab(tab, 'activated'))
       .catch(() => undefined);
   });
 

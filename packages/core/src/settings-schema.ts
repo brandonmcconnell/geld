@@ -124,7 +124,7 @@ export interface TextPreset {
   readonly value: string;
 }
 
-export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'copy-diagnostics' | 'reset';
+export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'copy-diagnostics' | 'report-diagnostics' | 'reset';
 
 /** A one-off operation on the whole settings document. */
 export interface MaintenanceAction {
@@ -557,7 +557,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
             id: 'copy-diagnostics',
             label: 'Copy diagnostics',
             description:
-              'Copies a short log of this session\'s diff fetches (which pull request, outcome, timing, rate budget) to the clipboard, for bug reports. No URLs, content or tokens.',
+              'Copies a short log of this session\'s diff fetches (which pull request, outcome, timing, rate budget) and each GitHub tab\'s timings and lifecycle to the clipboard, for bug reports. No URLs, content or tokens.',
+            surfaces: ['extension'],
+          },
+          {
+            id: 'report-diagnostics',
+            label: 'Report with diagnostics',
+            description:
+              'Opens GitHub\'s new-issue form with the same report filled in, plus a place to say what was happening. The report goes to GitHub alone, as the form\'s prefilled text, and nothing is posted until you submit the issue there; it is also copied to the clipboard in case the link had to trim it.',
             surfaces: ['extension'],
           },
           {

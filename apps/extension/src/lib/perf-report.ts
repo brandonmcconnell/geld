@@ -1,20 +1,7 @@
 import { browser } from 'wxt/browser';
+import { tabSubject } from './diagnostics';
 import type { PerfReportMessage } from './messages';
 import { formatPerf, isPerfSnapshot } from './perf';
-
-/** `owner/repo#N`, `owner/repo@sha7`, or the path: enough to tell the tabs apart, never a query string. */
-function tabLabel(url: string): string {
-  try {
-    const { pathname } = new URL(url);
-    const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(pathname);
-    if (pull !== null) return `${pull[1]}#${pull[2]}${pathname.slice(pull[0].length)}`;
-    const commit = /^\/([^/]+\/[^/]+)\/commit\/([0-9a-f]+)/i.exec(pathname);
-    if (commit !== null) return `${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
-    return pathname;
-  } catch {
-    return url;
-  }
-}
 
 /**
  * Every open GitHub tab's performance snapshot (`lib/perf.ts`), formatted
@@ -37,9 +24,11 @@ export async function collectTabPerf(hosts: readonly string[]): Promise<readonly
   for (const target of targets) {
     try {
       const response: unknown = await browser.tabs.sendMessage(target.id, message);
-      if (isPerfSnapshot(response)) reports.push(formatPerf(tabLabel(target.url), response));
+      if (isPerfSnapshot(response)) reports.push(formatPerf(tabSubject(target.url), response));
+      else reports.push(`${tabSubject(target.url)}: no Geld in this tab (nothing answered)`);
     } catch {
-      // No content script in that tab: nothing to report for it.
+      // No content script in that tab at all: that is itself what a blank page needs said.
+      reports.push(`${tabSubject(target.url)}: no Geld in this tab (nothing answered)`);
     }
   }
   return reports.length === 0 ? [] : [`Per-tab timings (this browser, in memory only)\n${reports.join('\n')}`];

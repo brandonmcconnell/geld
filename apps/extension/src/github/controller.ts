@@ -11,7 +11,7 @@ import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, dec
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
 import { cancelIdle, whenIdle } from '../lib/idle';
-import { count as perfCount, phase } from '../lib/perf';
+import { count as perfCount, mark, phase } from '../lib/perf';
 import type { RepoConfigChoices } from '../lib/local-state';
 import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
@@ -843,6 +843,7 @@ export class GeldController {
     // A sign-in page at a repository URL (an organisation's SSO prompt, a 2FA check): nothing here is the
     // repository's, and every request for its data would answer 401 in the console. Stand down until it is.
     if (isSignInInterstitial()) {
+      mark('sign-in-page');
       this.teardown();
       this.publish({ ...IDLE_STATE, repo });
       return;
