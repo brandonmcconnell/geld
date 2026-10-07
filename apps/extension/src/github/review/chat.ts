@@ -20,7 +20,7 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_TIME_FOR } from './panel';
-import { onRestore, teleportInto } from './teleport';
+import { isTeleported, onRestore, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
@@ -132,7 +132,7 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     loadDeferredReplies(thread);
     const messages = messagesIn(thread, true);
     annotateMessages(messages, viewer, false);
-    for (const message of messages) hoistMenu(message);
+    for (const message of messages) placeControls(message);
     dressComposer(thread);
     list.append(chat);
   }
@@ -386,7 +386,7 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
       openMinimized(body);
       const messages = messagesIn(source.node, false);
       annotateMessages(messages, viewer, true);
-      for (const message of messages) hoistMenu(message);
+      for (const message of messages) placeControls(message);
     }
   }
   return wrap;
@@ -515,33 +515,62 @@ function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement
 /** The comment's own ⋯ menu, most specific first; the reaction trigger is a `details` too and must not be taken for it. */
 const COMMENT_MENU = 'details.js-comment-header-actions-menu, .timeline-comment-actions details:not(.js-add-reaction):not(.js-reaction-popover-container), [data-testid="comment-header"] button[aria-label="Show options" i], button[aria-label="Comment actions" i]';
 
+/** GitHub's reactions row proper (the pills' parent, which its scripts observe and replace). */
+const REACTIONS_ROW = '.comment-reactions, .js-reactions-container';
+/** The reaction picker, GitHub's: a custom element round a `details` on current pages, the `details` alone on older ones. */
+const REACTION_PICKER = ':scope > reactions-menu, :scope > details.js-add-reaction';
+
 /**
- * The message strip on a bubble's top edge is GitHub's reactions row: the
- * pills always, the picker on hover. The comment's ⋯ lives in its author line,
- * a different part of the message, so it is moved into the row (a loan, home
- * on restore) between the picker and the pills: the strip is then one flex
- * row and the pills, farthest out, never move when the controls appear. A
- * menu already worn by a panel row (a single comment's line wears its own)
- * is left there: `teleportInto` skips a node on loan.
+ * A message's controls stand beside its bubble, on the empty side of the
+ * row, and its reaction pills sit under the bubble; the stylesheet lays both
+ * out from two slots this makes (own UI, gone on restore; every node in them
+ * a loan, home on restore):
+ *
+ * - `geld-review__msg-side`, appended to the message, takes the comment's
+ *   reaction picker out of the reactions row and the ⋯ menu out of the
+ *   author line. GitHub's reaction handler finds the comment from the picker
+ *   with `closest('.js-comment')`, which the message is, so a reaction still
+ *   posts and still redraws the row.
+ * - `geld-review__msg-reactions` holds the reactions row when the row is the
+ *   part itself (a direct child of the message, or nested in the bubble's
+ *   wrapper): the pills need a box of their own under the bubble, and the row
+ *   cannot be it — GitHub's scripts watch the row's size and hide pills when
+ *   it wraps.
+ *
+ * A ⋯ already worn by a panel row (a single comment's line wears its own) is
+ * left there: `teleportInto` skips a node on loan.
  */
-function hoistMenu(message: HTMLElement): void {
+function placeControls(message: HTMLElement): void {
   const meta = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta']`);
   const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
   if (meta === null || reactions === null) return;
+  const row = reactions.matches(REACTIONS_ROW) ? reactions : reactions.querySelector<HTMLElement>(REACTIONS_ROW);
+  if (row !== null && row === reactions) {
+    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
+    const bubble = message.querySelector(`:scope > [${ATTR_PART}='bubble']`);
+    if (bubble !== null) bubble.after(box);
+    else message.append(box);
+    teleportInto(box, [row]);
+    onRestore(() => box.remove());
+  }
+  const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
+  message.append(side);
+  const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
+  if (picker !== null && !isTeleported(picker)) teleportInto(side, [picker]);
   const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
-  if (menu === null || menu.closest('[data-geld-teleported]') === menu) return;
-  const row = reactions.matches('.comment-reactions, .js-reactions-container') ? reactions : (reactions.querySelector<HTMLElement>('.comment-reactions, .js-reactions-container') ?? reactions);
-  const slot = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-  const picker = row.querySelector(':scope > reactions-menu, :scope > details.js-add-reaction');
-  if (picker !== null) picker.after(slot);
-  else row.prepend(slot);
-  teleportInto(slot, [menu]);
-  // Not moved (worn by a row already): no empty slot, which would still take the row's gap.
-  if (slot.childElementCount === 0) {
-    slot.remove();
+  if (menu !== null && !isTeleported(menu)) {
+    // The ⋯ opens a menu of its own; a slot of its own keeps that menu anchored to the round button.
+    const actions = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
+    side.append(actions);
+    teleportInto(actions, [menu]);
+    if (actions.childElementCount === 0) actions.remove();
+  }
+  // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
+  if (side.childElementCount === 0) {
+    side.remove();
     return;
   }
-  onRestore(() => slot.remove());
+  onRestore(() => side.remove());
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
