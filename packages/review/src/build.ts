@@ -36,6 +36,8 @@ export interface RawIssueComment {
   readonly author: string;
   readonly body: string;
   readonly createdAt: string;
+  /** When it was last rewritten, ISO (the API's `lastEditedAt`): a bot that re-reviews into the same comment reports by editing it. */
+  readonly editedAt?: string;
 }
 
 export interface RawReview {
@@ -238,7 +240,7 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
   }
 
   const botComments = [
-    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt })),
+    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...(comment.editedAt === undefined ? {} : { editedAt: comment.editedAt }) })),
     ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...(review.submittedAt === null ? {} : { createdAt: review.submittedAt }) })),
   ];
   const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now());
