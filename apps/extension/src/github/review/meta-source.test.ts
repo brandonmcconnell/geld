@@ -105,12 +105,15 @@ describe('withLiveRuns', () => {
     expect(withLiveRuns(settled, live).map((bot) => bot.id)).toEqual(['bugbot', 'greptile', 'devin']);
   });
 
-  it('never ends a run the Action saw running from the page', () => {
-    // The page may be half loaded and read the summary from before this run as the bot's last word; the Action
-    // runs again when the bot finishes and will say so.
+  it('ends a run the Action saw running only on the bot\'s completed check', () => {
     const running: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'running', reviewedSha: sha }];
+    // From comments alone the page may be half loaded, reading the summary from before this run as the bot's
+    // last word: the Action's running stands.
     expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha }])).toEqual(running);
-    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha }])).toEqual(running);
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha, checkName: 'Cursor Bugbot' }])).toEqual(running);
+    // The bot's check row on the merge box says the run completed: that ends it, Action or no Action.
+    const checked: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha, checkName: 'Cursor Bugbot' }];
+    expect(withLiveRuns(running, checked)).toEqual(checked);
   });
 
   it('leaves settled verdicts to the Action', () => {
