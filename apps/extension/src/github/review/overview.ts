@@ -1646,26 +1646,33 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
  * page's node may by now report a later run.
  */
 function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatSource | null {
-  const source = item?.sources[0];
+  // An item can merge two bots' findings (cluster.ts unions their ids), so the source read is this thread's own,
+  // not the item's first: that one may be the other bot's, and its name, summary and Rerun would be the wrong bot's.
+  const threadAnchor = threadAnchorOf(thread);
+  const source = item?.sources.find((candidate) => candidate.anchor === threadAnchor) ?? item?.sources[0];
   const bot = source?.bot;
-  const who = bot !== undefined ? botTitle(bot, source?.author ?? '') : source?.author ?? 'the reviewer';
   const firstComment = thread.querySelector('[id^="discussion_r"], [id^="issuecomment-"]') ?? thread;
   const threadAt = Date.parse(createdAtOf(firstComment));
-  const describe = (node: HTMLElement, anchor: string, label: string): ChatSource => {
+  const describe = (node: HTMLElement, anchor: string, label: (who: string) => string): ChatSource => {
     const facts = sourceFacts.get(anchor);
-    const isBot = facts?.bot ?? bot !== undefined;
+    // The pinned comment's own author decides the name and the controls: a review body holding this thread is
+    // its reviewer's whoever the item's other sources are, and Rerun must ask that bot, "See latest" show its word.
+    const ownBot = facts?.botId ?? bot;
+    const ownAuthor = facts?.login ?? source?.author ?? '';
+    const who = ownBot !== undefined ? botTitle(ownBot, ownAuthor) : ownAuthor !== '' ? ownAuthor : 'the reviewer';
+    const isBot = facts?.bot ?? ownBot !== undefined;
     const revision = isBot && !Number.isNaN(threadAt) ? revisionAsOf(node, anchor, threadAt, RUN_SETTLE_MS, reapplySoon) : null;
     // A bot's summary from well before the thread is an earlier run's (this run posted none): the strip says when.
     const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
     const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
     // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
-    const latestAnchor = bot === undefined ? null : newerSummaryOf(bot, anchor, meta);
-    const rerun = bot === undefined || latestAnchor !== null ? null : rerunFor(bot, source?.author ?? '', meta, reapply);
+    const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor, meta);
+    const rerun = ownBot === undefined || latestAnchor !== null ? null : rerunFor(ownBot, ownAuthor, meta, reapply);
     return {
       node,
       anchor,
       name: who,
-      label,
+      label: label(who),
       preview: facts?.preview ?? '',
       avatarSrc: facts?.avatarSrc ?? avatarSrcOf(node),
       login: facts?.login ?? source?.author ?? '',
@@ -1685,7 +1692,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     review = outer;
   }
   const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, `${who}'s review`);
+  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, (who) => `${who}'s review`);
   if (bot === undefined) return null;
   // The bot's summary as of the thread (by time), else the bot's latest word when it is not itself a thread: a bot
   // that writes no review body has a thread comment for its "summary", and that is a thread, not a source.
@@ -1693,7 +1700,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
   const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
   const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
-  if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, `${who}'s run summary`);
+  if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, (who) => `${who}'s run summary`);
   return null;
 }
 
