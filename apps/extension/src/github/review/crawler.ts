@@ -930,6 +930,8 @@ export function crawlCheckRuns(root: ParentNode = document, headSha = ''): reado
     // external service posted links to that service, which the check reporters are known by.
     const details = row.querySelector<HTMLAnchorElement>('[class*="StatusCheckRow"] h4 a[href], .merge-status-item a.status-actions[href], .merge-status-item a[href]:not([href^="#"])');
     const description = (row.querySelector('[class*="titleDescription"], [class*="StatusCheckRow"] [class*="description" i], .merge-status-item .status-meta, .merge-status-item .text-small')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    // A running check's description says when it started ("Started <relative-time>"); a finished one's does not.
+    const startedAt = state.status === 'completed' ? null : (row.querySelector('[class*="titleDescription"] relative-time[datetime], .merge-status-item relative-time[datetime]')?.getAttribute('datetime') ?? null);
     out.push({
       name,
       status: state.status,
@@ -937,6 +939,7 @@ export function crawlCheckRuns(root: ParentNode = document, headSha = ''): reado
       sha: headSha,
       ...(details === null ? {} : { detailsUrl: details.href }),
       ...(description === '' ? {} : { description }),
+      ...(startedAt === null ? {} : { startedAt }),
     });
   }
   return out;

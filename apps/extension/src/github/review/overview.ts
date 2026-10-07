@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botByCheckName, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -26,6 +26,7 @@ import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { absoluteTimeText, relativeFineText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
+import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
@@ -437,11 +438,22 @@ function runsAskedFor(comments: readonly RawComment[], extraLogins: readonly str
 function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean): GeldPrMeta {
   const comments = crawled.comments.map((entry) => entry.comment);
   const items = clusterComments(comments, settings.reviewBots);
-  const asked = runsAskedFor(comments, settings.reviewBots);
+  const asked = new Map(runsAskedFor(comments, settings.reviewBots));
   // The merge box's check rows, as the Action would read them from the API: a bot whose run finished green and
-  // that flagged nothing is clean, whatever its opening comment said.
+  // that flagged nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept
+  // after) is a run asked for as surely as a trigger comment: the bot's earlier summary is then worth asking the
+  // edit log about, and a report is a word newer than that start.
+  const checks = withRunTimes(crawlCheckRuns(document, headSha), visit.pageKey, headSha, reapplySoon);
+  for (const check of checks) {
+    const bot = botByCheckName(check.name);
+    const started = check.startedAt === undefined ? NaN : Date.parse(check.startedAt);
+    if (bot !== null && !Number.isNaN(started) && started > (asked.get(bot.id) ?? Number.NEGATIVE_INFINITY)) asked.set(bot.id, started);
+  }
+  // The grace a finished check's report is given ends on a clock, not on a page change: a pass is due then.
+  const graceEnd = nextRunGraceEnd(checks, REPORT_GRACE_MS);
+  if (graceEnd !== null) reapplyAt(graceEnd);
   const bots = verdictsFrom(
-    crawlCheckRuns(document, headSha),
+    checks,
     crawled.comments.map(({ comment, author }) => {
       const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
       const askedAt = bot === null ? undefined : asked.get(bot);
@@ -1104,6 +1116,24 @@ function reapplySoon(): void {
     reapplyTimer = null;
     reapplyNow();
   }, 150);
+}
+
+let reapplyAtTimer: number | null = null;
+let reapplyAtDue = Number.POSITIVE_INFINITY;
+
+/** A pass at a moment on the clock (a grace ending), the earliest asked for winning; nothing on the page need change. */
+function reapplyAt(when: number): void {
+  if (when >= reapplyAtDue) return;
+  if (reapplyAtTimer !== null) window.clearTimeout(reapplyAtTimer);
+  reapplyAtDue = when;
+  reapplyAtTimer = window.setTimeout(
+    () => {
+      reapplyAtTimer = null;
+      reapplyAtDue = Number.POSITIVE_INFINITY;
+      reapplySoon();
+    },
+    Math.max(0, when - Date.now()) + 50,
+  );
 }
 
 /**
