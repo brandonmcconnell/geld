@@ -438,10 +438,10 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
 /** What stands on an open strip's right for a bot's source, if anything (see `pinnedContext`). */
 function sourceControl(source: ChatSource, showingRevision: boolean, handlers: ChatHandlers): HTMLElement | null {
   if (!source.bot) return null;
-  if (showingRevision) return latestControl({ bot: source.name, onOpen: () => handlers.onOpenAnchor(source.anchor) });
+  // The bot's latest word: a newer summary it posted since, else this comment's current reading (its own row).
+  const latest = source.latestAnchor ?? (showingRevision ? source.anchor : null);
+  if (latest !== null) return latestControl({ bot: source.name, onOpen: () => handlers.onOpenAnchor(latest) });
   if (source.revision?.state === 'loading') return null;
-  const { latestAnchor } = source;
-  if (latestAnchor !== undefined) return latestControl({ bot: source.name, onOpen: () => handlers.onOpenAnchor(latestAnchor) });
   return source.rerun === undefined ? null : rerunControl(source.rerun);
 }
 
