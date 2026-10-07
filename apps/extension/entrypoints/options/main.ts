@@ -1166,16 +1166,13 @@ async function main(): Promise<void> {
       }
     },
     'report-diagnostics': async () => {
-      // The tab is opened now, inside the click: gathering every GitHub tab's answer and writing the clipboard
-      // can outlast the click's activation, after which a browser blocks window.open as a pop-up. The report
-      // reaches the form through the link once it is built; a long one is trimmed to what a URL carries, and
-      // the whole report is on the clipboard for pasting over it. Nothing is posted until the issue is submitted.
-      const popup = window.open('about:blank', '_blank');
-      if (popup === null) {
-        maintenanceStatus('The browser blocked the new tab; allow pop-ups for this page and try again', 'error');
-        return;
-      }
-      popup.opener = null;
+      // Order matters twice over. The clipboard is written while this page still has focus: Chromium refuses
+      // navigator.clipboard.writeText from an unfocused document (the extension asks for no clipboard
+      // permission), and a tab opened first would take the focus with it. And the tab is opened through
+      // tabs.create, which an extension page may call without user activation, so the time spent gathering
+      // every GitHub tab's answer cannot cost the click its activation the way window.open would be blocked.
+      // The report reaches the form through the link; a long one is trimmed to what a URL carries, and the
+      // whole report is on the clipboard for pasting over it. Nothing is posted until the issue is submitted.
       const text = await diagnosticsReport();
       let copied = true;
       try {
@@ -1186,7 +1183,7 @@ async function main(): Promise<void> {
       // The copy's outcome decides what a trimmed report's note says: paste from the clipboard, or come back for it.
       const { trimmed } = trimReportForUrl(text, REPORT_URL_BUDGET, copied);
       const url = diagnosticsReportUrl(text, browser.runtime.getManifest().version, navigator.userAgent, navigator.platform, copied);
-      popup.location.href = url.toString();
+      await browser.tabs.create({ url: url.toString() });
       maintenanceStatus(
         trimmed
           ? copied
