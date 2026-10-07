@@ -4589,6 +4589,21 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-weight: 600;
 }
 
+/* "edited": a quiet clock beside the time, the exact and relative moment in its title. */
+.geld-review__edited {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 4px;
+  color: var(--geld-review-muted);
+  cursor: help;
+}
+
+.geld-review__edited svg {
+  width: 12px;
+  height: 12px;
+}
+
 /*
  * Rerun, on the byline's right. The byline's words stand 8px under the slot's top edge; the chat column is inset
  * 16px from the slot's right edge, so the control reaches 8px past the column to stand 8px from that edge too —

@@ -24,7 +24,7 @@ import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
-import { relativeTimeText } from './time';
+import { absoluteTimeText, relativeFineText, relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
@@ -43,13 +43,13 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { ATTR_EDITED_AT, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
-import { applyHold, holdRow, releaseHold, watchPanelForHold } from './hold';
+import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -71,6 +71,8 @@ interface VisitState {
   /** The anchor this visit already landed on, and the row it landed in: the browser revealing it again (`beforematch`) must not move the page. */
   landedAnchor: string | null;
   landedFocusKey: string | null;
+  /** The one-shot correction after load has run: the landed row settled under the sticky header once folding ended. */
+  landedSettled: boolean;
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
@@ -135,6 +137,7 @@ const visit: VisitState = {
   pendingAnchor: null,
   landedAnchor: null,
   landedFocusKey: null,
+  landedSettled: false,
   openSubKey: null,
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
@@ -1119,6 +1122,23 @@ function reapplyNow(): void {
 }
 
 /** Another pass shortly (fetched markup arrived), coalesced. */
+/**
+ * One pass when the document finishes loading. The deeplink's one-shot
+ * correction (the landed row settling below the sticky header) runs on the
+ * pass that first sees `readyState === 'complete'`; if the last pass of the
+ * load ran a moment before that, nothing else would schedule one. The `load`
+ * event guarantees a final pass — it fires once, after `complete`.
+ */
+let loadSettleArmed = false;
+function onDocumentLoaded(): void {
+  reapplySoon();
+}
+function armLoadSettle(): void {
+  if (loadSettleArmed || document.readyState === 'complete') return;
+  loadSettleArmed = true;
+  window.addEventListener('load', onDocumentLoaded, { once: true });
+}
+
 function reapplySoon(): void {
   if (lastSettings === null) return;
   if (document.hidden) {
@@ -1827,14 +1847,22 @@ function newerSummaryOf(id: string, anchor: string): string | null {
 /** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
 function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   const author = prAuthorLogin();
+  const node = anchor === null ? null : timelineRootOf(anchor);
   // An App's own comment carries the App as its "via" too (GitHub pairs the avatar with itself and hides the pair);
   // only a person's comment posted through an App wears the mark.
-  const via = anchor === null || byline.bot ? null : viaBotOf(timelineRootOf(anchor));
+  const via = node === null || byline.bot ? null : viaBotOf(node);
+  // Edited after it was posted: the clock beside the time (chat.ts `editedMark`). Read from the comment element
+  // itself (its id is the anchor, which `logUrlOf` matches against the edit-history menu's owner) — not the
+  // timeline row above. `editedAt` asks the log only for a comment the page marks as edited and bumps
+  // `editsVersion` (in the signature) when the time lands.
+  const commentEl = anchor === null ? null : document.getElementById(anchor);
+  const edited = commentEl === null ? null : editedAt(commentEl, reapplySoon);
   return {
     ...byline,
     ...(anchor === null ? {} : { timeAnchor: anchor }),
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
     ...(via === null ? {} : { via }),
+    ...(edited === null ? {} : { edited }),
   };
 }
 
@@ -1901,6 +1929,8 @@ const shownTimes = new Map<string, string>();
  * no key to remember the words under — the line's time blinked on close.
  */
 const timeByAnchor = new Map<string, string>();
+/** The exact `datetime` behind each anchor's time, for the cell's hover title — cached like the text, for the same reach reasons. */
+const datetimeByAnchor = new Map<string, string>();
 
 function anchorOf(node: Element): string | null {
   if (/^(issuecomment|pullrequestreview|discussion_r|event|commits-pushed)-/.test(node.id)) return node.id;
@@ -1938,9 +1968,23 @@ export function refreshReviewTimes(): number {
     const anchor = cell.getAttribute(ATTR_TIME_FOR);
     if (anchor === null) continue;
     const text = timeTextOf(document.getElementById(anchor), anchor);
+    // The exact moment on hover: the cell is plain text, so without this a panel time has no tooltip at all.
+    const title = absoluteTimeText(datetimeByAnchor.get(anchor) ?? '');
+    if (title !== '' && cell.title !== title) cell.title = title;
     if (text === '' || text === cell.textContent) continue;
     cell.textContent = text;
     changed += 1;
+  }
+  // The edited clock's "edited N minutes ago" is a one-off label no live element upgrades; re-word it here so a chat
+  // left open does not keep saying the old age (the exact timestamp in the title does not change).
+  for (const mark of document.querySelectorAll<HTMLElement>(`[${ATTR_EDITED_AT}]`)) {
+    const at = mark.getAttribute(ATTR_EDITED_AT);
+    if (at === null || at === '') continue;
+    const absolute = absoluteTimeText(at);
+    const title = `edited ${relativeFineText(at)}${absolute === '' ? '' : ` · ${absolute}`}`;
+    if (mark.title === title) continue;
+    mark.title = title;
+    mark.setAttribute('aria-label', title);
   }
   return changed;
 }
@@ -1967,6 +2011,8 @@ function timeTextRead(node: Element): string {
   const el = findIn(node, 'relative-time, time-ago, time');
   if (el === null) return '';
   const datetime = el.getAttribute('datetime') ?? '';
+  const anchor = anchorOf(node);
+  if (datetime !== '' && anchor !== null) datetimeByAnchor.set(anchor, datetime);
   let shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
   if (shown !== '' && datetime !== '' && ABSOLUTE_TIME.test(shown)) shown = relativeTimeText(datetime) || shown;
   if (shown !== '') {
@@ -2315,6 +2361,7 @@ function slotNeedsRender(slot: HTMLElement): boolean {
 let repoBots: RepoBotsHint = NO_REPO_BOTS;
 
 export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null, bots?: RepoBotsHint): void {
+  armLoadSettle();
   phase('review', () => applyReviewOverviewPass(settings, paths, bots));
 }
 
@@ -2340,6 +2387,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.landedAnchor = null;
     visit.landedFocusKey = null;
+    visit.landedSettled = false;
     visit.openSubKey = null;
     visit.sourcesShown = new Set<string>();
     visit.archivedPreviewsOpen = false;
@@ -2352,6 +2400,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     resetWholePaths();
     releaseHold();
     timeByAnchor.clear();
+    datetimeByAnchor.clear();
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
@@ -2537,6 +2586,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     batches,
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
+    // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
+    // one comment asked for at once, so looking a bot up by it opens the wrong bot. Open this bot's own latest
+    // summary instead (none → inert chip, no blind scroll). Settled verdicts open their own source (a thread, a
+    // refusal, a summary).
+    botOpenAnchor: (bot) => (bot.verdict === 'running' || bot.verdict === 'loading' ? botSummaryFor(bot.id, NaN)?.anchor ?? null : bot.sourceId ?? null),
     // A bot's mark, from wherever the page shows it: an avatar captioned with one of its logins (Bugbot's review
     // comments are by cursor[bot]; unambiguous, so first), its run summary's avatar when the summary is the bot's
     // own comment (a `running` verdict's source is the trigger comment, whose avatar is the person who asked),
@@ -2741,7 +2795,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
       const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
-        location.hash = target;
+        // Only scroll to something the page actually holds; a folded, silently-dropped comment has no place to land.
+        if (document.getElementById(target) !== null) location.hash = target;
         return;
       }
       openRowLocal(seat.key, seat.sub);
@@ -2856,6 +2911,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     restoreAll();
   }
   phaseSince('slots', slotsStart);
+  // After the slots render (an open chat's byline time cell is created there): give every time cell its hover title
+  // (and freshest wording) now, so a freshly opened chat carries it from the first paint, not after the next tick.
+  refreshReviewTimes();
   if (mounted !== null) {
     phase('dress', () => {
       wearControls(mounted.root, panelHandlers);
@@ -2899,6 +2957,26 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   // While the page still loads, Chrome's fragment anchor is alive: keep its scroll pointed at the landing.
   if (visit.landedAnchor !== null && visit.landedFocusKey !== null && document.readyState !== 'complete') alignAnchorCarriers(visit.landedAnchor, visit.landedFocusKey);
+  // One correction once the page has settled. Folding the timeline removes content above the landed row after it
+  // lands, drifting it up — behind the sticky header by the end — and the hold can give up mid-load to the
+  // fragment-anchor tug of war (hold.ts `MAX_REPEATS`), leaving nothing to put it right. With the load complete the
+  // fragment anchor is released, so a single re-land cannot ping-pong; skipped once the reader has scrolled by hand.
+  if (visit.landedAnchor !== null && visit.landedFocusKey !== null && !visit.landedSettled && document.readyState === 'complete') {
+    visit.landedSettled = true;
+    // Only when the reader has not moved on: not scrolled by hand, and the landed row is still the open one.
+    // Opening another row calls `holdRow`, which clears the hand-scroll flag, so that alone cannot be trusted —
+    // a reader who scrolled then opened a different row must not be yanked back to the permalink.
+    const subFocus = visit.openSubKey === null ? null : visit.openSubKey.startsWith('item:') ? visit.openSubKey : `sub:${visit.openSubKey}`;
+    const openFocus = visit.openKey === null ? null : `main:${subFocus ?? visit.openKey}`;
+    const landed = openFocus === visit.landedFocusKey ? mounted?.root.querySelector(`[data-geld-focus="${visit.landedFocusKey}"]`) ?? null : null;
+    if (landed instanceof HTMLElement && !readerScrolled()) {
+      const rect = landed.getBoundingClientRect();
+      if (rect.top < stickyHeaderBottomAt(window.scrollY) || rect.top < 0) {
+        scrollRowTo(rect.top + window.scrollY);
+        holdRow(visit.landedFocusKey);
+      }
+    }
+  }
   const tailStart = performance.now();
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
@@ -2955,6 +3033,8 @@ export function teardownReviewOverview(): void {
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
   deferredWhileHidden = false;
+  window.removeEventListener('load', onDocumentLoaded);
+  loadSettleArmed = false;
   if (reapplyTimer !== null) window.clearTimeout(reapplyTimer);
   reapplyTimer = null;
   if (fragmentRenderTimer !== null) window.clearTimeout(fragmentRenderTimer);
