@@ -3244,36 +3244,56 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /* Event rows, without the rail. The badge sits in the status column (16px) and the text starts where the
- * rows' labels do (16 + 16 + 10); GitHub marks events condensed or not, so every badge is treated alike. */
+ * rows' labels do (16 + 16 + 10); GitHub marks events condensed or not, so every badge is treated alike. Every
+ * row's first line is 20px (the buttons on it are shrunk to that below), so a badge at the top is centred on the
+ * first line, picture beside glyph, however far the sentence wraps. */
 .geld-review__qv .TimelineItem--condensed,
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) {
   display: flex !important;
-  align-items: center !important;
+  align-items: flex-start !important;
   gap: 10px;
   padding: 4px 0 !important;
   font-size: 12px;
   line-height: 20px;
 }
 
-/* One 20px line: the avatar (GitHub gives it a 4px gap, the rows here use 8px) and the words, and a button GitHub
- * floats at the right ("View deployment", 28px in the timeline) shrunk to the line so nothing sits above centre. */
+/* GitHub's own actor-and-words layout (deployments, state changes): the avatar in its own column, so the words
+ * wrap under themselves, never under the picture; GitHub gives the column a 4px gap, the rows here use 8px. */
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body > .d-flex {
-  align-items: center;
+  align-items: flex-start;
 }
 
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .flex-shrink-0.mr-1 {
   margin-right: 8px !important;
 }
 
-.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .avatar {
-  vertical-align: middle;
+/* The picture's link as a flex box (over GitHub's `d-inline-block`): the picture fills the first line's 20px
+ * exactly, where an inline image sits a pixel low on its baseline. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body a:has(> .avatar) {
+  display: flex !important;
+  height: 20px;
 }
 
+/* The other layout GitHub uses (a title change): the avatar inline in the sentence. It takes the same column —
+ * out of the flow, the body indented past it — so the words start 8px after it, as in the rows above and below,
+ * and wrap to that indent. */
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body:has(> a > .avatar) {
+  position: relative;
+  padding-left: 28px;
+}
+
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body > a:has(> .avatar) {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* GitHub floats "View deployment" (28px in the timeline) to the right; here it follows its words, whole, the size
+ * of the line (`.geld-review__line-btn`, with the other buttons on these rows). */
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right {
-  min-height: 20px !important;
-  padding: 0 8px !important;
-  font-size: 11px !important;
-  line-height: 18px !important;
+  float: none !important;
+  margin-left: 4px !important;
+  vertical-align: top;
 }
 
 /* The activity folds (events, commits, mentions) are lists of one-line rows: the same room above and below. */
@@ -5136,7 +5156,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 .geld-review__qv .TimelineItem:has(> .TimelineItem-body .geld-review__push) {
-  padding: 2px 0 !important;
+  padding: 4px 0 !important;
 }
 
 .geld-review__push {
@@ -5145,7 +5165,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 24px;
+  min-height: 20px;
   font-size: 12px;
   line-height: 20px;
 }
@@ -5166,32 +5186,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   text-decoration: underline;
 }
 
-/* The Compare button: GitHub's small secondary button shape, with its icon. */
+/* The Compare button is GitHub's own `btn btn-sm` (the same chrome as Revert, Details and View deployment on the
+ * event rows), with its icon; GitHub gives an octicon in a button a 4px right margin, the gap here is that. */
 .geld-review__push-compare {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
   gap: 4px;
-  height: 24px;
-  padding: 0 8px 0 7px;
-  border: 1px solid var(--geld-review-border);
-  border-radius: 6px;
-  background: var(--geld-review-bg);
-  color: var(--geld-review-muted) !important;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 20px;
-  text-decoration: none !important;
-}
-
-.geld-review__push-compare:hover {
-  background: var(--geld-review-hover);
-  color: var(--fgColor-default, var(--color-fg-default)) !important;
 }
 
 .geld-review__push-compare .octicon {
   width: 14px;
   height: 14px;
+  margin: 0 !important;
 }
 
 /* The two heads at the right edge, as the commit rows place their SHA (GitHub's `.text-right.ml-1` there is a
@@ -5256,23 +5261,13 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
-/* The badge sits on the row's middle line, so a wrapped sentence is centred on it; a merge with its checks list
- * unfolded (GitHub's `open`) keeps the badge at the top as the timeline does. */
-.geld-review__qv .TimelineItem:not(.open) {
-  align-items: center;
-}
-
-.geld-review__qv .TimelineItem:has(> .TimelineItem-body > .geld-review__event) {
-  padding: 2px 0 !important;
-}
-
 .geld-review__event {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
   min-width: 0;
-  min-height: 24px;
+  min-height: 20px;
   font-size: 12px;
   line-height: 20px;
 }
@@ -5295,6 +5290,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--fgColor-accent, var(--color-accent-fg));
   font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 11px;
+  /* Its inline box inside the 20px line, not a 20px box of its own at a smaller size that would push the line to 21. */
+  line-height: 1;
 }
 
 .geld-review__event-ref-link {
@@ -5316,7 +5313,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
  * `hx_dropdown-fullscreen` lets the menu take the screen on narrow viewports; the same markup here does too. */
 .geld-review__event-checks-popover {
   position: relative;
-  display: inline-flex;
+  /* Over GitHub's block: as a block the summary sits in a line box with room under it, and the row grows. */
+  display: inline-flex !important;
   flex: 0 0 auto;
 }
 
@@ -5330,7 +5328,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 /* As a button: no chrome of its own, the row's hover tint on hover, the text brightening as a link would. */
 .geld-review__event-checks--button {
-  height: 22px;
+  height: 20px;
   padding: 0 4px;
   margin: 0 -4px;
   border: 0;
@@ -5358,19 +5356,33 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--geld-review-danger-fg);
 }
 
-/* GitHub's own buttons (Details, Revert, Restore branch) inline after the words, the size of the Compare button. */
+/* GitHub's own buttons (Details, Revert, Restore branch) inline after the words. */
 .geld-review__event-control {
   flex: 0 0 auto;
   float: none !important;
   margin: 0 !important;
+  white-space: nowrap;
 }
 
+/* Every button on these rows — Details, Revert, View deployment, Compare — is one GitHub `btn btn-sm` from one
+ * rule, so none is a pixel off another: 22px tall, overhanging the row's 20px line by a pixel above and below
+ * (the negative margins keep its margin box at 20, so the line, the row and what sits on the first line do not
+ * move). GitHub's `.btn-sm` sets the padding, type and line-height it is overriding here with a weight a plain
+ * rule does not beat. */
 .geld-review__event-control .btn,
-.geld-review__event-control.btn {
-  height: 24px;
+.geld-review__event-control.btn,
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right,
+.geld-review__push-compare {
+  display: inline-flex !important;
+  align-items: center;
+  height: 22px !important;
+  min-height: 0 !important;
+  margin-top: -1px !important;
+  margin-bottom: -1px !important;
   padding: 0 8px !important;
-  font-size: 12px;
-  line-height: 22px;
+  font-size: 11px !important;
+  line-height: 20px !important;
+  white-space: nowrap;
 }
 
 /* The time is the last thing on the line, in the column the commit rows use. */
@@ -5378,9 +5390,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin-left: auto;
 }
 
-/* A row that keeps GitHub's words (labels, assignees, review requests): the words stay inline and centred, the time
- * moves off the sentence into the column. The column fits the longest relative time ("16 minutes ago") at 12px,
- * so a long one never runs into the SHA before it. */
+/* A row that keeps GitHub's words (labels, assignees, review requests): the words stay inline, the time moves off
+ * the sentence into the column, on the first line (same size and leading, so the baselines meet). The column fits
+ * the longest relative time ("16 minutes ago") at 12px, so a long one never runs into the SHA before it. */
 .geld-review__qv .TimelineItem-body:has(> .geld-review__event--time-only) {
   position: relative;
   padding-right: calc(var(--geld-time-col) + 8px);
@@ -5393,10 +5405,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__event--time-only {
   position: absolute;
-  top: 50%;
+  top: 0;
   right: 0;
   min-height: 0;
-  transform: translateY(-50%);
 }
 
 /* When the commit (or push) was made: one right-aligned column after the SHAs, so every row's SHA ends at the
@@ -5919,9 +5930,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     min-width: 0;
   }
 
-  /* Compare keeps its icon only, square. */
+  /* Compare keeps its icon only, square; the weight matches the line-button rule's (and GitHub's `.btn-sm`). */
   .geld-review__push-compare {
-    padding: 0 4px;
+    padding: 0 4px !important;
   }
 
   /* The grouping and AI controls are their marks alone, the copy button's square. */
