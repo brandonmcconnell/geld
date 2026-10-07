@@ -633,7 +633,20 @@ function placeControls(message: HTMLElement): void {
   const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
   message.append(side);
   const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
-  if (picker !== null && !isTeleported(picker)) teleportInto(side, [picker]);
+  if (picker !== null && !isTeleported(picker)) {
+    teleportInto(side, [picker]);
+    // GitHub's tooltip opens under the button; here the ⋯ can stand right there (the two stack when the bubble
+    // takes the row), and a tooltip over it swallowed the click. Above, nothing of ours is in the way.
+    const tip = picker.querySelector<HTMLElement>('tool-tip[data-direction]');
+    if (tip !== null) {
+      const direction = tip.getAttribute('data-direction');
+      tip.setAttribute('data-direction', 'n');
+      onRestore(() => {
+        if (direction === null) tip.removeAttribute('data-direction');
+        else tip.setAttribute('data-direction', direction);
+      });
+    }
+  }
   const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
   if (menu !== null && !isTeleported(menu)) {
     // The ⋯ opens a menu of its own; a slot of its own keeps that menu anchored to the round button.

@@ -4193,6 +4193,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   pointer-events: none;
 }
 
+/* The picker's tooltip ("Add or remove reactions") goes while its palette is open: the two would overlap. */
+.geld-review__msg-side > reactions-menu:has(details[open]) > tool-tip,
+.geld-review__msg-side > details.js-add-reaction[open] ~ tool-tip {
+  display: none !important;
+}
+
 /*
  * Where the menus open. GitHub anchors each to its button with a direction
  * class (`dropdown-menu-se`: down and east) and flips the palette north
