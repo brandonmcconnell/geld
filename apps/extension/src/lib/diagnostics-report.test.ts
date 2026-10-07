@@ -21,6 +21,10 @@ describe('diagnostics report link', () => {
     // The newest line survives, the oldest goes.
     expect(out[out.length - 1]).toBe(lines[lines.length - 1]);
     expect(text).not.toContain('owner/repo#0 ');
+    // When the clipboard write failed, the note does not promise a paste; it points at Copy diagnostics instead.
+    const without = trimReportForUrl(report, REPORT_URL_BUDGET, false).text.split('\n')[1] ?? '';
+    expect(without).toContain('Copy diagnostics');
+    expect(without).not.toContain('clipboard');
   });
 
   it('builds the link with the environment and the (trimmed) report', () => {
