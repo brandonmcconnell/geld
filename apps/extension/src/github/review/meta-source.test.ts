@@ -105,15 +105,16 @@ describe('withLiveRuns', () => {
     expect(withLiveRuns(settled, live).map((bot) => bot.id)).toEqual(['bugbot', 'greptile', 'devin']);
   });
 
-  it('ends a run the Action saw running only on the bot\'s completed check', () => {
+  it('ends a run the Action saw running only when the page judged the run against its start', () => {
     const running: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'running', reviewedSha: sha }];
-    // From comments alone the page may be half loaded, reading the summary from before this run as the bot's
-    // last word: the Action's running stands.
+    // A settled verdict the page did not judge (it opened after the check finished, with no start to go by) may be
+    // the summary from before this run: the Action's running stands. So does a completed check the page cannot date.
     expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha }])).toEqual(running);
-    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha, checkName: 'Cursor Bugbot' }])).toEqual(running);
-    // The bot's check row on the merge box says the run completed: that ends it, Action or no Action.
-    const checked: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha, checkName: 'Cursor Bugbot' }];
-    expect(withLiveRuns(running, checked)).toEqual(checked);
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha, checkName: 'Cursor Bugbot' }])).toEqual(running);
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha, checkName: 'Cursor Bugbot', runJudged: true }])).toEqual(running);
+    // The page knew when the run began and found the report newer than that (or waited the grace out): that ends it.
+    const judged: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha, checkName: 'Cursor Bugbot', runJudged: true }];
+    expect(withLiveRuns(running, judged)).toEqual(judged);
   });
 
   it('leaves settled verdicts to the Action', () => {

@@ -86,13 +86,14 @@ function unique(values: readonly string[]): string[] {
  * wrote its verdicts at one moment; a check that started since (CI, the
  * bot's own site), or a request posted since, is on the page and not in the
  * payload. A run is taken from the page as soon as it sees one. The end of a
- * run is taken only from the bot's completed check row: the timeline may
- * still be loading when the page reads the summary from before the run as
- * the bot's last word, but a check row on the merge box is the head's and
- * complete when it says so — and the Action does not run on every check
- * event (the example workflow skips completions with no pull request), so a
- * finished check could otherwise spin until the Action's next run. Every
- * other verdict stands as the Action wrote it.
+ * run is taken from the page only when the page judged it (`runJudged`): it
+ * knew the check's start and found a report newer than it, or waited out the
+ * report's grace and took the check's conclusion. The Action does not run on
+ * every check event (the example workflow skips completions with no pull
+ * request), so a finished check could otherwise spin until the Action's next
+ * run; but a page that opened after the finish, with no start to judge by,
+ * may be reading the summary of the run before, and leaves the Action's word.
+ * Every other verdict stands as the Action wrote it.
  */
 export function withLiveRuns(payload: readonly GeldPrMeta['bots'][number][], crawled: readonly GeldPrMeta['bots'][number][]): GeldPrMeta['bots'] {
   const live = new Map(crawled.map((bot) => [bot.id, bot]));
@@ -100,7 +101,7 @@ export function withLiveRuns(payload: readonly GeldPrMeta['bots'][number][], cra
     const now = live.get(bot.id);
     if (now === undefined) return bot;
     if (now.verdict === 'running' && bot.verdict !== 'running') return now;
-    if (bot.verdict === 'running' && now.checkName !== undefined && now.verdict !== 'running' && now.verdict !== 'loading') return now;
+    if (bot.verdict === 'running' && now.runJudged === true && now.verdict !== 'running' && now.verdict !== 'loading') return now;
     return bot;
   });
   const known = new Set(payload.map((bot) => bot.id));
