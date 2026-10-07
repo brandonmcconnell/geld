@@ -4486,8 +4486,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
+  height: 24px;
+  padding: 0 5px;
   border: 1px solid var(--geld-review-border);
   border-radius: 6px;
   background: var(--geld-review-bg);
