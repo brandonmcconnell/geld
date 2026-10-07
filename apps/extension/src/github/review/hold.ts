@@ -37,17 +37,22 @@ function release(): void {
   repeats = 0;
 }
 
+function userRelease(): void {
+  userMoved = true;
+  release();
+}
+
 function install(): void {
   if (installed) return;
   installed = true;
   const options: AddEventListenerOptions = { capture: true, passive: true };
-  window.addEventListener('wheel', release, options);
-  window.addEventListener('touchstart', release, options);
-  window.addEventListener('mousedown', release, options);
+  window.addEventListener('wheel', userRelease, options);
+  window.addEventListener('touchstart', userRelease, options);
+  window.addEventListener('mousedown', userRelease, options);
   window.addEventListener(
     'keydown',
     (event) => {
-      if (SCROLL_KEYS.has(event.key) && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable))) release();
+      if (SCROLL_KEYS.has(event.key) && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable))) userRelease();
     },
     options,
   );
@@ -61,6 +66,7 @@ function elementOf(key: string): HTMLElement | null {
 /** Keep the row with focus key `key` where it is now (its current viewport top) until the reader scrolls. */
 export function holdRow(key: string): void {
   install();
+  userMoved = false;
   const element = elementOf(key);
   if (element === null) {
     hold = null;
@@ -102,6 +108,20 @@ export function applyHold(): void {
     lastDelta = delta;
     window.scrollBy({ top: delta, behavior: 'instant' });
   });
+}
+
+/**
+ * Whether the reader has scrolled by their own hand since the last hold began.
+ * The landing's final correction after load (overview.ts) must not run once
+ * the reader has moved the page themselves, but the hold also releases on its
+ * own when another scroller wins the tug of war (`MAX_REPEATS`), which is not
+ * the reader — so that path is told apart here.
+ */
+let userMoved = false;
+
+/** True until the next `holdRow`: the reader scrolled by hand (wheel, touch, key, mouse) since the last hold began. */
+export function readerScrolled(): boolean {
+  return userMoved;
 }
 
 let onPanelResize: (() => void) | null = null;

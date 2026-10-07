@@ -49,7 +49,7 @@ import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
-import { applyHold, holdRow, releaseHold, watchPanelForHold } from './hold';
+import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -71,6 +71,8 @@ interface VisitState {
   /** The anchor this visit already landed on, and the row it landed in: the browser revealing it again (`beforematch`) must not move the page. */
   landedAnchor: string | null;
   landedFocusKey: string | null;
+  /** The one-shot correction after load has run: the landed row settled under the sticky header once folding ended. */
+  landedSettled: boolean;
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
@@ -135,6 +137,7 @@ const visit: VisitState = {
   pendingAnchor: null,
   landedAnchor: null,
   landedFocusKey: null,
+  landedSettled: false,
   openSubKey: null,
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
@@ -2340,6 +2343,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.pendingAnchor = sourceAnchorFromHash(location.hash);
     visit.landedAnchor = null;
     visit.landedFocusKey = null;
+    visit.landedSettled = false;
     visit.openSubKey = null;
     visit.sourcesShown = new Set<string>();
     visit.archivedPreviewsOpen = false;
@@ -2899,6 +2903,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   // While the page still loads, Chrome's fragment anchor is alive: keep its scroll pointed at the landing.
   if (visit.landedAnchor !== null && visit.landedFocusKey !== null && document.readyState !== 'complete') alignAnchorCarriers(visit.landedAnchor, visit.landedFocusKey);
+  // One correction once the page has settled. Folding the timeline removes content above the landed row after it
+  // lands, drifting it up — behind the sticky header by the end — and the hold can give up mid-load to the
+  // fragment-anchor tug of war (hold.ts `MAX_REPEATS`), leaving nothing to put it right. With the load complete the
+  // fragment anchor is released, so a single re-land cannot ping-pong; skipped once the reader has scrolled by hand.
+  if (visit.landedAnchor !== null && visit.landedFocusKey !== null && !visit.landedSettled && document.readyState === 'complete') {
+    visit.landedSettled = true;
+    const landed = mounted?.root.querySelector(`[data-geld-focus="${visit.landedFocusKey}"]`) ?? null;
+    if (landed instanceof HTMLElement && !readerScrolled()) {
+      const rect = landed.getBoundingClientRect();
+      if (rect.top < stickyHeaderBottomAt(window.scrollY) || rect.top < 0) {
+        scrollRowTo(rect.top + window.scrollY);
+        holdRow(visit.landedFocusKey);
+      }
+    }
+  }
   const tailStart = performance.now();
   collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
