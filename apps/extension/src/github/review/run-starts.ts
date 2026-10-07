@@ -10,6 +10,13 @@
  * finish does not lose it. The finish itself is the first pass that found the
  * row completed; the report's grace runs from there.
  *
+ * A check can run again on the same head (a re-run from the bot's site, a
+ * "Re-run" on GitHub) while the page is not watching (a hidden tab defers
+ * its passes); the finished row then looks like the one before. The row's
+ * details link names the run (`check_run_id=…`, `actions/runs/…/job/…`), so
+ * an entry is lent back only to the run it was taken from; a row with no
+ * such link is trusted only briefly after its finish.
+ *
  * Entries go when their head is no longer the pull request's (a push starts
  * every check over) and after a day regardless.
  */
@@ -20,6 +27,8 @@ import type { RawCheckRun } from '@geld/review';
 interface RunTimes {
   readonly startedAt: string;
   readonly completedAt?: string;
+  /** The row's details link while it ran, which names the run. */
+  readonly runId?: string;
   /** For pruning: when the entry was last written, ms. */
   readonly at: number;
 }
@@ -27,6 +36,8 @@ interface RunTimes {
 type RunMap = Record<string, RunTimes>;
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** How long after its finish an entry for a run the page cannot name is still believed to be that run's. */
+const UNNAMED_TRUST_MS = 10 * 60 * 1000;
 
 const runsItem = storage.defineItem<RunMap>('local:reviewRunStarts', { fallback: {} });
 
@@ -37,7 +48,19 @@ let writeQueued = false;
 function isRunTimes(value: unknown): value is RunTimes {
   if (typeof value !== 'object' || value === null) return false;
   const record: Record<string, unknown> = { ...value };
-  return typeof record.startedAt === 'string' && typeof record.at === 'number' && (record.completedAt === undefined || typeof record.completedAt === 'string');
+  return (
+    typeof record.startedAt === 'string' &&
+    typeof record.at === 'number' &&
+    (record.completedAt === undefined || typeof record.completedAt === 'string') &&
+    (record.runId === undefined || typeof record.runId === 'string')
+  );
+}
+
+/** Whether a remembered run is the one a completed row shows: the same named run, or an unnamed one still fresh. */
+function sameRun(known: RunTimes, check: RawCheckRun, now: number): boolean {
+  if (known.runId !== undefined && check.detailsUrl !== undefined) return known.runId === check.detailsUrl;
+  const finished = known.completedAt === undefined ? NaN : Date.parse(known.completedAt);
+  return Number.isNaN(finished) || now - finished < UNNAMED_TRUST_MS;
 }
 
 /** Bring the stored entries into memory once; `onChange` re-applies when they land so a finished check gets its start. */
@@ -86,13 +109,20 @@ export function withRunTimes(checks: readonly RawCheckRun[], pageKey: string, he
     const key = `${prefix}${check.name}`;
     const known = memory.get(key);
     if (check.status !== 'completed') {
-      if (check.startedAt !== undefined && known?.startedAt !== check.startedAt) {
-        memory.set(key, { startedAt: check.startedAt, at: now });
+      // A run under way: its start (and name) replace whatever run was remembered under this check.
+      if (check.startedAt !== undefined && (known === undefined || known.startedAt !== check.startedAt || known.runId !== check.detailsUrl)) {
+        memory.set(key, { startedAt: check.startedAt, ...(check.detailsUrl === undefined ? {} : { runId: check.detailsUrl }), at: now });
         changed = true;
       }
-      return check.startedAt === undefined && known !== undefined ? { ...check, startedAt: known.startedAt } : check;
+      return check.startedAt === undefined && known !== undefined && known.completedAt === undefined ? { ...check, startedAt: known.startedAt } : check;
     }
     if (known === undefined) return check;
+    if (!sameRun(known, check, now)) {
+      // The check ran again while nobody watched: what was remembered is the run before and says nothing of this one.
+      memory.delete(key);
+      changed = true;
+      return check;
+    }
     const completedAt = known.completedAt ?? new Date(now).toISOString();
     if (known.completedAt === undefined) {
       memory.set(key, { ...known, completedAt, at: now });

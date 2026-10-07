@@ -28,6 +28,18 @@ describe('withRunTimes', () => {
     expect(done[0]?.completedAt).toBeUndefined();
   });
 
+  it('lends a run\'s times only to that run: a re-run nobody saw running starts over', () => {
+    const run1 = 'https://github.com/mint/pull/1/checks?check_run_id=1';
+    withRunTimes([{ name: 'Greptile Review', status: 'in_progress', conclusion: null, sha, startedAt: '2026-10-07T22:00:00.000Z', detailsUrl: run1 }], 'mint/12661', sha, noop);
+    // The same run finished: its start comes back.
+    const done = withRunTimes([{ name: 'Greptile Review', status: 'completed', conclusion: 'success', sha, detailsUrl: run1 }], 'mint/12661', sha, noop);
+    expect(done[0]?.startedAt).toBe('2026-10-07T22:00:00.000Z');
+    // Another run of the check, finished before the page saw it running: a different run, nothing is known of it.
+    const rerun = withRunTimes([{ name: 'Greptile Review', status: 'completed', conclusion: 'success', sha, detailsUrl: 'https://github.com/mint/pull/1/checks?check_run_id=2' }], 'mint/12661', sha, noop);
+    expect(rerun[0]?.startedAt).toBeUndefined();
+    expect(rerun[0]?.completedAt).toBeUndefined();
+  });
+
   it('forgets a head\'s runs once the pull request has moved on', () => {
     const next = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
     withRunTimes([{ name: 'Cursor Bugbot', status: 'in_progress', conclusion: null, sha: next, startedAt: '2026-10-07T23:00:00.000Z' }], 'mint/12660', next, noop);
