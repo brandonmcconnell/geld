@@ -53,18 +53,27 @@ export async function readDiagnostics(): Promise<readonly DiagnosticEvent[]> {
   return diagnosticsItem.getValue();
 }
 
-/** `owner/repo#N`, `owner/repo@sha7`, or the path alone: enough to tell tabs apart in the log, never a query string. */
+/**
+ * What a tab is called in the log: `owner/repo#N` (with `/files` or
+ * `/changes` when on that tab), `owner/repo@sha7`, `owner/repo (pulls)` for
+ * a repository's list and compare pages, and `other page` for anything else.
+ * Never a path as such: a profile, an organisation or a search URL names
+ * people, and the log may name repositories and nothing more.
+ */
 export function tabSubject(url: string): string {
+  let pathname: string;
   try {
-    const { pathname } = new URL(url);
-    const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(pathname);
-    if (pull !== null) return `${pull[1]}#${pull[2]}${pathname.slice(pull[0].length)}`;
-    const commit = /^\/([^/]+\/[^/]+)\/commit\/([0-9a-f]+)/i.exec(pathname);
-    if (commit !== null) return `${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
-    return pathname;
+    pathname = new URL(url).pathname;
   } catch {
-    return url;
+    return 'other page';
   }
+  const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(\/(?:files|changes|commits|checks))?/.exec(pathname);
+  if (pull !== null) return `${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
+  const commit = /^\/([^/]+\/[^/]+)\/commit\/([0-9a-f]+)/i.exec(pathname);
+  if (commit !== null) return `${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
+  const repoPage = /^\/([^/]+\/[^/]+)\/(pulls|compare|commits)(?:\/|$)/.exec(pathname);
+  if (repoPage !== null) return `${repoPage[1]} (${repoPage[2]})`;
+  return 'other page';
 }
 
 /** `owner/repo#N` for a pull request diff, `owner/repo@sha7` for a commit's; null for anything else. */
