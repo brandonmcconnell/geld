@@ -6138,7 +6138,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-review-tab[data-strip-inline] .geld-review-tab__bar-step-title {
   flex: 0 1 auto;
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 18px;
 }
 

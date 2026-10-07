@@ -442,7 +442,8 @@ function countsInline(model: ReviewTabModel, step: ReviewStep): readonly Node[] 
     attachBreakdownTooltip(label, label, () => breakdown);
     nodes.push(label);
   }
-  nodes.push(createElement('span', { class: C('counts-add') }, [`+${formatCount(own.additions)}`]), createElement('span', { class: C('counts-del') }, [`\u2212${formatCount(own.deletions)}`]));
+  // A plain hyphen, as GitHub's React files page writes its own "-10" (the classic header's U+2212 is the odd one out).
+  nodes.push(createElement('span', { class: C('counts-add') }, [`+${formatCount(own.additions)}`]), createElement('span', { class: C('counts-del') }, [`-${formatCount(own.deletions)}`]));
   return [createElement('span', { class: C('counts'), role: 'group', 'aria-label': `${own.additions} additions and ${own.deletions} deletions in this step${hidden.totals.files > 0 ? `, ${hidden.totals.files} supporting ${hidden.totals.files === 1 ? 'file' : 'files'}` : ''}` }, nodes)];
 }
 
