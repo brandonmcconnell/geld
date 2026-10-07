@@ -17,7 +17,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_TIME_FOR } from './panel';
 import { isTeleported, onRestore, teleportInto } from './teleport';
@@ -54,6 +54,8 @@ export interface ChatSource {
   /** The comment on the page, moved into the chat when the strip is open. */
   readonly node: HTMLElement;
   readonly anchor: string;
+  /** Whose it is, as the label says it: "CodeRabbit", "chitalian". */
+  readonly name: string;
   /** "CodeRabbit's run summary", "chitalian's review". */
   readonly label: string;
   /** Its first line, for the collapsed strip. */
@@ -71,6 +73,10 @@ export interface ChatSource {
   readonly revision?: RevisionView;
   /** When the comment is from an earlier run than the thread (the bot posted no summary with this one): its time, said on the strip. */
   readonly earlier?: string;
+  /** A review bot's summary that is its latest word: Geld's Rerun stands on the open strip's right. */
+  readonly rerun?: ChatRerun;
+  /** The bot has written a newer summary since (its anchor): the open strip offers that instead of Rerun. */
+  readonly latestAnchor?: string;
 }
 
 export interface ChatHandlers {
@@ -81,6 +87,8 @@ export interface ChatHandlers {
   /** Whether that comment is unfolded at the top of the chat. */
   readonly sourceOpen: (thread: HTMLElement) => boolean;
   readonly onToggleSource: (thread: HTMLElement) => void;
+  /** Open a comment by its anchor where the panel keeps it (the bot's current word, from "See latest"). */
+  readonly onOpenAnchor: (anchor: string) => void;
 }
 
 /** Focus key of a chat's pinned-context toggle, so a rebuild returns focus to it. */
@@ -155,6 +163,16 @@ export interface ChatByline {
   readonly via?: ViaBot;
   /** A review bot's run summary: Geld's Rerun control on the byline's right (see `rerunControl`). */
   readonly rerun?: ChatRerun;
+  /** A bot's summary from an earlier run, a newer one on the page: "See latest" on the byline's right instead. */
+  readonly latest?: ChatLatest;
+}
+
+/** An older word of a review bot's: the control that leads to its current one. */
+export interface ChatLatest {
+  /** The bot's name as the chip says it ("Greptile"), for the label. */
+  readonly bot: string;
+  /** Open the bot's latest summary where the panel keeps it. */
+  readonly onOpen: () => void;
 }
 
 export interface ChatRerun {
@@ -221,6 +239,22 @@ function rerunControl(rerun: ChatRerun): HTMLElement {
   });
   wrap.append(button, tip);
   return wrap;
+}
+
+/**
+ * "See latest" where Rerun would stand, on a reading of a bot's summary that
+ * is no longer its word: an earlier run's comment, or how the comment read
+ * before the bot rewrote it. The glyph is the history one mirrored (the
+ * arrow runs forward: ahead in the comment's history, to its current
+ * reading). Same box as Rerun, so the two never shift the line.
+ */
+function latestControl(latest: ChatLatest): HTMLElement {
+  const button = createElement('button', { type: 'button', class: 'geld-review__rerun', 'data-kind': 'latest', 'aria-label': `See ${latest.bot}\u2019s latest`, title: `See ${latest.bot}\u2019s latest` }, [icon(ICON_HISTORY), createElement('span', {}, ['See latest'])]);
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    latest.onOpen();
+  });
+  return createElement('span', { class: 'geld-review__rerun-wrap' }, [button]);
 }
 
 /**
@@ -308,6 +342,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
     if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
     if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
+    else if (byline.latest !== undefined) line.append(latestControl(byline.latest));
     chat.append(line);
   }
   const body = createElement('div', { class: 'geld-review__chat-body' });
@@ -338,7 +373,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
   }
   openMinimized(body);
   annotateMessages(messagesIn(node, false), viewerLogin(), true);
-  if (byline?.rerun !== undefined) hideAgentRerunControls(body);
+  if (byline?.rerun !== undefined || byline?.latest !== undefined) hideAgentRerunControls(body);
 }
 
 /**
@@ -366,8 +401,14 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
   children.push(icon(ICON_CHEVRON_DOWN));
   const button = createElement('button', { type: 'button', class: 'geld-review__chat-pin', 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(thread) }, children);
   button.addEventListener('click', () => handlers.onToggleSource(thread));
-  const wrap = createElement('div', { class: 'geld-review__chat-context', 'data-open': String(open) }, [button]);
+  const row = createElement('div', { class: 'geld-review__chat-pin-row' }, [button]);
+  const wrap = createElement('div', { class: 'geld-review__chat-context', 'data-open': String(open) }, [row]);
   if (open) {
+    // On the strip's right, while the comment is in view: Rerun when this is the bot's latest word; "See latest"
+    // when it is not — an earlier run's summary (`latestAnchor`), or an earlier reading of this one (the page's
+    // node is the current reading, in the bot's own row). Nothing while the reading is still being decided.
+    const control = sourceControl(source, revision !== null, handlers);
+    if (control !== null) row.append(control);
     const body = createElement('div', { class: 'geld-review__chat-context-body' });
     wrap.append(body);
     if (revision !== null) {
@@ -387,9 +428,21 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
       const messages = messagesIn(source.node, false);
       annotateMessages(messages, viewer, true);
       for (const message of messages) placeControls(message);
+      // The same comment as in its own row, so the same rule: the bot's badge is hidden wherever the chat shows it.
+      if (source.bot) hideAgentRerunControls(body);
     }
   }
   return wrap;
+}
+
+/** What stands on an open strip's right for a bot's source, if anything (see `pinnedContext`). */
+function sourceControl(source: ChatSource, showingRevision: boolean, handlers: ChatHandlers): HTMLElement | null {
+  if (!source.bot) return null;
+  // The bot's latest word: a newer summary it posted since, else this comment's current reading (its own row).
+  const latest = source.latestAnchor ?? (showingRevision ? source.anchor : null);
+  if (latest !== null) return latestControl({ bot: source.name, onOpen: () => handlers.onOpenAnchor(latest) });
+  if (source.revision?.state === 'loading') return null;
+  return source.rerun === undefined ? null : rerunControl(source.rerun);
 }
 
 /** The first line of a rendered body, for a strip's preview: its first block's text, whitespace collapsed. */

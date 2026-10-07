@@ -4468,11 +4468,23 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   background: var(--geld-review-subtle);
 }
 
+/* The strip is a row: the toggle takes the width, and on the open strip Rerun or "See latest" stands at its right
+ * end, inset 12px like the toggle's words (chat.ts `sourceControl`). */
+.geld-review__chat-pin-row {
+  display: flex;
+  align-items: center;
+}
+
+.geld-review__chat-pin-row > .geld-review__rerun-wrap {
+  margin: 4px 12px 4px 0;
+}
+
 .geld-review__chat-pin {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 32px;
   padding: 0 12px;
   border: 0;
@@ -4640,6 +4652,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   .geld-review__rerun[data-running] .octicon {
     animation: none;
   }
+}
+
+/* "See latest" in Rerun's box, on an older word of the bot's: the history glyph mirrored, so its arrow runs the
+ * other way round the clock — ahead, to the current reading (Octicons draw only the backward one). */
+.geld-review__rerun[data-kind='latest'] .octicon {
+  transform: scaleX(-1);
 }
 
 /* A bot's own re-trigger badge inside its comment: Geld's Rerun stands for it (chat.ts, `AGENT_RERUN_CONTROLS`). */
