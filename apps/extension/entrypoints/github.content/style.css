@@ -5926,9 +5926,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     min-width: 0;
   }
 
-  /* Compare keeps its icon only, square. */
+  /* Compare keeps its icon only, square; the weight matches the line-button rule's (and GitHub's `.btn-sm`). */
   .geld-review__push-compare {
-    padding: 0 4px;
+    padding: 0 4px !important;
   }
 
   /* The grouping and AI controls are their marks alone, the copy button's square. */
