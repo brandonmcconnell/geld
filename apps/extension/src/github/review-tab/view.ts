@@ -6,15 +6,18 @@
  * hunks that belong to other steps fold with a note (`hunk-rows.ts`).
  */
 
-import type { FileHunks } from '@geld/core';
+import type { ChangeTotals, FileHunks, HiddenCategory } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import type { ReviewPlan, ReviewProgress, ReviewStep, StepDisplayState } from '@geld/review';
 import { finishBody, nextPendingStep, reviewComplete, STEP_KIND_LABELS, stepDisplayState, touchesSummary } from '@geld/review';
 import type { StoredStory } from '../../lib/local-state';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import type { CategoryTotals, HiddenBreakdown, StatsBreakdown } from '../breakdown';
+import { EMPTY_BREAKDOWN, hiddenLabel, hiddenNounPlural, statsBreakdown } from '../breakdown';
 import type { DiffEntry, DiffView } from '../model';
 import { inlineText } from '../review/inline-text';
 import { teleportInto } from '../review/teleport';
+import { attachBreakdownTooltip } from '../ui/tooltip';
 import { ICON_ALERT, ICON_ARROW_LEFT, ICON_ARROW_RIGHT, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_LEFT, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_DOT_CIRCLE, ICON_FLAG, ICON_INFO, ICON_KEBAB_HORIZONTAL, ICON_SPARKLE_FILL } from '../ui/icons';
 import { foldOtherHunks } from './hunk-rows';
 
@@ -53,8 +56,10 @@ export interface ReviewTabModel {
    */
   readonly entries: ReadonlyMap<string, DiffEntry>;
   readonly hunksByPath: ReadonlyMap<string, FileHunks>;
-  /** Which Geld category hides a path (its id and title), for the supporting sections' headings. */
-  readonly categoryOf: (path: string) => { readonly id: string; readonly title: string } | null;
+  /** Which Geld category hides a path, for the supporting sections and the step's counts. */
+  readonly categoryOf: (path: string) => HiddenCategory | null;
+  /** The categories in force on this repository, for the counts' label ("2 tests" vs "3 hidden files"). */
+  readonly activeCategories: readonly HiddenCategory[];
   /** Supporting sections (by category id) the reader collapsed this visit; every section starts open. */
   readonly collapsedSections: ReadonlySet<string>;
   /** GitHub's own sticky bar from the files layout (the classic `.pr-toolbar`), to borrow across the top of the view. */
@@ -133,6 +138,14 @@ export function renderReviewTab(model: ReviewTabModel, handlers: ReviewTabHandle
     // it tells when it is stuck (`watchBar`), which GitHub's own layout did for it at home.
     const bar = createElement('div', { class: C('bar') });
     teleportInto(bar, [model.toolbar]);
+    // The current step's line and title, shown in the bar once the step's own head has scrolled under it.
+    const step = model.finish ? null : model.current;
+    const index = step === null || model.plan === null ? -1 : model.plan.steps.findIndex((candidate) => candidate.id === step.id);
+    if (step !== null && model.plan !== null && index >= 0) {
+      // One grid child, so `grid-template-rows: 0fr` closes the whole strip (a second child would be an implicit row).
+      const inner = createElement('div', { class: C('bar-step-inner') }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('p', { class: C('bar-step-title') }, inlineText(step.title))]);
+      bar.append(createElement('div', { class: C('bar-step'), 'aria-hidden': 'true' }, [inner]));
+    }
     root.append(createElement('div', { class: C('bar-sentinel'), 'aria-hidden': 'true' }), bar);
   }
   root.append(renderStepper(model, handlers), renderMain(model, handlers));
@@ -142,30 +155,13 @@ export function renderReviewTab(model: ReviewTabModel, handlers: ReviewTabHandle
 
 /* ---- stepper ---------------------------------------------------------------- */
 
-let tooltipCounter = 0;
-
 /**
- * A small info mark with GitHub's own tooltip element (`tool-tip`, upgraded
- * by the page's script, gone the moment the pointer leaves); the words as a
- * `title` where the page has no such element.
+ * A small info mark whose words show beside it while the pointer rests on
+ * it (or it has focus) and go the moment it leaves: a stylesheet tooltip
+ * (`::after` reads `data-tip`), nothing the pointer can wander onto.
  */
 function infoMark(words: string): HTMLElement {
-  tooltipCounter += 1;
-  const id = `geld-review-info-${tooltipCounter}`;
-  const mark = createElement('span', { class: C('info'), id, tabindex: '0', role: 'img', 'aria-label': words }, [svgFromString(ICON_INFO)]);
-  const wrap = createElement('span', { class: C('info-wrap') }, [mark]);
-  // The isolated world has no `customElements` registry to ask; an upgraded `tool-tip` on the page (GitHub's
-  // script gives it `popover` and `role`) says the element is defined there.
-  if (document.querySelector('tool-tip[popover], tool-tip[role="tooltip"]') !== null) {
-    const tip = document.createElement('tool-tip');
-    tip.setAttribute('for', id);
-    tip.setAttribute('data-direction', 'se');
-    tip.setAttribute('data-type', 'description');
-    tip.className = 'sr-only';
-    tip.textContent = words;
-    wrap.append(tip);
-  } else mark.setAttribute('title', words);
-  return wrap;
+  return createElement('span', { class: C('info'), tabindex: '0', role: 'img', 'aria-label': words, 'data-tip': words }, [svgFromString(ICON_INFO)]);
 }
 
 /** What the stepper's info mark says about how the steps came to be. */
@@ -314,12 +310,9 @@ function renderStep(model: ReviewTabModel, step: ReviewStep, handlers: ReviewTab
 
   /* Head: position, kind, title, story, the step's own counts at the right. */
   const head = createElement('header', { class: C('step-head') });
-  const eyebrow = createElement('p', { class: C('eyebrow') }, [`Step ${index + 1} of ${plan.steps.length}`, createElement('span', { class: C('kind') }, [STEP_KIND_LABELS[step.kind]])]);
-  if (state !== 'pending') eyebrow.append(createElement('span', { class: C('state-word'), 'data-state': state }, [svgFromString(STATE_ICON[state]), STATE_WORD[state]]));
+  const eyebrow = stepEyebrow(model, plan, step, index, state);
   const title = createElement('h2', { class: C('step-title'), id: 'geld-review-step-title' }, inlineText(step.title));
-  const words = createElement('div', { class: C('step-words') }, [eyebrow, title]);
-  head.append(createElement('div', { class: C('step-top') }, [words, renderCounts(model, step)]));
-  head.append(renderStory(model, step));
+  head.append(eyebrow, title, renderStory(model, step));
   const touches = touchesSummary(step);
   if (touches.length > 0) {
     const line = createElement('p', { class: C('touches') }, ['Touches: ']);
@@ -361,8 +354,9 @@ function renderStep(model: ReviewTabModel, step: ReviewStep, handlers: ReviewTab
     article.append(box);
   }
 
-  /* Actions: where in the steps (previous · number · next), then flag and accept. */
-  const actions = createElement('footer', { class: C('actions') });
+  /* The foot sticks to the viewport's bottom while the step scrolls: where in the steps (previous · number · next), then flag and accept. */
+  const foot = createElement('footer', { class: C('foot') });
+  const actions = createElement('div', { class: C('actions') });
   actions.append(renderPager(plan, index, handlers));
   const decide = createElement('div', { class: C('actions-decide') });
   if (state === 'accepted' || state === 'flagged') {
@@ -380,7 +374,7 @@ function renderStep(model: ReviewTabModel, step: ReviewStep, handlers: ReviewTab
   }, ICON_ARROW_RIGHT);
   decide.append(accept);
   actions.append(decide);
-  article.append(actions);
+  foot.append(actions);
   if (model.flagOpen && state !== 'accepted' && state !== 'flagged') {
     const form = createElement('div', { class: C('flag') });
     const area = createElement('textarea', { class: `form-control ${C('flag-note')}`, rows: '3', placeholder: 'What should the author look at? (kept here until you finish; offered into the review body then)', 'aria-label': 'Flag note' });
@@ -393,14 +387,15 @@ function renderStep(model: ReviewTabModel, step: ReviewStep, handlers: ReviewTab
       }
     });
     form.append(area, createElement('div', { class: C('flag-actions') }, [button('Flag and next', 'btn btn-sm btn-danger', () => handlers.flag(step, area.value), ICON_FLAG)]));
-    article.append(form);
+    foot.append(form);
     requestAnimationFrame(() => area.focus({ preventScroll: true }));
   }
+  article.append(foot);
   return article;
 }
 
 /** Added and removed lines over a set of hunk refs (a whole-file ref counts nothing: a binary, a rename). */
-function linesOf(model: ReviewTabModel, refs: readonly { readonly path: string; readonly hunk: number }[]): { readonly additions: number; readonly deletions: number } {
+function linesOf(model: ReviewTabModel, refs: readonly { readonly path: string; readonly hunk: number }[]): ChangeTotals {
   let additions = 0;
   let deletions = 0;
   for (const ref of refs) {
@@ -409,25 +404,50 @@ function linesOf(model: ReviewTabModel, refs: readonly { readonly path: string; 
     additions += hunk.added.length;
     deletions += hunk.removed.length;
   }
-  return { additions, deletions };
+  return { files: new Set(refs.map((ref) => ref.path)).size, additions, deletions };
 }
 
 /**
- * The step's counts at the head's right, as the files page's header shows the
- * pull request's: the step's own lines, and when it carries supporting
- * changes, how many files those are and their lines in the muted type.
+ * The step's numbers as the page header shows the pull request's: the
+ * step's own `+A −D`, and when it carries supporting changes a label
+ * ("2 tests", "3 hidden files") that opens the same breakdown box the header
+ * does, one row per category. The supporting hunks are counted per hunk, so
+ * a test file split across steps counts only the hunks that are here.
  */
-function renderCounts(model: ReviewTabModel, step: ReviewStep): HTMLElement {
+function stepStats(model: ReviewTabModel, step: ReviewStep): { readonly own: ChangeTotals; readonly breakdown: StatsBreakdown; readonly hidden: HiddenBreakdown } {
   const own = linesOf(model, step.touches);
-  const box = createElement('div', { class: C('counts'), role: 'img', 'aria-label': `${own.additions} additions and ${own.deletions} deletions in this step` });
-  box.append(createElement('span', { class: C('counts-add') }, [`+${formatCount(own.additions)}`]), ' ', createElement('span', { class: C('counts-del') }, [`\u2212${formatCount(own.deletions)}`]));
-  if (step.supporting.length > 0) {
-    const supporting = linesOf(model, step.supporting);
-    const files = new Set(step.supporting.map((ref) => ref.path)).size;
-    box.append(createElement('span', { class: C('counts-supporting') }, [`${pluralize(files, 'supporting file', 'supporting files')} +${formatCount(supporting.additions)} \u2212${formatCount(supporting.deletions)}`]));
-    box.setAttribute('aria-label', `${box.getAttribute('aria-label')}, plus ${files} supporting ${files === 1 ? 'file' : 'files'} with ${supporting.additions} additions and ${supporting.deletions} deletions`);
+  const byCategory = new Map<string, { readonly category: HiddenCategory; readonly refs: typeof step.supporting }>();
+  for (const ref of step.supporting) {
+    const category = model.categoryOf(ref.path);
+    if (category === null) continue;
+    const entry = byCategory.get(category.id) ?? { category, refs: [] };
+    byCategory.set(category.id, { category, refs: [...entry.refs, ref] });
   }
-  return box;
+  const categories: CategoryTotals[] = [...byCategory.values()].map(({ category, refs }) => ({ category, totals: linesOf(model, refs), paths: [...new Set(refs.map((ref) => ref.path))] }));
+  const supporting = linesOf(model, step.supporting);
+  const hidden: HiddenBreakdown = step.supporting.length === 0 ? EMPTY_BREAKDOWN : { ...EMPTY_BREAKDOWN, totals: supporting, categories };
+  const all: ChangeTotals = { files: own.files + supporting.files, additions: own.additions + supporting.additions, deletions: own.deletions + supporting.deletions };
+  return { own, hidden, breakdown: statsBreakdown(all, hidden, hiddenNounPlural(model.activeCategories, hidden), model.activeCategories) };
+}
+
+/** "+385 −14" and, with supporting changes, the "2 tests" label that opens the breakdown on hover. */
+function countsInline(model: ReviewTabModel, step: ReviewStep): readonly Node[] {
+  const { own, hidden, breakdown } = stepStats(model, step);
+  const nodes: Node[] = [];
+  if (hidden.totals.files > 0) {
+    const label = createElement('span', { class: C('counts-label') }, [hiddenLabel(hidden, model.activeCategories)]);
+    attachBreakdownTooltip(label, label, () => breakdown);
+    nodes.push(label);
+  }
+  nodes.push(createElement('span', { class: C('counts-add') }, [`+${formatCount(own.additions)}`]), createElement('span', { class: C('counts-del') }, [`\u2212${formatCount(own.deletions)}`]));
+  return [createElement('span', { class: C('counts'), role: 'group', 'aria-label': `${own.additions} additions and ${own.deletions} deletions in this step${hidden.totals.files > 0 ? `, ${hidden.totals.files} supporting ${hidden.totals.files === 1 ? 'file' : 'files'}` : ''}` }, nodes)];
+}
+
+/** "Step 1 of 10 · Other · +385 −14 · 2 tests", the step's state when it has one; the same line heads the step and the sticky strip. */
+function stepEyebrow(model: ReviewTabModel, plan: ReviewPlan, step: ReviewStep, index: number, state: StepDisplayState): HTMLElement {
+  const eyebrow = createElement('p', { class: C('eyebrow') }, [createElement('span', {}, [`Step ${index + 1} of ${plan.steps.length}`]), createElement('span', { class: C('kind') }, [STEP_KIND_LABELS[step.kind]]), ...countsInline(model, step)]);
+  if (state !== 'pending') eyebrow.append(createElement('span', { class: C('state-word'), 'data-state': state }, [svgFromString(STATE_ICON[state]), STATE_WORD[state]]));
+  return eyebrow;
 }
 
 interface SupportingSection {
@@ -445,10 +465,11 @@ interface SupportingSection {
 function supportingSections(model: ReviewTabModel, step: ReviewStep): readonly SupportingSection[] {
   const byCategory = new Map<string, { readonly title: string; readonly paths: string[] }>();
   for (const path of new Set(step.supporting.map((ref) => ref.path))) {
-    const category = model.categoryOf(path) ?? { id: 'other', title: 'Supporting' };
-    const entry = byCategory.get(category.id) ?? { title: category.title, paths: [] };
+    const category = model.categoryOf(path);
+    const id = category?.id ?? 'other';
+    const entry = byCategory.get(id) ?? { title: category?.title ?? 'Supporting', paths: [] };
     entry.paths.push(path);
-    byCategory.set(category.id, entry);
+    byCategory.set(id, entry);
   }
   return [...byCategory].map(([id, entry]) => {
     const noun = SECTION_NOUNS[id] ?? [`${entry.title.toLowerCase()} file`, `${entry.title.toLowerCase()} files`];
@@ -508,7 +529,7 @@ function renderPager(plan: ReviewPlan, index: number, handlers: ReviewTabHandler
     event.stopPropagation();
   });
   field.addEventListener('blur', go);
-  const total = createElement('span', { class: C('pager-total') }, [` / ${plan.steps.length}`]);
+  const total = createElement('span', { class: C('pager-total') }, [`/ ${plan.steps.length}`]);
   pager.append(arrow(ICON_CHEVRON_LEFT, 'Previous step', previous), createElement('span', { class: C('pager-number') }, [field, total]), arrow(ICON_CHEVRON_RIGHT, 'Next step', next));
   return pager;
 }
@@ -578,7 +599,6 @@ function renderFile(model: ReviewTabModel, plan: ReviewPlan, step: ReviewStep, p
 /** Move GitHub's rendered diff into the slot and fold the hunks other steps own. */
 function mountEntry(slot: HTMLElement, entry: DiffEntry, model: ReviewTabModel, plan: ReviewPlan, step: ReviewStep, path: string, role: 'touches' | 'supporting'): void {
   teleportInto(slot, [entry.root]);
-  model.view?.expandEntry(entry);
   const file = model.hunksByPath.get(path);
   if (file === undefined || entry.anchor === null || file.hunks.length === 0) return;
   const refs = role === 'touches' ? step.touches : step.supporting;

@@ -961,6 +961,7 @@ export class GeldController {
       view,
       headSha: this.headShaFor(page, url),
       classify: (path) => this.classify(matcher, path, null),
+      activeCategories: matcher.activeCategories,
       // A commit's files for the rules producer's co-change grouping: its `.diff` through the budgeted source,
       // cached per SHA like the commit hovercards; a failure answers "no files" so the plan is not held for it.
       commitFiles: (sha) => {

@@ -23,7 +23,7 @@ import { activateControl, findViewedControls } from '../whitespace-viewed';
 import { clearFoldedHunks } from './hunk-rows';
 import { diffHunksFor, dropOtherPages, planInputFor, pullPathOf } from './inputs';
 import { closePlanner, dropPlan, markStep, openPlanner, planWithAi, plannerState, resetReview, reviewModelFor, setCurrentStep, storyFor, unmarkStep } from './planner';
-import { reviewKey } from './store';
+import { loadPlanRecord, loadProgress, reviewKey } from './store';
 import { ensureReviewTabLink, filesTabLink, interceptFilesTab, removeReviewTabLink, reviewTabUrl } from './tab';
 import type { InputPhase, ReviewTabHandlers, ReviewTabModel } from './view';
 import { ATTR_FILE_HEADER, counterFor, markStickyHeaders, renderReviewTab, ROOT_CLASS } from './view';
@@ -41,6 +41,7 @@ export interface ReviewTabContext {
   readonly view: DiffView | null;
   readonly headSha: string | null;
   readonly classify: (path: string) => HiddenCategory | null;
+  readonly activeCategories: readonly HiddenCategory[];
   readonly commitFiles: (sha: string) => readonly string[] | null;
   /** Ask for another pass soon. */
   readonly reapply: () => void;
@@ -71,8 +72,8 @@ interface Visit {
   scrollToStep: string | null;
   /** A handler changed what the view shows: the next pass rebuilds even with a field focused inside the view. */
   rebuildAsked: boolean;
-  /** Says when the borrowed sticky bar is stuck (`watchBar`). */
-  barObserver: IntersectionObserver | null;
+  /** Say when the borrowed sticky bar is stuck and when the step's head has scrolled under it (`watchBar`). */
+  observers: IntersectionObserver[];
   /** GitHub's sticky bar, found in the files layout once; on loan it is no longer there to find. */
   toolbar: HTMLElement | null;
   settings: GeldSettings;
@@ -81,10 +82,31 @@ interface Visit {
 let visit: Visit | null = null;
 let lastContext: ReviewTabContext | null = null;
 
-/** Steps marked over total for the tab's counter, from the planner (null before it has loaded). */
-function tabCounter(): string | null {
-  const state = plannerState(null);
-  return counterFor(state.plan, state.progress);
+/** The counter last known per pull request, so the tab says `k/N` on every PR page as its neighbours say their counts. */
+const counters = new Map<string, { counter: string | null; loading: boolean }>();
+
+/**
+ * Steps marked over total for the tab's counter: the planner's live state
+ * while the Review view is up, else what this device stored for the pull
+ * request (read once per visit; `reapply` when it lands). Null until a plan
+ * exists for the pull request.
+ */
+function tabCounter(stateKey: string, live: boolean, reapply: () => void): string | null {
+  const key = reviewKey(stateKey);
+  if (live) {
+    const state = plannerState(null);
+    const counter = counterFor(state.plan, state.progress);
+    if (state.loaded) counters.set(key, { counter, loading: false });
+    return counter;
+  }
+  const known = counters.get(key);
+  if (known !== undefined) return known.counter;
+  counters.set(key, { counter: null, loading: true });
+  void Promise.all([loadPlanRecord(key), loadProgress(key)]).then(([record, progress]) => {
+    counters.set(key, { counter: counterFor(record?.plan ?? null, progress), loading: false });
+    reapply();
+  });
+  return null;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -108,7 +130,7 @@ export function applyReviewTabLink(page: PageInfo, settings: GeldSettings, reapp
     return;
   }
   const onFilesPage = page.kind === 'pull-files' || page.kind === 'pull-review';
-  ensureReviewTabLink({ active: page.kind === 'pull-review', counter: page.kind === 'pull-review' ? tabCounter() : null, onSwitch: onFilesPage ? (toReview) => switchView(toReview, reapply) : null });
+  ensureReviewTabLink({ active: page.kind === 'pull-review', counter: tabCounter(page.stateKey, page.kind === 'pull-review', reapply), onSwitch: onFilesPage ? (toReview) => switchView(toReview, reapply) : null });
 }
 
 /* ------------------------------------------------------------------------- */
@@ -134,7 +156,7 @@ export function applyReviewTab(context: ReviewTabContext): void {
   const key = reviewKey(page.stateKey);
   if (visit === null || visit.stateKey !== page.stateKey) {
     teardownReviewTab();
-    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, barObserver: null, toolbar: null, settings };
+    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, observers: [], toolbar: null, settings };
     openPlanner(key, () => context.reapply());
     if (page.diffUrl !== null) dropOtherPages(page.diffUrl);
   }
@@ -203,10 +225,8 @@ export function applyReviewTab(context: ReviewTabContext): void {
     view,
     entries,
     hunksByPath,
-    categoryOf: (path) => {
-      const category = context.classify(path);
-      return category === null ? null : { id: category.id, title: category.title };
-    },
+    categoryOf: context.classify,
+    activeCategories: context.activeCategories,
     collapsedSections: current.collapsedSections,
     toolbar: toolbarOf(current),
     flagOpen: current.flagOpen,
@@ -314,6 +334,10 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
   if (typing && !current.rebuildAsked) return;
   current.rebuildAsked = false;
   if (typing && active instanceof HTMLElement) active.blur();
+  // The loans go home before the new build takes them back, and anything that forces a layout in between (GitHub's
+  // own collapse control reads a computed style) saw a document that had lost the files' height, so the browser
+  // clamped the scroll position to the top. The old root keeps its height until it is replaced.
+  if (root !== null && root.isConnected) root.style.minHeight = `${root.getBoundingClientRect().height}px`;
   for (const node of teleportedNodes()) undress(node);
   restoreAll();
   const next = renderReviewTab(model, handlers);
@@ -332,6 +356,8 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
   }
   current.root = next;
   current.signature = signature;
+  // A collapsed file (GitHub folds large and generated ones) opens in the step; asked after insertion, since the control's state is a computed style.
+  for (const entry of current.loaned.values()) if (next.contains(entry.root)) view?.expandEntry(entry);
   for (const loaned of next.querySelectorAll<HTMLElement>(`.${ROOT_CLASS}__file > [data-geld-teleported]`)) markStickyHeaders(loaned);
   watchBar(current, next);
   if (current.scrollToStep !== null && current.scrollToStep === model.current?.id) {
@@ -350,8 +376,8 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
  * class on, so nothing jumps when it sticks.
  */
 function watchBar(current: Visit, root: HTMLElement): void {
-  current.barObserver?.disconnect();
-  current.barObserver = null;
+  for (const observer of current.observers) observer.disconnect();
+  current.observers = [];
   const sentinel = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__bar-sentinel`);
   const toolbar = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__bar > [data-geld-teleported]`);
   if (sentinel === null || toolbar === null) {
@@ -362,16 +388,30 @@ function watchBar(current: Visit, root: HTMLElement): void {
     if (current.root !== root) return;
     const wasStuck = toolbar.classList.contains('is-stuck');
     toolbar.classList.add('is-stuck');
-    root.style.setProperty('--geld-rt-top', `${Math.round(toolbar.getBoundingClientRect().height)}px`);
+    const height = Math.round(toolbar.getBoundingClientRect().height);
+    root.style.setProperty('--geld-rt-top', `${height}px`);
     if (!wasStuck) toolbar.classList.remove('is-stuck');
+    // The step's head: once it has scrolled under the bar, the bar shows the step's line and title in its place.
+    const head = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__step-head`);
+    if (head === null) return;
+    const headObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        if (entry === undefined) return;
+        root.toggleAttribute('data-step-stuck', !entry.isIntersecting && entry.boundingClientRect.bottom < height + 8);
+      },
+      { rootMargin: `-${height}px 0px 0px 0px`, threshold: 0 },
+    );
+    headObserver.observe(head);
+    current.observers.push(headObserver);
   });
-  const observer = new IntersectionObserver((entries) => {
+  const barObserver = new IntersectionObserver((entries) => {
     const entry = entries[entries.length - 1];
     if (entry === undefined) return;
     toolbar.classList.toggle('is-stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0);
   });
-  observer.observe(sentinel);
-  current.barObserver = observer;
+  barObserver.observe(sentinel);
+  current.observers.push(barObserver);
 }
 
 function makeHandlers(context: ReviewTabContext, current: Visit): ReviewTabHandlers {
@@ -689,7 +729,7 @@ export function teardownReviewTab(): void {
   current.area?.style.removeProperty(SEEK_VAR);
   for (const element of queryAll(`[${ATTR_REVIEW_AREA}]`)) element.removeAttribute(ATTR_REVIEW_AREA);
   if (current.seekTimer !== null) clearTimeout(current.seekTimer);
-  current.barObserver?.disconnect();
+  for (const observer of current.observers) observer.disconnect();
   current.unbindKeys?.();
   current.unbindFilesTab?.();
   document.documentElement.removeAttribute(ATTR_PAGE);
