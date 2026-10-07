@@ -387,6 +387,8 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
       const messages = messagesIn(source.node, false);
       annotateMessages(messages, viewer, true);
       for (const message of messages) hoistMenu(message);
+      // The same comment as in its own row, so the same rule: the bot's badge is hidden wherever the chat shows it.
+      if (source.bot) hideAgentRerunControls(body);
     }
   }
   return wrap;
