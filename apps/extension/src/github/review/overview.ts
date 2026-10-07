@@ -2741,11 +2741,22 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // A review that wrote nothing but opened threads has nothing of its own to show: the reader who asked for it
       // (from the Reviews index, from its line in the round) lands on its first thread, which is the conversation.
       const entry = comments.find((candidate) => candidate.anchor === anchor);
-      const target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
+      let target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
+      // A running bot's chip points at its trigger or "Starting" line (that is what `verdictsFrom` records while a
+      // run is under way), which folds silently and holds nothing to read: clicking it used to scroll the page to
+      // that line and open nothing. Lead to the bot's latest real summary instead — its newest root comment — and
+      // when it has none yet, do nothing rather than scroll off to a line with no content.
+      const owner = meta.bots.find((bot) => bot.sourceId === anchor);
+      if (owner !== undefined && sourceFacts.get(anchor)?.summary !== true) {
+        const latest = botSummaryFor(owner.id, NaN)?.anchor ?? null;
+        if (latest === null) return;
+        target = latest;
+      }
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
       const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
-        location.hash = target;
+        // Only scroll to something the page actually holds; a folded, silently-dropped comment has no place to land.
+        if (document.getElementById(target) !== null) location.hash = target;
         return;
       }
       openRowLocal(seat.key, seat.sub);
