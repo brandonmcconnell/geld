@@ -21208,6 +21208,63 @@ var CHECK_REPORTERS = [
   }
 ];
 
+// ../../packages/review/src/review-plan.ts
+var STEP_KINDS = ["feature", "fix", "refactor", "tests", "docs", "chore", "generated", "other"];
+var STEP_SIZE_CAP = 400;
+
+// ../../packages/review/src/review-prompts.ts
+var PLAN_SYSTEM = `You plan a code review. A pull request's diff is given as numbered hunks (h1, h2, \u2026), each with its file, header and changed lines, plus the pull request's title, its commits, and a first grouping made by simple rules. Group the hunks into steps a reviewer reads in order.
+Rules:
+- A step is one body of work: a feature slice, a fix, a refactor, a migration. Group by purpose, never by file type or by file. A hunk belongs to exactly one step. Every hunk listed must appear in some step; invent none.
+- Order the steps so each reads with what came before it: foundations (types, data, shared helpers) before what uses them; the change the pull request is about before its follow-through. Name a dependency in "dependsOn" (step keys) only when reading the other step first is needed to understand this one.
+- Prefer steps under ${STEP_SIZE_CAP} changed lines. A tiny pull request may be one step. Do not pad: a step with one hunk is fine when it is its own change.
+- "key": s1, s2, \u2026 in reading order. "title": three to seven words, imperative or a noun phrase, naming the change not the files ("Debounce the search box", "Settings schema for the new toggle"). "kind": one of ${STEP_KINDS.join(", ")}. "gist": one sentence, under 160 characters, saying what the step does. "watch": zero to three short items worth a second look, only when the diff shows one.
+- Files Geld hides (tests, generated output, fixtures) are listed by path only and are not hunks to place; their steps are decided afterwards.
+- When "previousSteps" are given, the reader has already worked through them: keep a step's key where its hunks are the same change, and change only what the new and removed hunks require.
+- Return JSON only, matching the schema.`;
+var PLAN_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["steps"],
+  properties: {
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["key", "title", "kind", "gist", "hunks", "dependsOn", "watch"],
+        properties: {
+          key: { type: "string" },
+          title: { type: "string" },
+          kind: { type: "string", enum: [...STEP_KINDS] },
+          gist: { type: "string" },
+          hunks: { type: "array", items: { type: "string" } },
+          dependsOn: { type: "array", items: { type: "string" } },
+          watch: { type: "array", items: { type: "string" } }
+        }
+      }
+    }
+  }
+};
+var planOutputSchema = external_exports.object({
+  steps: external_exports.array(
+    external_exports.object({
+      key: external_exports.string().min(1),
+      title: external_exports.string().min(1).max(160),
+      kind: external_exports.string(),
+      gist: external_exports.string().max(400).optional(),
+      hunks: external_exports.array(external_exports.string()),
+      dependsOn: external_exports.array(external_exports.string()).optional(),
+      watch: external_exports.array(external_exports.string().max(300)).optional()
+    })
+  )
+});
+var storyOutputSchema = external_exports.object({
+  story: external_exports.string().min(1).max(2e3),
+  why: external_exports.string().max(400).optional(),
+  watch: external_exports.array(external_exports.string().max(300)).optional()
+});
+
 // src/github.ts
 var API = "https://api.github.com";
 var GRAPHQL = `${API}/graphql`;

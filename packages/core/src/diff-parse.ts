@@ -35,7 +35,7 @@ const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
  * Extract the post-image path from a `diff --git a/x b/y` header line.
  * Falls back to the pre-image path for deletions (`b/` is `/dev/null` then).
  */
-function pathFromGitHeader(line: string): string | null {
+export function pathFromGitHeader(line: string): string | null {
   const rest = line.slice('diff --git '.length);
   // Quoted paths (contain spaces or special characters) look like:
   //   diff --git "a/with space.ts" "b/with space.ts"

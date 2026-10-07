@@ -303,3 +303,31 @@ export const ICON_SPARKLE_FILL = octicon(
   '<path d="M7.53 1.282a.5.5 0 0 1 .94 0l.478 1.306a7.492 7.492 0 0 0 4.464 4.464l1.305.478a.5.5 0 0 1 0 .94l-1.305.478a7.492 7.492 0 0 0-4.464 4.464l-.478 1.305a.5.5 0 0 1-.94 0l-.478-1.305a7.492 7.492 0 0 0-4.464-4.464L1.282 8.47a.5.5 0 0 1 0-.94l1.306-.478a7.492 7.492 0 0 0 4.464-4.464Z"></path>',
   'octicon-sparkle-fill',
 );
+
+/** Octicon `checklist`: the Review tab's mark in the pull request's tab bar. */
+export const ICON_CHECKLIST = octicon(
+  '<path d="M2.5 1.75v11.5c0 .138.112.25.25.25h3.17a.75.75 0 0 1 0 1.5H2.75A1.75 1.75 0 0 1 1 13.25V1.75C1 .784 1.784 0 2.75 0h8.5C12.216 0 13 .784 13 1.75v7.736a.75.75 0 0 1-1.5 0V1.75a.25.25 0 0 0-.25-.25h-8.5a.25.25 0 0 0-.25.25Zm13.274 9.537v-.001l-4.557 4.45a.75.75 0 0 1-1.055-.008l-1.943-1.95a.75.75 0 0 1 1.062-1.058l1.419 1.425 4.026-3.932a.75.75 0 1 1 1.048 1.074ZM4.75 4h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM4 7.75A.75.75 0 0 1 4.75 7h2a.75.75 0 0 1 0 1.5h-2A.75.75 0 0 1 4 7.75Z"></path>',
+  'octicon-checklist',
+);
+
+/** Octicon `flag`: a step flagged with a note. */
+export const ICON_FLAG = octicon(
+  '<path d="M1 1.75C1 .784 1.784 0 2.75 0h10.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 13.25 12H2.5v3.25a.75.75 0 0 1-1.5 0Zm1.5 8.75h10.75a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H2.75a.25.25 0 0 0-.25.25Z"></path>',
+  'octicon-flag',
+);
+
+export const ICON_ARROW_RIGHT = octicon(
+  '<path d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z"></path>',
+  'octicon-arrow-right',
+);
+
+export const ICON_ARROW_LEFT = octicon(
+  '<path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z"></path>',
+  'octicon-arrow-left',
+);
+
+/** Octicon `history`-free "changed since": a dot in a circle, for a step whose hunks moved after it was accepted. */
+export const ICON_DOT_CIRCLE = octicon(
+  '<path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 5a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"></path>',
+  'octicon-dot-circle',
+);

@@ -67,6 +67,7 @@ const BOOLEAN_KEYS = [
   'collapseDescription',
   'aiEnabled',
   'aiJev',
+  'reviewTab',
 ] as const;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -261,6 +262,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   }
   if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
+  }
+  if (value.aiReviewModel !== undefined && typeof value.aiReviewModel !== 'string') {
+    issues.push({ path: `${path}.aiReviewModel`, message: `Expected a string, got ${describeValue(value.aiReviewModel)}.` });
   }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');

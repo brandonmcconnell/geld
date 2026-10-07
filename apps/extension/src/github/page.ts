@@ -1,4 +1,20 @@
-export type PageKind = 'pull-files' | 'pull-conversation' | 'pull-other' | 'commit' | 'compare' | 'other';
+/**
+ * `pull-review` is Geld's own tab: the files page (`/files` or `/changes`)
+ * opened at `#geld-review`, where the Review view stands in for GitHub's
+ * files layout. GitHub serves its files view underneath, which is what the
+ * steps borrow their diffs from. A hash, not a query: GitHub's page script
+ * `replaceState`s the files URL to its canonical form once loaded, dropping
+ * any query it does not know (`?geld=review` was gone within a second,
+ * measured Oct 2026) and keeping the fragment.
+ */
+export type PageKind = 'pull-files' | 'pull-review' | 'pull-conversation' | 'pull-other' | 'commit' | 'compare' | 'other';
+
+export const REVIEW_TAB_HASH = '#geld-review';
+
+/** Whether a URL asks for the Review tab (the files page at `#geld-review`). */
+export function isReviewTabUrl(url: URL): boolean {
+  return url.hash === REVIEW_TAB_HASH;
+}
 
 export interface PageInfo {
   readonly kind: PageKind;
@@ -20,8 +36,8 @@ export function describePage(url: URL): PageInfo {
     const [, owner, repo, number, tab] = pull;
     const base = `/${owner}/${repo}/pull/${number}`;
     // `/files` is the classic tab; `/changes` is the newer React experience.
-    const kind: PageKind =
-      tab === 'files' || tab === 'changes' ? 'pull-files' : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
+    const files = tab === 'files' || tab === 'changes';
+    const kind: PageKind = files ? (isReviewTabUrl(url) ? 'pull-review' : 'pull-files') : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
     return { kind, diffUrl: `${url.origin}${base}.diff`, stateKey: base };
   }
 

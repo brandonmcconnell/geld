@@ -1,4 +1,4 @@
-import type { ConsolidateOutputItem, ModelInfo, ReviewSummary } from '@geld/review';
+import type { ConsolidateOutputItem, ModelInfo, ReviewPlan, ReviewProgress, ReviewSummary, StoryOutput } from '@geld/review';
 import { storage } from 'wxt/utils/storage';
 
 /**
@@ -75,6 +75,33 @@ export interface AiRunRecord {
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;
+
+/**
+ * The Review tab's plan for one pull request, on this device: the current
+ * plan, the one before it (for the replan's diff), the stories written so
+ * far by step id, and how the last run ended. Keyed like {@link aiRunsItem}
+ * (`github[@host]:/owner/repo/pull/N`), capped at the most recent pull
+ * requests. Nothing here is posted to GitHub.
+ */
+/** A step's story as written, with the step's fingerprint then: a story for hunks that have since changed is not shown. */
+export interface StoredStory extends StoryOutput {
+  readonly model: string;
+  readonly at: string;
+  readonly fingerprint: string;
+}
+
+export interface ReviewPlanRecord {
+  readonly plan: ReviewPlan;
+  readonly previous?: ReviewPlan;
+  readonly stories: Readonly<Record<string, StoredStory>>;
+  /** Why the last model call failed, when it did; cleared by the next success. */
+  readonly error?: string;
+  readonly savedAt: string;
+}
+export const reviewPlansItem = storage.defineItem<Readonly<Record<string, ReviewPlanRecord>>>('local:reviewPlans', { fallback: {} });
+/** The reader's progress through a plan, keyed like the plans. */
+export const reviewProgressItem = storage.defineItem<Readonly<Record<string, ReviewProgress & { readonly savedAt: string }>>>('local:reviewProgress', { fallback: {} });
+export const REVIEW_PLANS_CAP = 20;
 
 /**
  * Development only: after every region-scoped pass the controller runs the

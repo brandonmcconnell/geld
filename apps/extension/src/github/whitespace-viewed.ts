@@ -9,7 +9,7 @@ import { describePage } from './page';
 export type WhitespaceOptOuts = Readonly<Record<string, number>>;
 const OPT_OUT_CAP = 300;
 
-const DIFF_KINDS = new Set(['pull-files', 'commit', 'compare']);
+const DIFF_KINDS = new Set(['pull-files', 'pull-review', 'commit', 'compare']);
 const SESSION_PREFIX = 'geld:whitespace:';
 /** A page that started loading this soon after our redirect is the redirect's result. */
 const LOOP_WINDOW_MS = 4000;

@@ -5982,3 +5982,845 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     flex-wrap: wrap;
   }
 }
+
+/* ------------------------------------------------------------------------ */
+/* Review tab: the pull request in steps (src/github/review-tab)             */
+/* ------------------------------------------------------------------------ */
+
+/*
+ * GitHub's files layout stays mounted (the steps borrow its diffs, the finish
+ * submits through its form) but leaves the flow: a fixed, invisible band
+ * behind the page. Its lazy loaders still see a viewport, and moving the band
+ * up (`--geld-review-seek`) brings a file GitHub has not rendered on screen
+ * for them without the reader scrolling anywhere. Fixed boxes add nothing to
+ * the document's scroll height, so the page is as tall as the Review view.
+ */
+[data-geld-review-area] {
+  position: fixed !important;
+  top: var(--geld-review-seek, 0px) !important;
+  left: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+/* Primer's ActionList (the file tree) sets `visibility: visible` on its sub-groups, which would show through. */
+[data-geld-review-area] * {
+  visibility: hidden !important;
+}
+
+.geld-review-tab {
+  --geld-rt-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-rt-border-muted: var(--borderColor-muted, var(--color-border-muted, #d8dee4));
+  --geld-rt-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  --geld-rt-bg: var(--bgColor-default, var(--color-canvas-default, #fff));
+  --geld-rt-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  --geld-rt-hover: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)));
+  --geld-rt-accent: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  --geld-rt-done: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+  --geld-rt-warn: var(--fgColor-attention, var(--color-attention-fg, #9a6700));
+  --geld-rt-bad: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+  --geld-rt-steps-width: 272px;
+  --geld-rt-top: 60px;
+  display: grid;
+  grid-template-columns: var(--geld-rt-steps-width) minmax(0, 1fr);
+  gap: 0 24px;
+  align-items: start;
+  margin: 0 auto;
+  padding: 16px 24px 48px;
+  max-width: 1480px;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.geld-review-tab [hidden] {
+  display: none !important;
+}
+
+.geld-review-tab .octicon {
+  flex: 0 0 auto;
+}
+
+/* ---- stepper ------------------------------------------------------------- */
+
+.geld-review-tab__steps {
+  position: sticky;
+  top: var(--geld-rt-top);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--geld-rt-top) - 16px);
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--geld-rt-bg);
+}
+
+.geld-review-tab__steps-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--geld-rt-border-muted);
+  background: var(--geld-rt-subtle);
+  border-radius: 6px 6px 0 0;
+  font-size: 12px;
+}
+
+.geld-review-tab__brand {
+  font-weight: 600;
+}
+
+.geld-review-tab__meter {
+  position: relative;
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--geld-rt-border-muted);
+  overflow: hidden;
+}
+
+.geld-review-tab__meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--geld-rt-done);
+  transition: width 200ms ease-out;
+}
+
+.geld-review-tab__count {
+  color: var(--geld-rt-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-review-tab__menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.geld-review-tab__menu-summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--geld-rt-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.geld-review-tab__menu-summary::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review-tab__menu-summary:hover {
+  background: var(--geld-rt-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review-tab__menu-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--overlay-bgColor, var(--geld-rt-bg));
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
+}
+
+.geld-review-tab__menu-item {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review-tab__menu-item:hover:not(:disabled) {
+  background: var(--geld-rt-hover);
+}
+
+.geld-review-tab__menu-item:disabled {
+  color: var(--geld-rt-muted);
+  cursor: default;
+}
+
+.geld-review-tab__list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.geld-review-tab__item + .geld-review-tab__item {
+  border-top: 1px solid var(--geld-rt-border-muted);
+}
+
+.geld-review-tab__item-button {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: start;
+  width: 100%;
+  padding: 8px 12px 8px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0 transparent;
+}
+
+.geld-review-tab__item-button:hover {
+  background: var(--geld-rt-hover);
+}
+
+.geld-review-tab__item[aria-current='step'] .geld-review-tab__item-button {
+  background: var(--geld-rt-subtle);
+  box-shadow: inset 2px 0 0 var(--geld-rt-accent);
+}
+
+.geld-review-tab__item-glyph {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__item-glyph[data-state='accepted'] {
+  color: var(--geld-rt-done);
+}
+
+.geld-review-tab__item-glyph[data-state='flagged'] {
+  color: var(--geld-rt-bad);
+}
+
+.geld-review-tab__item-glyph[data-state='changed'] {
+  color: var(--geld-rt-warn);
+}
+
+.geld-review-tab__item-number {
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: right;
+}
+
+.geld-review-tab__item-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.geld-review-tab__item-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.geld-review-tab__item[data-state='accepted'] .geld-review-tab__item-title {
+  font-weight: 400;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__item-meta {
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+.geld-review-tab__finish-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 8px 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--geld-rt-subtle);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.geld-review-tab__finish-link:hover {
+  background: var(--geld-rt-hover);
+}
+
+.geld-review-tab__steps-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--geld-rt-border-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-review-tab__steps-foot:empty {
+  display: none;
+}
+
+.geld-review-tab__notice {
+  margin: 0;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__notice[data-tone='warn'] {
+  color: var(--geld-rt-warn);
+}
+
+.geld-review-tab__notice[data-tone='bad'] {
+  color: var(--geld-rt-bad);
+}
+
+.geld-review-tab__notice .octicon {
+  vertical-align: -3px;
+}
+
+.geld-review-tab__link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-rt-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.geld-review-tab__link-button:hover {
+  text-decoration: underline;
+}
+
+/* ---- the step ------------------------------------------------------------ */
+
+.geld-review-tab__main {
+  min-width: 0;
+}
+
+.geld-review-tab__step,
+.geld-review-tab__finish,
+.geld-review-tab__empty {
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--geld-rt-bg);
+}
+
+.geld-review-tab__step-head {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--geld-rt-border-muted);
+}
+
+.geld-review-tab__eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+.geld-review-tab__kind {
+  padding: 0 7px;
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.geld-review-tab__state-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.geld-review-tab__state-word[data-state='accepted'] {
+  color: var(--geld-rt-done);
+}
+
+.geld-review-tab__state-word[data-state='flagged'] {
+  color: var(--geld-rt-bad);
+}
+
+.geld-review-tab__state-word[data-state='changed'] {
+  color: var(--geld-rt-warn);
+}
+
+.geld-review-tab__step-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.geld-review-tab__story {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 76ch;
+}
+
+.geld-review-tab__story:empty {
+  display: none;
+}
+
+.geld-review-tab__story-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.geld-review-tab__story-why {
+  margin: 0;
+  color: var(--geld-rt-muted);
+  font-style: italic;
+}
+
+.geld-review-tab__story-by {
+  margin: 0;
+  color: var(--geld-rt-muted);
+  font-size: 11px;
+}
+
+.geld-review-tab__story-by .octicon {
+  vertical-align: -2px;
+}
+
+.geld-review-tab__watch-box {
+  padding: 8px 12px;
+  border: 1px solid var(--borderColor-attention-muted, rgba(212, 167, 44, 0.4));
+  border-radius: 6px;
+  background: var(--bgColor-attention-muted, var(--color-attention-subtle, #fff8c5));
+}
+
+.geld-review-tab__watch-label {
+  margin: 0 0 2px;
+  color: var(--geld-rt-warn);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.geld-review-tab__watch {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review-tab__watch li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.geld-review-tab__watch .octicon {
+  color: var(--geld-rt-warn);
+  transform: translateY(2px);
+}
+
+.geld-review-tab__touches,
+.geld-review-tab__depends {
+  margin: 10px 0 0;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+.geld-review-tab__touch {
+  color: inherit;
+}
+
+.geld-review-tab__touch code {
+  font-size: 11.5px;
+}
+
+.geld-review-tab__files {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.geld-review-tab__file {
+  min-width: 0;
+}
+
+/* GitHub's own file box keeps its chrome; only the margin its list gave it goes. */
+.geld-review-tab__file > [data-geld-teleported] {
+  margin: 0 !important;
+}
+
+.geld-review-tab__file-pending {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px dashed var(--geld-rt-border);
+  border-radius: 6px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__file-path {
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.geld-review-tab__supporting {
+  border-top: 1px solid var(--geld-rt-border-muted);
+}
+
+.geld-review-tab__supporting-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.geld-review-tab__supporting-summary::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review-tab__supporting-summary .octicon {
+  transition: transform 120ms ease-out;
+}
+
+.geld-review-tab__supporting:not([open]) .geld-review-tab__supporting-summary .octicon {
+  transform: rotate(-90deg);
+}
+
+.geld-review-tab__supporting-names {
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review-tab__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--geld-rt-border-muted);
+  background: var(--geld-rt-subtle);
+  border-radius: 0 0 6px 6px;
+}
+
+.geld-review-tab__actions-nav,
+.geld-review-tab__actions-decide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.geld-review-tab__actions .btn .octicon {
+  margin-right: 4px;
+}
+
+.geld-review-tab__actions .btn-primary .octicon {
+  margin: 0 0 0 4px;
+  order: 2;
+}
+
+.geld-review-tab__flag {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 16px;
+  background: var(--geld-rt-subtle);
+  border-radius: 0 0 6px 6px;
+}
+
+.geld-review-tab__flag-note {
+  width: 100%;
+  resize: vertical;
+}
+
+.geld-review-tab__flag-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- folded rows of other steps (review-tab/hunk-rows.ts) ------------------ */
+
+tr[data-geld-step-row='hidden'] {
+  display: none !important;
+}
+
+.geld-step-note__cell {
+  padding: 2px 12px !important;
+  background: var(--bgColor-accent-muted, var(--color-accent-subtle, #ddf4ff)) !important;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font: 12px var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.geld-step-note__show {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-step-note__show:hover {
+  text-decoration: underline;
+}
+
+/* ---- finish and empty states ----------------------------------------------- */
+
+.geld-review-tab__finish {
+  padding: 16px 20px;
+}
+
+.geld-review-tab__finish-summary {
+  margin: 0 0 12px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__flagged {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review-tab__flagged li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.geld-review-tab__flagged .octicon {
+  color: var(--geld-rt-bad);
+  transform: translateY(2px);
+}
+
+.geld-review-tab__flagged-note {
+  flex: 1 1 100%;
+  padding-left: 24px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__body-preview {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__body-preview summary {
+  cursor: pointer;
+}
+
+.geld-review-tab__body-text {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--geld-rt-border-muted);
+  border-radius: 6px;
+  background: var(--geld-rt-subtle);
+  color: var(--fgColor-default, var(--color-fg-default));
+  white-space: pre-wrap;
+}
+
+.geld-review-tab__finish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.geld-review-tab__finish-note {
+  margin: 8px 0 0;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+/* GitHub's classic review form, borrowed whole: it opens in place rather than as a popover over the toolbar. */
+.geld-review-tab__form-slot {
+  margin-top: 16px;
+}
+
+.geld-review-tab__form-slot:empty {
+  display: none;
+}
+
+.geld-review-tab__form-slot .js-reviews-container details > .Popover,
+.geld-review-tab__form-slot .js-reviews-container details > [class*='Popover'] {
+  position: static;
+  margin-top: 8px;
+}
+
+.geld-review-tab__form-slot .js-reviews-container [class*='Popover-message'] {
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.geld-review-tab__form-slot .js-reviews-container [class*='Popover-message']::before,
+.geld-review-tab__form-slot .js-reviews-container [class*='Popover-message']::after {
+  display: none;
+}
+
+.geld-review-tab__empty {
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.geld-review-tab__empty-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.geld-review-tab__empty-words {
+  margin: 0 auto 16px;
+  max-width: 52ch;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  max-width: 420px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--overlay-bgColor, var(--geld-rt-bg));
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
+  font-size: 13px;
+}
+
+/* The keyboard list: a small floating card at the bottom edge. */
+.geld-review-tab__help {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  width: 260px;
+  padding: 12px 16px;
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--overlay-bgColor, var(--geld-rt-bg));
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
+}
+
+.geld-review-tab__help h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.geld-review-tab__help-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.geld-review-tab__help-list dt,
+.geld-review-tab__help-list dd {
+  margin: 0;
+}
+
+.geld-review-tab__help-list kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--geld-rt-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--geld-rt-subtle);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* The shimmer the digest uses, on the words still being written. */
+.geld-review-tab [data-pending] {
+  background: linear-gradient(90deg, var(--geld-rt-muted) 0%, var(--geld-rt-muted) 35%, var(--fgColor-default, #1f2328) 50%, var(--geld-rt-muted) 65%, var(--geld-rt-muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: geld-shimmer 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-review-tab [data-pending] {
+    animation: none;
+    color: var(--geld-rt-muted);
+    background: none;
+  }
+}
+
+/* Narrow: the stepper on top, scrolling sideways, the step below it. */
+@media (max-width: 900px) {
+  .geld-review-tab {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px 0;
+    padding: 12px 12px 32px;
+  }
+
+  .geld-review-tab__steps {
+    position: static;
+    max-height: none;
+  }
+
+  .geld-review-tab__list {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .geld-review-tab__item {
+    flex: 0 0 220px;
+  }
+
+  .geld-review-tab__item + .geld-review-tab__item {
+    border-top: 0;
+    border-left: 1px solid var(--geld-rt-border-muted);
+  }
+}

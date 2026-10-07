@@ -39,6 +39,7 @@ import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { applyReviewTab, applyReviewTabLink, removeReviewTab, teardownReviewTab } from './review-tab';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
@@ -869,11 +870,19 @@ export class GeldController {
 
     const matcher = this.matcherFor(repo);
     this.virtualSection = null;
+    const reviewTab = page.kind === 'pull-review' && this.settings.reviewTab;
     if (!skipFiles) {
       this.loadDiffFacts(page, url, matcher);
       const view = phase('read', () => legacyAdapter.read() ?? reactAdapter.read());
       this.currentView = view;
-      if (view !== null) {
+      if (reviewTab) {
+        // The Review view owns the page: GitHub's files layout is borrowed from, never rearranged. The header's
+        // counts, the chips and the whitespace handling keep running as on the files page.
+        this.teardownView();
+        this.currentView = view;
+        this.lastFiles = { view, breakdown: null, expanded: false, renderedEntryCount: view?.entries.length ?? 0 };
+        phase('review-tab', () => this.applyReviewTabNow(page, url, matcher, view));
+      } else if (view !== null) {
         const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
         this.lastFiles = { view, breakdown: result.breakdown, expanded: result.expanded, renderedEntryCount: view.entries.length };
         this.consumeRevealHash(page.stateKey);
@@ -883,6 +892,8 @@ export class GeldController {
         this.lastFiles = { view: null, breakdown: null, expanded: false, renderedEntryCount: 0 };
       }
     }
+    if (!reviewTab) teardownReviewTab();
+    applyReviewTabLink(page, this.settings, () => this.schedule());
     const { view, breakdown: hidden, expanded, renderedEntryCount } = this.lastFiles;
 
     const header = phase('header', () => this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden));
@@ -939,6 +950,26 @@ export class GeldController {
     });
 
     this.observer?.takeRecords();
+  }
+
+  /** The Review tab's pass: the plan over this page's diff, GitHub's diffs on loan to the current step. */
+  private applyReviewTabNow(page: PageInfo, url: URL, matcher: PathMatcher, view: DiffView | null): void {
+    applyReviewTab({
+      settings: this.settings,
+      page,
+      url,
+      view,
+      headSha: this.headShaFor(page, url),
+      classify: (path) => this.classify(matcher, path, null),
+      // A commit's files for the rules producer's co-change grouping: its `.diff` through the budgeted source,
+      // cached per SHA like the commit hovercards; a failure answers "no files" so the plan is not held for it.
+      commitFiles: (sha) => {
+        const state = this.diffSource.request(`${url.origin}${page.stateKey.replace(/\/pull\/\d+$/, '')}/commit/${sha}.diff`, sha, 'background');
+        if (state.status === 'ready') return state.files.map((file) => file.path);
+        return state.status === 'failed' ? [] : null;
+      },
+      reapply: () => this.schedule(),
+    });
   }
 
   /** `+N −M` chips on every PR row of the page (lists, stack popover, merge-box stack list). */
@@ -1252,7 +1283,7 @@ export class GeldController {
     if (!this.settings.hideWhitespace) return;
     rewriteFilesLinksForWhitespace((pageKey) => this.whitespace.isOptedOut(pageKey));
     if (view === null) return;
-    if (page.kind !== 'pull-files' && page.kind !== 'commit' && page.kind !== 'compare') return;
+    if (page.kind !== 'pull-files' && page.kind !== 'pull-review' && page.kind !== 'commit' && page.kind !== 'compare') return;
     this.whitespace.ensure(url, page.stateKey);
   }
 
@@ -1623,6 +1654,7 @@ export class GeldController {
     this.headerDirty = true;
     this.teardownView();
     teardownReviewOverview();
+    removeReviewTab();
     removePrListStats();
     removeCommitHover();
     removeAuthorHiding();
