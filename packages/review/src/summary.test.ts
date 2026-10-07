@@ -4,7 +4,7 @@ import type { RawPullRequest } from './build';
 import { encodePayloadAttribute, extractPayloadText, looksLikeSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, botsTriggeredBy, botTitle, isStatusLineComment, looksLikeBotLogin, parseBotBody, refusalReason, resolveBotId, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, botTitle, isStatusLineComment, looksLikeBotLogin, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { DerivedBotVerdict } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
@@ -356,6 +356,46 @@ describe('bots + prompts', () => {
     // Once the check completes, the comments say what the run found.
     const done = running.map((check) => ({ ...check, status: 'completed', conclusion: 'success' }));
     expect(verdictsFrom(done, earlier, 'bbb').map((bot) => `${bot.id}:${bot.verdict}`).sort()).toEqual(['bugbot:clean', 'greptile:findings']);
+  });
+
+  it('tells a finished run\'s report from the summary of the run before by the check\'s start', () => {
+    const now = Date.UTC(2026, 9, 7, 22, 10);
+    const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();
+    const byId = (list: readonly DerivedBotVerdict[], id: string): DerivedBotVerdict | undefined => list.find((bot) => bot.id === id);
+    // Greptile reviewed an hour ago (4/5, 2 issues) and Bugbot was clean; both checks ran again from CI, starting
+    // five minutes ago, and finished a moment ago. Nothing new in the thread yet.
+    const greptileSummary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\nFound 2 issues.', anchor: 'issuecomment-1', createdAt: at(60) };
+    const bugbotSummary = { author: 'cursor[bot]', body: 'Bugbot reviewed your changes and found no new issues!', anchor: 'issuecomment-2', createdAt: at(60) };
+    const earlier = [greptileSummary, bugbotSummary];
+    const greptileCheck = { name: 'Greptile Review', status: 'completed', conclusion: 'success', sha: 'bbb', startedAt: at(5), completedAt: at(0.2) };
+    const bugbotCheck = { name: 'Cursor Bugbot', status: 'completed', conclusion: 'success', sha: 'bbb', startedAt: at(5), completedAt: at(0.2) };
+    const finished = [greptileCheck, bugbotCheck];
+    // The old summaries are the run before: the report is awaited, the chip keeps running (and the old summary to open).
+    const awaiting = verdictsFrom(finished, earlier, 'bbb', [], now);
+    expect(byId(awaiting, 'greptile')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-1', checkName: 'Greptile Review', runJudged: true });
+    expect(byId(awaiting, 'greptile')?.score).toBeUndefined();
+    expect(byId(awaiting, 'bugbot')).toMatchObject({ verdict: 'running', runJudged: true });
+    // Greptile reports by rewriting its summary; Bugbot by a new comment. A word newer than the start is the report.
+    const reported = [
+      { ...greptileSummary, body: 'Confidence Score: 5/5\nNo issues found.', editedAt: at(0.1) },
+      bugbotSummary,
+      { author: 'cursor[bot]', body: 'Bugbot reviewed your changes and found 1 issue.', anchor: 'issuecomment-3', createdAt: at(0.1) },
+    ];
+    const settled = verdictsFrom(finished, reported, 'bbb', [], now);
+    expect(byId(settled, 'greptile')).toMatchObject({ verdict: 'clean', score: 5, runJudged: true });
+    expect(byId(settled, 'bugbot')).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'issuecomment-3', runJudged: true });
+    // A bot that reports through CI alone never posts: past the grace, its check's conclusion is the whole verdict.
+    const later = now + REPORT_GRACE_MS + 1000;
+    const quiet = verdictsFrom(finished, earlier, 'bbb', [], later);
+    expect(byId(quiet, 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1', runJudged: true });
+    expect(byId(quiet, 'greptile')?.score).toBeUndefined();
+    expect(byId(quiet, 'greptile')?.count).toBeUndefined();
+    const failedRun = verdictsFrom([{ ...bugbotCheck, conclusion: 'failure' }], earlier, 'bbb', [], later);
+    expect(byId(failedRun, 'bugbot')?.verdict).toBe('failed');
+    // A finished check whose start nobody saw cannot be judged: the comments decide as before, and say so.
+    const undated = finished.map(({ startedAt: _s, completedAt: _c, ...check }) => check);
+    expect(byId(verdictsFrom(undated, earlier, 'bbb', [], now), 'greptile')).toMatchObject({ verdict: 'findings', score: 4 });
+    expect(byId(verdictsFrom(undated, earlier, 'bbb', [], now), 'greptile')?.runJudged).toBeUndefined();
   });
 
   it('starts a run when a person asks a bot to', () => {
