@@ -144,11 +144,20 @@ function pinScroll(): () => void {
     window.cancelAnimationFrame(frame);
     window.removeEventListener('wheel', stop, options);
     window.removeEventListener('touchstart', stop, options);
-    window.removeEventListener('mousedown', stop, options);
+    window.removeEventListener('mousedown', onMouse, options);
     window.removeEventListener('keydown', onKey, options);
   };
   const onKey = (event: KeyboardEvent): void => {
     if (SCROLL_KEYS.has(event.key) && !(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) stop();
+  };
+  // A mouse press ends the pin only when it is itself scroll or navigation: a drag on the scrollbar gutter (past the
+  // viewport's content edge), or a click on a link (a permalink changes the URL and should reach its target). An
+  // ordinary click on a control is not navigation and must not end the pin, or GitHub's scroll to the new comment
+  // would jump the page after it — the very thing the pin prevents.
+  const onMouse = (event: MouseEvent): void => {
+    const onScrollbar = event.clientX >= document.documentElement.clientWidth || event.clientY >= document.documentElement.clientHeight;
+    const onLink = event.target instanceof Element && event.target.closest('a[href]') !== null;
+    if (onScrollbar || onLink) stop();
   };
   const keep = (): void => {
     if (!active) return;
@@ -156,11 +165,11 @@ function pinScroll(): () => void {
     frame = window.requestAnimationFrame(keep);
   };
   let frame = window.requestAnimationFrame(keep);
-  // The same releases the row hold watches: a wheel, a touch, a mouse press (a scrollbar drag, or a click on a
-  // permalink, starts with one), or a scroll key — any hand-driven navigation ends the pin at once.
+  // A wheel, touch or scroll key is unambiguous scroll and ends the pin; a mouse press ends it only when it is a
+  // scrollbar drag or a link (see `onMouse`), so GitHub's post-scroll is still absorbed under an ordinary click.
   window.addEventListener('wheel', stop, options);
   window.addEventListener('touchstart', stop, options);
-  window.addEventListener('mousedown', stop, options);
+  window.addEventListener('mousedown', onMouse, options);
   window.addEventListener('keydown', onKey, options);
   return stop;
 }
