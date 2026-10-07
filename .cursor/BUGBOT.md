@@ -8,8 +8,12 @@ root is the authoritative description; this file lists what a reviewer must chec
 
 - Any `any` (explicit or implicit), `ZodTypeAny`, or an `as X` cast outside the few commented interop
   shims. Prefer type guards and `unknown`.
-- The content script moving, removing or re-parenting GitHub's own DOM nodes. Hiding is done with CSS
-  `order`, attributes and `hidden`; GitHub's React view breaks otherwise.
+- The content script moving, removing or re-parenting GitHub's own DOM nodes in the diff view. Hiding
+  is done with CSS `order`, attributes and `hidden`; GitHub's React view breaks otherwise. The review
+  digest is the one exception: it opens a conversation's timeline nodes (and pieces of them — a
+  comment's picker, its ⋯ menu, the tooltip the picker names) inside its panel as *loans* through
+  `review/teleport.ts`, each with a placeholder at home and `restoreAll()` before any rebuild. A new
+  loan goes through `teleportInto`/`onRestore`; an ad-hoc `append` of a GitHub node is the problem.
 - The content script fetching `.diff` files or `api.github.com` itself. Those go through the
   background worker (`entrypoints/background.ts`), which paces them under the diff host's burst limit
   (~45 requests, then 429 to everything for a minute); bypassing it gets users rate-limited. The

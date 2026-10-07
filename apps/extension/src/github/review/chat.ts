@@ -26,6 +26,7 @@ import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
 import type { RevisionView } from './edit-times';
 import { absoluteTimeText, relativeFineText, relativeTimeElement } from './time';
+import { stickyHeaderBottomAt } from './sticky';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
@@ -633,7 +634,24 @@ function placeControls(message: HTMLElement): void {
   const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
   message.append(side);
   const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
-  if (picker !== null && !isTeleported(picker)) teleportInto(side, [picker]);
+  if (picker !== null && !isTeleported(picker)) {
+    teleportInto(side, [picker]);
+    // GitHub's tooltip opens under the button; here the ⋯ can stand right there (the two stack when the bubble
+    // takes the row), and a tooltip over it swallowed the click. Above, nothing of ours is in the way. The
+    // tooltip is the one the button names (`reactions-menu` holds it; the older `details` alone has it as a
+    // sibling, which comes along so the stylesheet can hide it while the palette is open).
+    const button = picker.querySelector<HTMLElement>('summary[id]');
+    const tip = (button === null ? null : document.querySelector<HTMLElement>(`tool-tip[for="${CSS.escape(button.id)}"]`)) ?? picker.querySelector<HTMLElement>('tool-tip');
+    if (tip !== null) {
+      if (!picker.contains(tip) && !isTeleported(tip)) teleportInto(side, [tip]);
+      const direction = tip.getAttribute('data-direction');
+      tip.setAttribute('data-direction', 'n');
+      onRestore(() => {
+        if (direction === null) tip.removeAttribute('data-direction');
+        else tip.setAttribute('data-direction', direction);
+      });
+    }
+  }
   const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
   if (menu !== null && !isTeleported(menu)) {
     // The ⋯ opens a menu of its own; a slot of its own keeps that menu anchored to the round button.
@@ -641,6 +659,11 @@ function placeControls(message: HTMLElement): void {
     side.append(actions);
     teleportInto(actions, [menu]);
     if (actions.childElementCount === 0) actions.remove();
+    else {
+      installMenuFlip();
+      // A menu still open when its chat is rebuilt goes home open; its watcher and mark go with the slot.
+      if (menu instanceof HTMLDetailsElement) onRestore(() => unwatchMenu(menu));
+    }
   }
   // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
   if (side.childElementCount === 0) {
@@ -648,6 +671,66 @@ function placeControls(message: HTMLElement): void {
     return;
   }
   onRestore(() => side.remove());
+}
+
+/** On a ⋯ `details` beside a bubble whose menu opens upward (see `installMenuFlip`). */
+const ATTR_MENU_UP = 'data-geld-menu-up';
+/** The menu's caret (16px) and the gap the stylesheet leaves under the button: what the menu needs beyond its own height. */
+const MENU_CLEARANCE = 24;
+
+let menuFlipInstalled = false;
+/** The ⋯ menus open beside a bubble right now, each with the observer following its menu's height. */
+const openMenus = new Map<HTMLDetailsElement, { menu: HTMLElement; observer: ResizeObserver }>();
+
+function placeMenu(details: HTMLDetailsElement, menu: HTMLElement): void {
+  const button = details.getBoundingClientRect();
+  const need = menu.offsetHeight + MENU_CLEARANCE;
+  const below = window.innerHeight - button.bottom;
+  const above = button.top - stickyHeaderBottomAt(window.scrollY);
+  details.toggleAttribute(ATTR_MENU_UP, need > below && above > below);
+}
+
+/** Stop following `details`' menu and drop its mark (closed, or gone home). */
+function unwatchMenu(details: HTMLDetailsElement): void {
+  openMenus.get(details)?.observer.disconnect();
+  openMenus.delete(details);
+  details.removeAttribute(ATTR_MENU_UP);
+}
+
+/**
+ * GitHub's ⋯ menu always drops down from its button (`dropdown-menu-sw`),
+ * even at the foot of the viewport where only its first items show. Each
+ * time one opens beside a bubble it is placed on the side with the room: down
+ * by default, up when down would cut it off and up would not (or cuts off
+ * less). The menu's items arrive after it opens (`details-menu[src]`), so its
+ * height is watched while it is open and the side re-decided as it grows, and
+ * again as the page scrolls or the viewport resizes under an open menu.
+ * `toggle` does not bubble; a capturing listener on the document sees it.
+ */
+function installMenuFlip(): void {
+  if (menuFlipInstalled) return;
+  menuFlipInstalled = true;
+  document.addEventListener(
+    'toggle',
+    (event) => {
+      const details = event.target;
+      if (!(details instanceof HTMLDetailsElement) || !details.matches('.geld-review__msg-actions > details')) return;
+      unwatchMenu(details);
+      if (!details.open) return;
+      const menu = details.querySelector<HTMLElement>('.dropdown-menu');
+      if (menu === null) return;
+      placeMenu(details, menu);
+      const observer = new ResizeObserver(() => placeMenu(details, menu));
+      observer.observe(menu);
+      openMenus.set(details, { menu, observer });
+    },
+    true,
+  );
+  const replaceOpen = (): void => {
+    for (const [details, { menu }] of openMenus) placeMenu(details, menu);
+  };
+  window.addEventListener('scroll', replaceOpen, { capture: true, passive: true });
+  window.addEventListener('resize', replaceOpen, { passive: true });
 }
 
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
