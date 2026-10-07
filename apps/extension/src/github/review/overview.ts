@@ -24,7 +24,7 @@ import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
-import { relativeTimeText } from './time';
+import { absoluteTimeText, relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
@@ -1904,6 +1904,8 @@ const shownTimes = new Map<string, string>();
  * no key to remember the words under — the line's time blinked on close.
  */
 const timeByAnchor = new Map<string, string>();
+/** The exact `datetime` behind each anchor's time, for the cell's hover title — cached like the text, for the same reach reasons. */
+const datetimeByAnchor = new Map<string, string>();
 
 function anchorOf(node: Element): string | null {
   if (/^(issuecomment|pullrequestreview|discussion_r|event|commits-pushed)-/.test(node.id)) return node.id;
@@ -1941,6 +1943,9 @@ export function refreshReviewTimes(): number {
     const anchor = cell.getAttribute(ATTR_TIME_FOR);
     if (anchor === null) continue;
     const text = timeTextOf(document.getElementById(anchor), anchor);
+    // The exact moment on hover: the cell is plain text, so without this a panel time has no tooltip at all.
+    const title = absoluteTimeText(datetimeByAnchor.get(anchor) ?? '');
+    if (title !== '' && cell.title !== title) cell.title = title;
     if (text === '' || text === cell.textContent) continue;
     cell.textContent = text;
     changed += 1;
@@ -1970,6 +1975,8 @@ function timeTextRead(node: Element): string {
   const el = findIn(node, 'relative-time, time-ago, time');
   if (el === null) return '';
   const datetime = el.getAttribute('datetime') ?? '';
+  const anchor = anchorOf(node);
+  if (datetime !== '' && anchor !== null) datetimeByAnchor.set(anchor, datetime);
   let shown = (el.shadowRoot?.textContent?.trim() ?? '') || (el.textContent ?? '').trim();
   if (shown !== '' && datetime !== '' && ABSOLUTE_TIME.test(shown)) shown = relativeTimeText(datetime) || shown;
   if (shown !== '') {
@@ -2767,6 +2774,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   phaseSince('model', modelStart);
   const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null }));
   scheduleTimeRefresh();
+  // Once now, so the cells carry their hover title (and freshest wording) from the first paint, not after the first tick.
+  refreshReviewTimes();
   if (mounted !== null) {
     watchLoans(mounted.root);
     watchPanelForHold(mounted.root, () => {

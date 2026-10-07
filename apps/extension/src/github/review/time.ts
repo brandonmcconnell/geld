@@ -22,6 +22,17 @@ export function relativeTimeText(datetime: string): string {
   return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(new Date(then).getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
 }
 
+/**
+ * The exact moment behind a relative time, for a `title`: "Oct 7, 2026,
+ * 4:21 AM" in the reader's locale. GitHub's own `relative-time` shows this
+ * on hover; the panel's text times (and its own elements) carry it too.
+ */
+export function absoluteTimeText(datetime: string): string {
+  const then = Date.parse(datetime);
+  if (Number.isNaN(then)) return '';
+  return new Date(then).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 /** A `<relative-time>` for `datetime`, worded by GitHub's element once it upgrades, by `relativeTimeText` until then. */
 export function relativeTimeElement(datetime: string, className: string): HTMLElement {
   const wrapper = createElement('span', { class: className });
@@ -29,6 +40,13 @@ export function relativeTimeElement(datetime: string, className: string): HTMLEl
   time.setAttribute('datetime', datetime);
   time.setAttribute('tense', 'past');
   time.textContent = relativeTimeText(datetime);
+  // GitHub's element may not set a hover title on its own; the exact moment is useful, so give it one (and the
+  // wrapper too, which GitHub never touches).
+  const title = absoluteTimeText(datetime);
+  if (title !== '') {
+    time.setAttribute('title', title);
+    wrapper.setAttribute('title', title);
+  }
   wrapper.append(time);
   return wrapper;
 }
