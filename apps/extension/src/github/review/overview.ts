@@ -1122,6 +1122,23 @@ function reapplyNow(): void {
 }
 
 /** Another pass shortly (fetched markup arrived), coalesced. */
+/**
+ * One pass when the document finishes loading. The deeplink's one-shot
+ * correction (the landed row settling below the sticky header) runs on the
+ * pass that first sees `readyState === 'complete'`; if the last pass of the
+ * load ran a moment before that, nothing else would schedule one. The `load`
+ * event guarantees a final pass — it fires once, after `complete`.
+ */
+let loadSettleArmed = false;
+function onDocumentLoaded(): void {
+  reapplySoon();
+}
+function armLoadSettle(): void {
+  if (loadSettleArmed || document.readyState === 'complete') return;
+  loadSettleArmed = true;
+  window.addEventListener('load', onDocumentLoaded, { once: true });
+}
+
 function reapplySoon(): void {
   if (lastSettings === null) return;
   if (document.hidden) {
@@ -2333,6 +2350,7 @@ function slotNeedsRender(slot: HTMLElement): boolean {
 let repoBots: RepoBotsHint = NO_REPO_BOTS;
 
 export function applyReviewOverview(settings: GeldSettings, paths?: readonly string[] | null, bots?: RepoBotsHint): void {
+  armLoadSettle();
   phase('review', () => applyReviewOverviewPass(settings, paths, bots));
 }
 
@@ -3004,6 +3022,8 @@ export function teardownReviewOverview(): void {
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
   deferredWhileHidden = false;
+  window.removeEventListener('load', onDocumentLoaded);
+  loadSettleArmed = false;
   if (reapplyTimer !== null) window.clearTimeout(reapplyTimer);
   reapplyTimer = null;
   if (fragmentRenderTimer !== null) window.clearTimeout(fragmentRenderTimer);
