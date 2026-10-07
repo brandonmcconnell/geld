@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -2376,7 +2376,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // also chats (Replicas) only a review-shaped comment.
         const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId);
         const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || parsed.count !== null || parsed.score !== null || parsed.clean;
-        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots);
+        // A refusal ("Skipping Bugbot: …") is review-shaped but not a report — `verdictsFrom` keeps the bot's earlier
+        // real review as its last run, so a refusal must not count as a summary, or `botSummaryFor` would offer it as
+        // the bot's newest word and "See latest" would open the refusal instead of the last report.
+        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots) && refusalReason(entry.comment.body) === null;
         return [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot, createdAt: entry.comment.createdAt, botId, summary }];
       }),
   );
