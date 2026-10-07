@@ -1382,6 +1382,70 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       else if (entry.kind === 'review') last.reviews.push(entry.review);
     }
   }
+  // A bot that edits one comment across runs (Greptile rewrites its summary in place) leaves that comment at its
+  // creation point in the timeline, so it would sit in the first run's round for good. Move it to the round its
+  // latest edit falls in — the run its current words describe — so the comment reads against the right push. Only
+  // forward, and only a real later edit moves it; past rounds' threads keep pinning their own snapshot. Edits by a
+  // human on a bot's comment are not told apart (GitHub's log does not expose the editor here); that is rare and
+  // its own fault. A round left with neither content nor commits by the move is dropped.
+  //
+  // Where a round starts is the push that opened it, and the timeline shows the order of pushes but not their
+  // times (a commit row carries no timestamp). The nearest numbers: a force-push event's own timeline time, and for
+  // a commit row the date it was seated by (seatRewrittenCommits: authored for a rewritten commit, committed
+  // otherwise, from the Commits tab), so the two readings of a round agree after a rebase. A commit's date can
+  // precede its push (committed Monday, pushed Friday); an edit in that gap would seat early. Accepted: a bot
+  // edits its summary in answer to a push, so its edits never fall there, and a human's edit of a bot comment is
+  // their own. Doing this exactly needs the API's push times, which belongs in the Action's payload.
+  if (rounds.length > 1) {
+    // Null when no time is known yet — such a round is not a move target, so a missing time never pulls a summary
+    // forward by mistake. Content that landed in the round is the last resort; an anchor not on the page is skipped.
+    const startOf = (round: Round): number | null => {
+      let best: number | null = null;
+      const take = (time: number): void => {
+        if (!Number.isNaN(time)) best = best === null ? time : Math.min(best, time);
+      };
+      for (const row of round.commits) {
+        if (pushRoots.has(row)) {
+          take(Date.parse(createdAtOf(row)));
+          continue;
+        }
+        const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+        const times = sha === undefined ? null : commitTimes(sha, reapplySoon);
+        if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
+      }
+      if (best !== null) return best;
+      const at = (anchor: string): number => {
+        const element = document.getElementById(anchor);
+        return element === null ? Number.NaN : Date.parse(createdAtOf(element));
+      };
+      const content = [...round.comments.map((comment) => Date.parse(createdAtOf(comment.node))), ...round.reviews.map((review) => at(review.anchor)), ...round.items.flatMap((item) => item.sources.map((source) => at(source.anchor)))].filter((time) => !Number.isNaN(time));
+      return content.length === 0 ? null : Math.min(...content);
+    };
+    const starts = rounds.map(startOf);
+    for (let from = 0; from < rounds.length; from += 1) {
+      for (const comment of [...rounds[from]?.comments ?? []]) {
+        const node = document.getElementById(comment.anchor);
+        const edited = node === null ? null : editedAt(node, reapplySoon);
+        const at = edited === null ? Number.NaN : Date.parse(edited);
+        if (Number.isNaN(at)) continue;
+        let target = from;
+        for (let round = from + 1; round < rounds.length; round += 1) {
+          const start = starts[round];
+          if (typeof start === 'number' && start <= at) target = round;
+        }
+        if (target === from) continue;
+        const source = rounds[from];
+        const into = rounds[target];
+        if (source === undefined || into === undefined) continue;
+        source.comments.splice(source.comments.indexOf(comment), 1);
+        into.comments.push(comment);
+      }
+    }
+    for (let round = rounds.length - 1; round >= 0; round -= 1) {
+      const entry = rounds[round];
+      if (entry !== undefined && entry.commits.length === 0 && !hasContent(entry)) rounds.splice(round, 1);
+    }
+  }
   // A round is known by the push that opened it (the first commit row's anchor, `commits-pushed-<sha>`, or the
   // force-push event's id), else by its first comment; only a round with neither falls back to its position.
   const identity = (round: Round, position: number): string => {
