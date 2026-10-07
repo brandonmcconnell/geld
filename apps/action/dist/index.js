@@ -19611,6 +19611,19 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     byId.set(id, { id, login: run2.login, verdict: "findings", count: 0, ...scored, reviewedSha, ...named, sourceId: run2.lastAnchor });
   }
+  for (const [id, verdict] of checkVerdict) {
+    if (verdict !== "running") continue;
+    const existing = byId.get(id);
+    if (existing === void 0 || existing.verdict === "running" || existing.verdict === "loading") continue;
+    byId.set(id, {
+      id,
+      login: existing.login,
+      verdict: "running",
+      reviewedSha: existing.reviewedSha,
+      ...existing.checkName === void 0 ? {} : { checkName: existing.checkName },
+      ...existing.sourceId === void 0 ? {} : { sourceId: existing.sourceId }
+    });
+  }
   return [...byId.values()];
 }
 function reactedBy(comment, id) {

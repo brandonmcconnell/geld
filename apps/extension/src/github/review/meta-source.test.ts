@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GeldPrMeta } from '@geld/review';
-import { mergeWithCrawler, usableMeta } from './meta-source';
+import { mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 
 function meta(overrides: Partial<GeldPrMeta> = {}): GeldPrMeta {
   return {
@@ -81,5 +81,38 @@ describe('usableMeta', () => {
     const usable = usableMeta(found);
     expect(usable.items.map((item) => item.id)).toEqual(['ri_open']);
     expect(usable.fold.comments).toEqual(['issuecomment-9']);
+  });
+});
+
+describe('withLiveRuns', () => {
+  const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const settled: GeldPrMeta['bots'] = [
+    { id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha },
+    { id: 'greptile', login: 'greptile-apps[bot]', verdict: 'findings', reviewedSha: sha, count: 2, score: 4 },
+  ];
+
+  it('takes a run the page sees now over the verdict the Action wrote earlier', () => {
+    // Bugbot's check started after the Action ran: the Action still says clean, the page says running.
+    const live: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'running', reviewedSha: sha, checkName: 'Cursor Bugbot' }];
+    expect(withLiveRuns(settled, live)).toEqual([live[0], settled[1]]);
+  });
+
+  it('adds a bot the Action never saw once the page sees it running, and only then', () => {
+    const live: GeldPrMeta['bots'] = [
+      { id: 'devin', login: 'devin-ai-integration[bot]', verdict: 'running', reviewedSha: sha },
+      { id: 'codex', login: 'chatgpt-codex-connector[bot]', verdict: 'clean', reviewedSha: sha },
+    ];
+    expect(withLiveRuns(settled, live).map((bot) => bot.id)).toEqual(['bugbot', 'greptile', 'devin']);
+  });
+
+  it('lets a run the Action saw running end on the page, but not into loading', () => {
+    const running: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'running', reviewedSha: sha }];
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: sha }])[0]?.verdict).toBe('clean');
+    expect(withLiveRuns(running, [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'loading', reviewedSha: sha }])[0]?.verdict).toBe('running');
+  });
+
+  it('leaves settled verdicts to the Action', () => {
+    const live: GeldPrMeta['bots'] = [{ id: 'greptile', login: 'greptile-apps[bot]', verdict: 'clean', reviewedSha: sha }];
+    expect(withLiveRuns(settled, live)).toEqual(settled);
   });
 });
