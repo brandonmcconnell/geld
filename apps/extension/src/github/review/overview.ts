@@ -2807,8 +2807,6 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   phaseSince('model', modelStart);
   const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null }));
   scheduleTimeRefresh();
-  // Once now, so the cells carry their hover title (and freshest wording) from the first paint, not after the first tick.
-  refreshReviewTimes();
   if (mounted !== null) {
     watchLoans(mounted.root);
     watchPanelForHold(mounted.root, () => {
@@ -2913,6 +2911,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     restoreAll();
   }
   phaseSince('slots', slotsStart);
+  // After the slots render (an open chat's byline time cell is created there): give every time cell its hover title
+  // (and freshest wording) now, so a freshly opened chat carries it from the first paint, not after the next tick.
+  refreshReviewTimes();
   if (mounted !== null) {
     phase('dress', () => {
       wearControls(mounted.root, panelHandlers);
