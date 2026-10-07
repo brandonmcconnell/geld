@@ -284,7 +284,7 @@ function renderStep(model: ReviewTabModel, step: ReviewStep, handlers: ReviewTab
     touches.forEach((entry, position) => {
       if (position > 0) line.append(', ');
       const name = entry.path.slice(entry.path.lastIndexOf('/') + 1);
-      const link = createElement('a', { href: `#geld-review-file-${position}`, class: C('touch'), title: entry.path }, [createElement('code', {}, [name]), ` (${entry.hunks})`]);
+      const link = createElement('a', { href: `#review-file-${position}`, class: C('touch'), title: entry.path }, [createElement('code', {}, [name]), ` (${entry.hunks})`]);
       link.addEventListener('click', (event) => {
         event.preventDefault();
         article.querySelector<HTMLElement>(`[data-geld-review-file="${CSS.escape(entry.path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });

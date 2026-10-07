@@ -4,7 +4,7 @@
  * on both experiences) with its own words, icon, href and counter, stamped
  * as Geld's own so the controller ignores its mutations. GitHub has no
  * `/pull/N/review` route, so the tab points at the files page at
- * `#geld-review`; on the files page itself the switch is a `pushState`, the
+ * `#review`; on the files page itself the switch is a `pushState`, the
  * DOM staying as it is, and anywhere else a navigation.
  */
 

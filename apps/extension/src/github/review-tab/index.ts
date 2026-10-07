@@ -1,5 +1,5 @@
 /**
- * The Review tab on a pull request's files page (`#geld-review`). GitHub's
+ * The Review tab on a pull request's files page (`#review`). GitHub's
  * files view stays mounted underneath - it is what the steps borrow their
  * diffs from and what the finish submits through - but out of sight: its
  * layout becomes a fixed, invisible band behind the page (`data-geld-review-

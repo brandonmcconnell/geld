@@ -1,6 +1,6 @@
 /**
  * `pull-review` is Geld's own tab: the files page (`/files` or `/changes`)
- * opened at `#geld-review`, where the Review view stands in for GitHub's
+ * opened at `#review`, where the Review view stands in for GitHub's
  * files layout. GitHub serves its files view underneath, which is what the
  * steps borrow their diffs from. A hash, not a query: GitHub's page script
  * `replaceState`s the files URL to its canonical form once loaded, dropping
@@ -9,9 +9,10 @@
  */
 export type PageKind = 'pull-files' | 'pull-review' | 'pull-conversation' | 'pull-other' | 'commit' | 'compare' | 'other';
 
-export const REVIEW_TAB_HASH = '#geld-review';
+/** The plain word, not a `geld-` prefix: GitHub's pull request pages carry no element with that id (checked Oct 2026), and the generic name is the one worth owning. */
+export const REVIEW_TAB_HASH = '#review';
 
-/** Whether a URL asks for the Review tab (the files page at `#geld-review`). */
+/** Whether a URL asks for the Review tab (the files page at `#review`). */
 export function isReviewTabUrl(url: URL): boolean {
   return url.hash === REVIEW_TAB_HASH;
 }
