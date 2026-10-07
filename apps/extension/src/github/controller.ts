@@ -27,7 +27,7 @@ import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText,
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
-import { describePage } from './page';
+import { describePage, isSignInInterstitial } from './page';
 import type { Region } from './regions';
 import { regionsOf, scopeWithin } from './regions';
 import { applyCommitHover, removeCommitHover } from './commit-hover';
@@ -840,6 +840,13 @@ export class GeldController {
     const page = describePage(url);
     this.currentPage = page;
     const repo = repoFromPathname(url.pathname);
+    // A sign-in page at a repository URL (an organisation's SSO prompt, a 2FA check): nothing here is the
+    // repository's, and every request for its data would answer 401 in the console. Stand down until it is.
+    if (isSignInInterstitial()) {
+      this.teardown();
+      this.publish({ ...IDLE_STATE, repo });
+      return;
+    }
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(this.repoRules, repo);
 
     if (!decision.allowed) {
@@ -1490,7 +1497,7 @@ export class GeldController {
     }
     const url = new URL(window.location.href);
     const page = describePage(url);
-    if (page.diffUrl === null) return;
+    if (page.diffUrl === null || isSignInInterstitial()) return;
     const repo = repoFromPathname(url.pathname);
     if (repo !== null && !decideRepo(this.repoRules, repo).allowed) return;
     this.currentPage = page;
