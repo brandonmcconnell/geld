@@ -1382,6 +1382,38 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       else if (entry.kind === 'review') last.reviews.push(entry.review);
     }
   }
+  // A bot that edits one comment across runs (Greptile rewrites its summary in place) leaves that comment at its
+  // creation point in the timeline, so it would sit in the first run's round for good. Move it to the round its
+  // latest edit falls in — the run its current words describe — so the comment reads against the right push. Only
+  // forward, and only a real later edit moves it; past rounds' threads keep pinning their own snapshot. Edits by a
+  // human on a bot's comment are not told apart (GitHub's log does not expose the editor here); that is rare and
+  // its own fault. A round left with neither content nor commits by the move is dropped.
+  if (rounds.length > 1) {
+    const startAt = rounds.map((round) => {
+      const times = round.commits.map((commit) => Date.parse(createdAtOf(commit))).filter((time) => !Number.isNaN(time));
+      return times.length === 0 ? Number.NEGATIVE_INFINITY : Math.min(...times);
+    });
+    for (let from = 0; from < rounds.length; from += 1) {
+      for (const comment of [...rounds[from]?.comments ?? []]) {
+        const node = document.getElementById(comment.anchor);
+        const edited = node === null ? null : editedAt(node, reapplySoon);
+        const at = edited === null ? Number.NaN : Date.parse(edited);
+        if (Number.isNaN(at)) continue;
+        let target = from;
+        for (let round = from + 1; round < rounds.length; round += 1) if (startAt[round] !== undefined && (startAt[round] as number) <= at) target = round;
+        if (target === from) continue;
+        const source = rounds[from];
+        const into = rounds[target];
+        if (source === undefined || into === undefined) continue;
+        source.comments.splice(source.comments.indexOf(comment), 1);
+        into.comments.push(comment);
+      }
+    }
+    for (let round = rounds.length - 1; round >= 0; round -= 1) {
+      const entry = rounds[round];
+      if (entry !== undefined && entry.commits.length === 0 && !hasContent(entry)) rounds.splice(round, 1);
+    }
+  }
   // A round is known by the push that opened it (the first commit row's anchor, `commits-pushed-<sha>`, or the
   // force-push event's id), else by its first comment; only a round with neither falls back to its position.
   const identity = (round: Round, position: number): string => {
