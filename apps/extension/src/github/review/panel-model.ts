@@ -148,7 +148,7 @@ export type VerdictTone = 'success' | 'attention' | 'danger' | 'neutral';
 
 export function verdictTone(bot: BotVerdictRecord): VerdictTone {
   if (bot.verdict === 'clean' || allResolved(bot)) return 'success';
-  if (bot.verdict === 'failed') return 'danger';
+  if (bot.verdict === 'failed') return bot.reason === undefined ? 'danger' : 'attention';
   if (bot.verdict === 'running' || bot.verdict === 'loading') return 'neutral';
   return 'attention';
 }
@@ -263,7 +263,9 @@ export type Health = 'good' | 'warn' | 'bad' | 'pending';
 
 export function botHealth(bot: BotVerdictRecord): Health {
   if (bot.verdict === 'running' || bot.verdict === 'loading') return 'pending';
-  if (bot.verdict === 'failed') return 'bad';
+  // A run the bot refused ("disabled for this repository") is a warning, not a failure: nothing is wrong with the
+  // pull request, the bot's setup is. A run that broke with no word is a failure.
+  if (bot.verdict === 'failed') return bot.reason === undefined ? 'bad' : 'warn';
   if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
   if (bot.severity === 'high') return 'bad';
   if (bot.score !== undefined) return bot.score >= 5 ? 'good' : bot.score >= 3 ? 'warn' : 'bad';

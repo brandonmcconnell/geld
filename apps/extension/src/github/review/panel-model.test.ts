@@ -125,6 +125,10 @@ describe('status rows', () => {
     expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('bad');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'findings', count: 1, severity: 'high' })).toBe('bad');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'clean' })).toBe('good');
+    // A low score is a failure (red X); a run the bot refused is a warning (amber triangle); a run that broke is a failure.
+    expect(botHealth({ ...base, verdict: 'findings', score: 1 })).toBe('bad');
+    expect(botHealth({ ...base, id: 'bugbot', verdict: 'failed', reason: 'Bugbot is disabled for this repository' })).toBe('warn');
+    expect(botHealth({ ...base, id: 'bugbot', verdict: 'failed' })).toBe('bad');
     // Findings whose threads are all resolved: nothing outstanding.
     const resolved = { ...base, verdict: 'findings', count: 0 } as const;
     expect(botHealth(resolved)).toBe('good');
