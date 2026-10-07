@@ -3775,9 +3775,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   max-width: 100%;
   min-width: 0;
   margin: 0 !important;
-  /* The same above the text as below, so a one-line message sits centred in its bubble; 9px plus the line's
-   * half-leading puts the first line's centre 20px down, where the controls beside the bubble are centred too. */
-  padding: 9px 12px !important;
+  /* The same above the text as below, so a one-line message sits centred in its bubble. 6px: nothing straddles
+   * the bubble's edges any more (the pills are under it, the controls beside it), so the padding only has to seat
+   * the text; a one-line bubble is 35px, between a pill's 20px and the composer's 32px. */
+  padding: 6px 12px !important;
   border: 1px solid var(--geld-review-border-muted);
   border-radius: var(--geld-chat-radius);
   background: var(--geld-review-subtle);
@@ -4031,10 +4032,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 /*
  * The side slot: the empty side of the row, from the bubble's top down. The
- * picker stands first, 8px off the bubble, the ⋯ after it; 8px down puts a
- * 24px control's centre on the first line's (1px border, 9px padding, a
- * 21px line). Too narrow for both — the gutter's 32px holds one — and the
- * flex row wraps, stacking the ⋯ under the picker.
+ * picker stands first, 8px off the bubble, the ⋯ after it; 6px down puts a
+ * 24px control's centre on the first line's (1px border, 6px padding, a
+ * 21px line: 17.5px, the control's 18px). Too narrow for both — the
+ * gutter's 32px holds one — and the flex row wraps, stacking the ⋯ under
+ * the picker: that is every bubble as wide as its row.
  */
 .geld-review__chat [data-geld-message] > .geld-review__msg-side {
   position: absolute;
@@ -4049,7 +4051,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   align-items: flex-start;
   gap: 4px;
   width: calc(100cqw - 100%);
-  padding: 8px 0 0 8px;
+  padding: 6px 0 0 8px;
   /* The menus below read their room from it; its own width comes from the row's (the `cqw` above), not from here. */
   container-type: inline-size;
 }
@@ -4058,11 +4060,12 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   right: 100%;
   left: auto;
   flex-direction: row-reverse;
-  padding: 8px 8px 0 0;
+  padding: 6px 8px 0 0;
 }
 
 /* A lone message spans its row (no empty side, and no row container to measure one in): its controls straddle its
- * top edge at the right, as a card's would, hover-only as everywhere. */
+ * top edge at the right, as a card's would, hover-only as everywhere; its bubble keeps 9px above the text so the
+ * controls' lower half (12px deep) stays off the first line's glyphs. */
 .geld-review__chat [data-geld-message][data-geld-lone] > .geld-review__msg-side {
   top: calc(var(--geld-chat-action) / -2);
   right: 12px;
@@ -4072,6 +4075,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
    * below opening over the content (west), the only side with room. */
   width: calc(var(--geld-chat-action) * 2 + 4px);
   padding: 0;
+}
+
+.geld-review__chat [data-geld-message][data-geld-lone] > [data-geld-part='bubble'] {
+  padding-top: 9px !important;
 }
 
 /* The controls, hidden until the message is hovered or focused or a menu is open. */
