@@ -1,0 +1,32 @@
+name: Diagnostics report
+description: Send what the extension recorded about this browser session. Opened from the options page's "Report with diagnostics", with the report filled in.
+title: '[Diagnostics] '
+labels: [diagnostics]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The report below is what Geld keeps in memory for this browser session: diff fetches by pull request number, per-tab timings, and each tab's lifecycle. No URLs, page content or tokens. Add a few words about what you were doing if you can; a report on its own is still useful.
+  - type: textarea
+    id: what
+    attributes:
+      label: What was happening?
+      description: Optional. What you were doing, what you expected, what you saw instead. A page URL helps when it is a public repository.
+  - type: input
+    id: version
+    attributes:
+      label: Geld version
+      placeholder: 0.1.2
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 148 on macOS
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Filled in by the extension. If it says the report was trimmed, the full one is on your clipboard — paste it over this.
+      render: text
+    validations:
+      required: true

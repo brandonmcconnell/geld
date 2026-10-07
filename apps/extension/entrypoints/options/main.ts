@@ -43,6 +43,7 @@ import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
+import { diagnosticsReportUrl, trimReportForUrl } from '../../src/lib/diagnostics-report';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
@@ -1131,6 +1132,11 @@ async function main(): Promise<void> {
   const importInput = requireElement('import-file', HTMLInputElement);
   const maintenanceHost = requireElement('maintenance-buttons', HTMLDivElement);
   const actionsField = sections.find((section) => section.id === 'maintenance')?.fields.find((field): field is ActionsField => field.kind === 'actions');
+  /** The whole report: the session's fetch and injection log, then one block per GitHub tab with its timings and lifecycle. */
+  const diagnosticsReport = async (): Promise<string> => {
+    const [events, perf] = await Promise.all([readDiagnostics(), collectTabPerf(allHosts(settings))]);
+    return [formatDiagnostics(events, browser.runtime.getManifest().version), ...perf].join('\n\n');
+  };
   const runMaintenance: Record<MaintenanceActionId, () => Promise<void> | void> = {
     export: () => {
       // Same document the gist holds, so an export can be dropped straight into a gist and vice versa.
@@ -1151,14 +1157,31 @@ async function main(): Promise<void> {
       maintenanceStatus('Cached diffs and repository configs cleared; open pages recount on reload', 'success');
     },
     'copy-diagnostics': async () => {
-      const [events, perf] = await Promise.all([readDiagnostics(), collectTabPerf(allHosts(settings))]);
-      const text = [formatDiagnostics(events, browser.runtime.getManifest().version), ...perf].join('\n\n');
+      const text = await diagnosticsReport();
       try {
         await navigator.clipboard.writeText(text);
         maintenanceStatus('Diagnostics copied to the clipboard', 'success');
       } catch {
         maintenanceStatus('Could not write to the clipboard', 'error');
       }
+    },
+    'report-diagnostics': async () => {
+      // The issue form gets the report through the link; a long one is trimmed to what a URL carries, and the
+      // whole report is on the clipboard for pasting over it. Nothing is sent until the issue is submitted there.
+      const text = await diagnosticsReport();
+      const { trimmed } = trimReportForUrl(text);
+      let copied = true;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        copied = false;
+      }
+      const url = diagnosticsReportUrl(text, browser.runtime.getManifest().version, navigator.userAgent, navigator.platform);
+      window.open(url.toString(), '_blank', 'noopener');
+      maintenanceStatus(
+        trimmed ? (copied ? 'Opened a new issue with the report (trimmed to fit; the full report is on your clipboard)' : 'Opened a new issue with the report, trimmed to fit the link') : 'Opened a new issue with the report filled in',
+        trimmed && !copied ? 'error' : 'success',
+      );
     },
     reset: async () => {
       await settingsItem.setValue(DEFAULT_SETTINGS);
