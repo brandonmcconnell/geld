@@ -19526,7 +19526,6 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
           if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
           const prior = threadRuns.get(asked.id);
           if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
-          else runsBeforeAsk.delete(asked.id);
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -19555,6 +19554,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (isStatusLineComment(comment.body)) {
+      const prior = threadRuns.get(id);
+      if (prior !== void 0) runsBeforeAsk.set(id, prior);
       threadRuns.delete(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });

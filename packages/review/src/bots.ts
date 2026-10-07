@@ -529,11 +529,11 @@ export function verdictsFrom(
         for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
           // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
           if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
-          // Only the threads current at this request are what a refusal would bring back; a stash from an
-          // earlier request that the bot has since answered is stale.
+          // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
+          // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
+          // real run.
           const prior = threadRuns.get(asked.id);
           if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
-          else runsBeforeAsk.delete(asked.id);
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -566,7 +566,10 @@ export function verdictsFrom(
       continue;
     }
     if (isStatusLineComment(comment.body)) {
-      // A new run began: the threads so far belong to the run before it.
+      // A new run began: the threads so far belong to the run before it — and are what a refusal of this run
+      // brings back, as with a request.
+      const prior = threadRuns.get(id);
+      if (prior !== undefined) runsBeforeAsk.set(id, prior);
       threadRuns.delete(id);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
