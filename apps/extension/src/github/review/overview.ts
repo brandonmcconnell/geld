@@ -24,7 +24,7 @@ import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
-import { absoluteTimeText, relativeTimeText } from './time';
+import { absoluteTimeText, relativeFineText, relativeTimeText } from './time';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
@@ -43,7 +43,7 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { ATTR_EDITED_AT, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -1975,6 +1975,17 @@ export function refreshReviewTimes(): number {
     cell.textContent = text;
     changed += 1;
   }
+  // The edited clock's "edited N minutes ago" is a one-off label no live element upgrades; re-word it here so a chat
+  // left open does not keep saying the old age (the exact timestamp in the title does not change).
+  for (const mark of document.querySelectorAll<HTMLElement>(`[${ATTR_EDITED_AT}]`)) {
+    const at = mark.getAttribute(ATTR_EDITED_AT);
+    if (at === null || at === '') continue;
+    const absolute = absoluteTimeText(at);
+    const title = `edited ${relativeFineText(at)}${absolute === '' ? '' : ` · ${absolute}`}`;
+    if (mark.title === title) continue;
+    mark.title = title;
+    mark.setAttribute('aria-label', title);
+  }
   return changed;
 }
 
@@ -2389,6 +2400,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     resetWholePaths();
     releaseHold();
     timeByAnchor.clear();
+    datetimeByAnchor.clear();
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;

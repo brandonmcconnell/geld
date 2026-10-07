@@ -29,6 +29,8 @@ import { absoluteTimeText, relativeFineText, relativeTimeElement } from './time'
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
+/** On the edited clock: the ISO moment of the edit, so the time refresh can re-word its relative title in place. */
+export const ATTR_EDITED_AT = 'data-geld-edited-at';
 const ATTR_MESSAGE = 'data-geld-message';
 const ATTR_MINE = 'data-geld-mine';
 /** Where a message stands in a run of one author's messages: `only`, `first`, `mid`, `last`. */
@@ -270,7 +272,8 @@ function editedMark(at: string): HTMLElement {
   const relative = relativeFineText(at);
   const absolute = absoluteTimeText(at);
   const title = `edited ${relative}${absolute === '' ? '' : ` · ${absolute}`}`;
-  return createElement('span', { class: 'geld-review__edited', role: 'img', title, 'aria-label': title }, [icon(ICON_HISTORY)]);
+  // The ISO stays on the element so the time refresh can re-word "N minutes ago" while the chat is left open.
+  return createElement('span', { class: 'geld-review__edited', role: 'img', title, 'aria-label': title, [ATTR_EDITED_AT]: at }, [icon(ICON_HISTORY)]);
 }
 
 /**
