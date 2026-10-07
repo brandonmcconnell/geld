@@ -1623,7 +1623,8 @@ const RUN_SETTLE_MS = 5 * 60 * 1000;
  * The bot's run summary a thread came from: the bot's latest summary written
  * by the thread's time (give or take the lag above). Bots rewrite that one
  * comment run after run, so a thread from an earlier run has a summary that
- * may since say something else — `revisionAsOf` reads it as it was.
+ * may since say something else — `revisionAsOf` reads it as it was. With
+ * `threadAt` NaN there is no cutoff: the bot's newest summary.
  */
 function botSummaryFor(botId: string, threadAt: number): { readonly anchor: string; readonly facts: SourceFacts } | null {
   let best: { readonly anchor: string; readonly facts: SourceFacts } | null = null;
@@ -1666,7 +1667,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
     const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
     // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
-    const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor, meta);
+    const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor);
     const rerun = ownBot === undefined || latestAnchor !== null ? null : rerunFor(ownBot, ownAuthor, meta, reapply);
     return {
       node,
@@ -1788,7 +1789,7 @@ function withRerun(byline: ChatByline, author: string, anchor: string, meta: Gel
   if (!byline.bot) return byline;
   const id = resolveBotId(author, settings.reviewBots);
   if (id === null) return byline;
-  const latest = newerSummaryOf(id, anchor, meta);
+  const latest = newerSummaryOf(id, anchor);
   if (latest !== null) return { ...byline, latest: { bot: botTitle(id, author), onOpen: () => onOpenAnchor(latest) } };
   const rerun = rerunFor(id, author, meta, reapply);
   return rerun === null ? byline : { ...byline, rerun };
@@ -1811,9 +1812,16 @@ function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => v
   };
 }
 
-/** The bot's newer summary than the comment at `anchor`, when there is one (`newerSummaryAnchor`, against the crawl's facts). */
-function newerSummaryOf(id: string, anchor: string, meta: GeldPrMeta): string | null {
-  return newerSummaryAnchor(meta.bots.find((bot) => bot.id === id)?.sourceId, anchor, sourceFacts);
+/**
+ * The bot's newer summary than the comment at `anchor`, when there is one
+ * (`newerSummaryAnchor`). The candidate is the bot's newest summary in the
+ * crawl's facts, not the verdict's `sourceId`: a bot posts its summary and
+ * then its threads, and the verdict can hang on one of those threads, which
+ * is not a summary and would have read as "no newer summary" — leaving an
+ * older comment offering Rerun where the current report was a click away.
+ */
+function newerSummaryOf(id: string, anchor: string): string | null {
+  return newerSummaryAnchor(botSummaryFor(id, NaN)?.anchor, anchor, sourceFacts);
 }
 
 /** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
