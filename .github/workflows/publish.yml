@@ -27,6 +27,7 @@ name: Publish to stores
 #   Firefox : AMO_JWT_ISSUER, AMO_JWT_SECRET  (add-on id comes from the manifest's browser_specific_settings)
 #   Safari  : APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_ASC_PRIVATE_KEY (base64 .p8),
 #             APPLE_CERTIFICATE_P12 (base64), APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID
+#             plus repository variables SAFARI_REVIEW_VIDEO_URL and SAFARI_REVIEW_TEST_DEVICE
 # See apps/extension/store/PUBLISHING.md for where each comes from.
 
 on:
@@ -223,9 +224,14 @@ jobs:
         env:
           KEY: ${{ secrets.APPLE_ASC_KEY_ID }}
           CERT: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          REVIEW_VIDEO: ${{ vars.SAFARI_REVIEW_VIDEO_URL }}
+          REVIEW_DEVICE: ${{ vars.SAFARI_REVIEW_TEST_DEVICE }}
         run: |
           if [ -z "$KEY" ] || [ -z "$CERT" ]; then
             echo "::warning title=Safari::Skipped: Apple credentials are not configured (see apps/extension/store/PUBLISHING.md)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$REVIEW_VIDEO" ] || [ -z "$REVIEW_DEVICE" ]; then
+            echo "::warning title=Safari::Skipped: Apple requires a physical-Mac recording and tested-device details. Set SAFARI_REVIEW_VIDEO_URL and SAFARI_REVIEW_TEST_DEVICE (see apps/extension/store/PUBLISHING.md)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -331,6 +337,8 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           TAG: ${{ needs.assets.outputs.tag }}
           NOTES: ${{ needs.assets.outputs.notes }}
+          SAFARI_REVIEW_VIDEO_URL: ${{ vars.SAFARI_REVIEW_VIDEO_URL }}
+          SAFARI_REVIEW_TEST_DEVICE: ${{ vars.SAFARI_REVIEW_TEST_DEVICE }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_HIDE_CHANGELOG: '1'
         working-directory: apps/extension/safari/Geld
@@ -339,6 +347,9 @@ jobs:
           build="${TAG##*build.}"
           jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
             '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
+          export SAFARI_REVIEW_VERSION="$version" SAFARI_REVIEW_BUILD="$build"
+          node ../../scripts/publish/safari-review-notes.mjs ../../store/safari-review-notes.txt > review-notes.txt
+          review_information=$(jq -cn --rawfile notes review-notes.txt '{notes:$notes}')
           set +e
           fastlane deliver \
             --api_key_path asc-key.json \
@@ -347,6 +358,7 @@ jobs:
             --app_version "$version" \
             --skip_screenshots --skip_metadata false \
             --release_notes "$(jq -n --arg n "$NOTES" '{"en-US":$n}')" \
+            --app_review_information "$review_information" \
             --submission_information '{"export_compliance_uses_encryption":false,"export_compliance_encryption_updated":false,"add_id_info_uses_idfa":false}' \
             --run_precheck_before_submit false \
             --submit_for_review --automatic_release --reject_if_possible \

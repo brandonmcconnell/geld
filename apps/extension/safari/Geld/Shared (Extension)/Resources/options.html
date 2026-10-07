@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Geld options</title>
     <meta name="manifest.open_in_tab" content="true">
-    <script type="module" crossorigin src="/chunks/options-DnQJIgJ1.js"></script>
+    <script type="module" crossorigin src="/chunks/options-DRL-Oj4K.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/browser-DzJe97Dp.js">
-    <link rel="modulepreload" crossorigin href="/chunks/switch-nSkmZzz-.js">
-    <link rel="stylesheet" crossorigin href="/assets/switch-DEYcKB9H.css">
-    <link rel="stylesheet" crossorigin href="/assets/options-CBnj8u_N.css">
+    <link rel="modulepreload" crossorigin href="/chunks/switch-B14HGWS7.js">
+    <link rel="stylesheet" crossorigin href="/assets/switch-DGtHSGX0.css">
+    <link rel="stylesheet" crossorigin href="/assets/options-BsBDoVBW.css">
   </head>
   <body>
     <main class="options">
@@ -31,11 +31,17 @@
         <h2 class="options__title">What to hide</h2>
         <p class="geld-help options__intro"></p>
         <div id="categories" class="options__categories"></div>
-        <p class="geld-help options__more-row">
+        <p class="geld-help options__more-row options__catalog-row">
           <a class="geld-button geld-button--link options__more" href="https://www.geld.sh/patterns" target="_blank" rel="noreferrer">
             <span class="geld-button__icon geld-button__icon--help" aria-hidden="true"></span>How patterns work
           </a>
+          <span class="options__catalog" aria-live="polite">
+            <span id="catalog-summary"></span>
+            <span class="options__catalog-sep" aria-hidden="true">·</span>
+            <button type="button" class="geld-button geld-button--link options__more" id="catalog-check">Check now</button>
+          </span>
         </p>
+        <p class="geld-help options__catalog-note" id="catalog-note" hidden></p>
       </section>
 
       <section class="options__card" data-section="custom-categories">
@@ -63,6 +69,19 @@ big-corp
         <div class="geld-row options__actions">
           <span class="geld-status" id="rules-status" aria-live="polite"></span>
           <button id="save-rules" class="geld-button geld-button--primary" type="button">Save rules</button>
+        </div>
+        <hr class="options__divider options__divider--spaced">
+        <!-- Choice fields of this section (repository configs), rendered from the schema. -->
+        <div id="repository-choices"></div>
+      </section>
+
+      <section class="options__card" data-section="lists">
+        <h2 class="options__title">Pull request lists</h2>
+        <p class="geld-help options__intro"></p>
+        <textarea id="hidden-authors" class="geld-textarea geld-code options__textarea" rows="4" spellcheck="false" aria-label="Hidden authors"></textarea>
+        <div class="geld-row options__actions">
+          <span class="geld-status" id="authors-status" aria-live="polite"></span>
+          <button id="save-authors" class="geld-button geld-button--primary" type="button">Save authors</button>
         </div>
       </section>
 
@@ -92,37 +111,42 @@ big-corp
 
       <section class="options__card">
         <h2 class="options__title">GitHub account</h2>
-        <p class="geld-help options__intro">
-          Sign in (top right) to keep these settings in sync across browsers and devices. Geld uses GitHub's
-          <em>device flow</em>: you confirm a short code on github.com, and the only permission requested is
-          <code>gist</code>. Your settings are stored in a <strong>secret gist on your own account</strong> named
+        <p class="geld-help options__intro" id="account-signed-out">
+          Sign in (top right) to keep these settings in sync across browsers and devices. Geld signs you in through
+          the <strong>Geld GitHub App</strong> with GitHub's <em>device flow</em>: you confirm a short code on
+          github.com. Your settings are stored in a <strong>secret gist on your own account</strong> named
           <code>geld-settings.json</code>. There is no Geld server and no database — nobody but you (including Geld's
-          author) can read or change that gist, and the sign-in token never leaves this device. Signing in on another
-          browser asks whether to keep that device's settings or use the account's. The same settings can be edited at
+          author) can read or change that gist, and the sign-in token never leaves this device; it expires after eight
+          hours and is renewed here. Signing in on another browser asks whether to keep that device's settings or use
+          the account's. The same settings can be edited at
           <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
         </p>
-        <label class="geld-label" for="oauth-client-id">OAuth App client id</label>
-        <p class="geld-help">
-          The public client id of a GitHub OAuth App with <em>Device Flow</em> enabled. A default is built in; paste
-          your own to use a different app.
+        <p class="geld-help options__intro" id="account-signed-in" hidden>
+          Signed in as <strong id="account-login"></strong>. These settings sync to a <strong>secret gist on your own
+          account</strong> named <code>geld-settings.json</code><span id="account-synced"></span>. Only you can read or
+          change it, and the sign-in token never leaves this device. Edit the same settings at
+          <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>, or
+          <a id="account-gist" href="https://gist.github.com" target="_blank" rel="noreferrer">open the gist</a>. Sync
+          now and sign out are in the account menu (top right).
         </p>
-        <input id="oauth-client-id" class="geld-input geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Ov23li…" aria-label="OAuth App client id">
+        <label class="geld-label" for="app-client-id">GitHub App client id</label>
+        <p class="geld-help">
+          The public client id of a GitHub App with <em>Device Flow</em> enabled. A default is built in; paste your
+          own to sign in through a different app (for development).
+        </p>
+        <input id="app-client-id" class="geld-input geld-code options__input options__input--grow" type="text" spellcheck="false" placeholder="Iv23li…" aria-label="GitHub App client id">
         <div class="geld-row options__actions">
-          <span class="geld-status" id="oauth-status" aria-live="polite"></span>
-          <button id="save-oauth" class="geld-button" type="button">Save client id</button>
+          <span class="geld-status" id="app-client-status" aria-live="polite"></span>
+          <button id="save-app-client" class="geld-button" type="button">Save client id</button>
         </div>
       </section>
 
-      <section class="options__card">
+      <section class="options__card" data-section="maintenance">
         <h2 class="options__title">Backup &amp; maintenance</h2>
-        <div class="options__buttons options__buttons--wrap">
-          <button id="export" class="geld-button" type="button">Export settings (JSON)</button>
-          <button id="import" class="geld-button" type="button">Import settings…</button>
+        <div class="options__buttons options__buttons--wrap" id="maintenance-buttons">
           <input id="import-file" type="file" accept="application/json,.json" hidden>
-          <button id="clear-cache" class="geld-button" type="button">Clear cached diffs</button>
-          <button id="reset" class="geld-button geld-button--danger" type="button">Reset to defaults</button>
+          <span class="geld-status options__buttons-status" id="maintenance-status" aria-live="polite"></span>
         </div>
-        <p class="geld-status" id="maintenance-status" aria-live="polite"></p>
       </section>
 
       <footer class="options__footer geld-muted">
