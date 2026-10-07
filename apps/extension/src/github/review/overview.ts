@@ -2586,6 +2586,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     batches,
     requestable,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
+    // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
+    // one comment asked for at once, so looking a bot up by it opens the wrong bot. Open this bot's own latest
+    // summary instead (none → inert chip, no blind scroll). Settled verdicts open their own source (a thread, a
+    // refusal, a summary).
+    botOpenAnchor: (bot) => (bot.verdict === 'running' || bot.verdict === 'loading' ? botSummaryFor(bot.id, NaN)?.anchor ?? null : bot.sourceId ?? null),
     // A bot's mark, from wherever the page shows it: an avatar captioned with one of its logins (Bugbot's review
     // comments are by cursor[bot]; unambiguous, so first), its run summary's avatar when the summary is the bot's
     // own comment (a `running` verdict's source is the trigger comment, whose avatar is the person who asked),
@@ -2786,19 +2791,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // A review that wrote nothing but opened threads has nothing of its own to show: the reader who asked for it
       // (from the Reviews index, from its line in the round) lands on its first thread, which is the conversation.
       const entry = comments.find((candidate) => candidate.anchor === anchor);
-      let target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
-      // A *running* bot's chip points at its trigger or "Starting" line (that is what `verdictsFrom` records while a
-      // run is under way), which folds silently and holds nothing to read: clicking it used to scroll the page to
-      // that line and open nothing. Lead to the bot's latest real summary instead — its newest root comment — and
-      // when it has none yet, do nothing rather than scroll off to a line with no content. Only running/loading
-      // verdicts point at such a line: a findings verdict points at its thread (the finding itself) and a refusal at
-      // its explanation, both worth opening, so those are left alone.
-      const owner = meta.bots.find((bot) => bot.sourceId === anchor);
-      if (owner !== undefined && (owner.verdict === 'running' || owner.verdict === 'loading')) {
-        const latest = botSummaryFor(owner.id, NaN)?.anchor ?? null;
-        if (latest === null) return;
-        target = latest;
-      }
+      const target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
       const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {

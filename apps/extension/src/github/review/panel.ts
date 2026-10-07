@@ -261,6 +261,8 @@ export interface PanelModel {
   readonly requestable: readonly InstalledBot[];
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
   readonly summaryAnchorFor: (botId: string) => string | null;
+  /** What this bot's chip opens: its own source, or — while it runs (its source is then the shared trigger line) — its latest real summary, else nothing. */
+  readonly botOpenAnchor: (bot: BotVerdictRecord) => string | null;
   /** The page's icon for a bot (from its `/apps/` link or comments). */
   readonly botIconFor: (botId: string) => string | null;
   /** CI checks as the merge box reports them; null when the page has no checks section. */
@@ -1162,7 +1164,10 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   glyph.removeAttribute('title');
   children.push(glyph);
   const who = whoAttributes(bot.login, true);
-  if (bot.sourceId !== undefined) return anchorLink(bot.sourceId, label, handlers, children, who);
+  // The anchor this chip opens is the bot's own (`botOpenAnchor`), never a trigger line shared with other bots it
+  // was requested alongside: a running chip opens this bot's latest summary, or is inert when it has posted none.
+  const open = model.botOpenAnchor(bot);
+  if (open !== null) return anchorLink(open, label, handlers, children, who);
   return createElement('span', { class: `${PANEL_CLASS}__bot`, ...who, ...(current ? {} : { 'data-current': 'false' }) }, children);
 }
 
