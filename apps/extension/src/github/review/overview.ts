@@ -2962,7 +2962,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // fragment anchor is released, so a single re-land cannot ping-pong; skipped once the reader has scrolled by hand.
   if (visit.landedAnchor !== null && visit.landedFocusKey !== null && !visit.landedSettled && document.readyState === 'complete') {
     visit.landedSettled = true;
-    const landed = mounted?.root.querySelector(`[data-geld-focus="${visit.landedFocusKey}"]`) ?? null;
+    // Only when the reader has not moved on: not scrolled by hand, and the landed row is still the open one.
+    // Opening another row calls `holdRow`, which clears the hand-scroll flag, so that alone cannot be trusted —
+    // a reader who scrolled then opened a different row must not be yanked back to the permalink.
+    const subFocus = visit.openSubKey === null ? null : visit.openSubKey.startsWith('item:') ? visit.openSubKey : `sub:${visit.openSubKey}`;
+    const openFocus = visit.openKey === null ? null : `main:${subFocus ?? visit.openKey}`;
+    const landed = openFocus === visit.landedFocusKey ? mounted?.root.querySelector(`[data-geld-focus="${visit.landedFocusKey}"]`) ?? null : null;
     if (landed instanceof HTMLElement && !readerScrolled()) {
       const rect = landed.getBoundingClientRect();
       if (rect.top < stickyHeaderBottomAt(window.scrollY) || rect.top < 0) {
