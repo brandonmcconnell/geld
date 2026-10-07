@@ -2757,12 +2757,14 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // (from the Reviews index, from its line in the round) lands on its first thread, which is the conversation.
       const entry = comments.find((candidate) => candidate.anchor === anchor);
       let target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
-      // A running bot's chip points at its trigger or "Starting" line (that is what `verdictsFrom` records while a
+      // A *running* bot's chip points at its trigger or "Starting" line (that is what `verdictsFrom` records while a
       // run is under way), which folds silently and holds nothing to read: clicking it used to scroll the page to
       // that line and open nothing. Lead to the bot's latest real summary instead — its newest root comment — and
-      // when it has none yet, do nothing rather than scroll off to a line with no content.
+      // when it has none yet, do nothing rather than scroll off to a line with no content. Only running/loading
+      // verdicts point at such a line: a findings verdict points at its thread (the finding itself) and a refusal at
+      // its explanation, both worth opening, so those are left alone.
       const owner = meta.bots.find((bot) => bot.sourceId === anchor);
-      if (owner !== undefined && sourceFacts.get(anchor)?.summary !== true) {
+      if (owner !== undefined && (owner.verdict === 'running' || owner.verdict === 'loading')) {
         const latest = botSummaryFor(owner.id, NaN)?.anchor ?? null;
         if (latest === null) return;
         target = latest;
