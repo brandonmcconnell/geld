@@ -3289,17 +3289,11 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /* GitHub floats "View deployment" (28px in the timeline) to the right; here it follows its words, whole, the size
- * of the line. */
+ * of the line (`.geld-review__line-btn`, with the other buttons on these rows). */
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right {
   float: none !important;
-  display: inline-block;
-  min-height: 20px !important;
-  margin-left: 4px;
-  padding: 0 8px !important;
-  font-size: 11px !important;
-  line-height: 18px !important;
+  margin-left: 4px !important;
   vertical-align: top;
-  white-space: nowrap;
 }
 
 /* The activity folds (events, commits, mentions) are lists of one-line rows: the same room above and below. */
@@ -5192,34 +5186,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   text-decoration: underline;
 }
 
-/* The Compare button: GitHub's small secondary button shape, with its icon, the height of the row's line like
- * every button in these lists. */
+/* The Compare button is GitHub's own `btn btn-sm` (the same chrome as Revert, Details and View deployment on the
+ * event rows), with its icon; GitHub gives an octicon in a button a 4px right margin, the gap here is that. */
 .geld-review__push-compare {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
   gap: 4px;
-  height: 20px;
-  padding: 0 8px 0 7px;
-  border: 1px solid var(--geld-review-border);
-  border-radius: 6px;
-  background: var(--geld-review-bg);
-  color: var(--geld-review-muted) !important;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
-  text-decoration: none !important;
-  white-space: nowrap;
-}
-
-.geld-review__push-compare:hover {
-  background: var(--geld-review-hover);
-  color: var(--fgColor-default, var(--color-fg-default)) !important;
 }
 
 .geld-review__push-compare .octicon {
   width: 14px;
   height: 14px;
+  margin: 0 !important;
 }
 
 /* The two heads at the right edge, as the commit rows place their SHA (GitHub's `.text-right.ml-1` there is a
@@ -5379,7 +5356,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--geld-review-danger-fg);
 }
 
-/* GitHub's own buttons (Details, Revert, Restore branch) inline after the words, the size of the Compare button. */
+/* GitHub's own buttons (Details, Revert, Restore branch) inline after the words. */
 .geld-review__event-control {
   flex: 0 0 auto;
   float: none !important;
@@ -5387,13 +5364,21 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   white-space: nowrap;
 }
 
+/* Every button on these rows — Details, Revert, View deployment, Compare — is one GitHub `btn btn-sm` at the
+ * height of the row's 20px line, from one rule, so none is a pixel off another. GitHub's `.btn-sm` sets the
+ * padding, type and line-height it is overriding here with a weight a plain rule does not beat. */
 .geld-review__event-control .btn,
-.geld-review__event-control.btn {
-  height: 20px;
-  min-height: 0;
+.geld-review__event-control.btn,
+.geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right,
+.geld-review__push-compare {
+  display: inline-flex !important;
+  align-items: center;
+  height: 20px !important;
+  min-height: 0 !important;
   padding: 0 8px !important;
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 11px !important;
+  line-height: 18px !important;
+  white-space: nowrap;
 }
 
 /* The time is the last thing on the line, in the column the commit rows use. */
