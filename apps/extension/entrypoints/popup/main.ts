@@ -461,6 +461,7 @@ async function main(): Promise<void> {
   // The feedback form's "Where" field: the kind of page, never its URL.
   const PAGE_WORDS: Readonly<Record<PageKind, string>> = {
     'pull-files': 'pull request files',
+    'pull-review': 'pull request review tab',
     'pull-conversation': 'pull request conversation',
     'pull-other': 'pull request',
     commit: 'commit',
