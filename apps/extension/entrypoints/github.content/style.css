@@ -4202,21 +4202,6 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
     right: 10px;
     left: auto;
   }
-
-  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw) {
-    right: auto;
-    left: 0;
-  }
-
-  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::before {
-    right: auto;
-    left: 9px;
-  }
-
-  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::after {
-    right: auto;
-    left: 10px;
-  }
 }
 
 @container (width >= 304px) {
