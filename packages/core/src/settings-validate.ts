@@ -3,7 +3,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustom
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
-import { REPO_CONFIG_MODES, isRepoConfigMode, normalizeHost, normalizeSettings } from './settings';
+import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
 import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 
@@ -63,6 +63,10 @@ const BOOLEAN_KEYS = [
   'shortcutEnabled',
   'showBadge',
   'autoUpdatePatterns',
+  'prOverview',
+  'collapseDescription',
+  'aiEnabled',
+  'aiJev',
 ] as const;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -243,6 +247,21 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.repoConfigs !== undefined && !isRepoConfigMode(value.repoConfigs)) {
     issues.push({ path: `${path}.repoConfigs`, message: `Expected one of ${list(REPO_CONFIG_MODES)}, got ${describeValue(value.repoConfigs)}.` });
   }
+  if (value.compactTimeline !== undefined && !isCompactTimelineMode(value.compactTimeline)) {
+    issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
+  }
+  if (value.reviewGrouping !== undefined && !isReviewGrouping(value.reviewGrouping)) {
+    issues.push({ path: `${path}.reviewGrouping`, message: `Expected one of ${list(REVIEW_GROUPINGS)}, got ${describeValue(value.reviewGrouping)}.` });
+  }
+  if (value.suggestedFixes !== undefined && !isSuggestedFixMode(value.suggestedFixes)) {
+    issues.push({ path: `${path}.suggestedFixes`, message: `Expected one of ${list(SUGGESTED_FIX_MODES)}, got ${describeValue(value.suggestedFixes)}.` });
+  }
+  if (value.aiBaseUrl !== undefined && typeof value.aiBaseUrl !== 'string') {
+    issues.push({ path: `${path}.aiBaseUrl`, message: `Expected a string, got ${describeValue(value.aiBaseUrl)}.` });
+  }
+  if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
+    issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
+  }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
   checkBooleanMap(issues, `${path}.groups`, value.groups, catalogGroupKeys(catalog), (key) => isGroupKey(key, catalog) || isWellFormedGroupKey(key), 'pattern group');
@@ -253,6 +272,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   checkStringList(issues, `${path}.customPatterns`, value.customPatterns, customPatternProblem);
   checkStringList(issues, `${path}.repoRules`, value.repoRules, repoRuleProblem);
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
+  checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }

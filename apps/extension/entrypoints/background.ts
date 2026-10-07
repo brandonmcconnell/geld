@@ -2,16 +2,21 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
+import { completeChat, evaluateJev, listModels, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
+import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
+  isAiCompleteRequest,
+  isAiEvaluateRequest,
+  isAiModelsRequest,
   isCatalogCheckMessage,
   isColorSchemeMessage,
   isEnsureContentMessage,
@@ -20,6 +25,7 @@ import {
   isClearDiffCacheMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
+import type { DiffPriority } from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
@@ -56,15 +62,28 @@ const cache = new Map<string, { readonly response: FetchDiffResponse; readonly a
  */
 const DIFF_BUDGET = 30;
 const DIFF_WINDOW_MS = 60 * 1000;
+/*
+ * Slots only the page's own subject may take (`priority: 'page'`): the header
+ * of the pull request or commit being read, a commit the reader hovers. A
+ * page of list rows and the refreshes of stale rows behind it stop at the
+ * rest, so opening a pull request after browsing a list never waits out the
+ * window behind rows the reader has scrolled past. Measured: a list page is
+ * 25 rows; the reserve is what a couple of pull requests opened in a row need.
+ */
+const PAGE_RESERVE = 8;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MAX_MS = 15 * 60 * 1000;
 /*
- * The diff endpoint also answers 503 (occasionally 502/504) to a burst —
- * measured: a third of a page of rows, within seconds, well under the budget
- * above. That is GitHub being busy rather than blocking us, so it gets a
- * short, gently growing pause during which rows stay "loading", not a strike.
+ * The diff host also answers 503 (occasionally 502/504) in waves — measured
+ * from the worker: seven of eight concurrent requests one minute, ten of ten
+ * fine the next, well under the budget above. That is GitHub being busy
+ * rather than blocking us, so the rows get a short pause, not a strike. A
+ * wave is one pause however many answers arrive during it (four concurrent
+ * 503s used to double it four times in 100 ms, into a minute), the pause
+ * grows only when the next wave follows the pause, and any success ends it.
+ * The page's own subject is not held by it (see `fetchDiff`).
  */
-const BUSY_COOLDOWN_MS = 12 * 1000;
+const BUSY_COOLDOWN_MS = 8 * 1000;
 const BUSY_COOLDOWN_MAX_MS = 60 * 1000;
 
 interface Throttle {
@@ -98,9 +117,18 @@ async function loadThrottle(): Promise<Throttle> {
   return throttleLoading;
 }
 
+/** Storage writes are gathered: a list page claims a dozen slots within a second, and the worker reads from memory anyway. */
+const THROTTLE_WRITE_DELAY_MS = 250;
+let throttleWrite: ReturnType<typeof setTimeout> | null = null;
+
 function saveThrottle(next: Throttle): void {
   throttle = next;
-  void throttleItem.setValue(next).catch(() => undefined);
+  // The stored copy only matters to the next worker, which starts well after this timer fires (the worker is kept
+  // for ~30 s of idleness), so the latest state is written once per burst rather than once per claim.
+  throttleWrite ??= setTimeout(() => {
+    throttleWrite = null;
+    if (throttle !== null) void throttleItem.setValue(throttle).catch(() => undefined);
+  }, THROTTLE_WRITE_DELAY_MS);
 }
 
 /**
@@ -110,45 +138,78 @@ function saveThrottle(next: Throttle): void {
  * still waiting on it — the rows then failed with "message port closed" and,
  * after a few such failures, gave up until the page was reloaded.
  */
-async function takeTurn(): Promise<number> {
+async function takeTurn(priority: DiffPriority): Promise<{ readonly wait: number; readonly stamp: number }> {
   const current = await loadThrottle();
   const now = Date.now();
   const sent = current.sent.filter((t) => now - t < DIFF_WINDOW_MS);
-  if (sent.length < DIFF_BUDGET) {
+  const allowed = priority === 'page' ? DIFF_BUDGET : DIFF_BUDGET - PAGE_RESERVE;
+  if (sent.length < allowed) {
     saveThrottle({ ...current, sent: [...sent, now] });
-    return 0;
+    return { wait: 0, stamp: now };
   }
-  const oldest = sent[0] ?? now;
-  return Math.max(50, oldest + DIFF_WINDOW_MS - now + 50);
+  // The slot frees when the request that would bring the count under the line leaves the window.
+  const blocking = sent[sent.length - allowed] ?? now;
+  return { wait: Math.max(50, blocking + DIFF_WINDOW_MS - now + 50), stamp: 0 };
+}
+
+/**
+ * Give a slot back: the answer never came from the diff host (github.com
+ * served its sign-in or SSO page, an error page), so it spent nothing of
+ * that host's tolerance. Without this a lapsed SSO session cost a page of
+ * rows the whole budget, and after signing in again every row waited out
+ * the window ("queued 32s").
+ */
+async function refundTurn(stamp: number): Promise<void> {
+  if (stamp === 0) return;
+  const current = await loadThrottle();
+  const index = current.sent.indexOf(stamp);
+  if (index === -1) return;
+  saveThrottle({ ...current, sent: [...current.sent.slice(0, index), ...current.sent.slice(index + 1)] });
+}
+
+const DIFF_HOST = 'patch-diff.githubusercontent.com';
+
+/**
+ * GitHub's own pages served in a diff's place: the sign-in wall, an
+ * organisation's SSO prompt ("Sign in to Mintlify"), the two-factor or
+ * device-verification interstitials. Recognised by their titles so they
+ * read as "signed out" (the fix is signing in) rather than "not a diff".
+ */
+function looksLikeSignInPage(html: string): boolean {
+  const title = /<title>([^<]*)<\/title>/i.exec(html)?.[1] ?? '';
+  return /sign in|single sign-on|\bSSO\b|two-factor|verify your|confirm access|login/i.test(title) || /<form[^>]+action="\/(?:session|sessions|login|orgs\/[^"/]+\/sso)/i.test(html);
 }
 
 /** A 429/403 arrived: block for longer each time it repeats, or for what GitHub asks. */
-async function recordRateLimit(retryAfterHeader: string | null): Promise<number> {
+async function recordRateLimit(retryAfterHeader: string | null, answer: { readonly status: number; readonly host: string }): Promise<number> {
   const current = await loadThrottle();
   const strikes = current.strikes + 1;
   const asked = Number.parseInt(retryAfterHeader ?? '', 10);
   const cooldown = Number.isFinite(asked) && asked > 0 ? asked * 1000 : Math.min(RATE_LIMIT_COOLDOWN_MS * 2 ** (strikes - 1), RATE_LIMIT_COOLDOWN_MAX_MS);
   saveThrottle({ ...current, strikes, cooldownUntil: Date.now() + cooldown, cooldownReason: 'rate-limited' });
-  recordDiagnostic({ kind: 'rate-limit', cooldownMs: cooldown, strikes });
+  recordDiagnostic({ kind: 'rate-limit', cooldownMs: cooldown, strikes, status: answer.status, host: answer.host });
   return cooldown;
 }
 
-/** A 5xx arrived: pause briefly, longer while they keep coming, or for what GitHub asks. */
-async function recordBusy(retryAfterHeader: string | null): Promise<number> {
+/** A 5xx arrived: pause briefly, longer when the waves follow one another, or for what GitHub asks. */
+async function recordBusy(retryAfterHeader: string | null, answer: { readonly status: number; readonly host: string }): Promise<number> {
   const current = await loadThrottle();
+  const now = Date.now();
+  // Another answer from the wave a pause is already running for: the same pause, not a longer one.
+  if (current.cooldownUntil > now) return current.cooldownUntil - now;
   const busy = (current.busy ?? 0) + 1;
   const asked = Number.parseInt(retryAfterHeader ?? '', 10);
   const cooldown = Number.isFinite(asked) && asked > 0 ? Math.min(asked * 1000, BUSY_COOLDOWN_MAX_MS) : Math.min(BUSY_COOLDOWN_MS * 2 ** (busy - 1), BUSY_COOLDOWN_MAX_MS);
-  // Never shorten a rate-limit block that is already running.
-  const until = Math.max(current.cooldownUntil, Date.now() + cooldown);
-  saveThrottle({ ...current, busy, cooldownUntil: until, cooldownReason: current.cooldownUntil > Date.now() ? (current.cooldownReason ?? 'busy') : 'busy' });
-  recordDiagnostic({ kind: 'busy', cooldownMs: until - Date.now(), strikes: busy });
-  return until - Date.now();
+  saveThrottle({ ...current, busy, cooldownUntil: now + cooldown, cooldownReason: 'busy' });
+  recordDiagnostic({ kind: 'busy', cooldownMs: cooldown, strikes: busy, status: answer.status, host: answer.host });
+  return cooldown;
 }
 
+/** A diff arrived: the strikes are over, and a busy pause with it (GitHub is answering again). A rate-limit block runs its course. */
 async function recordSuccess(): Promise<void> {
   const current = await loadThrottle();
-  if (current.strikes !== 0 || (current.busy ?? 0) !== 0) saveThrottle({ ...current, strikes: 0, busy: 0 });
+  const pausing = current.cooldownReason === 'busy' && current.cooldownUntil > Date.now();
+  if (current.strikes !== 0 || (current.busy ?? 0) !== 0 || pausing) saveThrottle({ ...current, strikes: 0, busy: 0, ...(pausing ? { cooldownUntil: 0 } : {}) });
 }
 
 function readCache(url: string): FetchDiffResponse | null {
@@ -176,7 +237,7 @@ function writeCache(url: string, response: FetchDiffResponse): void {
  * the extension's host permissions. Cookies are included so private
  * repositories work for signed-in users.
  */
-async function fetchDiff(url: string): Promise<FetchDiffResponse> {
+async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiffResponse> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -193,18 +254,29 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
     recordDiagnostic({ kind: 'fetch', subject, outcome: cached.ok ? 'memory-hit' : `memory-hit:${cached.reason}` });
     return cached;
   }
+  // A diff this worker already found too large stays too large (a pull request's `.diff` URL serves its current
+  // head, so it is asked again only on a new push, and a page revisited within the session asks again anyway):
+  // answer from memory rather than download the limit again on every pass. Session storage outlives the worker.
+  if (await knownTooLarge(parsed.toString())) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: 'memory-hit:too-large' });
+    return { ok: false, reason: 'too-large' };
+  }
   const state = await loadThrottle();
-  if (Date.now() < state.cooldownUntil) {
+  // A rate-limit block holds for everyone. A busy pause (GitHub answered 5xx to a burst of rows) holds the rows;
+  // the page's own subject is one request and goes through as the probe, and a 5xx to it only extends the pause.
+  if (Date.now() < state.cooldownUntil && !(priority === 'page' && state.cooldownReason === 'busy')) {
     const reason = state.cooldownReason ?? 'rate-limited';
     recordDiagnostic({ kind: 'fetch', subject, outcome: reason, cooldownMs: state.cooldownUntil - Date.now(), strikes: reason === 'busy' ? (state.busy ?? 0) : state.strikes });
     return { ok: false, reason, retryAfterMs: state.cooldownUntil - Date.now() };
   }
-  const wait = await takeTurn();
-  if (wait > 0) {
-    recordDiagnostic({ kind: 'fetch', subject, outcome: 'queued', ms: wait, budgetUsed: DIFF_BUDGET });
-    return { ok: false, reason: 'queued', retryAfterMs: wait };
+  const turn = await takeTurn(priority);
+  if (turn.wait > 0) {
+    recordDiagnostic({ kind: 'fetch', subject, outcome: 'queued', ms: turn.wait, budgetUsed: (throttle?.sent ?? []).length });
+    return { ok: false, reason: 'queued', retryAfterMs: turn.wait };
   }
   const started = Date.now();
+  /** Whether the diff host answered at all; an answer from elsewhere gives its slot back. */
+  let servedByDiffHost = false;
 
   let result: FetchDiffResponse;
   try {
@@ -215,11 +287,13 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
       headers: { Accept: 'text/plain' },
       redirect: 'follow',
     });
+    const answer = { status: response.status, host: new URL(response.url).hostname };
+    servedByDiffHost = answer.host === DIFF_HOST || !parsed.hostname.endsWith('github.com');
     if (response.status === 429 || response.status === 403) {
-      const retryAfterMs = await recordRateLimit(response.headers.get('retry-after'));
+      const retryAfterMs = await recordRateLimit(response.headers.get('retry-after'), answer);
       result = { ok: false, reason: 'rate-limited', retryAfterMs };
     } else if (response.status === 502 || response.status === 503 || response.status === 504) {
-      const retryAfterMs = await recordBusy(response.headers.get('retry-after'));
+      const retryAfterMs = await recordBusy(response.headers.get('retry-after'), answer);
       result = { ok: false, reason: 'busy', retryAfterMs };
     } else if (response.redirected && /^\/(login|sessions?|sso|orgs\/[^/]+\/sso)\b/.test(new URL(response.url).pathname)) {
       // A private repository while signed out (or with an SSO session that
@@ -235,8 +309,9 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
       } else {
         const text = await readWithLimit(response, MAX_DIFF_BYTES);
         if (looksLikeHtml(response.headers.get('content-type'), text)) {
-          // Not a diff at all (an interstitial, an error page served as 200).
-          result = { ok: false, reason: 'not-a-diff' };
+          // Not a diff at all: GitHub's sign-in or SSO page (signing in fixes it), else an interstitial or an
+          // error page served as 200.
+          result = { ok: false, reason: looksLikeSignInPage(text) ? 'signed-out' : 'not-a-diff' };
         } else {
           result = { ok: true, files: parseUnifiedDiff(text) };
           await recordSuccess();
@@ -246,6 +321,9 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
   } catch (error) {
     result = { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
   }
+  // A page github.com served in the diff's place (signed out, an SSO prompt, an interstitial) never reached the
+  // diff host: the slot goes back, so signing in and reloading gets fresh answers at once.
+  if (!result.ok && !servedByDiffHost && (result.reason === 'signed-out' || result.reason === 'not-a-diff')) await refundTurn(turn.stamp);
   recordDiagnostic({
     kind: 'fetch',
     subject,
@@ -262,7 +340,25 @@ async function fetchDiff(url: string): Promise<FetchDiffResponse> {
   if (result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404')) {
     writeCache(parsed.toString(), result);
   }
+  if (!result.ok && result.reason === 'too-large') await rememberTooLarge(parsed.toString());
   return result;
+}
+
+/** Diff URLs this session found too large, with when: a pull request's `.diff` is its head's, asked again after a push. */
+const tooLargeItem = storage.defineItem<Record<string, number>>('session:diffTooLarge', { fallback: {} });
+const TOO_LARGE_TTL_MS = 60 * 60 * 1000;
+
+async function knownTooLarge(url: string): Promise<boolean> {
+  const known = await tooLargeItem.getValue();
+  const at = known[url];
+  return at !== undefined && Date.now() - at < TOO_LARGE_TTL_MS;
+}
+
+async function rememberTooLarge(url: string): Promise<void> {
+  const known = await tooLargeItem.getValue();
+  const now = Date.now();
+  const kept = Object.fromEntries(Object.entries(known).filter(([, at]) => now - at < TOO_LARGE_TTL_MS));
+  await tooLargeItem.setValue({ ...kept, [url]: now });
 }
 
 /** Public raw files on github.com: `raw.githubusercontent.com/owner/repo/HEAD/path`. */
@@ -397,10 +493,15 @@ async function contentHosts(): Promise<Set<string>> {
   return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
 }
 
-/** Put Geld into a tab that should have it but does not (installed/updated while open, etc.). */
-async function ensureTab(tabId: number, url: string | undefined): Promise<EnsureContentResponse> {
-  if (hostOf(url, await contentHosts()) === null) return { injected: false };
-  return { injected: await ensureContentScript(tabId) };
+/**
+ * Put Geld into a tab that should have it but does not (installed/updated
+ * while open, etc.). A tab still loading is left alone: the browser injects
+ * the declared content script with the document, and a copy injected here
+ * on top of it would only make the first one retire (github.content/index.ts).
+ */
+async function ensureTab(tab: { readonly id?: number | undefined; readonly url?: string | undefined; readonly status?: string | undefined }): Promise<EnsureContentResponse> {
+  if (tab.id === undefined || tab.status === 'loading' || hostOf(tab.url, await contentHosts()) === null) return { injected: false };
+  return { injected: await ensureContentScript(tab.id) };
 }
 
 /** Keyboard shortcut: ask the active GitHub tab to toggle its hidden files. */
@@ -440,7 +541,7 @@ export default defineBackground(() => {
     if (isEnsureContentMessage(message)) {
       void browser.tabs
         .get(message.tabId)
-        .then((tab) => ensureTab(message.tabId, tab.url))
+        .then(ensureTab)
         .catch((): EnsureContentResponse => ({ injected: false }))
         .then(sendResponse);
       return true;
@@ -449,8 +550,44 @@ export default defineBackground(() => {
       void fetchFile(message.url).then(sendResponse);
       return true;
     }
+    if (isAiModelsRequest(message)) {
+      void (async () => {
+        const denied = await hasGatewayPermission(message.baseUrl);
+        if (denied !== null) return { ok: false as const, reason: denied };
+        if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
+        return listModels(fetch, message.baseUrl, message.apiKey);
+      })().then(sendResponse);
+      return true;
+    }
+    if (isAiEvaluateRequest(message)) {
+      void (async () => {
+        const denied = await hasGatewayPermission(message.baseUrl);
+        if (denied !== null) return { ok: false as const, reason: denied };
+        if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
+        return evaluateJev({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+      })().then(sendResponse);
+      return true;
+    }
+    if (isAiCompleteRequest(message)) {
+      void (async () => {
+        const denied = await hasGatewayPermission(message.baseUrl);
+        if (denied !== null) return { ok: false as const, reason: denied };
+        if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
+        if (message.model.trim() === '') return { ok: false as const, reason: 'No model selected.' };
+        return completeChat({
+          fetch,
+          baseUrl: message.baseUrl,
+          apiKey: message.apiKey,
+          model: message.model,
+          messages: message.messages,
+          ...(message.jsonSchema === undefined ? {} : { jsonSchema: message.jsonSchema }),
+          ...(message.schemaName === undefined ? {} : { schemaName: message.schemaName }),
+        });
+      })().then(sendResponse);
+      return true;
+    }
     if (!isFetchDiffRequest(message)) return undefined;
-    void fetchDiff(message.url).then(sendResponse);
+    void fetchDiff(message.url, message.priority ?? 'background').then(sendResponse);
     // Returning true keeps the message channel open for the async response.
     return true;
   });
@@ -481,7 +618,7 @@ export default defineBackground(() => {
   browser.tabs.onActivated.addListener(({ tabId }) => {
     void browser.tabs
       .get(tabId)
-      .then((tab) => ensureTab(tabId, tab.url))
+      .then(ensureTab)
       .catch(() => undefined);
   });
 

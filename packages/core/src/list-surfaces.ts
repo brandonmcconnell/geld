@@ -116,9 +116,9 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'stack-list',
     description:
-      'The merge box\'s "Stacked pull requests list" nav at the bottom of a PR: NavList items inside [class*="StackList"], "#N · branch" in an ActionList.Description with a status label ("Ready" / "Not ready") trailing the row. The counts follow the branch name inline — floated right they would butt against labels of differing widths and never line up.',
+      'The merge box\'s "Stacked pull requests list" nav at the bottom of a PR (NavList items inside [class*="StackList"]) and the "Preview stack" dialog that proposes a stack from sequential PRs (the same NavList inside [class*="PreviewStackDialog"], in a Primer portal): "#N · branch" in a block ActionList.Description, a status label ("Ready" / "Not ready") trailing the merge box\'s rows. The counts follow the branch name inline — floated right they would butt against labels of differing widths and never line up.',
     row: 'li[data-component="ActionList.Item"]',
-    inside: '[class*="StackList"], nav[aria-label="Stacked pull requests list"]',
+    inside: '[class*="StackList"], nav[aria-label="Stacked pull requests list"], [class*="PreviewStackDialog"], [role="region"][aria-label="Proposed stack of pull requests"]',
     chipAnchors: [{ selector: '[data-component="ActionList.Description"]', placement: 'append' }],
     authors: [],
     css: `.geld-pr-stat[data-geld-surface='stack-list'] { --geld-chip-gap: 6px; font-size: 11px; }`,

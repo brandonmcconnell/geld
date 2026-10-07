@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatcher } from './matcher';
-import { applyRepoConfig, applyRepoConfigs, describeRepoConfig, generatedConfigFrom, linguistGeneratedPatterns, parseRepoConfig } from './repo-config';
+import { applyRepoConfig, applyRepoConfigs, declaredReviewBots, describeRepoConfig, generatedConfigFrom, isEmptyRepoConfig, linguistGeneratedPatterns, parseRepoConfig } from './repo-config';
 import { DEFAULT_SETTINGS } from './settings';
 
 describe('parseRepoConfig', () => {
@@ -31,7 +31,7 @@ customCategories:
 
   it('treats an empty file as an empty config', () => {
     const result = parseRepoConfig('# nothing yet\n');
-    expect(result).toEqual({ ok: true, config: { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [] } });
+    expect(result).toEqual({ ok: true, config: { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [], reviewBots: [] } });
   });
 
   it('reports YAML syntax errors with a position', () => {
@@ -54,6 +54,29 @@ categoryPatterns:
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues.map((issue) => issue.path)).toEqual(['enabled', 'repoRules', 'categories.docs', 'categoryPatterns.generated[0]']);
+  });
+
+  it('reads the review bots a repository declares, checked against the registry when given', () => {
+    const result = parseRepoConfig('reviewBots: [coderabbit, greptile, coderabbit]\n', undefined, ['bugbot', 'coderabbit', 'greptile']);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.reviewBots).toEqual(['coderabbit', 'greptile']);
+    expect(describeRepoConfig(result.config)).toBe('2 review bots');
+    expect(isEmptyRepoConfig(result.config)).toBe(false);
+    expect(declaredReviewBots([result.config, { ...result.config, reviewBots: ['bugbot', 'greptile'] }])).toEqual(['coderabbit', 'greptile', 'bugbot']);
+    // Without the registry only the shape is checked (the site has no bot list to hand).
+    expect(parseRepoConfig('reviewBots: [anything-goes]\n').ok).toBe(true);
+  });
+
+  it('rejects review bots the registry does not know, and malformed ones', () => {
+    const result = parseRepoConfig('reviewBots: [coderabbit, CodeRabbit, 7, nope]\n', undefined, ['coderabbit']);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(['reviewBots[1]', 'reviewBots[2]', 'reviewBots[3]']);
+    expect(result.issues[2]?.message).toContain('Known bots: "coderabbit"');
+    const notAList = parseRepoConfig('reviewBots: coderabbit\n');
+    expect(notAList.ok).toBe(false);
+    if (!notAList.ok) expect(notAList.issues[0]?.path).toBe('reviewBots');
   });
 
   it('ignores unknown keys for forward compatibility', () => {

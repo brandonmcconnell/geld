@@ -10,6 +10,22 @@ type BreakdownProvider = () => StatsBreakdown | null;
 interface TooltipBinding {
   readonly anchor: HTMLElement;
   readonly provider: BreakdownProvider;
+  /** `end`: the box's right edge sits on the host's right edge (the PR header's counts end at the page column's edge); default centred on the anchor. */
+  readonly align?: 'end';
+  /**
+   * The box may sit flush on a bar under the host: when a bordered line (the
+   * PR header's tab bar) runs right below the counts, the box's top border
+   * is laid on that line and its top corners are squared, so it hangs from
+   * the bar as a drawer rather than floating a pixel or two beneath it.
+   */
+  readonly flush?: boolean;
+  /** The bar found for `flush`, kept between repositions (scroll, resize) while it is in the document. */
+  bar: HTMLElement | null;
+}
+
+export interface TooltipOptions {
+  readonly align?: 'end';
+  readonly flush?: boolean;
 }
 
 const providers = new WeakMap<HTMLElement, TooltipBinding>();
@@ -80,6 +96,8 @@ function render(breakdown: StatsBreakdown): void {
 const VIEWPORT_MARGIN = 8;
 /** Gap between the host and the tooltip; the bordered caret is 7px tall. */
 const HOST_GAP = 8;
+/** How far the underlined count may end before the host's right edge and still count as sitting at its end (the PR header's "+N −M" follows it). */
+const END_SLACK = 160;
 /**
  * Place the tooltip next to `host`, inside the viewport. The tooltip is
  * `position: fixed`, so the coordinates are viewport coordinates and the box
@@ -100,7 +118,8 @@ function position(host: HTMLElement): void {
     return;
   }
   const element = ensureTooltip();
-  const boundAnchor = providers.get(host)?.anchor;
+  const binding = providers.get(host);
+  const boundAnchor = binding?.anchor;
   const anchor = boundAnchor?.isConnected === true ? boundAnchor : host;
   const anchorRect = anchor.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth;
@@ -109,19 +128,77 @@ function position(host: HTMLElement): void {
   const tipRect = element.getBoundingClientRect();
   const anchorCentre = anchorRect.left + anchorRect.width / 2;
   const bounds = horizontalBounds(host, tipRect.width, viewportWidth);
-  const left = Math.max(bounds.left, Math.min(anchorCentre - tipRect.width / 2, bounds.right - tipRect.width));
+  // Centred on the underlined count, or, for a host that ends a line (the PR header's counts), flush with its
+  // right edge so the box hangs under the numbers it explains rather than past them. End alignment is asked for
+  // per host kind, but only holds when the underlined count really sits at the host's end: the classic compare
+  // and commit headers make the whole "Showing 29 changed files with 5 hidden, …" line the host, and aligning to
+  // its right edge put the box at the far side of the page with the caret left behind on the count.
+  const hostRect = host.getBoundingClientRect();
+  const endAligned = binding?.align === 'end' && hostRect.right - anchorRect.right <= END_SLACK;
+  const wanted = endAligned ? hostRect.right - tipRect.width : anchorCentre - tipRect.width / 2;
+  const left = Math.max(bounds.left, Math.min(wanted, bounds.right - tipRect.width));
   let top = anchorRect.bottom + HOST_GAP;
   let placement = 'below';
   if (top + tipRect.height > viewportHeight - VIEWPORT_MARGIN) {
     top = anchorRect.top - tipRect.height - HOST_GAP;
     placement = 'above';
   }
-  element.style.left = `${Math.round(left)}px`;
-  element.style.top = `${Math.round(top)}px`;
+  // On a bar: the box's top border is laid exactly over the bar's bottom border (same colour, one line), its top
+  // corners squared. Only below the host, and only while the bar still runs right under it (a narrow layout moves
+  // the counts off the bar, and the box floats as elsewhere).
+  const bar = endAligned && binding?.flush === true && placement === 'below' ? barUnder(binding, host, hostRect) : null;
+  let flush = false;
+  if (bar !== null) {
+    const barRect = bar.getBoundingClientRect();
+    top = barRect.bottom - parseFloat(getComputedStyle(bar).borderBottomWidth);
+    flush = true;
+  }
+  // Flush on the bar the edges are not rounded: the host's own edges are fractional at most zoom levels, and a
+  // rounded box ends up to half a pixel short of the bar's line it is meant to continue.
+  element.style.left = flush ? `${left}px` : `${Math.round(left)}px`;
+  element.style.top = flush ? `${top}px` : `${Math.round(top)}px`;
   element.dataset.placement = placement;
+  element.toggleAttribute('data-flush', flush);
   // The box may slide to stay on screen; the caret still points at the centre
   // of the one underlined count rather than the centre of the whole host.
   element.style.setProperty('--geld-arrow-x', `${Math.round(anchorCentre - left)}px`);
+}
+
+/** How far below the host's bottom a bar's bottom border may lie to count as the line the counts sit on. */
+const BAR_REACH = 24;
+
+/**
+ * The bordered line the host sits on, if any: an element whose bottom border
+ * runs just under the host (within `BAR_REACH`) and spans at least the host's
+ * width, found among the host's ancestors, their children and grandchildren
+ * (the PR header's tab bar sits in a wrapper beside the counts' wrapper, not
+ * above it). The answer
+ * is kept on the binding while the element stays in the document; its
+ * geometry is re-checked every time, since layout decides whether the counts
+ * are still above it.
+ */
+function barUnder(binding: TooltipBinding, host: HTMLElement, hostRect: DOMRect): HTMLElement | null {
+  const onBar = (candidate: HTMLElement): boolean => {
+    if (parseFloat(getComputedStyle(candidate).borderBottomWidth) <= 0) return false;
+    const rect = candidate.getBoundingClientRect();
+    return rect.bottom > hostRect.bottom && rect.bottom - hostRect.bottom <= BAR_REACH && rect.right >= hostRect.right - 1 && rect.left <= hostRect.left && rect.width > hostRect.width;
+  };
+  if (binding.bar !== null) {
+    if (binding.bar.isConnected && onBar(binding.bar)) return binding.bar;
+    binding.bar = null;
+  }
+  let depth = 0;
+  for (let ancestor = host.parentElement; ancestor !== null && ancestor !== document.body && depth < 8; ancestor = ancestor.parentElement, depth += 1) {
+    // The ancestor, its children and their children: the tab bar sits in a flex wrapper beside the counts' wrapper.
+    const candidates = [ancestor, ...ancestor.children, ...[...ancestor.children].flatMap((child) => [...child.children])];
+    for (const candidate of candidates) {
+      if (candidate instanceof HTMLElement && candidate !== host && onBar(candidate)) {
+        binding.bar = candidate;
+        return candidate;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -184,6 +261,11 @@ function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Escape') hideTooltip();
 }
 
+/** A hidden tab has no pointer over anything: close, which also stops the host watcher. */
+function onVisibilityChange(): void {
+  if (document.hidden) hideTooltip();
+}
+
 /** A single line in place of the breakdown when the counts cannot be had. */
 function renderMessage(message: string): void {
   ensureTooltip().replaceChildren(createElement('div', { class: 'geld-tooltip__message' }, [message]));
@@ -234,6 +316,7 @@ function present(host: HTMLElement, content: TooltipContent): void {
     window.addEventListener('scroll', follow, { capture: true, passive: true });
     window.addEventListener('resize', follow, { passive: true });
     document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     watchHost();
   }
   if (activeHost !== null && activeHost !== host) describe(activeHost, false);
@@ -280,6 +363,7 @@ export function hideTooltip(): void {
     window.removeEventListener('scroll', follow, { capture: true });
     window.removeEventListener('resize', follow);
     document.removeEventListener('keydown', onKeyDown, true);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     unwatchHost();
     describe(activeHost, false);
   }
@@ -303,11 +387,11 @@ function describe(host: HTMLElement, on: boolean): void {
  * Show a breakdown tooltip while hovering or focusing `host`. Calling this
  * again for the same host simply swaps the data provider.
  */
-export function attachBreakdownTooltip(host: HTMLElement, anchor: HTMLElement, provider: BreakdownProvider): void {
+export function attachBreakdownTooltip(host: HTMLElement, anchor: HTMLElement, provider: BreakdownProvider, options: TooltipOptions = {}): void {
   const previous = providers.get(host);
   const alreadyBound = previous !== undefined;
   if (previous?.anchor !== anchor) previous?.anchor.removeAttribute(TOOLTIP_ANCHOR_ATTRIBUTE);
-  providers.set(host, { anchor, provider });
+  providers.set(host, { anchor, provider, ...(options.align === undefined ? {} : { align: options.align }), ...(options.flush === true ? { flush: true } : {}), bar: previous?.bar ?? null });
   anchor.setAttribute(TOOLTIP_ANCHOR_ATTRIBUTE, '');
   if (alreadyBound) {
     if (activeHost === host) show(host);

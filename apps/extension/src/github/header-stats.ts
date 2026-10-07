@@ -270,6 +270,8 @@ export function applyHeaderStats(
   group: HeaderStatGroup,
   hidden: HiddenBreakdown,
   activeCategories: readonly HiddenCategory[],
+  /** The diff's file count, when the header's own numbers carry none (a pull request header: lines only). */
+  files = 0,
 ): void {
   // Nothing that could be hidden: GitHub's own numbers are right, so leave the header alone (no "0 hidden").
   if (group.original === null || activeCategories.length === 0) {
@@ -283,7 +285,7 @@ export function applyHeaderStats(
     syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
     return;
   }
-  const all = group.original;
+  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   const breakdown = statsBreakdown(all, hidden, nounPlural, activeCategories);
   const { visible } = breakdown;
 
@@ -311,7 +313,9 @@ export function applyHeaderStats(
     }
   }
 
-  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown);
+  // The header's counts end the line at the page column's edge, right above the tab bar: the box hangs flush with
+  // that edge and from that bar (its top border on the bar's, top corners square), as a drawer out of the header.
+  attachBreakdownTooltip(group.host, tooltipAnchor, () => breakdown, { align: 'end', flush: true });
   syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), hidden.totals.files > 0, visible, () => breakdown);
 }
 
@@ -350,7 +354,7 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
   mirror.hidden = group.host.getClientRects().length > 0;
   if (provider === null) detachBreakdownTooltip(mirror);
-  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider);
+  else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, { align: 'end' });
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {

@@ -38,8 +38,10 @@
     "wxt": "^0.21.4"
   },
   "dependencies": {
+    "@chenglou/pretext": "0.0.9",
     "@geld/core": "workspace:*",
     "@geld/github": "workspace:*",
+    "@geld/review": "workspace:*",
     "hyperellipse": "^1.0.5"
   }
 }
