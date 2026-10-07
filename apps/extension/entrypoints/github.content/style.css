@@ -3269,11 +3269,18 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   vertical-align: middle;
 }
 
+/* GitHub floats "View deployment" (28px in the timeline) to the right; here it follows its words, whole, the size
+ * of the line. */
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right {
+  float: none !important;
+  display: inline-block;
   min-height: 20px !important;
+  margin-left: 4px;
   padding: 0 8px !important;
   font-size: 11px !important;
   line-height: 18px !important;
+  vertical-align: top;
+  white-space: nowrap;
 }
 
 /* The activity folds (events, commits, mentions) are lists of one-line rows: the same room above and below. */
@@ -5136,7 +5143,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 .geld-review__qv .TimelineItem:has(> .TimelineItem-body .geld-review__push) {
-  padding: 2px 0 !important;
+  padding: 4px 0 !important;
 }
 
 .geld-review__push {
@@ -5145,7 +5152,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 24px;
+  min-height: 20px;
   font-size: 12px;
   line-height: 20px;
 }
@@ -5166,22 +5173,24 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   text-decoration: underline;
 }
 
-/* The Compare button: GitHub's small secondary button shape, with its icon. */
+/* The Compare button: GitHub's small secondary button shape, with its icon, the height of the row's line like
+ * every button in these lists. */
 .geld-review__push-compare {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  height: 24px;
+  height: 20px;
   padding: 0 8px 0 7px;
   border: 1px solid var(--geld-review-border);
   border-radius: 6px;
   background: var(--geld-review-bg);
   color: var(--geld-review-muted) !important;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 18px;
   text-decoration: none !important;
+  white-space: nowrap;
 }
 
 .geld-review__push-compare:hover {
@@ -5262,17 +5271,13 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   align-items: center;
 }
 
-.geld-review__qv .TimelineItem:has(> .TimelineItem-body > .geld-review__event) {
-  padding: 2px 0 !important;
-}
-
 .geld-review__event {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
   min-width: 0;
-  min-height: 24px;
+  min-height: 20px;
   font-size: 12px;
   line-height: 20px;
 }
@@ -5295,6 +5300,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   color: var(--fgColor-accent, var(--color-accent-fg));
   font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
   font-size: 11px;
+  /* Its inline box inside the 20px line, not a 20px box of its own at a smaller size that would push the line to 21. */
+  line-height: 1;
 }
 
 .geld-review__event-ref-link {
@@ -5316,7 +5323,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
  * `hx_dropdown-fullscreen` lets the menu take the screen on narrow viewports; the same markup here does too. */
 .geld-review__event-checks-popover {
   position: relative;
-  display: inline-flex;
+  /* Over GitHub's block: as a block the summary sits in a line box with room under it, and the row grows. */
+  display: inline-flex !important;
   flex: 0 0 auto;
 }
 
@@ -5330,7 +5338,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 /* As a button: no chrome of its own, the row's hover tint on hover, the text brightening as a link would. */
 .geld-review__event-checks--button {
-  height: 22px;
+  height: 20px;
   padding: 0 4px;
   margin: 0 -4px;
   border: 0;
@@ -5363,14 +5371,16 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   flex: 0 0 auto;
   float: none !important;
   margin: 0 !important;
+  white-space: nowrap;
 }
 
 .geld-review__event-control .btn,
 .geld-review__event-control.btn {
-  height: 24px;
+  height: 20px;
+  min-height: 0;
   padding: 0 8px !important;
-  font-size: 12px;
-  line-height: 22px;
+  font-size: 11px;
+  line-height: 18px;
 }
 
 /* The time is the last thing on the line, in the column the commit rows use. */
