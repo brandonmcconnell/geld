@@ -35,7 +35,7 @@ import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './pa
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
-import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, requiredReviewsFrom } from './panel-model';
+import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -44,7 +44,7 @@ import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
-import type { ChatByline } from './chat';
+import type { ChatByline, ChatRerun } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -1645,7 +1645,7 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
  * (`ChatSource.revision`): bots edit their summaries between runs, and the
  * page's node may by now report a later run.
  */
-function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): ChatSource | null {
+function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatSource | null {
   const source = item?.sources[0];
   const bot = source?.bot;
   const who = bot !== undefined ? botTitle(bot, source?.author ?? '') : source?.author ?? 'the reviewer';
@@ -1658,9 +1658,13 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     // A bot's summary from well before the thread is an earlier run's (this run posted none): the strip says when.
     const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
     const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
+    // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
+    const latestAnchor = bot === undefined ? null : newerSummaryOf(bot, anchor, meta);
+    const rerun = bot === undefined || latestAnchor !== null ? null : rerunFor(bot, source?.author ?? '', meta, reapply);
     return {
       node,
       anchor,
+      name: who,
       label,
       preview: facts?.preview ?? '',
       avatarSrc: facts?.avatarSrc ?? avatarSrcOf(node),
@@ -1668,6 +1672,8 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
       bot: isBot,
       ...(revision === null ? {} : { revision }),
       ...(earlier === null ? {} : { earlier }),
+      ...(latestAnchor === null ? {} : { latestAnchor }),
+      ...(rerun === null ? {} : { rerun }),
     };
   };
   // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
@@ -1771,25 +1777,36 @@ function prAuthorLogin(): string | null {
  * Running (the bot's verdict, or a click a moment ago) is shown on the
  * button itself; a click then asks before posting a second trigger.
  */
-function withRerun(byline: ChatByline, author: string, meta: GeldPrMeta, settings: GeldSettings, reapply: () => void): ChatByline {
+function withRerun(byline: ChatByline, author: string, anchor: string, meta: GeldPrMeta, settings: GeldSettings, reapply: () => void, onOpenAnchor: (anchor: string) => void): ChatByline {
   if (!byline.bot) return byline;
   const id = resolveBotId(author, settings.reviewBots);
-  const trigger = id === null ? null : rerunTriggerFor(id);
-  if (id === null || trigger === null) return byline;
+  if (id === null) return byline;
+  const latest = newerSummaryOf(id, anchor, meta);
+  if (latest !== null) return { ...byline, latest: { bot: botTitle(id, author), onOpen: () => onOpenAnchor(latest) } };
+  const rerun = rerunFor(id, author, meta, reapply);
+  return rerun === null ? byline : { ...byline, rerun };
+}
+
+/** Geld's Rerun for a bot with a trigger phrase (none: the control cannot ask, so there is none). */
+function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => void): ChatRerun | null {
+  const trigger = rerunTriggerFor(id);
+  if (trigger === null) return null;
   const pending = visit.rerunPending.get(id);
   const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running') || (pending !== undefined && Date.now() - pending < RERUN_PENDING_MS);
   return {
-    ...byline,
-    rerun: {
-      bot: botTitle(id, author),
-      running,
-      onRerun: () => {
-        visit.rerunPending.set(id, Date.now());
-        void postTopLevelComments([trigger]).then(() => reapplySoon());
-        reapply();
-      },
+    bot: botTitle(id, author),
+    running,
+    onRerun: () => {
+      visit.rerunPending.set(id, Date.now());
+      void postTopLevelComments([trigger]).then(() => reapplySoon());
+      reapply();
     },
   };
+}
+
+/** The bot's newer summary than the comment at `anchor`, when there is one (`newerSummaryAnchor`, against the crawl's facts). */
+function newerSummaryOf(id: string, anchor: string, meta: GeldPrMeta): string | null {
+  return newerSummaryAnchor(meta.bots.find((bot) => bot.id === id)?.sourceId, anchor, sourceFacts);
 }
 
 /** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
@@ -1807,11 +1824,12 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
 }
 
 /** Chat handlers shared by an item opened on its own and inside its round. */
-function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatHandlers {
+function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void, onOpenAnchor: (anchor: string) => void): ChatHandlers {
   return {
     pathOf: (node) => threadPathOf(node, item, meta),
     onCopy: (text) => void copyText(text),
-    sourceOf: (node) => threadSourceOf(node, item, meta),
+    sourceOf: (node) => threadSourceOf(node, item, meta, reapply),
+    onOpenAnchor,
     sourceOpen: (node) => visit.sourcesShown.has(threadAnchorOf(node)),
     onToggleSource: (node) => {
       const key = threadAnchorOf(node);
@@ -2766,9 +2784,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (thread === null ? timelineRootOf(view.openComment) : null));
           if (view.nested !== null && thread !== null) {
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
-            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply));
+            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
           } else if (view.nested !== null && commentNode !== null) {
-            const byline = openEntry === null ? null : withRerun(dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor), openEntry.author, meta, settings, reapply);
+            const byline = openEntry === null ? null : withRerun(dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor), openEntry.author, openEntry.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
             // The threads the review came with, by file, leading to their rows.
             const links = (openEntry?.threads ?? []).map((thread) => {
               const root = threadRootOf(thread.anchor);
@@ -2778,7 +2796,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
             renderCommentChat(view.nested, commentNode, byline, links, panelHandlers.onOpenAnchor);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
-            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply));
+            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
           } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
             if (openLineStillMissing()) visit.openSubKey = null;
           } else {
@@ -2810,7 +2828,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
-        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply));
+        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
       } else {
         // The Commits fold among these: its rows get their dates as they land.
         renderQuickView(mounted.slot, nodes, reapplySoon, { headSha: meta.headSha });

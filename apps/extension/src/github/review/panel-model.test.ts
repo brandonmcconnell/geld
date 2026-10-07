@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -22,6 +22,24 @@ describe('panel model', () => {
     expect(verdictLabel({ id: 'bugbot', login: 'cursor[bot]', verdict: 'clean', reviewedSha: 'aaa' })).toBe('Bugbot clean');
     expect(isCurrent(greptile, 'aaab')).toBe(true);
     expect(isCurrent(greptile, 'bbb')).toBe(false);
+  });
+
+  it('leads from an older run summary to the bot\u2019s newer one, and nowhere else', () => {
+    const facts = new Map([
+      ['issuecomment-1', { summary: true, createdAt: '2026-10-01T10:00:00Z' }],
+      ['issuecomment-2', { summary: true, createdAt: '2026-10-02T10:00:00Z' }],
+      ['issuecomment-3', { summary: false, createdAt: '2026-10-03T10:00:00Z' }],
+    ]);
+    // A review body per run: the first run's leads to the second's.
+    expect(newerSummaryAnchor('issuecomment-2', 'issuecomment-1', facts)).toBe('issuecomment-2');
+    // The current one is the latest: Rerun, not "See latest".
+    expect(newerSummaryAnchor('issuecomment-2', 'issuecomment-2', facts)).toBeNull();
+    // The verdict hanging on a status line ("reviewing…") or a thread is not a word to lead to.
+    expect(newerSummaryAnchor('issuecomment-3', 'issuecomment-1', facts)).toBeNull();
+    expect(newerSummaryAnchor('discussion_r9', 'issuecomment-1', facts)).toBeNull();
+    // No verdict yet, or the "current" word is in fact older than this comment.
+    expect(newerSummaryAnchor(undefined, 'issuecomment-1', facts)).toBeNull();
+    expect(newerSummaryAnchor('issuecomment-1', 'issuecomment-2', facts)).toBeNull();
   });
 
   it('renders an item as Markdown with absolute source links and an optional fix', () => {

@@ -173,6 +173,33 @@ export function verdictLabel(bot: BotVerdictRecord): string {
   return `${title} ${botDetail(bot)}`;
 }
 
+/** What the staleness check needs to know of a top-level comment: whether it is a bot's report, and when it was posted. */
+export interface SummaryFacts {
+  readonly summary: boolean;
+  readonly createdAt: string;
+}
+
+/**
+ * The bot's current summary when the comment at `anchor` is an older one of
+ * its: a bot that posts a new comment per run (a review body each time)
+ * leaves the earlier ones standing, and Rerun on those would read as a
+ * control on a stale word — "See latest" leads to the current one instead.
+ * `current` is the anchor the bot's verdict hangs on. Only a later *summary*
+ * counts: a status line or a thread is not a word to lead to, and a bot
+ * that rewrites one comment in place (Greptile) has the same anchor
+ * throughout, so its older readings are a matter of edit history, not of
+ * this check.
+ */
+export function newerSummaryAnchor(current: string | undefined, anchor: string, facts: ReadonlyMap<string, SummaryFacts>): string | null {
+  if (current === undefined || current === anchor) return null;
+  const latest = facts.get(current);
+  const own = facts.get(anchor);
+  if (latest === undefined || !latest.summary || own === undefined) return null;
+  const latestAt = Date.parse(latest.createdAt);
+  const ownAt = Date.parse(own.createdAt);
+  return !Number.isNaN(latestAt) && !Number.isNaN(ownAt) && latestAt > ownAt ? current : null;
+}
+
 export function statusBadge(status: ReviewItemStatus): string | null {
   if (status === 'needs-reply') return 'needs reply';
   if (status === 'addressed') return 'addressed';
