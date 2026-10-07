@@ -6030,7 +6030,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   gap: 0 24px;
   align-items: start;
   margin: 0 auto;
-  padding: 16px 24px 48px;
+  padding: 0 24px 48px;
   max-width: 1480px;
   color: var(--fgColor-default, var(--color-fg-default));
   font-size: 14px;
@@ -6047,12 +6047,44 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 /* ---- stepper ------------------------------------------------------------- */
 
+/*
+ * GitHub's own sticky bar from the files layout (the classic `.pr-toolbar`:
+ * title, "Changes from all commits", the file filter, Review changes), on
+ * loan across the top of the view, full width, sticky as it is at home. Its
+ * height sets `--geld-rt-top`, which the stepper and the files' own headers
+ * sit under.
+ */
+.geld-review-tab__bar-sentinel {
+  grid-column: 1 / -1;
+  height: 1px;
+  margin-bottom: -1px;
+}
+
+.geld-review-tab__bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  grid-column: 1 / -1;
+  margin: 0 -24px;
+  background: var(--geld-rt-bg);
+}
+
+.geld-review-tab__bar > [data-geld-teleported] {
+  position: static !important;
+  margin: 0 !important;
+}
+
+.geld-review-tab__steps,
+.geld-review-tab__main {
+  margin-top: 16px;
+}
+
 .geld-review-tab__steps {
   position: sticky;
-  top: var(--geld-rt-top);
+  top: calc(var(--geld-rt-top) + 16px);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - var(--geld-rt-top) - 16px);
+  max-height: calc(100vh - var(--geld-rt-top) - 32px);
   border: 1px solid var(--geld-rt-border);
   border-radius: 6px;
   background: var(--geld-rt-bg);
@@ -6072,6 +6104,22 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 .geld-review-tab__brand {
   font-weight: 600;
+}
+
+.geld-review-tab__info-wrap {
+  display: inline-flex;
+  position: relative;
+}
+
+.geld-review-tab__info {
+  display: inline-flex;
+  color: var(--geld-rt-muted);
+  cursor: default;
+}
+
+.geld-review-tab__info:hover,
+.geld-review-tab__info:focus-visible {
+  color: var(--fgColor-default, var(--color-fg-default));
 }
 
 .geld-review-tab__meter {
@@ -6162,7 +6210,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-review-tab__list {
   flex: 1 1 auto;
   margin: 0;
-  padding: 4px 0;
+  padding: 0;
   list-style: none;
   overflow-y: auto;
 }
@@ -6330,6 +6378,44 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   border-bottom: 1px solid var(--geld-rt-border-muted);
 }
 
+.geld-review-tab__step-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.geld-review-tab__step-words {
+  min-width: 0;
+}
+
+/* The step's lines at the head's right, as the page header shows the pull request's. */
+.geld-review-tab__counts {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.geld-review-tab__counts-add {
+  color: var(--geld-rt-done);
+}
+
+.geld-review-tab__counts-del {
+  color: var(--geld-rt-bad);
+}
+
+.geld-review-tab__counts-supporting {
+  color: var(--geld-rt-muted);
+  font-weight: 400;
+}
+
 .geld-review-tab__eyebrow {
   display: flex;
   flex-wrap: wrap;
@@ -6491,39 +6577,71 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   overflow-wrap: anywhere;
 }
 
+/*
+ * One section per category of supporting change (tests, generated files…),
+ * a divider that folds: open by default, so nothing is hidden from the
+ * reader, only told apart from the step's own work. The heading is the
+ * digest's inner label: 11px small caps.
+ */
 .geld-review-tab__supporting {
   border-top: 1px solid var(--geld-rt-border-muted);
+}
+
+.geld-review-tab__supporting > .geld-review-tab__files {
+  padding-top: 0;
 }
 
 .geld-review-tab__supporting-summary {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 10px 20px;
+  border: 0;
+  background: var(--geld-rt-subtle);
   color: var(--geld-rt-muted);
-  font-size: 12px;
+  font: inherit;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
   cursor: pointer;
-  list-style: none;
 }
 
-.geld-review-tab__supporting-summary::-webkit-details-marker {
-  display: none;
+.geld-review-tab__supporting-summary:hover {
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review-tab__supporting[data-collapsed] .geld-review-tab__supporting-summary {
+  border-radius: 0 0 6px 6px;
 }
 
 .geld-review-tab__supporting-summary .octicon {
   transition: transform 120ms ease-out;
 }
 
-.geld-review-tab__supporting:not([open]) .geld-review-tab__supporting-summary .octicon {
+.geld-review-tab__supporting[data-collapsed] .geld-review-tab__supporting-summary .octicon {
   transform: rotate(-90deg);
 }
 
-.geld-review-tab__supporting-names {
-  font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/*
+ * A loaned file's own sticky header sits under the borrowed bar (GitHub
+ * placed it under its own, at 60px), and gets a square backing behind its
+ * rounded corners: while stuck, the rows scrolling under it showed through
+ * the corner gaps.
+ */
+.geld-review-tab__file [data-geld-file-header] {
+  top: var(--geld-rt-top, 0px) !important;
+  isolation: isolate;
+}
+
+.geld-review-tab__file [data-geld-file-header]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--geld-rt-bg);
 }
 
 .geld-review-tab__actions {
@@ -6538,20 +6656,546 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   border-radius: 0 0 6px 6px;
 }
 
-.geld-review-tab__actions-nav,
 .geld-review-tab__actions-decide {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.geld-review-tab__actions .btn .octicon {
-  margin-right: 4px;
+/* Icons sit on the text's centre line with a breath between them; GitHub's `.btn` leaves them on the baseline. */
+.geld-review-tab .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.geld-review-tab__actions .btn-primary .octicon {
-  margin: 0 0 0 4px;
+.geld-review-tab .btn .octicon {
+  margin: 0;
+}
+
+.geld-review-tab .btn-primary .octicon {
   order: 2;
+}
+
+/* Previous · number of total · next, the same width on every step. */
+.geld-review-tab__pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.geld-review-tab__pager-arrow {
+  width: 32px;
+  padding: 0 !important;
+  justify-content: center;
+}
+
+.geld-review-tab__pager-arrow:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.5;
+}
+
+.geld-review-tab__pager-number {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0 4px;
+  color: var(--geld-rt-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-review-tab__pager-field {
+  min-width: 1ch;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-weight: 600;
+  text-align: right;
+  outline: none;
+}
+
+.geld-review-tab__pager-field:focus {
+  border-bottom-color: var(--geld-rt-accent);
+}
+
+.geld-review-tab__flag {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 16px;
+  background: var(--geld-rt-subtle);
+  border-radius: 0 0 6px 6px;
+}
+
+.geld-review-tab__flag-note {
+  width: 100%;
+  resize: vertical;
+}
+
+.geld-review-tab__flag-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- folded rows of other steps (review-tab/hunk-rows.ts) ------------------ */
+
+tr[data-geld-step-row='hidden'] {
+  display: none !important;
+}
+
+.geld-step-note__cell {
+  padding: 2px 12px !important;
+  background: var(--bgColor-accent-muted, var(--color-accent-subtle, #ddf4ff)) !important;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font: 12px var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.geld-step-note__show {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-step-note__show:hover {
+  text-decoration: underline;
+}
+
+/* ---- finish and empty states ----------------------------------------------- */
+
+.geld-review-tab__finish {
+  padding: 16px 20px;
+}
+
+.geld-review-tab__finish-summary {
+  margin: 0 0 12px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__flagged {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review-tab__flagged li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.geld-review-tab__flagged .octicon {
+  color: var(--geld-rt-bad);
+  transform: translateY(2px);
+}
+
+.geld-review-tab__flagged-note {
+  flex: 1 1 100%;
+  padding-left: 24px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__body-preview {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__body-preview summary {
+  cursor: pointer;
+}
+
+.geld-review-tab__body-text {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--geld-rt-border-muted);
+  border-radius: 6px;
+  background: var(--geld-rt-subtle);
+  color: var(--fgColor-default, var(--color-fg-default));
+  white-space: pre-wrap;
+}
+
+.geld-review-tab__finish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.geld-review-tab__finish-note {
+  margin: 8px 0 0;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+.geld-review-tab__empty {
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 6px;
+  background: var(--geld-rt-bg);
+}
+
+.geld-review-tab__step-head {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--geld-rt-border-muted);
+}
+
+.geld-review-tab__step-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.geld-review-tab__step-words {
+  min-width: 0;
+}
+
+/* The step's lines at the head's right, as the page header shows the pull request's. */
+.geld-review-tab__counts {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.geld-review-tab__counts-add {
+  color: var(--geld-rt-done);
+}
+
+.geld-review-tab__counts-del {
+  color: var(--geld-rt-bad);
+}
+
+.geld-review-tab__counts-supporting {
+  color: var(--geld-rt-muted);
+  font-weight: 400;
+}
+
+.geld-review-tab__eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+.geld-review-tab__kind {
+  padding: 0 7px;
+  border: 1px solid var(--geld-rt-border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.geld-review-tab__state-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.geld-review-tab__state-word[data-state='accepted'] {
+  color: var(--geld-rt-done);
+}
+
+.geld-review-tab__state-word[data-state='flagged'] {
+  color: var(--geld-rt-bad);
+}
+
+.geld-review-tab__state-word[data-state='changed'] {
+  color: var(--geld-rt-warn);
+}
+
+.geld-review-tab__step-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.geld-review-tab__story {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 76ch;
+}
+
+.geld-review-tab__story:empty {
+  display: none;
+}
+
+.geld-review-tab__story-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.geld-review-tab__story-why {
+  margin: 0;
+  color: var(--geld-rt-muted);
+  font-style: italic;
+}
+
+.geld-review-tab__story-by {
+  margin: 0;
+  color: var(--geld-rt-muted);
+  font-size: 11px;
+}
+
+.geld-review-tab__story-by .octicon {
+  vertical-align: -2px;
+}
+
+.geld-review-tab__watch-box {
+  padding: 8px 12px;
+  border: 1px solid var(--borderColor-attention-muted, rgba(212, 167, 44, 0.4));
+  border-radius: 6px;
+  background: var(--bgColor-attention-muted, var(--color-attention-subtle, #fff8c5));
+}
+
+.geld-review-tab__watch-label {
+  margin: 0 0 2px;
+  color: var(--geld-rt-warn);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.geld-review-tab__watch {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review-tab__watch li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.geld-review-tab__watch .octicon {
+  color: var(--geld-rt-warn);
+  transform: translateY(2px);
+}
+
+.geld-review-tab__touches,
+.geld-review-tab__depends {
+  margin: 10px 0 0;
+  color: var(--geld-rt-muted);
+  font-size: 12px;
+}
+
+.geld-review-tab__touch {
+  color: inherit;
+}
+
+.geld-review-tab__touch code {
+  font-size: 11.5px;
+}
+
+.geld-review-tab__files {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.geld-review-tab__file {
+  min-width: 0;
+}
+
+/* GitHub's own file box keeps its chrome; only the margin its list gave it goes. */
+.geld-review-tab__file > [data-geld-teleported] {
+  margin: 0 !important;
+}
+
+.geld-review-tab__file-pending {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px dashed var(--geld-rt-border);
+  border-radius: 6px;
+  color: var(--geld-rt-muted);
+}
+
+.geld-review-tab__file-path {
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * One section per category of supporting change (tests, generated files…),
+ * a divider that folds: open by default, so nothing is hidden from the
+ * reader, only told apart from the step's own work. The heading is the
+ * digest's inner label: 11px small caps.
+ */
+.geld-review-tab__supporting {
+  border-top: 1px solid var(--geld-rt-border-muted);
+}
+
+.geld-review-tab__supporting > .geld-review-tab__files {
+  padding-top: 0;
+}
+
+.geld-review-tab__supporting-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 20px;
+  border: 0;
+  background: var(--geld-rt-subtle);
+  color: var(--geld-rt-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review-tab__supporting-summary:hover {
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review-tab__supporting[data-collapsed] .geld-review-tab__supporting-summary {
+  border-radius: 0 0 6px 6px;
+}
+
+.geld-review-tab__supporting-summary .octicon {
+  transition: transform 120ms ease-out;
+}
+
+.geld-review-tab__supporting[data-collapsed] .geld-review-tab__supporting-summary .octicon {
+  transform: rotate(-90deg);
+}
+
+/*
+ * A loaned file's own sticky header sits under the borrowed bar (GitHub
+ * placed it under its own, at 60px), and gets a square backing behind its
+ * rounded corners: while stuck, the rows scrolling under it showed through
+ * the corner gaps.
+ */
+.geld-review-tab__file [data-geld-file-header] {
+  top: var(--geld-rt-top, 0px) !important;
+  isolation: isolate;
+}
+
+.geld-review-tab__file [data-geld-file-header]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--geld-rt-bg);
+}
+
+.geld-review-tab__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--geld-rt-border-muted);
+  background: var(--geld-rt-subtle);
+  border-radius: 0 0 6px 6px;
+}
+
+.geld-review-tab__actions-decide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Icons sit on the text's centre line with a breath between them; GitHub's `.btn` leaves them on the baseline. */
+.geld-review-tab .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.geld-review-tab .btn .octicon {
+  margin: 0;
+}
+
+.geld-review-tab .btn-primary .octicon {
+  order: 2;
+}
+
+/* Previous · number of total · next, the same width on every step. */
+.geld-review-tab__pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.geld-review-tab__pager-arrow {
+  width: 32px;
+  padding: 0 !important;
+  justify-content: center;
+}
+
+.geld-review-tab__pager-arrow:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.5;
+}
+
+.geld-review-tab__pager-number {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0 4px;
+  color: var(--geld-rt-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-review-tab__pager-field {
+  min-width: 1ch;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-weight: 600;
+  text-align: right;
+  outline: none;
+}
+
+.geld-review-tab__pager-field:focus {
+  border-bottom-color: var(--geld-rt-accent);
 }
 
 .geld-review-tab__flag {
@@ -6800,8 +7444,17 @@ tr[data-geld-step-row='hidden'] {
 @media (max-width: 900px) {
   .geld-review-tab {
     grid-template-columns: minmax(0, 1fr);
-    gap: 16px 0;
-    padding: 12px 12px 32px;
+    gap: 0;
+    padding: 0 12px 32px;
+  }
+
+  .geld-review-tab__bar {
+    margin: 0 -12px;
+  }
+
+  .geld-review-tab__steps,
+  .geld-review-tab__main {
+    margin-top: 12px;
   }
 
   .geld-review-tab__steps {

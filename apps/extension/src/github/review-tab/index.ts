@@ -26,7 +26,7 @@ import { closePlanner, dropPlan, markStep, openPlanner, planWithAi, plannerState
 import { reviewKey } from './store';
 import { ensureReviewTabLink, filesTabLink, interceptFilesTab, removeReviewTabLink, reviewTabUrl } from './tab';
 import type { InputPhase, ReviewTabHandlers, ReviewTabModel } from './view';
-import { counterFor, renderReviewTab, ROOT_CLASS } from './view';
+import { ATTR_FILE_HEADER, counterFor, markStickyHeaders, renderReviewTab, ROOT_CLASS } from './view';
 
 export const ATTR_REVIEW_AREA = 'data-geld-review-area';
 const ATTR_PAGE = 'data-geld-review-tab';
@@ -53,7 +53,8 @@ interface Visit {
   area: HTMLElement | null;
   signature: string;
   readonly shownRuns: Set<string>;
-  supportingOpen: boolean;
+  /** Supporting sections (by category id) the reader folded this visit. */
+  readonly collapsedSections: Set<string>;
   flagOpen: boolean;
   flagDraft: string;
   finishOpen: boolean;
@@ -70,6 +71,8 @@ interface Visit {
   scrollToStep: string | null;
   /** A handler changed what the view shows: the next pass rebuilds even with a field focused inside the view. */
   rebuildAsked: boolean;
+  /** Says when the borrowed sticky bar is stuck (`watchBar`). */
+  barObserver: IntersectionObserver | null;
   settings: GeldSettings;
 }
 
@@ -129,7 +132,7 @@ export function applyReviewTab(context: ReviewTabContext): void {
   const key = reviewKey(page.stateKey);
   if (visit === null || visit.stateKey !== page.stateKey) {
     teardownReviewTab();
-    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), supportingOpen: false, flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, settings };
+    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, barObserver: null, settings };
     openPlanner(key, () => context.reapply());
     if (page.diffUrl !== null) dropOtherPages(page.diffUrl);
   }
@@ -198,17 +201,52 @@ export function applyReviewTab(context: ReviewTabContext): void {
     view,
     entries,
     hunksByPath,
-    supportingOpen: current.supportingOpen,
+    categoryOf: (path) => {
+      const category = context.classify(path);
+      return category === null ? null : { id: category.id, title: category.title };
+    },
+    collapsedSections: current.collapsedSections,
+    toolbar: current.area === null ? null : stickyBarOf(current.area),
     flagOpen: current.flagOpen,
     flagDraft: current.flagDraft,
     helpOpen: current.helpOpen,
     shownRuns: current.shownRuns,
-    reviewForm: finish ? legacyReviewForm(current.area) : null,
   };
   current.wanted.clear();
   const handlers = makeHandlers(context, current);
   mount(current, model, handlers, view);
   seekWanted(current, view, context.reapply);
+}
+
+/**
+ * GitHub's own sticky bar in the files layout: the classic `.pr-toolbar`
+ * (title, "Changes from all commits", the file filter, Review changes),
+ * sticky at the viewport's top. Found by what it does, not what it is
+ * called: a sticky element at `top: 0` spanning the layout, within a few
+ * levels of the area's root. Borrowed across the top of the Review view so
+ * the reader keeps GitHub's navigation; null where the layout has none.
+ */
+function stickyBarOf(area: HTMLElement): HTMLElement | null {
+  const width = area.getBoundingClientRect().width;
+  const queue: Array<{ readonly node: HTMLElement; readonly depth: number }> = [{ node: area, depth: 0 }];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) break;
+    if (current.node !== area && !current.node.classList.contains(ROOT_CLASS)) {
+      const style = getComputedStyle(current.node);
+      if (style.position === 'sticky' && Number.parseFloat(style.top) <= 1 && current.node.getBoundingClientRect().width >= width * 0.6) return current.node;
+    }
+    if (current.depth >= 3) continue;
+    for (const child of current.node.children) if (child instanceof HTMLElement) queue.push({ node: child, depth: current.depth + 1 });
+  }
+  return null;
+}
+
+/** Take Geld's marks off a loaned node before it goes home: folded rows and their notes, the sticky-header mark. */
+function undress(node: HTMLElement): void {
+  clearFoldedHunks(node);
+  node.removeAttribute(ATTR_FILE_HEADER);
+  for (const element of node.querySelectorAll(`[${ATTR_FILE_HEADER}]`)) element.removeAttribute(ATTR_FILE_HEADER);
 }
 
 /** GitHub's files by path: what the adapters see at home plus what is on loan to the current build. */
@@ -245,10 +283,10 @@ function signatureOf(model: ReviewTabModel): string {
     model.virtualized ? 1 : 0,
     entries,
     model.hunksByPath.size,
-    model.supportingOpen ? 1 : 0,
     model.flagOpen ? 1 : 0,
     model.helpOpen ? 1 : 0,
-    model.reviewForm === null ? 0 : 1,
+    [...model.collapsedSections].sort().join(','),
+    model.toolbar === null ? 0 : 1,
   ].join('\u0000');
 }
 
@@ -267,7 +305,7 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
   if (typing && !current.rebuildAsked) return;
   current.rebuildAsked = false;
   if (typing && active instanceof HTMLElement) active.blur();
-  for (const node of teleportedNodes()) clearFoldedHunks(node);
+  for (const node of teleportedNodes()) undress(node);
   restoreAll();
   const next = renderReviewTab(model, handlers);
   const anchor = current.area ?? view?.container ?? null;
@@ -285,11 +323,46 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
   }
   current.root = next;
   current.signature = signature;
+  for (const loaned of next.querySelectorAll<HTMLElement>(`.${ROOT_CLASS}__file > [data-geld-teleported]`)) markStickyHeaders(loaned);
+  watchBar(current, next);
   if (current.scrollToStep !== null && current.scrollToStep === model.current?.id) {
     current.scrollToStep = null;
     const top = next.getBoundingClientRect().top;
     if (top < 0 || top > 120) next.scrollIntoView({ block: 'start', behavior: 'instant' });
   }
+}
+
+/**
+ * The borrowed bar is GitHub's: at home its layout gave it `is-stuck` once it
+ * reached the viewport's top (its title and controls show only then), and
+ * that layout no longer sees it. A sentinel above the bar says when it is
+ * stuck. The sticky offsets below the bar (the stepper, the files' own
+ * headers) follow its *stuck* height, measured once per build with the
+ * class on, so nothing jumps when it sticks.
+ */
+function watchBar(current: Visit, root: HTMLElement): void {
+  current.barObserver?.disconnect();
+  current.barObserver = null;
+  const sentinel = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__bar-sentinel`);
+  const toolbar = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__bar > [data-geld-teleported]`);
+  if (sentinel === null || toolbar === null) {
+    root.style.setProperty('--geld-rt-top', '0px');
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (current.root !== root) return;
+    const wasStuck = toolbar.classList.contains('is-stuck');
+    toolbar.classList.add('is-stuck');
+    root.style.setProperty('--geld-rt-top', `${Math.round(toolbar.getBoundingClientRect().height)}px`);
+    if (!wasStuck) toolbar.classList.remove('is-stuck');
+  });
+  const observer = new IntersectionObserver((entries) => {
+    const entry = entries[entries.length - 1];
+    if (entry === undefined) return;
+    toolbar.classList.toggle('is-stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0);
+  });
+  observer.observe(sentinel);
+  current.barObserver = observer;
 }
 
 function makeHandlers(context: ReviewTabContext, current: Visit): ReviewTabHandlers {
@@ -301,7 +374,6 @@ function makeHandlers(context: ReviewTabContext, current: Visit): ReviewTabHandl
   const open = (id: string): void => {
     current.flagOpen = false;
     current.flagDraft = '';
-    current.supportingOpen = false;
     current.finishOpen = false;
     current.scrollToStep = id;
     setCurrentStep(id);
@@ -335,25 +407,26 @@ function makeHandlers(context: ReviewTabContext, current: Visit): ReviewTabHandl
     unmark: (step) => {
       unmarkStep(step);
       current.finishOpen = false;
-      context.reapply();
+      reapply();
     },
     openFlag: (openIt) => {
       current.flagOpen = openIt;
-      context.reapply();
+      reapply();
     },
     flagDraft: (text) => {
       current.flagDraft = text;
     },
-    toggleSupporting: () => {
-      current.supportingOpen = !current.supportingOpen;
-      context.reapply();
+    toggleSection: (categoryId) => {
+      if (current.collapsedSections.has(categoryId)) current.collapsedSections.delete(categoryId);
+      else current.collapsedSections.add(categoryId);
+      reapply();
     },
     planWithAi: (replan) => void planWithAi(context.settings, replan),
     regroup: () => {
-      void dropPlan().then(() => context.reapply());
+      void dropPlan().then(() => reapply());
     },
     resetProgress: () => {
-      void resetReview().then(() => context.reapply());
+      void resetReview().then(() => reapply());
     },
     openFinish: (openIt) => {
       current.finishOpen = openIt;
@@ -363,7 +436,7 @@ function makeHandlers(context: ReviewTabContext, current: Visit): ReviewTabHandl
         const next = state.plan === null ? null : (nextPendingStep(state.plan, state.progress) ?? state.plan.steps[0] ?? null);
         if (next !== null) setCurrentStep(next.id);
       }
-      context.reapply();
+      reapply();
     },
     submitReview: (event) => {
       const state = plannerState(null);
@@ -372,11 +445,11 @@ function makeHandlers(context: ReviewTabContext, current: Visit): ReviewTabHandl
     },
     markAllViewed: () => {
       for (const entry of entriesOf(current, context.view).values()) for (const control of findViewedControls(entry.root).unviewed) activateControl(control);
-      context.reapply();
+      reapply();
     },
     toggleHelp: () => {
       current.helpOpen = !current.helpOpen;
-      context.reapply();
+      reapply();
     },
     goToFiles: () => switchView(false, context.reapply),
     wantFile: (path) => current.wanted.add(path),
@@ -449,12 +522,6 @@ function seekWanted(current: Visit, view: DiffView | null, reapply: () => void):
 /* ------------------------------------------------------------------------- */
 /* The finish: GitHub's own review form                                       */
 /* ------------------------------------------------------------------------- */
-
-/** The classic files page's "Review changes" container, to borrow into the finish; the React page renders its form in a portal instead. */
-function legacyReviewForm(area: HTMLElement | null): HTMLElement | null {
-  const container = (area ?? document).querySelector<HTMLElement>('.js-reviews-container');
-  return container;
-}
 
 function setFieldValue(field: HTMLTextAreaElement | HTMLInputElement, value: string): void {
   // React keeps its own notion of the value; the prototype setter plus an input event is how a user's typing reaches it.
@@ -606,13 +673,14 @@ export function teardownReviewTab(): void {
     return;
   }
   visit = null;
-  for (const node of teleportedNodes()) clearFoldedHunks(node);
+  for (const node of teleportedNodes()) undress(node);
   restoreAll();
   current.root?.remove();
   current.area?.removeAttribute(ATTR_REVIEW_AREA);
   current.area?.style.removeProperty(SEEK_VAR);
   for (const element of queryAll(`[${ATTR_REVIEW_AREA}]`)) element.removeAttribute(ATTR_REVIEW_AREA);
   if (current.seekTimer !== null) clearTimeout(current.seekTimer);
+  current.barObserver?.disconnect();
   current.unbindKeys?.();
   current.unbindFilesTab?.();
   document.documentElement.removeAttribute(ATTR_PAGE);
