@@ -57,6 +57,7 @@ export function ActionsRow({ field, settings, disabled, onReplace }: ActionsRowP
         return;
       case 'clear-cache':
       case 'copy-diagnostics':
+      case 'report-diagnostics':
         return;
     }
   };

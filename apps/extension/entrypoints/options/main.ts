@@ -43,6 +43,7 @@ import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
+import { diagnosticsReportUrl, REPORT_URL_BUDGET, trimReportForUrl } from '../../src/lib/diagnostics-report';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
@@ -1131,6 +1132,11 @@ async function main(): Promise<void> {
   const importInput = requireElement('import-file', HTMLInputElement);
   const maintenanceHost = requireElement('maintenance-buttons', HTMLDivElement);
   const actionsField = sections.find((section) => section.id === 'maintenance')?.fields.find((field): field is ActionsField => field.kind === 'actions');
+  /** The whole report: the session's fetch and injection log, then one block per GitHub tab with its timings and lifecycle. */
+  const diagnosticsReport = async (): Promise<string> => {
+    const [events, perf] = await Promise.all([readDiagnostics(), collectTabPerf(allHosts(settings))]);
+    return [formatDiagnostics(events, browser.runtime.getManifest().version), ...perf].join('\n\n');
+  };
   const runMaintenance: Record<MaintenanceActionId, () => Promise<void> | void> = {
     export: () => {
       // Same document the gist holds, so an export can be dropped straight into a gist and vice versa.
@@ -1151,14 +1157,52 @@ async function main(): Promise<void> {
       maintenanceStatus('Cached diffs and repository configs cleared; open pages recount on reload', 'success');
     },
     'copy-diagnostics': async () => {
-      const [events, perf] = await Promise.all([readDiagnostics(), collectTabPerf(allHosts(settings))]);
-      const text = [formatDiagnostics(events, browser.runtime.getManifest().version), ...perf].join('\n\n');
+      const text = await diagnosticsReport();
       try {
         await navigator.clipboard.writeText(text);
         maintenanceStatus('Diagnostics copied to the clipboard', 'success');
       } catch {
         maintenanceStatus('Could not write to the clipboard', 'error');
       }
+    },
+    'report-diagnostics': async () => {
+      // Order matters twice over. The clipboard is written while this page still has focus: Chromium refuses
+      // navigator.clipboard.writeText from an unfocused document (the extension asks for no clipboard
+      // permission), and a tab opened first would take the focus with it. And the tab is opened through
+      // tabs.create, which an extension page may call without user activation, so the time spent gathering
+      // every GitHub tab's answer cannot cost the click its activation the way window.open would be blocked.
+      // The report reaches the form through the link; a long one is trimmed to what a URL carries, and the
+      // whole report is on the clipboard for pasting over it. Nothing is posted until the issue is submitted.
+      let text: string;
+      try {
+        text = await diagnosticsReport();
+      } catch (error) {
+        maintenanceStatus(`Could not gather diagnostics: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        return;
+      }
+      let copied = true;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        copied = false;
+      }
+      // The copy's outcome decides what a trimmed report's note says: paste from the clipboard, or come back for it.
+      const { trimmed } = trimReportForUrl(text, REPORT_URL_BUDGET, copied);
+      const url = diagnosticsReportUrl(text, browser.runtime.getManifest().version, navigator.userAgent, navigator.platform, copied);
+      try {
+        await browser.tabs.create({ url: url.toString() });
+      } catch {
+        maintenanceStatus(copied ? 'Could not open a new tab; the report is on your clipboard' : 'Could not open a new tab or write the clipboard', 'error');
+        return;
+      }
+      maintenanceStatus(
+        trimmed
+          ? copied
+            ? 'Opened a new issue with the report (trimmed to fit; the full report is on your clipboard)'
+            : 'Opened a new issue with the report trimmed to fit the link; the clipboard could not be written, so use Copy diagnostics for the rest'
+          : 'Opened a new issue with the report filled in',
+        trimmed && !copied ? 'error' : 'success',
+      );
     },
     reset: async () => {
       await settingsItem.setValue(DEFAULT_SETTINGS);
