@@ -29,6 +29,10 @@ import type { InputPhase, ReviewTabHandlers, ReviewTabModel } from './view';
 import { ATTR_FILE_HEADER, counterFor, markStickyHeaders, renderReviewTab, ROOT_CLASS } from './view';
 
 export const ATTR_REVIEW_AREA = 'data-geld-review-area';
+/** On GitHub's per-file Viewed control (its label, for the classic checkbox) and the toolbar's files-viewed count, hidden in the view. */
+const ATTR_VIEWED = 'data-geld-viewed-ui';
+/** The step's line needs at least this much of the toolbar's middle to lie over it; else it is a row of its own. */
+const STRIP_MIN_WIDTH = 260;
 const ATTR_PAGE = 'data-geld-review-tab';
 const SEEK_VAR = '--geld-review-seek';
 const SEEK_MAX_ATTEMPTS = 60;
@@ -74,6 +78,8 @@ interface Visit {
   rebuildAsked: boolean;
   /** Say when the borrowed sticky bar is stuck and when the step's head has scrolled under it (`watchBar`). */
   observers: IntersectionObserver[];
+  /** Re-places the step's line over the toolbar when the toolbar changes size. */
+  resizeObserver: ResizeObserver | null;
   /** GitHub's sticky bar, found in the files layout once; on loan it is no longer there to find. */
   toolbar: HTMLElement | null;
   settings: GeldSettings;
@@ -156,7 +162,7 @@ export function applyReviewTab(context: ReviewTabContext): void {
   const key = reviewKey(page.stateKey);
   if (visit === null || visit.stateKey !== page.stateKey) {
     teardownReviewTab();
-    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, observers: [], toolbar: null, settings };
+    visit = { stateKey: page.stateKey, key, root: null, area: null, signature: '', shownRuns: new Set(), collapsedSections: new Set(), flagOpen: false, flagDraft: '', finishOpen: false, helpOpen: false, seek: null, seekTimer: null, wanted: new Set(), loaned: new Map(), unbindKeys: null, unbindFilesTab: null, scrollToStep: null, rebuildAsked: false, observers: [], resizeObserver: null, toolbar: null, settings };
     openPlanner(key, () => context.reapply());
     if (page.diffUrl !== null) dropOtherPages(page.diffUrl);
   }
@@ -269,8 +275,84 @@ function undress(node: HTMLElement): void {
   clearFoldedHunks(node);
   node.removeAttribute(ATTR_FILE_HEADER);
   for (const element of node.querySelectorAll(`[${ATTR_FILE_HEADER}]`)) element.removeAttribute(ATTR_FILE_HEADER);
-  // The step's line placed inside the toolbar's controls row.
-  for (const element of node.querySelectorAll(`.${ROOT_CLASS}__bar-inline`)) element.remove();
+  node.removeAttribute(ATTR_VIEWED);
+  for (const element of node.querySelectorAll(`[${ATTR_VIEWED}]`)) element.removeAttribute(ATTR_VIEWED);
+}
+
+/**
+ * GitHub's Viewed controls, hidden in the view: the per-file toggle (found
+ * by its accessible name, as `findViewedControls` does, with its label for
+ * the classic checkbox) and the toolbar's "N / M files viewed" with its
+ * progress bar (the smallest element saying so, and any progress element
+ * beside it). Marked, so the stylesheet hides them and `undress` undoes it;
+ * accepting a step still presses the hidden toggles.
+ */
+function markViewedUi(root: HTMLElement, entries: Iterable<DiffEntry>, toolbar: HTMLElement | null): void {
+  for (const entry of entries) {
+    if (!root.contains(entry.root)) continue;
+    const controls = findViewedControls(entry.root);
+    for (const control of [...controls.unviewed, ...controls.viewed]) (control.closest('label') ?? control).setAttribute(ATTR_VIEWED, '');
+  }
+  if (toolbar === null) return;
+  const saysViewed = (element: Element): boolean => /\bfiles? viewed\b/i.test(element.textContent ?? '');
+  for (const element of toolbar.querySelectorAll<HTMLElement>('*')) {
+    if (!saysViewed(element)) continue;
+    if ([...element.children].some(saysViewed)) continue;
+    // The count's row: its parent when that holds nothing but the count and a progress bar.
+    const parent = element.parentElement;
+    const target = parent !== null && parent !== toolbar && [...parent.children].every((child) => child === element || child.matches('progress, progress-bar, [role="progressbar"], [class*="rogress"]')) ? parent : element;
+    target.setAttribute(ATTR_VIEWED, '');
+  }
+  for (const element of toolbar.querySelectorAll<HTMLElement>('progress, progress-bar, [role="progressbar"]')) {
+    if (element.closest(`[${ATTR_VIEWED}]`) === null) element.setAttribute(ATTR_VIEWED, '');
+  }
+}
+
+/**
+ * Lay the step's line over the toolbar's empty middle: on the row of the
+ * toolbar's controls (the one holding "all commits"), between the rightmost
+ * control on the left and the leftmost tool on the right, as measured. The
+ * toolbar's markup differs between GitHub's two files experiences; its
+ * geometry does not. With less than `STRIP_MIN_WIDTH` free the strip is a
+ * row of its own under the bar (`data-strip-row`).
+ */
+function placeStrip(root: HTMLElement, toolbar: HTMLElement): void {
+  const strip = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__bar-step`);
+  const bar = root.querySelector<HTMLElement>(`.${ROOT_CLASS}__bar`);
+  if (strip === null || bar === null) return;
+  const barRect = bar.getBoundingClientRect();
+  const toolbarRect = toolbar.getBoundingClientRect();
+  const anchor = [...toolbar.querySelectorAll<HTMLElement>('button, summary, a, span')].find((element) => /\ball commits\b|^changes from\b/i.test(element.textContent ?? '') && element.getClientRects().length > 0);
+  const band = anchor?.getBoundingClientRect() ?? null;
+  if (band === null || band.height === 0) {
+    root.setAttribute('data-strip-row', '');
+    root.removeAttribute('data-strip-inline');
+    return;
+  }
+  const middle = toolbarRect.left + toolbarRect.width / 2;
+  let left = band.right;
+  let right = toolbarRect.right - 16;
+  for (const element of toolbar.querySelectorAll<HTMLElement>('*')) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0 || rect.bottom <= band.top || rect.top >= band.bottom) continue;
+    // Only leaves and small boxes: a wrapper spanning the row would swallow the gap.
+    if (rect.width > toolbarRect.width / 2) continue;
+    const centre = rect.left + rect.width / 2;
+    if (centre < middle) left = Math.max(left, rect.right);
+    else right = Math.min(right, rect.left);
+  }
+  const width = right - left - 32;
+  if (width < STRIP_MIN_WIDTH) {
+    root.setAttribute('data-strip-row', '');
+    root.removeAttribute('data-strip-inline');
+    strip.removeAttribute('style');
+    return;
+  }
+  root.removeAttribute('data-strip-row');
+  root.setAttribute('data-strip-inline', '');
+  strip.style.left = `${Math.round(left - barRect.left + 16)}px`;
+  strip.style.width = `${Math.round(width)}px`;
+  strip.style.top = `${Math.round(band.top - barRect.top + band.height / 2)}px`;
 }
 
 /** The sticky bar for this visit: the one on loan while it lives, else looked for in the files layout. */
@@ -361,6 +443,7 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
   // A collapsed file (GitHub folds large and generated ones) opens in the step; asked after insertion, since the control's state is a computed style.
   for (const entry of current.loaned.values()) if (next.contains(entry.root)) view?.expandEntry(entry);
   for (const loaned of next.querySelectorAll<HTMLElement>(`.${ROOT_CLASS}__file > [data-geld-teleported]`)) markStickyHeaders(loaned);
+  markViewedUi(next, current.loaned.values(), current.toolbar);
   watchBar(current, next);
   if (current.scrollToStep !== null && current.scrollToStep === model.current?.id) {
     current.scrollToStep = null;
@@ -400,12 +483,21 @@ function watchBar(current: Visit, root: HTMLElement): void {
       (entries) => {
         const entry = entries[entries.length - 1];
         if (entry === undefined) return;
-        root.toggleAttribute('data-step-stuck', !entry.isIntersecting && entry.boundingClientRect.bottom < height + 8);
+        const stuck = !entry.isIntersecting && entry.boundingClientRect.bottom < height + 8;
+        // Measured with the bar stuck (its controls shown), before the strip fades in.
+        if (stuck && !root.hasAttribute('data-step-stuck')) placeStrip(root, toolbar);
+        root.toggleAttribute('data-step-stuck', stuck);
       },
       { rootMargin: `-${height}px 0px 0px 0px`, threshold: 0 },
     );
     headObserver.observe(head);
     current.observers.push(headObserver);
+    const resize = new ResizeObserver(() => {
+      if (root.hasAttribute('data-step-stuck')) placeStrip(root, toolbar);
+    });
+    resize.observe(toolbar);
+    current.resizeObserver?.disconnect();
+    current.resizeObserver = resize;
   });
   const barObserver = new IntersectionObserver((entries) => {
     const entry = entries[entries.length - 1];
@@ -732,6 +824,7 @@ export function teardownReviewTab(): void {
   for (const element of queryAll(`[${ATTR_REVIEW_AREA}]`)) element.removeAttribute(ATTR_REVIEW_AREA);
   if (current.seekTimer !== null) clearTimeout(current.seekTimer);
   for (const observer of current.observers) observer.disconnect();
+  current.resizeObserver?.disconnect();
   current.unbindKeys?.();
   current.unbindFilesTab?.();
   document.documentElement.removeAttribute(ATTR_PAGE);

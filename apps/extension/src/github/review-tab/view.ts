@@ -144,33 +144,16 @@ export function renderReviewTab(model: ReviewTabModel, handlers: ReviewTabHandle
     const step = model.finish ? null : model.current;
     const index = step === null || model.plan === null ? -1 : model.plan.steps.findIndex((candidate) => candidate.id === step.id);
     if (step !== null && model.plan !== null && index >= 0) {
-      const host = stripHostOf(model.toolbar);
-      if (host !== null) {
-        host.append(createElement('span', { class: C('bar-inline'), [OWN_UI_ATTRIBUTE]: '', 'aria-hidden': 'true' }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('span', { class: C('bar-inline-title') }, inlineText(step.title))]));
-      } else {
-        // One grid child, so `grid-template-rows: 0fr` closes the whole strip (a second child would be an implicit row).
-        const inner = createElement('div', { class: C('bar-step-inner') }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('p', { class: C('bar-step-title') }, inlineText(step.title))]);
-        bar.append(createElement('div', { class: C('bar-step'), 'aria-hidden': 'true' }, [inner]));
-        root.setAttribute('data-strip-row', '');
-      }
+      // Laid over the toolbar's empty middle by `placeStrip` once the bar is stuck (measured, so it fits both the
+      // classic and the React toolbar); a row of its own under the bar when there is no room there.
+      const inner = createElement('div', { class: C('bar-step-inner') }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('p', { class: C('bar-step-title') }, inlineText(step.title))]);
+      bar.append(createElement('div', { class: C('bar-step'), 'aria-hidden': 'true' }, [inner]));
     }
     root.append(createElement('div', { class: C('bar-sentinel'), 'aria-hidden': 'true' }), bar);
   }
   root.append(renderStepper(model, handlers), renderMain(model, handlers));
   if (model.helpOpen) root.append(renderHelp(handlers));
   return root;
-}
-
-/**
- * The toolbar's controls row ("Changes from all commits", the file filter,
- * Conversations, the gear), found by the commit-range menu it holds: the
- * step's line sits after them while the bar is stuck. Null where the bar has
- * no such row (the React files view), and the strip is a row of its own.
- */
-function stripHostOf(toolbar: HTMLElement): HTMLElement | null {
-  const range = toolbar.querySelector<HTMLElement>('.diffbar-range-menu, [class*="range-menu"], details.diffbar-item');
-  const row = range?.parentElement ?? null;
-  return row !== null && row.children.length >= 2 ? row : null;
 }
 
 /* ---- stepper ---------------------------------------------------------------- */

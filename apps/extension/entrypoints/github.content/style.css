@@ -6090,6 +6090,63 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     border-color 180ms ease-out;
 }
 
+/*
+ * Laid over the toolbar's empty middle (`placeStrip` sets left, width and the
+ * controls row's centre line as top): one line, the title truncating, in
+ * from the left once the step's head is under the bar.
+ */
+.geld-review-tab[data-strip-inline] .geld-review-tab__bar-step {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  margin-top: -12px;
+  padding-left: 16px;
+  border-top: 0;
+  border-left: 1px solid var(--geld-rt-border);
+  transform: translateX(-6px);
+  visibility: hidden;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms ease-out,
+    visibility 0s 180ms;
+}
+
+.geld-review-tab[data-strip-inline][data-step-stuck] .geld-review-tab__bar-step {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms ease-out,
+    visibility 0s;
+}
+
+.geld-review-tab[data-strip-inline] .geld-review-tab__bar-step-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  padding: 0;
+}
+
+.geld-review-tab[data-strip-inline] .geld-review-tab__bar-step .geld-review-tab__eyebrow {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.geld-review-tab[data-strip-inline] .geld-review-tab__bar-step-title {
+  flex: 0 1 auto;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* GitHub's Viewed: the toolbar's files-viewed count and the per-file toggles, hidden in the view (marked by `markViewedUi`). */
+.geld-review-tab [data-geld-viewed-ui] {
+  display: none !important;
+}
+
 /* The grid item stretches (no auto margins, which would shrink it to its words); the page column is the padding. */
 .geld-review-tab__bar-step-inner {
   min-height: 0;
@@ -6127,67 +6184,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   white-space: nowrap;
 }
 
-/*
- * The step's line inside the toolbar's controls row, after the filters: one
- * line, the title truncating, in from the left once the step's head is under
- * the bar. GitHub's per-file Viewed count beside Review changes is hidden
- * here: the tab's unit is the step's hunks, not the file.
- */
-.geld-review-tab__bar-inline {
-  display: inline-flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  margin-left: 16px;
-  padding-left: 16px;
-  border-left: 1px solid var(--geld-rt-border);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateX(-6px);
-  visibility: hidden;
-  transition:
-    opacity 160ms ease-out,
-    transform 180ms ease-out,
-    visibility 0s 180ms;
-}
-
-.geld-review-tab[data-step-stuck] .geld-review-tab__bar-inline {
-  opacity: 1;
-  transform: none;
-  visibility: visible;
-  transition:
-    opacity 160ms ease-out,
-    transform 180ms ease-out,
-    visibility 0s;
-}
-
-.geld-review-tab__bar-inline .geld-review-tab__eyebrow {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  margin: 0;
-}
-
-.geld-review-tab__bar-inline-title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--fgColor-default, var(--color-fg-default));
-  font-weight: 600;
-  text-overflow: ellipsis;
-}
-
-.geld-review-tab__bar .pr-review-tools .diffbar-item:has(progress-bar, .progress-bar),
-.geld-review-tab__bar .pr-review-tools .js-reviewed-files-count,
-.geld-review-tab__file .js-reviewed-toggle {
-  display: none !important;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .geld-review-tab__bar-step,
-  .geld-review-tab__bar-inline {
+  .geld-review-tab__bar-step {
     transition: none;
   }
 }
