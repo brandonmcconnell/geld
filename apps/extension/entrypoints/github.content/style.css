@@ -2929,11 +2929,6 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   transform: rotate(180deg);
 }
 
-/* A pointer row's chevron points right and, hovered with its row, nudges that way: the row goes somewhere, it does not open. */
-.geld-review__row[data-pointer]:hover .geld-review__chevron--pointer .octicon {
-  transform: translateX(2px);
-}
-
 /* Controls stay put: a row must read the same collapsed, hovered and open. Muted until hovered. */
 .geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__icon,
 .geld-review__row:not(.geld-review__row--status) .geld-review__right > .geld-review__menu:not([open]) {
@@ -4476,7 +4471,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 .geld-review__chat-pin-row > .geld-review__rerun-wrap {
-  margin: 4px 12px 4px 0;
+  margin: 4px 0;
 }
 
 .geld-review__chat-pin {
@@ -4535,15 +4530,27 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   white-space: nowrap;
 }
 
-.geld-review__chat-pin > .octicon:last-child {
+/* The strip's expand/collapse toggle, at the row's right after the Rerun / See latest control. */
+.geld-review__chat-pin-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
+  margin: 0 12px 0 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+.geld-review__chat-pin-chevron .octicon {
   width: 12px;
   height: 12px;
-  margin-left: auto;
   transition: transform 120ms ease;
 }
 
-.geld-review__chat-context[data-open='true'] .geld-review__chat-pin > .octicon:last-child {
+.geld-review__chat-context[data-open='true'] .geld-review__chat-pin-chevron .octicon {
   transform: rotate(180deg);
 }
 
@@ -4593,8 +4600,9 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__edited {
   display: inline-flex;
   align-items: center;
+  align-self: center;
   flex: 0 0 auto;
-  margin-left: 4px;
+  margin-left: -5px;
   color: var(--geld-review-muted);
   cursor: help;
 }

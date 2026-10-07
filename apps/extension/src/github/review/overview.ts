@@ -2288,6 +2288,9 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     more,
     onReply,
     onOpen,
+    // A review's card leads to the review, not a comment: its own body may be empty (a bare verdict) and its threads
+    // live in the round, so "See full review" is the honest word.
+    ...(/^pullrequestreview-/.test(anchor) ? { openLabel: 'See full review' } : {}),
   };
 }
 

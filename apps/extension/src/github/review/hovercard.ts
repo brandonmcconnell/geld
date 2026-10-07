@@ -41,6 +41,8 @@ export interface HoverPreview {
   readonly onReply: (() => void) | null;
   /** Open the row: one more way in, always offered. */
   readonly onOpen: () => void;
+  /** The open button's words, when not the default ("See full comment" / "See full thread"): a review says "See full review". */
+  readonly openLabel?: string;
 }
 
 /** Who a bot is: what its (missing) GitHub hovercard would say. */
@@ -297,7 +299,7 @@ function showRow(row: HTMLElement): void {
   if (preview.body !== null) body.append(preview.body);
   const foot = createElement('div', { class: `${CARD_CLASS}__foot` });
   if (preview.more > 0) foot.append(createElement('span', { class: `${CARD_CLASS}__more` }, [`+ ${preview.more} more message${preview.more === 1 ? '' : 's'}`]));
-  const open = createElement('button', { type: 'button', class: `${CARD_CLASS}__open` }, [preview.more > 0 ? 'See full thread' : 'See full comment']);
+  const open = createElement('button', { type: 'button', class: `${CARD_CLASS}__open` }, [preview.openLabel ?? (preview.more > 0 ? 'See full thread' : 'See full comment')]);
   open.addEventListener('click', () => {
     hide();
     preview.onOpen();
@@ -350,10 +352,14 @@ function place(host: HTMLElement, node: HTMLElement, width: number): void {
     return;
   }
   const rect = host.getBoundingClientRect();
-  node.style.width = `${width}px`;
+  // `width` is a cap, not a fixed size: the card sizes to its content and only grows to `width` when the content
+  // needs it, so a short card (an icon and "See full review") is not padded out with empty space.
+  node.style.maxWidth = `${width}px`;
+  node.style.width = 'max-content';
+  const actual = Math.round(node.getBoundingClientRect().width);
   if (hangsCard(host) || pointer === null) {
     // Under an avatar, chip or pill the card hangs from the host.
-    node.style.left = `${Math.max(8, Math.min(rect.left - 8, window.innerWidth - width - 8))}px`;
+    node.style.left = `${Math.max(8, Math.min(rect.left - 8, window.innerWidth - actual - 8))}px`;
     const height = node.getBoundingClientRect().height;
     const below = rect.bottom + 6;
     node.style.top = below + height <= window.innerHeight - 8 ? `${below}px` : `${Math.max(8, rect.top - height - 6)}px`;
@@ -363,8 +369,8 @@ function place(host: HTMLElement, node: HTMLElement, width: number): void {
   // covered the next rows so the pointer could not travel down the list. Right of the pointer, or left of it
   // when the right edge is near; its top on the row's top, kept inside the viewport.
   const rightOf = pointer.x + CARD_OFFSET;
-  const fitsRight = rightOf + width <= window.innerWidth - 8;
-  node.style.left = `${fitsRight ? rightOf : Math.max(8, pointer.x - CARD_OFFSET - width)}px`;
+  const fitsRight = rightOf + actual <= window.innerWidth - 8;
+  node.style.left = `${fitsRight ? rightOf : Math.max(8, pointer.x - CARD_OFFSET - actual)}px`;
   const height = node.getBoundingClientRect().height;
   node.style.top = `${Math.max(8, Math.min(rect.top, window.innerHeight - height - 8))}px`;
 }
