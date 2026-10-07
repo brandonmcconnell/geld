@@ -138,19 +138,39 @@ export function renderReviewTab(model: ReviewTabModel, handlers: ReviewTabHandle
     // it tells when it is stuck (`watchBar`), which GitHub's own layout did for it at home.
     const bar = createElement('div', { class: C('bar') });
     teleportInto(bar, [model.toolbar]);
-    // The current step's line and title, shown in the bar once the step's own head has scrolled under it.
+    // The current step's line and title, shown once the step's own head has scrolled under the bar: in the bar's
+    // own controls row, after "Changes from all commits" and the filters (the classic toolbar), else as a second
+    // row under the bar. Inside GitHub's node, so it is marked as Geld's and taken out before the node goes home.
     const step = model.finish ? null : model.current;
     const index = step === null || model.plan === null ? -1 : model.plan.steps.findIndex((candidate) => candidate.id === step.id);
     if (step !== null && model.plan !== null && index >= 0) {
-      // One grid child, so `grid-template-rows: 0fr` closes the whole strip (a second child would be an implicit row).
-      const inner = createElement('div', { class: C('bar-step-inner') }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('p', { class: C('bar-step-title') }, inlineText(step.title))]);
-      bar.append(createElement('div', { class: C('bar-step'), 'aria-hidden': 'true' }, [inner]));
+      const host = stripHostOf(model.toolbar);
+      if (host !== null) {
+        host.append(createElement('span', { class: C('bar-inline'), [OWN_UI_ATTRIBUTE]: '', 'aria-hidden': 'true' }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('span', { class: C('bar-inline-title') }, inlineText(step.title))]));
+      } else {
+        // One grid child, so `grid-template-rows: 0fr` closes the whole strip (a second child would be an implicit row).
+        const inner = createElement('div', { class: C('bar-step-inner') }, [stepEyebrow(model, model.plan, step, index, stepDisplayState(step, model.progress)), createElement('p', { class: C('bar-step-title') }, inlineText(step.title))]);
+        bar.append(createElement('div', { class: C('bar-step'), 'aria-hidden': 'true' }, [inner]));
+        root.setAttribute('data-strip-row', '');
+      }
     }
     root.append(createElement('div', { class: C('bar-sentinel'), 'aria-hidden': 'true' }), bar);
   }
   root.append(renderStepper(model, handlers), renderMain(model, handlers));
   if (model.helpOpen) root.append(renderHelp(handlers));
   return root;
+}
+
+/**
+ * The toolbar's controls row ("Changes from all commits", the file filter,
+ * Conversations, the gear), found by the commit-range menu it holds: the
+ * step's line sits after them while the bar is stuck. Null where the bar has
+ * no such row (the React files view), and the strip is a row of its own.
+ */
+function stripHostOf(toolbar: HTMLElement): HTMLElement | null {
+  const range = toolbar.querySelector<HTMLElement>('.diffbar-range-menu, [class*="range-menu"], details.diffbar-item');
+  const row = range?.parentElement ?? null;
+  return row !== null && row.children.length >= 2 ? row : null;
 }
 
 /* ---- stepper ---------------------------------------------------------------- */

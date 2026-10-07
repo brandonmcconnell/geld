@@ -6100,7 +6100,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 /* 1px border + 5px + 18px line + 20px line + 5px: what the strip measures once open, so the offsets under it agree. */
-.geld-review-tab[data-step-stuck] {
+.geld-review-tab[data-step-stuck][data-strip-row] {
   --geld-rt-strip: 49px;
 }
 
@@ -6127,8 +6127,67 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   white-space: nowrap;
 }
 
+/*
+ * The step's line inside the toolbar's controls row, after the filters: one
+ * line, the title truncating, in from the left once the step's head is under
+ * the bar. GitHub's per-file Viewed count beside Review changes is hidden
+ * here: the tab's unit is the step's hunks, not the file.
+ */
+.geld-review-tab__bar-inline {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid var(--geld-rt-border);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-6px);
+  visibility: hidden;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms ease-out,
+    visibility 0s 180ms;
+}
+
+.geld-review-tab[data-step-stuck] .geld-review-tab__bar-inline {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms ease-out,
+    visibility 0s;
+}
+
+.geld-review-tab__bar-inline .geld-review-tab__eyebrow {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  margin: 0;
+}
+
+.geld-review-tab__bar-inline-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.geld-review-tab__bar .pr-review-tools .diffbar-item:has(progress-bar, .progress-bar),
+.geld-review-tab__bar .pr-review-tools .js-reviewed-files-count,
+.geld-review-tab__file .js-reviewed-toggle {
+  display: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .geld-review-tab__bar-step {
+  .geld-review-tab__bar-step,
+  .geld-review-tab__bar-inline {
     transition: none;
   }
 }
@@ -6510,12 +6569,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   line-height: 18px;
 }
 
-/* A middle dot between the parts that are words (not the pill, which has its own edge). */
-.geld-review-tab__eyebrow > :not(:first-child):not(.geld-review-tab__kind)::before {
-  content: '\00b7';
-  margin-right: 8px;
-  color: var(--geld-rt-muted);
-  font-weight: 400;
+/* The counts stand off the pill by half again the gap, as the step number stands off its left edge. */
+.geld-review-tab__eyebrow > .geld-review-tab__counts {
+  margin-left: 4px;
 }
 
 .geld-review-tab__kind {

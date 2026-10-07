@@ -269,6 +269,8 @@ function undress(node: HTMLElement): void {
   clearFoldedHunks(node);
   node.removeAttribute(ATTR_FILE_HEADER);
   for (const element of node.querySelectorAll(`[${ATTR_FILE_HEADER}]`)) element.removeAttribute(ATTR_FILE_HEADER);
+  // The step's line placed inside the toolbar's controls row.
+  for (const element of node.querySelectorAll(`.${ROOT_CLASS}__bar-inline`)) element.remove();
 }
 
 /** The sticky bar for this visit: the one on loan while it lives, else looked for in the files layout. */
