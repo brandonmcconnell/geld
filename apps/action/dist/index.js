@@ -19511,6 +19511,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   const statusOnly = /* @__PURE__ */ new Map();
   const threadRuns = /* @__PURE__ */ new Map();
+  const runsBeforeAsk = /* @__PURE__ */ new Map();
   const lastEditBy = /* @__PURE__ */ new Map();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
@@ -19523,6 +19524,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
         for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
           if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
+          const prior = threadRuns.get(asked.id);
+          if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -19540,9 +19543,12 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
-      threadRuns.delete(id);
       statusOnly.delete(id);
       const existing2 = byId.get(id);
+      const prior = runsBeforeAsk.get(id);
+      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+      const reviewed = threadRuns.has(id) || existing2?.sourceId !== void 0 && (existing2.verdict === "clean" || existing2.verdict === "findings");
+      if (reviewed) continue;
       byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal });
       continue;
     }

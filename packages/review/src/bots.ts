@@ -511,6 +511,8 @@ export function verdictsFrom(
   /** Bots whose latest comment so far is a status line (the run it announced has not reported), with that line. */
   const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
+  /** The thread run a request set aside, in case the request is refused and that run is still the bot's last real one. */
+  const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
   const lastEditBy = new Map<string, number>();
   for (const comment of comments) {
@@ -527,6 +529,8 @@ export function verdictsFrom(
         for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
           // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
           if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
+          const prior = threadRuns.get(asked.id);
+          if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
           threadRuns.delete(asked.id);
           statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
         }
@@ -545,10 +549,15 @@ export function verdictsFrom(
     if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
-      // The bot said it would not review: the run that was asked for failed, whatever an earlier run found.
-      threadRuns.delete(id);
+      // The bot said it would not review: the run that was asked for is answered (not running), and refused. A
+      // review the bot did make earlier still stands — the chip shows the last real run, and `reviewedSha` says
+      // whether it is behind the head — so the refusal is the verdict only for a bot that never reviewed here.
       statusOnly.delete(id);
       const existing = byId.get(id);
+      const prior = runsBeforeAsk.get(id);
+      if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
+      const reviewed = threadRuns.has(id) || (existing?.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings'));
+      if (reviewed) continue;
       byId.set(id, { id, login: comment.author, verdict: 'failed', reviewedSha: headSha, ...(existing?.checkName === undefined ? {} : { checkName: existing.checkName }), sourceId: comment.anchor, reason: refusal });
       continue;
     }

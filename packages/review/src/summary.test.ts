@@ -506,16 +506,32 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason('CodeRabbit is currently paused for this organization. Resume it in the dashboard.')).toBe('CodeRabbit is currently paused for this organization');
   });
 
-  it('is a failed verdict carrying the reason, sourced at the comment, after a trigger or an earlier run', () => {
+  it('is a failed verdict carrying the reason, sourced at the comment, after a trigger with no review before it', () => {
     const now = Date.UTC(2026, 9, 6, 6, 0);
     const comments = [
-      { author: 'cursor[bot]', body: 'Cursor Bugbot has reviewed your changes and found no issues.', anchor: 'issuecomment-1', createdAt: '2026-10-05T10:00:00Z' },
       { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-2', createdAt: '2026-10-06T05:49:27Z' },
       { author: 'cursor[bot]', body: skipping, anchor: 'issuecomment-3', createdAt: '2026-10-06T05:49:29Z' },
     ];
     const [bugbot] = verdictsFrom([], comments, 'aaa', [], now);
     expect(bugbot).toMatchObject({ id: 'bugbot', verdict: 'failed', sourceId: 'issuecomment-3', reason: 'Bugbot is disabled for this repository' });
     expect(bugbot?.count).toBeUndefined();
+  });
+
+  it('leaves the last real run standing when a later request is refused', () => {
+    const now = Date.UTC(2026, 9, 6, 6, 0);
+    const clean = [
+      { author: 'cursor[bot]', body: 'Cursor Bugbot has reviewed your changes and found no issues.', anchor: 'issuecomment-1', createdAt: '2026-10-05T10:00:00Z' },
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-2', createdAt: '2026-10-06T05:49:27Z' },
+      { author: 'cursor[bot]', body: skipping, anchor: 'issuecomment-3', createdAt: '2026-10-06T05:49:29Z' },
+    ];
+    // The request is answered (not running) and the earlier review is what the chip shows.
+    expect(verdictsFrom([], clean, 'aaa', [], now)[0]).toMatchObject({ id: 'bugbot', verdict: 'clean', sourceId: 'issuecomment-1' });
+    const threads = [
+      { author: 'cursor[bot]', body: 'Possible null dereference here.', anchor: 'discussion_r1', createdAt: '2026-02-04T10:00:00Z', resolved: false },
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-2', createdAt: '2026-10-06T05:49:27Z' },
+      { author: 'cursor[bot]', body: 'Skipping Bugbot: Bugbot could not find a matching SCM installation for this repository.', anchor: 'issuecomment-3', createdAt: '2026-10-06T05:49:29Z' },
+    ];
+    expect(verdictsFrom([], threads, 'aaa', [], now)[0]).toMatchObject({ id: 'bugbot', verdict: 'findings', count: 1 });
   });
 
   it('is loading, not failed, when an old request is the only word and the timeline is still being read', () => {
