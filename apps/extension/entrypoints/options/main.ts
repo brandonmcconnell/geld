@@ -1173,7 +1173,13 @@ async function main(): Promise<void> {
       // every GitHub tab's answer cannot cost the click its activation the way window.open would be blocked.
       // The report reaches the form through the link; a long one is trimmed to what a URL carries, and the
       // whole report is on the clipboard for pasting over it. Nothing is posted until the issue is submitted.
-      const text = await diagnosticsReport();
+      let text: string;
+      try {
+        text = await diagnosticsReport();
+      } catch (error) {
+        maintenanceStatus(`Could not gather diagnostics: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        return;
+      }
       let copied = true;
       try {
         await navigator.clipboard.writeText(text);
@@ -1183,7 +1189,12 @@ async function main(): Promise<void> {
       // The copy's outcome decides what a trimmed report's note says: paste from the clipboard, or come back for it.
       const { trimmed } = trimReportForUrl(text, REPORT_URL_BUDGET, copied);
       const url = diagnosticsReportUrl(text, browser.runtime.getManifest().version, navigator.userAgent, navigator.platform, copied);
-      await browser.tabs.create({ url: url.toString() });
+      try {
+        await browser.tabs.create({ url: url.toString() });
+      } catch {
+        maintenanceStatus(copied ? 'Could not open a new tab; the report is on your clipboard' : 'Could not open a new tab or write the clipboard', 'error');
+        return;
+      }
       maintenanceStatus(
         trimmed
           ? copied
