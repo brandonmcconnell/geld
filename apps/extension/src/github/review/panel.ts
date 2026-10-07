@@ -1178,7 +1178,7 @@ function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
   const record = model.meta.bots.find((entry) => entry.id === bot.id);
   if (record === undefined) return { health: null, word: 'Not run', preselect: false };
   const health = botHealth(record);
-  if (health === 'pending') return { health, word: 'Running', preselect: false };
+  if (health === 'pending') return { health, word: record.verdict === 'loading' ? 'Loading' : 'Running', preselect: false };
   if (!isCurrent(record, model.meta.headSha)) return { health, word: 'Earlier commit', preselect: true };
   // A refused run ("disabled for this repository") is Skipped, and not ticked: asking again changes nothing until
   // the bot's setup does.

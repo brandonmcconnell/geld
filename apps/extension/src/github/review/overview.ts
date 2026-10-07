@@ -430,7 +430,7 @@ function runsAskedFor(comments: readonly RawComment[], extraLogins: readonly str
   return asked;
 }
 
-function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string): GeldPrMeta {
+function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean): GeldPrMeta {
   const comments = crawled.comments.map((entry) => entry.comment);
   const items = clusterComments(comments, settings.reviewBots);
   const asked = runsAskedFor(comments, settings.reviewBots);
@@ -456,6 +456,8 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
     }),
     headSha,
     settings.reviewBots,
+    Date.now(),
+    { partial },
   );
   return {
     v: 1,
@@ -1496,6 +1498,7 @@ function botTitleFor(login: string): string {
 /** The bot's verdict as a sentence for its card. */
 function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'running') return 'Reviewing this pull request now';
+  if (record.verdict === 'loading') return 'Still reading this pull request\u2019s timeline for its review';
   if (record.verdict === 'failed') return record.reason === undefined ? 'Its review of this pull request failed' : `Did not review this pull request: ${record.reason}`;
   const scored = record.score === undefined ? '' : `Scored this pull request ${record.score}/5`;
   if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
@@ -2350,7 +2353,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Jev first, from its cache: what it has said about the top-level comments decides what is a trigger below.
   const topLevel: CommentToClassify[] = crawledDom.comments.filter((entry) => entry.comment.kind !== 'thread').map((entry) => ({ anchor: entry.comment.anchor, author: entry.author.login, bot: entry.author.bot, body: entry.comment.body }));
   jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, [], reapplySoon));
-  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt)));
+  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt, timelineIngesting(settings.compactTimeline !== 'off' && !visit.fullTimeline))));
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items

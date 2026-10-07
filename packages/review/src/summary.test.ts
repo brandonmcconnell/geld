@@ -518,6 +518,15 @@ describe('a bot that refuses to run', () => {
     expect(bugbot?.count).toBeUndefined();
   });
 
+  it('is loading, not failed, when an old request is the only word and the timeline is still being read', () => {
+    const now = Date.UTC(2026, 9, 6, 22, 0);
+    const comments = [{ author: 'brandonmcconnell', body: '@greptileai', anchor: 'issuecomment-9', createdAt: '2026-10-06T20:00:00Z', reactedBy: ['greptile-apps[bot]'] }];
+    expect(verdictsFrom([], comments, 'aaa', [], now, { partial: true })[0]).toMatchObject({ id: 'greptile', verdict: 'loading', sourceId: 'issuecomment-9' });
+    expect(verdictsFrom([], comments, 'aaa', [], now)[0]).toMatchObject({ id: 'greptile', verdict: 'failed' });
+    // A fresh request is running either way.
+    expect(verdictsFrom([], comments, 'aaa', [], Date.UTC(2026, 9, 6, 20, 1), { partial: true })[0]?.verdict).toBe('running');
+  });
+
   it('round-trips the reason through the payload', () => {
     const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const withReason = { ...meta, bots: [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'failed' as const, reviewedSha: meta.headSha, sourceId: 'issuecomment-3', reason: 'Bugbot is disabled for this repository' }] };

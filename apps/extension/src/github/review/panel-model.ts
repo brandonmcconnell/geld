@@ -149,7 +149,7 @@ export type VerdictTone = 'success' | 'attention' | 'danger' | 'neutral';
 export function verdictTone(bot: BotVerdictRecord): VerdictTone {
   if (bot.verdict === 'clean' || allResolved(bot)) return 'success';
   if (bot.verdict === 'failed') return 'danger';
-  if (bot.verdict === 'running') return 'neutral';
+  if (bot.verdict === 'running' || bot.verdict === 'loading') return 'neutral';
   return 'attention';
 }
 
@@ -168,6 +168,7 @@ export function allResolved(bot: BotVerdictRecord): boolean {
 export function verdictLabel(bot: BotVerdictRecord): string {
   const title = botTitle(bot.id, bot.login);
   if (bot.verdict === 'running') return `${title} running`;
+  if (bot.verdict === 'loading') return `${title}: still reading the timeline`;
   if (bot.verdict === 'failed') return bot.reason === undefined ? `${title} failed` : `${title} skipped: ${bot.reason}`;
   return `${title} ${botDetail(bot)}`;
 }
@@ -261,7 +262,7 @@ export function authorLabels(item: ReviewItem): readonly string[] {
 export type Health = 'good' | 'warn' | 'bad' | 'pending';
 
 export function botHealth(bot: BotVerdictRecord): Health {
-  if (bot.verdict === 'running') return 'pending';
+  if (bot.verdict === 'running' || bot.verdict === 'loading') return 'pending';
   if (bot.verdict === 'failed') return 'bad';
   if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
   if (bot.severity === 'high') return 'bad';
@@ -269,9 +270,10 @@ export function botHealth(bot: BotVerdictRecord): Health {
   return 'warn';
 }
 
-/** Short text beside the glyph: "4/5", "2 issues", "clean", "resolved", "running". */
+/** Short text beside the glyph: "4/5", "2 issues", "clean", "resolved", "running", "loading". */
 export function botDetail(bot: BotVerdictRecord): string {
   if (bot.verdict === 'running') return 'running';
+  if (bot.verdict === 'loading') return 'loading';
   // A run the bot refused ("disabled for this repository") is skipped, in its word; a run that broke is failed.
   if (bot.verdict === 'failed') return bot.reason === undefined ? 'failed' : 'skipped';
   // A scored run shows its score whatever became of its findings, and the open count beside it while threads are

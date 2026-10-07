@@ -51,7 +51,13 @@ export const STATUS_RANK: Readonly<Record<ReviewItemStatus, number>> = {
   resolved: 5,
 };
 
-export const BOT_VERDICTS = ['clean', 'findings', 'failed', 'running'] as const;
+/**
+ * `loading` is the extension's alone: the page's timeline is still being
+ * read and the bot's word may not have arrived (its only evidence so far is
+ * an old request for it). The Action reads the whole timeline and never
+ * produces it.
+ */
+export const BOT_VERDICTS = ['clean', 'findings', 'failed', 'running', 'loading'] as const;
 export type BotVerdict = (typeof BOT_VERDICTS)[number];
 
 export const REVIEWER_STATES = ['approved', 'changes_requested', 'commented', 'pending'] as const;

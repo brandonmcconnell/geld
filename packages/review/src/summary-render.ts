@@ -115,6 +115,7 @@ function botPhrase(bot: BotVerdictRecord, headSha: string): string {
   const title = botTitle(bot.id, bot.login);
   const tag = freshness(bot, headSha);
   if (bot.verdict === 'running') return `${title} running (${tag})`;
+  if (bot.verdict === 'loading') return `${title} loading (${tag})`;
   // A run the bot refused ("disabled for this repository") is skipped, in the bot's words; a run that broke is failed.
   if (bot.verdict === 'failed') return bot.reason === undefined ? `${title} failed (${tag})` : `${title} skipped (${tag}): ${bot.reason}`;
   if (bot.verdict === 'clean') return `${title} clean (${tag})`;

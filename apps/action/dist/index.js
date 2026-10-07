@@ -18911,7 +18911,7 @@ var STATUS_RANK = {
   "done-manual": 4,
   resolved: 5
 };
-var BOT_VERDICTS = ["clean", "findings", "failed", "running"];
+var BOT_VERDICTS = ["clean", "findings", "failed", "running", "loading"];
 var REVIEWER_STATES = ["approved", "changes_requested", "commented", "pending"];
 var SOURCE_KINDS = ["thread", "comment", "review"];
 var ADDRESSED_VERDICTS = ["yes", "partly", "no", "unclear"];
@@ -19489,7 +19489,7 @@ function isStatusLineComment(body) {
   return underWay.test(text) || stated.test(text) || promise2.test(text);
 }
 var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
-function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now()) {
+function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now(), options = {}) {
   const byId = /* @__PURE__ */ new Map();
   const checkVerdict = /* @__PURE__ */ new Map();
   for (const check2 of checks) {
@@ -19573,7 +19573,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (existing !== void 0 && at !== null && edited !== void 0 && edited > at) continue;
     const stale = at !== null && now - at > STATUS_LINE_STALE_MS;
     if (existing === void 0) {
-      byId.set(id, { id, login, verdict: stale ? "failed" : "running", reviewedSha: headSha, sourceId: anchor2 });
+      byId.set(id, { id, login, verdict: stale ? options.partial === true ? "loading" : "failed" : "running", reviewedSha: headSha, sourceId: anchor2 });
       continue;
     }
     if (existing.checkName === void 0) {
@@ -20190,6 +20190,7 @@ function botPhrase(bot, headSha) {
   const title = botTitle(bot.id, bot.login);
   const tag = freshness(bot, headSha);
   if (bot.verdict === "running") return `${title} running (${tag})`;
+  if (bot.verdict === "loading") return `${title} loading (${tag})`;
   if (bot.verdict === "failed") return bot.reason === void 0 ? `${title} failed (${tag})` : `${title} skipped (${tag}): ${bot.reason}`;
   if (bot.verdict === "clean") return `${title} clean (${tag})`;
   if (bot.score !== void 0) return `${title} ${bot.score}/5 (${tag})`;

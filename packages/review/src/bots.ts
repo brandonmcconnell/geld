@@ -237,7 +237,7 @@ export interface RawCheckRun {
 export interface DerivedBotVerdict {
   readonly id: string;
   readonly login: string;
-  readonly verdict: 'clean' | 'findings' | 'failed' | 'running';
+  readonly verdict: 'clean' | 'findings' | 'failed' | 'running' | 'loading';
   readonly count?: number;
   readonly score?: number;
   readonly severity?: FindingSeverity;
@@ -469,12 +469,22 @@ interface ThreadRun {
  * ("resolved"), or as its check ended when it has one. Threads posted before
  * the bot's next summary comment belong to the run that summary reports on.
  */
+export interface VerdictOptions {
+  /**
+   * The comments are not all of them yet (the page is still reading its
+   * timeline). An old request for a bot with nothing from the bot after it is
+   * then `loading`, not `failed`: the bot's answer may simply not be here yet.
+   */
+  readonly partial?: boolean;
+}
+
 export function verdictsFrom(
   checks: readonly RawCheckRun[],
   comments: readonly BotComment[],
   headSha: string,
   extraLogins: readonly string[] = [],
   now: number = Date.now(),
+  options: VerdictOptions = {},
 ): readonly DerivedBotVerdict[] {
   const byId = new Map<string, DerivedBotVerdict>();
   /** What each bot's check alone said, for a run its comments have not spoken about. */
@@ -580,7 +590,8 @@ export function verdictsFrom(
     // before that stands (from that earlier run); a bot that never said anything else did not review this.
     const stale = at !== null && now - at > STATUS_LINE_STALE_MS;
     if (existing === undefined) {
-      byId.set(id, { id, login, verdict: stale ? 'failed' : 'running', reviewedSha: headSha, sourceId: anchor });
+      // With the timeline still loading, an old request and silence is not yet a verdict on the bot.
+      byId.set(id, { id, login, verdict: stale ? (options.partial === true ? 'loading' : 'failed') : 'running', reviewedSha: headSha, sourceId: anchor });
       continue;
     }
     if (existing.checkName === undefined) {
