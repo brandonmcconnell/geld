@@ -5364,20 +5364,24 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   white-space: nowrap;
 }
 
-/* Every button on these rows — Details, Revert, View deployment, Compare — is one GitHub `btn btn-sm` at the
- * height of the row's 20px line, from one rule, so none is a pixel off another. GitHub's `.btn-sm` sets the
- * padding, type and line-height it is overriding here with a weight a plain rule does not beat. */
+/* Every button on these rows — Details, Revert, View deployment, Compare — is one GitHub `btn btn-sm` from one
+ * rule, so none is a pixel off another: 22px tall, overhanging the row's 20px line by a pixel above and below
+ * (the negative margins keep its margin box at 20, so the line, the row and what sits on the first line do not
+ * move). GitHub's `.btn-sm` sets the padding, type and line-height it is overriding here with a weight a plain
+ * rule does not beat. */
 .geld-review__event-control .btn,
 .geld-review__event-control.btn,
 .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .btn.float-right,
 .geld-review__push-compare {
   display: inline-flex !important;
   align-items: center;
-  height: 20px !important;
+  height: 22px !important;
   min-height: 0 !important;
+  margin-top: -1px !important;
+  margin-bottom: -1px !important;
   padding: 0 8px !important;
   font-size: 11px !important;
-  line-height: 18px !important;
+  line-height: 20px !important;
   white-space: nowrap;
 }
 
