@@ -3696,8 +3696,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   text-align: right;
 }
 
-/* GitHub's header keeps a holder for the ⋯ and the "Author" labels, padded 24px on the left; with the ⋯ moved to the
- * strip and the labels hidden it is an empty box that pushed the words 24px in from the picture. */
+/* GitHub's header keeps a holder for the ⋯ and the "Author" labels, padded 24px on the left; with the ⋯ moved beside the
+ * bubble and the labels hidden it is an empty box that pushed the words 24px in from the picture. */
 .geld-review__chat [data-geld-part='meta'] > .d-flex.flex-row-reverse:not(:has(details, button)) {
   display: none !important;
 }
@@ -3775,8 +3775,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   max-width: 100%;
   min-width: 0;
   margin: 0 !important;
-  /* The same above the text as below, so a one-line message sits centred in its bubble. The message actions
-   * straddle the top edge 12px deep; 9px of padding plus the line's half-leading keeps them off the glyphs. */
+  /* The same above the text as below, so a one-line message sits centred in its bubble; 9px plus the line's
+   * half-leading puts the first line's centre 20px down, where the controls beside the bubble are centred too. */
   padding: 9px 12px !important;
   border: 1px solid var(--geld-review-border-muted);
   border-radius: var(--geld-chat-radius);
@@ -3892,25 +3892,29 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 /*
- * The message strip. Every message's reactions row (GitHub's, with its
- * picker and the reaction pills in it) is lifted onto the bubble's top edge,
- * halfway across the line, at the bubble's outer corner 12px in from the
- * rounding. The pills are always there, farthest out; the picker and the ⋯
- * (chat.ts moves the comment's own menu into the row, a loan like any other)
- * stand inside them and show while the message is hovered or holds focus or
- * a menu is open. The pills never move when the controls appear, so nothing
- * shifts under the pointer. On the reader's own messages the strip is
- * mirrored to the top-left. The elements are GitHub's throughout, so every
- * reaction and every menu item runs GitHub's code.
+ * Reactions and controls. The reaction pills (GitHub's buttons) sit under
+ * the bubble, in flow, from the bubble's outer edge inward, wrapping when
+ * there are many; a run's next bubble follows below them, so nothing is ever
+ * covered. The picker and the ⋯ (chat.ts moves both into a slot of the
+ * message's, `geld-review__msg-side`, a loan like any other) stand beside the
+ * bubble on the empty side of its row, level with its first line, and show
+ * while the message is hovered or holds focus or a menu is open. When the
+ * empty side is too narrow for the two (a bubble as wide as the row leaves
+ * the gutter, 32px) they stack. On the reader's own messages everything is
+ * mirrored. The elements are GitHub's throughout, so every reaction and every
+ * menu item runs GitHub's code.
  *
- * A message is as wide as its bubble, so a hover strip (::before) fills the
- * empty side of its row, from the message's edge to the row's: hovering
- * anywhere level with the message shows its controls, and nothing lies over
- * the message itself.
+ * The side slot spans the empty side of the row (from the message's edge to
+ * the row's, the bubble's top to the message's bottom), so hovering anywhere
+ * level with the bubble shows its controls, and nothing lies over the
+ * message itself. For that, the message must be exactly as wide as its
+ * bubble: the author line and the pills' box contribute no width of their
+ * own (`width: 0; min-width: 100%`) and overflow the bubble's edges instead.
  */
 .geld-review__chat [data-geld-message] {
   --geld-chat-bubble-top: 24px;
   --geld-chat-action: 24px;
+  --geld-chat-pill: 20px;
 }
 
 .geld-review__chat [data-geld-message][data-geld-run='mid'],
@@ -3919,79 +3923,65 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   --geld-chat-bubble-top: 0px;
 }
 
-.geld-review__chat [data-geld-message]::before {
-  content: '';
-  /* GitHub's comment cards draw a speech caret with this pseudo, out of borders on a zero-size box; the chat hides
-   * it, and the strip takes the pseudo back as a plain box. Without clearing the borders the caret's 8px edges were
-   * stretched across the strip's width and read as a grey wedge over the comment. */
-  display: block !important;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 100%;
-  width: calc(100cqw - 100%);
-  height: auto !important;
-  border: 0 !important;
-  background: none !important;
-  pointer-events: auto;
+/* The author line takes the bubble's width and lets its words run past a narrower bubble, never wrapping them. */
+.geld-review__chat [data-geld-message]:not([data-geld-lone]) > [data-geld-part='meta'] {
+  width: 0;
+  min-width: 100%;
 }
 
-.geld-review__chat [data-geld-message][data-geld-mine]::before {
-  right: 100%;
-  left: auto;
+.geld-review__chat [data-geld-part='meta'] h3,
+.geld-review__chat [data-geld-part='meta'] .timeline-comment-header-text {
+  flex: 0 0 auto !important;
+  white-space: nowrap;
 }
 
-/* The row, wherever GitHub put it (a wrapper of its own, or nested inside the body's), on the top edge. */
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] {
-  position: absolute;
-  top: calc(var(--geld-chat-bubble-top) - var(--geld-chat-action) / 2);
-  right: 12px;
-  z-index: 2;
+/* The pills' box: a flex row as wide as the bubble, its content free to run past it. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions']:not(.comment-reactions, .js-reactions-container),
+.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-reactions {
+  position: static;
   display: flex !important;
-  align-items: center;
-  height: var(--geld-chat-action);
+  align-self: flex-start;
+  width: 0;
+  min-width: 100%;
   margin: 0 !important;
   padding: 0 !important;
   border: 0 !important;
   background: none !important;
 }
 
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] {
-  right: auto;
-  left: 12px;
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions']:not(.comment-reactions, .js-reactions-container),
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] .geld-review__msg-reactions {
+  justify-content: flex-end;
 }
 
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .comment-reactions,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .js-reactions-container,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'].comment-reactions,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'].js-reactions-container {
+/* GitHub's row itself has no box: its scripts watch the row's size and hide pills once it is two lines tall. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] :is(.comment-reactions, .js-reactions-container),
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions']:is(.comment-reactions, .js-reactions-container) {
+  display: contents !important;
+}
+
+/* A picker GitHub put back in the row (it redraws the row after a reaction) stays out of the pills. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] :is(reactions-menu, details.js-add-reaction) {
+  display: none !important;
+}
+
+/* The pills: as wide as they need up to the row's far edge, wrapping past that, 2px under the bubble. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] :is(.js-comment-reactions-options, form.js-pick-reaction),
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions']:is(.js-comment-reactions-options, form.js-pick-reaction) {
   display: flex !important;
-  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin: 0 !important;
+  gap: 2px;
+  width: max-content;
+  max-width: calc(100cqw - var(--geld-chat-gutter));
+  margin: 2px 0 0 !important;
   padding: 0 !important;
-  border: 0 !important;
-  background: none !important;
 }
 
-/* Mirrored for the reader's own messages: pills at the outer (left) edge, the controls inside them. */
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] .comment-reactions,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] .js-reactions-container,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'].comment-reactions,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'].js-reactions-container {
-  flex-direction: row-reverse;
-}
-
-/* The pills: GitHub's reaction buttons, sized to the strip's controls. */
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .js-comment-reactions-options,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] form.js-pick-reaction {
-  display: flex !important;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  margin: 0 !important;
-  padding: 0 !important;
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions'] :is(.js-comment-reactions-options, form.js-pick-reaction),
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-mine] [data-geld-part='reactions']:is(.js-comment-reactions-options, form.js-pick-reaction) {
+  justify-content: flex-end;
 }
 
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .js-comment-reactions-options:empty,
@@ -3999,16 +3989,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
+/* Each pill: GitHub's reaction button, compact. */
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item {
   display: inline-flex !important;
-  /* GitHub aligns the pill's emoji and count on the baseline, which in a 24px pill puts the emoji at the top. */
+  /* GitHub aligns the pill's emoji and count on the baseline, which in a short pill puts the emoji at the top. */
   align-items: center !important;
   gap: 3px;
-  height: var(--geld-chat-action) !important;
+  height: var(--geld-chat-pill) !important;
   margin: 0 !important;
-  padding: 0 8px !important;
+  padding: 0 7px !important;
   border: 1px solid var(--geld-review-border-muted) !important;
-  border-radius: calc(var(--geld-chat-action) / 2) !important;
+  border-radius: calc(var(--geld-chat-pill) / 2) !important;
   background: var(--geld-review-bg) !important;
   font-size: 12px !important;
   line-height: 1 !important;
@@ -4030,6 +4021,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: inline-flex !important;
   align-items: center;
   height: 16px;
+  font-size: 14px;
 }
 
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .social-reaction-summary-item.user-has-reacted {
@@ -4037,10 +4029,55 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   background: var(--geld-chat-mine-bg) !important;
 }
 
-/* The controls: the picker and the moved ⋯, hidden until the message is hovered or focused or a menu is open. */
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .geld-review__msg-actions {
+/*
+ * The side slot: the empty side of the row, from the bubble's top down. The
+ * picker stands first, 8px off the bubble, the ⋯ after it; 8px down puts a
+ * 24px control's centre on the first line's (1px border, 9px padding, a
+ * 21px line). Too narrow for both — the gutter's 32px holds one — and the
+ * flex row wraps, stacking the ⋯ under the picker.
+ */
+.geld-review__chat [data-geld-message] > .geld-review__msg-side {
+  position: absolute;
+  top: var(--geld-chat-bubble-top);
+  bottom: 0;
+  left: 100%;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 4px;
+  width: calc(100cqw - 100%);
+  padding: 8px 0 0 8px;
+  /* The menus below read their room from it; its own width comes from the row's (the `cqw` above), not from here. */
+  container-type: inline-size;
+}
+
+.geld-review__chat [data-geld-message][data-geld-mine] > .geld-review__msg-side {
+  right: 100%;
+  left: auto;
+  flex-direction: row-reverse;
+  padding: 8px 8px 0 0;
+}
+
+/* A lone message spans its row (no empty side, and no row container to measure one in): its controls straddle its
+ * top edge at the right, as a card's would, hover-only as everywhere. */
+.geld-review__chat [data-geld-message][data-geld-lone] > .geld-review__msg-side {
+  top: calc(var(--geld-chat-action) / -2);
+  right: 12px;
+  bottom: auto;
+  left: auto;
+  /* Two controls and their gap; a container's width cannot come from its content, and this one keeps the menus
+   * below opening over the content (west), the only side with room. */
+  width: calc(var(--geld-chat-action) * 2 + 4px);
+  padding: 0;
+}
+
+/* The controls, hidden until the message is hovered or focused or a menu is open. */
+.geld-review__msg-side > reactions-menu,
+.geld-review__msg-side > details.js-add-reaction,
+.geld-review__msg-side > .geld-review__msg-actions {
   display: inline-flex !important;
   flex: 0 0 auto;
   align-items: center;
@@ -4050,24 +4087,24 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   transition: opacity 150ms ease-out;
 }
 
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:hover [data-geld-part='reactions'] .geld-review__msg-actions,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:focus-within [data-geld-part='reactions'] reactions-menu,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:focus-within [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message]:focus-within [data-geld-part='reactions'] .geld-review__msg-actions,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu:has(details[open]),
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction[open],
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] .geld-review__msg-actions:has(details[open]) {
+.geld-review__chat [data-geld-message]:hover > .geld-review__msg-side > reactions-menu,
+.geld-review__chat [data-geld-message]:hover > .geld-review__msg-side > details.js-add-reaction,
+.geld-review__chat [data-geld-message]:hover > .geld-review__msg-side > .geld-review__msg-actions,
+.geld-review__chat [data-geld-message]:focus-within > .geld-review__msg-side > reactions-menu,
+.geld-review__chat [data-geld-message]:focus-within > .geld-review__msg-side > details.js-add-reaction,
+.geld-review__chat [data-geld-message]:focus-within > .geld-review__msg-side > .geld-review__msg-actions,
+.geld-review__msg-side > reactions-menu:has(details[open]),
+.geld-review__msg-side > details.js-add-reaction[open],
+.geld-review__msg-side > .geld-review__msg-actions:has(details[open]) {
   opacity: 1;
 }
 
 /* Round buttons on the chat's surface, like the panel's own icon buttons; only the control that opens each one,
  * never the summaries inside the menu it opens. */
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button {
+.geld-review__msg-side reactions-menu > details > summary,
+.geld-review__msg-side > details.js-add-reaction > summary,
+.geld-review__msg-actions > details > summary,
+.geld-review__msg-actions > button {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -4084,10 +4121,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 /* Primer's button wraps its glyph in two spans with a text line box of their own, which set the glyph a pixel or
  * two off centre in a round button; here the glyph is the only thing in the box and is centred as such. */
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary > *,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary > *,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary > *,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button > * {
+.geld-review__msg-side reactions-menu > details > summary > *,
+.geld-review__msg-side > details.js-add-reaction > summary > *,
+.geld-review__msg-actions > details > summary > *,
+.geld-review__msg-actions > button > * {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -4096,10 +4133,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   line-height: 0;
 }
 
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary .octicon,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary .octicon,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary .octicon,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button .octicon {
+.geld-review__msg-side reactions-menu > details > summary .octicon,
+.geld-review__msg-side > details.js-add-reaction > summary .octicon,
+.geld-review__msg-actions > details > summary .octicon,
+.geld-review__msg-actions > button .octicon {
   display: block;
   width: 14px;
   height: 14px;
@@ -4107,17 +4144,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   vertical-align: top;
 }
 
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] reactions-menu > details > summary:hover,
-.geld-review__chat:not([data-geld-chat='comment']) [data-geld-part='reactions'] > .comment-reactions > details.js-add-reaction > summary:hover,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > details > summary:hover,
-.geld-review__chat:not([data-geld-chat='comment']) .geld-review__msg-actions > button:hover {
-  /* An opaque shade, not the panel's translucent hover wash: over the bubble's edge a wash reads as a fade. */
+.geld-review__msg-side reactions-menu > details > summary:hover,
+.geld-review__msg-side > details.js-add-reaction > summary:hover,
+.geld-review__msg-actions > details > summary:hover,
+.geld-review__msg-actions > button:hover {
+  /* An opaque shade, not the panel's translucent hover wash: beside the bubble a wash reads as a fade. */
   border-color: var(--geld-review-border) !important;
   background: var(--geld-review-subtle) !important;
   color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
 }
 
-/* The moved ⋯ is a details whose menu drops down from it; positioned so the menu anchors to the button. */
+/* The ⋯ is a details whose menu drops down from it; positioned so the menu anchors to the button. */
 .geld-review__msg-actions > details {
   position: relative;
 }
@@ -4134,23 +4171,104 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   pointer-events: none;
 }
 
-/* The ⋯ menu of a message on the right opens toward the bubble (GitHub's default opens south-west, off the panel). */
-.geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw {
-  right: auto;
-  left: 0;
+/*
+ * Where the menus open. GitHub anchors each to its button with a direction
+ * class (`dropdown-menu-se`: down and east) and flips the palette north
+ * itself when the viewport is short; only east or west is Geld's. A menu
+ * opens into the empty side when that side has room for it — the palette
+ * is 294px wide, the ⋯ menu 185px, each 8px or 36px in from the bubble —
+ * and over the bubble otherwise, where the room then is. The side slot is
+ * the container these widths are read from.
+ */
+@container (width < 304px) {
+  .geld-review__chat [data-geld-message]:not([data-geld-mine]) .geld-review__msg-side :is(.dropdown-menu-se, .dropdown-menu-ne) {
+    right: 0;
+    left: auto;
+  }
+
+  .geld-review__chat [data-geld-message]:not([data-geld-mine]) .geld-review__msg-side :is(.dropdown-menu-se, .dropdown-menu-ne)::before {
+    right: 9px;
+    left: auto;
+  }
+
+  .geld-review__chat [data-geld-message]:not([data-geld-mine]) .geld-review__msg-side :is(.dropdown-menu-se, .dropdown-menu-ne)::after {
+    right: 10px;
+    left: auto;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw) {
+    right: auto;
+    left: 0;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::before {
+    right: auto;
+    left: 9px;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::after {
+    right: auto;
+    left: 10px;
+  }
 }
 
-.geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw::before,
-.geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions .dropdown-menu-sw::after {
-  right: auto;
-  left: 9px;
+@container (width >= 304px) {
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-side :is(.dropdown-menu-se, .dropdown-menu-ne) {
+    right: 0;
+    left: auto;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-side :is(.dropdown-menu-se, .dropdown-menu-ne)::before {
+    right: 9px;
+    left: auto;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-side :is(.dropdown-menu-se, .dropdown-menu-ne)::after {
+    right: 10px;
+    left: auto;
+  }
+}
+
+/* The ⋯ sits 36px in, so its menu asks for a little more room than the palette's 8px would. */
+@container (width >= 224px) {
+  .geld-review__chat [data-geld-message]:not([data-geld-mine]) .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw) {
+    right: auto;
+    left: 0;
+  }
+
+  .geld-review__chat [data-geld-message]:not([data-geld-mine]) .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::before {
+    right: auto;
+    left: 9px;
+  }
+
+  .geld-review__chat [data-geld-message]:not([data-geld-mine]) .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::after {
+    right: auto;
+    left: 10px;
+  }
+}
+
+@container (width < 224px) {
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw) {
+    right: auto;
+    left: 0;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::before {
+    right: auto;
+    left: 9px;
+  }
+
+  .geld-review__chat [data-geld-message][data-geld-mine] .geld-review__msg-actions :is(.dropdown-menu-sw, .dropdown-menu-nw)::after {
+    right: auto;
+    left: 10px;
+  }
 }
 
 /*
  * A message alone under its line (the pinned source under its strip, a
  * one-comment chat under its row) folds its author line to nothing, since the
  * line above already names the author; a ⋯ left inside it (the row above did
- * not wear it) is moved into the strip by chat.ts like any other.
+ * not wear it) is moved beside the bubble by chat.ts like any other.
  */
 .geld-review__chat [data-geld-lone] > [data-geld-part='meta'] {
   display: block !important;
