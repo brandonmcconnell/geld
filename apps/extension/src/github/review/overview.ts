@@ -1830,14 +1830,22 @@ function newerSummaryOf(id: string, anchor: string): string | null {
 /** A byline with what GitHub's header says beyond the name: the "Author" label and the App the comment came through. */
 function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   const author = prAuthorLogin();
+  const node = anchor === null ? null : timelineRootOf(anchor);
   // An App's own comment carries the App as its "via" too (GitHub pairs the avatar with itself and hides the pair);
   // only a person's comment posted through an App wears the mark.
-  const via = anchor === null || byline.bot ? null : viaBotOf(timelineRootOf(anchor));
+  const via = node === null || byline.bot ? null : viaBotOf(node);
+  // Edited after it was posted: the clock beside the time (chat.ts `editedMark`). Read from the comment element
+  // itself (its id is the anchor, which `logUrlOf` matches against the edit-history menu's owner) — not the
+  // timeline row above. `editedAt` asks the log only for a comment the page marks as edited and bumps
+  // `editsVersion` (in the signature) when the time lands.
+  const commentEl = anchor === null ? null : document.getElementById(anchor);
+  const edited = commentEl === null ? null : editedAt(commentEl, reapplySoon);
   return {
     ...byline,
     ...(anchor === null ? {} : { timeAnchor: anchor }),
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
     ...(via === null ? {} : { via }),
+    ...(edited === null ? {} : { edited }),
   };
 }
 

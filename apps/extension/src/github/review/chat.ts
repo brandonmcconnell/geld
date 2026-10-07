@@ -25,7 +25,7 @@ import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
 import type { RevisionView } from './edit-times';
-import { relativeTimeElement } from './time';
+import { absoluteTimeText, relativeFineText, relativeTimeElement } from './time';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
@@ -165,6 +165,8 @@ export interface ChatByline {
   readonly rerun?: ChatRerun;
   /** A bot's summary from an earlier run, a newer one on the page: "See latest" on the byline's right instead. */
   readonly latest?: ChatLatest;
+  /** The comment was edited after it was posted: a clock beside the time, its exact and relative moment in the title (ISO). */
+  readonly edited?: string;
 }
 
 /** An older word of a review bot's: the control that leads to its current one. */
@@ -258,6 +260,20 @@ function latestControl(latest: ChatLatest): HTMLElement {
 }
 
 /**
+ * A comment edited after it was posted: a clock beside the created time, so
+ * the byline still says when it first appeared (a bot's summary "an hour
+ * ago") while making plain it has since changed. Its title is the edit's
+ * relative and exact moment ("edited 7 minutes ago · Oct 7, 2026, 11:14 AM");
+ * the mark is a graphic with that title, read aloud as "edited <when>".
+ */
+function editedMark(at: string): HTMLElement {
+  const relative = relativeFineText(at);
+  const absolute = absoluteTimeText(at);
+  const title = `edited ${relative}${absolute === '' ? '' : ` · ${absolute}`}`;
+  return createElement('span', { class: 'geld-review__edited', role: 'img', title, 'aria-label': title }, [icon(ICON_HISTORY)]);
+}
+
+/**
  * GitHub's own small dialog (Primer's `Overlay`, as the page's "Verified"
  * and saved-replies dialogs are built), asking whether to trigger a bot that
  * is already running. `onConfirm` runs on Rerun; Cancel, Escape and a click
@@ -341,6 +357,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     line.append(name);
     if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
     if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
+    if (byline.edited !== undefined) line.append(editedMark(byline.edited));
     if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
     else if (byline.latest !== undefined) line.append(latestControl(byline.latest));
     chat.append(line);

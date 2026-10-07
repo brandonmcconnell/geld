@@ -23,6 +23,25 @@ export function relativeTimeText(datetime: string): string {
 }
 
 /**
+ * Finer relative wording than `relativeTimeText`, down to minutes and hours,
+ * for a one-off label that no `relative-time` element will upgrade (an edit's
+ * moment in a title: "7 minutes ago"). `relativeTimeText` stops at "today"
+ * because its callers are placeholders a live element soon replaces; this
+ * one is the final text, so it says the minutes.
+ */
+export function relativeFineText(datetime: string): string {
+  const then = Date.parse(datetime);
+  if (Number.isNaN(then)) return '';
+  const seconds = Math.floor((Date.now() - then) / 1000);
+  if (seconds < 45) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes <= 1 ? 'a minute ago' : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? 'an hour ago' : `${hours} hours ago`;
+  return relativeTimeText(datetime);
+}
+
+/**
  * The exact moment behind a relative time, for a `title`: "Oct 7, 2026,
  * 4:21 AM" in the reader's locale. GitHub's own `relative-time` shows this
  * on hover; the panel's text times (and its own elements) carry it too.
