@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -139,6 +139,24 @@ describe('status rows', () => {
     // reviewer who requested changes and was asked again — GitHub still holds that against the merge.
     expect(requiredReviewsFrom('Changes approved\n1 approving review by reviewers with write access.\n1 approval\n1 pending review', [{ login: 'brandonmcconnell', state: 'approved' }])).toEqual({ required: null, approvals: 1, changesRequested: false });
     expect(requiredReviewsFrom('Review required\n1 pending review', [{ login: 'kyle', state: 'changes_requested' }])).toEqual({ required: 1, approvals: 0, changesRequested: true });
+  });
+
+  it('counts the verdicts that stand: a re-request keeps one, a dismissal takes it away for good', () => {
+    const approved = { login: 'brandonmcconnell', state: 'approved' as const };
+    // mintlify/mint#12495: approved, then asked again. The sidebar states no verdict (it awaits him); the
+    // timeline's approval stands and counts.
+    expect(standingReviewers({ sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [approved], onTimeline: ['brandonmcconnell'], payload: [] })).toEqual([approved]);
+    // The sidebar's stated verdict is final; the timeline's and the payload's add only reviewers it does not state.
+    expect(standingReviewers({ sidebar: [{ login: 'Ana', verdict: 'approved', awaiting: false }], timeline: [{ login: 'ana', state: 'commented' }, { login: 'max', state: 'changes_requested' }], onTimeline: ['ana', 'max'], payload: [{ login: 'zoe', state: 'approved' }, { login: 'max', state: 'approved' }] })).toEqual([
+      { login: 'Ana', state: 'approved' },
+      { login: 'max', state: 'changes_requested' },
+      { login: 'zoe', state: 'approved' },
+    ]);
+    // A push dismissed the approval and he was asked again: the timeline has his reviews but no verdict (the
+    // dismissal took it), the sidebar awaits him, and a stale payload still says approved. Nothing stands.
+    expect(standingReviewers({ sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [], onTimeline: ['brandonmcconnell'], payload: [approved] })).toEqual([]);
+    // The payload speaks only for reviewers the page has not read at all.
+    expect(standingReviewers({ sidebar: [], timeline: [], onTimeline: [], payload: [approved] })).toEqual([approved]);
   });
 
   it('grades bots', () => {

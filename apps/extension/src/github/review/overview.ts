@@ -7,7 +7,7 @@
 
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
@@ -36,7 +36,7 @@ import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './pa
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
-import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom } from './panel-model';
+import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -2581,13 +2581,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // timeline's and the payload's for anyone whose verdict the sidebar does not state. A reviewer the sidebar only
   // awaits (asked again) keeps the verdict they gave: GitHub still counts it (the merge box reads "Changes approved
   // · 1 approval, 1 pending review"), so the count and the tint do too, as the heading's groups do (`reviewerGroups`).
-  const reviewers: ReviewerRecord[] = sidebar.flatMap((reviewer) => {
-    const state = sidebarVerdict(reviewer);
-    return state === null ? [] : [{ login: reviewer.login, state }];
+  const reviewers = standingReviewers({
+    sidebar: sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => ({ login: reviewer.login, verdict: sidebarVerdict(reviewer), awaiting: reviewer.state === 'awaiting' })),
+    timeline: latestReviewers(reviews),
+    onTimeline: reviews.filter((review) => !review.author.bot).map((review) => review.author.login),
+    payload: meta.reviewers,
   });
-  const settled = new Set(sidebar.filter((reviewer) => !reviewer.bot && reviewer.state !== 'awaiting').map((reviewer) => reviewer.login.toLowerCase()));
-  for (const record of latestReviewers(reviews)) if (!settled.has(record.login.toLowerCase())) reviewers.push(record);
-  for (const record of meta.reviewers) if (!settled.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
