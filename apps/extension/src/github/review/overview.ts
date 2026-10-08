@@ -2767,7 +2767,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onRequestReviewers: async (userIds, teamIds) => {
       // The pending set is read afresh for the post: whatever the menu showed, GitHub's own controls or another tab
       // may have changed who is requested since, and the form is the whole set.
-      const pending = (await fetchReviewerCandidates().catch(() => null)) ?? [];
+      // Without that read nothing is posted: a form with only the new names would withdraw everyone else's request.
+      const pending = await fetchReviewerCandidates().catch(() => null);
+      if (pending === null) return false;
       const posted = await requestReviewers(userIds, teamIds, pending).catch(() => false);
       candidatesCache = null;
       if (posted) window.setTimeout(reapplySoon, 800);
@@ -2788,7 +2790,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
             window.setTimeout(reapplySoon, 800);
             return;
           }
-          const found = (await fetchReviewerCandidates().catch(() => null)) ?? [];
+          const found = await fetchReviewerCandidates().catch(() => null);
+          if (found === null) {
+            console.warn('[geld] GitHub did not list the reviewers; nothing was re-requested');
+            return;
+          }
           const person = found.find((candidate) => !candidate.team && candidate.login.toLowerCase() === login.toLowerCase());
           if (person === undefined) {
             console.warn('[geld] GitHub does not list that reviewer among those that can be asked here');
