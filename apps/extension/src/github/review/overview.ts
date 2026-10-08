@@ -655,17 +655,25 @@ function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: Geld
   return { meta: layer(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
 }
 
-/** GitHub's list of who can be asked to review, fetched once per need and dropped after a request (the pending set changed). */
-let candidatesCache: Promise<readonly ReviewerCandidate[] | null> | null = null;
+/**
+ * GitHub's list of who can be asked to review, for the people menu: fetched
+ * once per pull request (the key is the page's, so another PR's list is
+ * never reused) and dropped after a request, since the pending set changed.
+ * The post itself never trusts it — `requestReviewers` is given a fresh list
+ * for the pending flags, as GitHub's own menu reads them on open.
+ */
+let candidatesCache: { readonly key: string; readonly promise: Promise<readonly ReviewerCandidate[] | null> } | null = null;
 function reviewerCandidates(): Promise<readonly ReviewerCandidate[] | null> {
-  if (candidatesCache === null) {
-    candidatesCache = fetchReviewerCandidates().catch(() => null);
+  const key = visit.pageKey;
+  if (candidatesCache === null || candidatesCache.key !== key) {
+    const promise = fetchReviewerCandidates().catch(() => null);
+    candidatesCache = { key, promise };
     // A failed or empty answer is not kept: the next open asks again.
-    void candidatesCache.then((found) => {
-      if (found === null) candidatesCache = null;
+    void promise.then((found) => {
+      if (found === null && candidatesCache?.promise === promise) candidatesCache = null;
     });
   }
-  return candidatesCache;
+  return candidatesCache.promise;
 }
 
 /** The run store's key for a pull request: the page key, prefixed with the host off github.com. */
@@ -2756,34 +2764,42 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
     onRequestMenuClosed: () => reapplySoon(),
     loadReviewerCandidates: () => reviewerCandidates(),
-    onRequestReviewers: (userIds, teamIds) => {
-      void reviewerCandidates().then((found) => requestReviewers(userIds, teamIds, found ?? []).then((posted) => {
-        candidatesCache = null;
-        if (posted) window.setTimeout(reapplySoon, 800);
-      }));
+    onRequestReviewers: async (userIds, teamIds) => {
+      // The pending set is read afresh for the post: whatever the menu showed, GitHub's own controls or another tab
+      // may have changed who is requested since, and the form is the whole set.
+      const pending = (await fetchReviewerCandidates().catch(() => null)) ?? [];
+      const posted = await requestReviewers(userIds, teamIds, pending).catch(() => false);
+      candidatesCache = null;
+      if (posted) window.setTimeout(reapplySoon, 800);
+      return posted;
     },
     onDismissReview: (login) => {
-      void pressReviewAction(login, 'Dismiss review').then((pressed) => {
-        if (!pressed) console.warn('[geld] GitHub offers no way to dismiss', login, "'s review here");
-      });
+      void pressReviewAction(login, 'Dismiss review')
+        .then((pressed) => {
+          if (!pressed) console.warn('[geld] GitHub offers no way to dismiss that review here');
+        })
+        .catch(() => console.warn('[geld] Dismiss review did not open'));
     },
     onReRequestReview: (login) => {
       // GitHub's own action when its merge box lists the verdict; else the request form with their id, the same post.
-      void pressReviewAction(login, 'Re-request review').then(async (pressed) => {
-        if (pressed) {
-          window.setTimeout(reapplySoon, 800);
-          return;
-        }
-        const found = (await reviewerCandidates()) ?? [];
-        const person = found.find((candidate) => candidate.login.toLowerCase() === login.toLowerCase());
-        if (person === undefined) {
-          console.warn('[geld] GitHub does not list', login, 'among the reviewers that can be asked here');
-          return;
-        }
-        const posted = await requestReviewers(person.team ? [] : [person.id], person.team ? [person.id] : [], found);
-        candidatesCache = null;
-        if (posted) window.setTimeout(reapplySoon, 800);
-      });
+      void pressReviewAction(login, 'Re-request review')
+        .then(async (pressed) => {
+          if (pressed) {
+            window.setTimeout(reapplySoon, 800);
+            return;
+          }
+          const found = (await fetchReviewerCandidates().catch(() => null)) ?? [];
+          const person = found.find((candidate) => !candidate.team && candidate.login.toLowerCase() === login.toLowerCase());
+          if (person === undefined) {
+            console.warn('[geld] GitHub does not list that reviewer among those that can be asked here');
+            return;
+          }
+          const posted = await requestReviewers([person.id], [], found);
+          candidatesCache = null;
+          if (posted) window.setTimeout(reapplySoon, 800);
+          else console.warn('[geld] GitHub did not take the re-request');
+        })
+        .catch(() => console.warn('[geld] Re-request review failed'));
     },
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
