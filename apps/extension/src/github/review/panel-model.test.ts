@@ -134,6 +134,11 @@ describe('status rows', () => {
     expect(requiredReviewsFrom('Changes approved\n2 approving reviews by reviewers with write access.', [])).toEqual({ required: null, approvals: 2, changesRequested: false });
     // Approvals seen in the timeline count even when the box says nothing yet.
     expect(requiredReviewsFrom('Review required\nAt least 1 approving review is required by reviewers with write access.', [{ login: 'a', state: 'approved' }, { login: 'b', state: 'approved' }])).toEqual({ required: 1, approvals: 2, changesRequested: false });
+    // A reviewer asked again keeps the verdict they gave (mintlify/mint#12495: the sidebar awaits brandonmcconnell,
+    // the box still reads "1 approval"); the count agrees with the heading's groups, and so does the warning for a
+    // reviewer who requested changes and was asked again — GitHub still holds that against the merge.
+    expect(requiredReviewsFrom('Changes approved\n1 approving review by reviewers with write access.\n1 approval\n1 pending review', [{ login: 'brandonmcconnell', state: 'approved' }])).toEqual({ required: null, approvals: 1, changesRequested: false });
+    expect(requiredReviewsFrom('Review required\n1 pending review', [{ login: 'kyle', state: 'changes_requested' }])).toEqual({ required: 1, approvals: 0, changesRequested: true });
   });
 
   it('grades bots', () => {

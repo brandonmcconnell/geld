@@ -2577,18 +2577,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // states it nowhere, so the row there says "N approved" rather than a fraction.
   const stated = /at least\s+(\d+)\s+approving review/i.exec(`${boxText}\n${reviewersSidebarText()}`)?.[1];
   if (stated !== undefined) visit.knownRequired = Number.parseInt(stated, 10);
-  // A re-requested reviewer is awaited again: GitHub sets their earlier verdict aside (the merge box stops saying
-  // "changes requested"), and so does the row, for the tint and the count alike.
-  const awaited = new Set(awaiting.map((entry) => entry.author.toLowerCase()));
   // The sidebar's verdicts first — GitHub's own latest-per-reviewer, complete from the start — then the
-  // timeline's and the payload's for anyone the sidebar does not list.
+  // timeline's and the payload's for anyone whose verdict the sidebar does not state. A reviewer the sidebar only
+  // awaits (asked again) keeps the verdict they gave: GitHub still counts it (the merge box reads "Changes approved
+  // · 1 approval, 1 pending review"), so the count and the tint do too, as the heading's groups do (`reviewerGroups`).
   const reviewers: ReviewerRecord[] = sidebar.flatMap((reviewer) => {
     const state = sidebarVerdict(reviewer);
     return state === null ? [] : [{ login: reviewer.login, state }];
   });
-  const settled = new Set(sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => reviewer.login.toLowerCase()));
-  for (const record of latestReviewers(reviews)) if (!awaited.has(record.login.toLowerCase()) && !settled.has(record.login.toLowerCase())) reviewers.push(record);
-  for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !settled.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
+  const settled = new Set(sidebar.filter((reviewer) => !reviewer.bot && reviewer.state !== 'awaiting').map((reviewer) => reviewer.login.toLowerCase()));
+  for (const record of latestReviewers(reviews)) if (!settled.has(record.login.toLowerCase())) reviewers.push(record);
+  for (const record of meta.reviewers) if (!settled.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 

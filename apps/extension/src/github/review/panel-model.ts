@@ -457,8 +457,8 @@ export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRe
   return {
     required,
     approvals,
-    // The box's own "changes requested" sentence is the merge blocker's wording; it stays while a request stands
-    // and goes once the reviewer is re-requested, so it can be read as it is.
+    // The box's own "changes requested" sentence is the merge blocker's wording and is read as it is; a reviewer's
+    // standing verdict counts beside it, asked again or not (the callers keep such verdicts in `reviewers`).
     changesRequested: reviewers.some((reviewer) => reviewer.state === 'changes_requested') || /\bchanges requested\b/i.test(text),
   };
 }
