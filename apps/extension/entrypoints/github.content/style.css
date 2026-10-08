@@ -4647,15 +4647,27 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-weight: 600;
 }
 
-/* "edited": a quiet clock beside the time, the exact and relative moment in its title. */
+/* Edited: a quiet clock beside the time (which is the edit's); its tooltip says when the comment was first posted.
+ * The wrapper is the box GitHub's `tool-tip` positions against. */
+.geld-review__edited-wrap {
+  position: relative;
+  display: inline-flex;
+  align-self: center;
+  flex: 0 0 auto;
+  margin-left: -5px;
+}
+
 .geld-review__edited {
   display: inline-flex;
   align-items: center;
   align-self: center;
   flex: 0 0 auto;
-  margin-left: -5px;
   color: var(--geld-review-muted);
   cursor: help;
+}
+
+.geld-review__chat-byline > .geld-review__edited {
+  margin-left: -5px;
 }
 
 .geld-review__edited svg {
