@@ -44,14 +44,14 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { ATTR_EDITED_AT, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { ATTR_EDITED_AT, chatNeedsRedress, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
-import { adoptReplacement, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -2370,11 +2370,38 @@ function completePath(path: string, hash: string | null, meta: GeldPrMeta): stri
  * has lost its node: React swaps GitHub's own sections (the checks list on
  * every status poll), and the page-world portal then takes the loaned node
  * out of the slot along with its placeholder. A slot carried across a panel
- * rebuild would otherwise stay empty until something else changed.
+ * rebuild would otherwise stay empty until something else changed. And
+ * again when a chat in it holds markup GitHub rewrote in place (a comment
+ * refreshed after a reaction, see `chatNeedsRedress`): the panel itself
+ * stands, nothing in the model changed, but the chat shows a raw comment.
  */
 function slotNeedsRender(slot: HTMLElement): boolean {
   if (slot.childElementCount === 0) return true;
-  return [...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0);
+  if ([...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0)) return true;
+  return [...slot.querySelectorAll<HTMLElement>('.geld-review__chat')].some(chatNeedsRedress);
+}
+
+/**
+ * Before a slot that still holds loans is rendered again (a chat redressed
+ * after GitHub rewrote its comment): every loan goes home first. A node on
+ * loan is not lent twice — `teleportInto` skips it — so rendering over the
+ * old chat would leave the comment stranded in the discarded one and the
+ * new chat saying "Not loaded on this page yet". The rows' worn controls
+ * and the CI gear go home with everything else and are worn again in the
+ * dress phase of this same pass, as after a panel rebuild. Not while the
+ * reader types in a reply box inside the slot (a reaction from someone else
+ * can refresh a message in the thread they are answering): the render waits
+ * for the field to blur, as a panel rebuild does.
+ */
+function readySlotForRender(slot: HTMLElement): boolean {
+  if (slot.querySelector(`[${ATTR_TELEPORTED}]`) === null) return true;
+  const active = document.activeElement;
+  if (active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) {
+    active.addEventListener('focusout', () => reapplySoon(), { once: true });
+    return false;
+  }
+  restoreAll();
+  return true;
 }
 
 /** What the repository says about its review bots (declared in its config, config files found), from the controller. */
@@ -2847,7 +2874,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         visit.openKey = null;
         restoreAll();
       }
-    } else if (slotNeedsRender(mounted.slot)) {
+    } else if (slotNeedsRender(mounted.slot) && readySlotForRender(mounted.slot)) {
       if (visit.openKey === REVIEWS_KEY) {
         // An index of people's reviews; each line points at the round where its conversation opens.
         renderCommentsList(mounted.slot, model, panelHandlers);

@@ -99,6 +99,35 @@ export function sourceFocusKey(thread: HTMLElement): string {
   return `source:${threadAnchorOf(thread)}`;
 }
 
+/**
+ * Does a chat hold GitHub markup it has not read? GitHub rewrites a comment
+ * where it stands: a reaction swaps the reactions row for a fresh one (inside
+ * the message, or inside the box `placeControls` moved it to), and the socket
+ * update that follows swaps the whole `.js-comment-container` — the loan,
+ * adopted by the watcher. The newcomers carry none of the marks the
+ * stylesheet lays the chat out from, so the comment showed as GitHub's raw
+ * card inside the chat (its own header, its own ⋯) until something else
+ * happened to rebuild the panel. True when any message in a chat view is
+ * unmarked, or a message's reactions row stands outside every marked part
+ * (a row still inside the bubble needs nothing: it is laid out by the
+ * bubble).
+ */
+export function chatNeedsRedress(chat: HTMLElement): boolean {
+  const thread = chat.getAttribute('data-geld-chat') === 'thread';
+  for (const view of chat.querySelectorAll<HTMLElement>('.geld-review__chat-body, .geld-review__chat-context-body')) {
+    const inThread = thread && view.matches('.geld-review__chat-body');
+    for (const node of view.children) {
+      if (!(node instanceof HTMLElement) || !isTeleported(node)) continue;
+      for (const message of messagesIn(node, inThread)) {
+        if (!message.hasAttribute(ATTR_MESSAGE)) return true;
+        const row = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
+        if (row !== null && row.closest(`[${ATTR_PART}]`) === null) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** The thread's first comment anchor (its identity across rebuilds). */
 export function threadAnchorOf(thread: HTMLElement): string {
   return thread.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? thread.id;
