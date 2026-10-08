@@ -487,7 +487,11 @@ export interface StandingSources {
  * approvals, and a payload from before one still holds the approval it
  * took), and it was written after every review loaded from them. A
  * complete timeline with reviews from them and no verdict is a confirmed
- * dismissal, and no payload brings the approval back.
+ * dismissal, and no payload brings the approval back. And only a verdict
+ * speaks: the Action records a person's *last* review, comment-only or not
+ * (a dismissed one reads as `commented` too), so a payload `commented`
+ * says nothing about the verdict they gave before it and leaves a loaded
+ * one standing — as a plain comment on the timeline does not withdraw one.
  */
 export function standingReviewers(sources: StandingSources): readonly ReviewerRecord[] {
   const reviewers: ReviewerRecord[] = sources.sidebar.flatMap((reviewer) => (reviewer.verdict === null ? [] : [{ login: reviewer.login, state: reviewer.verdict }]));
@@ -512,7 +516,7 @@ export function standingReviewers(sources: StandingSources): readonly ReviewerRe
     // Reviews from them are on the page. An unreadable time on either side reads as "not newer".
     if (sources.timelineComplete || !sources.payloadCurrent || !(written > loadedAt)) continue;
     if (index === -1) reviewers.push(record);
-    else reviewers[index] = record;
+    else if (record.state === 'approved' || record.state === 'changes_requested') reviewers[index] = record;
   }
   return reviewers;
 }

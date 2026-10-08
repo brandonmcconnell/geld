@@ -179,6 +179,11 @@ describe('status rows', () => {
     expect(standingReviewers({ ...partial, timelineComplete: false, onTimeline: [{ login: 'brandonmcconnell', latestAt: '2026-10-08T12:00:00Z' }] })).toEqual([]);
     // A later payload verdict supersedes an older loaded one for the same person (a comment loaded, the approval not).
     expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([approved]);
+    // The other way round, a later payload `commented` (the Action records the last review, comment-only or not) does
+    // not withdraw the verdict the page has: she approved, then commented, then was asked again.
+    const requested = { login: 'brandonmcconnell', state: 'changes_requested' } as const;
+    expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [approved], payload: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([approved]);
+    expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [requested], payload: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([requested]);
     // A time that cannot be read on either side is not "newer": the payload stays silent.
     expect(standingReviewers({ ...partial, timelineComplete: false, onTimeline: [{ login: 'brandonmcconnell', latestAt: '' }] })).toEqual([]);
     expect(standingReviewers({ ...partial, timelineComplete: false, payloadAt: null })).toEqual([]);
