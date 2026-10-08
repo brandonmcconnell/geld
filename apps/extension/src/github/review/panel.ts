@@ -1510,9 +1510,10 @@ function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement 
     hint.textContent = 'Loading…';
     void handlers.loadReviewerCandidates().then((found) => {
       loading = false;
-      candidates = found ?? [];
+      // A failed lookup is not an empty one: `candidates` stays null so opening the section again asks again.
+      candidates = found;
       if (found === null) {
-        hint.textContent = 'GitHub did not list anyone.';
+        hint.textContent = 'GitHub did not list anyone. Close and reopen to try again.';
         return;
       }
       fill(found);
