@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
@@ -410,43 +410,19 @@ function unique<T>(values: readonly T[]): T[] {
 
 type Crawled = ReturnType<typeof crawlConversation>;
 
-/**
- * The bots a run is waiting on, with when it was asked for: a person's trigger comment ("@greptileai", "bugbot
- * run") or the bot's own "Starting…" line, read in timeline order so the latest ask per bot wins. Only such a
- * bot's earlier summary is worth asking the edit log about (edit-times.ts): a bot that reports a re-run by
- * rewriting that summary posts nothing new, and the edit after the ask is the report.
- */
-function runsAskedFor(comments: readonly RawComment[], extraLogins: readonly string[]): ReadonlyMap<string, number> {
-  const asked = new Map<string, number>();
-  for (const comment of comments) {
-    if (comment.kind === 'thread') continue;
-    const at = Date.parse(comment.createdAt);
-    if (Number.isNaN(at)) continue;
-    const bot = resolveBotId(comment.author, extraLogins);
-    if (bot === null) {
-      if (isTriggerComment(comment.body, extraLogins)) for (const entry of botsTriggeredBy(comment.body, extraLogins)) asked.set(entry.id, at);
-    } else if (isStatusLineComment(comment.body)) {
-      asked.set(bot, at);
-    } else {
-      asked.delete(bot);
-    }
-  }
-  return asked;
-}
-
 function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean): GeldPrMeta {
   const comments = crawled.comments.map((entry) => entry.comment);
   const items = clusterComments(comments, settings.reviewBots);
-  const asked = runsAskedFor(comments, settings.reviewBots);
   // The merge box's check rows, as the Action would read them from the API: a bot whose run finished green and
   // that flagged nothing is clean, whatever its opening comment said.
   const bots = verdictsFrom(
     crawlCheckRuns(document, headSha),
     crawled.comments.map(({ comment, author }) => {
       const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
-      const askedAt = bot === null ? undefined : asked.get(bot);
-      // A bot summary posted before a run was asked for: its edit time says whether that run has reported into it.
-      const node = comment.kind !== 'thread' && askedAt !== undefined && Date.parse(comment.createdAt) < askedAt ? document.getElementById(comment.anchor) : null;
+      // A review bot's summary: when it was last rewritten says whether a run asked for since has reported into it,
+      // or whether it is the bot's latest word over an older run's threads (`verdictsFrom`). `editedAt` asks the
+      // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
+      const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
       const edited = node === null ? null : editedAt(node, reapplySoon);
       return {
         author: comment.author,

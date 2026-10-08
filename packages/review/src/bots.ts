@@ -452,7 +452,19 @@ interface ThreadRun {
   /** Where the reader should go: the first thread still open, else the last one. */
   readonly openAnchor: string | null;
   readonly lastAnchor: string;
+  /** When the latest of these threads was posted (epoch ms), when known. */
+  readonly lastAt: number | null;
 }
+
+/**
+ * A bot that reports a re-run by rewriting its summary posts its threads
+ * and that rewrite seconds apart (Greptile's summary says "Reviews (2)"
+ * moments after its threads land, and fills in while they do). A rewrite
+ * this long after the run's last thread is not that run's touch-up: it is
+ * the report of a later run that found nothing new, and the bot's latest
+ * word.
+ */
+export const RERUN_EDIT_GAP_MS = 5 * 60 * 1000;
 
 /**
  * Combine check-run conclusions with the bot's own comments. A green check
@@ -467,7 +479,10 @@ interface ThreadRun {
  * stays one only until someone resolves it: a run whose threads are all
  * resolved has nothing outstanding, so it reads `findings` with `count: 0`
  * ("resolved"), or as its check ended when it has one. Threads posted before
- * the bot's next summary comment belong to the run that summary reports on.
+ * the bot's next summary comment belong to the run that summary reports on,
+ * and a summary rewritten `RERUN_EDIT_GAP_MS` after a run's last thread
+ * reports a later run — the bot's latest word, with all threads resolved.
+ * A request for a bot counts whoever posts it, another bot included.
  */
 export interface VerdictOptions {
   /**
@@ -521,25 +536,27 @@ export function verdictsFrom(
       const edited = Date.parse(comment.editedAt);
       if (!Number.isNaN(edited) && edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
     }
-    if (id === null) {
-      // A person asking a bot to run ("bugbot run", "@greptileai") starts a run as surely as the bot's own
-      // "Starting" line does: that bot is running until it speaks (or the line ages, or its check says).
-      if (comment.resolved === undefined && isTriggerComment(comment.body, extraLogins)) {
-        const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
-        for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
-          // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
-          if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
-          // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
-          // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
-          // real run.
-          const prior = threadRuns.get(asked.id);
-          if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
-          threadRuns.delete(asked.id);
-          statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
-        }
+    // Asking a bot to run ("bugbot run", "@greptileai") starts a run as surely as the bot's own "Starting" line
+    // does: that bot is running until it speaks (or the line ages, or its check says). A person asks; so does a
+    // bot — a coding agent's "@greptileai" (Cursor's agents post as `cursor[bot]`, Bugbot's own login) asks
+    // Greptile just the same, though never itself: a bot's own trigger phrase in its own words is not a request.
+    if (comment.resolved === undefined && isTriggerComment(comment.body, extraLogins)) {
+      const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+      for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
+        if (asked.id === id) continue;
+        // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
+        if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
+        // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
+        // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
+        // real run.
+        const prior = threadRuns.get(asked.id);
+        if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
+        threadRuns.delete(asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at });
       }
       continue;
     }
+    if (id === null) continue;
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
       statusOnly.delete(id);
@@ -547,10 +564,11 @@ export function verdictsFrom(
       const run = threadRuns.get(id);
       const open = (run?.open ?? 0) + (comment.resolved ? 0 : 1);
       const openAnchor = run?.openAnchor ?? (comment.resolved ? null : comment.anchor);
-      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor });
+      const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+      const lastAt = Number.isNaN(at) ? (run?.lastAt ?? null) : Math.max(at, run?.lastAt ?? Number.NEGATIVE_INFINITY);
+      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt });
       continue;
     }
-    if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
       // The bot said it would not review: the run that was asked for is answered (not running), and refused. A
@@ -633,6 +651,11 @@ export function verdictsFrom(
       byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.lastAnchor });
       continue;
     }
+    // Every thread resolved, and the bot rewrote its summary well after the last of them: that rewrite reports a
+    // later run with nothing new to say (Greptile re-reviews into the same comment), so it is the bot's latest word
+    // — its verdict, read above from the words as they are now, and its anchor, where the reader should go.
+    const edited = lastEditBy.get(id);
+    if (existing?.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings') && edited !== undefined && run.lastAt !== null && edited > run.lastAt + RERUN_EDIT_GAP_MS) continue;
     const fromCheck = checkName === undefined ? null : checkVerdict.get(id) ?? null;
     if (fromCheck !== null) {
       byId.set(id, { id, login: run.login, verdict: fromCheck, ...(fromCheck === 'clean' ? scored : {}), reviewedSha, ...named, sourceId: run.lastAnchor });

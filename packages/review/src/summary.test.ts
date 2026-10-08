@@ -372,6 +372,16 @@ describe('bots + prompts', () => {
     expect(byId(verdictsFrom([], [summary, { ...ignored, createdAt: at(1) }], 'aaa', [], now), 'greptile')?.verdict).toBe('running');
     // Bugbot starts silently: its trigger counts until it ages, reaction or not.
     expect(byId(verdictsFrom([], [{ author: 'cursor[bot]', body: 'Bugbot reviewed your changes and found no new issues!', anchor: 'issuecomment-2', createdAt: at(60) }, { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-3', createdAt: at(5) }], 'aaa', [], now), 'bugbot')?.verdict).toBe('running');
+    // A bot asking another bot: Cursor's cloud agents post "@greptileai" as `cursor[bot]` (Bugbot's own login).
+    // Greptile is asked just the same; Bugbot is not asking itself to run.
+    const byAgent = { author: 'cursor[bot]', body: '@greptileai', anchor: 'issuecomment-3', createdAt: at(1), reactedBy: ['greptile-apps[bot]'] };
+    expect(byId(verdictsFrom([], [...before, byAgent], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-3' });
+    expect(byId(verdictsFrom([], [...before, byAgent], 'aaa', [], now), 'bugbot')?.verdict).toBe('clean');
+    expect(byId(verdictsFrom([], [...before, { ...byAgent, body: 'bugbot run' }], 'aaa', [], now), 'bugbot')?.verdict).toBe('clean');
+    // ...and the summary Greptile rewrote after that request is the run's report (geld#31: resolved threads before
+    // the request, "5/5" edited into the summary after it, nothing new posted).
+    const agentRun = [{ author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.\nReviews (3)', anchor: 'issuecomment-1', createdAt: at(60), editedAt: at(0.5) }, { author: 'greptile-apps[bot]', body: 'Unused import', anchor: 'discussion_r1', resolved: true, createdAt: at(30) }, byAgent];
+    expect(byId(verdictsFrom([], agentRun, 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', score: 5, sourceId: 'issuecomment-1' });
   });
 
   it('does not keep a bot running on a status line that aged with nothing after it', () => {
@@ -416,6 +426,26 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([], later, 'aaa')[0]).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-9' });
     const rerun = [...later, { author: 'greptile-apps[bot]', body: 'Escaped schema refs fail', anchor: 'discussion_r3', resolved: false }];
     expect(verdictsFrom([], rerun, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r3' });
+  });
+
+  it('reads a summary rewritten well after a resolved thread run as the latest word', () => {
+    const now = Date.UTC(2026, 9, 8, 18, 0);
+    const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();
+    // geld#31: Greptile's summary (edited to "5/5" at 17:29) and its two rounds of threads (17:08, 17:22), every one
+    // resolved. The rewrite came seven minutes after the last thread with nothing new posted: a re-run that found
+    // nothing. The chip says 5/5 and opens the summary, not "resolved" at the last thread.
+    const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nThe PR appears safe to merge; no actionable issues were found.\nReviews (3)', anchor: 'issuecomment-1', createdAt: at(52) };
+    const first = { author: 'greptile-apps[bot]', body: 'Requests reuse another PR\u2019s reviewers', anchor: 'discussion_r1', resolved: true, createdAt: at(52) };
+    const second = { author: 'greptile-apps[bot]', body: 'No reviewer post without the pending set', anchor: 'discussion_r2', resolved: true, createdAt: at(38) };
+    const threads = [first, second];
+    expect(verdictsFrom([], [{ ...summary, editedAt: at(31) }, ...threads], 'aaa', [], now)[0]).toMatchObject({ verdict: 'clean', score: 5, sourceId: 'issuecomment-1' });
+    // Edited while the threads landed (the run's own touch-up): the threads are the run, resolved.
+    expect(verdictsFrom([], [{ ...summary, editedAt: at(37.5) }, ...threads], 'aaa', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, sourceId: 'discussion_r2' });
+    // Never edited: as before.
+    expect(verdictsFrom([], [summary, ...threads], 'aaa', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, sourceId: 'discussion_r2' });
+    // A thread still open is outstanding whatever the summary was rewritten to say since.
+    const open = [{ ...summary, editedAt: at(31) }, first, { ...second, resolved: false }];
+    expect(verdictsFrom([], open, 'aaa', [], now)[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r2' });
   });
 
   it('counts only review-shaped comments from a conversational agent', () => {
