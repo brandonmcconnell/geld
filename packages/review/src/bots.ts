@@ -530,11 +530,16 @@ export function verdictsFrom(
   const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
   const lastEditBy = new Map<string, number>();
+  /** When each comment was last rewritten, by anchor: the summary a verdict was read from has an edit of its own. */
+  const editedAtOf = new Map<string, number>();
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id !== null && comment.editedAt !== undefined) {
       const edited = Date.parse(comment.editedAt);
-      if (!Number.isNaN(edited) && edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
+      if (!Number.isNaN(edited)) {
+        editedAtOf.set(comment.anchor, edited);
+        if (edited > (lastEditBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastEditBy.set(id, edited);
+      }
     }
     // Asking a bot to run ("bugbot run", "@greptileai") starts a run as surely as the bot's own "Starting" line
     // does: that bot is running until it speaks (or the line ages, or its check says). A person asks; so does a
@@ -653,8 +658,10 @@ export function verdictsFrom(
     }
     // Every thread resolved, and the bot rewrote its summary well after the last of them: that rewrite reports a
     // later run with nothing new to say (Greptile re-reviews into the same comment), so it is the bot's latest word
-    // — its verdict, read above from the words as they are now, and its anchor, where the reader should go.
-    const edited = lastEditBy.get(id);
+    // — its verdict, read above from the words as they are now, and its anchor, where the reader should go. The
+    // rewrite has to be that summary's own: a bot with two summaries editing the older one says nothing new in the
+    // one the verdict was read from.
+    const edited = existing?.sourceId === undefined ? undefined : editedAtOf.get(existing.sourceId);
     if (existing?.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings') && edited !== undefined && run.lastAt !== null && edited > run.lastAt + RERUN_EDIT_GAP_MS) continue;
     const fromCheck = checkName === undefined ? null : checkVerdict.get(id) ?? null;
     if (fromCheck !== null) {

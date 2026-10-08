@@ -446,6 +446,11 @@ describe('bots + prompts', () => {
     // A thread still open is outstanding whatever the summary was rewritten to say since.
     const open = [{ ...summary, editedAt: at(31) }, first, { ...second, resolved: false }];
     expect(verdictsFrom([], open, 'aaa', [], now)[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r2' });
+    // The rewrite must be the verdict's own summary's: an older summary of the bot's edited late says nothing about
+    // the newer one the verdict was read from, so the resolved threads stay the last word.
+    const older = { author: 'greptile-apps[bot]', body: 'Confidence Score: 2/5\nFound 3 issues.', anchor: 'issuecomment-0', createdAt: at(90), editedAt: at(31) };
+    const newer = { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\nFound 2 issues.', anchor: 'issuecomment-1', createdAt: at(52) };
+    expect(verdictsFrom([], [older, newer, ...threads], 'aaa', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, sourceId: 'discussion_r2' });
   });
 
   it('counts only review-shaped comments from a conversational agent', () => {
