@@ -403,8 +403,8 @@ export interface PanelHandlers {
   readonly onRequestMenuClosed: () => void;
   /** Everyone who can be asked to review, as GitHub's own menu lists them (fetched when the people menu first needs it). */
   readonly loadReviewerCandidates: () => Promise<readonly ReviewerCandidate[] | null>;
-  /** Ask these people (user ids) and teams (team ids) to review; someone who reviewed is asked again. */
-  readonly onRequestReviewers: (userIds: readonly number[], teamIds: readonly number[]) => void;
+  /** Ask these people (user ids) and teams (team ids) to review; someone who reviewed is asked again. Resolves false when GitHub refused. */
+  readonly onRequestReviewers: (userIds: readonly number[], teamIds: readonly number[]) => Promise<boolean>;
   /** Open GitHub's dismiss dialog for `login`'s review. */
   readonly onDismissReview: (login: string) => void;
   /** Ask `login` to review again. */
@@ -1398,18 +1398,22 @@ function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement 
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__request-list` });
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']));
 
-  /** Ticked people by login (lower-case); candidates carry the ids the form wants. */
+  /** Ticked reviewers by kind and login (`u:` a person, `t:` a team — a team's slug may read like a login); candidates carry the ids the form wants. */
   const ticked = new Map<string, HTMLInputElement>();
-  const picked = (): string[] => [...ticked.entries()].filter(([, input]) => input.checked).map(([login]) => login);
+  const keyOf = (login: string, team: boolean): string => `${team ? 't' : 'u'}:${login.toLowerCase()}`;
+  const picked = (): string[] => [...ticked.entries()].filter(([, input]) => input.checked).map(([key]) => key);
   const request = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__request-run` }, ['Request']);
+  const problem = createElement('span', { class: `${PANEL_CLASS}__menu-hint ${PANEL_CLASS}__request-problem`, role: 'alert' });
+  let busy = false;
   const syncRequest = (): void => {
+    if (busy) return;
     const count = picked().length;
     request.textContent = count === 0 ? 'Request' : count === 1 ? 'Request review' : `Request ${count} reviews`;
     request.toggleAttribute('disabled', count === 0);
   };
-  const personLine = (login: string, avatarSrc: string, name: string, status: ReviewerStatus | null, title: string): HTMLElement => {
-    const key = login.toLowerCase();
-    const input = ticked.get(key) ?? createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': login });
+  const personLine = (login: string, team: boolean, avatarSrc: string, name: string, status: ReviewerStatus | null, title: string): HTMLElement => {
+    const key = keyOf(login, team);
+    const input = ticked.get(key) ?? createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': team ? `${login} (team)` : login });
     ticked.set(key, input);
     input.addEventListener('change', syncRequest);
     const picture = avatarSrc !== '' ? createElement('img', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__people-avatar`, src: avatarSrc, alt: '', width: '16', height: '16' }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
@@ -1433,7 +1437,7 @@ function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement 
   const standing = model.reviewerStatuses;
   for (const status of standing) {
     const { words } = statusWords(status);
-    list.append(personLine(status.login, status.avatar.src, '', status, status.verdict !== null ? `Asks ${status.login} to review again · ${words}` : `${status.login} · ${words}`));
+    list.append(personLine(status.login, false, status.avatar.src, '', status, status.verdict !== null ? `Asks ${status.login} to review again · ${words}` : `${status.login} · ${words}`));
   }
   if (standing.length === 0) list.append(createElement('div', { class: `${PANEL_CLASS}__menu-hint ${PANEL_CLASS}__people-hint` }, ['Nobody has been asked yet.']));
 
@@ -1450,7 +1454,8 @@ function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement 
 
   let candidates: readonly ReviewerCandidate[] | null = null;
   let loading = false;
-  const ids = new Map<string, { readonly id: number; readonly team: boolean }>();
+  /** GitHub's id for each ticked key, once its candidates have been read. */
+  const ids = new Map<string, number>();
   const rows: HTMLElement[] = [];
   let active = -1;
   const visibleRows = (): HTMLElement[] => rows.filter((row) => !row.hidden);
@@ -1479,14 +1484,15 @@ function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement 
     setActive(needle === '' ? -1 : 0);
   };
   const fill = (found: readonly ReviewerCandidate[]): void => {
-    const standingLogins = new Set(standing.map((entry) => entry.login.toLowerCase()));
+    const standingKeys = new Set(standing.map((entry) => keyOf(entry.login, false)));
     for (const candidate of found) {
-      ids.set(candidate.login.toLowerCase(), { id: candidate.id, team: candidate.team });
-      if (standingLogins.has(candidate.login.toLowerCase())) {
+      const key = keyOf(candidate.login, candidate.team);
+      ids.set(key, candidate.id);
+      if (standingKeys.has(key)) {
         // Already listed above with their standing; the form still needs their id, which is now known.
         continue;
       }
-      const row = personLine(candidate.login, candidate.avatar, candidate.name, null, candidate.suggested ? `${candidate.login} · suggested` : candidate.login);
+      const row = personLine(candidate.login, candidate.team, candidate.avatar, candidate.name, null, candidate.team ? `${candidate.login} · team` : candidate.suggested ? `${candidate.login} · suggested` : candidate.login);
       row.id = `${listboxId}-${rows.length}`;
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', 'false');
@@ -1547,37 +1553,65 @@ function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement 
 
   list.append(createElement('div', { class: `${PANEL_CLASS}__request-sep`, role: 'separator' }));
   const cancel = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__request-cancel` }, ['Cancel']);
+  // Request keeps the menu open until GitHub has answered: a refusal is said here, with the ticks kept for another
+  // try, and Cancel (or the menu closing any other way) while the ids are still loading means nothing is posted.
+  let attempt = 0;
   request.addEventListener('click', (event) => {
     event.stopPropagation();
     const chosen = picked();
-    if (chosen.length === 0) return;
-    const go = (): void => {
+    if (chosen.length === 0 || busy) return;
+    attempt += 1;
+    const mine = attempt;
+    const still = (): boolean => details.open && details.isConnected && attempt === mine;
+    busy = true;
+    problem.textContent = '';
+    request.toggleAttribute('disabled', true);
+    request.textContent = 'Requesting…';
+    const settle = (message: string | null): void => {
+      busy = false;
+      if (message === null) {
+        details.removeAttribute('open');
+        return;
+      }
+      problem.textContent = message;
+      syncRequest();
+    };
+    void (async () => {
+      // Someone listed by their standing alone has no id yet: GitHub's list supplies it.
+      if (!chosen.every((key) => ids.has(key))) {
+        const found = await handlers.loadReviewerCandidates();
+        if (!still()) return;
+        for (const candidate of found ?? []) ids.set(keyOf(candidate.login, candidate.team), candidate.id);
+      }
       const users: number[] = [];
       const teams: number[] = [];
-      for (const login of chosen) {
-        const known = ids.get(login);
-        if (known === undefined) continue;
-        (known.team ? teams : users).push(known.id);
+      for (const key of chosen) {
+        const id = ids.get(key);
+        if (id !== undefined) (key.startsWith('t:') ? teams : users).push(id);
       }
-      details.removeAttribute('open');
-      if (users.length + teams.length > 0) handlers.onRequestReviewers(users, teams);
-    };
-    // Someone listed by their standing alone has no id yet: GitHub's list supplies it.
-    if (chosen.every((login) => ids.has(login))) go();
-    else {
-      request.toggleAttribute('disabled', true);
-      request.textContent = 'Requesting…';
-      void handlers.loadReviewerCandidates().then((found) => {
-        for (const candidate of found ?? []) ids.set(candidate.login.toLowerCase(), { id: candidate.id, team: candidate.team });
-        go();
-      });
-    }
+      if (users.length + teams.length === 0) {
+        settle('GitHub does not list them among the reviewers that can be asked here.');
+        return;
+      }
+      const posted = await handlers.onRequestReviewers(users, teams).catch(() => false);
+      if (!still()) return;
+      settle(posted ? null : 'GitHub did not take the request. Try again.');
+    })();
   });
   cancel.addEventListener('click', (event) => {
     event.stopPropagation();
     details.removeAttribute('open');
   });
-  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [request, cancel]));
+  // Closing the menu by any means ends a request still waiting on ids; a menu rebuilt by the panel is a new one.
+  details.addEventListener('toggle', () => {
+    if (!details.open) {
+      attempt += 1;
+      busy = false;
+      problem.textContent = '';
+      syncRequest();
+    }
+  });
+  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [request, cancel, problem]));
   syncRequest();
   details.append(summary, list);
   return details;
@@ -2206,8 +2240,11 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
  */
 function reviewActions(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const entries: MenuEntry[] = [];
-  if (model.canDismissReviews && (entry.state === 'approved' || entry.state === 'changes_requested')) entries.push({ label: 'Dismiss review', onSelect: () => handlers.onDismissReview(entry.author) });
-  if (model.canRequestReviewers) entries.push({ label: 'Re-request review', onSelect: () => handlers.onReRequestReview(entry.author) });
+  // GitHub acts on a person's current verdict; an earlier one of theirs in the list (approved, then changes
+  // requested) is history and offers neither action, or the dismissal would land on the newer review.
+  const current = model.reviewerStatuses.find((status) => status.login.toLowerCase() === entry.author.toLowerCase())?.anchor === entry.anchor;
+  if (current && model.canDismissReviews && (entry.state === 'approved' || entry.state === 'changes_requested')) entries.push({ label: 'Dismiss review', onSelect: () => handlers.onDismissReview(entry.author) });
+  if (current && model.canRequestReviewers) entries.push({ label: 'Re-request review', onSelect: () => handlers.onReRequestReview(entry.author) });
   entries.push({ label: 'Show in timeline', onSelect: () => handlers.onShowInTimeline(entry.anchor) });
   entries.push({ label: 'Copy link', onSelect: () => handlers.onCopyLink(entry.anchor) });
   return menu(entries, `review:${entry.anchor}`);

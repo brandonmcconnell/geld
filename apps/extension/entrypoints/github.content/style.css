@@ -1635,6 +1635,16 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   padding: 4px 8px;
 }
 
+/* What went wrong with a request, beside the buttons; empty until it does. */
+.geld-review__request-problem {
+  align-self: center;
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__request-problem:empty {
+  display: none;
+}
+
 .geld-review__people-filter {
   padding: 4px 8px 6px;
 }
