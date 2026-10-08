@@ -24,7 +24,7 @@ import { crawlConversation } from './crawler';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
-import { absoluteTimeText, relativeFineText, relativeTimeText } from './time';
+import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
@@ -44,7 +44,7 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { ATTR_EDITED_AT, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { redressComposer, renderChatView, renderCommentChat, rewordEditedMarks, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -1676,9 +1676,13 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     const who = ownBot !== undefined ? botTitle(ownBot, ownAuthor) : ownAuthor !== '' ? ownAuthor : 'the reviewer';
     const isBot = facts?.bot ?? ownBot !== undefined;
     const revision = isBot && !Number.isNaN(threadAt) ? revisionAsOf(node, anchor, threadAt, RUN_SETTLE_MS, reapplySoon) : null;
-    // A bot's summary from well before the thread is an earlier run's (this run posted none): the strip says when.
+    // The strip says when, where the time tells something: a live summary rewritten since it was posted wears the
+    // rewrite's time (the reading shown is that one's); a summary from well before the thread is an earlier run's
+    // (this run posted none) and wears its own. A past revision wears its own time in chat.ts.
+    const rewritten = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
     const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
     const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
+    const at = rewritten ?? earlier;
     // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
     const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor);
     const rerun = ownBot === undefined || latestAnchor !== null ? null : rerunFor(ownBot, ownAuthor, meta, reapply);
@@ -1692,7 +1696,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
       login: facts?.login ?? source?.author ?? '',
       bot: isBot,
       ...(revision === null ? {} : { revision }),
-      ...(earlier === null ? {} : { earlier }),
+      ...(at === null ? {} : { at }),
       ...(latestAnchor === null ? {} : { latestAnchor }),
       ...(rerun === null ? {} : { rerun }),
     };
@@ -1850,12 +1854,15 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   // `editsVersion` (in the signature) when the time lands.
   const commentEl = anchor === null ? null : document.getElementById(anchor);
   const edited = commentEl === null ? null : editedAt(commentEl, reapplySoon);
+  // The clock beside an edited comment's time says when it was first posted: the page's datetime for the anchor.
+  const postedAt = edited === null || anchor === null ? '' : (datetimeByAnchor.get(anchor) ?? (commentEl === null ? '' : createdAtOf(commentEl)));
   return {
     ...byline,
     ...(anchor === null ? {} : { timeAnchor: anchor }),
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
     ...(via === null ? {} : { via }),
     ...(edited === null ? {} : { edited }),
+    ...(postedAt === '' ? {} : { postedAt }),
   };
 }
 
@@ -1968,17 +1975,9 @@ export function refreshReviewTimes(): number {
     cell.textContent = text;
     changed += 1;
   }
-  // The edited clock's "edited N minutes ago" is a one-off label no live element upgrades; re-word it here so a chat
-  // left open does not keep saying the old age (the exact timestamp in the title does not change).
-  for (const mark of document.querySelectorAll<HTMLElement>(`[${ATTR_EDITED_AT}]`)) {
-    const at = mark.getAttribute(ATTR_EDITED_AT);
-    if (at === null || at === '') continue;
-    const absolute = absoluteTimeText(at);
-    const title = `edited ${relativeFineText(at)}${absolute === '' ? '' : ` · ${absolute}`}`;
-    if (mark.title === title) continue;
-    mark.title = title;
-    mark.setAttribute('aria-label', title);
-  }
+  // The edited clock's "Originally posted N minutes ago" is a one-off label no live element upgrades; re-worded here
+  // so a chat left open does not keep saying the old age (the exact timestamp in it does not change).
+  rewordEditedMarks();
   return changed;
 }
 

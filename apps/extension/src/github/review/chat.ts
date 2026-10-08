@@ -30,8 +30,10 @@ import { stickyHeaderBottomAt } from './sticky';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
 export const ATTR_PART = 'data-geld-part';
-/** On the edited clock: the ISO moment of the edit, so the time refresh can re-word its relative title in place. */
-export const ATTR_EDITED_AT = 'data-geld-edited-at';
+/** On the edited clock: the ISO moment of the edit; with `ATTR_POSTED_AT`, what its words are built from (`rewordEditedMarks`). */
+const ATTR_EDITED_AT = 'data-geld-edited-at';
+/** On the edited clock: the ISO moment the comment was first posted, when known. */
+const ATTR_POSTED_AT = 'data-geld-posted-at';
 const ATTR_MESSAGE = 'data-geld-message';
 const ATTR_MINE = 'data-geld-mine';
 /** Where a message stands in a run of one author's messages: `only`, `first`, `mid`, `last`. */
@@ -74,8 +76,14 @@ export interface ChatSource {
    * `current` means the node is that reading.
    */
   readonly revision?: RevisionView;
-  /** When the comment is from an earlier run than the thread (the bot posted no summary with this one): its time, said on the strip. */
-  readonly earlier?: string;
+  /**
+   * The time said on the strip after the label, ISO, when it is worth saying:
+   * the comment is from an earlier run than the thread (the bot posted no
+   * summary with this one), or the live node has been rewritten since it
+   * was posted (then this is the rewrite's time — the reading's own). A
+   * revision shown instead of the live node carries its own time.
+   */
+  readonly at?: string;
   /** A review bot's summary that is its latest word: Geld's Rerun stands on the open strip's right. */
   readonly rerun?: ChatRerun;
   /** The bot has written a newer summary since (its anchor): the open strip offers that instead of Rerun. */
@@ -168,8 +176,14 @@ export interface ChatByline {
   readonly rerun?: ChatRerun;
   /** A bot's summary from an earlier run, a newer one on the page: "See latest" on the byline's right instead. */
   readonly latest?: ChatLatest;
-  /** The comment was edited after it was posted: a clock beside the time, its exact and relative moment in the title (ISO). */
+  /**
+   * The comment was edited after it was posted (ISO of the last edit). The
+   * chat shows the comment as it reads now, so this is the time on the
+   * byline; a clock beside it says when the comment was first posted.
+   */
   readonly edited?: string;
+  /** When the comment was first posted (ISO), for that clock; `time` is its relative wording as the page says it. */
+  readonly postedAt?: string;
 }
 
 /** An older word of a review bot's: the control that leads to its current one. */
@@ -262,19 +276,57 @@ function latestControl(latest: ChatLatest): HTMLElement {
   return createElement('span', { class: 'geld-review__rerun-wrap' }, [button]);
 }
 
+let editedIds = 0;
+
 /**
- * A comment edited after it was posted: a clock beside the created time, so
- * the byline still says when it first appeared (a bot's summary "an hour
- * ago") while making plain it has since changed. Its title is the edit's
- * relative and exact moment ("edited 7 minutes ago · Oct 7, 2026, 11:14 AM");
- * the mark is a graphic with that title, read aloud as "edited <when>".
+ * A comment edited after it was posted: a clock beside the byline's time.
+ * The byline says the edit's time, since the bubble is the comment as it
+ * reads now; the clock's words say when it was first posted ("Originally
+ * posted 2 hours ago · Oct 8, 2026, 5:08 PM"), or, when the page has not
+ * said that, when it was edited. The words come up in GitHub's own tooltip
+ * (`tool-tip`, instant and styled like the page's; where the page does not
+ * define it they are the title) and are read aloud as the mark's label.
  */
-function editedMark(at: string): HTMLElement {
-  const relative = relativeFineText(at);
+function editedMark(editedAt: string, postedAt: string | null): HTMLElement {
+  editedIds += 1;
+  const id = `geld-edited-${editedIds}`;
+  const words = editedWords(editedAt, postedAt);
+  // Both moments stay on the element so the time refresh can re-word "N minutes ago" while the chat is left open.
+  const mark = createElement('span', { id, class: 'geld-review__edited', role: 'img', 'aria-label': words, [ATTR_EDITED_AT]: editedAt, ...(postedAt === null ? {} : { [ATTR_POSTED_AT]: postedAt }) }, [icon(ICON_HISTORY)]);
+  // The content script's world has no `customElements` to ask (Chrome leaves it null there); a page that defines
+  // `tool-tip` has rendered some of its own by now (the header's), so their presence stands for the definition.
+  if (document.querySelector('tool-tip') === null) {
+    mark.setAttribute('title', words);
+    return mark;
+  }
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = words;
+  return createElement('span', { class: 'geld-review__edited-wrap' }, [mark, tip]);
+}
+
+function editedWords(editedAt: string, postedAt: string | null): string {
+  const at = postedAt ?? editedAt;
   const absolute = absoluteTimeText(at);
-  const title = `edited ${relative}${absolute === '' ? '' : ` · ${absolute}`}`;
-  // The ISO stays on the element so the time refresh can re-word "N minutes ago" while the chat is left open.
-  return createElement('span', { class: 'geld-review__edited', role: 'img', title, 'aria-label': title, [ATTR_EDITED_AT]: at }, [icon(ICON_HISTORY)]);
+  return `${postedAt === null ? 'Edited' : 'Originally posted'} ${relativeFineText(at)}${absolute === '' ? '' : ` · ${absolute}`}`;
+}
+
+/**
+ * Re-word every edited clock's "N minutes ago" (its tooltip and label) for
+ * the time refresh: a one-off label no live element upgrades, so a chat
+ * left open would otherwise keep saying the old age.
+ */
+export function rewordEditedMarks(): void {
+  for (const mark of document.querySelectorAll<HTMLElement>(`[${ATTR_EDITED_AT}]`)) {
+    const editedAt = mark.getAttribute(ATTR_EDITED_AT);
+    if (editedAt === null || editedAt === '') continue;
+    const words = editedWords(editedAt, mark.getAttribute(ATTR_POSTED_AT));
+    if (mark.getAttribute('aria-label') === words) continue;
+    mark.setAttribute('aria-label', words);
+    if (mark.hasAttribute('title')) mark.setAttribute('title', words);
+    const tip = mark.id === '' ? null : mark.parentElement?.querySelector(`tool-tip[for="${CSS.escape(mark.id)}"]`);
+    if (tip !== null && tip !== undefined) tip.textContent = words;
+  }
 }
 
 /**
@@ -360,8 +412,14 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     }
     line.append(name);
     if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
-    if (byline.time !== '') line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
-    if (byline.edited !== undefined) line.append(editedMark(byline.edited));
+    if (byline.edited !== undefined) {
+      // The bubble is the comment as it reads now, so the time beside the name is the edit's (GitHub's own live
+      // element, which keeps it current); the clock says when the comment was first posted. The created time is
+      // not refreshed into this cell (no `ATTR_TIME_FOR`).
+      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null));
+    } else if (byline.time !== '') {
+      line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
+    }
     if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
     else if (byline.latest !== undefined) line.append(latestControl(byline.latest));
     chat.append(line);
@@ -416,8 +474,11 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
   const children: Node[] = [createElement('span', { class: 'geld-review__chat-pin-glyph', 'aria-hidden': 'true' }, [icon(ICON_PIN)])];
   if (source.avatarSrc !== null) children.push(createElement('img', { class: 'geld-review__avatar', 'data-kind': source.bot ? 'bot' : 'user', src: source.avatarSrc, alt: '', width: '20', height: '20' }));
   children.push(createElement('span', { class: 'geld-review__chat-pin-label' }, [source.label]));
-  // A summary from before this run ("Bugbot's run summary · 2 days ago"): the bot wrote none for this one.
-  if (source.earlier !== undefined) children.push(relativeTimeElement(source.earlier, 'geld-review__chat-pin-when'));
+  // The reading's own time, when worth saying ("Greptile's run summary · 2 hours ago"): a past revision's, the
+  // rewrite's for a live summary rewritten since, or the summary's for one from before this run (the bot wrote
+  // none for this one). Never the created time of a comment that reads differently now.
+  const when = revision?.at ?? source.at;
+  if (when !== undefined) children.push(relativeTimeElement(when, 'geld-review__chat-pin-when'));
   if (preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, inlineText(preview)));
   const button = createElement('button', { type: 'button', class: 'geld-review__chat-pin', 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(thread) }, children);
   button.addEventListener('click', () => handlers.onToggleSource(thread));
