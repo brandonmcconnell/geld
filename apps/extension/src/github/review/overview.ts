@@ -26,12 +26,14 @@ import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { absoluteTimeText, relativeFineText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
+import { fetchReviewerCandidates, hasReviewActions, pressReviewAction, requestReviewers, reviewRequestForm } from './reviewers';
+import type { ReviewerCandidate } from './reviewers';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -651,6 +653,27 @@ function composeMeta(found: ReturnType<typeof findSummaryComment>, crawled: Geld
     return { meta: layer(usable), freshness: 'fresh' };
   }
   return { meta: layer(mergeWithCrawler(usable, crawled)), freshness: found.freshness };
+}
+
+/**
+ * GitHub's list of who can be asked to review, for the people menu: fetched
+ * once per pull request (the key is the page's, so another PR's list is
+ * never reused) and dropped after a request, since the pending set changed.
+ * The post itself never trusts it — `requestReviewers` is given a fresh list
+ * for the pending flags, as GitHub's own menu reads them on open.
+ */
+let candidatesCache: { readonly key: string; readonly promise: Promise<readonly ReviewerCandidate[] | null> } | null = null;
+function reviewerCandidates(): Promise<readonly ReviewerCandidate[] | null> {
+  const key = visit.pageKey;
+  if (candidatesCache === null || candidatesCache.key !== key) {
+    const promise = fetchReviewerCandidates().catch(() => null);
+    candidatesCache = { key, promise };
+    // A failed or empty answer is not kept: the next open asks again.
+    void promise.then((found) => {
+      if (found === null && candidatesCache?.promise === promise) candidatesCache = null;
+    });
+  }
+  return candidatesCache.promise;
 }
 
 /** The run store's key for a pull request: the page key, prefixed with the host off github.com. */
@@ -2634,6 +2657,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     checksRing,
     comments,
     reviewerGroups: reviewerGroups(comments, sidebar),
+    reviewerStatuses: reviewerStatuses(comments, sidebar),
+    canRequestReviewers: reviewRequestForm() !== null,
+    canDismissReviews: hasReviewActions(),
     ingesting,
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
@@ -2742,6 +2768,50 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       void postTopLevelComments(triggers);
     },
     onRequestMenuClosed: () => reapplySoon(),
+    loadReviewerCandidates: () => reviewerCandidates(),
+    onRequestReviewers: async (userIds, teamIds) => {
+      // The pending set is read afresh for the post: whatever the menu showed, GitHub's own controls or another tab
+      // may have changed who is requested since, and the form is the whole set.
+      // Without that read nothing is posted: a form with only the new names would withdraw everyone else's request.
+      const pending = await fetchReviewerCandidates().catch(() => null);
+      if (pending === null) return false;
+      const posted = await requestReviewers(userIds, teamIds, pending).catch(() => false);
+      candidatesCache = null;
+      if (posted) window.setTimeout(reapplySoon, 800);
+      return posted;
+    },
+    onDismissReview: (login) => {
+      void pressReviewAction(login, 'Dismiss review')
+        .then((pressed) => {
+          if (!pressed) console.warn('[geld] GitHub offers no way to dismiss that review here');
+        })
+        .catch(() => console.warn('[geld] Dismiss review did not open'));
+    },
+    onReRequestReview: (login) => {
+      // GitHub's own action when its merge box lists the verdict; else the request form with their id, the same post.
+      void pressReviewAction(login, 'Re-request review')
+        .then(async (pressed) => {
+          if (pressed) {
+            window.setTimeout(reapplySoon, 800);
+            return;
+          }
+          const found = await fetchReviewerCandidates().catch(() => null);
+          if (found === null) {
+            console.warn('[geld] GitHub did not list the reviewers; nothing was re-requested');
+            return;
+          }
+          const person = found.find((candidate) => !candidate.team && candidate.login.toLowerCase() === login.toLowerCase());
+          if (person === undefined) {
+            console.warn('[geld] GitHub does not list that reviewer among those that can be asked here');
+            return;
+          }
+          const posted = await requestReviewers([person.id], [], found);
+          candidatesCache = null;
+          if (posted) window.setTimeout(reapplySoon, 800);
+          else console.warn('[geld] GitHub did not take the re-request');
+        })
+        .catch(() => console.warn('[geld] Re-request review failed'));
+    },
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
         visit.openSubKey = visit.openSubKey === anchor ? null : anchor;

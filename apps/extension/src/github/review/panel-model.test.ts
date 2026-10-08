@@ -228,6 +228,25 @@ describe('reviewer groups', () => {
     ]);
   });
 
+  it('gives each person one standing: their verdict, whether they are awaited, and where the verdict is', async () => {
+    const { reviewerStatuses } = await import('./panel');
+    const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented', anchor = `${state}:${author}`) => ({ anchor, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    const sidebar = [
+      { login: 'brandonmcconnell', avatarSrc: 'https://avatars.githubusercontent.com/u/5913254?s=80&v=4', state: 'awaiting' as const, bot: false },
+      { login: 'Ana', avatarSrc: null, state: 'approved' as const, bot: false },
+      { login: 'cursor[bot]', avatarSrc: null, state: 'commented' as const, bot: true },
+    ];
+    const statuses = reviewerStatuses([line('brandonmcconnell', 'approved', 'pullrequestreview-1'), line('ana', 'approved', 'sidebar:ana'), line('ana', 'approved', 'pullrequestreview-2'), line('max', 'changes_requested', 'pullrequestreview-3'), line('max', 'commented', 'pullrequestreview-4')], sidebar);
+    expect(statuses).toEqual([
+      // #12495: approved, asked again — both hold, the sidebar's picture, the timeline's anchor.
+      { login: 'brandonmcconnell', avatar: { src: 'https://avatars.githubusercontent.com/u/5913254?s=80&v=4', bot: false, login: 'brandonmcconnell' }, verdict: 'approved', awaiting: true, anchor: 'pullrequestreview-1' },
+      // The sidebar's verdict is final; the timeline's real row (not the provisional line) is where it opens.
+      { login: 'Ana', avatar: { src: '', bot: false, login: 'Ana' }, verdict: 'approved', awaiting: false, anchor: 'pullrequestreview-2' },
+      // A later comment-only review sets no verdict aside.
+      { login: 'max', avatar: { src: '', bot: false, login: 'max' }, verdict: 'changes_requested', awaiting: false, anchor: 'pullrequestreview-3' },
+    ]);
+  });
+
   it("shows an approval the sidebar no longer names once the reviewer was asked again", async () => {
     const { reviewerGroups } = await import('./panel');
     const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;

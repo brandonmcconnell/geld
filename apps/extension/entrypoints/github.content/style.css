@@ -1578,6 +1578,113 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   opacity: 0.6;
 }
 
+/* ---- Request a review, for people (the Reviews row's ⋯): standings, Other reviewers behind a search box ---- */
+
+.geld-review__menu-list.geld-review__request-list:has(.geld-review__people-more) {
+  width: 380px;
+  min-width: 0;
+  max-width: calc(100vw - 32px);
+  /* The menu's own width decides whether a standing's words fit beside the name (below). */
+  container-type: inline-size;
+}
+
+.geld-review__people-avatar {
+  border-radius: 50%;
+}
+
+/* Login, then the name and GitHub's "suggested" after it on the one line (the shared text box is a column). */
+.geld-review__people-item > .geld-review__menu-text {
+  display: block;
+}
+
+.geld-review__people-name {
+  margin-left: 6px;
+  color: var(--geld-review-muted);
+}
+
+/* A person's standing: its glyphs (a check, a dot — both when they approved and are awaited again) and the words. */
+.geld-review__people-state {
+  gap: 3px;
+}
+
+.geld-review__people-glyph {
+  display: inline-flex;
+}
+
+.geld-review__people-glyph > .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__people-state[data-health='pending'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__people-words {
+  margin-left: 2px;
+}
+
+/* On a narrow menu the words go and the glyphs stay, the title holding the words. */
+@container (width < 340px) {
+  .geld-review__people-words {
+    display: none;
+  }
+}
+
+.geld-review__people-hint {
+  padding: 4px 8px;
+}
+
+/* What went wrong with a request, beside the buttons; empty until it does. */
+.geld-review__request-problem {
+  align-self: center;
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__request-problem:empty {
+  display: none;
+}
+
+.geld-review__people-filter {
+  padding: 4px 8px 6px;
+}
+
+.geld-review__people-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+}
+
+.geld-review__people-search:focus {
+  outline: 2px solid var(--geld-review-accent);
+  outline-offset: -1px;
+}
+
+.geld-review__people-options {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The arrow keys' choice reads like a hover; a suggestion of GitHub's is marked. */
+.geld-review__people-item[data-active] {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__people-item[data-suggested] > .geld-review__menu-text::after {
+  content: 'suggested';
+  margin-left: 6px;
+  color: var(--geld-review-muted);
+  font-size: 11px;
+}
+
 .geld-review__menu-hint {
   color: var(--geld-review-muted);
   font-size: 12px;
