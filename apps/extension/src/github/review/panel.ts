@@ -1287,10 +1287,11 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
   if (model.requestable.length === 0) return null;
   installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__request` });
+  // The ⋯ every row wears; while a bot runs it turns into the spinning sync glyph, which is the news.
   const summary = createElement(
     'summary',
     { class: `${PANEL_CLASS}__icon${model.running ? ` ${PANEL_CLASS}__icon--spin` : ''}`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
-    [icon(ICON_SYNC)],
+    [icon(model.running ? ICON_SYNC : ICON_KEBAB_HORIZONTAL)],
   );
   summary.addEventListener('click', (event) => event.stopPropagation());
   // Closed by Run, Cancel, Escape or a click outside: whatever changed meanwhile renders now.
