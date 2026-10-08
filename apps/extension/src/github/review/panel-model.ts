@@ -3,7 +3,7 @@
  * Kept DOM-free so they can be unit tested.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord } from '@geld/review';
+import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord, ReviewerState } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
 import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
 
@@ -441,6 +441,86 @@ export interface RequiredReviewsOptions {
  * `required` is null when the page no longer states it and nothing was
  * remembered; the row then shows "N approved".
  */
+/** A reviewer as the sidebar lists them: the verdict it states, if any, and whether GitHub is waiting on them. */
+export interface SidebarStanding {
+  readonly login: string;
+  readonly verdict: ReviewerState | null;
+  readonly awaiting: boolean;
+}
+
+/** Someone the loaded timeline has a review from, and when the latest review loaded from them was submitted (ISO). */
+export interface TimelinePresence {
+  readonly login: string;
+  readonly latestAt: string;
+}
+
+export interface StandingSources {
+  readonly sidebar: readonly SidebarStanding[];
+  /** The timeline's latest verdict per reviewer (`latestReviewers`: a dismissal leaves none). */
+  readonly timeline: readonly ReviewerRecord[];
+  /** Everyone the loaded timeline has a review from, verdict or not. */
+  readonly onTimeline: readonly TimelinePresence[];
+  /** Whether the loaded timeline is all of it: no "Load more" left to press, nothing still being fetched. */
+  readonly timelineComplete: boolean;
+  /** The Action's verdicts, written at one moment. */
+  readonly payload: readonly ReviewerRecord[];
+  /** When the payload was written (ISO); null when there is none. */
+  readonly payloadAt: string | null;
+  /** Whether the payload was written for the page's head: a push is when GitHub dismisses stale approvals, so an older payload may be from before one. */
+  readonly payloadCurrent: boolean;
+}
+
+/**
+ * Whose verdicts count toward the approvals and the warning: the sidebar's
+ * first (GitHub's own latest-per-reviewer, complete from the start), the
+ * timeline's for anyone whose verdict the sidebar does not state, the
+ * payload's for anyone the page has not read at all. A reviewer the sidebar
+ * only awaits (asked again) keeps the verdict they gave — GitHub still counts
+ * it ("Changes approved · 1 approval, 1 pending review") — so the timeline
+ * supplies it.
+ *
+ * For someone the timeline has reviews from, the payload speaks only when
+ * it knows more than the page has loaded: the timeline is incomplete (a
+ * long conversation's middle behind "Load more" can hold their later
+ * approval while an older, dismissed review of theirs is on the page), the
+ * payload was written for this head (a push is when GitHub dismisses stale
+ * approvals, and a payload from before one still holds the approval it
+ * took), and it was written after every review loaded from them. A
+ * complete timeline with reviews from them and no verdict is a confirmed
+ * dismissal, and no payload brings the approval back. And only a verdict
+ * speaks: the Action records a person's *last* review, comment-only or not
+ * (a dismissed one reads as `commented` too), so a payload `commented`
+ * says nothing about the verdict they gave before it and leaves a loaded
+ * one standing — as a plain comment on the timeline does not withdraw one.
+ */
+export function standingReviewers(sources: StandingSources): readonly ReviewerRecord[] {
+  const reviewers: ReviewerRecord[] = sources.sidebar.flatMap((reviewer) => (reviewer.verdict === null ? [] : [{ login: reviewer.login, state: reviewer.verdict }]));
+  const settled = new Set(sources.sidebar.filter((reviewer) => !reviewer.awaiting).map((reviewer) => reviewer.login.toLowerCase()));
+  for (const record of sources.timeline) if (!settled.has(record.login.toLowerCase())) reviewers.push(record);
+  const latestLoaded = new Map<string, number>();
+  for (const presence of sources.onTimeline) {
+    const key = presence.login.toLowerCase();
+    const at = Date.parse(presence.latestAt);
+    latestLoaded.set(key, Math.max(latestLoaded.get(key) ?? Number.NEGATIVE_INFINITY, Number.isNaN(at) ? Number.POSITIVE_INFINITY : at));
+  }
+  const written = sources.payloadAt === null ? Number.NaN : Date.parse(sources.payloadAt);
+  for (const record of sources.payload) {
+    const key = record.login.toLowerCase();
+    if (settled.has(key)) continue;
+    const index = reviewers.findIndex((entry) => entry.login.toLowerCase() === key);
+    const loadedAt = latestLoaded.get(key);
+    if (loadedAt === undefined) {
+      if (index === -1) reviewers.push(record);
+      continue;
+    }
+    // Reviews from them are on the page. An unreadable time on either side reads as "not newer".
+    if (sources.timelineComplete || !sources.payloadCurrent || !(written > loadedAt)) continue;
+    if (index === -1) reviewers.push(record);
+    else if (record.state === 'approved' || record.state === 'changes_requested') reviewers[index] = record;
+  }
+  return reviewers;
+}
+
 export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRecord[], options: RequiredReviewsOptions = {}): RequiredReviews | null {
   const stated = /at least\s+(\d+)\s+approving review/i.exec(text)?.[1];
   const satisfied = /(\d+)\s+approving reviews?\s+by\b/i.exec(text)?.[1];
@@ -457,8 +537,8 @@ export function requiredReviewsFrom(text: string, reviewers: readonly ReviewerRe
   return {
     required,
     approvals,
-    // The box's own "changes requested" sentence is the merge blocker's wording; it stays while a request stands
-    // and goes once the reviewer is re-requested, so it can be read as it is.
+    // The box's own "changes requested" sentence is the merge blocker's wording and is read as it is; a reviewer's
+    // standing verdict counts beside it, asked again or not (the callers keep such verdicts in `reviewers`).
     changesRequested: reviewers.some((reviewer) => reviewer.state === 'changes_requested') || /\bchanges requested\b/i.test(text),
   };
 }

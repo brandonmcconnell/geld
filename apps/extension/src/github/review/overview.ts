@@ -7,7 +7,7 @@
 
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewerState } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botsTriggeredBy, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
@@ -36,7 +36,7 @@ import type { Batch, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './pa
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
-import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom } from './panel-model';
+import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -2577,18 +2577,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // states it nowhere, so the row there says "N approved" rather than a fraction.
   const stated = /at least\s+(\d+)\s+approving review/i.exec(`${boxText}\n${reviewersSidebarText()}`)?.[1];
   if (stated !== undefined) visit.knownRequired = Number.parseInt(stated, 10);
-  // A re-requested reviewer is awaited again: GitHub sets their earlier verdict aside (the merge box stops saying
-  // "changes requested"), and so does the row, for the tint and the count alike.
-  const awaited = new Set(awaiting.map((entry) => entry.author.toLowerCase()));
   // The sidebar's verdicts first — GitHub's own latest-per-reviewer, complete from the start — then the
-  // timeline's and the payload's for anyone the sidebar does not list.
-  const reviewers: ReviewerRecord[] = sidebar.flatMap((reviewer) => {
-    const state = sidebarVerdict(reviewer);
-    return state === null ? [] : [{ login: reviewer.login, state }];
+  // timeline's and the payload's for anyone whose verdict the sidebar does not state. A reviewer the sidebar only
+  // awaits (asked again) keeps the verdict they gave: GitHub still counts it (the merge box reads "Changes approved
+  // · 1 approval, 1 pending review"), so the count and the tint do too, as the heading's groups do (`reviewerGroups`).
+  // The payload is the Action's reading of the whole review list at one moment, for one head: with a payload at
+  // all (`local` is this device's own crawl), it fills in for what a partly loaded timeline has not read yet.
+  const reviewers = standingReviewers({
+    sidebar: sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => ({ login: reviewer.login, verdict: sidebarVerdict(reviewer), awaiting: reviewer.state === 'awaiting' })),
+    timeline: latestReviewers(reviews),
+    onTimeline: reviews.filter((review) => !review.author.bot).map((review) => ({ login: review.author.login, latestAt: review.createdAt })),
+    timelineComplete: !hasLoadMore() && !ingesting,
+    payload: composed.freshness === 'local' ? [] : meta.reviewers,
+    payloadAt: composed.freshness === 'local' ? null : meta.generatedAt,
+    payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
   });
-  const settled = new Set(sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => reviewer.login.toLowerCase()));
-  for (const record of latestReviewers(reviews)) if (!awaited.has(record.login.toLowerCase()) && !settled.has(record.login.toLowerCase())) reviewers.push(record);
-  for (const record of meta.reviewers) if (!awaited.has(record.login.toLowerCase()) && !settled.has(record.login.toLowerCase()) && !reviewers.some((entry) => entry.login === record.login)) reviewers.push(record);
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -134,6 +134,59 @@ describe('status rows', () => {
     expect(requiredReviewsFrom('Changes approved\n2 approving reviews by reviewers with write access.', [])).toEqual({ required: null, approvals: 2, changesRequested: false });
     // Approvals seen in the timeline count even when the box says nothing yet.
     expect(requiredReviewsFrom('Review required\nAt least 1 approving review is required by reviewers with write access.', [{ login: 'a', state: 'approved' }, { login: 'b', state: 'approved' }])).toEqual({ required: 1, approvals: 2, changesRequested: false });
+    // A reviewer asked again keeps the verdict they gave (mintlify/mint#12495: the sidebar awaits brandonmcconnell,
+    // the box still reads "1 approval"); the count agrees with the heading's groups, and so does the warning for a
+    // reviewer who requested changes and was asked again — GitHub still holds that against the merge.
+    expect(requiredReviewsFrom('Changes approved\n1 approving review by reviewers with write access.\n1 approval\n1 pending review', [{ login: 'brandonmcconnell', state: 'approved' }])).toEqual({ required: null, approvals: 1, changesRequested: false });
+    expect(requiredReviewsFrom('Review required\n1 pending review', [{ login: 'kyle', state: 'changes_requested' }])).toEqual({ required: 1, approvals: 0, changesRequested: true });
+  });
+
+  it('counts the verdicts that stand: a re-request keeps one, a dismissal takes it away for good', () => {
+    const approved = { login: 'brandonmcconnell', state: 'approved' as const };
+    // mintlify/mint#12495: approved, then asked again. The sidebar states no verdict (it awaits him); the
+    // timeline's approval stands and counts.
+    const loaded = (login: string, latestAt = '2026-10-07T10:00:00Z') => ({ login, latestAt });
+    const whole = { timelineComplete: true, payloadAt: '2026-10-08T09:00:00Z', payloadCurrent: true };
+    expect(standingReviewers({ ...whole, sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [approved], onTimeline: [loaded('brandonmcconnell')], payload: [] })).toEqual([approved]);
+    // The sidebar's stated verdict is final; the timeline's and the payload's add only reviewers it does not state.
+    expect(standingReviewers({ ...whole, sidebar: [{ login: 'Ana', verdict: 'approved', awaiting: false }], timeline: [{ login: 'ana', state: 'commented' }, { login: 'max', state: 'changes_requested' }], onTimeline: [loaded('ana'), loaded('max')], payload: [{ login: 'zoe', state: 'approved' }, { login: 'max', state: 'approved' }] })).toEqual([
+      { login: 'Ana', state: 'approved' },
+      { login: 'max', state: 'changes_requested' },
+      { login: 'zoe', state: 'approved' },
+    ]);
+    // A push dismissed the approval and he was asked again: the timeline has his reviews but no verdict (the
+    // dismissal took it), the sidebar awaits him, and the payload from before the push still says approved.
+    // Nothing stands — whether the timeline is all loaded or not, a payload for an older head is from before the
+    // push that dismissed the approval.
+    const dismissed = { sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [], onTimeline: [loaded('brandonmcconnell')], payload: [approved] };
+    expect(standingReviewers({ ...whole, ...dismissed })).toEqual([]);
+    expect(standingReviewers({ ...whole, ...dismissed, timelineComplete: false, payloadCurrent: false })).toEqual([]);
+    // The payload speaks for reviewers the page has not read at all.
+    expect(standingReviewers({ ...whole, sidebar: [], timeline: [], onTimeline: [], payload: [approved] })).toEqual([approved]);
+  });
+
+  it('lets a payload written after the loaded reviews fill in for a partly loaded timeline', () => {
+    const approved = { login: 'brandonmcconnell', state: 'approved' } as const;
+    const awaiting = [{ login: 'brandonmcconnell', verdict: null, awaiting: true }];
+    // A long conversation: an older review of his, dismissed, is on the page while his later approval sits behind
+    // "Load more"; asked again, the sidebar only awaits him. The payload, written for this head after that older
+    // review, read the whole list and holds the approval — it fills in until the timeline has it too.
+    const partial = { sidebar: awaiting, timeline: [], onTimeline: [{ login: 'brandonmcconnell', latestAt: '2026-10-07T10:00:00Z' }], payload: [approved], payloadAt: '2026-10-08T09:00:00Z', payloadCurrent: true };
+    expect(standingReviewers({ ...partial, timelineComplete: false })).toEqual([approved]);
+    // Once the timeline is all loaded, reviews from him and no verdict is a dismissal confirmed: the payload is silent.
+    expect(standingReviewers({ ...partial, timelineComplete: true })).toEqual([]);
+    // A review of his loaded from after the payload was written: the page knows more, and the payload yields.
+    expect(standingReviewers({ ...partial, timelineComplete: false, onTimeline: [{ login: 'brandonmcconnell', latestAt: '2026-10-08T12:00:00Z' }] })).toEqual([]);
+    // A later payload verdict supersedes an older loaded one for the same person (a comment loaded, the approval not).
+    expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([approved]);
+    // The other way round, a later payload `commented` (the Action records the last review, comment-only or not) does
+    // not withdraw the verdict the page has: she approved, then commented, then was asked again.
+    const requested = { login: 'brandonmcconnell', state: 'changes_requested' } as const;
+    expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [approved], payload: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([approved]);
+    expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [requested], payload: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([requested]);
+    // A time that cannot be read on either side is not "newer": the payload stays silent.
+    expect(standingReviewers({ ...partial, timelineComplete: false, onTimeline: [{ login: 'brandonmcconnell', latestAt: '' }] })).toEqual([]);
+    expect(standingReviewers({ ...partial, timelineComplete: false, payloadAt: null })).toEqual([]);
   });
 
   it('grades bots', () => {
@@ -161,15 +214,35 @@ describe('status rows', () => {
 });
 
 describe('reviewer groups', () => {
-  it('sets a verdict aside once the reviewer is awaited again', async () => {
+  it('keeps a verdict standing beside a request to review again', async () => {
     const { reviewerGroups } = await import('./panel');
     const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
-    // The sidebar's awaited reviewers come first, the timeline's verdicts after, oldest first.
+    // The sidebar's awaited reviewers come first, the timeline's verdicts after, oldest first. Kyle requested
+    // changes and was asked again: GitHub still holds his verdict against the merge, and still awaits him, so
+    // he is in both groups — as the merge box puts it, "changes requested, 1 pending review".
     const groups = reviewerGroups([line('kyle', 'awaiting'), line('kyle', 'changes_requested'), line('ana', 'approved'), line('ana', 'commented')]);
     expect(groups.map((group) => [group.state, group.reviewers.map((reviewer) => reviewer.login)])).toEqual([
       ['approved', ['ana']],
+      ['changes_requested', ['kyle']],
       ['awaiting', ['kyle']],
     ]);
+  });
+
+  it("shows an approval the sidebar no longer names once the reviewer was asked again", async () => {
+    const { reviewerGroups } = await import('./panel');
+    const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    // mintlify/mint#12495: brandonmcconnell approved, then re-requested his own review. The sidebar says only
+    // "Awaiting requested review from brandonmcconnell"; the merge box says "Changes approved · 1 approval, 1
+    // pending review". The approval is the timeline's; the request the sidebar's; both show.
+    const sidebar = [{ login: 'brandonmcconnell', avatarSrc: 'https://avatars.githubusercontent.com/u/5913254?s=80&v=4', state: 'awaiting' as const, bot: false }];
+    const groups = reviewerGroups([line('brandonmcconnell', 'approved')], sidebar);
+    expect(groups.map((group) => [group.state, group.reviewers.map((reviewer) => reviewer.login)])).toEqual([
+      ['approved', ['brandonmcconnell']],
+      ['awaiting', ['brandonmcconnell']],
+    ]);
+    // Dismissed by GitHub (a push under "dismiss stale approvals"): nothing stands, only the request.
+    const dismissed = [{ login: 'brandonmcconnell', avatarSrc: null, state: 'dismissed' as const, bot: false }, ...sidebar];
+    expect(reviewerGroups([line('brandonmcconnell', 'approved')], dismissed).map((group) => group.state)).toEqual(['awaiting']);
   });
 
   it("takes the sidebar's word on a reviewer over the timeline's, and the timeline's for anyone else", async () => {
