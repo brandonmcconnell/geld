@@ -18965,7 +18965,8 @@ var botVerdictSchema = external_exports.object({
   reviewedSha: sha,
   checkName: external_exports.string().min(1).optional(),
   sourceId: external_exports.string().min(1).optional(),
-  reason: external_exports.string().min(1).optional()
+  reason: external_exports.string().min(1).optional(),
+  runJudged: external_exports.literal(true).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -19046,7 +19047,8 @@ function botVerdictFrom(value) {
   const graded = value.severity === void 0 ? scored : { ...scored, severity: value.severity };
   const named = value.checkName === void 0 ? graded : { ...graded, checkName: value.checkName };
   const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
-  return value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
+  const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
+  return value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -19513,6 +19515,13 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const threadRuns = /* @__PURE__ */ new Map();
   const runsBeforeAsk = /* @__PURE__ */ new Map();
   const lastEditBy = /* @__PURE__ */ new Map();
+  const lastWordBy = /* @__PURE__ */ new Map();
+  const reported = (id, comment) => {
+    for (const at of [comment.createdAt, comment.editedAt]) {
+      const time3 = at === void 0 ? NaN : Date.parse(at);
+      if (!Number.isNaN(time3) && time3 > (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastWordBy.set(id, time3);
+    }
+  };
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id !== null && comment.editedAt !== void 0) {
@@ -19533,6 +19542,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (comment.resolved !== void 0) {
+      reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
       const run2 = threadRuns.get(id);
@@ -19544,6 +19554,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
+      reported(id, comment);
       statusOnly.delete(id);
       const existing2 = byId.get(id);
       const prior = runsBeforeAsk.get(id);
@@ -19563,6 +19574,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    reported(id, comment);
     threadRuns.delete(id);
     statusOnly.delete(id);
     runsBeforeAsk.delete(id);
@@ -19611,8 +19623,45 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     byId.set(id, { id, login: run2.login, verdict: "findings", count: 0, ...scored, reviewedSha, ...named, sourceId: run2.lastAnchor });
   }
+  for (const [id, verdict] of checkVerdict) {
+    if (verdict !== "running") continue;
+    const existing = byId.get(id);
+    if (existing === void 0 || existing.verdict === "running" || existing.verdict === "loading") continue;
+    byId.set(id, {
+      id,
+      login: existing.login,
+      verdict: "running",
+      reviewedSha: existing.reviewedSha,
+      ...existing.checkName === void 0 ? {} : { checkName: existing.checkName },
+      ...existing.sourceId === void 0 ? {} : { sourceId: existing.sourceId }
+    });
+  }
+  for (const check2 of checks) {
+    if (check2.startedAt === void 0 || check2.status !== "completed") continue;
+    const started = Date.parse(check2.startedAt);
+    const bot = botByCheckName(check2.name);
+    if (bot === null || Number.isNaN(started)) continue;
+    const existing = byId.get(bot.id);
+    if (existing === void 0) continue;
+    if ((lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) > started) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);
+    const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
+    byId.set(bot.id, {
+      id: bot.id,
+      login: existing.login,
+      verdict: awaiting ? "running" : checkVerdict.get(bot.id) ?? "clean",
+      reviewedSha: existing.reviewedSha,
+      checkName: check2.name,
+      ...existing.sourceId === void 0 ? {} : { sourceId: existing.sourceId },
+      runJudged: true
+    });
+  }
   return [...byId.values()];
 }
+var REPORT_GRACE_MS = 90 * 1e3;
 function reactedBy(comment, id) {
   const bot = botById(id);
   const logins = new Set((bot?.logins ?? []).flatMap((login) => [login.toLowerCase(), login.toLowerCase().replace(/\[bot\]$/, "")]));
@@ -20874,7 +20923,7 @@ function buildMeta(pr, options) {
     items = [...items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]).slice(0, maxItems);
   }
   const botComments = [
-    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt })),
+    ...pr.comments.map((comment) => ({ author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt } })),
     ...pr.reviews.map((review) => ({ author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...review.submittedAt === null ? {} : { createdAt: review.submittedAt } }))
   ];
   const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now());
@@ -21258,7 +21307,7 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login __typename } body createdAt }
+        nodes { databaseId author { login __typename } body createdAt lastEditedAt }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
@@ -21273,7 +21322,7 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion }
+                  ... on CheckRun { name status conclusion startedAt completedAt }
                   ... on StatusContext { context state }
                 }
               }
@@ -21324,7 +21373,7 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
             pageInfo { hasNextPage endCursor }
             nodes {
               __typename
-              ... on CheckRun { name status conclusion }
+              ... on CheckRun { name status conclusion startedAt completedAt }
               ... on StatusContext { context state }
             }
           }
@@ -21354,7 +21403,14 @@ async function remainingCheckContexts(client, owner, repo, oid, first) {
 }
 function checkRunOf(node2, sha2) {
   if (node2.__typename === "CheckRun" && node2.name !== void 0 && node2.status !== void 0) {
-    return { name: node2.name, status: node2.status.toLowerCase(), conclusion: node2.conclusion?.toLowerCase() ?? null, sha: sha2 };
+    return {
+      name: node2.name,
+      status: node2.status.toLowerCase(),
+      conclusion: node2.conclusion?.toLowerCase() ?? null,
+      sha: sha2,
+      ...typeof node2.startedAt === "string" ? { startedAt: node2.startedAt } : {},
+      ...typeof node2.completedAt === "string" ? { completedAt: node2.completedAt } : {}
+    };
   }
   if (node2.__typename === "StatusContext" && node2.context !== void 0 && node2.state !== void 0) {
     const state = node2.state.toLowerCase();
@@ -21405,7 +21461,13 @@ async function loadPullRequest(client, owner, repo, number4) {
       });
     }
     for (const node2 of pr.comments.nodes) {
-      comments.push({ databaseId: node2.databaseId, author: loginOf(node2.author), body: node2.body, createdAt: node2.createdAt });
+      comments.push({
+        databaseId: node2.databaseId,
+        author: loginOf(node2.author),
+        body: node2.body,
+        createdAt: node2.createdAt,
+        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {}
+      });
     }
     for (const node2 of pr.reviews.nodes) {
       reviews.push({

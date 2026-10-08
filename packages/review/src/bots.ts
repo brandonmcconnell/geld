@@ -232,6 +232,19 @@ export interface RawCheckRun {
   readonly detailsUrl?: string;
   /** The check's one-line description as GitHub shows it ("Failing after 6m", "— 3 changes must be accepted"). */
   readonly description?: string;
+  /**
+   * When the run began, ISO, when known: the API's `startedAt`, or on the
+   * page the "Started …" time GitHub shows while a check runs (kept once it
+   * has finished, run-starts.ts). What lets a finished check's report be told
+   * from the summary of the run before it (see `verdictsFrom`).
+   */
+  readonly startedAt?: string;
+  /**
+   * When the run was seen to have finished, ISO, when known: the API's
+   * `completedAt`, or on the page the first pass that found the row
+   * completed. The report's grace (`REPORT_GRACE_MS`) runs from here.
+   */
+  readonly completedAt?: string;
 }
 
 export interface DerivedBotVerdict {
@@ -246,6 +259,13 @@ export interface DerivedBotVerdict {
   readonly sourceId?: string;
   /** The bot's own words for a run it refused (`refusalReason`). */
   readonly reason?: string;
+  /**
+   * The verdict was judged against the check's known start: either a report
+   * newer than it, or the check alone once the report's grace ran out. Set
+   * only when `RawCheckRun.startedAt` was known; a page that opened after the
+   * check finished cannot say and leaves it unset.
+   */
+  readonly runJudged?: true;
 }
 
 /**
@@ -515,6 +535,17 @@ export function verdictsFrom(
   const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
   const lastEditBy = new Map<string, number>();
+  /**
+   * When each bot last reported: a comment that votes below (a thread, a refusal, a review-shaped summary) posted
+   * or rewritten. Its "Starting" lines and a coding agent's conversational replies are not reports.
+   */
+  const lastWordBy = new Map<string, number>();
+  const reported = (id: string, comment: BotComment): void => {
+    for (const at of [comment.createdAt, comment.editedAt]) {
+      const time = at === undefined ? NaN : Date.parse(at);
+      if (!Number.isNaN(time) && time > (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) lastWordBy.set(id, time);
+    }
+  };
   for (const comment of comments) {
     const id = reviewBotIdFor(comment.author, extraLogins);
     if (id !== null && comment.editedAt !== undefined) {
@@ -542,6 +573,7 @@ export function verdictsFrom(
     }
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
+      reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
       const run = threadRuns.get(id);
@@ -553,6 +585,7 @@ export function verdictsFrom(
     if (isTriggerComment(comment.body, extraLogins)) continue;
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
+      reported(id, comment);
       // The bot said it would not review: the run that was asked for is answered (not running), and refused. A
       // review the bot did make earlier still stands — the chip shows the last real run, and `reviewedSha` says
       // whether it is behind the head — so the refusal is the verdict only for a bot that never reviewed here.
@@ -578,6 +611,7 @@ export function verdictsFrom(
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    reported(id, comment);
     threadRuns.delete(id);
     statusOnly.delete(id);
     // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
@@ -640,9 +674,61 @@ export function verdictsFrom(
     }
     byId.set(id, { id, login: run.login, verdict: 'findings', count: 0, ...scored, reviewedSha, ...named, sourceId: run.lastAnchor });
   }
+  // A check still running on the head is the bot's current run, whatever its comments said: those are the run
+  // before (a bot run from CI, or asked for on its own site, posts nothing until it is done). The chip reads
+  // running and keeps the latest summary to open.
+  for (const [id, verdict] of checkVerdict) {
+    if (verdict !== 'running') continue;
+    const existing = byId.get(id);
+    if (existing === undefined || existing.verdict === 'running' || existing.verdict === 'loading') continue;
+    byId.set(id, {
+      id,
+      login: existing.login,
+      verdict: 'running',
+      reviewedSha: existing.reviewedSha,
+      ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }),
+      ...(existing.sourceId === undefined ? {} : { sourceId: existing.sourceId }),
+    });
+  }
+  // A check that finished, whose start is known: its report is a word from the bot newer than that start. With
+  // none yet the run is still running for a grace after the finish (the bot writes its summary around the time
+  // it closes its check, in either order), then the check alone says how it went — the whole verdict for a bot
+  // that reports through CI and never posts. Without this the summary of the run before would read as this
+  // run's result for as long as the new one took to appear.
+  for (const check of checks) {
+    if (check.startedAt === undefined || check.status !== 'completed') continue;
+    const started = Date.parse(check.startedAt);
+    const bot = botByCheckName(check.name);
+    if (bot === null || Number.isNaN(started)) continue;
+    const existing = byId.get(bot.id);
+    if (existing === undefined) continue;
+    if ((lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) > started) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
+    const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
+    byId.set(bot.id, {
+      id: bot.id,
+      login: existing.login,
+      verdict: awaiting ? 'running' : (checkVerdict.get(bot.id) ?? 'clean'),
+      reviewedSha: existing.reviewedSha,
+      checkName: check.name,
+      ...(existing.sourceId === undefined ? {} : { sourceId: existing.sourceId }),
+      runJudged: true,
+    });
+  }
 
   return [...byId.values()];
 }
+
+/**
+ * How long after a bot's check finishes its report (a summary posted or
+ * rewritten, review threads) is still awaited before the check's conclusion
+ * is taken as the whole verdict. The bots seen write the summary within
+ * seconds of closing the check, in either order.
+ */
+export const REPORT_GRACE_MS = 90 * 1000;
 
 /** Whether the bot `id` is among a comment's reactors (any of its logins, with or without `[bot]`). */
 function reactedBy(comment: BotComment, id: string): boolean {
