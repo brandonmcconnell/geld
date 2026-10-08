@@ -1691,7 +1691,10 @@ function statusRow(label: [string, string], lead: Node, content: Node[], right: 
  */
 function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--status`, role: 'list' });
-  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting) {
+  // The row stands wherever there is something to say about reviews — or someone to ask: on a pull request with no
+  // review, no pending reviewer and no required count, GitHub still offers its reviewer form, and the Request a
+  // review menu lives on this row, so without it the first reviewer could not be asked from Geld.
+  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting || model.canRequestReviewers) {
     const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
     const content: Node[] = [];
     // The words carry only what the reviewer groups cannot: how many approvals the repository asks for. Without
