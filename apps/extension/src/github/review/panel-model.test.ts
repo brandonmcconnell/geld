@@ -145,18 +145,43 @@ describe('status rows', () => {
     const approved = { login: 'brandonmcconnell', state: 'approved' as const };
     // mintlify/mint#12495: approved, then asked again. The sidebar states no verdict (it awaits him); the
     // timeline's approval stands and counts.
-    expect(standingReviewers({ sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [approved], onTimeline: ['brandonmcconnell'], payload: [] })).toEqual([approved]);
+    const loaded = (login: string, latestAt = '2026-10-07T10:00:00Z') => ({ login, latestAt });
+    const whole = { timelineComplete: true, payloadAt: '2026-10-08T09:00:00Z', payloadCurrent: true };
+    expect(standingReviewers({ ...whole, sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [approved], onTimeline: [loaded('brandonmcconnell')], payload: [] })).toEqual([approved]);
     // The sidebar's stated verdict is final; the timeline's and the payload's add only reviewers it does not state.
-    expect(standingReviewers({ sidebar: [{ login: 'Ana', verdict: 'approved', awaiting: false }], timeline: [{ login: 'ana', state: 'commented' }, { login: 'max', state: 'changes_requested' }], onTimeline: ['ana', 'max'], payload: [{ login: 'zoe', state: 'approved' }, { login: 'max', state: 'approved' }] })).toEqual([
+    expect(standingReviewers({ ...whole, sidebar: [{ login: 'Ana', verdict: 'approved', awaiting: false }], timeline: [{ login: 'ana', state: 'commented' }, { login: 'max', state: 'changes_requested' }], onTimeline: [loaded('ana'), loaded('max')], payload: [{ login: 'zoe', state: 'approved' }, { login: 'max', state: 'approved' }] })).toEqual([
       { login: 'Ana', state: 'approved' },
       { login: 'max', state: 'changes_requested' },
       { login: 'zoe', state: 'approved' },
     ]);
     // A push dismissed the approval and he was asked again: the timeline has his reviews but no verdict (the
-    // dismissal took it), the sidebar awaits him, and a stale payload still says approved. Nothing stands.
-    expect(standingReviewers({ sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [], onTimeline: ['brandonmcconnell'], payload: [approved] })).toEqual([]);
-    // The payload speaks only for reviewers the page has not read at all.
-    expect(standingReviewers({ sidebar: [], timeline: [], onTimeline: [], payload: [approved] })).toEqual([approved]);
+    // dismissal took it), the sidebar awaits him, and the payload from before the push still says approved.
+    // Nothing stands — whether the timeline is all loaded or not, a payload for an older head is from before the
+    // push that dismissed the approval.
+    const dismissed = { sidebar: [{ login: 'brandonmcconnell', verdict: null, awaiting: true }], timeline: [], onTimeline: [loaded('brandonmcconnell')], payload: [approved] };
+    expect(standingReviewers({ ...whole, ...dismissed })).toEqual([]);
+    expect(standingReviewers({ ...whole, ...dismissed, timelineComplete: false, payloadCurrent: false })).toEqual([]);
+    // The payload speaks for reviewers the page has not read at all.
+    expect(standingReviewers({ ...whole, sidebar: [], timeline: [], onTimeline: [], payload: [approved] })).toEqual([approved]);
+  });
+
+  it('lets a payload written after the loaded reviews fill in for a partly loaded timeline', () => {
+    const approved = { login: 'brandonmcconnell', state: 'approved' } as const;
+    const awaiting = [{ login: 'brandonmcconnell', verdict: null, awaiting: true }];
+    // A long conversation: an older review of his, dismissed, is on the page while his later approval sits behind
+    // "Load more"; asked again, the sidebar only awaits him. The payload, written for this head after that older
+    // review, read the whole list and holds the approval — it fills in until the timeline has it too.
+    const partial = { sidebar: awaiting, timeline: [], onTimeline: [{ login: 'brandonmcconnell', latestAt: '2026-10-07T10:00:00Z' }], payload: [approved], payloadAt: '2026-10-08T09:00:00Z', payloadCurrent: true };
+    expect(standingReviewers({ ...partial, timelineComplete: false })).toEqual([approved]);
+    // Once the timeline is all loaded, reviews from him and no verdict is a dismissal confirmed: the payload is silent.
+    expect(standingReviewers({ ...partial, timelineComplete: true })).toEqual([]);
+    // A review of his loaded from after the payload was written: the page knows more, and the payload yields.
+    expect(standingReviewers({ ...partial, timelineComplete: false, onTimeline: [{ login: 'brandonmcconnell', latestAt: '2026-10-08T12:00:00Z' }] })).toEqual([]);
+    // A later payload verdict supersedes an older loaded one for the same person (a comment loaded, the approval not).
+    expect(standingReviewers({ ...partial, timelineComplete: false, timeline: [{ login: 'brandonmcconnell', state: 'commented' }] })).toEqual([approved]);
+    // A time that cannot be read on either side is not "newer": the payload stays silent.
+    expect(standingReviewers({ ...partial, timelineComplete: false, onTimeline: [{ login: 'brandonmcconnell', latestAt: '' }] })).toEqual([]);
+    expect(standingReviewers({ ...partial, timelineComplete: false, payloadAt: null })).toEqual([]);
   });
 
   it('grades bots', () => {

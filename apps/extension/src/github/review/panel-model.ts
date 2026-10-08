@@ -448,14 +448,26 @@ export interface SidebarStanding {
   readonly awaiting: boolean;
 }
 
+/** Someone the loaded timeline has a review from, and when the latest review loaded from them was submitted (ISO). */
+export interface TimelinePresence {
+  readonly login: string;
+  readonly latestAt: string;
+}
+
 export interface StandingSources {
   readonly sidebar: readonly SidebarStanding[];
   /** The timeline's latest verdict per reviewer (`latestReviewers`: a dismissal leaves none). */
   readonly timeline: readonly ReviewerRecord[];
   /** Everyone the loaded timeline has a review from, verdict or not. */
-  readonly onTimeline: readonly string[];
+  readonly onTimeline: readonly TimelinePresence[];
+  /** Whether the loaded timeline is all of it: no "Load more" left to press, nothing still being fetched. */
+  readonly timelineComplete: boolean;
   /** The Action's verdicts, written at one moment. */
   readonly payload: readonly ReviewerRecord[];
+  /** When the payload was written (ISO); null when there is none. */
+  readonly payloadAt: string | null;
+  /** Whether the payload was written for the page's head: a push is when GitHub dismisses stale approvals, so an older payload may be from before one. */
+  readonly payloadCurrent: boolean;
 }
 
 /**
@@ -465,18 +477,42 @@ export interface StandingSources {
  * payload's for anyone the page has not read at all. A reviewer the sidebar
  * only awaits (asked again) keeps the verdict they gave — GitHub still counts
  * it ("Changes approved · 1 approval, 1 pending review") — so the timeline
- * supplies it. One the timeline has reviews from and no verdict for was
- * dismissed (a push under "dismiss stale approvals", then asked again): the
- * payload's older approval must not come back for them.
+ * supplies it.
+ *
+ * For someone the timeline has reviews from, the payload speaks only when
+ * it knows more than the page has loaded: the timeline is incomplete (a
+ * long conversation's middle behind "Load more" can hold their later
+ * approval while an older, dismissed review of theirs is on the page), the
+ * payload was written for this head (a push is when GitHub dismisses stale
+ * approvals, and a payload from before one still holds the approval it
+ * took), and it was written after every review loaded from them. A
+ * complete timeline with reviews from them and no verdict is a confirmed
+ * dismissal, and no payload brings the approval back.
  */
 export function standingReviewers(sources: StandingSources): readonly ReviewerRecord[] {
   const reviewers: ReviewerRecord[] = sources.sidebar.flatMap((reviewer) => (reviewer.verdict === null ? [] : [{ login: reviewer.login, state: reviewer.verdict }]));
   const settled = new Set(sources.sidebar.filter((reviewer) => !reviewer.awaiting).map((reviewer) => reviewer.login.toLowerCase()));
   for (const record of sources.timeline) if (!settled.has(record.login.toLowerCase())) reviewers.push(record);
-  const onTimeline = new Set(sources.onTimeline.map((login) => login.toLowerCase()));
+  const latestLoaded = new Map<string, number>();
+  for (const presence of sources.onTimeline) {
+    const key = presence.login.toLowerCase();
+    const at = Date.parse(presence.latestAt);
+    latestLoaded.set(key, Math.max(latestLoaded.get(key) ?? Number.NEGATIVE_INFINITY, Number.isNaN(at) ? Number.POSITIVE_INFINITY : at));
+  }
+  const written = sources.payloadAt === null ? Number.NaN : Date.parse(sources.payloadAt);
   for (const record of sources.payload) {
     const key = record.login.toLowerCase();
-    if (!settled.has(key) && !onTimeline.has(key) && !reviewers.some((entry) => entry.login.toLowerCase() === key)) reviewers.push(record);
+    if (settled.has(key)) continue;
+    const index = reviewers.findIndex((entry) => entry.login.toLowerCase() === key);
+    const loadedAt = latestLoaded.get(key);
+    if (loadedAt === undefined) {
+      if (index === -1) reviewers.push(record);
+      continue;
+    }
+    // Reviews from them are on the page. An unreadable time on either side reads as "not newer".
+    if (sources.timelineComplete || !sources.payloadCurrent || !(written > loadedAt)) continue;
+    if (index === -1) reviewers.push(record);
+    else reviewers[index] = record;
   }
   return reviewers;
 }
