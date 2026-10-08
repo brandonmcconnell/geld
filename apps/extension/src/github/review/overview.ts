@@ -2604,11 +2604,16 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // timeline's and the payload's for anyone whose verdict the sidebar does not state. A reviewer the sidebar only
   // awaits (asked again) keeps the verdict they gave: GitHub still counts it (the merge box reads "Changes approved
   // · 1 approval, 1 pending review"), so the count and the tint do too, as the heading's groups do (`reviewerGroups`).
+  // The payload is the Action's reading of the whole review list at one moment, for one head: with a payload at
+  // all (`local` is this device's own crawl), it fills in for what a partly loaded timeline has not read yet.
   const reviewers = standingReviewers({
     sidebar: sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => ({ login: reviewer.login, verdict: sidebarVerdict(reviewer), awaiting: reviewer.state === 'awaiting' })),
     timeline: latestReviewers(reviews),
-    onTimeline: reviews.filter((review) => !review.author.bot).map((review) => review.author.login),
-    payload: meta.reviewers,
+    onTimeline: reviews.filter((review) => !review.author.bot).map((review) => ({ login: review.author.login, latestAt: review.createdAt })),
+    timelineComplete: !hasLoadMore() && !ingesting,
+    payload: composed.freshness === 'local' ? [] : meta.reviewers,
+    payloadAt: composed.freshness === 'local' ? null : meta.generatedAt,
+    payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
   });
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
