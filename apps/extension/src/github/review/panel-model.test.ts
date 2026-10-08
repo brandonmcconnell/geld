@@ -161,15 +161,35 @@ describe('status rows', () => {
 });
 
 describe('reviewer groups', () => {
-  it('sets a verdict aside once the reviewer is awaited again', async () => {
+  it('keeps a verdict standing beside a request to review again', async () => {
     const { reviewerGroups } = await import('./panel');
     const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
-    // The sidebar's awaited reviewers come first, the timeline's verdicts after, oldest first.
+    // The sidebar's awaited reviewers come first, the timeline's verdicts after, oldest first. Kyle requested
+    // changes and was asked again: GitHub still holds his verdict against the merge, and still awaits him, so
+    // he is in both groups — as the merge box puts it, "changes requested, 1 pending review".
     const groups = reviewerGroups([line('kyle', 'awaiting'), line('kyle', 'changes_requested'), line('ana', 'approved'), line('ana', 'commented')]);
     expect(groups.map((group) => [group.state, group.reviewers.map((reviewer) => reviewer.login)])).toEqual([
       ['approved', ['ana']],
+      ['changes_requested', ['kyle']],
       ['awaiting', ['kyle']],
     ]);
+  });
+
+  it("shows an approval the sidebar no longer names once the reviewer was asked again", async () => {
+    const { reviewerGroups } = await import('./panel');
+    const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    // mintlify/mint#12495: brandonmcconnell approved, then re-requested his own review. The sidebar says only
+    // "Awaiting requested review from brandonmcconnell"; the merge box says "Changes approved · 1 approval, 1
+    // pending review". The approval is the timeline's; the request the sidebar's; both show.
+    const sidebar = [{ login: 'brandonmcconnell', avatarSrc: 'https://avatars.githubusercontent.com/u/5913254?s=80&v=4', state: 'awaiting' as const, bot: false }];
+    const groups = reviewerGroups([line('brandonmcconnell', 'approved')], sidebar);
+    expect(groups.map((group) => [group.state, group.reviewers.map((reviewer) => reviewer.login)])).toEqual([
+      ['approved', ['brandonmcconnell']],
+      ['awaiting', ['brandonmcconnell']],
+    ]);
+    // Dismissed by GitHub (a push under "dismiss stale approvals"): nothing stands, only the request.
+    const dismissed = [{ login: 'brandonmcconnell', avatarSrc: null, state: 'dismissed' as const, bot: false }, ...sidebar];
+    expect(reviewerGroups([line('brandonmcconnell', 'approved')], dismissed).map((group) => group.state)).toEqual(['awaiting']);
   });
 
   it("takes the sidebar's word on a reviewer over the timeline's, and the timeline's for anyone else", async () => {

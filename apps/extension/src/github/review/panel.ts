@@ -218,29 +218,44 @@ export interface SidebarVerdict {
  * the timeline only adds reviewers the sidebar does not list.
  */
 export function reviewerGroups(entries: readonly ReviewEntry[], sidebar: readonly SidebarVerdict[] = []): readonly ReviewerGroup[] {
-  const latest = new Map<string, { state: ReviewerGroupState; avatar: Avatar }>();
+  const latest = new Map<string, { state: Exclude<ReviewerGroupState, 'awaiting'>; avatar: Avatar }>();
+  const awaited = new Map<string, Avatar>();
   const settled = new Set<string>();
   for (const reviewer of sidebar) {
     if (reviewer.bot) continue;
     const key = reviewer.login.toLowerCase();
+    const avatar: Avatar = { src: reviewer.avatarSrc ?? '', bot: false, login: reviewer.login };
+    // A pending request is a fact beside any verdict, not instead of it: a reviewer who approved and was asked
+    // again still counts as approving (GitHub's merge box: "1 approval, 1 pending review"); the sidebar names only
+    // the request, so the timeline supplies their verdict below.
+    if (reviewer.state === 'awaiting') {
+      awaited.set(key, avatar);
+      continue;
+    }
     settled.add(key);
-    if (reviewer.state !== 'dismissed') latest.set(key, { state: reviewer.state, avatar: { src: reviewer.avatarSrc ?? '', bot: false, login: reviewer.login } });
+    if (reviewer.state !== 'dismissed') latest.set(key, { state: reviewer.state, avatar });
   }
   for (const entry of entries) {
     if (entry.state === 'thread' || entry.state === 'comment' || entry.state === 'dismissed') continue;
     const key = entry.author.toLowerCase();
+    const avatar: Avatar = { src: entry.avatarSrc ?? '', bot: false, login: entry.author };
+    if (entry.state === 'awaiting') {
+      if (!awaited.has(key)) awaited.set(key, avatar);
+      continue;
+    }
     if (settled.has(key)) continue;
     const current = latest.get(key);
-    // Awaited again (re-requested) sets any earlier verdict aside; a comment-only review sets nothing aside.
-    if (current?.state === 'awaiting') continue;
+    // A comment-only review sets no verdict aside.
     if (entry.state === 'commented' && current !== undefined && current.state !== 'commented') continue;
-    latest.set(key, { state: entry.state, avatar: { src: entry.avatarSrc ?? '', bot: false, login: entry.author } });
+    latest.set(key, { state: entry.state, avatar });
   }
-  const order: readonly ReviewerGroupState[] = ['approved', 'changes_requested', 'commented', 'awaiting'];
-  return order.flatMap((state) => {
+  const order: readonly Exclude<ReviewerGroupState, 'awaiting'>[] = ['approved', 'changes_requested', 'commented'];
+  const groups: ReviewerGroup[] = order.flatMap((state) => {
     const reviewers = [...latest.values()].filter((entry) => entry.state === state).map((entry) => entry.avatar);
     return reviewers.length === 0 ? [] : [{ state, reviewers }];
   });
+  if (awaited.size > 0) groups.push({ state: 'awaiting', reviewers: [...awaited.values()] });
+  return groups;
 }
 
 export interface PanelModel {
@@ -1383,8 +1398,15 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     }
     // Every reviewer, grouped by their latest verdict: the state's glyph, their avatars, how many (the words go on
     // narrow screens; the glyph says it).
+    const verdictOf = new Map(model.reviewerGroups.filter((group) => group.state !== 'awaiting').flatMap((group) => group.reviewers.map((reviewer) => [reviewer.login.toLowerCase(), REVIEWER_GROUP_WORD[group.state]] as const)));
     for (const group of model.reviewerGroups) {
-      const names = group.reviewers.map((reviewer) => reviewer.login).join(', ');
+      // Someone awaited who already gave a verdict was asked again; their verdict still stands in its own group.
+      const names = group.reviewers
+        .map((reviewer) => {
+          const verdict = group.state === 'awaiting' ? verdictOf.get(reviewer.login.toLowerCase()) : undefined;
+          return verdict === undefined ? reviewer.login : `${reviewer.login} (asked again; ${verdict})`;
+        })
+        .join(', ');
       const label = `${group.reviewers.length} ${REVIEWER_GROUP_WORD[group.state]}`;
       content.push(
         createElement('span', { class: `${PANEL_CLASS}__reviewers`, 'data-state': group.state, title: `${REVIEWER_GROUP_TITLE[group.state]}: ${names}`, role: 'img', 'aria-label': `${label}: ${names}` }, [
