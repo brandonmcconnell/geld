@@ -30,6 +30,25 @@ export const RECOMMENDED_MODELS: readonly ModelGuide[] = [
   { tail: 'glm-5.3-flash', title: 'GLM 5.3 Flash', why: 'The budget pick: a tenth of GLM 5.3’s price, quick, and good enough for titles and TL;DRs.' },
 ];
 
+/**
+ * For the Review tab's planner: which hunks form which steps, in what order.
+ * Reasoning work over a whole diff, done once per pull request, so a model
+ * that thinks before it answers earns its price here where it would not for
+ * the digest's titles.
+ */
+export const PLANNING_MODELS: readonly ModelGuide[] = [
+  { tail: 'claude-opus-5.5', title: 'Claude Opus 5.5', why: 'The careful pick: keeps a long diff straight and groups by purpose rather than by file.' },
+  { tail: 'gpt-5.6-sol', title: 'GPT-5.6 Sol', why: 'Strong at ordering steps so each reads with what came before it.' },
+  { tail: 'claude-sonnet-5', title: 'Claude Sonnet 5', why: 'Good plans at a mid price; the default when Opus is more than the pull request needs.' },
+  { tail: 'gemini-3.8-pro', title: 'Gemini 3.8 Pro', why: 'A large context window for very large pull requests sent in full.' },
+  { tail: 'deepseek-v4-pro', title: 'DeepSeek V4 Pro', why: 'Open-weights reasoning model at a fraction of the frontier price.' },
+];
+
+export function planningRecommendationFor(id: string): ModelGuide | null {
+  const tail = modelTail(id).toLowerCase();
+  return PLANNING_MODELS.find((guide) => guide.tail === tail) ?? null;
+}
+
 export interface VariantHint {
   readonly kind: 'batch' | 'fast' | 'flashx' | 'small' | 'pro' | 'free' | 'preview' | 'coding' | 'thinking' | 'other';
   readonly note: string;

@@ -138,6 +138,33 @@ export interface GeldSettings {
    * model proposes. `all`: both. `off`: never show one.
    */
   readonly suggestedFixes: SuggestedFixMode;
+  /**
+   * Add a Review tab to pull request pages that walks the diff in steps
+   * (bodies of work spanning files) instead of file by file. Grouped by
+   * commit, symbol and path on its own; planned and explained by the AI
+   * model once one is configured.
+   */
+  readonly reviewTab: boolean;
+  /**
+   * What the Review tab does when a push leaves its plan behind:
+   * `automatic` remakes the plan (the model is asked again when it made the
+   * plan) as soon as the new head is read, `manual` keeps the plan the
+   * reader is working through and shows a notice with a Refresh control,
+   * as GitHub's files page does when the pull request changed underneath.
+   */
+  readonly reviewReplan: ReviewReplanMode;
+  /**
+   * Model id at the gateway that plans the Review tab's steps and writes
+   * each step's story. Empty means the prose model ({@link aiModel}).
+   */
+  readonly aiReviewModel: string;
+}
+
+export const REVIEW_REPLAN_MODES = ['manual', 'automatic'] as const;
+export type ReviewReplanMode = (typeof REVIEW_REPLAN_MODES)[number];
+
+export function isReviewReplanMode(value: unknown): value is ReviewReplanMode {
+  return typeof value === 'string' && REVIEW_REPLAN_MODES.some((mode) => mode === value);
 }
 
 export const SUGGESTED_FIX_MODES = ['all', 'bots', 'ai', 'off'] as const;
@@ -198,6 +225,9 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   aiModel: '',
   aiJev: false,
   suggestedFixes: 'bots',
+  reviewTab: false,
+  reviewReplan: 'manual',
+  aiReviewModel: '',
 };
 
 /**
@@ -421,6 +451,9 @@ export function normalizeSettings(value: unknown): GeldSettings {
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
+    reviewTab: bool(record, 'reviewTab', DEFAULT_SETTINGS.reviewTab),
+    reviewReplan: isReviewReplanMode(record.reviewReplan) ? record.reviewReplan : DEFAULT_SETTINGS.reviewReplan,
+    aiReviewModel: typeof record.aiReviewModel === 'string' ? record.aiReviewModel.trim() : DEFAULT_SETTINGS.aiReviewModel,
   };
 }
 

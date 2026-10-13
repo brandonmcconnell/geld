@@ -24,6 +24,22 @@ export type FetchDiffResponse =
   | { readonly ok: false; readonly reason: string; readonly retryAfterMs?: number };
 
 /**
+ * Content script → background: the raw text of the page's own `.diff`, for
+ * work that needs hunks and lines rather than counts (the Review tab). Served
+ * from the worker's short text cache when the diff was just fetched, else
+ * fetched as a `page` request through the same budget as every other diff.
+ * Never stored on disk: a large pull request's text is megabytes.
+ */
+export interface FetchDiffTextRequest {
+  readonly type: 'geld:fetch-diff-text';
+  readonly url: string;
+}
+
+export type FetchDiffTextResponse =
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly reason: string; readonly retryAfterMs?: number };
+
+/**
  * Content script → background: read one public repository file (an
  * organisation's `.github` defaults) by its raw URL. Fetched from the
  * background rather than the page so that a missing file — the normal case —
@@ -174,6 +190,7 @@ export interface CatalogCheckMessage {
 
 export type GeldRequest =
   | FetchDiffRequest
+  | FetchDiffTextRequest
   | FetchFileRequest
   | ColorSchemeMessage
   | ToggleHiddenMessage
@@ -195,6 +212,16 @@ export function isFetchDiffRequest(value: unknown): value is FetchDiffRequest {
 export function isFetchDiffResponse(value: unknown): value is FetchDiffResponse {
   if (!isRecord(value)) return false;
   if (value.ok === true) return Array.isArray(value.files);
+  return value.ok === false && typeof value.reason === 'string';
+}
+
+export function isFetchDiffTextRequest(value: unknown): value is FetchDiffTextRequest {
+  return isRecord(value) && value.type === 'geld:fetch-diff-text' && typeof value.url === 'string';
+}
+
+export function isFetchDiffTextResponse(value: unknown): value is FetchDiffTextResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.text === 'string';
   return value.ok === false && typeof value.reason === 'string';
 }
 

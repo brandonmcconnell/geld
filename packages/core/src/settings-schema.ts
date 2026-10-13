@@ -20,10 +20,10 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes' | 'reviewReplan';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
-export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
+export type TextSettingKey = 'aiBaseUrl' | 'aiModel' | 'aiReviewModel';
 
 export type SettingsSurface = 'extension' | 'site';
 
@@ -403,6 +403,26 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: true,
       },
       {
+        kind: 'toggle',
+        key: 'reviewTab',
+        label: 'Review tab on pull requests',
+        description:
+          'Adds a Review tab next to Files changed that walks the pull request in steps: each step is one body of work (a feature slice, a fix, a refactor) across the files it touches, with the hunks of other steps folded away. Accept or flag each step and finish with GitHub’s own review form. On its own Geld groups by commit, shared symbols and path; with AI on, the model plans the steps and explains each one.',
+        popup: true,
+        popupDescription: 'Walk the diff in steps, not files.',
+      },
+      {
+        kind: 'choice',
+        key: 'reviewReplan',
+        label: 'When the pull request changes',
+        description: 'A push can leave the Review tab’s steps behind. `Manual` keeps the steps you are working through and shows a notice with a Refresh control, as GitHub’s files page does. `Automatic` remakes the steps as soon as the new changes are read.',
+        popup: false,
+        options: [
+          { value: 'manual', label: 'Manual', description: 'Keep the steps and say the pull request changed. Refresh when you are ready.' },
+          { value: 'automatic', label: 'Automatic', description: 'Remake the steps on every push (the model is asked again when it planned them).' },
+        ],
+      },
+      {
         kind: 'choice',
         key: 'compactTimeline',
         label: 'Timeline',
@@ -492,6 +512,17 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         description: 'The model that writes: consolidated findings, the TL;DR, proposed fixes. Listed from the gateway once a URL and key are saved; evaluation models such as Jev are not offered here.',
         popup: false,
         placeholder: 'anthropic/claude-sonnet-4.5',
+        autocomplete: 'off',
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'text',
+        key: 'aiReviewModel',
+        label: 'Review planning model',
+        description:
+          'The model that plans the Review tab’s steps and writes each step’s story. Planning steps is reasoning work: a model that thinks before it answers makes better steps than a fast one. Empty means the AI model above.',
+        popup: false,
+        placeholder: 'Same as the AI model',
         autocomplete: 'off',
         surfaces: ['extension'],
       },

@@ -21208,6 +21208,134 @@ var CHECK_REPORTERS = [
   }
 ];
 
+// ../../packages/review/src/review-plan.ts
+var STEP_KINDS = ["feature", "fix", "refactor", "tests", "docs", "chore", "generated", "other"];
+var FLOW_NODE_KINDS = ["new", "changed", "existing", "decision"];
+var STEP_SIZE_CAP = 240;
+
+// ../../packages/review/src/review-prompts.ts
+var PLAN_SYSTEM = `You plan a code review. A pull request's diff is given as numbered hunks (h1, h2, \u2026), each with its file, header and changed lines, plus the pull request's title, its commits, and a first grouping made by simple rules. Group the hunks into steps a reviewer reads in order.
+Rules:
+- A step is one body of work: a feature slice, a fix, a refactor, a migration. Group by purpose, never by file type or by file. A hunk belongs to exactly one step. Every hunk listed must appear in some step; invent none.
+- Order the steps so each reads with what came before it: foundations (types, data, shared helpers) before what uses them; the change the pull request is about before its follow-through. Name a dependency in "dependsOn" (step keys) only when reading the other step first is needed to understand this one.
+- A step is read in one sitting: prefer steps under ${STEP_SIZE_CAP} changed lines, a few hunks in one to three files, and split a large body of work into the parts a reader would take in turn (the data model, then the logic, then where it is wired in). A tiny pull request may be one step. Do not pad: a step with one hunk is fine when it is its own change.
+- "key": s1, s2, \u2026 in reading order. "title": three to seven words, imperative or a noun phrase, naming the change not the files ("Debounce the search box", "Settings schema for the new toggle"). "kind": one of ${STEP_KINDS.join(", ")}. "gist": one sentence, under 160 characters, saying what the step does. "watch": zero to three short items worth a second look, only when the diff shows one.
+- Files Geld hides (tests, generated output, fixtures) are listed by path only and are not hunks to place; their steps are decided afterwards.
+- "moves" lists blocks cut from one hunk and pasted into another ("h3 \u2192 h9 \xB7 31 lines"). Both ends of a move belong to one step, and a move is not new code: say "moved", not "adds".
+- When "previousSteps" are given, the reader has already worked through them: keep a step's key where its hunks are the same change, and change only what the new and removed hunks require; rewrite "previousOverview" only where the new hunks change the account.
+- "overview" is the account of the whole pull request a reader gets before the steps. "summary": three or four sentences in one paragraph: what the system did before, what this pull request turns it into, the mechanism in a clause, and why. "points": one line per mechanism in reading order, zero to five, each under 140 characters, identifiers in backticks. "beforeAfter": the behaviour as a diff, not the code: a "caption" naming the path through the system ("A row in Ready to merge", "Crew merge completion path"), then "lines" in reading order, each with "kind" same (behaviour that stays), before (the old way, gone) or after (the new way), "depth" 0 to 3 for nesting under the line above, "text" under 100 characters in plain words with \u2192 for "leads to", and "step": the key of the step where that behaviour is read, or null. Four to twelve lines. "flow": the same path as boxes and arrows: "nodes" (id n1, n2, \u2026; "label": a function or a question, under 48 characters; "file": its file's name or null; "kind" new, changed, existing or decision; "step": the step key or null) and "edges" (from, to, "label": yes, no or null for a decision's branches). Three to ten nodes, a tree or a near tree, no cycles.
+- Return JSON only, matching the schema.`;
+var STEP_REF = { type: ["string", "null"] };
+var PLAN_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["steps", "overview"],
+  properties: {
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["key", "title", "kind", "gist", "hunks", "dependsOn", "watch"],
+        properties: {
+          key: { type: "string" },
+          title: { type: "string" },
+          kind: { type: "string", enum: [...STEP_KINDS] },
+          gist: { type: "string" },
+          hunks: { type: "array", items: { type: "string" } },
+          dependsOn: { type: "array", items: { type: "string" } },
+          watch: { type: "array", items: { type: "string" } }
+        }
+      }
+    },
+    overview: {
+      type: "object",
+      additionalProperties: false,
+      required: ["summary", "points", "beforeAfter", "flow"],
+      properties: {
+        summary: { type: "string" },
+        points: { type: "array", items: { type: "string" } },
+        beforeAfter: {
+          type: "object",
+          additionalProperties: false,
+          required: ["caption", "lines"],
+          properties: {
+            caption: { type: "string" },
+            lines: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["kind", "text", "depth", "step"],
+                properties: { kind: { type: "string", enum: ["same", "before", "after"] }, text: { type: "string" }, depth: { type: "integer" }, step: STEP_REF }
+              }
+            }
+          }
+        },
+        flow: {
+          type: "object",
+          additionalProperties: false,
+          required: ["caption", "nodes", "edges"],
+          properties: {
+            caption: { type: "string" },
+            nodes: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["id", "label", "file", "kind", "step"],
+                properties: { id: { type: "string" }, label: { type: "string" }, file: { type: ["string", "null"] }, kind: { type: "string", enum: [...FLOW_NODE_KINDS] }, step: STEP_REF }
+              }
+            },
+            edges: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["from", "to", "label"],
+                properties: { from: { type: "string" }, to: { type: "string" }, label: { type: ["string", "null"] } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+var stepRef = external_exports.string().nullable().optional();
+var planOutputSchema = external_exports.object({
+  steps: external_exports.array(
+    external_exports.object({
+      key: external_exports.string().min(1),
+      title: external_exports.string().min(1).max(160),
+      kind: external_exports.string(),
+      gist: external_exports.string().max(400).optional(),
+      hunks: external_exports.array(external_exports.string()),
+      dependsOn: external_exports.array(external_exports.string()).optional(),
+      watch: external_exports.array(external_exports.string().max(300)).optional()
+    })
+  ),
+  // Lenient on purpose: a model that answers the steps alone still gives a plan.
+  overview: external_exports.object({
+    summary: external_exports.string().max(2e3).optional(),
+    points: external_exports.array(external_exports.string().max(300)).optional(),
+    beforeAfter: external_exports.object({
+      caption: external_exports.string().max(200).optional(),
+      lines: external_exports.array(external_exports.object({ kind: external_exports.string(), text: external_exports.string().max(300), depth: external_exports.number().optional(), step: stepRef })).optional()
+    }).nullable().optional(),
+    flow: external_exports.object({
+      caption: external_exports.string().max(200).optional(),
+      nodes: external_exports.array(external_exports.object({ id: external_exports.string().min(1), label: external_exports.string().max(200), file: external_exports.string().nullable().optional(), kind: external_exports.string().optional(), step: stepRef })).optional(),
+      edges: external_exports.array(external_exports.object({ from: external_exports.string(), to: external_exports.string(), label: external_exports.string().nullable().optional() })).optional()
+    }).nullable().optional()
+  }).nullable().optional()
+});
+var storyOutputSchema = external_exports.object({
+  story: external_exports.string().min(1).max(2e3),
+  why: external_exports.string().max(400).optional(),
+  watch: external_exports.array(external_exports.string().max(300)).optional()
+});
+
 // src/github.ts
 var API = "https://api.github.com";
 var GRAPHQL = `${API}/graphql`;

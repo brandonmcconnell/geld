@@ -49,7 +49,7 @@ import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
 import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
 import type { ModelInfo } from '@geld/review';
-import { isEvaluationModel, jevModelFor, TYPESAFE_API } from '@geld/review';
+import { isEvaluationModel, jevModelFor, planningRecommendationFor, TYPESAFE_API } from '@geld/review';
 import { modelCombobox } from '../../src/ui/model-combobox';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -640,7 +640,7 @@ async function main(): Promise<void> {
     return block([el('div', 'geld-row options__field-row', [head, button]), ...extra]);
   };
   let reviewBotsArea: HTMLTextAreaElement | null = null;
-  const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev']);
+  const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiReviewModel', 'aiJev']);
   let aiRendered = false;
   for (const field of reviewSection?.fields ?? []) {
     if ('key' in field && aiFieldKeys.has(field.key)) {
@@ -728,8 +728,9 @@ async function main(): Promise<void> {
     const enabledField = fields.find((field): field is ToggleField => field.kind === 'toggle' && field.key === 'aiEnabled');
     const urlField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiBaseUrl');
     const modelField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiModel');
+    const reviewModelField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiReviewModel');
     const jevField = fields.find((field): field is ToggleField => field.kind === 'toggle' && field.key === 'aiJev');
-    if (enabledField === undefined || urlField === undefined || modelField === undefined || jevField === undefined) return;
+    if (enabledField === undefined || urlField === undefined || modelField === undefined || reviewModelField === undefined || jevField === undefined) return;
 
     toggleBlock(enabledField);
 
@@ -822,16 +823,45 @@ async function main(): Promise<void> {
     modelGate.setAttribute('role', 'status');
     const combo = modelCombobox({ id: 'aiModel', labelledBy: modelHead.label.id, placeholder: modelField.placeholder, initial: settings.aiModel });
     const modelControls = el('div', 'options__gated', [combo.root, el('div', 'geld-row options__actions', [modelStatusEl, modelSave])]);
+    /* The Review tab's planning model: the same list, led by the models that reason well; empty means the writing model above. */
+    const reviewHead = fieldHead(reviewModelField);
+    const reviewStatusEl = el('span', 'geld-status');
+    reviewStatusEl.setAttribute('aria-live', 'polite');
+    const reviewStatus = statusReporter(reviewStatusEl);
+    const reviewSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
+    reviewSave.type = 'button';
+    const reviewCombo = modelCombobox({
+      id: 'aiReviewModel',
+      labelledBy: reviewHead.label.id,
+      placeholder: reviewModelField.placeholder,
+      initial: settings.aiReviewModel,
+      guide: { recommend: planningRecommendationFor, heading: 'Recommended for planning a review' },
+    });
+    const reviewControls = el('div', 'options__gated', [reviewCombo.root, el('div', 'geld-row options__actions', [reviewStatusEl, reviewSave])]);
+    reviewSave.addEventListener('click', async () => {
+      const value = reviewCombo.value();
+      if (value !== '' && isEvaluationModel(value)) {
+        reviewStatus('That is an evaluation model; it answers questions but writes nothing. Pick a language model.', 'error');
+        return;
+      }
+      settings = await settingsItem.patch({ aiReviewModel: value });
+      reviewStatus(value === '' ? 'Cleared; the Review tab uses the AI model above.' : reviewCombo.has(value) ? 'Saved' : 'Saved (not in the gateway’s list; requests will say if it does not exist)', 'success');
+    });
     const setModelsEnabled = (enabled: boolean, reason: string): void => {
       combo.setDisabled(!enabled);
       modelSave.disabled = !enabled;
       modelControls.toggleAttribute('data-disabled', !enabled);
+      reviewCombo.setDisabled(!enabled);
+      reviewSave.disabled = !enabled;
+      reviewControls.toggleAttribute('data-disabled', !enabled);
       modelGate.textContent = reason;
       modelGate.hidden = enabled;
     };
     const fillModels = (models: readonly ModelInfo[]): void => {
       // The writing model is a language model; evaluation models (Jev) answer questions, they do not write.
-      combo.setOptions(models.filter((model) => !isEvaluationModel(model.id, model.type) && !isEvaluationModel(model.id)));
+      const writing = models.filter((model) => !isEvaluationModel(model.id, model.type) && !isEvaluationModel(model.id));
+      combo.setOptions(writing);
+      reviewCombo.setOptions(writing);
     };
     modelSave.addEventListener('click', async () => {
       const value = combo.value();
@@ -847,6 +877,7 @@ async function main(): Promise<void> {
       modelStatus(combo.has(value) ? 'Saved' : 'Saved (not in the gateway’s list; requests will say if it does not exist)', 'success');
     });
     block([modelHead.head, modelGate, modelControls]);
+    block([reviewHead.head, reviewControls]);
 
     /* Jev: through the gateway when it offers it, else (or on request) with a TypeSafe key of the user's own. Nothing of this shows while Jev is off. */
     const jevNote = el('p', 'options__jev-note');

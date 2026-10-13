@@ -10,7 +10,7 @@ import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
-import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import type { FetchDiffResponse, FetchDiffTextResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
@@ -21,6 +21,7 @@ import {
   isColorSchemeMessage,
   isEnsureContentMessage,
   isFetchDiffRequest,
+  isFetchDiffTextRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
   isTabStateMessage,
@@ -230,6 +231,52 @@ function writeCache(url: string, response: FetchDiffResponse): void {
   cache.set(url, { response, at: Date.now() });
 }
 
+/*
+ * The raw text of the last few diffs fetched, for the Review tab (it needs
+ * hunks and lines, which the parsed response drops). A handful of entries
+ * under a byte cap: a text request for the page's own diff usually follows
+ * the header's parsed request within seconds, so it is served from here
+ * without a second trip to the diff host.
+ */
+const TEXT_CACHE_MAX_ENTRIES = 6;
+const TEXT_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+const textCache = new Map<string, { readonly text: string; readonly at: number }>();
+
+function writeTextCache(url: string, text: string): void {
+  textCache.delete(url);
+  textCache.set(url, { text, at: Date.now() });
+  let bytes = 0;
+  for (const entry of textCache.values()) bytes += entry.text.length;
+  while (textCache.size > TEXT_CACHE_MAX_ENTRIES || (bytes > TEXT_CACHE_MAX_BYTES && textCache.size > 1)) {
+    const oldest = textCache.keys().next().value;
+    if (oldest === undefined) break;
+    bytes -= textCache.get(oldest)?.text.length ?? 0;
+    textCache.delete(oldest);
+  }
+}
+
+function readTextCache(url: string): string | null {
+  const hit = textCache.get(url);
+  if (hit === undefined) return null;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    textCache.delete(url);
+    return null;
+  }
+  return hit.text;
+}
+
+/** The page's own diff as text: the text cache first, else one `page` fetch (which fills it). */
+async function fetchDiffText(url: string): Promise<FetchDiffTextResponse> {
+  const cached = readTextCache(url);
+  if (cached !== null) return { ok: true, text: cached };
+  // A parsed answer in memory does not help here: it has no text, and the entry would stop the fetch below.
+  cache.delete(url);
+  const result = await fetchDiff(url, 'page');
+  if (!result.ok) return { ok: false, reason: result.reason, ...(result.retryAfterMs === undefined ? {} : { retryAfterMs: result.retryAfterMs }) };
+  const text = readTextCache(url);
+  return text === null ? { ok: false, reason: 'no-text' } : { ok: true, text };
+}
+
 /**
  * `https://github.com/<owner>/<repo>/pull/<n>.diff` redirects to
  * `patch-diff.githubusercontent.com`, which does not send CORS headers. Content
@@ -314,6 +361,7 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
           result = { ok: false, reason: looksLikeSignInPage(text) ? 'signed-out' : 'not-a-diff' };
         } else {
           result = { ok: true, files: parseUnifiedDiff(text) };
+          writeTextCache(parsed.toString(), text);
           await recordSuccess();
         }
       }
@@ -522,6 +570,7 @@ export default defineBackground(() => {
     }
     if (isClearDiffCacheMessage(message)) {
       cache.clear();
+      textCache.clear();
       recordDiagnostic({ kind: 'cache-clear' });
       sendResponse(true);
       return undefined;
@@ -548,6 +597,10 @@ export default defineBackground(() => {
     }
     if (isFetchFileRequest(message)) {
       void fetchFile(message.url).then(sendResponse);
+      return true;
+    }
+    if (isFetchDiffTextRequest(message)) {
+      void fetchDiffText(message.url).then(sendResponse);
       return true;
     }
     if (isAiModelsRequest(message)) {
