@@ -54,7 +54,7 @@ import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
-import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -2484,6 +2484,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
     loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
+  // A loan whose home GitHub refreshed away is its discarded copy: gone before anything reads the page, so the
+  // crawl, the slots and the fragment loader all see the fresh item at home instead (see `dropOrphanedLoans`).
+  const standing = document.querySelector('.geld-review');
+  if (standing !== null) dropOrphanedLoans(standing);
   const crawledDom = phase('crawl', crawlConversation);
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(

@@ -129,6 +129,13 @@ export default defineContentScript({
       if (!(parent instanceof Node)) return;
       unshim(parent);
       for (const [token, loan] of loans) if (loan.placeholder.parentNode === null || loan.placeholder.parentNode === parent) loans.delete(token);
+      // A parent GitHub replaced while its child was on loan is detached for good: its shim and its count go
+      // with it (the content script sends such a return on the document, since nothing on the parent would arrive).
+      for (const lent of [...lending.keys()]) {
+        if (lent.isConnected) continue;
+        lending.set(lent, 1);
+        unshim(lent);
+      }
     });
 
     /** The React root a loaned ancestor of `target` came from, unless that root already contains the target. */
