@@ -379,6 +379,15 @@ describe('bots + prompts', () => {
     expect(verdicts[0]?.verdict).toBe('clean');
   });
 
+  it('does not read a #reference as a count', () => {
+    // server#9385: a Cursor automation's review under the Bugbot login, "I checked both #9377 findings against the
+    // code, and both are fixed" — a pull request, not 9,377 findings; the summary is clean ("no blocking findings").
+    const parsed = parseBotBody('AppSec review: no blocking findings. I checked both #9377 findings against the code, and both are fixed: Medium (stale cross-org subscribers still emailed): fixed.', 'bugbot');
+    expect(parsed).toMatchObject({ count: null, clean: true });
+    expect(parseBotBody('Found 2 issues, see #9377 issues for the earlier ones.', 'bugbot').count).toBe(2);
+    expect(parseBotBody('Fixes GH-123 issues: found 1 bug.', 'bugbot').count).toBe(1);
+  });
+
   it("reads a check's conclusion in the bot's own words", () => {
     // Bugbot's docs: `neutral` is its default for a run that found something; `failure` only when configured to
     // fail on unresolved findings. CodeRabbit's check is neutral on completion and says nothing about the code.

@@ -19499,7 +19499,9 @@ function parseBotBody(body, botId) {
   const text = body.replace(/\r\n/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
   const scoreMatch = botId === "qodo" ? null : (botId === "entelligence" ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== void 0 ? Number.parseFloat(scoreMatch[1]) : null;
-  const countMatch = botId === "greptile" ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:\s*(\d+)/i.exec(text) ?? /(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
+  const countMatch = botId === "greptile" ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:\s*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
+  // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
+  /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
   let count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text);
   if (shaped !== null) count = shaped;

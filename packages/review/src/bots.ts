@@ -462,7 +462,10 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
   const countMatch =
     botId === 'greptile'
       ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text)
-      : (/\bactionable comments posted:\s*(\d+)/i.exec(text) ?? /(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
+      : (/\bactionable comments posted:\s*(\d+)/i.exec(text) ??
+        // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
+        // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
+        /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text);
   if (shaped !== null) count = shaped;
