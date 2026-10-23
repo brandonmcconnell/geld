@@ -19,44 +19,44 @@ export const REFUSAL_CODES = [
 export const TRIGGER_TYPES = ['push', 'comment', 'check', 'schedule', 'manual', 'api'] as const;
 export const BLOCK_KINDS = ['summary', 'status', 'refusal', 'finding', 'reply'] as const;
 
-export const Severity = z.enum(SEVERITIES);
+export const Severity = z.enum(SEVERITIES).meta({ id: 'Severity' });
 
-const Sha = z.string().regex(/^[0-9a-f]{40}$/, 'a full 40-character lowercase commit SHA');
-const PositiveInt = z.int().positive();
+const Sha = z.string().regex(/^[0-9a-f]{40}$/, 'a full 40-character lowercase commit SHA').meta({ id: 'Sha' });
+const PositiveInt = z.int().positive().meta({ id: 'PositiveInt' });
 
 export const UrlAction = z.object({
   type: z.literal('url'),
   url: z.url(),
   label: z.string().min(1).optional(),
-});
+}).meta({ id: 'UrlAction' });
 
 export const CommentAction = z.object({
   type: z.literal('comment'),
   body: z.string().min(1),
   label: z.string().min(1).optional(),
-});
+}).meta({ id: 'CommentAction' });
 
-export const Action = z.discriminatedUnion('type', [UrlAction, CommentAction]);
+export const Action = z.discriminatedUnion('type', [UrlAction, CommentAction]).meta({ id: 'Action' });
 
 export const Links = z.object({
   view: UrlAction.optional(),
   rerun: Action.optional(),
   fix: Action.optional(),
   settings: UrlAction.optional(),
-});
+}).meta({ id: 'Links' });
 
 export const Location = z.object({
   path: z.string().min(1),
   line: PositiveInt.optional(),
   startLine: PositiveInt.optional(),
   side: z.enum(['LEFT', 'RIGHT']).optional(),
-});
+}).meta({ id: 'Location' });
 
 export const Rule = z.object({
   source: z.enum(['repo', 'bot']),
   id: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
-});
+}).meta({ id: 'Rule' });
 
 export const Finding = z.object({
   id: z.string().min(1),
@@ -72,19 +72,19 @@ export const Finding = z.object({
   rule: Rule.optional(),
   commentId: PositiveInt.optional(),
   links: Links.pick({ view: true, fix: true }).optional(),
-});
+}).meta({ id: 'Finding' });
 
 export const Bot = z.object({
   name: z.string().min(1),
   app: z.string().min(1).optional(),
   version: z.string().min(1).optional(),
-});
+}).meta({ id: 'Bot' });
 
 export const Trigger = z.object({
   type: z.enum(TRIGGER_TYPES),
   commentId: PositiveInt.optional(),
   by: z.string().min(1).optional(),
-});
+}).meta({ id: 'Trigger' });
 
 export const Run = z.object({
   id: z.string().min(1),
@@ -100,9 +100,9 @@ export const Run = z.object({
   startedAt: z.iso.datetime({ offset: true }).optional(),
   completedAt: z.iso.datetime({ offset: true }).optional(),
   trigger: Trigger.optional(),
-});
+}).meta({ id: 'Run' });
 
-export const RunRef = Run.pick({ id: true });
+export const RunRef = Run.pick({ id: true }).meta({ id: 'RunRef' });
 
 export const Result = z.object({
   verdict: z.enum(['clean', 'findings']),
@@ -124,25 +124,28 @@ export const Result = z.object({
   previouslyMissed: z.int().nonnegative().optional(),
   gate: z.object({ blocking: z.boolean(), threshold: Severity.optional() }).optional(),
   recommendation: z.enum(['approve', 'comment', 'request_changes']).optional(),
-});
+}).meta({ id: 'Result' });
 
 export const Refusal = z.object({
   code: z.enum(REFUSAL_CODES),
   message: z.string().min(1),
   retryable: z.boolean().optional(),
-});
+}).meta({ id: 'Refusal' });
+
+// The tag every block opens with, named once in the JSON Schema's `$defs`.
+const SchemaTag = z.literal(CRF_SCHEMA).meta({ id: 'SchemaTag' });
 
 const base = {
-  schema: z.literal(CRF_SCHEMA),
+  schema: SchemaTag,
   bot: Bot,
   links: Links.optional(),
 };
 
-export const SummaryBlock = z.object({ ...base, kind: z.literal('summary'), run: Run, result: Result.optional() });
-export const StatusBlock = z.object({ ...base, kind: z.literal('status'), run: Run });
-export const RefusalBlock = z.object({ ...base, kind: z.literal('refusal'), run: Run, refusal: Refusal });
-export const FindingBlock = z.object({ ...base, kind: z.literal('finding'), run: RunRef, finding: Finding });
-export const ReplyBlock = z.object({ ...base, kind: z.literal('reply'), run: RunRef.optional() });
+export const SummaryBlock = z.object({ ...base, kind: z.literal('summary'), run: Run, result: Result.optional() }).meta({ id: 'SummaryBlock' });
+export const StatusBlock = z.object({ ...base, kind: z.literal('status'), run: Run }).meta({ id: 'StatusBlock' });
+export const RefusalBlock = z.object({ ...base, kind: z.literal('refusal'), run: Run, refusal: Refusal }).meta({ id: 'RefusalBlock' });
+export const FindingBlock = z.object({ ...base, kind: z.literal('finding'), run: RunRef, finding: Finding }).meta({ id: 'FindingBlock' });
+export const ReplyBlock = z.object({ ...base, kind: z.literal('reply'), run: RunRef.optional() }).meta({ id: 'ReplyBlock' });
 
 /** One block per comment. Also a Standard Schema (`CrfBlock['~standard']`), so any Standard Schema consumer can use it directly. */
 export const CrfBlock = z.discriminatedUnion('kind', [SummaryBlock, StatusBlock, RefusalBlock, FindingBlock, ReplyBlock]);

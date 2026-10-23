@@ -6,7 +6,7 @@ import { CRF_SCHEMA, CrfBlock } from './schema';
  * Generated from the input side so objects stay open: readers ignore fields they do not know, and so must the JSON Schema.
  */
 export function crfJsonSchema(): Record<string, unknown> {
-  const { $schema, ...rest } = z.toJSONSchema(CrfBlock, { io: 'input', reused: 'ref' });
+  const { $schema, ...rest } = z.toJSONSchema(CrfBlock, { io: 'input' });
   return {
     $schema,
     $id: `https://www.geld.sh/schema/${CRF_SCHEMA.replace('/', '-')}.schema.json`,
