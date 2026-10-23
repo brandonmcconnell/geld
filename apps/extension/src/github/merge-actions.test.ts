@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, bypassBeside, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean } = {}): unknown {
@@ -109,6 +109,23 @@ describe('mergeOffer', () => {
     expect(mergeOffer(read({ state: 'BLOCKED', auto: true }), null)).toBe('auto');
     expect(mergeOffer(read({ state: 'BLOCKED', auto: true, autoOn: true }), null)).toBeNull();
     expect(mergeOffer(read({ auto: true }), null)).toBe('merge');
+  });
+
+  it('offers the queue wherever the repository has one, even where a direct merge would also go, as GitHub does', () => {
+    expect(mergeOffer(read({ queue: 'ALLOWED' }), null)).toBe('queue');
+  });
+
+  it('puts an admin’s bypass beside the queue or auto-merge, never beside a merge GitHub would take now', () => {
+    const queued = read({ queue: 'ALLOWED', canBypass: true });
+    expect(bypassBeside(queued, read({ canBypass: true }), mergeOffer(queued, null))).toBe(true);
+    expect(bypassBeside(queued, read({ state: 'UNMERGEABLE', canBypass: true }), 'queue')).toBe(false);
+    expect(bypassBeside(read({ queue: 'ALLOWED' }), read({}), 'queue')).toBe(false);
+    const waiting = read({ state: 'BLOCKED', auto: true, canBypass: true });
+    expect(mergeOffer(waiting, read({ canBypass: true }))).toBe('auto');
+    expect(bypassBeside(waiting, read({ canBypass: true }), 'auto')).toBe(true);
+    expect(bypassBeside(read({ canBypass: true }), read({ canBypass: true }), 'merge')).toBe(false);
+    // The bypass alone, where nothing else would take it, is the offer itself and stands beside nothing.
+    expect(bypassBeside(read({ state: 'UNMERGEABLE', canBypass: true }), read({ canBypass: true }), 'bypass')).toBe(false);
   });
 });
 

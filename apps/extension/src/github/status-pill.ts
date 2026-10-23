@@ -19,6 +19,8 @@ export type PullStatus = 'open' | 'draft' | 'queued' | 'merged' | 'closed';
 export interface StatusOption {
   readonly status: PullStatus;
   readonly action: StatusAction;
+  /** A merge past the rules (GitHub's bypass checkbox), which its merge box opens with the checkbox to tick. */
+  readonly bypass?: boolean;
   /** GitHub's words for the action, the menu item's label. */
   readonly note: string;
 }
@@ -51,19 +53,22 @@ export function statusOf(box: MergeBox): PullStatus | null {
  * ("not planned", "duplicate") are issues'. Empty when there is nothing to
  * switch to, a merged pull request always.
  */
-export function statusOptions(box: MergeBox, offer: MergeOffer): readonly StatusOption[] {
+export function statusOptions(box: MergeBox, offer: MergeOffer, bypass = false): readonly StatusOption[] {
   const current = statusOf(box);
   if (current === null || current === 'merged') return [];
   const method = box.methods[0] ?? 'SQUASH';
   const moves: { [S in PullStatus]?: StatusOption } = {};
+  // A bypass beside the queue or auto-merge: a second way forward, merging now past the rules, right after it.
+  const beside: StatusOption | null = current === 'open' && bypass ? { status: 'merged', action: 'merge', note: 'Bypass rules and merge', bypass: true } : null;
   if (current === 'draft' && box.canMarkReady) moves.open = { status: 'open', action: 'ready', note: 'Ready for review' };
   if (current === 'closed' && box.canClose) moves.open = { status: 'open', action: 'reopen', note: 'Reopen pull request' };
   if (current === 'open' && box.canConvertToDraft) moves.draft = { status: 'draft', action: 'draft', note: 'Convert to draft' };
   if (current === 'open' && offer === 'queue') moves.queued = { status: 'queued', action: 'queue', note: 'Merge when ready' };
   else if (current === 'open' && offer === 'auto') moves.merged = { status: 'merged', action: 'auto', note: 'Enable auto-merge' };
-  else if (current === 'open' && offer !== null) moves.merged = { status: 'merged', action: 'merge', note: offer === 'bypass' ? 'Bypass rules and merge' : METHOD_LABEL[method] };
+  else if (current === 'open' && offer === 'bypass') moves.merged = { status: 'merged', action: 'merge', note: 'Bypass rules and merge', bypass: true };
+  else if (current === 'open' && offer !== null) moves.merged = { status: 'merged', action: 'merge', note: METHOD_LABEL[method] };
   if (current !== 'closed' && box.canClose) moves.closed = { status: 'closed', action: 'close', note: 'Close pull request' };
-  return STATUS_ORDER.flatMap((status) => moves[status] ?? []);
+  return STATUS_ORDER.flatMap((status) => [...(moves[status] === undefined ? [] : [moves[status]]), ...(beside !== null && status === 'merged' ? [beside] : [])]);
 }
 
 const GITHUB_PILLS = '[data-component="PageHeader"] [data-component="StateLabel"], .gh-header-meta .State, .gh-header-sticky .State';

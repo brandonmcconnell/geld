@@ -53,6 +53,17 @@ describe('statusOptions', () => {
     ]);
   });
 
+  it('lists an admin’s bypass right after the queue or auto-merge it stands beside', () => {
+    expect(statusOptions(box({ canClose: true, canConvertToDraft: true, canQueue: true }), 'queue', true).map((option) => [option.status, option.action, option.note, option.bypass === true])).toEqual([
+      ['queued', 'queue', 'Merge when ready', false],
+      ['merged', 'merge', 'Bypass rules and merge', true],
+      ['draft', 'draft', 'Convert to draft', false],
+      ['closed', 'close', 'Close pull request', false],
+    ]);
+    expect(statusOptions(box({ canAutoMerge: true }), 'auto', true).map((option) => option.note)).toEqual(['Enable auto-merge', 'Bypass rules and merge']);
+    expect(statusOptions(box({ draft: true, canMarkReady: true }), null, true).map((option) => option.status)).toEqual(['open']);
+  });
+
   it('never offers a draft a merge', () => {
     expect(statusOptions(box({ draft: true, canMarkReady: true }), 'merge').map((option) => option.status)).toEqual(['open']);
   });
