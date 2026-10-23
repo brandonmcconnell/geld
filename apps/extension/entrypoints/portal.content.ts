@@ -21,6 +21,14 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
  *
  * The protocol is DOM-only: the loaned node carries `data-geld-teleported=<token>`
  * and a `<!--geld:quick-view:<token>-->` comment holds its place.
+
+ *
+ * One more thing only this world can do well: GitHub stops listening to a
+ * page's live updates once its tab has been hidden 30s and listens again when
+ * it shows, so a reply posted in a thread meanwhile never arrives. Back after
+ * that long, each live region is sent the `socket:message` GitHub's socket
+ * would have sent (a message's `detail` reaches GitHub's handler whole only
+ * from this world), and GitHub's own handler refetches it.
  */
 export default defineContentScript({
   matches: ['https://github.com/*'],
@@ -157,6 +165,34 @@ export default defineContentScript({
       root.dispatchEvent(copy);
       if (copy.defaultPrevented) event.preventDefault();
     }
+
+    // GitHub's own grace before it stops listening (its visibility handler's timer).
+    const QUIET_AFTER_MS = 30_000;
+    const LIVE_REGION = '.js-socket-channel.js-updatable-content[data-url]';
+    // The description, which holds Geld's panel and the comments on loan to it, and the timeline marker, which
+    // `catchUpTimeline` already reads: GitHub's handler would replace both whole.
+    const LEFT_ALONE = new Set(['body_updated', 'timeline_updated']);
+    // GitHub fetches each region on its own: spaced out, a page of reviews is not one burst.
+    const STAGGER_MS = 100;
+    let hiddenAt: number | null = document.hidden ? Date.now() : null;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (away < QUIET_AFTER_MS) return;
+      const regions = [...document.querySelectorAll(LIVE_REGION)].filter((region) => !LEFT_ALONE.has(region.getAttribute('data-channel-event-name') ?? '') && !region.hasAttribute('data-batched'));
+      // A region naming its event refreshes only when the message lists it.
+      const eventUpdates = Object.fromEntries(regions.flatMap((region) => {
+        const name = region.getAttribute('data-channel-event-name');
+        return name === null ? [] : [[name, true]];
+      }));
+      regions.forEach((region, index) => {
+        region.dispatchEvent(new CustomEvent('socket:message', { detail: { name: region.getAttribute('data-channel') ?? '', data: { event_updates: eventUpdates, wait: index * STAGGER_MS } } }));
+      });
+    });
 
     for (const type of BRIDGED) {
       document.addEventListener(
