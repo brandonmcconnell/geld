@@ -1591,6 +1591,11 @@ button.geld-status-pill[data-geld-instant-merge] {
   filter: none;
 }
 
+/* GitHub's focus outline is drawn just inside the pill, over the ring: keyboard focus stands outside it instead. */
+button.geld-status-pill[data-geld-instant-merge]:focus-visible {
+  outline-offset: 2px;
+}
+
 button.geld-status-pill[data-geld-instant-merge]:hover {
   background: var(--bgColor-done-muted, rgba(171, 125, 248, 0.15)) !important;
   filter: none;
