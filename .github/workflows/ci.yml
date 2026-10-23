@@ -65,11 +65,15 @@ jobs:
           # name: refs/heads/gh-readonly-queue/<base>/pr-<number>-<base sha>.
           # The group's head also carries every pull request queued ahead of this
           # one, each with its own label and version: only this one's changes are
-          # judged here, from its own head against the group's base, so another's
-          # unbumped change is not blamed on it nor excused by its label.
+          # judged here, from its own head against its own base, as its
+          # pull_request run judged them, so another's unbumped change is not
+          # blamed on it nor excused by its label. Its own base, not the group's:
+          # a stacked pull request's head holds the commits of those below it too.
           if [[ -z "$PR_NUMBER" && "$MERGE_GROUP_HEAD_REF" =~ /pr-([0-9]+)-[0-9a-f]+$ ]]; then
             PR_NUMBER="${BASH_REMATCH[1]}"
+            BASE_SHA="$(gh pr view "$PR_NUMBER" --json baseRefOid --jq '.baseRefOid')"
             git fetch --no-tags --quiet origin "pull/$PR_NUMBER/head"
             HEAD_SHA="$(git rev-parse FETCH_HEAD)"
+            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$BASE_SHA"
           fi
           .github/scripts/check-extension-version.sh "$BASE_SHA" "$HEAD_SHA" "$PR_NUMBER"
