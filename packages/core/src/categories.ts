@@ -93,7 +93,7 @@ export interface Catalog {
  * surfaces (`list-surfaces.ts`) change and
  * run `pnpm catalog:build` (which refuses a stale version) and `pnpm catalog:sign`.
  */
-export const CATALOG_VERSION = 20261014;
+export const CATALOG_VERSION = 20261023;
 
 /**
  * The oldest extension version that can read this catalog. Raise it (with
@@ -189,6 +189,7 @@ export const CATEGORIES: readonly BuiltInCategory[] = [
           'schema.graphql.json',
           'graphql.schema.json',
           '*.tsbuildinfo',
+          'atlas.sum',
         ],
       },
     ],

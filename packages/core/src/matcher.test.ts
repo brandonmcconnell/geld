@@ -83,6 +83,22 @@ describe('built-in test detection', () => {
   });
 });
 
+describe('Atlas migration directory (Generated)', () => {
+  const generated = createMatcher({ ...DEFAULT_SETTINGS, categories: { generated: true } });
+
+  it.each(['migrations/atlas.sum', 'db/migrations/atlas.sum', 'atlas.sum'])('hides %s', (path) => {
+    expect(generated.categorize(path)?.id).toBe('generated');
+  });
+
+  it.each(['migrations/20241023120000_add_users.sql', 'atlas.hcl', 'schema.hcl', 'migrations/atlas.sum.bak'])('keeps %s', (path) => {
+    expect(generated.categorize(path)).toBeNull();
+  });
+
+  it('is off by default', () => {
+    expect(matcher.categorize('migrations/atlas.sum')).toBeNull();
+  });
+});
+
 describe('settings interplay', () => {
   it('matches nothing when disabled', () => {
     const disabled = createMatcher({ ...DEFAULT_SETTINGS, enabled: false });

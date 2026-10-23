@@ -1,6 +1,6 @@
 {
   "geldCatalog": 1,
-  "version": 20261014,
+  "version": 20261023,
   "minExtensionVersion": "0.1.2",
   "categories": [
     {
@@ -250,7 +250,8 @@
             "*.snap.js",
             "schema.graphql.json",
             "graphql.schema.json",
-            "*.tsbuildinfo"
+            "*.tsbuildinfo",
+            "atlas.sum"
           ]
         }
       ]
