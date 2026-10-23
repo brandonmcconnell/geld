@@ -1596,8 +1596,13 @@ button.geld-status-pill[data-geld-instant-merge]:hover {
   filter: none;
 }
 
-button.geld-status-pill:is(:hover, [aria-expanded='true']) {
+button.geld-status-pill[aria-haspopup]:is(:hover, [aria-expanded='true']) {
   filter: brightness(0.92);
+}
+
+/* Merged (`showMergedPills`): no menu, so GitHub's plain label, no pointer, no hover, no caret, until the reload. */
+button.geld-status-pill:not([aria-haspopup]) {
+  cursor: default;
 }
 
 button.geld-status-pill[aria-busy='true'] {
@@ -1633,11 +1638,11 @@ button.geld-status-pill[aria-busy='true'] {
   fill: currentColor;
 }
 
-button.geld-status-pill:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__lead > svg {
+button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__lead > svg {
   visibility: hidden;
 }
 
-button.geld-status-pill:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__caret {
+button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__caret {
   display: inline-flex;
 }
 

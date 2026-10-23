@@ -1049,6 +1049,7 @@ function showStatus(state: Mounted): void {
 
 /** Every pill's click: a pill may be put in place before the controls are mounted (`reassertStatusPills`). */
 function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
+  if (!pill.hasAttribute('aria-haspopup')) return;
   if (mounted === null) return;
   if (instantMergeReady(mounted) && (MAC ? click.metaKey : click.ctrlKey)) void instantMerge(mounted, pill);
   else toggleStatusMenu(mounted, pill);
@@ -1936,7 +1937,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   const send = async (): Promise<void> => {
     if (submit.disabled) return;
     error.hidden = true;
-    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()));
+    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMergedPills(state.pills));
     submit.textContent = 'Merging…';
     refresh();
     const failed = await pending;

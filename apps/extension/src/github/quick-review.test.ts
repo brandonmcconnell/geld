@@ -748,7 +748,8 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 3; i += 1) await settle();
     expect(posts).toEqual([{ url: 'merge', body: JSON.stringify({ bypassBranchProtections: false, mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: '' }) }]);
     expect(pill()?.getAttribute('data-status')).toBe('pullMerged');
-    expect(pill()?.textContent).toBe('Merged');
+    expect(pill()?.querySelector('.geld-status-pill__label')?.textContent).toBe('Merged');
+    expect(pill()?.hasAttribute('aria-haspopup')).toBe(false);
     expect(reload).toHaveBeenCalled();
   });
 
