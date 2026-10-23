@@ -7,7 +7,7 @@ import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
@@ -16,10 +16,10 @@ import { inlineText } from './review/inline-text';
 import type { SidebarReviewer, SidebarReviewerState } from './review/crawler';
 import { catchUpTimeline } from './review/timeline-catchup';
 import type { ReviewTally } from './review-tally';
-import type { StatusOption } from './status-pill';
-import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
+import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
+import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
-import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
+import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -1038,7 +1038,8 @@ function showStatus(state: Mounted): void {
   const actions = state.mergeActions;
   if (actions !== null) showVerdict(state, heldVerdict(state) ?? viewerVerdict(actions.box, viewerLogin()));
   const repo = repoOf(state.pullPath);
-  const options = actions === null ? null : statusOptions(actions.box, actions.offer, actions.bypass);
+  const groups = stackMenuOf(actions);
+  const options = actions === null ? null : (groups ?? flatStatusOptions(actions));
   // A merged pull request has nothing to switch to whoever reads it: it says nothing about the reader's rights.
   if (options !== null && repo !== null && actions !== null && statusOf(actions.box) !== 'merged') rememberStatusHint(repo, options.length > 0);
   const on = options !== null ? options.length > 0 : repo !== null && statusHint(repo) === true && !/merged/i.test(pullRequestStateWords());
@@ -1149,23 +1150,42 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
 }
 
 /**
+ * The flat menu. A stacked pull request whose stack could not be read offers no merge and no place in the queue: both
+ * go through `enqueue_stack`, which takes every pull request below it, and only the stack says which those are.
+ */
+function flatStatusOptions(actions: MergeActions): readonly StatusOption[] {
+  const options = statusOptions(actions.box, actions.offer, actions.bypass);
+  return actions.box.stacked && actions.stack === null ? options.filter((option) => option.action !== 'merge' && option.action !== 'queue') : options;
+}
+
+/** A stack's menu, by type, or null for a pull request in no stack or a stack of one (whose menu is `statusOptions`'). */
+function stackMenuOf(actions: MergeActions | null): readonly StackGroup[] | null {
+  return actions === null || actions.stack === null ? null : stackGroups(actions.stack, actions.box.methods[0] ?? 'SQUASH');
+}
+
+/**
  * The status menu, under the pill: each status the reader may switch to
  * (closed last), named by GitHub's words for what it does, its glyph in the
  * status's colour. Merging opens the merge box and closing asks first;
  * marking ready, converting to a draft and reopening go at once, as from
- * GitHub's own controls.
+ * GitHub's own controls. In a stack of more than one, each type is a parent
+ * whose submenu, beside it on its inline-end side, offers this pull request,
+ * it and every one below, or the entire stack.
  */
 function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const actions = state.mergeActions;
-  const options = actions === null ? [] : statusOptions(actions.box, actions.offer, actions.bypass);
-  if (options.length === 0) return;
+  const groups = stackMenuOf(actions);
+  const options = actions === null || groups !== null ? [] : flatStatusOptions(actions);
+  if (options.length === 0 && (groups === null || groups.length === 0)) return;
   const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status' });
+  const visual = (status: PullStatus, bypass: boolean): HTMLElement =>
+    createElement('span', { class: 'geld-quick-review__menu-visual', ...(bypass ? { 'data-bypass': '' } : {}) }, [
+      svgFromString(STATUS_INFO[status].icon),
+      ...(bypass ? [createElement('span', { class: 'geld-quick-review__menu-badge' }, [svgFromString(ICON_ALERT_FILL_12)])] : []),
+    ]);
   for (const option of options) {
     const item = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-status': option.status }, [
-      createElement('span', { class: 'geld-quick-review__menu-visual', ...(option.bypass === true ? { 'data-bypass': '' } : {}) }, [
-        svgFromString(STATUS_INFO[option.status].icon),
-        ...(option.bypass === true ? [createElement('span', { class: 'geld-quick-review__menu-badge' }, [svgFromString(ICON_ALERT_FILL_12)])] : []),
-      ]),
+      visual(option.status, option.bypass === true),
       createElement('span', { class: 'geld-quick-review__menu-label' }, [option.note]),
     ]);
     item.addEventListener('click', () => {
@@ -1174,30 +1194,85 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     });
     menu.append(item);
   }
+  let submenu: HTMLElement | null = null;
+  let submenuFor: HTMLButtonElement | null = null;
+  const closeSubmenu = (focusParent: boolean): void => {
+    submenu?.remove();
+    submenuFor?.setAttribute('aria-expanded', 'false');
+    if (focusParent) submenuFor?.focus({ preventScroll: true });
+    submenu = null;
+    submenuFor = null;
+  };
+  const openSubmenu = (item: HTMLButtonElement, group: StackGroup, focusFirst: boolean): void => {
+    if (submenuFor !== item) {
+      closeSubmenu(false);
+      const sub = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu geld-quick-review__status-submenu', role: 'menu', 'aria-label': group.note });
+      for (const choice of group.choices) {
+        const button = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-scope': choice.scope }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [choice.label])]);
+        button.addEventListener('click', () => {
+          closeStatusMenu(state);
+          chooseStackChoice(state, group, choice);
+        });
+        sub.append(button);
+      }
+      menu.append(sub);
+      item.setAttribute('aria-expanded', 'true');
+      submenu = sub;
+      submenuFor = item;
+      placeSubmenu(item, sub);
+    }
+    if (focusFirst) submenu?.querySelector<HTMLButtonElement>('.geld-quick-review__menu-item')?.focus({ preventScroll: true });
+  };
+  for (const group of groups ?? []) {
+    const item = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item geld-quick-review__menu-parent', role: 'menuitem', 'data-status': group.status, 'data-action': group.action, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, [
+      visual(group.status, false),
+      createElement('span', { class: 'geld-quick-review__menu-label' }, [group.note]),
+      createElement('span', { class: 'geld-quick-review__menu-trail', 'aria-hidden': 'true' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
+    ]);
+    item.addEventListener('click', () => openSubmenu(item, group, true));
+    item.addEventListener('pointerenter', () => openSubmenu(item, group, false));
+    menu.append(item);
+  }
   const keys = new AbortController();
   state.statusMenu = menu;
   state.statusMenuKeys = keys;
   pill.setAttribute('aria-expanded', 'true');
   document.body.append(menu);
   positionStatusMenu(state);
-  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')];
+  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>(':scope > .geld-quick-review__menu-item')];
   items()[0]?.focus({ preventScroll: true });
   menu.addEventListener(
     'keydown',
     (event) => {
-      if (event.key === 'Escape') {
+      const rtl = getComputedStyle(menu).direction === 'rtl';
+      const inward = rtl ? 'ArrowLeft' : 'ArrowRight';
+      const outward = rtl ? 'ArrowRight' : 'ArrowLeft';
+      const active = document.activeElement;
+      const inSubmenu = submenu !== null && active instanceof Node && submenu.contains(active);
+      if (event.key === 'Escape' && inSubmenu) {
+        event.preventDefault();
+        closeSubmenu(true);
+      } else if (event.key === 'Escape') {
         event.preventDefault();
         closeStatusMenu(state);
         pill.focus({ preventScroll: true });
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
-        const list = items();
-        const at = list.findIndex((item) => item === document.activeElement);
+        const list = inSubmenu && submenu !== null ? [...submenu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')] : items();
+        const at = list.findIndex((item) => item === active);
         list[(at + (event.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus({ preventScroll: true });
+      } else if (event.key === inward && !inSubmenu && active instanceof HTMLButtonElement && active.getAttribute('aria-haspopup') === 'menu') {
+        event.preventDefault();
+        active.click();
+      } else if (event.key === outward && inSubmenu) {
+        event.preventDefault();
+        closeSubmenu(true);
       }
     },
     { signal: keys.signal },
   );
+  // A plain item under the pointer closes a parent's submenu, as moving onto another parent swaps it.
+  for (const item of items()) if (item.getAttribute('aria-haspopup') !== 'menu') item.addEventListener('pointerenter', () => closeSubmenu(false), { signal: keys.signal });
   document.addEventListener(
     'pointerdown',
     (event) => {
@@ -1218,7 +1293,38 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     { signal: keys.signal },
   );
   window.addEventListener('scroll', () => positionStatusMenu(state), { passive: true, signal: keys.signal });
-  window.addEventListener('resize', () => positionStatusMenu(state), { signal: keys.signal });
+  window.addEventListener(
+    'resize',
+    () => {
+      positionStatusMenu(state);
+      const open = submenu;
+      const parent = submenuFor;
+      if (open !== null && parent !== null) placeSubmenu(parent, open);
+    },
+    { signal: keys.signal },
+  );
+}
+
+/**
+ * Beside its parent, on the menu's inline-end side as Primer's submenus open, its first item level with the parent;
+ * on the other side when that would leave the viewport, and under the parent, over the rows below it, when neither
+ * side has room (a narrow window). Placed again as the window changes size.
+ */
+function placeSubmenu(item: HTMLElement, submenu: HTMLElement): void {
+  submenu.removeAttribute('data-geld-flip');
+  submenu.removeAttribute('data-geld-under');
+  const style = getComputedStyle(submenu);
+  submenu.style.top = `${item.offsetTop - parseFloat(style.paddingTop) - parseFloat(style.borderTopWidth)}px`;
+  const fits = (): boolean => {
+    const rect = submenu.getBoundingClientRect();
+    return rect.left >= 8 && rect.right <= document.documentElement.clientWidth - 8;
+  };
+  if (fits()) return;
+  submenu.setAttribute('data-geld-flip', '');
+  if (fits()) return;
+  submenu.removeAttribute('data-geld-flip');
+  submenu.setAttribute('data-geld-under', '');
+  submenu.style.top = `${item.offsetTop + item.offsetHeight}px`;
 }
 
 /** Under the pill, its left edge on the pill's, inside the viewport (fixed, and placed again as the page scrolls, so it follows the pill). */
@@ -1250,6 +1356,76 @@ function chooseStatus(state: Mounted, option: StatusOption): void {
   } else void runStatus(state, option.action);
 }
 
+/**
+ * A stack's choice: this pull request alone as the flat menu's item would go; more than one only after the browser's
+ * confirmation naming every one.
+ */
+function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoice): void {
+  if (choice.targets.length === 1) {
+    chooseStatus(state, { status: group.status, action: group.action, note: group.note });
+    return;
+  }
+  if (window.confirm(stackConfirmWords(group.action, choice))) void runStackChoice(state, group.action, choice);
+  else if (state.statusOpener?.isConnected === true) state.statusOpener.focus({ preventScroll: true });
+}
+
+const STACK_REQUEST: { readonly [A in Exclude<StackAction, 'merge' | 'queue'>]: Request } = { ready: readyRequest, draft: draftRequest, close: closeRequest, reopen: reopenRequest };
+
+const STACK_RETRY: { readonly [A in StackAction]: (count: number) => { readonly icon: string; readonly label: string } } = {
+  merge: () => ({ icon: ICON_GIT_MERGE, label: 'Merge stack' }),
+  queue: () => ({ icon: ICON_GIT_MERGE_QUEUE, label: 'Merge when ready' }),
+  ready: (count) => ({ icon: ICON_GIT_PULL_REQUEST, label: count > 1 ? `Mark ${count} ready for review` : 'Ready for review' }),
+  draft: (count) => ({ icon: ICON_GIT_PULL_REQUEST_DRAFT, label: count > 1 ? `Convert ${count} to drafts` : 'Convert to draft' }),
+  close: (count) => ({ icon: ICON_GIT_PULL_REQUEST_CLOSED, label: count > 1 ? `Close ${count} pull requests` : 'Close pull request' }),
+  reopen: (count) => ({ icon: ICON_GIT_PULL_REQUEST, label: count > 1 ? `Reopen ${count} pull requests` : 'Reopen pull request' }),
+};
+
+/**
+ * A merge or a place in the queue goes through the top pull request's `enqueue_stack`, which takes every one below it,
+ * with GitHub's default method and the commit it would write, read afresh; the rest is one request per pull request,
+ * top first. A refusal opens GitHub's reason with a retry of what was left.
+ */
+async function runStackChoice(state: Mounted, action: StackAction, choice: StackChoice): Promise<void> {
+  const nonce = fetchNonce();
+  // The pull request it was chosen on: the controls move with the reader to another one, and nothing chosen here may
+  // go out from there or dress its pills.
+  const pullPath = state.pullPath;
+  const here = (): boolean => mounted === state && state.pullPath === pullPath && pullPathOf(window.location.pathname) === pullPath;
+  let steps: readonly Step[];
+  if (action === 'merge') {
+    const first = await fetchMergeBox(choice.via.path, 'SQUASH', false);
+    const method = first?.methods[0] ?? 'SQUASH';
+    const box = first === null || method === 'SQUASH' ? first : await fetchMergeBox(choice.via.path, method, false);
+    if (!here()) return;
+    if (box === null) {
+      openRetryBox(state, action, actionErrorText(action, 0, null), {
+          ...STACK_RETRY.merge(1),
+          run: async () => {
+            await runStackChoice(state, action, choice);
+            return null;
+          },
+        });
+      return;
+    }
+    steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true }, nonce) }];
+  } else if (action === 'queue') steps = [{ number: choice.via.number, request: stackQueueRequest(choice.via.path, nonce) }];
+  else {
+    const request = STACK_REQUEST[action];
+    steps = choice.targets.map((member) => ({ number: member.number, request: request(member.path, nonce) }));
+  }
+  const done = action === 'merge' ? () => (here() ? showMergedPills(state.pills) : undefined) : undefined;
+  let left = steps;
+  const send = async (): Promise<string | null> => {
+    if (!here()) return null;
+    const failed = await sendSteps(state, action, left, done, here);
+    if (failed === null) return null;
+    left = failed.left;
+    return failed.failed;
+  };
+  const failed = await send();
+  if (failed !== null && here()) openRetryBox(state, action, failed, { ...STACK_RETRY[action](left.length), run: send });
+}
+
 const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
   close: 'Close this pull request?',
   queue: 'Add this pull request to the merge queue?',
@@ -1258,6 +1434,11 @@ const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
 
 type Request = (pullPath: string, nonce: string) => { readonly url: string; readonly init: RequestInit };
 
+/** A place in the merge queue: through the stack's own request for a stacked pull request, as GitHub's merge box sends it. */
+function queueFor(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
+  return mounted?.mergeActions?.box.stacked === true ? stackQueueRequest(pullPath, nonce) : queueRequest(pullPath, nonce);
+}
+
 /** Auto-merge with GitHub's default method and the commit it would write, as read last from the merge box. */
 function autoMergeFor(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
   const box = mounted?.mergeActions?.box;
@@ -1265,7 +1446,7 @@ function autoMergeFor(pullPath: string, nonce: string): { readonly url: string; 
 }
 
 const CONFIRM_INFO: { readonly [A in Exclude<StatusAction, 'merge'>]: { readonly icon: string; readonly label: string; readonly request: Request } } = {
-  queue: { icon: ICON_GIT_MERGE_QUEUE, label: 'Merge when ready', request: queueRequest },
+  queue: { icon: ICON_GIT_MERGE_QUEUE, label: 'Merge when ready', request: queueFor },
   auto: { icon: ICON_GIT_MERGE, label: 'Enable auto-merge', request: autoMergeFor },
   close: { icon: ICON_GIT_PULL_REQUEST_CLOSED, label: 'Close pull request', request: closeRequest },
   ready: { icon: ICON_GIT_PULL_REQUEST, label: 'Ready for review', request: readyRequest },
@@ -1836,23 +2017,49 @@ function boxFooter(left: readonly HTMLElement[], cancel: HTMLButtonElement, subm
 
 const ACTION_STATUS: { readonly [K in StatusAction]: string } = { merge: 'Merging…', queue: 'Adding to merge queue…', auto: 'Enabling auto-merge…', close: 'Closing…', ready: 'Marking ready…', draft: 'Converting to draft…', reopen: 'Reopening…' };
 
+interface Step {
+  /** The pull request it changes, named in a failure among several; null for the page's own alone. */
+  readonly number: number | null;
+  readonly request: { readonly url: string; readonly init: RequestInit };
+}
+
 /** Send a merge, close or ready for review; on success the page reloads, since every part of it (header, timeline, tabs) changes with the state. */
-async function sendAction(state: Mounted, kind: StatusAction, request: { readonly url: string; readonly init: RequestInit }, done: () => void = () => undefined): Promise<string | null> {
+async function sendAction(state: Mounted, kind: StatusAction, request: Step['request'], done: () => void = () => undefined): Promise<string | null> {
+  return (await sendSteps(state, kind, [{ number: null, request }], done))?.failed ?? null;
+}
+
+/**
+ * Each request in turn, stopping at the first GitHub refuses: its reason, and the requests from it on, for another try.
+ * Stops quietly, sending nothing more and reloading nothing, once `here` says the reader has left the page it began on.
+ */
+async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Step[], done: () => void = () => undefined, here: () => boolean = () => true): Promise<{ readonly failed: string; readonly left: readonly Step[] } | null> {
   state.sending = true;
   state.root.setAttribute('aria-busy', 'true');
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = ACTION_STATUS[kind];
   for (const pill of state.pills) pill.setAttribute('aria-busy', 'true');
   try {
-    const response = await fetch(request.url, request.init);
-    const payload: unknown = await response.json().catch(() => null);
-    const failed = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
-    if (!response.ok || failed) return actionErrorText(kind, response.status, payload);
+    for (const [index, step] of steps.entries()) {
+      if (!here()) return null;
+      let failed: string | null;
+      try {
+        const response = await fetch(step.request.url, step.request.init);
+        const payload: unknown = await response.json().catch(() => null);
+        const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
+        failed = !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
+      } catch {
+        failed = actionErrorText(kind, 0, null);
+      }
+      if (failed !== null) {
+        // The ones before it went through: the menu is read again so it offers nothing they already did.
+        if (index > 0) void loadMergeActions(state);
+        return { failed: step.number === null ? failed : `#${step.number}: ${failed}`, left: steps.slice(index) };
+      }
+    }
+    if (!here()) return null;
     done();
     window.location.reload();
     return null;
-  } catch {
-    return actionErrorText(kind, 0, null);
   } finally {
     state.sending = false;
     state.panelRefresh?.();
@@ -1988,6 +2195,19 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
 function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, failure: string | null = null): void {
   const pullPath = state.pullPath;
   const { icon, label, request } = CONFIRM_INFO[kind];
+  openRetryBox(state, kind, failure, { icon, label, run: () => sendAction(state, kind, request(pullPath, fetchNonce())) });
+}
+
+interface Retry {
+  readonly icon: string;
+  readonly label: string;
+  /** Sends it again: null once it went through (the page reloads), else GitHub's reason. */
+  readonly run: () => Promise<string | null>;
+}
+
+/** GitHub's reason a change was refused, with a button to try it again. */
+function openRetryBox(state: Mounted, kind: StatusAction, failure: string | null, retry: Retry): void {
+  const { icon, label } = retry;
   const error = createElement('p', { class: 'geld-quick-review__error color-fg-danger', role: 'alert', hidden: '' });
   if (failure !== null) {
     error.textContent = failure;
@@ -2003,7 +2223,7 @@ function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, fa
     if (submit.disabled) return;
     submit.disabled = true;
     error.hidden = true;
-    const failed = await sendAction(state, kind, request(pullPath, fetchNonce()));
+    const failed = await retry.run();
     submit.disabled = false;
     if (failed === null) return;
     error.textContent = failed;

@@ -1726,6 +1726,53 @@ button.geld-status-pill:is(:hover, :focus-visible, [aria-expanded='true']) .geld
   color: var(--fgColor-closed, #d1242f);
 }
 
+/*
+ * A stack's type opens its choices beside it, on the menu's inline-end side as Primer's submenus do, its first choice
+ * level with the type (`placeSubmenu` sets `top`); on the other side where the viewport has no room (`data-geld-flip`).
+ */
+.geld-quick-review__status-menu .geld-quick-review__menu-trail {
+  display: flex;
+  align-self: center;
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+/* It points at its submenu, open or not: the shared chevron turns down under an expanded control, a disclosure's. */
+.geld-quick-review__status-menu .geld-quick-review__menu-parent .geld-quick-review__menu-trail > svg {
+  width: 16px;
+  height: 16px;
+  transform: none;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-parent .geld-quick-review__menu-trail:dir(rtl) > svg {
+  transform: scaleX(-1);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-parent[aria-expanded='true'] {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+}
+
+.geld-quick-review__menu.geld-quick-review__status-submenu {
+  position: absolute;
+  inset-inline-start: calc(100% + 4px);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.geld-quick-review__menu.geld-quick-review__status-submenu[data-geld-flip] {
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% + 4px);
+}
+
+/* Neither side has room: under its parent, inside the menu's padding, over the rows below it. */
+.geld-quick-review__menu.geld-quick-review__status-submenu[data-geld-under] {
+  z-index: 1;
+  inset-inline-start: 4px;
+  inset-inline-end: auto;
+  max-width: calc(100vw - 32px);
+}
+
 /* "Pending comments N", as GitHub's dialog lists them under the choices. */
 .geld-quick-review__pending-toggle {
   display: inline-flex;

@@ -7,7 +7,10 @@
  * rules), close and mark a draft ready, and whose verdicts stand; `POST page_data/merge`
  * merges; `POST page_data/close_pull_request` closes; `POST page_data/mark_ready_for_review`
  * takes a draft out of draft; `POST page_data/enable_auto_merge` with a merge queue's strategy adds the pull request to
- * the repository's merge queue ("Merge when ready"). Same origin and session as the page, so they work from any tab.
+ * the repository's merge queue ("Merge when ready"). A pull request in a GitHub stack merges through the stack's own
+ * `POST page_data/enqueue_stack` (`mergeAction` `DIRECT_MERGE`, or `MERGE_QUEUE` alone), which takes it and every pull
+ * request below it, and `GET page_data/stacks` lists the stack. Same origin and session as the page, so they work from
+ * any tab.
  */
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
@@ -218,6 +221,11 @@ export function draftRequest(pullPath: string, nonce: string): { readonly url: s
 }
 
 /** What GitHub's merge box sends for "Merge when ready": `enable_auto_merge` with the queue's grouped strategy (its "Queue and force solo merge" sends `SOLO`). */
+/** A stacked pull request's place in the merge queue, with every pull request below it, as GitHub's stack merge box sends it. */
+export function stackQueueRequest(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
+  return { url: `${pullPath}/page_data/enqueue_stack`, init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, true), body: JSON.stringify({ mergeAction: 'MERGE_QUEUE' }) } };
+}
+
 export function queueRequest(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
   return { url: `${pullPath}/page_data/enable_auto_merge`, init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, true), body: JSON.stringify({ mergeMethod: 'GROUP' }) } };
 }
@@ -257,9 +265,62 @@ export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypas
   }
 }
 
+/** A pull request of the GitHub stack the page's belongs to. */
+export interface StackMember {
+  readonly number: number;
+  /** `/owner/repo/pull/N`, where its own `page_data` requests go. */
+  readonly path: string;
+  readonly title: string;
+  readonly current: boolean;
+}
+
+export interface Stack {
+  /** Top of the stack first, as GitHub lists them, merged ones left out: they are no longer anyone's to act on. */
+  readonly members: readonly StackMember[];
+  /** Each member's merge box, for what the reader may do to it; missing where the read failed. */
+  readonly boxes: ReadonlyMap<number, MergeBox>;
+}
+
+/** `page_data/stacks`: `{ stack: { pulls: [{ number, title, state, url }] } }`, top first. */
+export function parseStack(payload: unknown, pullPath: string): readonly StackMember[] | null {
+  if (!isRecord(payload) || !isRecord(payload.stack) || !Array.isArray(payload.stack.pulls)) return null;
+  const current = Number(/\/pull\/(\d+)/.exec(pullPath)?.[1] ?? Number.NaN);
+  const members: StackMember[] = [];
+  for (const pull of payload.stack.pulls) {
+    // A member that cannot be read would be left out of every choice that should take it: no stack rather than part of one.
+    if (!isRecord(pull)) return null;
+    if (pull.state === 'MERGED') continue;
+    if (typeof pull.number !== 'number' || typeof pull.url !== 'string') return null;
+    const path = new URL(pull.url, 'https://github.com').pathname;
+    members.push({ number: pull.number, path, title: stringOf(pull.title), current: pull.number === current });
+  }
+  return members.some((member) => member.current) ? members : null;
+}
+
+async function readStack(pullPath: string, box: MergeBox): Promise<Stack | null> {
+  try {
+    const response = await fetch(`${pullPath}/page_data/stacks`, { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
+    if (!response.ok) return null;
+    const members = parseStack(await response.json(), pullPath);
+    if (members === null) return null;
+    const boxes = new Map<number, MergeBox>();
+    await Promise.all(
+      members.map(async (member) => {
+        const read = member.current ? box : await fetchMergeBox(member.path, 'SQUASH', false);
+        if (read !== null) boxes.set(member.number, read);
+      }),
+    );
+    return { members, boxes };
+  } catch {
+    return null;
+  }
+}
+
 export interface MergeActions {
   readonly box: MergeBox;
   readonly offer: MergeOffer;
+  /** The GitHub stack it belongs to, with every member's merge box; null when it is in none or the stack could not be read. */
+  readonly stack: Stack | null;
   /** An admin's bypass beside the offer (`bypassBeside`): the menu lists it too. */
   readonly bypass: boolean;
   /** The direct methods the bypass may use, as the box read past the rules lists them (a queue's repository may allow none otherwise). */
@@ -277,7 +338,8 @@ export async function readMergeActions(pullPath: string): Promise<MergeActions |
   // Past the rules: where it is not mergeable, or where a queue stands in a direct merge's way.
   const asBypass = box.canBypass && (!box.mergeable || box.canQueue) ? await fetchMergeBox(pullPath, method, true) : null;
   const offer = mergeOffer(box, asBypass);
-  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.methods ?? [] };
+  const stack = box.stacked ? await readStack(pullPath, box) : null;
+  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.methods ?? [], stack };
 }
 
 /** The reason a merge or close failed, in GitHub's words when it gave any. */

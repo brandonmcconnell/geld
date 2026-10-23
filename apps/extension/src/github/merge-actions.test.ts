@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, bypassBeside, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean } = {}): unknown {
@@ -175,5 +175,36 @@ describe('the requests', () => {
       'GitHub could not merge the pull request: Repository rule violations found Changes must be made through a pull request.',
     );
     expect(actionErrorText('close', 500, null)).toBe('GitHub could not close the pull request (HTTP 500).');
+  });
+});
+
+describe('parseStack', () => {
+  const pulls = [
+    { number: 13453, title: 'Top', state: 'DRAFT', url: '/mintlify/mint/pull/13453' },
+    { number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' },
+    { number: 13442, title: 'Merged already', state: 'MERGED', url: '/mintlify/mint/pull/13442' },
+    { number: 13440, title: 'Foot', state: 'OPEN', url: '/mintlify/mint/pull/13440' },
+  ];
+  it('lists the stack top first, as GitHub does, marks the page’s own and leaves merged ones out', () => {
+    expect(parseStack({ id: 1, stack: { pulls } }, '/mintlify/mint/pull/13447')).toEqual([
+      { number: 13453, path: '/mintlify/mint/pull/13453', title: 'Top', current: false },
+      { number: 13447, path: '/mintlify/mint/pull/13447', title: 'Middle', current: true },
+      { number: 13440, path: '/mintlify/mint/pull/13440', title: 'Foot', current: false },
+    ]);
+  });
+  it('reads no stack when a member that is not merged cannot be read, since every choice would leave it out', () => {
+    expect(parseStack({ stack: { pulls: [{ number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' }, { title: 'No number', state: 'OPEN', url: '/mintlify/mint/pull/1' }] } }, '/mintlify/mint/pull/13447')).toBeNull();
+    expect(parseStack({ stack: { pulls: [{ number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' }, 'not a pull'] } }, '/mintlify/mint/pull/13447')).toBeNull();
+    expect(parseStack({ stack: { pulls: [{ number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' }, { state: 'MERGED' }] } }, '/mintlify/mint/pull/13447')).toHaveLength(1);
+  });
+
+  it('reads nothing from an answer without the page’s own pull request in it', () => {
+    expect(parseStack({ stack: { pulls } }, '/mintlify/mint/pull/1')).toBeNull();
+    expect(parseStack({}, '/mintlify/mint/pull/13447')).toBeNull();
+  });
+  it('queues a stacked pull request as GitHub’s stack merge box does, with every one below it', () => {
+    const request = stackQueueRequest('/o/r/pull/7', 'n');
+    expect(request.url).toBe('/o/r/pull/7/page_data/enqueue_stack');
+    expect(request.init.body).toBe('{"mergeAction":"MERGE_QUEUE"}');
   });
 });
