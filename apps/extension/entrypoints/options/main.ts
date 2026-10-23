@@ -473,8 +473,23 @@ async function main(): Promise<void> {
     return card;
   }
 
+  /**
+   * Focus is in something being edited: a category's pattern editor (its
+   * textarea, or its Save button, since Chrome focuses a clicked button), or
+   * a custom category's name, count labels and icon picker. Rebuilding then
+   * would eat typed input, an unsaved draft or the "Saved" status the click
+   * is about to show.
+   */
+  function isEditingCategory(): boolean {
+    const active = document.activeElement;
+    return active !== null && active.closest('.options__categories .options__editor, .options__custom-editor') !== null;
+  }
+  /** A rebuild was skipped because someone was editing; it runs once focus moves on (see the focusin listener below). */
+  let renderDeferred = false;
+
   /** Rebuild both category lists from the current settings, keeping open disclosures open. */
   function renderAll(): void {
+    renderDeferred = false;
     const wasOpen = new Set(
       Array.from(document.querySelectorAll<HTMLDetailsElement>('details.options__category[open]')).map((card) => card.dataset.categoryId ?? ''),
     );
@@ -1241,7 +1256,8 @@ async function main(): Promise<void> {
     cachedCatalog = next;
     catalog = catalogFromCache(next);
     renderCatalogStatus();
-    if (!(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) renderAll();
+    if (isEditingCategory()) renderDeferred = true;
+    else renderAll();
     runTester();
   }
   catalogItem.watch(applyCatalog);
@@ -1257,16 +1273,28 @@ async function main(): Promise<void> {
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
-    // Rebuilding while someone types in a pattern box would eat their input.
-    if (signature !== lastSignature && !(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) {
-      lastSignature = signature;
-      renderAll();
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
+    if (signature !== lastSignature) {
+      if (isEditingCategory()) renderDeferred = true;
+      else {
+        lastSignature = signature;
+        renderAll();
+      }
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
     if (reviewBotsArea !== null && document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
+  });
+  // Catch up on a skipped rebuild once focus lands outside the category lists.
+  // Not inside them: focus moves on mousedown, so rebuilding then would pull
+  // the control being clicked (another card's switch or Save) out from under the click.
+  document.addEventListener('focusin', (event) => {
+    if (!renderDeferred) return;
+    if (event.target instanceof Element && event.target.closest('.options__categories') !== null) return;
+    lastSignature = categorySignature(settings);
+    renderAll();
   });
 }
 
