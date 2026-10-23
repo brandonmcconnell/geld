@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { MergeBox } from './merge-actions';
-import { statusOptions } from './status-pill';
+import { showMergedPills, statusOptions, syncStatusPills } from './status-pill';
+import { ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST } from './ui/icons';
 
 const box = (over: Partial<MergeBox>): MergeBox => ({
   state: 'OPEN',
@@ -66,5 +67,41 @@ describe('statusOptions', () => {
 
   it('never offers a draft a merge', () => {
     expect(statusOptions(box({ draft: true, canMarkReady: true }), 'merge').map((option) => option.status)).toEqual(['open']);
+  });
+});
+
+describe('showMergedPills', () => {
+  const glyph = (icon: string, name: string): string => icon.replace(/class="[^"]*"/, `class="octicon ${name} prc-StateLabel-Icon-x"`);
+  const react = (status: string, words: string, icon: string, name: string): string =>
+    `<div data-component="PageHeader"><span class="prc-StateLabel-x" data-component="StateLabel" data-size="medium" data-status="${status}" title="Status: ${words}">${glyph(icon, name)}${words}</span></div>`;
+  const classic = (state: string, words: string, icon: string, name: string): string =>
+    `<div class="gh-header-meta"><span class="State State--${state}" title="Status: ${words}">${glyph(icon, name)} ${words}</span></div>`;
+  const pillAfterMerge = (markup: string): string => {
+    document.body.innerHTML = markup;
+    showMergedPills(syncStatusPills(true, () => undefined));
+    return document.querySelector('button[data-geld-status-pill]')?.outerHTML ?? '';
+  };
+  const pillFromGitHub = (markup: string): string => {
+    document.body.innerHTML = markup;
+    const pill = syncStatusPills(true, () => undefined)[0];
+    pill?.removeAttribute('aria-haspopup');
+    pill?.removeAttribute('aria-expanded');
+    return pill?.outerHTML ?? '';
+  };
+
+  it('draws the merged pill as GitHub’s own merged label will dress it, so the reload moves nothing', () => {
+    const merged = pillAfterMerge(react('pullOpened', 'Open', ICON_GIT_PULL_REQUEST, 'octicon-git-pull-request'));
+    expect(merged).toContain('Merged');
+    expect(merged).toContain('geld-status-pill__lead');
+    expect(merged).not.toContain('aria-haspopup');
+    expect(merged).not.toContain('aria-expanded');
+    expect(merged).toBe(pillFromGitHub(react('pullMerged', 'Merged', ICON_GIT_MERGE, 'octicon-git-merge')));
+    expect(pillAfterMerge(classic('open', 'Open', ICON_GIT_PULL_REQUEST, 'octicon-git-pull-request'))).toBe(pillFromGitHub(classic('merged', 'Merged', ICON_GIT_MERGE, 'octicon-git-merge')));
+  });
+
+  it('stays merged through a pass before the reload, while GitHub’s label still reads open', () => {
+    const merged = pillAfterMerge(react('pullOpened', 'Open', ICON_GIT_PULL_REQUEST, 'octicon-git-pull-request'));
+    syncStatusPills(true, () => undefined);
+    expect(document.querySelector('button[data-geld-status-pill]')?.outerHTML).toBe(merged);
   });
 });

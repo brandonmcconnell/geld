@@ -109,18 +109,44 @@ export const ATTR_INSTANT_MERGE = 'data-geld-instant-merge';
 
 /**
  * The pills as GitHub draws a merged pull request's, the moment a merge went
- * through (the page reloads to GitHub's own after): Primer's StateLabel keys
- * its look on `data-status`, the classic label on its `State--merged` class.
+ * through (the page reloads to GitHub's own after): each dressed from a copy
+ * of GitHub's label turned merged, so it is built exactly as the pill dressed
+ * from GitHub's own merged label will be and the reload moves nothing.
+ * Primer's StateLabel keys its look on `data-status`, the classic label on its
+ * `State--merged` class. The pill stays keyed to GitHub's label as it stands,
+ * so a pass before the reload does not dress it back.
  */
 export function showMergedPills(pills: readonly HTMLButtonElement[]): void {
   for (const pill of pills) {
     pill.removeAttribute(ATTR_INSTANT_MERGE);
+    // The held key's "Merge now: …", which would otherwise outlast the merge as the pill's name.
+    pill.removeAttribute('aria-label');
     pill.removeAttribute('aria-haspopup');
-    if (pill.hasAttribute('data-status')) pill.setAttribute('data-status', 'pullMerged');
-    for (const token of [...pill.classList]) if (/^State--(?:open|draft|closed)$/.test(token)) pill.classList.replace(token, 'State--merged');
-    if (pill.hasAttribute('title')) pill.setAttribute('title', 'Status: Merged');
-    pill.replaceChildren(svgFromString(ICON_GIT_MERGE), createElement('span', { class: 'geld-status-pill__label' }, ['Merged']));
+    pill.removeAttribute('aria-expanded');
+    const label = pill.previousElementSibling;
+    if (label === null) continue;
+    dress(pill, mergedCopy(label));
+    dressedFrom.set(pill, labelKey(label));
   }
+}
+
+function mergedCopy(label: Element): Element {
+  const copy = label.cloneNode(true);
+  if (!(copy instanceof Element)) return label;
+  if (copy.hasAttribute('data-status')) copy.setAttribute('data-status', 'pullMerged');
+  for (const token of [...copy.classList]) if (/^State--(?:open|draft|closed)$/.test(token)) copy.classList.replace(token, 'State--merged');
+  if (copy.hasAttribute('title')) copy.setAttribute('title', 'Status: Merged');
+  const glyph = copy.querySelector('svg');
+  if (glyph !== null) {
+    // GitHub's own glyph element, sized and classed as it is, drawing the merge octicon.
+    glyph.replaceChildren(...svgFromString(ICON_GIT_MERGE).childNodes);
+    glyph.setAttribute('class', (glyph.getAttribute('class') ?? 'octicon').replace(/\bocticon-[\w-]+/, 'octicon-git-merge'));
+  }
+  for (const node of [...copy.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.remove();
+  const words = [...copy.querySelectorAll('*')].find((element) => element.children.length === 0 && !(element instanceof SVGElement) && (element.textContent ?? '').trim() !== '');
+  if (words === undefined) copy.append('Merged');
+  else words.textContent = 'Merged';
+  return copy;
 }
 
 /**

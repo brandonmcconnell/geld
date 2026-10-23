@@ -744,11 +744,15 @@ describe('the tab bar button', () => {
     // Through: GitHub's default method and commit, then GitHub's merged pill until the page reloads.
     answer = 200;
     posts.length = 0;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.getAttribute('aria-label')).toBe('Merge now: Squash and merge');
     pill()?.dispatchEvent(new MouseEvent('click', instant));
     for (let i = 0; i < 3; i += 1) await settle();
     expect(posts).toEqual([{ url: 'merge', body: JSON.stringify({ bypassBranchProtections: false, mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: '' }) }]);
     expect(pill()?.getAttribute('data-status')).toBe('pullMerged');
-    expect(pill()?.textContent).toBe('Merged');
+    expect(pill()?.querySelector('.geld-status-pill__label')?.textContent).toBe('Merged');
+    expect(pill()?.hasAttribute('aria-haspopup')).toBe(false);
+    expect(pill()?.hasAttribute('aria-label')).toBe(false);
     expect(reload).toHaveBeenCalled();
   });
 
