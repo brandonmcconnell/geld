@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean } = {}): unknown {
@@ -74,6 +74,17 @@ describe('parseMergeBox', () => {
     if (box === null) throw new Error('fixture');
     expect(viewerVerdict(box, 'alice')).toBe('CHANGES_REQUESTED');
     expect(viewerVerdict(box, 'bob')).toBeNull();
+  });
+});
+
+describe('mergeableNow', () => {
+  it('reads a pull request that waits only on statuses that have passed as mergeable, as GitHub’s merge box does', () => {
+    expect(mergeableNow('MERGEABLE', undefined)).toBe(true);
+    // mintlify/mint#13535 (Oct 2026): GitHub's merge box offered Squash and merge.
+    expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'CLEAN')).toBe(true);
+    expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'HAS_HOOKS')).toBe(true);
+    for (const status of ['BEHIND', 'BLOCKED', 'UNSTABLE', 'DIRTY', 'UNKNOWN', undefined]) expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', status)).toBe(false);
+    expect(mergeableNow('BLOCKED', 'CLEAN')).toBe(false);
   });
 });
 
