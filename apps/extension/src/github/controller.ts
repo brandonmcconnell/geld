@@ -40,6 +40,7 @@ import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
+import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
@@ -639,10 +640,12 @@ export class GeldController {
     // GitHub's socket goes quiet for a hidden tab and its status timers run late: bots that finished meanwhile still
     // read as running. Back after a while, the checks are read again and the timeline caught up (`catchUpTimeline`);
     // what it puts in the page makes passes of its own.
-    const catchUp = away >= CATCH_UP_AFTER_MS;
+    const catchUp = away >= CATCH_UP_AFTER_MS && this.mayDressPage();
     if (catchUp) {
       expireHeadChecks();
       void catchUpTimeline();
+      // Longer away, GitHub stopped listening: the replies in threads it missed come only by refetching their regions.
+      if (liveCatchUpDue(away)) document.dispatchEvent(new Event(LIVE_CATCH_UP_EVENT));
     }
     const deferred = takeReviewDeferred();
     if (!this.hiddenDirty && !deferred && !catchUp) {
