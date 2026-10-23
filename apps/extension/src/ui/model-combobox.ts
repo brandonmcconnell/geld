@@ -1,4 +1,4 @@
-import type { ModelInfo, ModelTiers } from '@geld/review';
+import type { ModelGuide, ModelInfo, ModelTiers } from '@geld/review';
 import { pickerRank, recommendationFor, tiersFor, variantOf } from '@geld/review';
 
 /**
@@ -23,6 +23,8 @@ export interface ModelComboboxOptions {
   readonly labelledBy: string;
   readonly placeholder: string;
   readonly initial: string;
+  /** Which models to lead with and why; the digest's writing guide when omitted. */
+  readonly guide?: { readonly recommend: (id: string) => ModelGuide | null; readonly heading: string };
 }
 
 export interface ModelCombobox {
@@ -71,11 +73,16 @@ function tiersEl(tiers: ModelTiers): HTMLElement {
   ]);
 }
 
+type Recommend = (id: string) => ModelGuide | null;
+
 /** Recommended first (in the guide's order), then plain models, then variants; alphabetical within a rank. */
-function compareModels(a: ModelInfo, b: ModelInfo): number {
-  const rank = pickerRank(a.id) - pickerRank(b.id);
-  if (rank !== 0) return rank;
-  return a.id.localeCompare(b.id);
+function compareModels(recommend: Recommend): (a: ModelInfo, b: ModelInfo) => number {
+  const rankOf = (id: string): 0 | 1 | 2 => (recommend(id) !== null ? 0 : pickerRank(id) === 0 ? 1 : pickerRank(id));
+  return (a, b) => {
+    const rank = rankOf(a.id) - rankOf(b.id);
+    if (rank !== 0) return rank;
+    return a.id.localeCompare(b.id);
+  };
 }
 
 function matches(model: ModelInfo, query: string): boolean {
@@ -99,6 +106,9 @@ export function modelCombobox(options: ModelComboboxOptions): ModelCombobox {
   let models: readonly ModelInfo[] = [];
   let shown: readonly ModelInfo[] = [];
   let active = -1;
+  const recommend: Recommend = options.guide?.recommend ?? recommendationFor;
+  const recommendedHeading = options.guide?.heading ?? 'Recommended for the digest';
+  const compare = compareModels(recommend);
 
   const input = el('input', 'geld-input geld-code options__input options__input--grow');
   input.id = options.id;
@@ -133,7 +143,7 @@ export function modelCombobox(options: ModelComboboxOptions): ModelCombobox {
   };
 
   const optionEl = (model: ModelInfo, index: number): HTMLElement => {
-    const recommended = recommendationFor(model.id);
+    const recommended = recommend(model.id);
     const variant = variantOf(model.id);
     const tiers = tiersFor(model.id);
     const head = el('span', 'options__combo-head', [el('span', 'geld-code options__combo-id', [model.id])]);
@@ -165,15 +175,15 @@ export function modelCombobox(options: ModelComboboxOptions): ModelCombobox {
   };
 
   const render = (query: string): void => {
-    const all = models.filter((model) => matches(model, query)).sort(compareModels);
+    const all = models.filter((model) => matches(model, query)).sort(compare);
     shown = all.slice(0, MAX_SHOWN);
     list.replaceChildren();
     if (shown.length === 0) {
       list.append(el('li', 'options__combo-empty', [models.length === 0 ? 'No models listed yet' : 'No model matches']));
     }
     // Opened empty: the recommended few under their own heading, then everything else.
-    const recommendedCount = query === '' ? shown.filter((model) => recommendationFor(model.id) !== null).length : 0;
-    if (recommendedCount > 0) list.append(heading('Recommended for the digest'));
+    const recommendedCount = query === '' ? shown.filter((model) => recommend(model.id) !== null).length : 0;
+    if (recommendedCount > 0) list.append(heading(recommendedHeading));
     shown.forEach((model, index) => {
       if (recommendedCount > 0 && index === recommendedCount) list.append(heading('All models'));
       list.append(optionEl(model, index));
@@ -245,7 +255,7 @@ export function modelCombobox(options: ModelComboboxOptions): ModelCombobox {
     has: (id) => models.some((model) => model.id === id),
     size: () => models.length,
     setOptions: (next) => {
-      models = [...next].sort(compareModels);
+      models = [...next].sort(compare);
       if (!list.hidden) render(input.value.trim());
     },
     setDisabled: (disabled) => {

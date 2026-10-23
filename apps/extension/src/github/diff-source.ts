@@ -52,6 +52,11 @@ function isDefinitive(reason: string): boolean {
   return reason === 'too-large' || reason === 'invalid-url' || reason === 'disallowed-url' || reason === 'signed-out' || reason === 'not-a-diff' || /^http-4\d\d$/.test(reason);
 }
 
+/** A failure the source will ask about again by itself (the same rule as its own retry timer below). */
+export function willRetry(state: DiffFetchState): boolean {
+  return state.status === 'failed' && (state.reason === 'rate-limited' || (!isDefinitive(state.reason) && state.attempts < TRANSIENT_MAX_ATTEMPTS));
+}
+
 /**
  * Lazily asks the background script for `<page>.diff` and caches the per-file
  * statistics — in memory for this page, and on disk keyed by commit SHA so a
