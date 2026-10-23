@@ -1,0 +1,28 @@
+{
+  "name": "@geld/crf",
+  "version": "0.0.0",
+  "description": "Common Review Format: a small versioned JSON block code review bots hide in their GitHub comments so tools can read verdicts, findings and run state without parsing prose.",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema.json": "./schema/crf-v0.schema.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run",
+    "schema": "tsx scripts/write-schema.ts"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
