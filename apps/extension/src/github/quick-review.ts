@@ -1390,7 +1390,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
   // The pull request it was chosen on: the controls move with the reader to another one, and nothing chosen here may
   // go out from there or dress its pills.
   const pullPath = state.pullPath;
-  const here = (): boolean => mounted === state && state.pullPath === pullPath;
+  const here = (): boolean => mounted === state && state.pullPath === pullPath && pullPathOf(window.location.pathname) === pullPath;
   let steps: readonly Step[];
   if (action === 'merge') {
     const first = await fetchMergeBox(choice.via.path, 'SQUASH', false);
@@ -1417,7 +1417,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
   let left = steps;
   const send = async (): Promise<string | null> => {
     if (!here()) return null;
-    const failed = await sendSteps(state, action, left, done);
+    const failed = await sendSteps(state, action, left, done, here);
     if (failed === null) return null;
     left = failed.left;
     return failed.failed;
@@ -2028,8 +2028,11 @@ async function sendAction(state: Mounted, kind: StatusAction, request: Step['req
   return (await sendSteps(state, kind, [{ number: null, request }], done))?.failed ?? null;
 }
 
-/** Each request in turn, stopping at the first GitHub refuses: its reason, and the requests from it on, for another try. */
-async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Step[], done: () => void = () => undefined): Promise<{ readonly failed: string; readonly left: readonly Step[] } | null> {
+/**
+ * Each request in turn, stopping at the first GitHub refuses: its reason, and the requests from it on, for another try.
+ * Stops quietly, sending nothing more and reloading nothing, once `here` says the reader has left the page it began on.
+ */
+async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Step[], done: () => void = () => undefined, here: () => boolean = () => true): Promise<{ readonly failed: string; readonly left: readonly Step[] } | null> {
   state.sending = true;
   state.root.setAttribute('aria-busy', 'true');
   window.clearTimeout(state.submittedTimer);
@@ -2037,6 +2040,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
   for (const pill of state.pills) pill.setAttribute('aria-busy', 'true');
   try {
     for (const [index, step] of steps.entries()) {
+      if (!here()) return null;
       let failed: string | null;
       try {
         const response = await fetch(step.request.url, step.request.init);
@@ -2052,6 +2056,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
         return { failed: step.number === null ? failed : `#${step.number}: ${failed}`, left: steps.slice(index) };
       }
     }
+    if (!here()) return null;
     done();
     window.location.reload();
     return null;

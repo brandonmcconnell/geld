@@ -567,6 +567,48 @@ describe('the tab bar button', () => {
     expect(reload).toHaveBeenCalled();
   });
 
+  it('stops a stack’s changes, and reloads nothing, once the reader has left the pull request they began on', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: string[] = [];
+    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' };
+    vi.stubGlobal('location', where);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push(url);
+          // The reader moves on to another pull request while the first change is out.
+          where.pathname = '/acme/widgets/pull/8';
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+          if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+          Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request']);
+    expect(where.reload).not.toHaveBeenCalled();
+    where.pathname = '/acme/widgets/pull/7';
+  });
+
   it('confirms a merge only with the chosen method’s commit, whatever order GitHub answers in', async () => {
     const held: { [method: string]: (() => void) | undefined } = {};
     const slow = new Set<string>();
