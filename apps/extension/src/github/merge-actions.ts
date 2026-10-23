@@ -67,6 +67,17 @@ function isMethod(value: unknown): value is MergeMethod {
   return value === 'MERGE' || value === 'SQUASH' || value === 'REBASE';
 }
 
+/**
+ * Whether GitHub would merge it now, as its merge box decides: `MERGEABLE`, or `MERGEABLE_IF_STATUSES_PASS` once the
+ * statuses do pass. The box reads those from its separate status query; the pull request's `mergeStateStatus` says
+ * the same in one word (`CLEAN`: mergeable with passing commit status, `HAS_HOOKS`: the same with pre-receive hooks),
+ * where `BEHIND`, `BLOCKED`, `UNSTABLE` and the rest are not ready.
+ */
+export function mergeableNow(requirementsState: unknown, mergeStateStatus: unknown): boolean {
+  if (requirementsState === 'MERGEABLE') return true;
+  return requirementsState === 'MERGEABLE_IF_STATUSES_PASS' && (mergeStateStatus === 'CLEAN' || mergeStateStatus === 'HAS_HOOKS');
+}
+
 /** A `page_data/merge_box` answer, or null when it is not one. */
 export function parseMergeBox(payload: unknown): MergeBox | null {
   if (!isRecord(payload) || !isRecord(payload.pullRequest)) return null;
@@ -101,7 +112,7 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     canMarkReady: pull.viewerCanMarkReadyForReview === true,
     canConvertToDraft: pull.viewerCanConvertToDraft === true,
     verdicts,
-    mergeable: requirements.state === 'MERGEABLE',
+    mergeable: mergeableNow(requirements.state, pull.mergeStateStatus),
     canBypass: pull.viewerCanAdminBypassMergeRequirements === true,
     methods,
     commitTitle: stringOf(requirements.commitMessageHeadline),
