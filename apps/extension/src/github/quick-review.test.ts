@@ -481,21 +481,23 @@ describe('the tab bar button', () => {
     resetStatusHints();
     const posts: string[] = [];
     let refuse: string | null = null;
-    let boxReads = 0;
+    const closed = new Set<string>();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (init?.method === 'POST') {
           posts.push(url);
-          return refuse !== null && url.includes(refuse) ? new Response('{"error":"Not allowed"}', { status: 422 }) : new Response('{}', { status: 200 });
+          if (refuse !== null && url.includes(refuse)) return new Response('{"error":"Not allowed"}', { status: 422 });
+          closed.add(url.replace(/\/page_data\/.*$/, ''));
+          return new Response('{}', { status: 200 });
         }
         if (url.endsWith('/page_data/stacks')) {
           return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
         }
         if (url.includes('/page_data/merge_box')) {
-          boxReads += 1;
-          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          const shut = closed.has(url.replace(/\/page_data\/.*$/, ''));
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, shut ? { pull: 'CLOSED' } : { convert: true }));
           const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
           if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
           Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
@@ -534,27 +536,34 @@ describe('the tab bar button', () => {
     expect(confirm).toHaveBeenCalledWith('Close the entire stack of 3 pull requests (#9, #7 and #5)?');
     await settle();
     expect(posts).toEqual([]);
-    // Refused partway: GitHub's reason for the one it refused, and the menu read again, since the one before went through.
+    // Refused partway: GitHub's reason for the one it refused, and nothing reloads.
     confirm.mockReturnValue(true);
     refuse = '/pull/7/';
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
-    const readsBefore = boxReads;
     for (let i = 0; i < 4; i += 1) await settle();
     expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request', '/acme/widgets/pull/7/page_data/close_pull_request']);
     expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__error')?.textContent).toBe('#7: GitHub could not close the pull request: Not allowed');
-    expect(boxReads).toBeGreaterThan(readsBefore);
     expect(reload).not.toHaveBeenCalled();
-    // Accepted with nothing refused, each pull request is closed in turn, top first, and the page reloads.
-    refuse = null;
-    posts.length = 0;
+    // The menu was read again: #9 is closed now, so the entire stack can no longer be closed, this and the one below can.
     document.querySelector<HTMLButtonElement>('.geld-quick-review__panel .btn.btn-invisible')?.click();
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
-    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    expect(choices()).toEqual(['This pull request', 'This and 1 below']);
+    // Refused at the second of two, then tried again: only what was left goes out, and the page reloads.
+    refuse = '/pull/5/';
+    posts.length = 0;
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="below"]')?.click();
+    expect(confirm).toHaveBeenLastCalledWith('Close 2 pull requests (#7 and #5)?');
     for (let i = 0; i < 4; i += 1) await settle();
-    expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request', '/acme/widgets/pull/7/page_data/close_pull_request', '/acme/widgets/pull/5/page_data/close_pull_request']);
+    expect(posts).toEqual(['/acme/widgets/pull/7/page_data/close_pull_request', '/acme/widgets/pull/5/page_data/close_pull_request']);
+    expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__confirm-submit')?.textContent).toBe('Close pull request');
+    refuse = null;
+    posts.length = 0;
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__panel .geld-quick-review__confirm-submit')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/5/page_data/close_pull_request']);
     expect(reload).toHaveBeenCalled();
   });
 

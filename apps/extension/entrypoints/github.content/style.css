@@ -1765,6 +1765,14 @@ button.geld-status-pill:is(:hover, :focus-visible, [aria-expanded='true']) .geld
   inset-inline-end: calc(100% + 4px);
 }
 
+/* Neither side has room: under its parent, inside the menu's padding, over the rows below it. */
+.geld-quick-review__menu.geld-quick-review__status-submenu[data-geld-under] {
+  z-index: 1;
+  inset-inline-start: 4px;
+  inset-inline-end: auto;
+  max-width: calc(100vw - 32px);
+}
+
 /* "Pending comments N", as GitHub's dialog lists them under the choices. */
 .geld-quick-review__pending-toggle {
   display: inline-flex;

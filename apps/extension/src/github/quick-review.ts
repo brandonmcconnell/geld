@@ -1293,18 +1293,38 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     { signal: keys.signal },
   );
   window.addEventListener('scroll', () => positionStatusMenu(state), { passive: true, signal: keys.signal });
-  window.addEventListener('resize', () => positionStatusMenu(state), { signal: keys.signal });
+  window.addEventListener(
+    'resize',
+    () => {
+      positionStatusMenu(state);
+      const open = submenu;
+      const parent = submenuFor;
+      if (open !== null && parent !== null) placeSubmenu(parent, open);
+    },
+    { signal: keys.signal },
+  );
 }
 
 /**
  * Beside its parent, on the menu's inline-end side as Primer's submenus open, its first item level with the parent;
- * on the other side when that would leave the viewport.
+ * on the other side when that would leave the viewport, and under the parent, over the rows below it, when neither
+ * side has room (a narrow window). Placed again as the window changes size.
  */
 function placeSubmenu(item: HTMLElement, submenu: HTMLElement): void {
+  submenu.removeAttribute('data-geld-flip');
+  submenu.removeAttribute('data-geld-under');
   const style = getComputedStyle(submenu);
   submenu.style.top = `${item.offsetTop - parseFloat(style.paddingTop) - parseFloat(style.borderTopWidth)}px`;
-  const rect = submenu.getBoundingClientRect();
-  if (rect.right > document.documentElement.clientWidth - 8 || rect.left < 8) submenu.setAttribute('data-geld-flip', '');
+  const fits = (): boolean => {
+    const rect = submenu.getBoundingClientRect();
+    return rect.left >= 8 && rect.right <= document.documentElement.clientWidth - 8;
+  };
+  if (fits()) return;
+  submenu.setAttribute('data-geld-flip', '');
+  if (fits()) return;
+  submenu.removeAttribute('data-geld-flip');
+  submenu.setAttribute('data-geld-under', '');
+  submenu.style.top = `${item.offsetTop + item.offsetHeight}px`;
 }
 
 /** Under the pill, its left edge on the pill's, inside the viewport (fixed, and placed again as the page scrolls, so it follows the pill). */
@@ -1367,13 +1387,18 @@ const STACK_RETRY: { readonly [A in StackAction]: (count: number) => { readonly 
  */
 async function runStackChoice(state: Mounted, action: StackAction, choice: StackChoice): Promise<void> {
   const nonce = fetchNonce();
+  // The pull request it was chosen on: the controls move with the reader to another one, and nothing chosen here may
+  // go out from there or dress its pills.
+  const pullPath = state.pullPath;
+  const here = (): boolean => mounted === state && state.pullPath === pullPath;
   let steps: readonly Step[];
   if (action === 'merge') {
     const first = await fetchMergeBox(choice.via.path, 'SQUASH', false);
     const method = first?.methods[0] ?? 'SQUASH';
     const box = first === null || method === 'SQUASH' ? first : await fetchMergeBox(choice.via.path, method, false);
+    if (!here()) return;
     if (box === null) {
-      if (mounted === state) openRetryBox(state, action, actionErrorText(action, 0, null), {
+      openRetryBox(state, action, actionErrorText(action, 0, null), {
           ...STACK_RETRY.merge(1),
           run: async () => {
             await runStackChoice(state, action, choice);
@@ -1388,16 +1413,17 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
     const request = STACK_REQUEST[action];
     steps = choice.targets.map((member) => ({ number: member.number, request: request(member.path, nonce) }));
   }
-  const done = action === 'merge' ? () => showMergedPills(state.pills) : undefined;
+  const done = action === 'merge' ? () => (here() ? showMergedPills(state.pills) : undefined) : undefined;
   let left = steps;
   const send = async (): Promise<string | null> => {
+    if (!here()) return null;
     const failed = await sendSteps(state, action, left, done);
     if (failed === null) return null;
     left = failed.left;
     return failed.failed;
   };
   const failed = await send();
-  if (failed !== null && mounted === state) openRetryBox(state, action, failed, { ...STACK_RETRY[action](left.length), run: send });
+  if (failed !== null && here()) openRetryBox(state, action, failed, { ...STACK_RETRY[action](left.length), run: send });
 }
 
 const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
