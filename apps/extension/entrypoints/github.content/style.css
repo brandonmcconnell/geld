@@ -1585,7 +1585,8 @@ button.geld-status-pill[data-geld-instant-merge] .geld-status-pill__merge {
 
 button.geld-status-pill[data-geld-instant-merge] {
   background: transparent !important;
-  box-shadow: inset 0 0 0 1px var(--borderColor-done-emphasis, var(--fgColor-done, #8250df));
+  /* The stroke of GitHub's 16px glyphs, so the ring weighs what the merge glyph and "Merge" beside it do. */
+  box-shadow: inset 0 0 0 1.5px var(--borderColor-done-emphasis, var(--fgColor-done, #8250df));
   color: var(--fgColor-done, #8250df) !important;
   filter: none;
 }
@@ -1661,6 +1662,41 @@ button.geld-status-pill:is(:hover, :focus-visible, [aria-expanded='true']) .geld
 .geld-quick-review__status-menu .geld-quick-review__menu-visual > svg {
   width: 18px;
   height: 18px;
+}
+
+/*
+ * Past the rules: an amber warning triangle over the glyph's bottom-right corner, the glyph cut away around it
+ * by the same triangle stroked 1.5px wider. The cut's box is the badge's grown by 2 of its 12 units on every side,
+ * so its offsets are the badge's less 5/3px, and the two must move together.
+ */
+.geld-quick-review__status-menu .geld-quick-review__menu-visual[data-bypass] {
+  position: relative;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-visual[data-bypass] > svg {
+  -webkit-mask-image: linear-gradient(#000 0 0), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 16 16'%3E%3Cpath d='M4.855.708c.5-.896 1.79-.896 2.29 0l4.675 8.351a1.312 1.312 0 0 1-1.146 1.954H1.33A1.313 1.313 0 0 1 .183 9.058Z' stroke='black' stroke-width='3.6' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-image: linear-gradient(#000 0 0), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 16 16'%3E%3Cpath d='M4.855.708c.5-.896 1.79-.896 2.29 0l4.675 8.351a1.312 1.312 0 0 1-1.146 1.954H1.33A1.313 1.313 0 0 1 .183 9.058Z' stroke='black' stroke-width='3.6' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-position: 0 0, right -5.667px bottom -4.667px;
+  mask-position: 0 0, right -5.667px bottom -4.667px;
+  -webkit-mask-size: 100% 100%, 13.333px 13.333px;
+  mask-size: 100% 100%, 13.333px 13.333px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.geld-quick-review__menu-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  display: flex;
+  color: var(--fgColor-attention, #9a6700);
+}
+
+.geld-quick-review__menu-badge > svg {
+  width: 10px;
+  height: 10px;
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-label {
