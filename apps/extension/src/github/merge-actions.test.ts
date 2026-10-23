@@ -192,6 +192,12 @@ describe('parseStack', () => {
       { number: 13440, path: '/mintlify/mint/pull/13440', title: 'Foot', current: false },
     ]);
   });
+  it('reads no stack when a member that is not merged cannot be read, since every choice would leave it out', () => {
+    expect(parseStack({ stack: { pulls: [{ number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' }, { title: 'No number', state: 'OPEN', url: '/mintlify/mint/pull/1' }] } }, '/mintlify/mint/pull/13447')).toBeNull();
+    expect(parseStack({ stack: { pulls: [{ number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' }, 'not a pull'] } }, '/mintlify/mint/pull/13447')).toBeNull();
+    expect(parseStack({ stack: { pulls: [{ number: 13447, title: 'Middle', state: 'OPEN', url: '/mintlify/mint/pull/13447' }, { state: 'MERGED' }] } }, '/mintlify/mint/pull/13447')).toHaveLength(1);
+  });
+
   it('reads nothing from an answer without the page’s own pull request in it', () => {
     expect(parseStack({ stack: { pulls } }, '/mintlify/mint/pull/1')).toBeNull();
     expect(parseStack({}, '/mintlify/mint/pull/13447')).toBeNull();

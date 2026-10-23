@@ -287,7 +287,10 @@ export function parseStack(payload: unknown, pullPath: string): readonly StackMe
   const current = Number(/\/pull\/(\d+)/.exec(pullPath)?.[1] ?? Number.NaN);
   const members: StackMember[] = [];
   for (const pull of payload.stack.pulls) {
-    if (!isRecord(pull) || typeof pull.number !== 'number' || typeof pull.url !== 'string' || pull.state === 'MERGED') continue;
+    // A member that cannot be read would be left out of every choice that should take it: no stack rather than part of one.
+    if (!isRecord(pull)) return null;
+    if (pull.state === 'MERGED') continue;
+    if (typeof pull.number !== 'number' || typeof pull.url !== 'string') return null;
     const path = new URL(pull.url, 'https://github.com').pathname;
     members.push({ number: pull.number, path, title: stringOf(pull.title), current: pull.number === current });
   }
