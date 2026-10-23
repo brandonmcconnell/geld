@@ -405,14 +405,26 @@ describe('the tab bar button', () => {
     return sent;
   };
 
+  const stubStacked = (stack: string | null): void => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/page_data/stacks')) return stack === null ? new Response('{}', { status: 500 }) : new Response(stack, { status: 200 });
+        if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        const payload: unknown = JSON.parse(mergeBox('MERGEABLE', true));
+        const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+        if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+        Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+  };
+
   it('says a stacked pull request merges the stack below it too', async () => {
     window.localStorage.clear();
     resetStatusHints();
-    stubBox(() => {
-      const payload = JSON.parse(mergeBox('MERGEABLE', true));
-      payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
-      return JSON.stringify(payload);
-    });
+    stubStacked(JSON.stringify({ stack: { pulls: [{ number: 7, title: 'Title', state: 'OPEN', url: '/acme/widgets/pull/7' }] } }));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -420,6 +432,19 @@ describe('the tab bar button', () => {
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="merged"]')?.click();
     expect(document.querySelector<HTMLElement>('.geld-quick-review__stack-note')?.hidden).toBe(false);
   });
+
+  it('offers a stacked pull request no merge while its stack cannot be read, since the merge takes every one below it', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    stubStacked(null);
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([['closed', 'Close pull request']]);
+  });
+
+
 
   it('lists an admin’s bypass beside the merge queue, badged, opening the merge box with GitHub’s bypass checkbox', async () => {
     window.localStorage.clear();
@@ -455,20 +480,25 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     const posts: string[] = [];
+    let refuse: string | null = null;
+    let boxReads = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (init?.method === 'POST') {
           posts.push(url);
-          return new Response('{}', { status: 200 });
+          return refuse !== null && url.includes(refuse) ? new Response('{"error":"Not allowed"}', { status: 422 }) : new Response('{}', { status: 200 });
         }
         if (url.endsWith('/page_data/stacks')) {
           return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
         }
         if (url.includes('/page_data/merge_box')) {
-          const payload = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
-          payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
+          boxReads += 1;
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+          if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+          Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
           return new Response(JSON.stringify(payload), { status: 200 });
         }
         return new Response('{}', { status: 404 });
@@ -504,8 +534,22 @@ describe('the tab bar button', () => {
     expect(confirm).toHaveBeenCalledWith('Close the entire stack of 3 pull requests (#9, #7 and #5)?');
     await settle();
     expect(posts).toEqual([]);
-    // Accepted, each pull request is closed in turn, top first, and the page reloads.
+    // Refused partway: GitHub's reason for the one it refused, and the menu read again, since the one before went through.
     confirm.mockReturnValue(true);
+    refuse = '/pull/7/';
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    const readsBefore = boxReads;
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request', '/acme/widgets/pull/7/page_data/close_pull_request']);
+    expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__error')?.textContent).toBe('#7: GitHub could not close the pull request: Not allowed');
+    expect(boxReads).toBeGreaterThan(readsBefore);
+    expect(reload).not.toHaveBeenCalled();
+    // Accepted with nothing refused, each pull request is closed in turn, top first, and the page reloads.
+    refuse = null;
+    posts.length = 0;
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__panel .btn.btn-invisible')?.click();
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();

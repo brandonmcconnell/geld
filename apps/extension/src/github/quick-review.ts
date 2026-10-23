@@ -1039,7 +1039,7 @@ function showStatus(state: Mounted): void {
   if (actions !== null) showVerdict(state, heldVerdict(state) ?? viewerVerdict(actions.box, viewerLogin()));
   const repo = repoOf(state.pullPath);
   const groups = stackMenuOf(actions);
-  const options = actions === null ? null : (groups ?? statusOptions(actions.box, actions.offer, actions.bypass));
+  const options = actions === null ? null : (groups ?? flatStatusOptions(actions));
   // A merged pull request has nothing to switch to whoever reads it: it says nothing about the reader's rights.
   if (options !== null && repo !== null && actions !== null && statusOf(actions.box) !== 'merged') rememberStatusHint(repo, options.length > 0);
   const on = options !== null ? options.length > 0 : repo !== null && statusHint(repo) === true && !/merged/i.test(pullRequestStateWords());
@@ -1149,6 +1149,15 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   });
 }
 
+/**
+ * The flat menu. A stacked pull request whose stack could not be read offers no merge and no place in the queue: both
+ * go through `enqueue_stack`, which takes every pull request below it, and only the stack says which those are.
+ */
+function flatStatusOptions(actions: MergeActions): readonly StatusOption[] {
+  const options = statusOptions(actions.box, actions.offer, actions.bypass);
+  return actions.box.stacked && actions.stack === null ? options.filter((option) => option.action !== 'merge' && option.action !== 'queue') : options;
+}
+
 /** A stack's menu, by type, or null for a pull request in no stack or a stack of one (whose menu is `statusOptions`'). */
 function stackMenuOf(actions: MergeActions | null): readonly StackGroup[] | null {
   return actions === null || actions.stack === null ? null : stackGroups(actions.stack, actions.box.methods[0] ?? 'SQUASH');
@@ -1166,7 +1175,7 @@ function stackMenuOf(actions: MergeActions | null): readonly StackGroup[] | null
 function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const actions = state.mergeActions;
   const groups = stackMenuOf(actions);
-  const options = actions === null || groups !== null ? [] : statusOptions(actions.box, actions.offer, actions.bypass);
+  const options = actions === null || groups !== null ? [] : flatStatusOptions(actions);
   if (options.length === 0 && (groups === null || groups.length === 0)) return;
   const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status' });
   const visual = (status: PullStatus, bypass: boolean): HTMLElement =>
@@ -2011,7 +2020,11 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
       } catch {
         failed = actionErrorText(kind, 0, null);
       }
-      if (failed !== null) return { failed: step.number === null ? failed : `#${step.number}: ${failed}`, left: steps.slice(index) };
+      if (failed !== null) {
+        // The ones before it went through: the menu is read again so it offers nothing they already did.
+        if (index > 0) void loadMergeActions(state);
+        return { failed: step.number === null ? failed : `#${step.number}: ${failed}`, left: steps.slice(index) };
+      }
     }
     done();
     window.location.reload();
