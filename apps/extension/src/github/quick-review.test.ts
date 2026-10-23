@@ -377,6 +377,36 @@ describe('the tab bar button', () => {
     expect(document.querySelector<HTMLElement>('.geld-quick-review__stack-note')?.hidden).toBe(false);
   });
 
+  it('lists an admin’s bypass beside the merge queue, badged, opening the merge box with GitHub’s bypass checkbox', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        const past = url.includes('bypass_requirements=true');
+        const payload = JSON.parse(mergeBox(past ? 'MERGEABLE' : 'BLOCKED', true));
+        payload.pullRequest.viewerCanAdminBypassMergeRequirements = true;
+        payload.pullRequest.viewerMergeActions.push({ name: 'MERGE_QUEUE', allowableStatus: 'ALLOWED', mergeMethods: [{ name: 'GROUP', allowableStatus: 'ALLOWED', isDefault: true }] });
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([
+      ['queued', 'Merge when ready'],
+      ['merged', 'Bypass rules and merge'],
+      ['closed', 'Close pull request'],
+    ]);
+    expect(document.querySelector('.geld-quick-review__status-menu [data-status="queued"] .geld-quick-review__menu-badge')).toBeNull();
+    expect(document.querySelector('.geld-quick-review__status-menu [data-status="merged"] .geld-quick-review__menu-visual[data-bypass] > .geld-quick-review__menu-badge svg')).not.toBeNull();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="merged"]')?.click();
+    expect(document.querySelector<HTMLElement>('.geld-quick-review__bypass')?.hidden).toBe(false);
+  });
+
   it('confirms a merge only with the chosen method’s commit, whatever order GitHub answers in', async () => {
     const held: { [method: string]: (() => void) | undefined } = {};
     const slow = new Set<string>();
