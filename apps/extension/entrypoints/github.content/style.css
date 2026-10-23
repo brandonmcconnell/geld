@@ -1099,7 +1099,10 @@ html[data-geld-quick-review] details.js-reviews-container {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  padding: 12px 12px 0;
+  /* GitHub's focus ring on the field is 2px drawn 1px outside it, which a scrolling body (a fixed box) clips at its
+     padding: 2px of bottom padding, taken back by the margin, give the ring room and move nothing. */
+  margin-bottom: -2px;
+  padding: 12px 12px 2px;
   overflow: visible;
 }
 
@@ -1187,12 +1190,25 @@ html[data-geld-quick-review] details.js-reviews-container {
 }
 
 /*
+ * The preview framed as the field is in Write. GitHub gives the body a `min-height` of the field's framed height, and
+ * the body is border-box, so the frame goes on the body: switching tabs moves nothing.
+ */
+.geld-quick-review__panel .CommentBox :is(.js-preview-panel, .preview-content) {
+  margin: 0;
+}
+
+.geld-quick-review__panel .CommentBox .js-preview-body {
+  border: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+  border-radius: var(--borderRadius-medium, 6px);
+}
+
+/*
  * The comment box keeps everything 6px from its edges, as the Write tab is: the words' field, the pending comments and
  * the footer's buttons, each corner's 6px radius inside the box's 12px. The pending rows and Discard keep their glyphs
  * in one column 12px in, their hover surfaces inside the box.
  */
 .Overlay.geld-quick-review__panel--writer .Overlay-body {
-  padding: 6px 6px 0;
+  padding: 6px 6px 2px;
 }
 
 .Overlay.geld-quick-review__panel--writer .Overlay-footer.geld-quick-review__footer {
