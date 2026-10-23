@@ -144,16 +144,16 @@ big-corp
           Sign in (top right) to keep these settings in sync across browsers and devices. Geld signs you in through
           the <strong>Geld GitHub App</strong> with GitHub's <em>device flow</em>: you confirm a short code on
           github.com. Your settings are stored in a <strong>secret gist on your own account</strong> named
-          <code>geld-settings.json</code>. There is no Geld server and no database — nobody but you (including Geld's
-          author) can read or change that gist, and the sign-in token never leaves this device; it expires after eight
+          <code>geld-settings.json</code>. There is no Geld server and no database — only you can change that gist, and
+          anyone you give its link to could read it, and the sign-in token never leaves this device; it expires after eight
           hours and is renewed here. Signing in on another browser asks whether to keep that device's settings or use
           the account's. The same settings can be edited at
           <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
         </p>
         <p class="geld-help options__intro" id="account-signed-in" hidden>
           Signed in as <strong id="account-login"></strong>. These settings sync to a <strong>secret gist on your own
-          account</strong> named <code>geld-settings.json</code><span id="account-synced"></span>. Only you can read or
-          change it, and the sign-in token never leaves this device. Edit the same settings at
+          account</strong> named <code>geld-settings.json</code><span id="account-synced"></span>. Only you can change it.
+          A secret gist is unlisted, not private, so anyone with its link can read it. The sign-in token never leaves this device. Edit the same settings at
           <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>, or
           <a id="account-gist" href="https://gist.github.com" target="_blank" rel="noreferrer">open the gist</a>. Sync
           now and sign out are in the account menu (top right).
