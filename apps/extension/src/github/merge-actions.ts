@@ -128,20 +128,35 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
  * The merge on offer: none on a draft or a closed pull request; a plain
  * merge when GitHub would take it now; a bypass when it would take it only
  * past the rules (`asBypass` is the same box read with
- * `bypass_requirements=true`); else a place in the merge queue where the
- * repository merges through one and the reader may add it (the queue waits
- * for the checks itself, so it is offered whatever they say); else
- * auto-merge where GitHub offers it (a pull request still waiting on checks
- * or reviews in a repository that allows it), in the order GitHub's merge box
- * picks its button.
+ * `bypass_requirements=true`); in the order GitHub's merge box picks its
+ * button: a place in the merge queue wherever the repository merges through
+ * one and the reader may add it (whether or not a direct merge would also go:
+ * GitHub shows the queue, and the queue waits for the checks itself); else a
+ * merge GitHub would take now; else auto-merge where GitHub offers it (a pull
+ * request still waiting on checks or reviews in a repository that allows it);
+ * else a merge only past the rules.
  */
 export function mergeOffer(box: MergeBox, asBypass: MergeBox | null): MergeOffer {
   if (!box.open || box.draft) return null;
-  if (box.methods.length > 0 && box.mergeable) return 'merge';
-  if (box.methods.length > 0 && box.canBypass && asBypass?.mergeable === true) return 'bypass';
   if (box.canQueue) return 'queue';
+  if (box.methods.length > 0 && box.mergeable) return 'merge';
   if (box.methods.length > 0 && box.canAutoMerge) return 'auto';
+  if (bypassMerges(box, asBypass)) return 'bypass';
   return null;
+}
+
+function bypassMerges(box: MergeBox, asBypass: MergeBox | null): boolean {
+  return box.canBypass && asBypass?.mergeable === true && (asBypass.methods.length > 0 || box.methods.length > 0);
+}
+
+/**
+ * Whether an admin's bypass stands beside the offer, as GitHub's "bypass
+ * rules" checkbox does: beside the queue (merging at once, ahead of it) or
+ * beside auto-merge (merging now instead of once the requirements are met),
+ * never beside a merge GitHub would take now.
+ */
+export function bypassBeside(box: MergeBox, asBypass: MergeBox | null, offer: MergeOffer): boolean {
+  return (offer === 'queue' || offer === 'auto') && bypassMerges(box, asBypass);
 }
 
 /** "Squash and merge", the words GitHub's merge box gives each method. */
@@ -245,6 +260,10 @@ export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypas
 export interface MergeActions {
   readonly box: MergeBox;
   readonly offer: MergeOffer;
+  /** An admin's bypass beside the offer (`bypassBeside`): the menu lists it too. */
+  readonly bypass: boolean;
+  /** The direct methods the bypass may use, as the box read past the rules lists them (a queue's repository may allow none otherwise). */
+  readonly bypassMethods: readonly MergeMethod[];
 }
 
 /** What the reader may do now: the merge on offer and whether they may close, read with GitHub's default method. */
@@ -255,8 +274,10 @@ export async function readMergeActions(pullPath: string): Promise<MergeActions |
   // The squash box's commit title and message would be sent under another method: no reading is safer than that.
   const box = method === 'SQUASH' ? first : await fetchMergeBox(pullPath, method, false);
   if (box === null) return null;
-  const asBypass = !box.mergeable && box.canBypass ? await fetchMergeBox(pullPath, method, true) : null;
-  return { box, offer: mergeOffer(box, asBypass) };
+  // Past the rules: where it is not mergeable, or where a queue stands in a direct merge's way.
+  const asBypass = box.canBypass && (!box.mergeable || box.canQueue) ? await fetchMergeBox(pullPath, method, true) : null;
+  const offer = mergeOffer(box, asBypass);
+  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.methods ?? [] };
 }
 
 /** The reason a merge or close failed, in GitHub's words when it gave any. */

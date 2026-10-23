@@ -1038,7 +1038,7 @@ function showStatus(state: Mounted): void {
   const actions = state.mergeActions;
   if (actions !== null) showVerdict(state, heldVerdict(state) ?? viewerVerdict(actions.box, viewerLogin()));
   const repo = repoOf(state.pullPath);
-  const options = actions === null ? null : statusOptions(actions.box, actions.offer);
+  const options = actions === null ? null : statusOptions(actions.box, actions.offer, actions.bypass);
   // A merged pull request has nothing to switch to whoever reads it: it says nothing about the reader's rights.
   if (options !== null && repo !== null && actions !== null && statusOf(actions.box) !== 'merged') rememberStatusHint(repo, options.length > 0);
   const on = options !== null ? options.length > 0 : repo !== null && statusHint(repo) === true && !/merged/i.test(pullRequestStateWords());
@@ -1157,7 +1157,7 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
  */
 function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const actions = state.mergeActions;
-  const options = actions === null ? [] : statusOptions(actions.box, actions.offer);
+  const options = actions === null ? [] : statusOptions(actions.box, actions.offer, actions.bypass);
   if (options.length === 0) return;
   const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status' });
   for (const option of options) {
@@ -1239,7 +1239,7 @@ function closeStatusMenu(state: Mounted): void {
 }
 
 function chooseStatus(state: Mounted, option: StatusOption): void {
-  if (option.action === 'merge') openMergeBox(state);
+  if (option.action === 'merge') openMergeBox(state, null, option.bypass === true);
   // The browser's own confirmation, not a box to click through: closing is undone only by reopening.
   else if (option.action === 'close' || option.action === 'queue' || option.action === 'auto') {
     if (window.confirm(CONFIRM_WORDS[option.action])) void runStatus(state, option.action);
@@ -1866,21 +1866,23 @@ async function sendAction(state: Mounted, kind: StatusAction, request: { readonl
  * take it, GitHub's own checkbox, which the confirmation waits on. Read
  * afresh as it opens, since checks and reviews land meanwhile.
  */
-function openMergeBox(state: Mounted, failure: string | null = null): void {
+function openMergeBox(state: Mounted, failure: string | null = null, pastRules = false): void {
   const pullPath = state.pullPath;
   const known = state.mergeActions;
   if (known === null || known.offer === null) return;
-  const bypass = known.offer === 'bypass';
-  let method: MergeMethod = known.box.methods[0] ?? 'SQUASH';
+  const bypass = pastRules || known.offer === 'bypass';
+  // Past the rules a queue's repository may allow no direct method otherwise: the box read past them lists them.
+  const methods = bypass && known.bypassMethods.length > 0 ? known.bypassMethods : known.box.methods;
+  let method: MergeMethod = methods[0] ?? 'SQUASH';
   let box: MergeBox = known.box;
   // The method `box`'s commit was written for: until the chosen method's has come, the confirmation waits.
-  let boxFor: MergeMethod = method;
+  let boxFor: MergeMethod = known.box.methods[0] ?? 'SQUASH';
   // False after a failed read: `box` then holds another method's commit, which must not fill the fields.
   let commitFresh = true;
   let edited = false;
 
-  const select = createElement('select', { class: 'form-select select-sm geld-quick-review__method', 'aria-label': 'Merge method' }, known.box.methods.map((name) => createElement('option', { value: name }, [METHOD_LABEL[name]])));
-  select.hidden = known.box.methods.length < 2;
+  const select = createElement('select', { class: 'form-select select-sm geld-quick-review__method', 'aria-label': 'Merge method' }, methods.map((name) => createElement('option', { value: name }, [METHOD_LABEL[name]])));
+  select.hidden = methods.length < 2;
   const title = createElement('input', { type: 'text', class: 'form-control input-sm width-full geld-quick-review__commit-title', 'aria-label': 'Commit message' });
   const message = createElement('textarea', { class: 'form-control width-full geld-quick-review__body geld-quick-review__commit-body', 'aria-label': 'Extended description', rows: '4' });
   const commit = createElement('div', { class: 'geld-quick-review__commit' }, [title, message]);
@@ -1942,7 +1944,7 @@ function openMergeBox(state: Mounted, failure: string | null = null): void {
   };
 
   select.addEventListener('change', () => {
-    const chosen = known.box.methods.find((name) => name === select.value);
+    const chosen = methods.find((name) => name === select.value);
     if (chosen === undefined) return;
     method = chosen;
     fill();
