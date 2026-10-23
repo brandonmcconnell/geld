@@ -28,7 +28,7 @@ import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText,
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
-import { describePage, isSignInInterstitial } from './page';
+import { describePage, isSignInInterstitial, narrowedHead } from './page';
 import type { Region } from './regions';
 import { regionsOf, scopeWithin } from './regions';
 import { applyCommitHover, removeCommitHover } from './commit-hover';
@@ -305,6 +305,8 @@ export class GeldController {
   /** The last header numbers we settled on, re-applied synchronously if GitHub re-renders the header. */
   private settledHeader: {
     readonly stateKey: string;
+    /** The diff the numbers came from: one pull request's Files tab narrowed to a commit or a range reads another. */
+    readonly diffUrl: string | null;
     readonly sha: string | null;
     readonly hidden: HiddenBreakdown;
     readonly categories: readonly HiddenCategory[];
@@ -1484,11 +1486,11 @@ export class GeldController {
       headerHidden = hidden ?? EMPTY_BREAKDOWN;
     }
     if (headerHidden !== null) {
-      this.settledHeader = { stateKey: page.stateKey, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
+      this.settledHeader = { stateKey: page.stateKey, diffUrl: page.diffUrl, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
       this.applyHeader(groups, headerHidden, matcher.activeCategories, allTotals?.files ?? 0);
     } else {
       // A new head commit (or another page) invalidates what we settled on.
-      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.sha !== sha)) {
+      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.diffUrl !== page.diffUrl || this.settledHeader.sha !== sha)) {
         this.settledHeader = null;
       }
       this.headerGroups = [];
@@ -1537,6 +1539,8 @@ export class GeldController {
    */
   private headShaFor(page: PageInfo, url: URL): string | null {
     if (page.kind === 'commit') return shaFromCommitUrl(url.pathname);
+    // Narrowed to a commit or a range: that commit (or the range's head) keys its diff, never the pull request's head.
+    if (page.commits !== undefined) return narrowedHead(page.commits).toLowerCase();
     if (!page.kind.startsWith('pull')) return null;
     const cached = this.headShaCache;
     const live = page.kind === 'pull-conversation' ? conversationHeadSha() : null;
@@ -1593,6 +1597,9 @@ export class GeldController {
   private reassertHeader(): void {
     const settled = this.settledHeader;
     if (settled === null || this.currentPage?.stateKey !== settled.stateKey) return;
+    // The live URL, not `currentPage`: this runs before paint, and after a move from one narrowed diff to another the
+    // pass that updates `currentPage` has not run yet, so the settled counts would land in the new view's header.
+    if (describePage(new URL(window.location.href)).diffUrl !== settled.diffUrl) return;
     const stale = this.headerGroups.some(
       ({ group, additionsText }) => !group.host.isConnected || (group.additions !== null && group.additions.textContent !== additionsText),
     );
