@@ -451,6 +451,69 @@ describe('the tab bar button', () => {
     expect(document.querySelector<HTMLElement>('.geld-quick-review__bypass')?.hidden).toBe(false);
   });
 
+  it('groups a stack’s menu by type, each opening its choices beside it, and confirms one that changes several', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push(url);
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          const payload = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    // None of them would merge now: no merge type, and each type is a parent, not a choice.
+    expect(menuRows()).toEqual([
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close'],
+    ]);
+    const close = document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]');
+    expect(close?.getAttribute('aria-haspopup')).toBe('menu');
+    close?.click();
+    expect(close?.getAttribute('aria-expanded')).toBe('true');
+    const choices = (): string[] => [...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent ?? '');
+    expect(choices()).toEqual(['This pull request', 'This and 1 below', 'Entire stack (3)']);
+    expect(document.activeElement?.textContent).toBe('This pull request');
+    // Back out with the arrow toward the parent, which keeps focus.
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(document.querySelector('.geld-quick-review__status-submenu')).toBeNull();
+    expect(document.activeElement).toBe(close);
+    // Declined, nothing is sent.
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirm);
+    close?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    expect(confirm).toHaveBeenCalledWith('Close the entire stack of 3 pull requests (#9, #7 and #5)?');
+    await settle();
+    expect(posts).toEqual([]);
+    // Accepted, each pull request is closed in turn, top first, and the page reloads.
+    confirm.mockReturnValue(true);
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request', '/acme/widgets/pull/7/page_data/close_pull_request', '/acme/widgets/pull/5/page_data/close_pull_request']);
+    expect(reload).toHaveBeenCalled();
+  });
+
   it('confirms a merge only with the chosen method’s commit, whatever order GitHub answers in', async () => {
     const held: { [method: string]: (() => void) | undefined } = {};
     const slow = new Set<string>();

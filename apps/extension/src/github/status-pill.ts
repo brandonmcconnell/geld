@@ -1,4 +1,4 @@
-import type { MergeBox, MergeOffer, StatusAction } from './merge-actions';
+import type { MergeBox, MergeOffer, Stack, StackMember, StatusAction } from './merge-actions';
 import { METHOD_LABEL } from './merge-actions';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_TRIANGLE_DOWN } from './ui/icons';
@@ -69,6 +69,96 @@ export function statusOptions(box: MergeBox, offer: MergeOffer, bypass = false):
   else if (current === 'open' && offer !== null) moves.merged = { status: 'merged', action: 'merge', note: METHOD_LABEL[method] };
   if (current !== 'closed' && box.canClose) moves.closed = { status: 'closed', action: 'close', note: 'Close pull request' };
   return STATUS_ORDER.flatMap((status) => [...(moves[status] === undefined ? [] : [moves[status]]), ...(beside !== null && status === 'merged' ? [beside] : [])]);
+}
+
+/** What a stack's menu does: a merge or a place in the queue through GitHub's stack request, or one change per pull request. */
+export type StackAction = 'merge' | 'queue' | 'ready' | 'draft' | 'close' | 'reopen';
+
+/** This pull request alone, it and every one below it (what GitHub's own stack merge takes), or the whole stack. */
+export type StackScope = 'this' | 'below' | 'stack';
+
+export interface StackChoice {
+  readonly scope: StackScope;
+  readonly label: string;
+  /** Top first: every pull request the choice changes. */
+  readonly targets: readonly StackMember[];
+  /** Whose `enqueue_stack` a merge or a place in the queue goes through: the top of `targets`, which takes the rest. */
+  readonly via: StackMember;
+}
+
+export interface StackGroup {
+  readonly status: PullStatus;
+  readonly action: StackAction;
+  /** GitHub's words for the action, the parent item's label. */
+  readonly note: string;
+  readonly choices: readonly StackChoice[];
+}
+
+const STACK_CAN: { readonly [A in StackAction]: (box: MergeBox) => boolean } = {
+  merge: (box) => box.open && !box.draft && box.methods.length > 0 && box.mergeable,
+  queue: (box) => box.canQueue,
+  ready: (box) => box.open && box.draft && box.canMarkReady,
+  draft: (box) => box.open && !box.draft && box.canConvertToDraft,
+  close: (box) => box.open && box.canClose,
+  reopen: (box) => box.state === 'CLOSED' && box.canClose,
+};
+
+const STACK_STATUS: { readonly [A in StackAction]: PullStatus } = { ready: 'open', reopen: 'open', queue: 'queued', merge: 'merged', draft: 'draft', close: 'closed' };
+
+/**
+ * A stack's menu, by type, each with the choices every pull request they take allows: this pull request (a merge only
+ * at the foot of the stack, since GitHub merges a stacked pull request with every one below it), this and every one
+ * below, and the entire stack (whoever is reading it, merging through its top), each only when it differs from the one
+ * before. A merge goes as GitHub's merge box would: through the queue where the repository has one, else directly;
+ * auto-merge and the bypass are left to a stack of one. Null for a stack of one, whose menu is `statusOptions`'.
+ */
+export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): readonly StackGroup[] | null {
+  const { members, boxes } = stack;
+  const at = members.findIndex((member) => member.current);
+  const current = members[at];
+  const top = members[0];
+  if (members.length < 2 || current === undefined || top === undefined) return null;
+  const all = (action: StackAction, of: readonly StackMember[]): boolean =>
+    of.every((member) => {
+      const box = boxes.get(member.number);
+      return box !== undefined && STACK_CAN[action](box);
+    });
+  const below = members.slice(at);
+  const scopes: readonly { readonly scope: StackScope; readonly targets: readonly StackMember[] }[] = [
+    { scope: 'this', targets: [current] },
+    // From the top, this and every one below is the entire stack, and says so.
+    ...(at > 0 && below.length > 1 ? [{ scope: 'below' as const, targets: below }] : []),
+    { scope: 'stack', targets: members },
+  ];
+  const label = (scope: StackScope): string => (scope === 'this' ? 'This pull request' : scope === 'below' ? `This and ${below.length - 1} below` : `Entire stack (${members.length})`);
+  const merging: StackAction = boxes.get(current.number)?.canQueue === true ? 'queue' : 'merge';
+  const actions: readonly StackAction[] = ['ready', 'reopen', merging, 'draft', 'close'];
+  const notes: { readonly [A in StackAction]: string } = { ready: 'Ready for review', reopen: 'Reopen', queue: 'Merge when ready', merge: METHOD_LABEL[method], draft: 'Convert to draft', close: 'Close' };
+  const groups = actions.flatMap((action): StackGroup[] => {
+    const choices = scopes
+      // GitHub merges a stacked pull request with every one below it: alone only at the foot.
+      .filter(({ scope }) => !((action === 'merge' || action === 'queue') && scope === 'this' && below.length > 1))
+      .filter(({ targets }) => all(action, targets))
+      .map(({ scope, targets }) => ({ scope, label: label(scope), targets, via: targets[0] ?? current }));
+    return choices.length === 0 ? [] : [{ status: STACK_STATUS[action], action, note: notes[action], choices }];
+  });
+  return STATUS_ORDER.flatMap((status) => groups.filter((group) => group.status === status));
+}
+
+/** The browser's confirmation before a choice that changes more than one pull request, naming every one. */
+export function stackConfirmWords(action: StackAction, choice: StackChoice): string {
+  const numbers = choice.targets.map((member) => `#${member.number}`);
+  const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1] ?? ''}` : (numbers[0] ?? '');
+  const count = choice.scope === 'stack' ? `the entire stack of ${choice.targets.length} pull requests` : `${choice.targets.length} pull requests`;
+  const verb: { readonly [A in StackAction]: string } = {
+    merge: `Merge ${count}`,
+    queue: `Add ${count} to the merge queue`,
+    ready: `Mark ${count} ready for review`,
+    draft: `Convert ${count} to drafts`,
+    close: `Close ${count}`,
+    reopen: `Reopen ${count}`,
+  };
+  return `${verb[action]} (${list})?`;
 }
 
 const GITHUB_PILLS = '[data-component="PageHeader"] [data-component="StateLabel"], .gh-header-meta .State, .gh-header-sticky .State';
