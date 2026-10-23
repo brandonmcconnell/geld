@@ -63,7 +63,13 @@ jobs:
         run: |
           # In the merge queue the PR number is only present in the queue branch
           # name: refs/heads/gh-readonly-queue/<base>/pr-<number>-<base sha>.
+          # The group's head also carries every pull request queued ahead of this
+          # one, each with its own label and version: only this one's changes are
+          # judged here, from its own head against the group's base, so another's
+          # unbumped change is not blamed on it nor excused by its label.
           if [[ -z "$PR_NUMBER" && "$MERGE_GROUP_HEAD_REF" =~ /pr-([0-9]+)-[0-9a-f]+$ ]]; then
             PR_NUMBER="${BASH_REMATCH[1]}"
+            git fetch --no-tags --quiet origin "pull/$PR_NUMBER/head"
+            HEAD_SHA="$(git rev-parse FETCH_HEAD)"
           fi
           .github/scripts/check-extension-version.sh "$BASE_SHA" "$HEAD_SHA" "$PR_NUMBER"
