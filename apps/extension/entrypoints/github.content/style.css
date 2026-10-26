@@ -738,6 +738,24 @@ html[data-geld-quick-review] details.js-reviews-container {
   white-space: nowrap;
 }
 
+/* GitHub's counts wrapper, for a tab bar rendered without one (`standAnchor`): at the row's end, gone on a narrow header as GitHub's is. */
+.geld-quick-review__stand {
+  float: right;
+  display: flex;
+  align-items: center;
+  padding-top: var(--base-size-12, 12px);
+}
+
+.geld-quick-review:has(+ .geld-quick-review__mark) {
+  margin-right: 0;
+}
+
+@container (width <= 768px) {
+  .geld-quick-review__stand {
+    display: none !important;
+  }
+}
+
 /* In the Files changed tab's stuck toolbar, where GitHub's own button would be: the toolbar's row spaces it, at its 28px. */
 .geld-quick-review[data-geld-place] {
   margin: 0;
