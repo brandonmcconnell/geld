@@ -1294,6 +1294,8 @@ function closePanel(restoreFocus = false): void {
   opener?.setAttribute('aria-expanded', 'false');
   document.removeEventListener('pointerdown', onOutsidePointer, true);
   window.removeEventListener('resize', positionPanel);
+  panelResize?.disconnect();
+  panelResize = null;
   if (restoreFocus) opener?.focus();
 }
 
@@ -1319,13 +1321,24 @@ function positionPanel(): void {
   const rect = anchor.getBoundingClientRect();
   const width = mounted.panel.offsetWidth;
   const left = Math.max(16, Math.min(pill === null ? rect.right - width : rect.left, document.documentElement.clientWidth - width - 16));
+  // The box keeps to the room in the window on the side it opens, and Primer's Overlay scrolls its body, so nothing runs
+  // off an edge and the buttons in its footer stay in view: under the anchor, or over it when the room below is too
+  // little for a useful box and there is more above.
+  const below = Math.max(0, Math.round(window.innerHeight - rect.bottom - 20));
+  const above = Math.max(0, Math.round(rect.top - 20));
+  const up = below < PANEL_ROOM && above > below;
+  mounted.panel.style.maxHeight = `${up ? above : below}px`;
+  const top = up ? rect.top - 4 - mounted.panel.offsetHeight : rect.bottom + 4;
   mounted.panel.style.position = fixed ? 'fixed' : '';
-  mounted.panel.style.top = `${Math.round(rect.bottom + (fixed ? 0 : window.scrollY) + 4)}px`;
+  mounted.panel.style.top = `${Math.round(top + (fixed ? 0 : window.scrollY))}px`;
   mounted.panel.style.left = `${Math.round(left + (fixed ? 0 : window.scrollX))}px`;
-  // Wherever it opens, the box keeps to the room left below it in the window and Primer's Overlay scrolls its body, so
-  // nothing runs off the bottom edge and the buttons in its footer stay in view.
-  mounted.panel.style.maxHeight = `${Math.max(160, Math.round(window.innerHeight - rect.bottom - 20))}px`;
 }
+
+/** The room under the anchor below which the box opens over it instead, when there is more room there. */
+const PANEL_ROOM = 240;
+
+/** Placed again as the box changes size (the writer arriving, a reason shown, pending comments opening): one over its anchor grows upward. */
+let panelResize: ResizeObserver | null = null;
 
 function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
   closePanel();
@@ -1337,6 +1350,8 @@ function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
   positionPanel();
   document.addEventListener('pointerdown', onOutsidePointer, true);
   window.addEventListener('resize', positionPanel);
+  panelResize = new ResizeObserver(() => positionPanel());
+  panelResize.observe(panel);
 }
 
 function isAuthorViewing(): boolean {
