@@ -1492,6 +1492,7 @@ function closePanel(restoreFocus = false): void {
   opener?.setAttribute('aria-expanded', 'false');
   document.removeEventListener('pointerdown', onOutsidePointer, true);
   window.removeEventListener('resize', positionPanel);
+  window.removeEventListener('scroll', positionPanel);
   panelResize?.disconnect();
   panelResize = null;
   if (restoreFocus) opener?.focus();
@@ -1578,6 +1579,8 @@ function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
   positionPanel();
   document.addEventListener('pointerdown', onOutsidePointer, true);
   window.addEventListener('resize', positionPanel);
+  // Its room is the window's: a page scrolled under a box placed in page coordinates moves the box with it, footer and all.
+  window.addEventListener('scroll', positionPanel, { passive: true });
 }
 
 function isAuthorViewing(): boolean {
