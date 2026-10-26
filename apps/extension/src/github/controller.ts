@@ -736,7 +736,7 @@ export class GeldController {
     const url = new URL(window.location.href);
     const page = describePage(url);
     if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
-    const state = this.diffSource.request(page.diffUrl, this.headShaFor(page, url), 'page');
+    const state = this.diffSource.request(page.diffUrl, this.diffShaFor(page, url), 'page');
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
@@ -760,7 +760,7 @@ export class GeldController {
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
     if ((!matcher.usesChangeKinds && !this.settings.hideCommentLines) || page.diffUrl === null) return;
-    const sha = this.headShaFor(page, url);
+    const sha = this.diffShaFor(page, url);
     const state = this.diffSource.request(page.diffUrl, sha, 'page');
     if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
   }
@@ -1463,7 +1463,7 @@ export class GeldController {
     const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
     const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
     const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
-    const sha = this.headShaFor(page, url);
+    const sha = this.diffShaFor(page, url);
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
@@ -1537,10 +1537,16 @@ export class GeldController {
    * page state, and the diff, header counts and paths follow the new head as
    * they do after the files view's refresh (`onFilesRefresh`).
    */
+  /** The SHA the page's diff is keyed by: a narrowed Files tab's commit (or its range's head), else the head. */
+  private diffShaFor(page: PageInfo, url: URL): string | null {
+    // Narrowed to a commit or a range: that commit keys its diff, never the pull request's head.
+    if (page.commits !== undefined) return narrowedHead(page.commits).toLowerCase();
+    return this.headShaFor(page, url);
+  }
+
+  /** The commit's own SHA on a commit page, the pull request's head on its pages, whatever commit a Files tab is narrowed to. */
   private headShaFor(page: PageInfo, url: URL): string | null {
     if (page.kind === 'commit') return shaFromCommitUrl(url.pathname);
-    // Narrowed to a commit or a range: that commit (or the range's head) keys its diff, never the pull request's head.
-    if (page.commits !== undefined) return narrowedHead(page.commits).toLowerCase();
     if (!page.kind.startsWith('pull')) return null;
     const cached = this.headShaCache;
     const live = page.kind === 'pull-conversation' ? conversationHeadSha() : null;
