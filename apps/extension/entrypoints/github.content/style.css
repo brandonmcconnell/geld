@@ -738,8 +738,9 @@ html[data-geld-quick-review] details.js-reviews-container {
   white-space: nowrap;
 }
 
-/* GitHub's counts wrapper, for a tab bar rendered without one (`standAnchor`): at the row's end, gone on a narrow header as GitHub's is. */
-.geld-quick-review__stand {
+/* GitHub's counts wrapper, for a tab bar rendered without one (`standAnchor`, `syncCountsStandIn`): at the row's end, gone on a narrow header as GitHub's is. */
+.geld-quick-review__stand,
+.geld-counts-stand {
   float: right;
   display: flex;
   align-items: center;
@@ -751,7 +752,8 @@ html[data-geld-quick-review] details.js-reviews-container {
 }
 
 @container (width <= 768px) {
-  .geld-quick-review__stand {
+  .geld-quick-review__stand,
+  .geld-counts-stand {
     display: none !important;
   }
 }

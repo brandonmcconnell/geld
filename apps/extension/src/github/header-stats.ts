@@ -193,6 +193,67 @@ export function findHeaderStatGroups(): HeaderStatGroup[] {
   return groups;
 }
 
+/** Geld's line counts where GitHub shows none (`syncCountsStandIn`), found and rewritten like GitHub's own. */
+export const ATTR_COUNTS_STAND_IN = 'data-geld-counts-stand-in';
+const COUNTS_STAND_CLASS = 'geld-counts-stand';
+
+export function isCountsStandIn(element: Element): boolean {
+  return element.hasAttribute(ATTR_COUNTS_STAND_IN);
+}
+
+/** The pull request header's tab row, where GitHub floats its line counts. */
+function pullTabRow(): HTMLElement | null {
+  return queryAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]').find((row) => row.querySelector('#prs-files-anchor-tab') !== null) ?? null;
+}
+
+/**
+ * GitHub leaves the tab bar's line counts out when there are no line changes (a change of binary files only:
+ * mintlify/landing#886), rendering their wrapper empty, so the header showed no counts and no breakdown. `want` (the
+ * page's diff is loaded and has no added or removed lines) puts a stand-in of GitHub's shape in that wrapper, or in a
+ * wrapper of Geld's where there is none, for the header pass to rewrite as it does GitHub's. GitHub's own counts always
+ * win: once a push brings line changes they render, and the stand-in goes; when a push takes them away, it comes back.
+ * Not marked as Geld's UI, which the header scan skips (`isInsideDiffEntry`): it is read and rewritten as GitHub's are.
+ * True when the page changed.
+ */
+export function syncCountsStandIn(want: boolean): boolean {
+  const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
+  const row = pullTabRow();
+  const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
+  if (!want || row === null || real) {
+    if (existing === null) return false;
+    removeCountsStandIn();
+    return true;
+  }
+  if (existing !== null && row.contains(existing)) return false;
+  removeCountsStandIn();
+  let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
+  if (home === null) {
+    home = createElement('div', { class: COUNTS_STAND_CLASS });
+    row.prepend(home);
+  }
+  home.append(
+    createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: '' }, [
+      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, ['+0']),
+      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, ['-0']),
+      createElement('span', { class: 'sr-only' }, ['Lines changed: 0 additions & 0 deletions']),
+    ]),
+  );
+  return true;
+}
+
+export function removeCountsStandIn(): void {
+  for (const host of queryAll<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`)) {
+    detachBreakdownTooltip(host);
+    host.remove();
+  }
+  for (const stand of queryAll<HTMLElement>(`.${COUNTS_STAND_CLASS}`)) stand.remove();
+  // Its narrow-screen copy in the state row; GitHub's counts, if they took its place, make their own.
+  for (const mirror of queryAll<HTMLElement>(`.${MIRROR_CLASS}`)) {
+    detachBreakdownTooltip(mirror);
+    mirror.remove();
+  }
+}
+
 const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
 
 /**
