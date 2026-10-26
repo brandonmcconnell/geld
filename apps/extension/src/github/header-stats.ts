@@ -341,12 +341,17 @@ export function applyHeaderStats(
   }
   const nounPlural = hiddenNounPlural(activeCategories, hidden);
   const tooltipAnchor = renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
+  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   if (!hidesAnything(hidden)) {
+    // GitHub's numbers stand, and the breakdown is still there to read (the files and their counts) unless there is
+    // nothing at all: a change of binary files only reads "+0 −0" over a file that changed (mintlify/landing#886).
     restoreNumbers(group);
-    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
+    const changed = all.files > 0 || all.additions > 0 || all.deletions > 0;
+    const whole = changed ? statsBreakdown(all, hidden, nounPlural, activeCategories) : null;
+    if (whole !== null) attachBreakdownTooltip(group.host, tooltipAnchor, () => whole, { align: 'end', flush: true });
+    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, whole === null ? null : () => whole);
     return;
   }
-  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   const breakdown = statsBreakdown(all, hidden, nounPlural, activeCategories);
   const { visible } = breakdown;
 

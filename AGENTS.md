@@ -901,6 +901,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   GitHub's own counts always win: a push that brings line changes renders them, the mutation callback sees them arrive (`headerNodesAdded`) and the stand-in steps aside before paint while the counts are rewritten;
   a push that takes them away leaves the next pass with no counts, the new head's diff with none, and the stand-in comes back (and before paint after a header remount, while it is wanted, `countsStandInWanted`).
   Geld's own nodes make no passes, so a change to the stand-in on a path that does not finish the header (before paint, a repository config pending) schedules one (`onCountsStandInChanged`).
+  **Header counts offer their breakdown whenever anything changed** (`applyHeaderStats`): with nothing hidden GitHub's numbers stand, but the label is still dotted and its tooltip lists the files (Essential, each category, Total, the file count from the diff), since "0 tests +0 −0" over a binary file that changed says nothing on its own;
+  only a change of nothing at all (no files, no lines) has no tooltip.
   While the diff is not in (or cannot be had), `standAnchor` gives the group a mark of Geld's (`.geld-quick-review__mark`) in the empty wrapper, or a stand of its own (`.geld-quick-review__stand`), only while it shows, as `anchorOf` requires of the counts, so on a narrow header the group steps aside and GitHub's own button stays;
   the mark and stand go once counts, GitHub's or the stand-in, are there.
   **The pull request's status pill in GitHub's header is a menu of the statuses the reader may switch to** (`status-pill.ts`, `showStatus`, `openStatusMenu`;
