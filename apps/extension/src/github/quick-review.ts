@@ -1554,7 +1554,13 @@ function fitField(panel: HTMLElement, room: number): void {
   for (const child of body.children) panelResize?.observe(child);
   const whole = panel.offsetHeight - body.clientHeight + body.scrollHeight;
   const rest = whole - field.offsetHeight;
-  panel.style.setProperty('--geld-field-max', `${Math.max(FIELD_MIN, Math.floor(room - rest))}px`);
+  const cap = Math.max(FIELD_MIN, Math.floor(room - rest));
+  panel.style.setProperty('--geld-field-max', `${cap}px`);
+  // GitHub gives the preview the field's height as an inline `min-height` when Preview opens, which would outrank the
+  // cap once the room shrinks: the stylesheet takes the smaller of the two, GitHub's value left as it wrote it.
+  const previewMin = panel.querySelector<HTMLElement>('.js-preview-body')?.style.minHeight ?? '';
+  if (previewMin === '') panel.style.removeProperty('--geld-preview-min');
+  else panel.style.setProperty('--geld-preview-min', previewMin);
 }
 
 /** Placed again as the box changes size (the writer arriving, a reason shown, pending comments opening): one over its anchor grows upward. */

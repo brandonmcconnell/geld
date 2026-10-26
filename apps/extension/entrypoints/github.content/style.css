@@ -1124,6 +1124,11 @@ html[data-geld-quick-review] details.js-reviews-container {
   overflow-y: auto;
 }
 
+/* GitHub's inline `min-height` on the preview (the field's height) would outrank that cap: the smaller of the two wins. */
+.Overlay.geld-quick-review__panel .js-preview-body {
+  min-height: min(var(--geld-preview-min, 0px), var(--geld-field-max, 100vh)) !important;
+}
+
 /*
  * GitHub's writer, borrowed into the box, reads as the box's own: no frame of its own (its root is a Primer `Box`, whose
  * border is a utility's), no grey header behind its toolbar, Write and Preview as quiet pills on the box's surface, the
