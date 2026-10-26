@@ -656,6 +656,11 @@ export function refusalReason(body: string): string | null {
   // for a bot that never reviewed here, as any refusal is).
   const skipNotice = /^(?:\[!important\][.\s]*|important[.\s]+)?(?:automatic\s+)?review skipped[.:]?\s+(.+?)(?:[.!?](?:\s|$)|\s+(?:please|to trigger|trigger a|⚙)|$)/i.exec(text);
   if (skipNotice?.[1] !== undefined && skipNotice[1].trim() !== '') return skipNotice[1].trim();
+  // Its failure notice, rewritten into the same summary over the last review's walkthrough: "Review failed" in a
+  // caution alert, then why ("The pull request is closed", a merge mid-run). The alert's title or the heading's own
+  // block end has to be there, so a sentence that merely opens on the words ("Review failed login attempts…") is not one.
+  const failNotice = /^(?:(?:\[!caution\][.\s]*|caution[.\s]+)review failed[.:]?|review failed[.:])\s+(.+?)(?:[.!?](?:\s|$)|$)/i.exec(text);
+  if (failNotice?.[1] !== undefined && failNotice[1].trim() !== '') return failNotice[1].trim();
   if (text.length > 400) return null;
   // "Skipping Bugbot: …", "Skipped review: …" — a skip of the run, not of something in the code under review.
   // "Macroscope skipped reviewing this pull request." names itself first; "Claude encountered an error" is a run that
@@ -1083,6 +1088,8 @@ export function verdictsFrom(
    * or rewritten. Its "Starting" lines and a coding agent's conversational replies are not reports.
    */
   const lastWordBy = new Map<string, number>();
+  /** When each bot last refused, posted or rewritten: a run its check still shows under way may be the one it gave up. */
+  const refusedAt = new Map<string, number>();
   const reported = (id: string, comment: BotComment): void => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time = at === undefined ? NaN : Date.parse(at);
@@ -1135,6 +1142,10 @@ export function verdictsFrom(
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
       reported(id, comment);
+      for (const at of [comment.createdAt, comment.editedAt]) {
+        const time = at === undefined ? NaN : Date.parse(at);
+        if (!Number.isNaN(time) && time > (refusedAt.get(id) ?? Number.NEGATIVE_INFINITY)) refusedAt.set(id, time);
+      }
       // The bot said it would not review: the run that was asked for is answered (not running), and refused. A
       // review the bot did make earlier still stands — the chip shows the last real run, and `reviewedSha` says
       // whether it is behind the head — so the refusal is the verdict only for a bot that never reviewed here.
@@ -1178,6 +1189,16 @@ export function verdictsFrom(
     }
     const verdict = parsed.clean ? 'clean' : 'findings';
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
+  }
+  // A check left under way by a run the bot gave up on: CodeRabbit rewrites its summary into "Review failed · The pull
+  // request is closed" when a merge lands mid-run and never closes its commit status (geld#103), so the check alone
+  // would read running for good. The refusal must be the bot's latest word and newer than the check's start; a commit
+  // status carries no start, and then only a closed pull request, where no new run can begin, lets it end the run.
+  for (const [id, verdict] of checkVerdict) {
+    const refused = refusedAt.get(id);
+    if (verdict !== 'running' || refused === undefined || refused < (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) continue;
+    const started = checkStartedAt.get(id);
+    if (started !== undefined ? refused > started : options.closed === true) checkVerdict.delete(id);
   }
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no

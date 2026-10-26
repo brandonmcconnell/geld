@@ -1012,6 +1012,33 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], [{ author: 'coderabbitai[bot]', body: crSkipPage, anchor: 'issuecomment-1', createdAt: new Date(now - 3_600_000).toISOString() }], 'aaa', [], now)[0]).toMatchObject({ verdict: 'failed', reason: 'Auto reviews are disabled on base/target branches other than the default branch', sourceId: 'issuecomment-1' });
   });
 
+  it('ends a run left under way by the bot giving up on it (geld#103)', () => {
+    // A merge mid-run: CodeRabbit rewrote its summary into a failure notice over the last walkthrough, and its commit
+    // status stayed "pending · Review in progress" for good.
+    const failRaw =
+      '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n\n> [!CAUTION]\n> ## Review failed\n> \n> The pull request is closed.\n\n<!-- end of auto-generated comment: failure by coderabbit.ai -->\n\n<!-- walkthrough_start -->\n\nNo actionable comments were generated in the recent review.\n\n<details><summary>Recent review info</summary>Run configuration</details>';
+    const failPage = 'Caution\nReview failed\nThe pull request is closed.\nNo actionable comments were generated in the recent review.\nRecent review info\nRun configuration';
+    expect(refusalReason(failRaw)).toBe('The pull request is closed');
+    expect(refusalReason(failPage)).toBe('The pull request is closed');
+    expect(refusalReason('Review failed login attempts are not rate limited, so the endpoint can be brute forced.')).toBeNull();
+    const pending = { name: 'CodeRabbit', status: 'in_progress' as const, conclusion: null, sha: 'head' };
+    const comments = [
+      { author: 'coderabbitai[bot]', body: failPage, anchor: 'issuecomment-1', createdAt: '2026-10-26T20:42:12Z', editedAt: '2026-10-26T21:59:47Z' },
+      { author: 'coderabbitai[bot]', body: 'Actionable comments posted: 1', anchor: 'pullrequestreview-1', createdAt: '2026-10-26T20:53:13Z' },
+      { author: 'coderabbitai[bot]', body: 'Refit the box on scroll.', anchor: 'discussion_r1', createdAt: '2026-10-26T20:53:12Z', resolved: true },
+    ];
+    const now = Date.parse('2026-10-26T22:10:00Z');
+    // Merged: the run cannot go on, and the last real review (its one finding, resolved) stands.
+    expect(verdictsFrom([pending], comments, 'head', [], now, { closed: true })[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0 });
+    // Still open and the status carries no start: an old refusal must not end a run that may be new.
+    expect(verdictsFrom([pending], comments, 'head', [], now)[0]?.verdict).toBe('running');
+    // A known start: a refusal after it ends that run, one before it does not.
+    expect(verdictsFrom([{ ...pending, startedAt: '2026-10-26T21:51:59Z' }], comments, 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0 });
+    expect(verdictsFrom([{ ...pending, startedAt: '2026-10-26T22:05:00Z' }], comments, 'head', [], now)[0]?.verdict).toBe('running');
+    // A bot that never reviewed here reads skipped, with its reason.
+    expect(verdictsFrom([pending], [comments[0]!], 'head', [], now, { closed: true })[0]).toMatchObject({ verdict: 'failed', reason: 'The pull request is closed' });
+  });
+
   it('does not mistake a review, a status line or a question for a refusal', () => {
     expect(refusalReason('Bugbot reviewed your changes and found 2 potential issues.')).toBeNull();
     expect(refusalReason('Starting Devin Review.')).toBeNull();
