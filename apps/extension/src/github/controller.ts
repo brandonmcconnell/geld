@@ -447,10 +447,14 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
-    // Started in a background tab: the time away counts from now, so the first return can catch up.
-    if (document.hidden) this.hiddenAt = Date.now();
+    // A copy that starts on a page already open a while (an update or reload of the extension retired the one before,
+    // and this one was injected) cannot know what GitHub's quiet socket missed meanwhile, so the page's age counts as
+    // time away: caught up now when the tab is in view, on the first return when it is not.
+    const age = performance.now();
+    if (document.hidden) this.hiddenAt = Date.now() - age;
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.apply();
+    if (!document.hidden) this.catchUp(age);
   }
 
   stop(): void {
@@ -639,16 +643,7 @@ export class GeldController {
     }
     const away = this.hiddenAt === null ? 0 : Date.now() - this.hiddenAt;
     this.hiddenAt = null;
-    // GitHub's socket goes quiet for a hidden tab and its status timers run late: bots that finished meanwhile still
-    // read as running. Back after a while, the checks are read again and the timeline caught up (`catchUpTimeline`);
-    // what it puts in the page makes passes of its own.
-    const catchUp = away >= CATCH_UP_AFTER_MS && this.mayDressPage();
-    if (catchUp) {
-      expireHeadChecks();
-      void catchUpTimeline();
-      // Longer away, GitHub stopped listening: the replies in threads it missed come only by refetching their regions.
-      if (liveCatchUpDue(away)) document.dispatchEvent(new Event(LIVE_CATCH_UP_EVENT));
-    }
+    const catchUp = this.catchUp(away);
     const deferred = takeReviewDeferred();
     if (!this.hiddenDirty && !deferred && !catchUp) {
       // Nothing to redo, but the clocks moved on while the tab was away.
@@ -666,6 +661,20 @@ export class GeldController {
     }
     this.apply();
   };
+
+  /**
+   * GitHub's socket goes quiet for a hidden tab and its status timers run late: bots that finished meanwhile still read
+   * as running. After `away` of that, the checks are read again and the timeline caught up (`catchUpTimeline`); what it
+   * puts in the page makes passes of its own. True when it ran.
+   */
+  private catchUp(away: number): boolean {
+    if (away < CATCH_UP_AFTER_MS || !this.mayDressPage()) return false;
+    expireHeadChecks();
+    void catchUpTimeline();
+    // Longer away, GitHub stopped listening: the replies in threads it missed come only by refetching their regions.
+    if (liveCatchUpDue(away)) document.dispatchEvent(new Event(LIVE_CATCH_UP_EVENT));
+    return true;
+  }
 
   /** While hidden, work is noted rather than done; `onVisibilityChange` picks it up. */
   private deferWhileHidden(): boolean {
