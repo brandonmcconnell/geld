@@ -1089,10 +1089,10 @@ html[data-geld-quick-review] details.js-reviews-container {
 }
 
 /*
- * A small box: the words, any pending comments, then the buttons with no rule between. Its body overflows rather than
- * scrolls, so GitHub's suggestion lists (slash commands, mentions, saved replies) hang past the box instead of being cut
- * off by it and scrolling it; only a box fixed under a sticky header keeps to the room below it and scrolls its body,
- * and even there a list that is open overflows.
+ * A small box: the words, any pending comments, then the buttons with no rule between. It keeps to the room below it in
+ * the window (`positionPanel`) and scrolls its body when the words outgrow that, its footer's buttons always in view; a
+ * suggestion list that is open (slash commands, mentions, saved replies) overflows instead, hanging past the box rather
+ * than being cut off by it and scrolling it.
  */
 .Overlay.geld-quick-review__panel .Overlay-body {
   display: flex;
@@ -1103,14 +1103,10 @@ html[data-geld-quick-review] details.js-reviews-container {
      padding: 2px of bottom padding, taken back by the margin, give the ring room and move nothing. */
   margin-bottom: -2px;
   padding: 12px 12px 2px;
-  overflow: visible;
-}
-
-.Overlay.geld-quick-review__panel[data-geld-fixed] .Overlay-body {
   overflow-y: auto;
 }
 
-.Overlay.geld-quick-review__panel[data-geld-fixed]:has(.CommentBox :is([role='listbox'], .suggester, details[open] > details-menu)) .Overlay-body {
+.Overlay.geld-quick-review__panel:has(.CommentBox :is([role='listbox'], .suggester, details[open] > details-menu)) .Overlay-body {
   overflow: visible;
 }
 
@@ -1230,6 +1226,19 @@ html[data-geld-quick-review] details.js-reviews-container {
 .geld-quick-review__panel--writer .geld-quick-review__footer .btn.btn-invisible.geld-quick-review__discard {
   margin-left: 0;
   padding-left: 6px;
+}
+
+/*
+ * Write, Preview and the toolbar stay at the top while a long comment or its preview scrolls, as the footer's buttons
+ * stay at the bottom: stuck over the body's own 6px of top padding, on the box's surface, so nothing shows above them.
+ */
+.geld-quick-review__panel--writer .CommentBox :is(.comment-form-head, .CommentBox-header) {
+  position: sticky !important;
+  top: -6px;
+  z-index: 1;
+  margin-top: -6px !important;
+  padding-top: 6px !important;
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff)) !important;
 }
 
 /* The writer's foot, which repeats what its toolbar and field offer (`hideFoot`). */

@@ -67,8 +67,6 @@ const ATTR_ACTIVE = 'data-geld-quick-review';
 const ATTR_HOST = 'data-geld-quick-review-host';
 /** On the group while it rides a sticky header: `toolbar` (Files changed, where GitHub's own button would be) or `header` (every other tab). */
 const ATTR_PLACE = 'data-geld-place';
-/** On a box fixed under a sticky header, which then keeps to the room below it: only there does its body scroll. */
-const ATTR_PANEL_FIXED = 'data-geld-fixed';
 /** GitHub's own review control, React's Files changed view or the classic one; hidden while the group is mounted. */
 const GITHUB_REVIEW_CONTROL = '[class*="ReviewMenuButton"], details.js-reviews-container';
 /** The toolbar that holds it and sticks to the top of the viewport as the diff scrolls. */
@@ -1322,12 +1320,11 @@ function positionPanel(): void {
   const width = mounted.panel.offsetWidth;
   const left = Math.max(16, Math.min(pill === null ? rect.right - width : rect.left, document.documentElement.clientWidth - width - 16));
   mounted.panel.style.position = fixed ? 'fixed' : '';
-  mounted.panel.toggleAttribute(ATTR_PANEL_FIXED, fixed);
   mounted.panel.style.top = `${Math.round(rect.bottom + (fixed ? 0 : window.scrollY) + 4)}px`;
   mounted.panel.style.left = `${Math.round(left + (fixed ? 0 : window.scrollX))}px`;
-  // Fixed under a sticky header, scrolling the page cannot reach what overflows the window: the box keeps to the room
-  // left below it and Primer's Overlay scrolls its body, so the buttons in its footer stay in view.
-  mounted.panel.style.maxHeight = fixed ? `${Math.max(160, Math.round(window.innerHeight - rect.bottom - 20))}px` : '';
+  // Wherever it opens, the box keeps to the room left below it in the window and Primer's Overlay scrolls its body, so
+  // nothing runs off the bottom edge and the buttons in its footer stay in view.
+  mounted.panel.style.maxHeight = `${Math.max(160, Math.round(window.innerHeight - rect.bottom - 20))}px`;
 }
 
 function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
