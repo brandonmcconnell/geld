@@ -19862,6 +19862,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const countedSummaries = /* @__PURE__ */ new Set();
   const lastWordBy = /* @__PURE__ */ new Map();
   const refusedAt = /* @__PURE__ */ new Map();
+  const answeredBy = /* @__PURE__ */ new Map();
   const reported = (id, comment) => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time3 = at === void 0 ? NaN : Date.parse(at);
@@ -19903,6 +19904,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (commandReply(comment.body) === "done") {
+      const times = [comment.createdAt, comment.editedAt].map((at) => at === void 0 ? NaN : Date.parse(at)).filter((at) => !Number.isNaN(at));
+      if (times.length > 0) {
+        const at = Math.max(...times);
+        answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? Math.min(...times), at });
+      }
       statusOnly.delete(id);
       const prior = runsBeforeAsk.get(id);
       if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
@@ -20027,6 +20033,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const existing = byId.get(bot.id);
     if (existing === void 0) continue;
     if ((lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) > started) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    const answer = answeredBy.get(bot.id);
+    if (answer !== void 0 && started >= answer.askedAt && started <= answer.at + REPORT_GRACE_MS && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }

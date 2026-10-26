@@ -1108,6 +1108,11 @@ export function verdictsFrom(
   const lastWordBy = new Map<string, number>();
   /** When each bot last refused, posted or rewritten: a run its check still shows under way may be the one it gave up. */
   const refusedAt = new Map<string, number>();
+  /**
+   * Requests a bot answered with no review ("Review finished"): when it was asked, and when the answer was last written.
+   * A check that ran for that request ends with nothing new, so the run the request set aside stands over its conclusion.
+   */
+  const answeredBy = new Map<string, { readonly askedAt: number; readonly at: number }>();
   const reported = (id: string, comment: BotComment): void => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time = at === undefined ? NaN : Date.parse(at);
@@ -1159,6 +1164,11 @@ export function verdictsFrom(
     }
     if (commandReply(comment.body) === 'done') {
       // The request is answered with no review: the run it set aside is still the bot's last, threads and all.
+      const times = [comment.createdAt, comment.editedAt].map((at) => (at === undefined ? NaN : Date.parse(at))).filter((at) => !Number.isNaN(at));
+      if (times.length > 0) {
+        const at = Math.max(...times);
+        answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? Math.min(...times), at });
+      }
       statusOnly.delete(id);
       const prior = runsBeforeAsk.get(id);
       if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
@@ -1344,6 +1354,14 @@ export function verdictsFrom(
     const existing = byId.get(bot.id);
     if (existing === undefined) continue;
     if ((lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) > started) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    // The run this check made was the one the bot answered with "Review finished": nothing new, so the run before it
+    // stands rather than the check's bare conclusion. It starts after the request and, with the answer's rewrite not
+    // known yet, moments after the answer was first posted; a check begun later, with no word since, is a newer run.
+    const answer = answeredBy.get(bot.id);
+    if (answer !== undefined && started >= answer.askedAt && started <= answer.at + REPORT_GRACE_MS && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }

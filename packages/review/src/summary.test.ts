@@ -1059,6 +1059,19 @@ describe('a bot that refuses to run', () => {
     // Nothing new to review: the earlier run stands whole, its one finding resolved, not that finding's count.
     const finished = { author: 'coderabbitai[bot]', body: finishedPage, anchor: 'issuecomment-2', createdAt: '2026-10-26T04:57:10Z', editedAt: '2026-10-26T05:03:14Z' };
     expect(verdictsFrom([status('completed')], [...before, finished], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, sourceId: 'discussion_r1' });
+    // The check the request started, dated (the Action dates commit statuses): it began moments after the reply was
+    // posted and closed green when the reply turned "finished". The run before stands, and the green check does not
+    // turn it into "clean" once the report's grace runs out, whether or not the reply's rewrite is known yet.
+    const dated = { ...status('completed'), startedAt: '2026-10-26T04:57:14Z', completedAt: '2026-10-26T05:03:12Z' };
+    const unedited = { author: finished.author, body: finished.body, anchor: finished.anchor, createdAt: finished.createdAt };
+    for (const reply of [finished, unedited]) {
+      expect(verdictsFrom([dated], [...before, reply], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, runJudged: true });
+      const open = before.map((comment) => (comment.anchor === 'discussion_r1' ? { ...comment, resolved: false } : comment));
+      expect(verdictsFrom([dated], [...open, reply], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 1 });
+    }
+    // A check begun hours after the answer is a newer run, judged on its own.
+    const later = { ...dated, startedAt: '2026-10-26T09:00:00Z', completedAt: '2026-10-26T09:05:00Z' };
+    expect(verdictsFrom([later], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', runJudged: true });
     // While it still says "Review triggered", the review is under way.
     const triggered = { author: finished.author, body: triggeredPage, anchor: finished.anchor, createdAt: finished.createdAt };
     expect(verdictsFrom([status('in_progress')], [...before, triggered], 'head', [], Date.parse('2026-10-26T04:58:00Z'))[0]?.verdict).toBe('running');
