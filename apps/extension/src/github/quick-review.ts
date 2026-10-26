@@ -2025,7 +2025,10 @@ interface Step {
 
 /** Send a merge, close or ready for review; on success the page reloads, since every part of it (header, timeline, tabs) changes with the state. */
 async function sendAction(state: Mounted, kind: StatusAction, request: Step['request'], done: () => void = () => undefined): Promise<string | null> {
-  return (await sendSteps(state, kind, [{ number: null, request }], done))?.failed ?? null;
+  // An answer that comes back after the reader moved to another pull request completes nothing there and reloads nothing.
+  const pullPath = state.pullPath;
+  const here = (): boolean => mounted === state && state.pullPath === pullPath && pullPathOf(window.location.pathname) === pullPath;
+  return (await sendSteps(state, kind, [{ number: null, request }], done, here))?.failed ?? null;
 }
 
 /**

@@ -567,6 +567,34 @@ describe('the tab bar button', () => {
     expect(reload).toHaveBeenCalled();
   });
 
+  it('completes nothing and reloads nothing when a change comes back after the reader moved to another pull request', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' };
+    vi.stubGlobal('location', where);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          where.pathname = '/acme/widgets/pull/8';
+          return new Response('{}', { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) return new Response(mergeBox('BLOCKED', true), { status: 200 });
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="closed"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(where.reload).not.toHaveBeenCalled();
+    where.pathname = '/acme/widgets/pull/7';
+  });
+
   it('stops a stack’s changes, and reloads nothing, once the reader has left the pull request they began on', async () => {
     window.localStorage.clear();
     resetStatusHints();
