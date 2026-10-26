@@ -4,7 +4,7 @@ import type { RawPullRequest } from './build';
 import { encodePayloadAttribute, extractPayloadText, looksLikeSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, botsTriggeredBy, botTitle, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, botTitle, commandReply, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
@@ -1037,6 +1037,31 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([{ ...pending, startedAt: '2026-10-26T22:05:00Z' }], comments, 'head', [], now)[0]?.verdict).toBe('running');
     // A bot that never reviewed here reads skipped, with its reason.
     expect(verdictsFrom([pending], [comments[0]!], 'head', [], now, { closed: true })[0]).toMatchObject({ verdict: 'failed', reason: 'The pull request is closed' });
+  });
+
+  it("reads CodeRabbit's answer to a command as no review (geld#68)", () => {
+    const finishedRaw =
+      '<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated reply by CodeRabbit -->\n<details>\n<summary>✅ Action performed</summary>\n<dl>\n<dd>\n\nReview finished.\n\n> Note: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.\n\n</dd>\n</dl>\n</details>';
+    const finishedPage = '✅ Action performed\nReview finished.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.';
+    const triggeredPage = '✅ Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits.';
+    expect(commandReply(finishedRaw)).toBe('done');
+    expect(commandReply(finishedPage)).toBe('done');
+    expect(commandReply(triggeredPage)).toBe('started');
+    expect(isStatusLineComment(triggeredPage)).toBe(true);
+    expect(commandReply('Actionable comments posted: 1')).toBeNull();
+    const before = [
+      { author: 'coderabbitai[bot]', body: 'Actionable comments posted: 1', anchor: 'pullrequestreview-1', createdAt: '2026-10-22T22:49:37Z' },
+      { author: 'coderabbitai[bot]', body: 'Guard the empty list.', anchor: 'discussion_r1', createdAt: '2026-10-22T22:49:36Z', resolved: true },
+      { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-1', createdAt: '2026-10-26T04:57:04Z' },
+    ];
+    const status = (state: 'in_progress' | 'completed') => ({ name: 'CodeRabbit', status: state, conclusion: state === 'completed' ? ('success' as const) : null, sha: 'head' });
+    const now = Date.parse('2026-10-26T22:00:00Z');
+    // Nothing new to review: the earlier run stands whole, its one finding resolved, not that finding's count.
+    const finished = { author: 'coderabbitai[bot]', body: finishedPage, anchor: 'issuecomment-2', createdAt: '2026-10-26T04:57:10Z', editedAt: '2026-10-26T05:03:14Z' };
+    expect(verdictsFrom([status('completed')], [...before, finished], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, sourceId: 'discussion_r1' });
+    // While it still says "Review triggered", the review is under way.
+    const triggered = { author: finished.author, body: triggeredPage, anchor: finished.anchor, createdAt: finished.createdAt };
+    expect(verdictsFrom([status('in_progress')], [...before, triggered], 'head', [], Date.parse('2026-10-26T04:58:00Z'))[0]?.verdict).toBe('running');
   });
 
   it('does not mistake a review, a status line or a question for a refusal', () => {

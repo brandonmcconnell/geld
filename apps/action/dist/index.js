@@ -19800,7 +19800,13 @@ function reviewBotIdFor(login, extraLogins) {
   if (known !== null) return known.id;
   return extraLogins.some((entry2) => entry2.toLowerCase() === login.toLowerCase()) ? `custom:${login.toLowerCase()}` : null;
 }
+function commandReply(body) {
+  const text = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
+  if (!/^(?:✅\s*)?actions? performed\b/i.test(text)) return null;
+  return /\breviews? triggered\b/i.test(text) ? "started" : "done";
+}
 function isStatusLineComment(body) {
+  if (commandReply(body) === "started") return true;
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ");
   const firstLine = untagged.split("\n").find((line) => line.trim() !== "") ?? "";
   if (/^\s*reviewing (?:pr|pull request) #?\d+\s*$/i.test(firstLine.replace(/[`*_>~#]/g, " ").replace(/\s+/g, " "))) return true;
@@ -19894,6 +19900,13 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? run2?.lastAt ?? null : Math.max(at, run2?.lastAt ?? Number.NEGATIVE_INFINITY);
       threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt });
+      continue;
+    }
+    if (commandReply(comment.body) === "done") {
+      statusOnly.delete(id);
+      const prior = runsBeforeAsk.get(id);
+      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+      runsBeforeAsk.delete(id);
       continue;
     }
     const refusal = refusalReason(comment.body);

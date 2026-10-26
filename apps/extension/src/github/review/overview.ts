@@ -8,7 +8,7 @@
 import { createElement } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
@@ -2705,7 +2705,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // A refusal ("Skipping Bugbot: …") is review-shaped but not a report — `verdictsFrom` keeps the bot's earlier
         // real review as its last run, so a refusal must not count as a summary, or `botSummaryFor` would offer it as
         // the bot's newest word and "See latest" would open the refusal instead of the last report.
-        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots) && refusalReason(entry.comment.body) === null;
+        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots) && refusalReason(entry.comment.body) === null && commandReply(entry.comment.body) === null;
         return [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot, createdAt: entry.comment.createdAt, botId, summary }];
       }),
   );

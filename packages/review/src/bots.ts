@@ -890,7 +890,25 @@ function reviewBotIdFor(login: string, extraLogins: readonly string[]): string |
  * Review.", "Bugbot is reviewing your changes", "Review in progress"): a
  * status line, never a verdict. Short, one sentence, and shaped like one.
  */
+/**
+ * CodeRabbit's answer to a command (`@coderabbitai review`, `resume`): "✅ Action performed" in a disclosure, then what
+ * it did, edited in place from "Review triggered." to "Review finished." — the second with "does not re-review already
+ * reviewed commits" when there was nothing new. `started` is a run under way; `done` answers the request and reviews
+ * nothing, so the run before it stands (geld#68 read the inherited count of a resolved finding as "1 issue").
+ */
+export function commandReply(body: string): 'started' | 'done' | null {
+  const text = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[`*_>~#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!/^(?:✅\s*)?actions? performed\b/i.test(text)) return null;
+  return /\breviews? triggered\b/i.test(text) ? 'started' : 'done';
+}
+
 export function isStatusLineComment(body: string): boolean {
+  if (commandReply(body) === 'started') return true;
   const untagged = body
     .replace(/<!--[\s\S]*?-->/g, '')
     // Qodo's "<h3>Qodo is busy working</h3>" is HTML, raw.
@@ -1137,6 +1155,14 @@ export function verdictsFrom(
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? (run?.lastAt ?? null) : Math.max(at, run?.lastAt ?? Number.NEGATIVE_INFINITY);
       threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt });
+      continue;
+    }
+    if (commandReply(comment.body) === 'done') {
+      // The request is answered with no review: the run it set aside is still the bot's last, threads and all.
+      statusOnly.delete(id);
+      const prior = runsBeforeAsk.get(id);
+      if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
+      runsBeforeAsk.delete(id);
       continue;
     }
     const refusal = refusalReason(comment.body);
