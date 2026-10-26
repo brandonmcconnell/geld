@@ -126,6 +126,15 @@ export function nextCheckRefresh(subject: CheckSubject, headSha: string): number
   return reading.fetchedAt + (botCheckRunning(reading.checks) ? REFRESH_RUNNING_MS : REFRESH_SETTLED_MS);
 }
 
+/**
+ * Make every reading due now, so the next pass reads the checks again: the
+ * tab was away, and timers in a hidden tab ran late or not at all while bots
+ * may have finished. What was read stays shown until the new read lands.
+ */
+export function expireHeadChecks(): void {
+  for (const reading of readings.values()) if (reading.pending === null && reading.fetchedAt !== 0) reading.fetchedAt = 1;
+}
+
 /** Forget every reading (a test, or leaving the pull request). */
 export function resetHeadChecks(): void {
   readings.clear();

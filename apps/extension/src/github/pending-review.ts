@@ -103,10 +103,18 @@ export async function discardPendingReview(pullPath: string): Promise<boolean> {
   }
 }
 
-/** The count GitHub's own (hidden) Files changed button shows, live while comments are added there. */
+/**
+ * The count GitHub's own (hidden) Files changed button shows, live while
+ * comments are added there or the pending review is discarded. The button
+ * drops its counter at zero, so buttons with none say none are pending; null
+ * where no such button is on the page.
+ */
 export function pendingCountOnPage(): number | null {
-  const counter = document.querySelector('[class*="ReviewMenuButton"] [data-component="ButtonCounter"]');
-  if (counter === null) return null;
+  // The page may carry more than one (the toolbar's, and its copy in the sticky header): a counter on any of them wins.
+  const buttons = document.querySelectorAll('[class*="ReviewMenuButton"]');
+  if (buttons.length === 0) return null;
+  const counter = [...buttons].map((button) => button.querySelector('[data-component="ButtonCounter"]')).find((found) => found !== null) ?? null;
+  if (counter === null) return 0;
   const count = Number.parseInt(counter.textContent?.trim() ?? '', 10);
   return Number.isFinite(count) ? count : null;
 }

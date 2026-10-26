@@ -726,7 +726,7 @@ html[data-geld-quick-review] details.js-reviews-container {
 .geld-quick-review {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-shrink: 0;
   /*
    * Primer's group floats its buttons, so its min-content is one button wide: a flex row sized from min-content (the
@@ -734,13 +734,23 @@ html[data-geld-quick-review] details.js-reviews-container {
    */
   min-width: max-content;
   /* A 26px group in an 18px line: overhang it rather than grow the line, which shifted the bar and crossed its border. */
-  margin: -4px 12px -4px 0;
+  margin: -4px 8px -4px 0;
   white-space: nowrap;
 }
 
 /* In the Files changed tab's stuck toolbar, where GitHub's own button would be: the toolbar's row spaces it, at its 28px. */
 .geld-quick-review[data-geld-place] {
   margin: 0;
+}
+
+/*
+ * The toolbar's row leaves 12px after its divider: 4px of it before the tally, as between the tally and the group. Only
+ * right after the divider (one of GitHub's hidden tooltips may stand between) and with the tally there: after a button
+ * of GitHub's ("Merge status") the row's own gap stands, as between its buttons, and without the tally the group's own
+ * border stands next to GitHub's buttons, which keep the row's spacing.
+ */
+:is([class*='file-controls-divider'], [class*='file-controls-divider'] + [class*='Tooltip']) + .geld-quick-review[data-geld-place='toolbar']:has(> .geld-quick-review__tally:not([hidden])) {
+  margin-left: -8px;
 }
 
 /* At the end of the other tabs' compact header's title row, right of the title, which gives way to it. */
@@ -892,28 +902,53 @@ html[data-geld-quick-review] details.js-reviews-container {
   display: flex;
 }
 
+/*
+ * A review on its way freezes the group: the segments that were not pressed fade, and the pressed one's glyph gives way
+ * to Primer's spinner in the glyph's own colour (it sits in a `.geld-quick-review__glyph`, which the colours key on).
+ * Nothing beside the group appears or goes, so nothing moves.
+ */
 .geld-quick-review[aria-busy='true'] .geld-quick-review__segment {
   cursor: progress;
+}
+
+.geld-quick-review[aria-busy='true'] .geld-quick-review__segment:not([data-sending]) {
   opacity: 0.6;
 }
 
-/* Not drawn until what the reader may do is read: close and merge arriving later would push the group aside. */
-.geld-quick-review[data-loading] {
+.geld-quick-review__glyph--sending,
+.geld-quick-review .geld-quick-review__segment[data-sending] .geld-quick-review__glyph:not(.geld-quick-review__glyph--sending) {
   display: none !important;
 }
 
+.geld-quick-review .geld-quick-review__segment[data-sending] .geld-quick-review__glyph--sending {
+  display: flex !important;
+}
+
+.geld-spinner,
+.geld-spinner circle,
+.geld-spinner path {
+  fill: none !important;
+}
+
+.geld-spinner {
+  transform-origin: center;
+  animation: geld-spin 1s linear infinite;
+}
+
 /*
- * "3 ✓ 1 ✗ 3 💬": how the reviews stand, muted counts with each glyph in its verdict's colour on a subtle surface. A link to
- * the reviews on the conversation; resting on it shows who reviewed (the snapshot card).
+ * "3 ✓ 1 ✗ 3 💬": how the reviews stand, muted counts with each glyph in its verdict's colour, a surface only under the
+ * pointer. A link to the reviews on the conversation; resting on it shows who reviewed (the snapshot card).
  */
 .geld-quick-review__tally {
   display: inline-flex;
+  /* As tall as the group beside it, whichever height its place gives the group. */
+  align-self: stretch;
   align-items: center;
   gap: 6px;
-  height: 22px;
+  box-sizing: border-box;
   padding: 0 7px;
   border-radius: 6px;
-  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  background: transparent;
   color: var(--fgColor-muted, #59636e);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -921,8 +956,9 @@ html[data-geld-quick-review] details.js-reviews-container {
   text-decoration: none;
 }
 
-.geld-quick-review__tally:hover {
-  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+.geld-quick-review__tally:is(:hover, :focus-visible) {
+  /* Three quarters of the neutral surface's contrast, in either scheme: the tally is a quiet link, not a button. */
+  background: color-mix(in srgb, var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12)) 75%, transparent);
   color: var(--fgColor-default, #1f2328);
   text-decoration: none;
 }
@@ -1012,8 +1048,8 @@ html[data-geld-quick-review] details.js-reviews-container {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
   margin-left: auto;
+  padding-left: 8px;
   color: var(--fgColor-muted, #59636e);
   font-size: 12px;
 }
@@ -1031,14 +1067,14 @@ html[data-geld-quick-review] details.js-reviews-container {
   color: var(--fgColor-danger, #d1242f);
 }
 
-/* "Approved", "Submitting…": a moment's word beside the group, nothing when idle. */
+/* "Approved", "Submitting…": said to screen readers only, so no word beside the group pushes the controls around. */
 .geld-quick-review__status {
-  color: var(--fgColor-muted, #59636e);
-  font-size: 12px;
-}
-
-.geld-quick-review__status:empty {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Both classes: Primer's own `.Overlay` (width, position) comes later in the cascade and would win a tie. */
@@ -1054,19 +1090,207 @@ html[data-geld-quick-review] details.js-reviews-container {
   animation: none;
 }
 
-/* A small box: the words, any pending comments, then the buttons with no rule between. */
+/*
+ * A small box: the words, any pending comments, then the buttons with no rule between. It keeps to the room below it in
+ * the window (`positionPanel`) and scrolls its body when the words outgrow that, its footer's buttons always in view; a
+ * suggestion list that is open (slash commands, mentions, saved replies) overflows instead, hanging past the box rather
+ * than being cut off by it and scrolling it.
+ */
 .Overlay.geld-quick-review__panel .Overlay-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  padding: 12px 12px 0;
+  /* GitHub's focus ring on the field is 2px drawn 1px outside it, which a scrolling body (a fixed box) clips at its
+     padding: 2px of bottom padding, taken back by the margin, give the ring room and move nothing. */
+  margin-bottom: -2px;
+  padding: 12px 12px 2px;
   overflow-y: auto;
+}
+
+.Overlay.geld-quick-review__panel:has(.CommentBox :is([role='listbox'], .suggester, details[open] > details-menu)) .Overlay-body {
+  overflow: visible;
 }
 
 .geld-quick-review__body {
   min-height: 90px;
   resize: vertical;
+}
+
+/*
+ * GitHub's writer, borrowed into the box, reads as the box's own: no frame of its own (its root is a Primer `Box`, whose
+ * border is a utility's), no grey header behind its toolbar, Write and Preview as quiet pills on the box's surface, the
+ * field flush with the box's padding. `!important` where GitHub's rules on the same element are.
+ */
+.geld-quick-review__panel .js-previewable-comment-form.CommentBox {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* At the box's 6px inset, so the Write tab's corner is concentric with the box's: 6px in, 6px inside 12px. */
+.geld-quick-review__panel .CommentBox .comment-form-head,
+.geld-quick-review__panel .CommentBox-header {
+  align-items: center;
+  margin: 0 0 6px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+/* The tabs and the toolbar share one 32px row: no padding of their own above or below to push the tabs down. */
+.geld-quick-review__panel .CommentBox-header > * {
+  margin-block: 0 !important;
+  padding-block: 0 !important;
+}
+
+.geld-quick-review__panel .CommentBox .tabnav-tabs {
+  gap: 2px;
+  margin: 0 !important;
+}
+
+.geld-quick-review__panel .CommentBox .tabnav-tab {
+  margin: 0;
+  padding: 6px 12px;
+  border: 0 !important;
+  border-radius: calc(var(--borderRadius-large, 12px) - 6px) !important;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.geld-quick-review__panel .CommentBox .tabnav-tab:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-quick-review__panel .CommentBox .tabnav-tab:is(.selected, [aria-selected='true']) {
+  background: var(--control-transparent-bgColor-selected, rgba(208, 215, 222, 0.24));
+  color: var(--fgColor-default, #1f2328);
+  font-weight: 600;
+}
+
+.geld-quick-review__panel .CommentBox .CommentBox-toolbar {
+  margin-right: 0;
+}
+
+.geld-quick-review__panel .CommentBox .CommentBox-container {
+  width: 100%;
+  margin: 0;
+}
+
+.geld-quick-review__panel .CommentBox :is(.write-content, .preview-content) {
+  margin: 0;
+}
+
+/*
+ * The preview framed as the field is in Write. GitHub gives the body a `min-height` of the field's framed height, and
+ * the body is border-box, so the frame goes on the body: switching tabs moves nothing.
+ */
+.geld-quick-review__panel .CommentBox :is(.js-preview-panel, .preview-content) {
+  margin: 0;
+}
+
+.geld-quick-review__panel .CommentBox .js-preview-body {
+  border: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+  border-radius: var(--borderRadius-medium, 6px);
+}
+
+/*
+ * The comment box keeps everything 6px from its edges, as the Write tab is: the words' field, the pending comments and
+ * the footer's buttons, each corner's 6px radius inside the box's 12px. The pending rows and Discard keep their glyphs
+ * in one column 12px in, their hover surfaces inside the box.
+ */
+.Overlay.geld-quick-review__panel--writer .Overlay-body {
+  padding: 6px 6px 2px;
+}
+
+.Overlay.geld-quick-review__panel--writer .Overlay-footer.geld-quick-review__footer {
+  padding: 6px;
+}
+
+.geld-quick-review__panel--writer .geld-quick-review__pending-toggle {
+  padding-left: 6px;
+}
+
+.geld-quick-review__panel--writer .geld-quick-review__pending-list {
+  margin: 4px 0 0;
+}
+
+.geld-quick-review__panel--writer .geld-quick-review__pending-row {
+  padding: 0 6px;
+}
+
+.geld-quick-review__panel--writer .geld-quick-review__footer .btn.btn-invisible.geld-quick-review__discard {
+  margin-left: 0;
+  padding-left: 6px;
+}
+
+/*
+ * Write, Preview and the toolbar stay at the top while a long comment or its preview scrolls, as the footer's buttons
+ * stay at the bottom: stuck over the body's own 6px of top padding, on the box's surface, so nothing shows above them.
+ */
+.geld-quick-review__panel--writer .CommentBox :is(.comment-form-head, .CommentBox-header) {
+  position: sticky !important;
+  top: -6px;
+  z-index: 1;
+  margin-top: -6px !important;
+  padding-top: 6px !important;
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff)) !important;
+}
+
+/* The writer's foot, which repeats what its toolbar and field offer (`hideFoot`). */
+.geld-quick-review__panel [data-geld-writer-foot] {
+  display: none !important;
+}
+
+/* GitHub's writer while it is fetched, in its shape: Write and Preview, the toolbar, then the field. */
+.geld-quick-review__writer-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  outline: none;
+}
+
+.geld-quick-review__writer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 6px;
+}
+
+.geld-quick-review__writer-gap {
+  flex: 1;
+}
+
+.geld-quick-review__writer-bar {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.geld-quick-review__writer-bar,
+.geld-quick-review__writer-field {
+  background: linear-gradient(90deg, var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12)) 25%, color-mix(in srgb, var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12)) 40%, transparent) 50%, var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12)) 75%);
+  background-size: 200% 100%;
+  animation: geld-shimmer 1.8s linear infinite;
+}
+
+.geld-quick-review__writer-field {
+  /* GitHub's field: its 102px input inside a 1px border (its foot row is hidden, `hideFoot`). */
+  height: 104px;
+  border-radius: var(--borderRadius-medium, 6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-quick-review__writer-bar,
+  .geld-quick-review__writer-field {
+    animation: none;
+  }
 }
 
 .geld-quick-review__error {
@@ -1113,9 +1337,11 @@ html[data-geld-quick-review] details.js-reviews-container {
   color: var(--fgColor-danger, #d1242f);
 }
 
-.geld-quick-review__discard > svg {
+/* Over Primer's `.btn .octicon` muted colour, so the can turns red with the words. */
+.geld-quick-review__footer .btn.geld-quick-review__discard > svg {
   margin: 0;
   color: inherit;
+  fill: currentColor;
 }
 
 /*
@@ -1330,6 +1556,14 @@ html[data-geld-quick-review] details.js-reviews-container {
   color: var(--fgColor-draft, var(--fgColor-muted, #59636e));
 }
 
+.geld-quick-review__confirm-submit[data-action='auto'] > svg {
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-quick-review__confirm-submit[data-action='queue'] > svg {
+  color: var(--fgColor-attention, #9a6700);
+}
+
 /*
  * The header's status pill as a menu of the statuses the reader may switch to: GitHub's label hidden, Geld's button
  * beside it in the label's own classes and data-status (Primer's StateLabel keys its look on them), a caret added.
@@ -1378,9 +1612,15 @@ button.geld-status-pill[data-geld-instant-merge] .geld-status-pill__merge {
 
 button.geld-status-pill[data-geld-instant-merge] {
   background: transparent !important;
-  box-shadow: inset 0 0 0 1px var(--borderColor-done-emphasis, var(--fgColor-done, #8250df));
+  /* The stroke of GitHub's 16px glyphs, so the ring weighs what the merge glyph and "Merge" beside it do. */
+  box-shadow: inset 0 0 0 1.5px var(--borderColor-done-emphasis, var(--fgColor-done, #8250df));
   color: var(--fgColor-done, #8250df) !important;
   filter: none;
+}
+
+/* GitHub's focus outline is drawn just inside the pill, over the ring: keyboard focus stands outside it instead. */
+button.geld-status-pill[data-geld-instant-merge]:focus-visible {
+  outline-offset: 2px;
 }
 
 button.geld-status-pill[data-geld-instant-merge]:hover {
@@ -1388,8 +1628,13 @@ button.geld-status-pill[data-geld-instant-merge]:hover {
   filter: none;
 }
 
-button.geld-status-pill:is(:hover, [aria-expanded='true']) {
+button.geld-status-pill[aria-haspopup]:is(:hover, [aria-expanded='true']) {
   filter: brightness(0.92);
+}
+
+/* Merged (`showMergedPills`): no menu, so GitHub's plain label, no pointer, no hover, no caret, until the reload. */
+button.geld-status-pill:not([aria-haspopup]) {
+  cursor: default;
 }
 
 button.geld-status-pill[aria-busy='true'] {
@@ -1397,25 +1642,117 @@ button.geld-status-pill[aria-busy='true'] {
   opacity: 0.7;
 }
 
-.geld-status-pill__caret {
+/* The status glyph, with the caret laid over it: shown in its place while the pill is hovered, focused or open. */
+.geld-status-pill__lead {
+  position: relative;
   display: inline-flex;
-  margin-left: 2px;
-  margin-right: -4px;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.geld-status-pill__lead > svg {
+  margin: 0 !important;
+}
+
+.geld-status-pill__caret {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
 }
 
 .geld-status-pill__caret > svg {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
   fill: currentColor;
 }
 
-/* Each status in the menu wears GitHub's colour for it, which accessible themes redefine. */
+button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__lead > svg {
+  visibility: hidden;
+}
+
+button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__caret {
+  display: inline-flex;
+}
+
+/* GitHub's action menu: one line per action, its glyph in the status's colour, which accessible themes redefine. */
+.geld-quick-review__status-menu {
+  gap: 0;
+  min-width: 192px;
+  padding: 8px;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item {
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-visual {
+  padding-top: 0;
+}
+
+/* A step up from the comment-kind menu's 16px glyph and 14px words: the statuses are the menu, read at a glance. */
+.geld-quick-review__status-menu .geld-quick-review__menu-visual > svg {
+  width: 18px;
+  height: 18px;
+}
+
+/*
+ * Past the rules: an amber warning triangle over the glyph's bottom-right corner, the glyph cut away around it
+ * by the same triangle stroked 1.5px wider. The cut's box is the badge's grown by 2 of its 12 units on every side,
+ * so its offsets are the badge's less 5/3px, and the two must move together.
+ */
+.geld-quick-review__status-menu .geld-quick-review__menu-visual[data-bypass] {
+  position: relative;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-visual[data-bypass] > svg {
+  -webkit-mask-image: linear-gradient(#000 0 0), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 16 16'%3E%3Cpath d='M4.855.708c.5-.896 1.79-.896 2.29 0l4.675 8.351a1.312 1.312 0 0 1-1.146 1.954H1.33A1.313 1.313 0 0 1 .183 9.058Z' stroke='black' stroke-width='3.6' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-image: linear-gradient(#000 0 0), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 16 16'%3E%3Cpath d='M4.855.708c.5-.896 1.79-.896 2.29 0l4.675 8.351a1.312 1.312 0 0 1-1.146 1.954H1.33A1.313 1.313 0 0 1 .183 9.058Z' stroke='black' stroke-width='3.6' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-position: 0 0, right -5.667px bottom -4.667px;
+  mask-position: 0 0, right -5.667px bottom -4.667px;
+  -webkit-mask-size: 100% 100%, 13.333px 13.333px;
+  mask-size: 100% 100%, 13.333px 13.333px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.geld-quick-review__menu-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  display: flex;
+  color: var(--fgColor-attention, #9a6700);
+}
+
+.geld-quick-review__menu-badge > svg {
+  width: 10px;
+  height: 10px;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-label {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
 .geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='open'] .geld-quick-review__menu-visual {
   color: var(--fgColor-open, #1a7f37);
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='draft'] .geld-quick-review__menu-visual {
   color: var(--fgColor-draft, var(--fgColor-muted, #59636e));
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='queued'] .geld-quick-review__menu-visual {
+  color: var(--fgColor-attention, #9a6700);
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='merged'] .geld-quick-review__menu-visual {
@@ -1426,13 +1763,51 @@ button.geld-status-pill[aria-busy='true'] {
   color: var(--fgColor-closed, #d1242f);
 }
 
-/* The status the pull request has: checked, not a choice. */
-.geld-quick-review__status-menu .geld-quick-review__menu-item:disabled {
-  cursor: default;
+/*
+ * A stack's type opens its choices beside it, on the menu's inline-end side as Primer's submenus do, its first choice
+ * level with the type (`placeSubmenu` sets `top`); on the other side where the viewport has no room (`data-geld-flip`).
+ */
+.geld-quick-review__status-menu .geld-quick-review__menu-trail {
+  display: flex;
+  align-self: center;
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
+  color: var(--fgColor-muted, #59636e);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item:disabled:hover {
-  background: transparent;
+/* It points at its submenu, open or not: the shared chevron turns down under an expanded control, a disclosure's. */
+.geld-quick-review__status-menu .geld-quick-review__menu-parent .geld-quick-review__menu-trail > svg {
+  width: 16px;
+  height: 16px;
+  transform: none;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-parent .geld-quick-review__menu-trail:dir(rtl) > svg {
+  transform: scaleX(-1);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-parent[aria-expanded='true'] {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+}
+
+.geld-quick-review__menu.geld-quick-review__status-submenu {
+  position: absolute;
+  inset-inline-start: calc(100% + 4px);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.geld-quick-review__menu.geld-quick-review__status-submenu[data-geld-flip] {
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% + 4px);
+}
+
+/* Neither side has room: under its parent, inside the menu's padding, over the rows below it. */
+.geld-quick-review__menu.geld-quick-review__status-submenu[data-geld-under] {
+  z-index: 1;
+  inset-inline-start: 4px;
+  inset-inline-end: auto;
+  max-width: calc(100vw - 32px);
 }
 
 /* "Pending comments N", as GitHub's dialog lists them under the choices. */

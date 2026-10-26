@@ -8,6 +8,8 @@
 
 import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
 import { closestAtHome, wornPiecesOf } from './teleport';
+import { catchUpTimeline } from './timeline-catchup';
+import { fetchNonce, pullPathOf, timelineCommentRequest } from '../timeline-comment';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
@@ -126,136 +128,34 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /**
- * Hold the window at its current scroll until `release`, so posting through
- * GitHub's comment box does not drag the reader to the bottom. GitHub focuses
- * the field and scrolls the freshly posted comment into view; the reader only
- * clicked a menu, so neither should move the page. Any scroll the reader makes
- * by hand (wheel, touch, a scroll key) ends the hold — the same release hold.ts
- * uses — so this never fights a reader who chooses to move.
- */
-function pinScroll(): () => void {
-  const x = window.scrollX;
-  const y = window.scrollY;
-  let active = true;
-  const options: AddEventListenerOptions = { capture: true, passive: true };
-  const stop = (): void => {
-    if (!active) return;
-    active = false;
-    window.cancelAnimationFrame(frame);
-    window.removeEventListener('wheel', stop, options);
-    window.removeEventListener('touchstart', stop, options);
-    window.removeEventListener('mousedown', onMouse, options);
-    window.removeEventListener('keydown', onKey, options);
-  };
-  const onKey = (event: KeyboardEvent): void => {
-    if (SCROLL_KEYS.has(event.key) && !(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) stop();
-  };
-  // A mouse press ends the pin only when it is itself scroll or navigation: a drag on the scrollbar gutter (past the
-  // viewport's content edge), or a click on a link (a permalink changes the URL and should reach its target). An
-  // ordinary click on a control is not navigation and must not end the pin, or GitHub's scroll to the new comment
-  // would jump the page after it — the very thing the pin prevents.
-  const onMouse = (event: MouseEvent): void => {
-    const onScrollbar = event.clientX >= document.documentElement.clientWidth || event.clientY >= document.documentElement.clientHeight;
-    const onLink = event.target instanceof Element && event.target.closest('a[href]') !== null;
-    if (onScrollbar || onLink) stop();
-  };
-  const keep = (): void => {
-    if (!active) return;
-    if (window.scrollX !== x || window.scrollY !== y) window.scrollTo({ left: x, top: y, behavior: 'instant' });
-    frame = window.requestAnimationFrame(keep);
-  };
-  let frame = window.requestAnimationFrame(keep);
-  // A wheel, touch or scroll key is unambiguous scroll and ends the pin; a mouse press ends it only when it is a
-  // scrollbar drag or a link (see `onMouse`), so GitHub's post-scroll is still absorbed under an ordinary click.
-  window.addEventListener('wheel', stop, options);
-  window.addEventListener('touchstart', stop, options);
-  window.addEventListener('mousedown', onMouse, options);
-  window.addEventListener('keydown', onKey, options);
-  return stop;
-}
-
-const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
-
-/**
- * Post several trigger comments one after another: each bot wants its own
- * comment, and GitHub's form only accepts the next one once it has cleared.
- * The whole run holds the reader's scroll (plus a short tail past the last
- * insert), so the triggers post in the background without a jump.
+ * Post trigger comments one after another, straight to the endpoint GitHub's
+ * own comment box posts to: each bot wants its own comment, and nothing on the
+ * page moves, fills or takes focus (driving the box at the foot of the
+ * conversation scrolled the reader to it and focused it). The timeline is then
+ * caught up the way GitHub's live update does it, so the triggers show, and
+ * their bots read as running, without a reload.
  */
 export async function postTopLevelComments(bodies: readonly string[]): Promise<number> {
-  const unpin = pinScroll();
-  try {
-    let posted = 0;
-    for (const body of bodies) {
-      if (!postTopLevelComment(body)) break;
-      posted += 1;
-      const cleared = await waitForCommentForm(6000);
-      if (!cleared) break;
+  const pullPath = pullPathOf(window.location.pathname);
+  if (pullPath === null) return 0;
+  let posted = 0;
+  for (const body of bodies) {
+    const { url, init } = timelineCommentRequest(pullPath, body, fetchNonce());
+    try {
+      const response = await fetch(url, init);
+      if (!response.ok) break;
+    } catch {
+      break;
     }
-    return posted;
-  } finally {
-    // GitHub scrolls to the inserted comment a beat after the form clears; hold a moment longer, then let go.
-    window.setTimeout(unpin, 1200);
+    posted += 1;
   }
-}
-
-function waitForCommentForm(timeoutMs: number): Promise<boolean> {
-  const started = Date.now();
-  return new Promise((resolve) => {
-    const tick = (): void => {
-      const field = document.querySelector<HTMLTextAreaElement>('#new_comment_field, textarea[name="comment[body]"]');
-      if (field !== null && field.value === '' && !field.disabled) {
-        resolve(true);
-        return;
-      }
-      if (Date.now() - started > timeoutMs) {
-        resolve(false);
-        return;
-      }
-      window.setTimeout(tick, 250);
-    };
-    window.setTimeout(tick, 400);
-  });
-}
-
-/**
- * The form's plain "Comment" button, never its neighbour. GitHub's classic
- * new-comment form has two submit buttons and the first in the DOM is "Close
- * pull request" (`name="comment_and_close"`, "Close with comment" once there
- * is text), which is what a first-submit-button lookup used to press: every
- * bot re-run posted the trigger and closed the pull request with it. Only a
- * submit button that carries no `name` (GitHub names every alternative
- * action) and reads "Comment" qualifies; nothing is pressed otherwise.
- */
-export function commentSubmitButton(form: HTMLFormElement): HTMLButtonElement | null {
-  const candidates = [...form.querySelectorAll<HTMLButtonElement>('button[type="submit"], button:not([type])')];
-  return (
-    candidates.find((button) => {
-      if (button.name !== '' || button.matches('.js-comment-and-button, .js-quick-submit-alternative, [name="comment_and_close"], [name="comment_and_open"]')) return false;
-      const words = textOf(button);
-      return /^comment$/i.test(words) || /^submit new comment$/i.test(words) || (button.classList.contains('btn-primary') && !/close|reopen/i.test(words));
-    }) ?? null
-  );
-}
-
-export function postTopLevelComment(body: string): boolean {
-  const field =
-    document.querySelector<HTMLTextAreaElement>('#new_comment_field') ??
-    document.querySelector<HTMLTextAreaElement>('textarea[name="comment[body]"]') ??
-    document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="comment" i]');
-  if (field === null) return false;
-  const form = field.closest('form');
-  if (form === null) return false;
-  const submit = commentSubmitButton(form);
-  if (submit === null) return false;
-  field.focus({ preventScroll: true });
-  field.value = body;
-  field.dispatchEvent(new Event('input', { bubbles: true }));
-  field.dispatchEvent(new Event('change', { bubbles: true }));
-  // GitHub enables "Comment" from its own input handler; a still-disabled button is not one to press.
-  if (submit.disabled) return false;
-  submit.click();
-  return true;
+  // Twice: the first may be a catch-up already out from before the posts (the tab's return), whose answer cannot hold
+  // them, and one that missed (a failed fetch, GitHub's partial not yet carrying them) is tried again a moment later.
+  if (posted > 0) {
+    if (!(await catchUpTimeline())) await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
+    await catchUpTimeline();
+  }
+  return posted;
 }
 
 const REACTION_OPENER =

@@ -3026,8 +3026,18 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       reapply();
     },
     onRequest: (botIds) => {
-      const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
-      void postTopLevelComments(triggers);
+      const requested = botIds.flatMap((id) => {
+        const trigger = rerunTriggerFor(id);
+        return trigger === null ? [] : [{ id, trigger }];
+      });
+      // This visit's map: a move to another pull request while the posts are out gives the new one a map of its own.
+      const rerunPending = visit.rerunPending;
+      for (const { id } of requested) rerunPending.set(id, Date.now());
+      void postTopLevelComments(requested.map(({ trigger }) => trigger)).then((posted) => {
+        // The posts stop at the first refusal: the bots after it were never asked and do not read as running.
+        for (const { id } of requested.slice(posted)) rerunPending.delete(id);
+        reapplySoon();
+      });
     },
     onRequestMenuClosed: () => reapplySoon(),
     loadReviewerCandidates: () => reviewerCandidates(),

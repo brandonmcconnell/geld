@@ -1,21 +1,25 @@
 import { firstSentence } from '@geld/review';
+import { fetchNonce, pullPathOf, timelineCommentRequest } from './timeline-comment';
+
+export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, readyRequest, reopenRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
 import { discardPendingReview, fetchPendingComments, linkOnFilesTab, pendingCountOnPage } from './pending-review';
 import { inlineText } from './review/inline-text';
-import type { SidebarReviewer } from './review/crawler';
+import type { SidebarReviewer, SidebarReviewerState } from './review/crawler';
+import { catchUpTimeline } from './review/timeline-catchup';
 import type { ReviewTally } from './review-tally';
-import type { StatusOption } from './status-pill';
-import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
+import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
+import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
-import { ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
+import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -77,10 +81,10 @@ type Place = 'toolbar' | 'header';
 const SUBMITTED_MS = 3000;
 /** On the group while the instant key is held: ✓ and ✗ then send on a click, and the stylesheet swaps their glyphs for the sending ones. */
 const ATTR_INSTANT = 'data-instant';
-/** On the group until what the reader may do is read: it is not drawn meanwhile. */
-const ATTR_LOADING = 'data-loading';
 /** On the group while comments are pending: ⌘-click on 💬 then submits them, and its glyph says so while the key is held. */
 const ATTR_PENDING = 'data-pending';
+/** On the segment whose review is on its way: its glyph gives way to a spinner in the same colour. */
+const ATTR_SENDING = 'data-sending';
 /** On 💬: the kind its box will post (`comment` or `review`), which its glyph shows. */
 const ATTR_KIND = 'data-kind';
 
@@ -147,11 +151,6 @@ export function segmentHint(event: ReviewEvent, instantKey: string, held = false
   return [info.label, `${instantKey} 1-click review`];
 }
 
-/** `/owner/repo/pull/N` for a pull request page, else null. */
-export function pullPathOf(pathname: string): string | null {
-  return /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(pathname)?.[0] ?? null;
-}
-
 /** What GitHub's review dialog sends, from the page's own origin and session. */
 export function submitReviewRequest(pullPath: string, submission: ReviewSubmission, nonce: string): { readonly url: string; readonly init: RequestInit } {
   const headers: Record<string, string> = {
@@ -165,13 +164,6 @@ export function submitReviewRequest(pullPath: string, submission: ReviewSubmissi
     url: `${pullPath}/page_data/submit_review`,
     init: { method: 'PUT', credentials: 'same-origin', headers, body: JSON.stringify({ body: submission.body, event: submission.event, headSha: submission.headSha }) },
   };
-}
-
-/** What GitHub's conversation composer sends to post a comment on the pull request (`create_timeline_comment`, its `text`; verified Oct 2026). */
-export function timelineCommentRequest(pullPath: string, text: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
-  const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json', 'GitHub-Verified-Fetch': 'true', 'X-Requested-With': 'XMLHttpRequest' };
-  if (nonce !== '') headers['X-Fetch-Nonce'] = nonce;
-  return { url: `${pullPath}/page_data/create_timeline_comment`, init: { method: 'POST', credentials: 'same-origin', headers, body: JSON.stringify({ text }) } };
 }
 
 /** An approval needs no words; a comment or a request for changes needs them, unless pending comments go with it. */
@@ -211,10 +203,6 @@ function authorLogin(): string | null {
   const legacy = document.querySelector<HTMLAnchorElement>('.gh-header-meta a.author');
   const login = (react ?? legacy)?.textContent?.trim().replace(/^@/, '') ?? '';
   return login === '' ? null : login;
-}
-
-function fetchNonce(): string {
-  return document.querySelector<HTMLMetaElement>('meta[name="fetch-nonce"]')?.content ?? '';
 }
 
 /** The tab bar's line counts: the group in the pull request header (not a diff's, not Geld's narrow mirror). */
@@ -264,11 +252,11 @@ interface Mounted {
   readonly tally: HTMLAnchorElement;
   /** The reviewers the tally counts, for its snapshot card. */
   reviewers: readonly SidebarReviewer[];
+  /** The review the reader just sent, held over GitHub's reads until `OWN_REVIEW_HOLD_MS` has passed (`heldReview`). */
+  ownReview: OwnReview | null;
   /** The snapshot card while it shows, and the timer that shows or hides it. */
   snapshot: HTMLElement | null;
   snapshotTimer: number;
-  /** Until the first reading of what the reader may do lands (or `READY_WAIT_MS` passes), the control is not drawn. */
-  loadingTimer: number;
   /** What the merge box last said the reader may do, for {@link mergeFor}; null until read. */
   mergeActions: MergeActions | null;
   mergeFor: string | null;
@@ -293,6 +281,7 @@ interface Mounted {
   submittedTimer: number;
   /** The pending comments last read for {@link pendingFor}; null until read (or when GitHub could not say). */
   pending: readonly PendingComment[] | null;
+  /** The pull request and tab they were read on (`pendingKey`): a tab switched to reads them again, since another may have changed them. */
   pendingFor: string | null;
   /** Stops following the instant key. */
   readonly keys: AbortController;
@@ -351,11 +340,10 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     // Another pull request's counts (and the reviewers behind them) never stand in for this one's: nothing until its reviews are read.
     mounted.reviewers = [];
     showTally(mounted, { approved: 0, changesRequested: 0, commented: 0 });
-    holdUntilReady(mounted);
   }
   mounted.context = context;
   followReviewHash(context);
-  if (mounted.pendingFor !== pullPath) void loadPending(mounted);
+  if (mounted.pendingFor !== pendingKey(mounted)) void loadPending(mounted);
   // GitHub turns a draft ready (and back), merges and closes in place: what the reader may do changes with the label.
   const stateWords = pullRequestStateWords();
   const stateChanged = stateWords !== '' && mounted.stateWords !== null && mounted.stateWords !== stateWords;
@@ -488,7 +476,6 @@ export function removeQuickReview(): void {
   closeStatusMenu(mounted);
   window.clearTimeout(mounted.submittedTimer);
   window.clearTimeout(mounted.mergeTimer);
-  window.clearTimeout(mounted.loadingTimer);
   hideSnapshot(mounted);
   mounted.host?.removeAttribute(ATTR_HOST);
   mounted.keys.abort();
@@ -540,6 +527,8 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
       [
         createElement('span', { class: 'geld-quick-review__glyph' }, [svgFromString(info.icon)]),
         ...(info.instantIcon === null ? [] : [createElement('span', { class: 'geld-quick-review__glyph geld-quick-review__glyph--instant' }, [svgFromString(info.instantIcon)])]),
+        // In the glyph's place, in its colour, while this segment's review is on its way.
+        createElement('span', { class: 'geld-quick-review__glyph geld-quick-review__glyph--sending' }, [svgFromString(ICON_SPINNER)]),
       ],
     );
   };
@@ -549,7 +538,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
   const tips = SEGMENT_ORDER.flatMap((event) => describe(segments[event], segmentHint(event, INSTANT_KEY)) ?? []);
   // The count is a badge on the group's corner, outside it: inside, Primer's `:last-child` rounding would land on it.
   // Drawn once the reviews are read: the tally arriving later would push the group aside.
-  const root = createElement('span', { class: GROUP_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_LOADING]: '' }, [tally, status, createElement('span', { class: 'geld-quick-review__badged' }, [group, counter]), ...tips]);
+  const root = createElement('span', { class: GROUP_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [tally, status, createElement('span', { class: 'geld-quick-review__badged' }, [group, counter]), ...tips]);
   const keys = new AbortController();
   const stickyWatch = new MutationObserver(() => {
     if (mounted !== state) return;
@@ -570,9 +559,9 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     statusMenuKeys: null,
     tally,
     reviewers: [],
+    ownReview: null,
     snapshot: null,
     snapshotTimer: 0,
-    loadingTimer: 0,
     mergeActions: null,
     mergeFor: null,
     mergeRead: 0,
@@ -609,7 +598,6 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     showInstantMerge(state);
   });
   armSnapshot(state);
-  holdUntilReady(state);
   // Off the conversation GitHub's writer is fetched (the conversation's HTML): when the reader heads for a review segment, not before.
   for (const type of ['pointerenter', 'focusin']) state.group.addEventListener(type, () => prefetchWriter(state.pullPath), { signal: keys.signal });
   // The tally's link from this very tab changes only the hash: resolve it there and then.
@@ -627,7 +615,10 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
   document.addEventListener(
     'visibilitychange',
     () => {
-      if (mounted === state && !document.hidden) void loadMergeActions(state);
+      if (mounted !== state || document.hidden) return;
+      void loadMergeActions(state);
+      // Pending comments added or discarded in another tab while this one was away.
+      void loadPending(state);
     },
     { signal: keys.signal },
   );
@@ -730,6 +721,61 @@ function showVerdict(state: Mounted, verdict: 'APPROVED' | 'CHANGES_REQUESTED' |
 }
 
 /**
+ * The reader's own review, shown the moment GitHub accepts it and held over
+ * GitHub's reads for a while: the merge box and the Reviewers partial answer
+ * from before the review for some seconds after it went through, and read
+ * then they took the pressed segment and the tally's count back.
+ */
+interface OwnReview {
+  readonly pullPath: string;
+  /** The standing verdict it leaves: the review's own, or for a comment the verdict held before it. */
+  readonly verdict: 'APPROVED' | 'CHANGES_REQUESTED' | null;
+  readonly at: number;
+}
+
+const OWN_REVIEW_HOLD_MS = 90_000;
+
+const OWN_VERDICT: { readonly [E in ReviewEvent]: 'APPROVED' | 'CHANGES_REQUESTED' | null } = { approve: 'APPROVED', 'request changes': 'CHANGES_REQUESTED', comment: null };
+
+function ownState(verdict: 'APPROVED' | 'CHANGES_REQUESTED' | null): SidebarReviewerState {
+  return verdict === 'APPROVED' ? 'approved' : verdict === 'CHANGES_REQUESTED' ? 'changes_requested' : 'commented';
+}
+
+function heldReview(state: Mounted): OwnReview | null {
+  const own = state.ownReview;
+  return own !== null && own.pullPath === state.pullPath && Date.now() - own.at < OWN_REVIEW_HOLD_MS ? own : null;
+}
+
+/** The verdict the reader just sent, while it is held; a comment leaves the standing verdict to GitHub's read. */
+function heldVerdict(state: Mounted): 'APPROVED' | 'CHANGES_REQUESTED' | null {
+  return heldReview(state)?.verdict ?? null;
+}
+
+/** The reviewers with the reader's held review in place of (or beside) what GitHub's read said of them. */
+function withOwnReview(state: Mounted, reviewers: readonly SidebarReviewer[]): readonly SidebarReviewer[] {
+  const held = heldReview(state);
+  const login = viewerLogin();
+  if (held === null || login === '') return reviewers;
+  const wanted = ownState(held.verdict);
+  const mine = reviewers.find((reviewer) => reviewer.login.toLowerCase() === login.toLowerCase());
+  // A comment leaves a standing approval or request for changes standing, as GitHub counts reviews.
+  if (mine !== undefined && (mine.state === wanted || (wanted === 'commented' && (mine.state === 'approved' || mine.state === 'changes_requested')))) return reviewers;
+  const avatar = document.querySelector<HTMLImageElement>(`img.avatar[alt="@${CSS.escape(login)}" i]`)?.src ?? null;
+  const entry: SidebarReviewer = { login: mine?.login ?? login, avatarSrc: mine?.avatarSrc ?? avatar, state: wanted, bot: false };
+  return mine === undefined ? [...reviewers, entry] : reviewers.map((reviewer) => (reviewer === mine ? entry : reviewer));
+}
+
+/** Hold the review GitHub just accepted and show it now: the verdict pressed in, the tally counting it. */
+function showOwnReview(state: Mounted, event: ReviewEvent): void {
+  // A comment leaves the standing verdict standing, a held one included: a stale read must not take it back meanwhile.
+  const verdict = OWN_VERDICT[event] ?? heldVerdict(state);
+  state.ownReview = { pullPath: state.pullPath, verdict, at: Date.now() };
+  if (verdict !== null) showVerdict(state, verdict);
+  state.reviewers = withOwnReview(state, state.reviewers);
+  showTally(state, tallyOf(state.reviewers));
+}
+
+/**
  * Read what the reader may do from the merge box (once per pull request and
  * again each minute while the tab is shown, since checks and reviews land
  * meanwhile), then show it.
@@ -741,51 +787,27 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
   state.mergeRead += 1;
   const read = state.mergeRead;
   const current = (): boolean => mounted === state && state.pullPath === pullPath && state.mergeRead === read;
-  // Each answer shows when it lands: a slow Reviewers read must not hold back merge and close. The control is drawn once both are in.
-  let waiting = 2;
-  const settle = (): void => {
-    waiting -= 1;
-    if (waiting === 0) ready(state);
-  };
+  // Each answer shows when it lands: a slow Reviewers read must not hold back the verdict or the status pill.
   let sidebar: readonly SidebarReviewer[] | null = null;
   const showReviewers = (): void => {
     if (sidebar === null) return;
-    state.reviewers = standingReviewers(sidebar, state.mergeActions?.box.verdicts ?? []);
+    state.reviewers = withOwnReview(state, standingReviewers(sidebar, state.mergeActions?.box.verdicts ?? []));
     showTally(state, tallyOf(state.reviewers));
   };
   void fetchReviewers(pullPath).then((reviewers) => {
     if (!current()) return;
     sidebar = reviewers;
     showReviewers();
-    settle();
   });
   const actions = await readMergeActions(pullPath);
   if (!current()) return null;
   if (actions !== null) state.mergeActions = actions;
   showStatus(state);
   showReviewers();
-  settle();
   state.mergeTimer = window.setTimeout(() => {
     if (mounted === state && !document.hidden) void loadMergeActions(state);
   }, MERGE_REFRESH_MS);
   return actions;
-}
-
-const READY_WAIT_MS = 1500;
-
-/** Keep the control undrawn until what the reader may do is read, or for `READY_WAIT_MS` at most. */
-function holdUntilReady(state: Mounted): void {
-  state.root.setAttribute(ATTR_LOADING, '');
-  window.clearTimeout(state.loadingTimer);
-  state.loadingTimer = window.setTimeout(() => ready(state), READY_WAIT_MS);
-}
-
-function ready(state: Mounted): void {
-  window.clearTimeout(state.loadingTimer);
-  if (state.root.hasAttribute(ATTR_LOADING)) {
-    state.root.removeAttribute(ATTR_LOADING);
-    positionPanel();
-  }
 }
 
 const TALLY_PARTS: ReadonlyArray<{ readonly key: keyof ReviewTally; readonly icon: string; readonly tone: string }> = [
@@ -862,7 +884,7 @@ function showSnapshot(state: Mounted): void {
           ? createElement('span', { class: 'geld-quick-review__snapshot-avatar', 'aria-hidden': 'true' })
           : createElement('img', { class: `geld-quick-review__snapshot-avatar${reviewer.bot ? ' geld-quick-review__snapshot-avatar--bot' : ''}`, src: reviewer.avatarSrc, alt: '', width: '20', height: '20' }),
         createElement('span', { class: 'geld-quick-review__snapshot-name' }, [reviewer.login]),
-        createElement('span', { class: 'geld-quick-review__snapshot-state', 'data-tone': look.tone }, [svgFromString(look.icon), look.words]),
+        createElement('span', { class: 'geld-quick-review__snapshot-state', 'data-tone': look.tone, role: 'img', 'aria-label': look.words, title: look.words }, [svgFromString(look.icon)]),
       ]);
     }),
   ]);
@@ -1012,19 +1034,23 @@ let hashSince: { readonly hash: string; readonly at: number } | null = null;
  */
 function showStatus(state: Mounted): void {
   const actions = state.mergeActions;
-  if (actions !== null) showVerdict(state, viewerVerdict(actions.box, viewerLogin()));
+  if (actions !== null) showVerdict(state, heldVerdict(state) ?? viewerVerdict(actions.box, viewerLogin()));
   const repo = repoOf(state.pullPath);
-  const options = actions === null ? null : statusOptions(actions.box, actions.offer);
+  const groups = stackMenuOf(actions);
+  const options = actions === null ? null : (groups ?? flatStatusOptions(actions));
   // A merged pull request has nothing to switch to whoever reads it: it says nothing about the reader's rights.
   if (options !== null && repo !== null && actions !== null && statusOf(actions.box) !== 'merged') rememberStatusHint(repo, options.length > 0);
   const on = options !== null ? options.length > 0 : repo !== null && statusHint(repo) === true && !/merged/i.test(pullRequestStateWords());
-  state.pills = syncStatusPills(on, openFromPill);
+  // While a merge is out the pills stay, whatever a reading meanwhile says (one may already read it merged): its
+  // success dresses them as merged until the reload.
+  state.pills = syncStatusPills(on || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) closeStatusMenu(state);
 }
 
 /** Every pill's click: a pill may be put in place before the controls are mounted (`reassertStatusPills`). */
 function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
+  if (!pill.hasAttribute('aria-haspopup')) return;
   if (mounted === null) return;
   if (instantMergeReady(mounted) && (MAC ? click.metaKey : click.ctrlKey)) void instantMerge(mounted, pill);
   else toggleStatusMenu(mounted, pill);
@@ -1049,6 +1075,8 @@ function showInstantMerge(state: Mounted): void {
   const on = state.root.hasAttribute(ATTR_INSTANT) && instantMergeReady(state);
   const method = state.mergeActions?.box.methods[0] ?? 'SQUASH';
   for (const pill of state.pills) {
+    // A merged pill (`showMergedPills`) has no menu and nothing left to merge, whatever the last reading said.
+    if (!pill.hasAttribute('aria-haspopup')) continue;
     if (pill.hasAttribute(ATTR_INSTANT_MERGE) === on) continue;
     pill.toggleAttribute(ATTR_INSTANT_MERGE, on);
     if (on) pill.setAttribute('aria-label', `Merge now: ${METHOD_LABEL[method]}`);
@@ -1082,8 +1110,18 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
   const box = fresh.box;
   const method = box.methods[0] ?? 'SQUASH';
   const request = mergeRequest(state.pullPath, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: box.stacked }, fetchNonce());
-  const failed = await sendAction(state, 'merge', request, () => showMergedPills(state.pills));
+  const failed = await sendAction(state, 'merge', request, () => showMerged(state, pullPath));
   if (failed !== null && mounted === state) openMergeBox(state, failed);
+}
+
+/**
+ * The merge of `pullPath` went through: the pills on the page now, whichever GitHub's header re-rendered meanwhile,
+ * shown merged, only while the reader is still on that pull request.
+ */
+function showMerged(state: Mounted, pullPath: string): void {
+  if (mounted !== state || state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return;
+  state.pills = syncStatusPills(true, openFromPill);
+  showMergedPills(state.pills);
 }
 
 /**
@@ -1125,32 +1163,89 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
 }
 
 /**
- * The status menu, under the pill: the status the pull request has, checked,
- * then the others the reader may switch to (closed last), each with GitHub's
- * words for what it does. Merging opens the merge box and closing asks
- * first; marking ready, converting to a draft and reopening go at once, as
- * from GitHub's own controls.
+ * The flat menu. A stacked pull request whose stack could not be read offers no merge and no place in the queue: both
+ * go through `enqueue_stack`, which takes every pull request below it, and only the stack says which those are.
+ */
+function flatStatusOptions(actions: MergeActions): readonly StatusOption[] {
+  const options = statusOptions(actions.box, actions.offer, actions.bypass);
+  return actions.box.stacked && actions.stack === null ? options.filter((option) => option.action !== 'merge' && option.action !== 'queue') : options;
+}
+
+/** A stack's menu, by type, or null for a pull request in no stack or a stack of one (whose menu is `statusOptions`'). */
+function stackMenuOf(actions: MergeActions | null): readonly StackGroup[] | null {
+  return actions === null || actions.stack === null ? null : stackGroups(actions.stack, actions.box.methods[0] ?? 'SQUASH');
+}
+
+/**
+ * The status menu, under the pill: each status the reader may switch to
+ * (closed last), named by GitHub's words for what it does, its glyph in the
+ * status's colour. Merging opens the merge box and closing asks first;
+ * marking ready, converting to a draft and reopening go at once, as from
+ * GitHub's own controls. In a stack of more than one, each type is a parent
+ * whose submenu, beside it on its inline-end side, offers this pull request,
+ * it and every one below, or the entire stack.
  */
 function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
+  // Merged meanwhile (`showMergedPills`): a merge or a reading that lands after it opens nothing on it.
+  if (!pill.hasAttribute('aria-haspopup')) return;
   const actions = state.mergeActions;
-  const options = actions === null ? [] : statusOptions(actions.box, actions.offer);
-  if (options.length === 0) return;
+  const groups = stackMenuOf(actions);
+  const options = actions === null || groups !== null ? [] : flatStatusOptions(actions);
+  if (options.length === 0 && (groups === null || groups.length === 0)) return;
   const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status' });
+  const visual = (status: PullStatus, bypass: boolean): HTMLElement =>
+    createElement('span', { class: 'geld-quick-review__menu-visual', ...(bypass ? { 'data-bypass': '' } : {}) }, [
+      svgFromString(STATUS_INFO[status].icon),
+      ...(bypass ? [createElement('span', { class: 'geld-quick-review__menu-badge' }, [svgFromString(ICON_ALERT_FILL_12)])] : []),
+    ]);
   for (const option of options) {
-    const info = STATUS_INFO[option.status];
-    const item = createElement(
-      'button',
-      { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitemradio', 'aria-checked': String(option.action === null), 'data-status': option.status, ...(option.action === null ? { disabled: '' } : {}) },
-      [
-        createElement('span', { class: 'geld-quick-review__menu-visual' }, [svgFromString(info.icon)]),
-        createElement('span', { class: 'geld-quick-review__menu-text' }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [info.label]), createElement('span', { class: 'geld-quick-review__menu-note' }, [option.note])]),
-        createElement('span', { class: 'geld-quick-review__menu-check', 'aria-hidden': 'true' }, [svgFromString(ICON_CHECK)]),
-      ],
-    );
+    const item = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-status': option.status }, [
+      visual(option.status, option.bypass === true),
+      createElement('span', { class: 'geld-quick-review__menu-label' }, [option.note]),
+    ]);
     item.addEventListener('click', () => {
       closeStatusMenu(state);
       chooseStatus(state, option);
     });
+    menu.append(item);
+  }
+  let submenu: HTMLElement | null = null;
+  let submenuFor: HTMLButtonElement | null = null;
+  const closeSubmenu = (focusParent: boolean): void => {
+    submenu?.remove();
+    submenuFor?.setAttribute('aria-expanded', 'false');
+    if (focusParent) submenuFor?.focus({ preventScroll: true });
+    submenu = null;
+    submenuFor = null;
+  };
+  const openSubmenu = (item: HTMLButtonElement, group: StackGroup, focusFirst: boolean): void => {
+    if (submenuFor !== item) {
+      closeSubmenu(false);
+      const sub = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu geld-quick-review__status-submenu', role: 'menu', 'aria-label': group.note });
+      for (const choice of group.choices) {
+        const button = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-scope': choice.scope }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [choice.label])]);
+        button.addEventListener('click', () => {
+          closeStatusMenu(state);
+          chooseStackChoice(state, group, choice);
+        });
+        sub.append(button);
+      }
+      menu.append(sub);
+      item.setAttribute('aria-expanded', 'true');
+      submenu = sub;
+      submenuFor = item;
+      placeSubmenu(item, sub);
+    }
+    if (focusFirst) submenu?.querySelector<HTMLButtonElement>('.geld-quick-review__menu-item')?.focus({ preventScroll: true });
+  };
+  for (const group of groups ?? []) {
+    const item = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item geld-quick-review__menu-parent', role: 'menuitem', 'data-status': group.status, 'data-action': group.action, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, [
+      visual(group.status, false),
+      createElement('span', { class: 'geld-quick-review__menu-label' }, [group.note]),
+      createElement('span', { class: 'geld-quick-review__menu-trail', 'aria-hidden': 'true' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
+    ]);
+    item.addEventListener('click', () => openSubmenu(item, group, true));
+    item.addEventListener('pointerenter', () => openSubmenu(item, group, false));
     menu.append(item);
   }
   const keys = new AbortController();
@@ -1159,24 +1254,40 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   pill.setAttribute('aria-expanded', 'true');
   document.body.append(menu);
   positionStatusMenu(state);
-  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item:not(:disabled)')];
+  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>(':scope > .geld-quick-review__menu-item')];
   items()[0]?.focus({ preventScroll: true });
   menu.addEventListener(
     'keydown',
     (event) => {
-      if (event.key === 'Escape') {
+      const rtl = getComputedStyle(menu).direction === 'rtl';
+      const inward = rtl ? 'ArrowLeft' : 'ArrowRight';
+      const outward = rtl ? 'ArrowRight' : 'ArrowLeft';
+      const active = document.activeElement;
+      const inSubmenu = submenu !== null && active instanceof Node && submenu.contains(active);
+      if (event.key === 'Escape' && inSubmenu) {
+        event.preventDefault();
+        closeSubmenu(true);
+      } else if (event.key === 'Escape') {
         event.preventDefault();
         closeStatusMenu(state);
         pill.focus({ preventScroll: true });
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
-        const list = items();
-        const at = list.findIndex((item) => item === document.activeElement);
+        const list = inSubmenu && submenu !== null ? [...submenu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')] : items();
+        const at = list.findIndex((item) => item === active);
         list[(at + (event.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus({ preventScroll: true });
+      } else if (event.key === inward && !inSubmenu && active instanceof HTMLButtonElement && active.getAttribute('aria-haspopup') === 'menu') {
+        event.preventDefault();
+        active.click();
+      } else if (event.key === outward && inSubmenu) {
+        event.preventDefault();
+        closeSubmenu(true);
       }
     },
     { signal: keys.signal },
   );
+  // A plain item under the pointer closes a parent's submenu, as moving onto another parent swaps it.
+  for (const item of items()) if (item.getAttribute('aria-haspopup') !== 'menu') item.addEventListener('pointerenter', () => closeSubmenu(false), { signal: keys.signal });
   document.addEventListener(
     'pointerdown',
     (event) => {
@@ -1197,7 +1308,38 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     { signal: keys.signal },
   );
   window.addEventListener('scroll', () => positionStatusMenu(state), { passive: true, signal: keys.signal });
-  window.addEventListener('resize', () => positionStatusMenu(state), { signal: keys.signal });
+  window.addEventListener(
+    'resize',
+    () => {
+      positionStatusMenu(state);
+      const open = submenu;
+      const parent = submenuFor;
+      if (open !== null && parent !== null) placeSubmenu(parent, open);
+    },
+    { signal: keys.signal },
+  );
+}
+
+/**
+ * Beside its parent, on the menu's inline-end side as Primer's submenus open, its first item level with the parent;
+ * on the other side when that would leave the viewport, and under the parent, over the rows below it, when neither
+ * side has room (a narrow window). Placed again as the window changes size.
+ */
+function placeSubmenu(item: HTMLElement, submenu: HTMLElement): void {
+  submenu.removeAttribute('data-geld-flip');
+  submenu.removeAttribute('data-geld-under');
+  const style = getComputedStyle(submenu);
+  submenu.style.top = `${item.offsetTop - parseFloat(style.paddingTop) - parseFloat(style.borderTopWidth)}px`;
+  const fits = (): boolean => {
+    const rect = submenu.getBoundingClientRect();
+    return rect.left >= 8 && rect.right <= document.documentElement.clientWidth - 8;
+  };
+  if (fits()) return;
+  submenu.setAttribute('data-geld-flip', '');
+  if (fits()) return;
+  submenu.removeAttribute('data-geld-flip');
+  submenu.setAttribute('data-geld-under', '');
+  submenu.style.top = `${item.offsetTop + item.offsetHeight}px`;
 }
 
 /** Under the pill, its left edge on the pill's, inside the viewport (fixed, and placed again as the page scrolls, so it follows the pill). */
@@ -1221,22 +1363,114 @@ function closeStatusMenu(state: Mounted): void {
 }
 
 function chooseStatus(state: Mounted, option: StatusOption): void {
-  if (option.action === 'merge') openMergeBox(state);
-  else if (option.action === 'close') openCloseBox(state);
-  else if (option.action !== null) void runStatus(state, option.action);
+  if (option.action === 'merge') openMergeBox(state, null, option.bypass === true);
+  // The browser's own confirmation, not a box to click through: closing is undone only by reopening.
+  else if (option.action === 'close' || option.action === 'queue' || option.action === 'auto') {
+    if (window.confirm(CONFIRM_WORDS[option.action])) void runStatus(state, option.action);
+    else if (state.statusOpener?.isConnected === true) state.statusOpener.focus({ preventScroll: true });
+  } else void runStatus(state, option.action);
 }
+
+/**
+ * A stack's choice: this pull request alone as the flat menu's item would go; more than one only after the browser's
+ * confirmation naming every one.
+ */
+function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoice): void {
+  if (choice.targets.length === 1) {
+    chooseStatus(state, { status: group.status, action: group.action, note: group.note });
+    return;
+  }
+  if (window.confirm(stackConfirmWords(group.action, choice))) void runStackChoice(state, group.action, choice);
+  else if (state.statusOpener?.isConnected === true) state.statusOpener.focus({ preventScroll: true });
+}
+
+const STACK_REQUEST: { readonly [A in Exclude<StackAction, 'merge' | 'queue'>]: Request } = { ready: readyRequest, draft: draftRequest, close: closeRequest, reopen: reopenRequest };
+
+const STACK_RETRY: { readonly [A in StackAction]: (count: number) => { readonly icon: string; readonly label: string } } = {
+  merge: () => ({ icon: ICON_GIT_MERGE, label: 'Merge stack' }),
+  queue: () => ({ icon: ICON_GIT_MERGE_QUEUE, label: 'Merge when ready' }),
+  ready: (count) => ({ icon: ICON_GIT_PULL_REQUEST, label: count > 1 ? `Mark ${count} ready for review` : 'Ready for review' }),
+  draft: (count) => ({ icon: ICON_GIT_PULL_REQUEST_DRAFT, label: count > 1 ? `Convert ${count} to drafts` : 'Convert to draft' }),
+  close: (count) => ({ icon: ICON_GIT_PULL_REQUEST_CLOSED, label: count > 1 ? `Close ${count} pull requests` : 'Close pull request' }),
+  reopen: (count) => ({ icon: ICON_GIT_PULL_REQUEST, label: count > 1 ? `Reopen ${count} pull requests` : 'Reopen pull request' }),
+};
+
+/**
+ * A merge or a place in the queue goes through the top pull request's `enqueue_stack`, which takes every one below it,
+ * with GitHub's default method and the commit it would write, read afresh; the rest is one request per pull request,
+ * top first. A refusal opens GitHub's reason with a retry of what was left.
+ */
+async function runStackChoice(state: Mounted, action: StackAction, choice: StackChoice): Promise<void> {
+  const nonce = fetchNonce();
+  // The pull request it was chosen on: the controls move with the reader to another one, and nothing chosen here may
+  // go out from there or dress its pills.
+  const pullPath = state.pullPath;
+  const here = (): boolean => mounted === state && state.pullPath === pullPath && pullPathOf(window.location.pathname) === pullPath;
+  let steps: readonly Step[];
+  if (action === 'merge') {
+    const first = await fetchMergeBox(choice.via.path, 'SQUASH', false);
+    const method = first?.methods[0] ?? 'SQUASH';
+    const box = first === null || method === 'SQUASH' ? first : await fetchMergeBox(choice.via.path, method, false);
+    if (!here()) return;
+    if (box === null) {
+      openRetryBox(state, action, actionErrorText(action, 0, null), {
+          ...STACK_RETRY.merge(1),
+          run: async () => {
+            await runStackChoice(state, action, choice);
+            return null;
+          },
+        });
+      return;
+    }
+    steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true }, nonce) }];
+  } else if (action === 'queue') steps = [{ number: choice.via.number, request: stackQueueRequest(choice.via.path, nonce) }];
+  else {
+    const request = STACK_REQUEST[action];
+    steps = choice.targets.map((member) => ({ number: member.number, request: request(member.path, nonce) }));
+  }
+  const done = action === 'merge' ? () => (here() ? showMergedPills(state.pills) : undefined) : undefined;
+  let left = steps;
+  const send = async (): Promise<string | null> => {
+    if (!here()) return null;
+    const failed = await sendSteps(state, action, left, done, here);
+    if (failed === null) return null;
+    left = failed.left;
+    return failed.failed;
+  };
+  const failed = await send();
+  if (failed !== null && here()) openRetryBox(state, action, failed, { ...STACK_RETRY[action](left.length), run: send });
+}
+
+const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
+  close: 'Close this pull request?',
+  queue: 'Add this pull request to the merge queue?',
+  auto: 'Merge this pull request automatically once its requirements are met?',
+};
 
 type Request = (pullPath: string, nonce: string) => { readonly url: string; readonly init: RequestInit };
 
+/** A place in the merge queue: through the stack's own request for a stacked pull request, as GitHub's merge box sends it. */
+function queueFor(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
+  return mounted?.mergeActions?.box.stacked === true ? stackQueueRequest(pullPath, nonce) : queueRequest(pullPath, nonce);
+}
+
+/** Auto-merge with GitHub's default method and the commit it would write, as read last from the merge box. */
+function autoMergeFor(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
+  const box = mounted?.mergeActions?.box;
+  return autoMergeRequest(pullPath, { method: box?.methods[0] ?? 'SQUASH', commitTitle: box?.commitTitle ?? '', commitMessage: box?.commitMessage ?? '', authorEmail: box?.authorEmail ?? null }, nonce);
+}
+
 const CONFIRM_INFO: { readonly [A in Exclude<StatusAction, 'merge'>]: { readonly icon: string; readonly label: string; readonly request: Request } } = {
+  queue: { icon: ICON_GIT_MERGE_QUEUE, label: 'Merge when ready', request: queueFor },
+  auto: { icon: ICON_GIT_MERGE, label: 'Enable auto-merge', request: autoMergeFor },
   close: { icon: ICON_GIT_PULL_REQUEST_CLOSED, label: 'Close pull request', request: closeRequest },
   ready: { icon: ICON_GIT_PULL_REQUEST, label: 'Ready for review', request: readyRequest },
   draft: { icon: ICON_GIT_PULL_REQUEST_DRAFT, label: 'Convert to draft', request: draftRequest },
   reopen: { icon: ICON_GIT_PULL_REQUEST, label: 'Reopen pull request', request: reopenRequest },
 };
 
-/** Mark ready, convert to a draft or reopen at once; a refusal opens the box with GitHub's reason, for another try. */
-async function runStatus(state: Mounted, action: 'ready' | 'draft' | 'reopen'): Promise<void> {
+/** Mark ready, convert to a draft, reopen or (confirmed) close at once; a refusal opens the box with GitHub's reason, for another try. */
+async function runStatus(state: Mounted, action: Exclude<StatusAction, 'merge'>): Promise<void> {
   const failed = await sendAction(state, action, CONFIRM_INFO[action].request(state.pullPath, fetchNonce()));
   if (failed !== null && mounted === state) openConfirmBox(state, action, failed);
 }
@@ -1258,6 +1492,8 @@ function closePanel(restoreFocus = false): void {
   opener?.setAttribute('aria-expanded', 'false');
   document.removeEventListener('pointerdown', onOutsidePointer, true);
   window.removeEventListener('resize', positionPanel);
+  panelResize?.disconnect();
+  panelResize = null;
   if (restoreFocus) opener?.focus();
 }
 
@@ -1283,13 +1519,24 @@ function positionPanel(): void {
   const rect = anchor.getBoundingClientRect();
   const width = mounted.panel.offsetWidth;
   const left = Math.max(16, Math.min(pill === null ? rect.right - width : rect.left, document.documentElement.clientWidth - width - 16));
+  // The box keeps to the room in the window on the side it opens, and Primer's Overlay scrolls its body, so nothing runs
+  // off an edge and the buttons in its footer stay in view: under the anchor, or over it when the room below is too
+  // little for a useful box and there is more above.
+  const below = Math.max(0, Math.round(window.innerHeight - rect.bottom - 20));
+  const above = Math.max(0, Math.round(rect.top - 20));
+  const up = below < PANEL_ROOM && above > below;
+  mounted.panel.style.maxHeight = `${up ? above : below}px`;
+  const top = up ? rect.top - 4 - mounted.panel.offsetHeight : rect.bottom + 4;
   mounted.panel.style.position = fixed ? 'fixed' : '';
-  mounted.panel.style.top = `${Math.round(rect.bottom + (fixed ? 0 : window.scrollY) + 4)}px`;
+  mounted.panel.style.top = `${Math.round(top + (fixed ? 0 : window.scrollY))}px`;
   mounted.panel.style.left = `${Math.round(left + (fixed ? 0 : window.scrollX))}px`;
-  // Fixed under a sticky header, scrolling the page cannot reach what overflows the window: the box keeps to the room
-  // left below it and Primer's Overlay scrolls its body, so the buttons in its footer stay in view.
-  mounted.panel.style.maxHeight = fixed ? `${Math.max(160, Math.round(window.innerHeight - rect.bottom - 20))}px` : '';
 }
+
+/** The room under the anchor below which the box opens over it instead, when there is more room there. */
+const PANEL_ROOM = 240;
+
+/** Placed again as the box changes size (the writer arriving, a reason shown, pending comments opening): one over its anchor grows upward. */
+let panelResize: ResizeObserver | null = null;
 
 function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
   closePanel();
@@ -1301,6 +1548,8 @@ function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
   positionPanel();
   document.addEventListener('pointerdown', onOutsidePointer, true);
   window.addEventListener('resize', positionPanel);
+  panelResize = new ResizeObserver(() => positionPanel());
+  panelResize.observe(panel);
 }
 
 function isAuthorViewing(): boolean {
@@ -1313,7 +1562,7 @@ let pendingRead = 0;
 /** Read the reader's pending comments for the button's pull request, once per visit and again when the box opens. */
 async function loadPending(state: Mounted): Promise<readonly PendingComment[] | null> {
   const pullPath = state.pullPath;
-  state.pendingFor = pullPath;
+  state.pendingFor = pendingKey(state);
   pendingRead += 1;
   const read = pendingRead;
   const pending = await fetchPendingComments(pullPath);
@@ -1323,8 +1572,15 @@ async function loadPending(state: Mounted): Promise<readonly PendingComment[] | 
   return pending;
 }
 
+function pendingKey(state: Mounted): string {
+  return `${state.pullPath} ${state.context.page.kind}`;
+}
+
 function pendingCount(state: Mounted): number {
-  return pendingCountOnPage() ?? state.pending?.length ?? 0;
+  const onPage = pendingCountOnPage();
+  // GitHub's button is live on Files changed (its missing counter means none); a copy elsewhere would not follow a submit.
+  if (onPage !== null && state.context.page.kind === 'pull-files') return onPage;
+  return state.pending?.length ?? 0;
 }
 
 /** GitHub's own count (live on the Files changed tab, where its hidden button tracks new comments), else the last read. */
@@ -1380,6 +1636,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   const { url, init } = submitReviewRequest(pullPath, { body, event, headSha }, fetchNonce());
   state.sending = true;
   state.root.setAttribute('aria-busy', 'true');
+  state.segments[event].setAttribute(ATTR_SENDING, '');
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Submitting…';
   try {
@@ -1394,14 +1651,23 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
     // The controls may still name it while the browser already shows the next one (the controller's route pass is debounced).
     if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return null;
     showCommentKind(state);
-    if (state.context.page.kind === 'pull-files' || pendingCount(state) > 0) {
+    // A new verdict replaces the reader's standing one, as GitHub counts reviews; a comment leaves it standing.
+    showOwnReview(state, event);
+    const published = pendingCount(state) > 0;
+    // Files changed still draws the comments just published as pending until it reloads; nothing else needs a reload.
+    if (published && state.context.page.kind === 'pull-files') {
       window.location.reload();
       return null;
     }
     showDone(state, EVENT_INFO[event].done);
-    // A new verdict replaces the reader's standing one, as GitHub counts reviews; a comment leaves it standing.
-    if (event === 'approve') showVerdict(state, 'APPROVED');
-    else if (event === 'request changes') showVerdict(state, 'CHANGES_REQUESTED');
+    if (published) {
+      // They went with the review: none are pending now, and a read already on its way must not bring them back.
+      pendingRead += 1;
+      state.pending = [];
+      showCount(state);
+    }
+    // The review in the conversation as GitHub's live update would put it there (a no-op off the classic conversation).
+    void catchUpTimeline();
     void loadMergeActions(state);
     return null;
   } catch {
@@ -1410,6 +1676,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
     state.sending = false;
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
+    state.segments[event].removeAttribute(ATTR_SENDING);
     if (state.status.textContent === 'Submitting…') state.status.textContent = '';
   }
 }
@@ -1424,6 +1691,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
   const { url, init } = timelineCommentRequest(pullPath, text, fetchNonce());
   state.sending = true;
   state.root.setAttribute('aria-busy', 'true');
+  state.segments.comment.setAttribute(ATTR_SENDING, '');
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Posting…';
   try {
@@ -1436,11 +1704,13 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
     clearDraft(pullPath, text);
     if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return null;
     showCommentKind(state);
-    if (state.context.page.kind === 'pull-conversation') {
-      window.location.reload();
-      return null;
-    }
     showDone(state, 'Commented');
+    // The comment in the conversation as GitHub's live update would put it there; a reload where that cannot be done.
+    if (state.context.page.kind === 'pull-conversation') {
+      void catchUpTimeline().then((caught) => {
+        if (!caught && pullPathOf(window.location.pathname) === pullPath) window.location.reload();
+      });
+    }
     return null;
   } catch {
     return 'GitHub could not post the comment.';
@@ -1448,6 +1718,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
     state.sending = false;
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
+    state.segments.comment.removeAttribute(ATTR_SENDING);
     if (state.status.textContent === 'Posting…') state.status.textContent = '';
   }
 }
@@ -1472,9 +1743,13 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
   const allowed = (event: ReviewEvent): ReviewEvent => (isAuthorViewing() && !EVENT_INFO[event].authorMay ? 'comment' : event);
   draft.event = allowed(initial);
 
-  // GitHub's own writer when it is at hand; a plain field stands in while it is fetched, or for good when it cannot be.
+  // GitHub's own writer when it is at hand; while it is fetched a placeholder in its shape holds its place, and a plain
+  // field stands in only if it cannot be had, so the reader never types into one editor that another then replaces.
   const writer = writerNow(pullPath, draft.body);
   let body = writer?.field ?? plainField(draft.body);
+  const placeholder = writer === null ? writerPlaceholder() : null;
+  body.hidden = placeholder !== null;
+  const focusBody = (): void => (placeholder?.isConnected === true ? placeholder : body).focus({ preventScroll: true });
   const pendingSection = createElement('div', { class: 'geld-quick-review__pending' });
   const error = createElement('p', { class: 'geld-quick-review__error color-fg-danger', role: 'alert', hidden: '' });
   if (failure !== null) {
@@ -1488,8 +1763,8 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
   const kindToggle = createElement('button', { type: 'button', class: 'btn btn-sm BtnGroup-item geld-quick-review__kind-toggle', 'aria-label': 'Comment or review', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, [svgFromString(ICON_TRIANGLE_DOWN)]);
   const submitGroup = createElement('div', { class: 'geld-quick-review__submit-group' }, [submit]);
   const kindMenu = createElement('div', { class: 'geld-quick-review__menu', role: 'menu', 'aria-label': 'Comment or review', hidden: '' });
-  const bodyBox = createElement('div', { class: 'Overlay-body' }, [writer?.element ?? body, pendingSection, error]);
-  const panel = createElement('div', { class: `Overlay ${PANEL_CLASS}`, [OWN_UI_ATTRIBUTE]: '', role: 'dialog' }, [
+  const bodyBox = createElement('div', { class: 'Overlay-body' }, [...(placeholder === null ? [] : [placeholder]), writer?.element ?? body, pendingSection, error]);
+  const panel = createElement('div', { class: `Overlay ${PANEL_CLASS} ${PANEL_CLASS}--writer`, [OWN_UI_ATTRIBUTE]: '', role: 'dialog' }, [
     bodyBox,
     createElement('div', { class: 'Overlay-footer geld-quick-review__footer' }, [discard, createElement('div', { class: 'geld-quick-review__actions' }, [cancel, submitGroup])]),
     kindMenu,
@@ -1662,26 +1937,44 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
     error.hidden = true;
     showVerdict();
     refresh();
-    body.focus({ preventScroll: true });
+    focusBody();
   };
   showVerdict();
   refresh();
-  body.focus({ preventScroll: true });
   if (writer !== null) fitWriter(panel, bodyBox, writer.element);
-  else
+  else if (writerWidth !== null) fitWidth(panel, writerWidth);
+  focusBody();
+  if (writer === null) {
+    const showPlain = (): void => {
+      if (placeholder === null || !placeholder.isConnected) return;
+      const focused = document.activeElement === placeholder;
+      placeholder.remove();
+      body.hidden = false;
+      if (focused) body.focus({ preventScroll: true });
+    };
+    const patience = window.setTimeout(showPlain, WRITER_PATIENCE_MS);
     void loadWriter(pullPath, body.value).then((loaded) => {
-      if (loaded === null || state.panel !== panel || !body.isConnected) return;
+      window.clearTimeout(patience);
+      if (state.panel !== panel || !body.isConnected) return;
+      if (loaded === null) {
+        showPlain();
+        return;
+      }
       const plain = body;
-      const focused = document.activeElement === plain;
+      const waited = placeholder?.isConnected === true;
+      const focused = document.activeElement === (waited ? placeholder : plain);
       loaded.field.value = plain.value;
+      placeholder?.remove();
       plain.replaceWith(loaded.element);
       body = loaded.field;
       fitWriter(panel, bodyBox, loaded.element);
       if (focused) {
         body.focus({ preventScroll: true });
-        body.setSelectionRange(plain.selectionStart, plain.selectionEnd, plain.selectionDirection);
+        if (waited) body.setSelectionRange(body.value.length, body.value.length);
+        else body.setSelectionRange(plain.selectionStart, plain.selectionEnd, plain.selectionDirection);
       }
     });
+  }
   // Comments the reader left with "Start a review" go out with this review, words or not; read them afresh.
   void loadPending(state).then(() => {
     if (state.panel !== panel) return;
@@ -1689,6 +1982,21 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
     showVerdict();
     refresh();
   });
+}
+
+/** How long the box waits for GitHub's writer before the plain field takes its place. */
+const WRITER_PATIENCE_MS = 5000;
+
+/** The width the last writer was fitted to, so a box waiting for the next one opens at that width. */
+let writerWidth: number | null = null;
+
+/** The writer's shape (Write and Preview, the toolbar, the field) while it is fetched; focusable, so Escape still closes the box. */
+function writerPlaceholder(): HTMLElement {
+  const bar = (width: number): HTMLElement => createElement('span', { class: 'geld-quick-review__writer-bar', style: `width: ${width}px` });
+  return createElement('div', { class: 'geld-quick-review__writer-placeholder', tabindex: '-1', role: 'status', 'aria-label': 'Loading the comment editor' }, [
+    createElement('div', { class: 'geld-quick-review__writer-head' }, [bar(56), bar(64), createElement('span', { class: 'geld-quick-review__writer-gap' }), bar(120), bar(96)]),
+    createElement('div', { class: 'geld-quick-review__writer-field' }),
+  ]);
 }
 
 function plainField(text: string): HTMLTextAreaElement {
@@ -1707,7 +2015,25 @@ function fitWriter(panel: HTMLElement, bodyBox: HTMLElement, writer: HTMLElement
   writer.style.width = '';
   const box = getComputedStyle(bodyBox);
   const chrome = panel.offsetWidth - panel.clientWidth + parseFloat(box.paddingLeft) + parseFloat(box.paddingRight);
-  panel.style.width = `${Math.round(Math.min(natural + chrome + WRITER_CUSHION, document.documentElement.clientWidth - 32))}px`;
+  writerWidth = Math.round(natural + chrome + WRITER_CUSHION);
+  fitWidth(panel, writerWidth);
+  // GitHub's toolbar can measure narrower than it lays out (its buttons are sized by its own scripts once in the page):
+  // whatever still reaches past the row's edge widens the box by that much, so no button runs off it.
+  const row = writer.querySelector('.CommentBox-header');
+  if (row === null) return;
+  const edge = row.getBoundingClientRect().right;
+  const reach = [...row.querySelectorAll<HTMLElement>('button, a[href], summary')].reduce((far, control) => {
+    const rect = control.getBoundingClientRect();
+    return rect.width > 0 ? Math.max(far, rect.right) : far;
+  }, edge);
+  const over = Math.ceil(reach - edge);
+  if (over <= 0) return;
+  writerWidth += over;
+  fitWidth(panel, writerWidth);
+}
+
+function fitWidth(panel: HTMLElement, width: number): void {
+  panel.style.width = `${Math.min(width, document.documentElement.clientWidth - 32)}px`;
   // Measured once: a window narrowed (or zoomed) afterwards still keeps the box, and its buttons, inside it.
   panel.style.maxWidth = 'calc(100vw - 32px)';
   positionPanel();
@@ -1718,25 +2044,54 @@ function boxFooter(left: readonly HTMLElement[], cancel: HTMLButtonElement, subm
   return createElement('div', { class: 'Overlay-footer geld-quick-review__footer' }, [...left, createElement('div', { class: 'geld-quick-review__actions' }, [cancel, submit])]);
 }
 
-const ACTION_STATUS: { readonly [K in StatusAction]: string } = { merge: 'Merging…', close: 'Closing…', ready: 'Marking ready…', draft: 'Converting to draft…', reopen: 'Reopening…' };
+const ACTION_STATUS: { readonly [K in StatusAction]: string } = { merge: 'Merging…', queue: 'Adding to merge queue…', auto: 'Enabling auto-merge…', close: 'Closing…', ready: 'Marking ready…', draft: 'Converting to draft…', reopen: 'Reopening…' };
+
+interface Step {
+  /** The pull request it changes, named in a failure among several; null for the page's own alone. */
+  readonly number: number | null;
+  readonly request: { readonly url: string; readonly init: RequestInit };
+}
 
 /** Send a merge, close or ready for review; on success the page reloads, since every part of it (header, timeline, tabs) changes with the state. */
-async function sendAction(state: Mounted, kind: StatusAction, request: { readonly url: string; readonly init: RequestInit }, done: () => void = () => undefined): Promise<string | null> {
+async function sendAction(state: Mounted, kind: StatusAction, request: Step['request'], done: () => void = () => undefined): Promise<string | null> {
+  // An answer that comes back after the reader moved to another pull request completes nothing there and reloads nothing.
+  const pullPath = state.pullPath;
+  const here = (): boolean => mounted === state && state.pullPath === pullPath && pullPathOf(window.location.pathname) === pullPath;
+  return (await sendSteps(state, kind, [{ number: null, request }], done, here))?.failed ?? null;
+}
+
+/**
+ * Each request in turn, stopping at the first GitHub refuses: its reason, and the requests from it on, for another try.
+ * Stops quietly, sending nothing more and reloading nothing, once `here` says the reader has left the page it began on.
+ */
+async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Step[], done: () => void = () => undefined, here: () => boolean = () => true): Promise<{ readonly failed: string; readonly left: readonly Step[] } | null> {
   state.sending = true;
   state.root.setAttribute('aria-busy', 'true');
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = ACTION_STATUS[kind];
   for (const pill of state.pills) pill.setAttribute('aria-busy', 'true');
   try {
-    const response = await fetch(request.url, request.init);
-    const payload: unknown = await response.json().catch(() => null);
-    const failed = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
-    if (!response.ok || failed) return actionErrorText(kind, response.status, payload);
+    for (const [index, step] of steps.entries()) {
+      if (!here()) return null;
+      let failed: string | null;
+      try {
+        const response = await fetch(step.request.url, step.request.init);
+        const payload: unknown = await response.json().catch(() => null);
+        const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
+        failed = !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
+      } catch {
+        failed = actionErrorText(kind, 0, null);
+      }
+      if (failed !== null) {
+        // The ones before it went through: the menu is read again so it offers nothing they already did.
+        if (index > 0) void loadMergeActions(state);
+        return { failed: step.number === null ? failed : `#${step.number}: ${failed}`, left: steps.slice(index) };
+      }
+    }
+    if (!here()) return null;
     done();
     window.location.reload();
     return null;
-  } catch {
-    return actionErrorText(kind, 0, null);
   } finally {
     state.sending = false;
     state.panelRefresh?.();
@@ -1753,21 +2108,23 @@ async function sendAction(state: Mounted, kind: StatusAction, request: { readonl
  * take it, GitHub's own checkbox, which the confirmation waits on. Read
  * afresh as it opens, since checks and reviews land meanwhile.
  */
-function openMergeBox(state: Mounted, failure: string | null = null): void {
+function openMergeBox(state: Mounted, failure: string | null = null, pastRules = false): void {
   const pullPath = state.pullPath;
   const known = state.mergeActions;
   if (known === null || known.offer === null) return;
-  const bypass = known.offer === 'bypass';
-  let method: MergeMethod = known.box.methods[0] ?? 'SQUASH';
+  const bypass = pastRules || known.offer === 'bypass';
+  // Past the rules a queue's repository may allow no direct method otherwise: the box read past them lists them.
+  const methods = bypass && known.bypassMethods.length > 0 ? known.bypassMethods : known.box.methods;
+  let method: MergeMethod = methods[0] ?? 'SQUASH';
   let box: MergeBox = known.box;
   // The method `box`'s commit was written for: until the chosen method's has come, the confirmation waits.
-  let boxFor: MergeMethod = method;
+  let boxFor: MergeMethod = known.box.methods[0] ?? 'SQUASH';
   // False after a failed read: `box` then holds another method's commit, which must not fill the fields.
   let commitFresh = true;
   let edited = false;
 
-  const select = createElement('select', { class: 'form-select select-sm geld-quick-review__method', 'aria-label': 'Merge method' }, known.box.methods.map((name) => createElement('option', { value: name }, [METHOD_LABEL[name]])));
-  select.hidden = known.box.methods.length < 2;
+  const select = createElement('select', { class: 'form-select select-sm geld-quick-review__method', 'aria-label': 'Merge method' }, methods.map((name) => createElement('option', { value: name }, [METHOD_LABEL[name]])));
+  select.hidden = methods.length < 2;
   const title = createElement('input', { type: 'text', class: 'form-control input-sm width-full geld-quick-review__commit-title', 'aria-label': 'Commit message' });
   const message = createElement('textarea', { class: 'form-control width-full geld-quick-review__body geld-quick-review__commit-body', 'aria-label': 'Extended description', rows: '4' });
   const commit = createElement('div', { class: 'geld-quick-review__commit' }, [title, message]);
@@ -1818,7 +2175,7 @@ function openMergeBox(state: Mounted, failure: string | null = null): void {
   const send = async (): Promise<void> => {
     if (submit.disabled) return;
     error.hidden = true;
-    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()));
+    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMerged(state, pullPath));
     submit.textContent = 'Merging…';
     refresh();
     const failed = await pending;
@@ -1829,7 +2186,7 @@ function openMergeBox(state: Mounted, failure: string | null = null): void {
   };
 
   select.addEventListener('change', () => {
-    const chosen = known.box.methods.find((name) => name === select.value);
+    const chosen = methods.find((name) => name === select.value);
     if (chosen === undefined) return;
     method = chosen;
     fill();
@@ -1864,13 +2221,25 @@ function openMergeBox(state: Mounted, failure: string | null = null): void {
 }
 
 /**
- * The close box and the ready-for-review box: GitHub acts at once from its
- * merge box, so here the box is the confirmation, Cancel or the action in
- * GitHub's words.
+ * The box a refused status change opens: GitHub's reason, Cancel and the
+ * action again in GitHub's words.
  */
 function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, failure: string | null = null): void {
   const pullPath = state.pullPath;
   const { icon, label, request } = CONFIRM_INFO[kind];
+  openRetryBox(state, kind, failure, { icon, label, run: () => sendAction(state, kind, request(pullPath, fetchNonce())) });
+}
+
+interface Retry {
+  readonly icon: string;
+  readonly label: string;
+  /** Sends it again: null once it went through (the page reloads), else GitHub's reason. */
+  readonly run: () => Promise<string | null>;
+}
+
+/** GitHub's reason a change was refused, with a button to try it again. */
+function openRetryBox(state: Mounted, kind: StatusAction, failure: string | null, retry: Retry): void {
+  const { icon, label } = retry;
   const error = createElement('p', { class: 'geld-quick-review__error color-fg-danger', role: 'alert', hidden: '' });
   if (failure !== null) {
     error.textContent = failure;
@@ -1886,7 +2255,7 @@ function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, fa
     if (submit.disabled) return;
     submit.disabled = true;
     error.hidden = true;
-    const failed = await sendAction(state, kind, request(pullPath, fetchNonce()));
+    const failed = await retry.run();
     submit.disabled = false;
     if (failed === null) return;
     error.textContent = failed;
@@ -1904,10 +2273,6 @@ function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, fa
   submit.addEventListener('click', () => void send());
   showPanel(state, panel, kind);
   submit.focus({ preventScroll: true });
-}
-
-function openCloseBox(state: Mounted): void {
-  openConfirmBox(state, 'close');
 }
 
 /**

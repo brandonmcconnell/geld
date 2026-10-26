@@ -1,4 +1,5 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { LIVE_CATCH_UP_EVENT, liveRegionMessages } from '../src/github/review/live-regions';
 
 /**
  * The page-world half of quick view (see `src/github/review/teleport.ts`).
@@ -21,6 +22,10 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
  *
  * The protocol is DOM-only: the loaned node carries `data-geld-teleported=<token>`
  * and a `<!--geld:quick-view:<token>-->` comment holds its place.
+
+ *
+ * It also sends GitHub's live regions the socket messages a hidden tab
+ * missed, when the content script asks (`src/github/review/live-regions.ts`).
  */
 export default defineContentScript({
   matches: ['https://github.com/*'],
@@ -157,6 +162,10 @@ export default defineContentScript({
       root.dispatchEvent(copy);
       if (copy.defaultPrevented) event.preventDefault();
     }
+
+    document.addEventListener(LIVE_CATCH_UP_EVENT, () => {
+      for (const { region, detail } of liveRegionMessages(document)) region.dispatchEvent(new CustomEvent('socket:message', { detail }));
+    });
 
     for (const type of BRIDGED) {
       document.addEventListener(

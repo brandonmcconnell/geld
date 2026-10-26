@@ -28,7 +28,7 @@ import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText,
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
-import { describePage, isSignInInterstitial } from './page';
+import { describePage, isSignInInterstitial, narrowedHead } from './page';
 import type { Region } from './regions';
 import { regionsOf, scopeWithin } from './regions';
 import { applyCommitHover, removeCommitHover } from './commit-hover';
@@ -37,8 +37,11 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
+import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
+import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
+import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyReviewTab, applyReviewTabLink, removeReviewTab, teardownReviewTab } from './review-tab';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
@@ -61,6 +64,8 @@ import { legacyAdapter } from './views/legacy';
 import { activateTreeItem, ATTR_WRAP, isSelectedTreeItem, liveEntryRoot, reactAdapter } from './views/react';
 import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
 
+/** Away at least this long and the tab is brought up to date on return (checks read again, the timeline caught up). */
+const CATCH_UP_AFTER_MS = 15_000;
 const ATTR_CONTAINER = 'data-geld-container';
 const ATTR_EXPANDED = 'data-geld-expanded';
 const ATTR_ENTRY = 'data-geld';
@@ -306,6 +311,8 @@ export class GeldController {
   /** The last header numbers we settled on, re-applied synchronously if GitHub re-renders the header. */
   private settledHeader: {
     readonly stateKey: string;
+    /** The diff the numbers came from: one pull request's Files tab narrowed to a commit or a range reads another. */
+    readonly diffUrl: string | null;
     readonly sha: string | null;
     readonly hidden: HiddenBreakdown;
     readonly categories: readonly HiddenCategory[];
@@ -330,6 +337,8 @@ export class GeldController {
   private hiddenDirty = false;
   /** A `reapply` (settings or catalog change) arrived while hidden: the catch-up pass starts from a bare page. */
   private hiddenTeardown = false;
+  /** When the tab was last hidden: back after `CATCH_UP_AFTER_MS`, the page is brought up to date before the pass. */
+  private hiddenAt: number | null = null;
   /**
    * The regions the batches since the last pass touched (`regions.ts`). The
    * debounced pass redoes only the subsystems that read them; `unknown` (or
@@ -439,6 +448,8 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
+    // Started in a background tab: the time away counts from now, so the first return can catch up.
+    if (document.hidden) this.hiddenAt = Date.now();
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.apply();
   }
@@ -622,9 +633,25 @@ export class GeldController {
    * just before the tab went hidden is folded into it.
    */
   private readonly onVisibilityChange = (): void => {
-    if (document.hidden || this.stopped) return;
+    if (this.stopped) return;
+    if (document.hidden) {
+      this.hiddenAt = Date.now();
+      return;
+    }
+    const away = this.hiddenAt === null ? 0 : Date.now() - this.hiddenAt;
+    this.hiddenAt = null;
+    // GitHub's socket goes quiet for a hidden tab and its status timers run late: bots that finished meanwhile still
+    // read as running. Back after a while, the checks are read again and the timeline caught up (`catchUpTimeline`);
+    // what it puts in the page makes passes of its own.
+    const catchUp = away >= CATCH_UP_AFTER_MS && this.mayDressPage();
+    if (catchUp) {
+      expireHeadChecks();
+      void catchUpTimeline();
+      // Longer away, GitHub stopped listening: the replies in threads it missed come only by refetching their regions.
+      if (liveCatchUpDue(away)) document.dispatchEvent(new Event(LIVE_CATCH_UP_EVENT));
+    }
     const deferred = takeReviewDeferred();
-    if (!this.hiddenDirty && !deferred) {
+    if (!this.hiddenDirty && !deferred && !catchUp) {
       // Nothing to redo, but the clocks moved on while the tab was away.
       refreshReviewTimes();
       return;
@@ -735,7 +762,7 @@ export class GeldController {
     const url = new URL(window.location.href);
     const page = describePage(url);
     if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
-    const state = this.diffSource.request(page.diffUrl, this.headShaFor(page, url), 'page');
+    const state = this.diffSource.request(page.diffUrl, this.diffShaFor(page, url), 'page');
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
@@ -759,7 +786,7 @@ export class GeldController {
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
     if ((!matcher.usesChangeKinds && !this.settings.hideCommentLines) || page.diffUrl === null) return;
-    const sha = this.headShaFor(page, url);
+    const sha = this.diffShaFor(page, url);
     const state = this.diffSource.request(page.diffUrl, sha, 'page');
     if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
   }
@@ -1495,7 +1522,7 @@ export class GeldController {
     const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
     const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
     const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
-    const sha = this.headShaFor(page, url);
+    const sha = this.diffShaFor(page, url);
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
@@ -1518,11 +1545,11 @@ export class GeldController {
       headerHidden = hidden ?? EMPTY_BREAKDOWN;
     }
     if (headerHidden !== null) {
-      this.settledHeader = { stateKey: page.stateKey, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
+      this.settledHeader = { stateKey: page.stateKey, diffUrl: page.diffUrl, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
       this.applyHeader(groups, headerHidden, matcher.activeCategories, allTotals?.files ?? 0);
     } else {
       // A new head commit (or another page) invalidates what we settled on.
-      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.sha !== sha)) {
+      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.diffUrl !== page.diffUrl || this.settledHeader.sha !== sha)) {
         this.settledHeader = null;
       }
       this.headerGroups = [];
@@ -1569,6 +1596,14 @@ export class GeldController {
    * page state, and the diff, header counts and paths follow the new head as
    * they do after the files view's refresh (`onFilesRefresh`).
    */
+  /** The SHA the page's diff is keyed by: a narrowed Files tab's commit (or its range's head), else the head. */
+  private diffShaFor(page: PageInfo, url: URL): string | null {
+    // Narrowed to a commit or a range: that commit keys its diff, never the pull request's head.
+    if (page.commits !== undefined) return narrowedHead(page.commits).toLowerCase();
+    return this.headShaFor(page, url);
+  }
+
+  /** The commit's own SHA on a commit page, the pull request's head on its pages, whatever commit a Files tab is narrowed to. */
   private headShaFor(page: PageInfo, url: URL): string | null {
     if (page.kind === 'commit') return shaFromCommitUrl(url.pathname);
     if (!page.kind.startsWith('pull')) return null;
@@ -1627,6 +1662,9 @@ export class GeldController {
   private reassertHeader(): void {
     const settled = this.settledHeader;
     if (settled === null || this.currentPage?.stateKey !== settled.stateKey) return;
+    // The live URL, not `currentPage`: this runs before paint, and after a move from one narrowed diff to another the
+    // pass that updates `currentPage` has not run yet, so the settled counts would land in the new view's header.
+    if (describePage(new URL(window.location.href)).diffUrl !== settled.diffUrl) return;
     const stale = this.headerGroups.some(
       ({ group, additionsText }) => !group.host.isConnected || (group.additions !== null && group.additions.textContent !== additionsText),
     );

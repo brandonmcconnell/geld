@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { HeaderStatGroup } from './header-stats';
 import { resetStatusHints } from './status-pill';
-import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
+import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
 const SHA = 'a'.repeat(40);
 
@@ -283,6 +283,50 @@ describe('the tab bar button', () => {
     expect(segment('request changes').hasAttribute('data-current')).toBe(false);
   });
 
+  it('holds the approval just sent over GitHub’s lagging reads, and brings the conversation up to date without a reload', async () => {
+    document.head.innerHTML = '<meta name="user-login" content="alice">';
+    document.body.insertAdjacentHTML('beforeend', '<div id="partial-timeline" class="js-timeline-marker" data-url="/acme/widgets/pull/7/partials/unread_timeline?since=1"></div>');
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/submit_review')) return new Response('{}', { status: 200 });
+      // GitHub answers from before the review for a while: no verdict in the merge box, nobody in the Reviewers block.
+      if (url.includes('/page_data/merge_box')) return new Response(mergeBox('MERGEABLE', true), { status: 200 });
+      if (url.includes('show_partial')) return new Response('<form id="pull-request-reviewers-form-1"></form>', { status: 200 });
+      if (url.includes('unread_timeline')) return new Response('<div class="js-timeline-item" id="new-review"></div><div id="partial-timeline" class="js-timeline-marker" data-url="/acme/widgets/pull/7/partials/unread_timeline?since=2"></div>', { status: 200 });
+      return new Response('{}', { status: 404 });
+    }));
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    segment('approve').dispatchEvent(new MouseEvent('click', instant));
+    for (let i = 0; i < 6; i += 1) await settle();
+    expect(segment('approve').hasAttribute('data-current')).toBe(true);
+    expect(document.querySelector('.geld-quick-review__tally')?.getAttribute('aria-label')).toBe('1 approval');
+    expect(document.getElementById('new-review')).not.toBeNull();
+    expect(document.querySelector('#partial-timeline')?.getAttribute('data-url')).toContain('since=2');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('freezes the group while a review is on its way, the pressed segment’s glyph giving way to a spinner', async () => {
+    let answer: ((response: Response) => void) | null = null;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => (String(input).endsWith('/submit_review') ? new Promise<Response>((resolve) => { answer = resolve; }) : Promise.resolve(new Response('{}', { status: 404 })))));
+    mount();
+    segment('approve').dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    expect(segment('approve').hasAttribute('data-sending')).toBe(true);
+    expect(segment('approve').querySelector('.geld-quick-review__glyph--sending .geld-spinner')).not.toBeNull();
+    expect(segment('request changes').hasAttribute('data-sending')).toBe(false);
+    expect(document.querySelector('.geld-quick-review')?.getAttribute('aria-busy')).toBe('true');
+    if (answer === null) throw new Error('no request');
+    const resolve: (response: Response) => void = answer;
+    resolve(new Response('{}', { status: 200 }));
+    await settle();
+    await settle();
+    expect(segment('approve').hasAttribute('data-sending')).toBe(false);
+    expect(segment('approve').hasAttribute('data-current')).toBe(true);
+  });
+
   it('opens the box with the verdict instead of sending when words wait in it', async () => {
     const sent: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -344,11 +388,7 @@ describe('the tab bar button', () => {
   };
   const pill = (): HTMLButtonElement | null => document.querySelector<HTMLButtonElement>('button[data-geld-status-pill]');
   const menuRows = (): string[][] =>
-    [...document.querySelectorAll('.geld-quick-review__status-menu .geld-quick-review__menu-item')].map((item) => [
-      item.getAttribute('data-status') ?? '',
-      item.querySelector('.geld-quick-review__menu-note')?.textContent ?? '',
-      item.getAttribute('aria-checked') ?? '',
-    ]);
+    [...document.querySelectorAll('.geld-quick-review__status-menu .geld-quick-review__menu-item')].map((item) => [item.getAttribute('data-status') ?? '', item.querySelector('.geld-quick-review__menu-label')?.textContent ?? '']);
   const stubBox = (box: () => string, sent: string[] = []): string[] => {
     vi.stubGlobal(
       'fetch',
@@ -365,20 +405,236 @@ describe('the tab bar button', () => {
     return sent;
   };
 
+  const stubStacked = (stack: string | null): void => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/page_data/stacks')) return stack === null ? new Response('{}', { status: 500 }) : new Response(stack, { status: 200 });
+        if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        const payload: unknown = JSON.parse(mergeBox('MERGEABLE', true));
+        const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+        if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+        Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+  };
+
   it('says a stacked pull request merges the stack below it too', async () => {
     window.localStorage.clear();
     resetStatusHints();
-    stubBox(() => {
-      const payload = JSON.parse(mergeBox('MERGEABLE', true));
-      payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
-      return JSON.stringify(payload);
-    });
+    stubStacked(JSON.stringify({ stack: { pulls: [{ number: 7, title: 'Title', state: 'OPEN', url: '/acme/widgets/pull/7' }] } }));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="merged"]')?.click();
     expect(document.querySelector<HTMLElement>('.geld-quick-review__stack-note')?.hidden).toBe(false);
+  });
+
+  it('offers a stacked pull request no merge while its stack cannot be read, since the merge takes every one below it', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    stubStacked(null);
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([['closed', 'Close pull request']]);
+  });
+
+
+
+  it('lists an admin’s bypass beside the merge queue, badged, opening the merge box with GitHub’s bypass checkbox', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        const past = url.includes('bypass_requirements=true');
+        const payload = JSON.parse(mergeBox(past ? 'MERGEABLE' : 'BLOCKED', true));
+        payload.pullRequest.viewerCanAdminBypassMergeRequirements = true;
+        payload.pullRequest.viewerMergeActions.push({ name: 'MERGE_QUEUE', allowableStatus: 'ALLOWED', mergeMethods: [{ name: 'GROUP', allowableStatus: 'ALLOWED', isDefault: true }] });
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([
+      ['queued', 'Merge when ready'],
+      ['merged', 'Bypass rules and merge'],
+      ['closed', 'Close pull request'],
+    ]);
+    expect(document.querySelector('.geld-quick-review__status-menu [data-status="queued"] .geld-quick-review__menu-badge')).toBeNull();
+    expect(document.querySelector('.geld-quick-review__status-menu [data-status="merged"] .geld-quick-review__menu-visual[data-bypass] > .geld-quick-review__menu-badge svg')).not.toBeNull();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="merged"]')?.click();
+    expect(document.querySelector<HTMLElement>('.geld-quick-review__bypass')?.hidden).toBe(false);
+  });
+
+  it('groups a stack’s menu by type, each opening its choices beside it, and confirms one that changes several', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: string[] = [];
+    let refuse: string | null = null;
+    const closed = new Set<string>();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push(url);
+          if (refuse !== null && url.includes(refuse)) return new Response('{"error":"Not allowed"}', { status: 422 });
+          closed.add(url.replace(/\/page_data\/.*$/, ''));
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          const shut = closed.has(url.replace(/\/page_data\/.*$/, ''));
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, shut ? { pull: 'CLOSED' } : { convert: true }));
+          const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+          if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+          Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    // None of them would merge now: no merge type, and each type is a parent, not a choice.
+    expect(menuRows()).toEqual([
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close'],
+    ]);
+    const close = document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]');
+    expect(close?.getAttribute('aria-haspopup')).toBe('menu');
+    close?.click();
+    expect(close?.getAttribute('aria-expanded')).toBe('true');
+    const choices = (): string[] => [...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent ?? '');
+    expect(choices()).toEqual(['This pull request', 'This and 1 below', 'Entire stack (3)']);
+    expect(document.activeElement?.textContent).toBe('This pull request');
+    // Back out with the arrow toward the parent, which keeps focus.
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(document.querySelector('.geld-quick-review__status-submenu')).toBeNull();
+    expect(document.activeElement).toBe(close);
+    // Declined, nothing is sent.
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirm);
+    close?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    expect(confirm).toHaveBeenCalledWith('Close the entire stack of 3 pull requests (#9, #7 and #5)?');
+    await settle();
+    expect(posts).toEqual([]);
+    // Refused partway: GitHub's reason for the one it refused, and nothing reloads.
+    confirm.mockReturnValue(true);
+    refuse = '/pull/7/';
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request', '/acme/widgets/pull/7/page_data/close_pull_request']);
+    expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__error')?.textContent).toBe('#7: GitHub could not close the pull request: Not allowed');
+    expect(reload).not.toHaveBeenCalled();
+    // The menu was read again: #9 is closed now, so the entire stack can no longer be closed, this and the one below can.
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__panel .btn.btn-invisible')?.click();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    expect(choices()).toEqual(['This pull request', 'This and 1 below']);
+    // Refused at the second of two, then tried again: only what was left goes out, and the page reloads.
+    refuse = '/pull/5/';
+    posts.length = 0;
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="below"]')?.click();
+    expect(confirm).toHaveBeenLastCalledWith('Close 2 pull requests (#7 and #5)?');
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/7/page_data/close_pull_request', '/acme/widgets/pull/5/page_data/close_pull_request']);
+    expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__confirm-submit')?.textContent).toBe('Close pull request');
+    refuse = null;
+    posts.length = 0;
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__panel .geld-quick-review__confirm-submit')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/5/page_data/close_pull_request']);
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it('completes nothing and reloads nothing when a change comes back after the reader moved to another pull request', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' };
+    vi.stubGlobal('location', where);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          where.pathname = '/acme/widgets/pull/8';
+          return new Response('{}', { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) return new Response(mergeBox('BLOCKED', true), { status: 200 });
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="closed"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(where.reload).not.toHaveBeenCalled();
+    where.pathname = '/acme/widgets/pull/7';
+  });
+
+  it('stops a stack’s changes, and reloads nothing, once the reader has left the pull request they began on', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: string[] = [];
+    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' };
+    vi.stubGlobal('location', where);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push(url);
+          // The reader moves on to another pull request while the first change is out.
+          where.pathname = '/acme/widgets/pull/8';
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+          if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+          Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/9/page_data/close_pull_request']);
+    expect(where.reload).not.toHaveBeenCalled();
+    where.pathname = '/acme/widgets/pull/7';
   });
 
   it('confirms a merge only with the chosen method’s commit, whatever order GitHub answers in', async () => {
@@ -474,7 +730,7 @@ describe('the tab bar button', () => {
   it('turns the header’s status pill into a menu of the statuses the reader may switch to, closed last', async () => {
     window.localStorage.clear();
     resetStatusHints();
-    stubBox(() => mergeBox('MERGEABLE', true, { convert: true }));
+    const sent = stubBox(() => mergeBox('MERGEABLE', true, { convert: true }));
     const label = withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -488,20 +744,32 @@ describe('the tab bar button', () => {
     expect(document.querySelector('.geld-quick-review__actions-group')).toBeNull();
     pill()?.click();
     expect(menuRows()).toEqual([
-      ['open', 'Current status', 'true'],
-      ['draft', 'Convert to draft', 'false'],
-      ['merged', 'Squash and merge', 'false'],
-      ['closed', 'Close pull request', 'false'],
+      ['merged', 'Squash and merge'],
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close pull request'],
     ]);
     // Merged opens the merge box on GitHub's commit for its default method, under the pill.
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="merged"]')?.click();
     expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();
     expect(document.querySelector<HTMLInputElement>('.geld-quick-review__commit-title')?.value).toBe('Title (#7)');
     expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__submit')?.textContent).toBe('Confirm squash and merge');
-    // Closing asks first.
+    // Closing asks the browser's own confirmation first, then closes at once.
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirm);
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="closed"]')?.click();
-    expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__confirm-submit')?.textContent).toBe('Close pull request');
+    expect(confirm).toHaveBeenCalledWith('Close this pull request?');
+    await settle();
+    expect(sent).toEqual([]);
+    // Declined, the reader carries on from the pill: the menu item that had focus is gone.
+    expect(document.activeElement).toBe(pill());
+    confirm.mockReturnValue(true);
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="closed"]')?.click();
+    await settle();
+    expect(sent).toEqual(['close_pull_request']);
+    expect(document.querySelector('.geld-quick-review__panel')).toBeNull();
   });
 
   it('shows Open, not “Ready for review”, on a draft, and marks it ready at once; a refusal opens the box with GitHub’s reason', async () => {
@@ -515,9 +783,8 @@ describe('the tab bar button', () => {
     expect(segment('approve').getAttribute('aria-label')).toBe('Approve (your current review)');
     pill()?.click();
     expect(menuRows()).toEqual([
-      ['open', 'Ready for review', 'false'],
-      ['draft', 'Current status', 'true'],
-      ['closed', 'Close pull request', 'false'],
+      ['open', 'Ready for review'],
+      ['closed', 'Close pull request'],
     ]);
     const reload = vi.fn();
     vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
@@ -550,8 +817,7 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 4; i += 1) await settle();
     pill()?.click();
     expect(menuRows()).toEqual([
-      ['open', 'Reopen pull request', 'false'],
-      ['closed', 'Current status', 'true'],
+      ['open', 'Reopen pull request'],
     ]);
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="open"]')?.click();
     await settle();
@@ -574,6 +840,44 @@ describe('the tab bar button', () => {
     expect(window.localStorage.getItem('geld:status-menu')).toBeNull();
   });
 
+  it('offers a merge queue’s Merge when ready where a merge would stand, and queues after the browser’s confirmation', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const queueBox = JSON.stringify({
+      pullRequest: {
+        state: 'OPEN',
+        isDraft: false,
+        isInMergeQueue: false,
+        viewerCanClose: true,
+        viewerCanConvertToDraft: false,
+        viewerCanMarkReadyForReview: false,
+        latestOpinionatedReviews: [],
+        viewerCanAdminBypassMergeRequirements: false,
+        viewerMergeActions: [
+          { name: 'MERGE_QUEUE', allowableStatus: 'ALLOWED', mergeMethods: [{ name: 'MERGE', allowableStatus: 'ALLOWED', isDefault: true }] },
+          { name: 'DIRECT_MERGE', allowableStatus: 'BLOCKED', mergeMethods: [{ name: 'SQUASH', allowableStatus: 'BLOCKED', isDefault: true }] },
+        ],
+      },
+      mergeRequirements: { state: 'BLOCKED', conditions: [], commitMessageHeadline: '', commitMessageBody: '' },
+    });
+    const sent = stubBox(() => queueBox);
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([
+      ['queued', 'Merge when ready'],
+      ['closed', 'Close pull request'],
+    ]);
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
+    expect(confirm).toHaveBeenCalledWith('Add this pull request to the merge queue?');
+    await settle();
+    expect(sent).toEqual(['enable_auto_merge']);
+  });
+
   it('opens GitHub’s reason when converting to a draft is refused', async () => {
     window.localStorage.clear();
     resetStatusHints();
@@ -582,7 +886,7 @@ describe('the tab bar button', () => {
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
     pill()?.click();
-    expect(menuRows().map((row) => row[0])).toEqual(['open', 'draft']);
+    expect(menuRows().map((row) => row[0])).toEqual(['draft']);
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="draft"]')?.click();
     await settle();
     await settle();
@@ -626,12 +930,21 @@ describe('the tab bar button', () => {
     // Through: GitHub's default method and commit, then GitHub's merged pill until the page reloads.
     answer = 200;
     posts.length = 0;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.getAttribute('aria-label')).toBe('Merge now: Squash and merge');
     pill()?.dispatchEvent(new MouseEvent('click', instant));
     for (let i = 0; i < 3; i += 1) await settle();
     expect(posts).toEqual([{ url: 'merge', body: JSON.stringify({ bypassBranchProtections: false, mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: '' }) }]);
     expect(pill()?.getAttribute('data-status')).toBe('pullMerged');
-    expect(pill()?.textContent).toBe('Merged');
+    expect(pill()?.querySelector('.geld-status-pill__label')?.textContent).toBe('Merged');
+    expect(pill()?.hasAttribute('aria-haspopup')).toBe(false);
+    expect(pill()?.hasAttribute('aria-label')).toBe(false);
     expect(reload).toHaveBeenCalled();
+    // A pass before the reload, the key still held, leaves it merged: no Merge face, no "Merge now" name.
+    reassertStatusPills();
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    expect(pill()?.hasAttribute('aria-label')).toBe(false);
+    expect(pill()?.querySelector('.geld-status-pill__label')?.textContent).toBe('Merged');
   });
 
   it('reads GitHub again before a 1-click merge, and merges nothing when the approval was dismissed meanwhile', async () => {
@@ -650,7 +963,7 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 4; i += 1) await settle();
     expect(sent).toEqual([]);
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
-    expect(menuRows().map((row) => row[0])).toEqual(['open', 'merged', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
   });
 
@@ -666,7 +979,7 @@ describe('the tab bar button', () => {
     pill()?.dispatchEvent(new MouseEvent('click', instant));
     await settle();
     expect(sent).toEqual([]);
-    expect(menuRows().map((row) => row[0])).toEqual(['open', 'merged', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
   });
 
@@ -701,7 +1014,7 @@ describe('the tab bar button', () => {
     expect(document.querySelector('.geld-quick-review')).toBeNull();
     expect(document.documentElement.hasAttribute('data-geld-quick-review')).toBe(false);
     pill()?.click();
-    expect(menuRows().map((row) => row[0])).toEqual(['open', 'merged', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
     // Focus leaving the menu (Tab) closes it.
     document.querySelector('.geld-quick-review__status-menu')?.dispatchEvent(new FocusEvent('focusout', { relatedTarget: document.body }));
     expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();
@@ -740,7 +1053,7 @@ describe('the tab bar button', () => {
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
     pill()?.click();
-    expect(menuRows().map((row) => row[0])).toEqual(['open', 'draft', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['open', 'closed']);
     pill()?.click();
     const afterLoad = reads;
     // A pass with nothing changed reads nothing.
@@ -755,7 +1068,7 @@ describe('the tab bar button', () => {
     expect(reads).toBeGreaterThan(afterLoad);
     expect(pill()?.querySelector('.geld-status-pill__label')?.textContent).toBe('Open');
     pill()?.click();
-    expect(menuRows().map((row) => row[0])).toEqual(['open', 'merged', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
   });
 
   it('keeps the newest reading when an older read of the merge box answers last', async () => {
@@ -791,11 +1104,11 @@ describe('the tab bar button', () => {
     label.lastChild?.replaceWith('Open');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
-    expect(statuses()).toEqual(['open', 'merged', 'closed']);
+    expect(statuses()).toEqual(['merged', 'closed']);
     if (gate.release === null) throw new Error('the first read was not held');
     gate.release();
     for (let i = 0; i < 4; i += 1) await settle();
-    expect(statuses()).toEqual(['open', 'merged', 'closed']);
+    expect(statuses()).toEqual(['merged', 'closed']);
   });
 
   it('tallies the standing reviews from the Reviewers block, left of the group', async () => {
@@ -863,6 +1176,24 @@ describe('the tab bar button', () => {
     document.head.innerHTML = '<meta name="user-login" content="bob">';
     mount();
     expect(chosen()).toBe('Comment');
+  });
+
+  it('follows GitHub’s own count on Files changed, down to none once the pending review is discarded there', async () => {
+    const pending = { id: '1', path: 'src/a.ts', line: 3, isOutdated: false, subject: { diffLines: [] }, commentsData: { comments: [{ id: 'c1', state: 'pending', viewerDidAuthor: true, body: 'Typo.', currentDiffResourcePath: '/acme/widgets/pull/13/files#r1' }] } };
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('/thread_previews') ? new Response(JSON.stringify([pending]), { status: 200 }) : new Response('{}', { status: 200 }))));
+    window.history.replaceState(null, '', '/acme/widgets/pull/13/changes');
+    const context = { page: { kind: 'pull-files' as const, diffUrl: null, stateKey: '/acme/widgets/pull/13' }, groups: [groupAt(counts())], headSha: () => SHA };
+    const own = document.querySelector('.ReviewMenuButton__x');
+    own?.insertAdjacentHTML('beforeend', '<span data-component="ButtonCounter">1</span>');
+    applyQuickReview(true, context);
+    await settle();
+    applyQuickReview(true, context);
+    const badge = (): string | null | undefined => document.querySelector('.geld-quick-review__badged > .geld-quick-review__count')?.textContent;
+    expect(badge()).toBe('1');
+    // Discarded on Files changed: GitHub drops its counter, and the badge goes with it though the last read said one.
+    own?.querySelector('[data-component="ButtonCounter"]')?.remove();
+    applyQuickReview(true, context);
+    expect(badge()).toBe('');
   });
 
   it('counts the pending comments, lists them and discards the review as GitHub does', async () => {
@@ -1034,13 +1365,13 @@ describe('the tab bar button', () => {
     expect(JSON.parse(String(request.init.body))).toEqual({ text: 'Hello' });
   });
 
-  it('draws the control once the reviews are read, so the tally never pushes it aside', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).includes('/page_data/merge_box') ? new Response(mergeBox('MERGEABLE', true), { status: 200 }) : new Response('{}', { status: 404 }))));
+  it('draws the group at once, before GitHub has answered anything, with the tally arriving to its left later', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
     mount();
     const root = document.querySelector('.geld-quick-review');
-    expect(root?.hasAttribute('data-loading')).toBe(true);
-    for (let i = 0; i < 4; i += 1) await settle();
     expect(root?.hasAttribute('data-loading')).toBe(false);
+    expect(root?.isConnected).toBe(true);
+    expect(document.querySelector<HTMLElement>('.geld-quick-review__tally')?.hidden).toBe(true);
   });
 
   it('links the tally to the reviews and shows who reviewed on it, each a link to their review', async () => {
@@ -1059,7 +1390,7 @@ describe('the tab bar button', () => {
     tally?.dispatchEvent(new Event('focus'));
     const rows = [...document.querySelectorAll<HTMLAnchorElement>('.geld-quick-review__snapshot-row')];
     // An approval links to its own review; a comment review, whose id only the timeline has, to the reviewer's marker.
-    expect(rows.map((link) => [link.querySelector('.geld-quick-review__snapshot-name')?.textContent, link.querySelector('.geld-quick-review__snapshot-state')?.textContent, link.getAttribute('href')])).toEqual([
+    expect(rows.map((link) => [link.querySelector('.geld-quick-review__snapshot-name')?.textContent, link.querySelector('.geld-quick-review__snapshot-state')?.getAttribute('aria-label'), link.getAttribute('href')])).toEqual([
       ['ann', 'approved', '/acme/widgets/pull/7#pullrequestreview-42'],
       ['dee', 'commented', '/acme/widgets/pull/7#geld-review-by-dee'],
     ]);
@@ -1127,7 +1458,8 @@ describe('the tab bar button', () => {
   const WRITER_HTML = `
     <form id="new_comment_form"><div class="js-previewable-comment-form preview-selected CommentBox">
       <markdown-toolbar for="new_comment_field"><button id="bold-1" data-md-button="bold" data-hotkey-scope="new_comment_field" aria-labelledby="tip-1"></button><tool-tip id="tip-1" for="bold-1">Bold</tool-tip></markdown-toolbar>
-      <textarea id="new_comment_field" class="js-comment-field js-session-resumable" name="comment[body]"></textarea>
+      <file-attachment><textarea id="new_comment_field" class="js-comment-field js-session-resumable" name="comment[body]" required></textarea>
+      <div class="d-flex foot"><a href="https://docs.github.com/github/writing-on-github"><svg></svg> Markdown is supported</a><label><input type="file"><span>Paste, drop, or click to add files</span></label></div></file-attachment>
       <div class="js-preview-body"><p>old preview</p></div>
     </div></form>`;
 
@@ -1145,6 +1477,10 @@ describe('the tab bar button', () => {
     segment('comment').click();
     const box = document.querySelector('.geld-quick-review__panel');
     const writer = box?.querySelector('.js-previewable-comment-form');
+    // Its foot says what the toolbar and the field offer: hidden, the file input still in the page; the form never validates.
+    expect(box?.querySelector('.foot')?.hasAttribute('data-geld-writer-foot')).toBe(true);
+    expect(box?.querySelector('.foot input[type="file"]')).not.toBeNull();
+    expect(box?.querySelector<HTMLFormElement>('form.geld-comment-writer')?.noValidate).toBe(true);
     const field = writer?.querySelector('textarea');
     if (!(field instanceof HTMLTextAreaElement)) throw new Error('no writer');
     expect(writer?.classList.contains('write-selected')).toBe(true);
@@ -1173,7 +1509,7 @@ describe('the tab bar button', () => {
     expect(sent).toEqual([JSON.stringify({ text: 'Ship it.' })]);
   });
 
-  it('fetches the writer off the conversation, on intent, and swaps it in keeping the words', async () => {
+  it('fetches the writer off the conversation, on intent, and shows it in place of a placeholder', async () => {
     const asked: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -1184,24 +1520,39 @@ describe('the tab bar button', () => {
     applyQuickReview(true, { page: { kind: 'pull-files', diffUrl: null, stateKey: '/acme/widgets/pull/11' }, groups: [groupAt(counts())], headSha: () => SHA });
     expect(asked).not.toContain('/acme/widgets/pull/11');
     segment('comment').click();
+    // A placeholder in the writer's shape holds its place, focused so Escape still closes the box; no plain field shows first.
+    const placeholder = document.querySelector<HTMLElement>('.geld-quick-review__panel .geld-quick-review__writer-placeholder');
     const stand = document.querySelector<HTMLTextAreaElement>('.geld-quick-review__panel textarea');
-    if (stand === null) throw new Error('no box');
-    expect(stand.closest('.js-previewable-comment-form')).toBeNull();
-    stand.value = 'Halfway';
-    stand.dispatchEvent(new Event('input', { bubbles: true }));
+    if (placeholder === null || stand === null) throw new Error('no box');
+    expect(stand.hidden).toBe(true);
+    expect(document.activeElement).toBe(placeholder);
     await settle();
     await settle();
     expect(asked.filter((url) => url === '/acme/widgets/pull/11')).toHaveLength(1);
     const field = document.querySelector('.geld-quick-review__panel .js-previewable-comment-form textarea');
     if (!(field instanceof HTMLTextAreaElement)) throw new Error('no writer');
-    expect(field.value).toBe('Halfway');
+    expect(placeholder.isConnected).toBe(false);
     expect(stand.isConnected).toBe(false);
+    expect(document.activeElement).toBe(field);
     // The next box has the writer at once, from the same fetch.
     document.querySelector<HTMLButtonElement>('.geld-quick-review__panel .btn-invisible:not(.geld-quick-review__discard)')?.click();
     document.querySelector('.geld-quick-review__group[aria-label="Submit review"]')?.dispatchEvent(new Event('pointerenter'));
     segment('comment').click();
     expect(document.querySelector('.geld-quick-review__panel .js-previewable-comment-form textarea')).not.toBeNull();
     expect(asked.filter((url) => url === '/acme/widgets/pull/11')).toHaveLength(1);
+  });
+
+  it('falls back to a plain field when the writer cannot be read', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    window.history.replaceState(null, '', '/acme/widgets/pull/12/changes');
+    applyQuickReview(true, { page: { kind: 'pull-files', diffUrl: null, stateKey: '/acme/widgets/pull/12' }, groups: [groupAt(counts())], headSha: () => SHA });
+    segment('comment').click();
+    await settle();
+    await settle();
+    const stand = document.querySelector<HTMLTextAreaElement>('.geld-quick-review__panel textarea');
+    expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__writer-placeholder')).toBeNull();
+    expect(stand?.hidden).toBe(false);
+    expect(document.activeElement).toBe(stand);
   });
 
   it('reads the pull request path', () => {

@@ -83,6 +83,24 @@ function reid(root: Element): void {
   }
 }
 
+const FOOT_WORDS = /^\s*(?:markdown is supported|paste, drop, or click to add files)\s*$/i;
+
+/**
+ * The writer's foot ("Markdown is supported", "Paste, drop, or click to add
+ * files") says what the toolbar and the field already offer: hidden, with
+ * whatever holds both and nothing else (the attach button and dropping onto
+ * the field still upload, the file input staying in the page). Found by its
+ * words, since nothing in GitHub's markup names the row.
+ */
+function hideFoot(root: HTMLElement, field: HTMLTextAreaElement): void {
+  const marks = [...root.querySelectorAll<HTMLElement>('*')].filter((element) => FOOT_WORDS.test(element.textContent ?? '') && ![...element.children].some((child) => FOOT_WORDS.test(child.textContent ?? '')));
+  if (marks.length === 0) return;
+  let row = marks[0]?.parentElement ?? null;
+  while (row !== null && row !== root && !marks.every((mark) => row?.contains(mark))) row = row.parentElement;
+  const targets = row === null || row === root || row.contains(field) ? marks : [row];
+  for (const target of targets) target.setAttribute('data-geld-writer-foot', '');
+}
+
 function writerFrom(template: Element, text: string): CommentWriter | null {
   const element = document.importNode(template, true);
   if (!(element instanceof HTMLElement)) return null;
@@ -96,10 +114,14 @@ function writerFrom(template: Element, text: string): CommentWriter | null {
   // GitHub's session resume would keep this copy's words under an id no page has again.
   field.classList.remove('js-session-resumable');
   field.value = text;
+  hideFoot(element, field);
   // GitHub's preview finds the writer's form (without one it answers "Error rendering preview"); its Ctrl+Enter submits
   // that form, which must never go anywhere: the box sends the words itself.
   const form = document.createElement('form');
   form.className = 'geld-comment-writer';
+  // The field is `required` for GitHub's own form: a submit here (Ctrl+Enter, a toolbar button) showed the browser's
+  // "Please fill out this field" bubble over the toolbar, though the box decides what may be sent.
+  form.noValidate = true;
   form.addEventListener('submit', (event) => event.preventDefault());
   form.append(element);
   return { element: form, field };

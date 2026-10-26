@@ -59,6 +59,9 @@ describe('pendingCountOnPage', () => {
   it('reads the count from GitHub’s own Files changed button', () => {
     document.body.innerHTML = '<button class="ReviewMenuButton__x"><span>Submit review</span><span data-component="ButtonCounter">2</span></button>';
     expect(pendingCountOnPage()).toBe(2);
+    // Discarded on the page: GitHub drops the counter, and none are pending.
+    document.body.innerHTML = '<button class="ReviewMenuButton__x"><span>Submit review</span></button>';
+    expect(pendingCountOnPage()).toBe(0);
     document.body.innerHTML = '';
     expect(pendingCountOnPage()).toBeNull();
   });
