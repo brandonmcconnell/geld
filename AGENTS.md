@@ -211,6 +211,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The notice is a refusal with the sentence under the heading as its reason, and a running check gives way to a refusal that is the bot's latest word and newer than the check's start;
   a commit status carries no start, and then only a merged or closed pull request (`VerdictOptions.closed`), where no new run can begin, lets the refusal end it, since on an open one an old refusal must not end a run that may be new.
   As with any refusal, the last real review stands (#103: "resolved", its one finding resolved), and a bot that never reviewed reads skipped with the reason.
+  The verdict a refusal ends a run with carries `runJudged`, so a summary the Action wrote while the check still ran (saying running) gives way to it in `withLiveRuns`, which replaces a saved running verdict only with a judged one.
   **CodeRabbit's answer to a command is not a review** (`commandReply`): `@coderabbitai review` gets "✅ Action performed" in a disclosure, edited in place from "Review triggered." (a status line, the run under way) to "Review finished." (with "does not re-review already reviewed commits" when there was nothing new).
   The finished reply answers the request and votes nothing, so the run the request set aside stands whole, its threads included, and it is never the bot's summary in the panel (`sourceFacts`);
   read as an uncounted summary it inherited the count of a finding long resolved and the chip said "1 issue" (geld#68).
