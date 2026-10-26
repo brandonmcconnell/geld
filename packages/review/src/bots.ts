@@ -584,7 +584,8 @@ export interface DerivedBotVerdict {
    * The verdict was judged against the check's known start: either a report
    * newer than it, or the check alone once the report's grace ran out. Set
    * only when `RawCheckRun.startedAt` was known; a page that opened after the
-   * check finished cannot say and leaves it unset.
+   * check finished cannot say and leaves it unset. Also set when the bot's
+   * refusal ended a check left under way (its own words judged the run).
    */
   readonly runJudged?: true;
 }
@@ -1090,6 +1091,8 @@ export function verdictsFrom(
   const lastWordBy = new Map<string, number>();
   /** When each bot last refused, posted or rewritten: a run its check still shows under way may be the one it gave up. */
   const refusedAt = new Map<string, number>();
+  /** Bots whose running check a refusal ended: their verdict is judged, as one read against a finished check is. */
+  const refusedRuns = new Set<string>();
   const reported = (id: string, comment: BotComment): void => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time = at === undefined ? NaN : Date.parse(at);
@@ -1198,7 +1201,10 @@ export function verdictsFrom(
     const refused = refusedAt.get(id);
     if (verdict !== 'running' || refused === undefined || refused < (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) continue;
     const started = checkStartedAt.get(id);
-    if (started !== undefined ? refused > started : options.closed === true) checkVerdict.delete(id);
+    if (started !== undefined ? refused > started : options.closed === true) {
+      checkVerdict.delete(id);
+      refusedRuns.add(id);
+    }
   }
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
@@ -1332,6 +1338,12 @@ export function verdictsFrom(
       ...(existing.sourceId === undefined ? {} : { sourceId: existing.sourceId }),
       runJudged: true,
     });
+  }
+  // Judged by the bot's own words, so a summary the Action wrote while the check still ran gives way to it
+  // (`withLiveRuns` replaces a saved "running" only with a judged verdict).
+  for (const id of refusedRuns) {
+    const record = byId.get(id);
+    if (record !== undefined && record.verdict !== 'running') byId.set(id, { ...record, runJudged: true });
   }
 
   return [...byId.values()];

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { verdictsFrom } from '@geld/review';
 import type { GeldPrMeta } from '@geld/review';
 import { mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 
@@ -95,6 +96,21 @@ describe('withLiveRuns', () => {
     // Bugbot's check started after the Action ran: the Action still says clean, the page says running.
     const live: GeldPrMeta['bots'] = [{ id: 'bugbot', login: 'cursor[bot]', verdict: 'running', reviewedSha: sha, checkName: 'Cursor Bugbot' }];
     expect(withLiveRuns(settled, live)).toEqual([live[0], settled[1]]);
+  });
+
+  it("ends a saved run the bot gave up on, with the page's verdict (geld#103)", () => {
+    // The Action wrote while CodeRabbit's status was pending; the pull request was then merged mid-run and CodeRabbit
+    // rewrote its summary into "Review failed", leaving the status pending for good.
+    const saved: GeldPrMeta['bots'] = [{ id: 'coderabbit', login: 'coderabbitai[bot]', verdict: 'running', reviewedSha: sha, checkName: 'CodeRabbit' }];
+    const page = verdictsFrom(
+      [{ name: 'CodeRabbit', status: 'in_progress', conclusion: null, sha }],
+      [{ author: 'coderabbitai[bot]', body: 'Caution\nReview failed\nThe pull request is closed.', anchor: 'issuecomment-1', createdAt: '2026-10-26T20:42:12Z', editedAt: '2026-10-26T21:59:47Z' }],
+      sha,
+      [],
+      Date.parse('2026-10-26T22:10:00Z'),
+      { closed: true },
+    );
+    expect(withLiveRuns(saved, page)).toMatchObject([{ id: 'coderabbit', verdict: 'failed', reason: 'The pull request is closed', runJudged: true }]);
   });
 
   it('adds a bot the Action never saw once the page sees it running, and only then', () => {

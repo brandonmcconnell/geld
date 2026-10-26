@@ -1029,7 +1029,7 @@ describe('a bot that refuses to run', () => {
     ];
     const now = Date.parse('2026-10-26T22:10:00Z');
     // Merged: the run cannot go on, and the last real review (its one finding, resolved) stands.
-    expect(verdictsFrom([pending], comments, 'head', [], now, { closed: true })[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0 });
+    expect(verdictsFrom([pending], comments, 'head', [], now, { closed: true })[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, runJudged: true });
     // Still open and the status carries no start: an old refusal must not end a run that may be new.
     expect(verdictsFrom([pending], comments, 'head', [], now)[0]?.verdict).toBe('running');
     // A known start: a refusal after it ends that run, one before it does not.
