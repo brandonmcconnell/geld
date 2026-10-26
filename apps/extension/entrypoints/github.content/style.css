@@ -2039,10 +2039,14 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
 
 /*
  * The caret is two stacked triangles, the border colour under the surface
- * colour. Both bases sit on the padding edge (`top`/`bottom: 0` is the
+ * colour. Both bases sit on the padding edge (`bottom`/`top: 100%` of the
  * padding box, the 1px border lies just outside it), so the inner triangle
  * covers the border row and the body flows into the caret without a seam;
- * the outer one, 1px larger, shows only along the slopes.
+ * the outer one, 1px larger, shows only along the slopes. Anchored by the
+ * base, not by a fixed offset from it: at a zoom other than 100% the browser
+ * rounds the triangles' borders down to device pixels (7px became 6.1), and
+ * a caret placed 14px up then ended short of the box, its border running
+ * through the caret's base.
  */
 .geld-tooltip::before,
 .geld-tooltip::after {
@@ -2058,22 +2062,26 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
 }
 
 .geld-tooltip[data-placement='below']::before {
-  top: -14px;
+  bottom: 100%;
+  border-top-width: 0;
   border-bottom-color: var(--geld-tooltip-border);
 }
 
 .geld-tooltip[data-placement='below']::after {
-  top: -12px;
+  bottom: 100%;
+  border-top-width: 0;
   border-bottom-color: var(--geld-tooltip-bg);
 }
 
 .geld-tooltip[data-placement='above']::before {
-  bottom: -14px;
+  top: 100%;
+  border-bottom-width: 0;
   border-top-color: var(--geld-tooltip-border);
 }
 
 .geld-tooltip[data-placement='above']::after {
-  bottom: -12px;
+  top: 100%;
+  border-bottom-width: 0;
   border-top-color: var(--geld-tooltip-bg);
 }
 
