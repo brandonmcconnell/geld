@@ -1092,7 +1092,8 @@ html[data-geld-quick-review] details.js-reviews-container {
 
 /*
  * A small box: the words, any pending comments, then the buttons with no rule between. It keeps to the room below it in
- * the window (`positionPanel`) and scrolls its body when the words outgrow that, its footer's buttons always in view; a
+ * the window (`positionPanel`), the field scrolling inside itself (`fitField`) and the body only when even the field's
+ * shortest cap does not fit, its footer's buttons always in view; a
  * suggestion list that is open (slash commands, mentions, saved replies) overflows instead, hanging past the box rather
  * than being cut off by it and scrolling it.
  */
@@ -1115,6 +1116,12 @@ html[data-geld-quick-review] details.js-reviews-container {
 .geld-quick-review__body {
   min-height: 90px;
   resize: vertical;
+}
+
+/* The field's room in the box (`fitField`), over the `max-height` GitHub's sizer writes inline from the window's edge. */
+.Overlay.geld-quick-review__panel :is(textarea, .js-preview-body) {
+  max-height: var(--geld-field-max, none) !important;
+  overflow-y: auto;
 }
 
 /*
@@ -1231,8 +1238,8 @@ html[data-geld-quick-review] details.js-reviews-container {
 }
 
 /*
- * Write, Preview and the toolbar stay at the top while a long comment or its preview scrolls, as the footer's buttons
- * stay at the bottom: stuck over the body's own 6px of top padding, on the box's surface, so nothing shows above them.
+ * Write, Preview and the toolbar stay at the top when the body itself scrolls (a box too short for the field's shortest
+ * cap), as the footer's buttons stay at the bottom: stuck over the body's own 6px of top padding, on the box's surface.
  */
 .geld-quick-review__panel--writer .CommentBox :is(.comment-form-head, .CommentBox-header) {
   position: sticky !important;
