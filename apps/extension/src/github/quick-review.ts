@@ -1074,6 +1074,8 @@ function showInstantMerge(state: Mounted): void {
   const on = state.root.hasAttribute(ATTR_INSTANT) && instantMergeReady(state);
   const method = state.mergeActions?.box.methods[0] ?? 'SQUASH';
   for (const pill of state.pills) {
+    // A merged pill (`showMergedPills`) has no menu and nothing left to merge, whatever the last reading said.
+    if (!pill.hasAttribute('aria-haspopup')) continue;
     if (pill.hasAttribute(ATTR_INSTANT_MERGE) === on) continue;
     pill.toggleAttribute(ATTR_INSTANT_MERGE, on);
     if (on) pill.setAttribute('aria-label', `Merge now: ${METHOD_LABEL[method]}`);

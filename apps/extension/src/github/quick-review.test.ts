@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { HeaderStatGroup } from './header-stats';
 import { resetStatusHints } from './status-pill';
-import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
+import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
 const SHA = 'a'.repeat(40);
 
@@ -754,6 +754,11 @@ describe('the tab bar button', () => {
     expect(pill()?.hasAttribute('aria-haspopup')).toBe(false);
     expect(pill()?.hasAttribute('aria-label')).toBe(false);
     expect(reload).toHaveBeenCalled();
+    // A pass before the reload, the key still held, leaves it merged: no Merge face, no "Merge now" name.
+    reassertStatusPills();
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    expect(pill()?.hasAttribute('aria-label')).toBe(false);
+    expect(pill()?.querySelector('.geld-status-pill__label')?.textContent).toBe('Merged');
   });
 
   it('reads GitHub again before a 1-click merge, and merges nothing when the approval was dismissed meanwhile', async () => {
