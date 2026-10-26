@@ -1111,12 +1111,16 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
   const box = fresh.box;
   const method = box.methods[0] ?? 'SQUASH';
   const request = mergeRequest(state.pullPath, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: box.stacked }, fetchNonce());
-  const failed = await sendAction(state, 'merge', request, () => showMerged(state));
+  const failed = await sendAction(state, 'merge', request, () => showMerged(state, pullPath));
   if (failed !== null && mounted === state) openMergeBox(state, failed);
 }
 
-/** The merge went through: the pills on the page now, whichever GitHub's header re-rendered meanwhile, shown merged. */
-function showMerged(state: Mounted): void {
+/**
+ * The merge of `pullPath` went through: the pills on the page now, whichever GitHub's header re-rendered meanwhile,
+ * shown merged, only while the reader is still on that pull request.
+ */
+function showMerged(state: Mounted, pullPath: string): void {
+  if (mounted !== state || state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return;
   state.pills = syncStatusPills(true, openFromPill);
   showMergedPills(state.pills);
 }
@@ -1949,7 +1953,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   const send = async (): Promise<void> => {
     if (submit.disabled) return;
     error.hidden = true;
-    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMerged(state));
+    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMerged(state, pullPath));
     submit.textContent = 'Merging…';
     refresh();
     const failed = await pending;
