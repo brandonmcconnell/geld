@@ -1111,8 +1111,14 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
   const box = fresh.box;
   const method = box.methods[0] ?? 'SQUASH';
   const request = mergeRequest(state.pullPath, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: box.stacked }, fetchNonce());
-  const failed = await sendAction(state, 'merge', request, () => showMergedPills(state.pills));
+  const failed = await sendAction(state, 'merge', request, () => showMerged(state));
   if (failed !== null && mounted === state) openMergeBox(state, failed);
+}
+
+/** The merge went through: the pills on the page now, whichever GitHub's header re-rendered meanwhile, shown merged. */
+function showMerged(state: Mounted): void {
+  state.pills = syncStatusPills(true, openFromPill);
+  showMergedPills(state.pills);
 }
 
 /**
@@ -1943,7 +1949,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   const send = async (): Promise<void> => {
     if (submit.disabled) return;
     error.hidden = true;
-    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMergedPills(state.pills));
+    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMerged(state));
     submit.textContent = 'Merging…';
     refresh();
     const failed = await pending;
