@@ -1042,7 +1042,9 @@ function showStatus(state: Mounted): void {
   // A merged pull request has nothing to switch to whoever reads it: it says nothing about the reader's rights.
   if (options !== null && repo !== null && actions !== null && statusOf(actions.box) !== 'merged') rememberStatusHint(repo, options.length > 0);
   const on = options !== null ? options.length > 0 : repo !== null && statusHint(repo) === true && !/merged/i.test(pullRequestStateWords());
-  state.pills = syncStatusPills(on, openFromPill);
+  // While a merge is out the pills stay, whatever a reading meanwhile says (one may already read it merged): its
+  // success dresses them as merged until the reload.
+  state.pills = syncStatusPills(on || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) closeStatusMenu(state);
 }
@@ -1159,6 +1161,8 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
  * GitHub's own controls.
  */
 function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
+  // Merged meanwhile (`showMergedPills`): a merge or a reading that lands after it opens nothing on it.
+  if (!pill.hasAttribute('aria-haspopup')) return;
   const actions = state.mergeActions;
   const options = actions === null ? [] : statusOptions(actions.box, actions.offer, actions.bypass);
   if (options.length === 0) return;
