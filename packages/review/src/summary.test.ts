@@ -1069,6 +1069,10 @@ describe('a bot that refuses to run', () => {
       const open = before.map((comment) => (comment.anchor === 'discussion_r1' ? { ...comment, resolved: false } : comment));
       expect(verdictsFrom([dated], [...open, reply], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 1 });
     }
+    // With the answer's rewrite known, that is the run's finish: a check begun 30 s after it (a review started on the
+    // bot's own site, no trigger comment) that closes green with no report is the newer, clean run.
+    const after = { ...dated, startedAt: '2026-10-26T05:03:44Z', completedAt: '2026-10-26T05:06:00Z' };
+    expect(verdictsFrom([after], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', runJudged: true });
     // A check begun hours after the answer is a newer run, judged on its own.
     const later = { ...dated, startedAt: '2026-10-26T09:00:00Z', completedAt: '2026-10-26T09:05:00Z' };
     expect(verdictsFrom([later], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', runJudged: true });

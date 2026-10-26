@@ -19905,11 +19905,10 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (commandReply(comment.body) === "done") {
-      const times = [comment.createdAt, comment.editedAt].map((at) => at === void 0 ? NaN : Date.parse(at)).filter((at) => !Number.isNaN(at));
-      if (times.length > 0) {
-        const at = Math.max(...times);
-        answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? Math.min(...times), at });
-      }
+      const posted = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+      const rewritten = comment.editedAt === void 0 ? NaN : Date.parse(comment.editedAt);
+      const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
+      if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten) });
       statusOnly.delete(id);
       const prior = runsBeforeAsk.get(id);
       if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
@@ -20041,7 +20040,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     const answer = answeredBy.get(bot.id);
-    if (answer !== void 0 && started >= answer.askedAt && started <= answer.at + REPORT_GRACE_MS && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
+    const ranForAnswer = answer !== void 0 && started >= answer.askedAt && started <= (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS);
+    if (answer !== void 0 && ranForAnswer && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }

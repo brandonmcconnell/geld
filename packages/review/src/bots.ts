@@ -1110,10 +1110,11 @@ export function verdictsFrom(
   /** When each bot last refused, posted or rewritten: a run its check still shows under way may be the one it gave up. */
   const refusedAt = new Map<string, number>();
   /**
-   * Requests a bot answered with no review ("Review finished"): when it was asked, and when the answer was last written.
-   * A check that ran for that request ends with nothing new, so the run the request set aside stands over its conclusion.
+   * Requests a bot answered with no review ("Review finished"): when it was asked, when the answer was last written, and
+   * whether that time is its rewrite (the run's finish) or only its first posting. A check that ran for that request ends
+   * with nothing new, so the run the request set aside stands over its conclusion.
    */
-  const answeredBy = new Map<string, { readonly askedAt: number; readonly at: number }>();
+  const answeredBy = new Map<string, { readonly askedAt: number; readonly at: number; readonly finished: boolean }>();
   /** Bots whose running check a refusal ended: their verdict is judged, as one read against a finished check is. */
   const refusedRuns = new Set<string>();
   const reported = (id: string, comment: BotComment): void => {
@@ -1167,11 +1168,10 @@ export function verdictsFrom(
     }
     if (commandReply(comment.body) === 'done') {
       // The request is answered with no review: the run it set aside is still the bot's last, threads and all.
-      const times = [comment.createdAt, comment.editedAt].map((at) => (at === undefined ? NaN : Date.parse(at))).filter((at) => !Number.isNaN(at));
-      if (times.length > 0) {
-        const at = Math.max(...times);
-        answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? Math.min(...times), at });
-      }
+      const posted = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+      const rewritten = comment.editedAt === undefined ? NaN : Date.parse(comment.editedAt);
+      const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
+      if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten) });
       statusOnly.delete(id);
       const prior = runsBeforeAsk.get(id);
       if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
@@ -1364,10 +1364,13 @@ export function verdictsFrom(
       continue;
     }
     // The run this check made was the one the bot answered with "Review finished": nothing new, so the run before it
-    // stands rather than the check's bare conclusion. It starts after the request and, with the answer's rewrite not
-    // known yet, moments after the answer was first posted; a check begun later, with no word since, is a newer run.
+    // stands rather than the check's bare conclusion. It starts after the request and before the answer's rewrite, the
+    // run's finish; with that rewrite not known yet, within the report's grace of the answer's first posting, since the
+    // bot posts the answer moments before it starts the check. A check begun after that is a newer run (one started on
+    // the bot's own site, say), judged on its own.
     const answer = answeredBy.get(bot.id);
-    if (answer !== undefined && started >= answer.askedAt && started <= answer.at + REPORT_GRACE_MS && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
+    const ranForAnswer = answer !== undefined && started >= answer.askedAt && started <= (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS);
+    if (answer !== undefined && ranForAnswer && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }
