@@ -27,7 +27,7 @@ One HTML comment, normally at the end of the bot's comment, on a line of its own
 - **Invisible to readers.** GitHub strips HTML comments from the rendered page, so nobody sees it and no bot has to change its UI.
 - **Kept in the raw source.** The comment's raw Markdown still holds it. Tools read it from the API (`body` on issue comments, review comments and reviews) or, on github.com, from the comment's own "Copy Markdown" menu item, whose `value` attribute is the raw body (present on every comment kind, verified signed out on the classic conversation page in Oct 2026).
 - **Escaped so it cannot end early.** Writers escape `<` and `>` inside the JSON as `\u003c` and `\u003e`. That is still the same JSON, and it means a `-->` inside a finding's title cannot close the HTML comment. `encodeBlock` does this.
-- **Not inside code.** A block inside a fenced code block (``` or ~~~) is an example, not a claim, and readers skip it. A comment that documents the format can show one safely.
+- **Not inside code.** A block inside a fenced code block (``` or ~~~) is an example, not a claim, and readers skip it. A comment that documents the format can show one safely. Fences follow CommonMark: a backtick line indented four or more spaces past where its list item's content (or the line) starts is an indented code block and opens nothing.
 
 The marker follows the convention bots already use for their own markers (`codex-review-state:v1 {…}`): a name, a version, then JSON.
 

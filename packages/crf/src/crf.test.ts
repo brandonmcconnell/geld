@@ -67,6 +67,12 @@ describe('carrier', () => {
     expect(parseBlock(`- \`\`\`\n  ${encodeBlock(CrfBlock.parse(EXAMPLE_STATUS))}\n\n${example}`)?.kind).toBe('summary');
     // A quoted fence shown inside an example is the example's content and closes nothing.
     expect(parseBlock(`\`\`\`\n> \`\`\`\n> ${encodeBlock(CrfBlock.parse(EXAMPLE_STATUS))}\n\`\`\`\n\n${example}`)?.kind).toBe('summary');
+    // Four spaces in from where its container's content starts, a backtick line opens no fence (an indented code block),
+    // so the real block after it is read; a fence in a nested list item, at most three in from its content, still is one.
+    const real = encodeBlock(CrfBlock.parse(EXAMPLE_STATUS));
+    expect(parseBlock(`Example:\n\n    \`\`\`json\n    {}\n\n${real}`)?.kind).toBe('status');
+    expect(parseBlock(`- item\n\n      \`\`\`\n\n${real}`)?.kind).toBe('status');
+    expect(parseBlock(`1. step\n   - detail\n     \`\`\`\n     ${real}\n     \`\`\`\n\n${example}`)?.kind).toBe('summary');
     // A marker four spaces in is the example's content, not its end: the example after it stays an example.
     expect(parseBlock(`${example}\n\n\`\`\`\n    \`\`\`\n${encodeBlock(CrfBlock.parse(EXAMPLE_STATUS))}\n\`\`\``)?.kind).toBe('summary');
   });

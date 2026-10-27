@@ -24,19 +24,26 @@ interface Fence {
 
 const QUOTE = /^ {0,3}> ?/;
 const OPENER = /^( *)((?:[-*+]|\d{1,9}[.)]) +)?( {0,3})(`{3,}|~{3,})(.*)$/;
+const LIST_ITEM = /^( *)((?:[-*+]|\d{1,9}[.)]) +)/;
 
 /**
  * The Markdown with every fenced code block (``` or ~~~) blanked out: an example there is not a claim. CommonMark's
- * rules as far as a comment needs them: a fence may stand in a quote or a list item, closes with a marker at most three
- * spaces in from where its content starts, and ends unclosed when its quote or list item does.
+ * rules as far as a comment needs them: a fence may stand in a quote or a list item, opens and closes with a marker at
+ * most three spaces in from where its container's content starts (four or more is an indented code block, whose
+ * backticks are text, so a real block after it is still read), and ends unclosed when its quote or list item does.
  */
 function outsideFences(markdown: string): string {
   let fence: Fence | null = null;
+  // The content columns of the list items the scan is inside, innermost last; a line less indented leaves them.
+  let items: number[] = [];
+  let wasQuoted = false;
   return markdown
     .split('\n')
     .map((line) => {
       const quoted = QUOTE.test(line);
       const inner = quoted ? line.replace(QUOTE, '') : line;
+      if (quoted !== wasQuoted) items = [];
+      wasQuoted = quoted;
       if (fence !== null) {
         // A `>` is the quote's marker only for a fence opened in a quote: inside any other fence it is content.
         const view = fence.quoted ? inner : line;
@@ -50,11 +57,18 @@ function outsideFences(markdown: string): string {
         }
         fence = null;
       }
+      const indent = /^ */.exec(inner)?.[0].length ?? 0;
+      if (inner.trim() !== '') while (items.length > 0 && indent < (items[items.length - 1] ?? 0)) items.pop();
+      const container = items[items.length - 1] ?? 0;
+      const listed = LIST_ITEM.exec(inner);
+      if (listed !== null && indent - container <= 3) items.push(indent + (listed[2]?.length ?? 0));
       const found = OPENER.exec(inner);
       const marker = found?.[4];
       if (found === null || marker === undefined || (marker[0] === '`' && (found[5] ?? '').includes('`'))) return line;
       const lead = found[1]?.length ?? 0;
       const item = found[2] ?? '';
+      // Four or more spaces in from the container's content: an indented code block, not a fence.
+      if (lead - container > 3) return line;
       fence = { char: marker[0] ?? '`', length: marker.length, quoted, indent: lead + item.length, listed: item !== '' };
       return '';
     })
