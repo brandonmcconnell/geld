@@ -15,7 +15,7 @@ export function SiteFooter() {
       <div className="container-site grid gap-10 py-12 sm:grid-cols-[1fr_auto_auto_auto] sm:gap-16">
         <div className="flex flex-col gap-3">
           <Logomark height={28} alt="" />
-          <p className="max-w-[17rem] text-sm text-muted-foreground text-pretty">Hides tests and other review noise from GitHub diffs. Open source and MIT licensed.</p>
+          <p className="max-w-[17rem] text-sm text-muted-foreground text-pretty">Hides tests and other review noise from GitHub diffs. Open source under the AGPL.</p>
           <p className="text-xs text-muted-foreground">
             Version <span className="font-mono">{EXTENSION_VERSION}</span>
           </p>
@@ -40,7 +40,7 @@ export function SiteFooter() {
             <ExternalLink href={ISSUES_URL} className={linkClass}>Report an issue</ExternalLink>
           </li>
           <li>
-            <ExternalLink href={LICENSE_URL} className={linkClass}>MIT license</ExternalLink>
+            <ExternalLink href={LICENSE_URL} className={linkClass}>AGPL-3.0 license</ExternalLink>
           </li>
         </FooterColumn>
         <FooterColumn title={AUTHOR.name}>

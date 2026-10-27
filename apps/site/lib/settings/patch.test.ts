@@ -12,14 +12,15 @@ describe('isSettingsPatch', () => {
     expect(isSettingsPatch({ kind: 'category-patterns', categoryId: 'docs', lines: ['*.golden'] })).toBe(true);
     expect(isSettingsPatch({ kind: 'custom-category', category: { id: 'custom:tokens', title: 'Tokens', icon: 'paintbrush', patterns: ['tokens/**'] } })).toBe(true);
     expect(isSettingsPatch({ kind: 'remove-custom-category', id: 'custom:tokens' })).toBe(true);
-    expect(isSettingsPatch({ kind: 'list', key: 'repoRules', lines: ['acme/*'] })).toBe(true);
+    expect(isSettingsPatch({ kind: 'choice', key: 'compactTimeline', value: 'minimal' })).toBe(true);
+    expect(isSettingsPatch({ kind: 'list', key: 'reviewBots', lines: ['my-bot[bot]'] })).toBe(true);
   });
 
   it('refuses unknown keys, extension-only fields and malformed input', () => {
     expect(SITE_TOGGLE_KEYS).not.toContain('showBadge');
     expect(SITE_LIST_KEYS).not.toContain('enterpriseHosts');
     expect(isSettingsPatch({ kind: 'toggle', key: 'showBadge', value: true })).toBe(false);
-    expect(isSettingsPatch({ kind: 'list', key: 'enterpriseHosts', lines: [] })).toBe(false);
+    expect(isSettingsPatch({ kind: 'choice', key: 'compactTimeline', value: 'loud' })).toBe(false);
     expect(isSettingsPatch({ kind: 'toggle', key: 'enabled', value: 'yes' })).toBe(false);
     expect(isSettingsPatch({ kind: 'category', id: 'nope', value: true })).toBe(false);
     expect(isSettingsPatch({ kind: 'group', categoryId: 'tests', groupId: 'lockfiles', value: false })).toBe(false);

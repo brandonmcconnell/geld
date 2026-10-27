@@ -56,6 +56,8 @@ export function ActionsRow({ field, settings, disabled, onReplace }: ActionsRowP
         void replace(DEFAULT_SETTINGS, 'Restored default settings');
         return;
       case 'clear-cache':
+      case 'copy-diagnostics':
+      case 'report-diagnostics':
         return;
     }
   };

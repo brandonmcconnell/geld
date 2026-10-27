@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { popupMaxHeight, popupNeedsScroll } from './popup-size';
 
 describe('popupMaxHeight', () => {
-  it('uses three quarters of the available display on shorter viewports', () => {
-    expect(popupMaxHeight(720)).toBe(540);
-    expect(popupMaxHeight(800)).toBe(600);
+  it('uses nine tenths of the available display on shorter viewports', () => {
+    expect(popupMaxHeight(600)).toBe(540);
+    expect(popupMaxHeight(660)).toBe(594);
+    expect(popupMaxHeight(720)).toBe(600);
   });
 
   it('respects browser and usability bounds', () => {

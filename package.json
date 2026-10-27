@@ -20,7 +20,9 @@
     "catalog:check": "tsx scripts/catalog-build.ts --check",
     "catalog:sign": "node scripts/catalog-sign.mjs",
     "catalog:keygen": "node scripts/catalog-keygen.mjs",
-    "check": "pnpm -r run check && pnpm catalog:check",
+    "check": "pnpm -r run check && pnpm catalog:check && pnpm docs:lines:check",
+    "docs:lines": "tsx scripts/doc-lines.ts",
+    "docs:lines:check": "tsx scripts/doc-lines.ts --check",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint"

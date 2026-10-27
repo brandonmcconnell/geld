@@ -3,6 +3,7 @@ import { storage } from 'wxt/utils/storage';
 import type { RepoConfig, RepoConfigParse, SettingsIssue } from '@geld/core';
 import { BUNDLED_CATALOG, ORG_CONFIG_PATHS, ORG_CONFIG_REPO, REPO_CONFIG_PATH, generatedConfigFrom, isEmptyRepoConfig, parseRepoConfig } from '@geld/core';
 import type { Catalog } from '@geld/core';
+import { REVIEW_BOTS } from '@geld/review';
 import { persist } from '../lib/context';
 import { looksLikeHtml } from '../lib/http';
 import type { FetchFileRequest } from '../lib/messages';
@@ -25,6 +26,13 @@ import { isFetchFileResponse } from '../lib/messages';
  * Files are cached on disk per `github:{owner}:{repo}:{path}` (a missing file
  * is cached too) and refreshed after {@link TTL_MS}; a network error is
  * retried after a minute and never cached.
+ *
+ * The same directory listings say which review bots have a config file in
+ * the repository (`ReviewBot.configFiles`: `.coderabbit.yaml`, `.cursor/`
+ * `BUGBOT.md`, …), which is how the Request a review menu can offer a bot on
+ * a pull request it has not run on; see {@link RepoConfigSource.botConfigs}.
+ * The root listing is fetched for the config file anyway, so this costs at
+ * most one more request per dotted directory the repository has.
  */
 
 const TTL_MS = 30 * 60 * 1000;
@@ -70,6 +78,18 @@ export interface ResolvedRepoConfig {
   readonly files: readonly RepoConfigFile[];
 }
 
+/** The registry's ids, for validating a config's `reviewBots`. */
+const KNOWN_BOT_IDS: readonly string[] = REVIEW_BOTS.map((bot) => bot.id);
+
+/** Which review bots have a config file in a repository, as far as the listings have answered. */
+export interface BotConfigs {
+  readonly loading: boolean;
+  /** Bot id → the path that was found. */
+  readonly found: ReadonlyMap<string, string>;
+}
+
+const NO_BOT_CONFIGS: BotConfigs = { loading: true, found: new Map() };
+
 /** The valid configs of `resolved`, ready for `applyRepoConfigs`. */
 export function validConfigs(resolved: ResolvedRepoConfig): readonly RepoConfig[] {
   const configs: RepoConfig[] = [];
@@ -104,6 +124,8 @@ export class RepoConfigSource {
   private cacheReady = false;
   /** Parsed results per repository, invalidated whenever a file for it lands. */
   private readonly resolved = new Map<string, ResolvedRepoConfig>();
+  /** Bot config detection per `origin/repo`, for {@link TTL_MS}. */
+  private readonly botConfigsByRepo = new Map<string, { readonly at: number; value: BotConfigs }>();
 
   constructor(
     private readonly onChange: () => void,
@@ -150,14 +172,14 @@ export class RepoConfigSource {
           break;
         }
         if (lookup.text !== null) {
-          files.push({ kind: 'org', repo: orgRepo, path, url: fileUrl(origin, orgRepo, path), parse: parseRepoConfig(lookup.text, this.catalog) });
+          files.push({ kind: 'org', repo: orgRepo, path, url: fileUrl(origin, orgRepo, path), parse: parseRepoConfig(lookup.text, this.catalog, KNOWN_BOT_IDS) });
           break;
         }
       }
     }
     const own = this.lookup(origin, repo, REPO_CONFIG_PATH);
     if (own.status === 'loading') loading = true;
-    else if (own.text !== null) files.push({ kind: 'repo', repo, path: REPO_CONFIG_PATH, url: fileUrl(origin, repo, REPO_CONFIG_PATH), parse: parseRepoConfig(own.text, this.catalog) });
+    else if (own.text !== null) files.push({ kind: 'repo', repo, path: REPO_CONFIG_PATH, url: fileUrl(origin, repo, REPO_CONFIG_PATH), parse: parseRepoConfig(own.text, this.catalog, KNOWN_BOT_IDS) });
 
     const attributes = this.lookup(origin, repo, '.gitattributes');
     if (attributes.status === 'loading') loading = true;
@@ -171,6 +193,54 @@ export class RepoConfigSource {
     const result: ResolvedRepoConfig = { repo, loading, files };
     this.resolved.set(repo, result);
     return result;
+  }
+
+  /**
+   * Which registry bots have one of their config files in `repo`. Answered
+   * from memory; the first ask starts the listing reads and `onChange` fires
+   * when they are in. Independent of the `repoConfigs` setting: this reads
+   * what the repository contains, it applies nothing from it.
+   */
+  botConfigs(origin: string, repo: string): BotConfigs {
+    const key = `${origin}/${repo}`;
+    const known = this.botConfigsByRepo.get(key);
+    if (known !== undefined && Date.now() - known.at < TTL_MS) return known.value;
+    const entry = { at: Date.now(), value: NO_BOT_CONFIGS };
+    this.botConfigsByRepo.set(key, entry);
+    void this.detectBotConfigs(origin, repo).then((found) => {
+      entry.value = { loading: false, found };
+      this.onChange();
+    });
+    return entry.value;
+  }
+
+  private async detectBotConfigs(origin: string, repo: string): Promise<ReadonlyMap<string, string>> {
+    const found = new Map<string, string>();
+    await Promise.all(
+      REVIEW_BOTS.map(async (bot) => {
+        for (const path of bot.configFiles) {
+          if (await this.pathExists(origin, repo, path)) {
+            found.set(bot.id, path);
+            return;
+          }
+        }
+      }),
+    );
+    return found;
+  }
+
+  /** Whether `path` (a directory when it ends in `/`) exists at HEAD; an unreadable listing counts as absent. */
+  private async pathExists(origin: string, repo: string, path: string): Promise<boolean> {
+    const segments = path.replace(/\/$/, '').split('/');
+    let directory = '';
+    for (const segment of segments) {
+      const paths = await this.listing(origin, repo, directory);
+      if (paths === null) return false;
+      const next = directory === '' ? segment : `${directory}/${segment}`;
+      if (!paths.has(next)) return false;
+      directory = next;
+    }
+    return true;
   }
 
   private lookup(origin: string, repo: string, path: string): Lookup {

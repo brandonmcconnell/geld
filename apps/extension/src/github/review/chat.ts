@@ -1,0 +1,1036 @@
+/**
+ * Chat view: an opened conversation as one chat. A review thread's real
+ * timeline node is moved into the panel (teleport.ts) and read as messages:
+ * the signed-in user's on the right, everyone else's on the left, each with
+ * avatar and name, consecutive messages from one author grouped as chat apps
+ * group them. Every bubble is the whole comment as GitHub rendered it, with
+ * its reactions, its ⋯ menu and its edit form, and the thread's own reply
+ * control is the composer at the bottom. Nothing is cloned or rewritten: the
+ * layout is attributes on GitHub's nodes (`data-geld-part`, `data-geld-mine`,
+ * `data-geld-run`), removed when the nodes go home, and the stylesheet.
+ *
+ * A top-level comment (a bot's run summary, a person's review body or
+ * remark) opens the same way as a one-bubble chat, so everything in the
+ * panel opens into the same shape.
+ */
+
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { authorOf, avatarSrcForLogin } from './crawler';
+import { fitPathInto } from './path-fit';
+import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ATTR_WHO } from './hovercard';
+import { ATTR_TIME_FOR } from './panel';
+import { isTeleported, onRestore, teleportInto } from './teleport';
+import { inlineText } from './inline-text';
+import { armViaHovercard } from './via';
+import type { ViaBot } from './via';
+import type { RevisionView } from './edit-times';
+import { absoluteTimeText, relativeTimeElement } from './time';
+import { stickyHeaderBottomAt } from './sticky';
+
+/** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
+export const ATTR_PART = 'data-geld-part';
+const ATTR_MESSAGE = 'data-geld-message';
+const ATTR_MINE = 'data-geld-mine';
+/** Where a message stands in a run of one author's messages: `only`, `first`, `mid`, `last`. */
+const ATTR_RUN = 'data-geld-run';
+/** A message standing alone under a line that already names its author (pinned context, a one-bubble chat). */
+const ATTR_LONE = 'data-geld-lone';
+
+const BODY_SELECTOR = '.comment-body, .js-comment-body, [data-testid="comment-body"], .markdown-body';
+const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"]';
+const META_SELECTOR = '.timeline-comment-header, .timeline-comment-actions, [data-testid="comment-header"], h3, a.author, a[data-testid="author-link"]';
+const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"]';
+/** GitHub's wrapper round a minimized comment (its <details> holds the notice and the comment). */
+const MINIMIZED_WRAPPER = '.minimized-comment, .js-minimized-comment';
+/** The compact comment card GitHub renders inside a minimized comment: header (h4) and body as siblings in here. */
+const COMPACT_CARD = '.review-comment-contents';
+/** The signed-in login, from GitHub's own meta tag (empty when signed out: then nothing is "mine"). */
+export function viewerLogin(): string {
+  return document.querySelector<HTMLMetaElement>('meta[name="user-login"]')?.content.trim() ?? '';
+}
+
+/** The comment (or bot run summary) a thread came from, for the pinned strip at the top of its chat. */
+export interface ChatSource {
+  /** The comment on the page, moved into the chat when the strip is open. */
+  readonly node: HTMLElement;
+  readonly anchor: string;
+  /** Whose it is, as the label says it: "CodeRabbit", "chitalian". */
+  readonly name: string;
+  /** "CodeRabbit's run summary", "chitalian's review". */
+  readonly label: string;
+  /** Its first line, for the collapsed strip. */
+  readonly preview: string;
+  readonly avatarSrc: string | null;
+  readonly login: string;
+  readonly bot: boolean;
+  /**
+   * For a bot's thread: how the comment read when the thread was opened
+   * (`edit-times.ts` `revisionAsOf`). Bots rewrite their summaries run after
+   * run, so the page's node may now describe a later run; `revision` shows
+   * the one this thread came from, `loading` while it is on its way, and
+   * `current` means the node is that reading.
+   */
+  readonly revision?: RevisionView;
+  /**
+   * The time said on the strip after the label, ISO, when it is worth saying:
+   * the comment is from an earlier run than the thread (the bot posted no
+   * summary with this one), or the live node has been rewritten since it
+   * was posted (then this is the rewrite's time — the reading's own). A
+   * revision shown instead of the live node carries its own time.
+   */
+  readonly at?: string;
+  /** A review bot's summary that is its latest word: Geld's Rerun stands on the open strip's right. */
+  readonly rerun?: ChatRerun;
+  /** The bot has written a newer summary since (its anchor): the open strip offers that instead of Rerun. */
+  readonly latestAnchor?: string;
+}
+
+export interface ChatHandlers {
+  readonly pathOf: (thread: HTMLElement) => string;
+  readonly onCopy: (text: string) => void;
+  /** The comment this thread was posted from, when the page has one. */
+  readonly sourceOf: (thread: HTMLElement) => ChatSource | null;
+  /** Whether that comment is unfolded at the top of the chat. */
+  readonly sourceOpen: (thread: HTMLElement) => boolean;
+  readonly onToggleSource: (thread: HTMLElement) => void;
+  /** Open a comment by its anchor where the panel keeps it (the bot's current word, from "See latest"). */
+  readonly onOpenAnchor: (anchor: string) => void;
+}
+
+/** Focus key of a chat's pinned-context toggle, so a rebuild returns focus to it. */
+export function sourceFocusKey(thread: HTMLElement): string {
+  return `source:${threadAnchorOf(thread)}`;
+}
+
+/**
+ * Does a chat hold GitHub markup it has not read? GitHub rewrites a comment
+ * where it stands: a reaction swaps the reactions row for a fresh one (inside
+ * the message, or inside the box `placeControls` moved it to), and the socket
+ * update that follows swaps the whole `.js-comment-container` — the loan,
+ * adopted by the watcher. The newcomers carry none of the marks the
+ * stylesheet lays the chat out from, so the comment showed as GitHub's raw
+ * card inside the chat (its own header, its own ⋯) until something else
+ * happened to rebuild the panel. True when any message in a chat view is
+ * unmarked, or a message's reactions row stands outside every marked part
+ * (a row still inside the bubble needs nothing: it is laid out by the
+ * bubble).
+ */
+export function chatNeedsRedress(chat: HTMLElement): boolean {
+  const thread = chat.getAttribute('data-geld-chat') === 'thread';
+  for (const view of chat.querySelectorAll<HTMLElement>('.geld-review__chat-body, .geld-review__chat-context-body')) {
+    const inThread = thread && view.matches('.geld-review__chat-body');
+    for (const node of view.children) {
+      if (!(node instanceof HTMLElement) || !isTeleported(node)) continue;
+      for (const message of messagesIn(node, inThread)) {
+        if (!message.hasAttribute(ATTR_MESSAGE)) return true;
+        const row = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
+        if (row !== null && row.closest(`[${ATTR_PART}]`) === null) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Dress what GitHub has just added to a chat on loan, where it stands. A
+ * reply the reader posts (or one that arrives over the socket) is appended
+ * to the loaned thread as GitHub's raw card; the pass that would have read
+ * it (`chatNeedsRedress` → a full re-render of the slot, every loan going
+ * home and coming back) runs after a debounce, so the card showed raw for a
+ * moment and then the whole chat redrew around it (notra#1148). Called from
+ * the loan watcher's MutationObserver callback — a microtask, before the
+ * browser paints — this marks the newcomers and re-reads each message's
+ * place in its author's run (the one before a new reply is no longer the
+ * last of its run), so the reply is a bubble from its first frame and the
+ * pass that follows finds nothing to redress. True when something was dressed.
+ */
+export function dressArrivals(root: ParentNode = document): boolean {
+  let dressed = false;
+  const viewer = viewerLogin();
+  for (const body of root.querySelectorAll<HTMLElement>('.geld-review__chat[data-geld-chat="thread"] .geld-review__chat-body')) {
+    for (const thread of body.children) {
+      if (!(thread instanceof HTMLElement) || !isTeleported(thread)) continue;
+      const messages = messagesIn(thread, true);
+      const fresh = messages.filter((message) => !message.hasAttribute(ATTR_MESSAGE));
+      if (fresh.length === 0) continue;
+      annotateMessages(messages, viewer, false);
+      for (const message of fresh) placeControls(message);
+      dressed = true;
+    }
+  }
+  return dressed;
+}
+
+/** The thread's first comment anchor (its identity across rebuilds). */
+export function threadAnchorOf(thread: HTMLElement): string {
+  return thread.querySelector('[id^="discussion_r"], [id^="issuecomment-"]')?.id ?? thread.id;
+}
+
+function icon(markup: string): SVGElement {
+  return svgFromString(markup);
+}
+
+/**
+ * An item's review threads, one chat each: the file path (fitted, with a
+ * copy button and GitHub's link to the diff), the comment the thread came
+ * from as a pinned strip, then the thread itself as bubbles with its reply
+ * control at the bottom.
+ */
+export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[], handlers: ChatHandlers): void {
+  const list = createElement('div', { class: 'geld-review__chats' });
+  slot.replaceChildren(list);
+  const viewer = viewerLogin();
+  const pathEls: [HTMLElement, string][] = [];
+  for (const thread of threads) {
+    const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'thread', 'aria-label': 'Conversation' });
+    const path = handlers.pathOf(thread);
+    if (path !== '') {
+      const actions = createElement('span', { class: 'geld-review__chat-head-actions' });
+      const copy = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__chat-copy', 'aria-label': 'Copy path', title: 'Copy path' }, [icon(ICON_COPY)]);
+      copy.addEventListener('click', () => handlers.onCopy(path));
+      actions.append(copy);
+      // GitHub's own file link goes to the diff in Files changed; the path text here stays text.
+      const fileHref = thread.querySelector<HTMLAnchorElement>('.file-header a[href], review-thread-collapsible a[href*="/files"], a[href*="/files#diff-"], a[href*="/files/"][href*="#diff"]')?.getAttribute('href') ?? null;
+      if (fileHref !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-open', href: fileHref, 'aria-label': 'Open in Files changed', title: 'Open in Files changed' }, [icon(ICON_LINK_EXTERNAL)]));
+      const pathEl = createElement('code', { class: 'geld-review__chat-path' });
+      chat.append(createElement('div', { class: 'geld-review__chat-head' }, [pathEl, actions]));
+      pathEls.push([pathEl, path]);
+    }
+    const source = handlers.sourceOf(thread);
+    if (source !== null) chat.append(pinnedContext(thread, source, handlers, viewer));
+    const body = createElement('div', { class: 'geld-review__chat-body' });
+    chat.append(body);
+    teleportInto(body, [thread]);
+    liftCollapsedBody(thread);
+    loadDeferredReplies(thread);
+    const messages = messagesIn(thread, true);
+    annotateMessages(messages, viewer, false);
+    for (const message of messages) placeControls(message);
+    dressComposer(thread);
+    list.append(chat);
+  }
+  if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+  // Fitted once the chats have their width: file name whole, the start first, "…" for what does not fit.
+  for (const [element, path] of pathEls) fitPathInto(element, path);
+}
+
+/** Who posted a top-level comment and when, as the crawl read it, for the byline over its bubble. */
+export interface ChatByline {
+  readonly login: string;
+  readonly bot: boolean;
+  readonly avatarSrc: string | null;
+  readonly time: string;
+  /** The anchor `time` was read from, when known: the cell is then refreshed with the clocks (`ATTR_TIME_FOR`). */
+  readonly timeAnchor?: string;
+  /** The pull request's author: GitHub's "Author" label, said beside the name. */
+  readonly author?: boolean;
+  /** The App the comment was posted through: its mark on the picture's corner, named in the hovercard. */
+  readonly via?: ViaBot;
+  /** A review bot's run summary: Geld's Rerun control on the byline's right (see `rerunControl`). */
+  readonly rerun?: ChatRerun;
+  /** A bot's summary from an earlier run, a newer one on the page: "See latest" on the byline's right instead. */
+  readonly latest?: ChatLatest;
+  /**
+   * The comment was edited after it was posted (ISO of the last edit). The
+   * chat shows the comment as it reads now, so this is the time on the
+   * byline; a clock beside it says when the comment was first posted.
+   */
+  readonly edited?: string;
+  /** When the comment was first posted (ISO), for that clock; `time` is its relative wording as the page says it. */
+  readonly postedAt?: string;
+}
+
+/** An older word of a review bot's: the control that leads to its current one. */
+export interface ChatLatest {
+  /** The bot's name as the chip says it ("Greptile"), for the label. */
+  readonly bot: string;
+  /** Open the bot's latest summary where the panel keeps it. */
+  readonly onOpen: () => void;
+}
+
+export interface ChatRerun {
+  /** The bot's name as the chip says it ("Greptile"), for the tooltip and the confirmation. */
+  readonly bot: string;
+  /** The bot is running (its verdict, or a Rerun a moment ago): the control spins and asks before posting again. */
+  readonly running: boolean;
+  /** Post the bot's trigger comment. */
+  readonly onRerun: () => void;
+}
+
+/**
+ * Re-trigger controls review bots put inside their own comments: hidden in
+ * the chat, where Geld's Rerun stands for them (one control, one behaviour,
+ * the request menu's). Each is a markdown badge link, so the heading or
+ * paragraph that holds only it goes too. The nodes are GitHub's and go home
+ * untouched: the hiding is a mark the chat's own CSS reads.
+ */
+const AGENT_RERUN_CONTROLS = ['a[href*="app.greptile.com/api/retrigger"]'];
+const ATTR_AGENT_RERUN = 'data-geld-agent-rerun';
+/**
+ * A bot's own "view this run on our site" badge inside its comment (Greptile's
+ * "View in Greptile", Devin's "Devin Review", CodeRabbit's "Review in Change
+ * Stack" — each a linked image, present only when the bot chose to show it).
+ * A review posted by a Cursor cloud agent (an automation, by `cursor[bot]`)
+ * ends in "Open in Web", the agent's run on cursor.com. Found Oct 2026 on
+ * public pull requests; Bugbot's "Fix All in Cursor" is an action, not a
+ * view, and the other bots post none.
+ */
+const AGENT_VIEW_LINKS = ['a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])', 'a[href^="https://app.devin.ai/review/"]', 'a[href^="https://app.coderabbit.ai/change-stack/"]', 'a[href^="https://cursor.com/agents/"]'];
+const ATTR_AGENT_VIEW = 'data-geld-agent-view';
+
+export function hideAgentRerunControls(body: HTMLElement): void {
+  for (const link of body.querySelectorAll<HTMLElement>(AGENT_RERUN_CONTROLS.join(', '))) hideAgentBadge(link, ATTR_AGENT_RERUN);
+}
+
+/**
+ * Hide a bot's badge where it stands, and the block holding it once it holds
+ * nothing else that shows (Greptile's badges share one paragraph with a
+ * `<br clear="all">`: with both badges gone the paragraph is a blank line).
+ */
+function hideAgentBadge(link: HTMLElement, attribute: string): void {
+  link.setAttribute(attribute, '');
+  const holder = link.closest<HTMLElement>('h1, h2, h3, h4, p, div');
+  if (holder === null || (holder.textContent ?? '').trim() !== '') return;
+  const showing = [...holder.querySelectorAll('a, img')].some((node) => node.closest(`[${ATTR_AGENT_RERUN}], [${ATTR_AGENT_VIEW}]`) === null);
+  if (!showing) holder.setAttribute(ATTR_AGENT_RERUN, '');
+}
+
+/** What a bot's view badge links to, for the byline's View control. */
+interface AgentViewLink {
+  readonly href: string;
+  /** The badge's words: "View in Greptile", "Devin Review". */
+  readonly label: string;
+}
+
+/** The bot's view badge in its comment, hidden there and handed back so the byline can wear it as View. Exported for its test. */
+export function takeAgentViewLink(body: HTMLElement): AgentViewLink | null {
+  // The badge is a linked image on the run's own path; a text link to the same site earlier in the comment (a
+  // settings or support link) is neither, and stays where it is.
+  const link = [...body.querySelectorAll<HTMLAnchorElement>(AGENT_VIEW_LINKS.join(', '))].find((candidate) => candidate.querySelector('img') !== null) ?? null;
+  if (link === null) return null;
+  hideAgentBadge(link, ATTR_AGENT_VIEW);
+  const words = (link.querySelector('img')?.getAttribute('alt') ?? link.textContent ?? '').replace(/\s*(?:\u2192|->)\s*$/, '').replace(/\s+/g, ' ').trim();
+  return { href: link.href, label: words };
+}
+
+/**
+ * "View" with the external-link glyph, in Rerun's box and before it: the
+ * bot's own badge, moved out of the bubble to where the chat's controls are.
+ * The tooltip keeps the badge's words ("View in Greptile"); a badge that only
+ * names the product ("Devin Review") reads "Open Devin Review".
+ */
+function viewControl(view: AgentViewLink): HTMLElement {
+  const title = view.label === '' ? 'View' : /^(?:view|open|review|see|show)\b/i.test(view.label) ? view.label : `Open ${view.label}`;
+  const link = createElement('a', { class: 'geld-review__rerun', 'data-kind': 'view', href: view.href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': title, title }, [icon(ICON_LINK_EXTERNAL), createElement('span', {}, ['View'])]);
+  link.addEventListener('click', (event) => event.stopPropagation());
+  return createElement('span', { class: 'geld-review__rerun-wrap' }, [link]);
+}
+
+let rerunIds = 0;
+
+/**
+ * "Rerun" with the sync glyph, on the byline's right. Running: the glyph
+ * spins, the words stay (so nothing shifts), the border goes transparent,
+ * the pointer is the default one and GitHub's tooltip says "<bot> is
+ * running"; a click then asks, in GitHub's own dialog, before posting the
+ * trigger again. A click while idle posts at once and the control takes
+ * the running look itself, ahead of the pass that reads the comment.
+ */
+function rerunControl(rerun: ChatRerun): HTMLElement {
+  rerunIds += 1;
+  const id = `geld-rerun-${rerunIds}`;
+  const wrap = createElement('span', { class: 'geld-review__rerun-wrap' });
+  const button = createElement('button', { type: 'button', id, class: 'geld-review__rerun', ...(rerun.running ? { 'data-running': '', 'aria-describedby': `${id}-tip` } : { 'aria-label': `Rerun ${rerun.bot}` }) }, [icon(ICON_SYNC), createElement('span', {}, ['Rerun'])]);
+  // GitHub's own tooltip element (the page defines `tool-tip`; an element made here is upgraded like its own), so
+  // the words come up in GitHub's style. Without the definition (an Enterprise version before it) it stays sr-only.
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip', ...(rerun.running ? {} : { hidden: '' }) })) tip.setAttribute(name, value);
+  tip.textContent = `${rerun.bot} is running`;
+  const setRunning = (): void => {
+    button.setAttribute('data-running', '');
+    button.setAttribute('aria-describedby', `${id}-tip`);
+    button.removeAttribute('aria-label');
+    tip.removeAttribute('hidden');
+  };
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!button.hasAttribute('data-running')) {
+      setRunning();
+      rerun.onRerun();
+      return;
+    }
+    confirmRerun(rerun.bot, () => rerun.onRerun());
+  });
+  wrap.append(button, tip);
+  return wrap;
+}
+
+/**
+ * "See latest" where Rerun would stand, on a reading of a bot's summary that
+ * is no longer its word: an earlier run's comment, or how the comment read
+ * before the bot rewrote it. The glyph is the history one mirrored (the
+ * arrow runs forward: ahead in the comment's history, to its current
+ * reading). Same box as Rerun, so the two never shift the line.
+ */
+function latestControl(latest: ChatLatest): HTMLElement {
+  const button = createElement('button', { type: 'button', class: 'geld-review__rerun', 'data-kind': 'latest', 'aria-label': `See ${latest.bot}\u2019s latest`, title: `See ${latest.bot}\u2019s latest` }, [icon(ICON_HISTORY), createElement('span', {}, ['See latest'])]);
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    latest.onOpen();
+  });
+  return createElement('span', { class: 'geld-review__rerun-wrap' }, [button]);
+}
+
+let editedIds = 0;
+
+/**
+ * A comment edited after it was posted: a clock beside the byline's time.
+ * The byline says the edit's time, since the bubble is the comment as it
+ * reads now; the clock's words say when it was first posted ("Originally
+ * posted Oct 8, 2026, 5:08 PM"), or, when the page has not said that, when
+ * it was edited. The moment is absolute only: a relative age would need
+ * re-wording while the chat stays open, and with the date beside it the
+ * tooltip ran to two lines. The words come up in GitHub's own tooltip
+ * (`tool-tip`, instant and styled like the page's; where the page does not
+ * define it they are the title) and are read aloud as the mark's label.
+ */
+function editedMark(editedAt: string, postedAt: string | null): HTMLElement {
+  editedIds += 1;
+  const id = `geld-edited-${editedIds}`;
+  const words = editedWords(editedAt, postedAt);
+  const mark = createElement('span', { id, class: 'geld-review__edited', role: 'img', 'aria-label': words }, [icon(ICON_HISTORY)]);
+  // The content script's world has no `customElements` to ask (Chrome leaves it null there); a page that defines
+  // `tool-tip` has rendered some of its own by now (the header's), so their presence stands for the definition.
+  if (document.querySelector('tool-tip') === null) {
+    mark.setAttribute('title', words);
+    return mark;
+  }
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = words;
+  return createElement('span', { class: 'geld-review__edited-wrap' }, [mark, tip]);
+}
+
+/** "Originally posted Oct 8, 2026, 5:08 PM"; "Edited Oct 8, 2026, 5:08 PM" when the posting time is not known. */
+function editedWords(editedAt: string, postedAt: string | null): string {
+  const absolute = absoluteTimeText(postedAt ?? editedAt);
+  return `${postedAt === null ? 'Edited' : 'Originally posted'}${absolute === '' ? '' : ` ${absolute}`}`;
+}
+
+/**
+ * GitHub's own small dialog (Primer's `Overlay`, as the page's "Verified"
+ * and saved-replies dialogs are built), asking whether to trigger a bot that
+ * is already running. `onConfirm` runs on Rerun; Cancel, Escape and a click
+ * on the backdrop close it.
+ */
+function confirmRerun(bot: string, onConfirm: () => void): void {
+  rerunIds += 1;
+  const titleId = `geld-rerun-${rerunIds}-title`;
+  const dialog = createElement('dialog', { class: 'Overlay Overlay-whenNarrow Overlay--size-small-portrait Overlay--motion-scaleFade geld-review__dialog', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
+  const close = createElement('button', { type: 'button', class: 'close-button Overlay-closeButton', 'aria-label': 'Close' }, [icon(ICON_X)]);
+  const cancel = createElement('button', { type: 'button', class: 'btn' }, ['Cancel']);
+  const confirm = createElement('button', { type: 'button', class: 'btn btn-primary' }, ['Rerun anyway']);
+  dialog.append(
+    createElement('div', { class: 'Overlay-header' }, [
+      createElement('div', { class: 'Overlay-headerContentWrap' }, [createElement('div', { class: 'Overlay-titleWrap' }, [createElement('h1', { class: 'Overlay-title', id: titleId }, [`${bot} is already running`])]), createElement('div', { class: 'Overlay-actionWrap' }, [close])]),
+    ]),
+    createElement('div', { class: 'Overlay-body' }, [createElement('p', { class: 'geld-review__dialog-text' }, [`${bot} is reviewing this pull request right now. Asking again posts another trigger comment and may start a second review.`])]),
+    createElement('div', { class: 'Overlay-footer Overlay-footer--alignEnd Overlay-footer--divided' }, [cancel, confirm]),
+  );
+  const dismiss = (): void => {
+    if (dialog.open) dialog.close();
+    dialog.remove();
+  };
+  close.addEventListener('click', dismiss);
+  cancel.addEventListener('click', dismiss);
+  confirm.addEventListener('click', () => {
+    dismiss();
+    onConfirm();
+  });
+  // A click on the backdrop lands on the dialog element itself, outside its children.
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dismiss();
+  });
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  // The safe answer has focus: Enter closes without posting.
+  cancel.focus();
+}
+
+/** A thread a review came with, for the line under the review's bubble that leads to it. */
+export interface ChatThreadLink {
+  readonly anchor: string;
+  readonly path: string;
+  /** The line the thread is on, when known: several threads on one file tell apart by it. */
+  readonly line?: number;
+  /** The thread's first words, shown when several threads share a file and no line tells them apart. */
+  readonly preview: string;
+  readonly done: boolean;
+}
+
+/**
+ * A top-level comment (a bot's run summary, a review body, a person's
+ * remark) as a chat of one message: a byline with the author's picture, name
+ * and time, the whole comment as a bubble under it, its reactions under
+ * that. No path, no pinned context and no composer, since GitHub offers no
+ * reply on a top-level comment other than the page's own form. A review that
+ * came with threads gets a line under the bubble naming each thread's file,
+ * leading to the thread where it opens (the threads are rows of their own).
+ * The comment's own header stays hidden: its ⋯ is worn by the row above.
+ */
+export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null): void {
+  // Without a byline the row above is the header, and the body needs no gutter to sit under a name.
+  const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment', ...(byline === null ? { 'data-geld-headless': '' } : {}) });
+  if (byline !== null) {
+    const who = byline.login === '' ? {} : byline.bot && /\[bot\]$/i.test(byline.login) ? { [ATTR_WHO]: byline.login } : { 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(byline.login)}/hovercard` };
+    const line = createElement('div', { class: 'geld-review__chat-byline' });
+    const name = createElement('span', { class: 'geld-review__chat-byline-name', ...who }, [byline.bot ? byline.login.replace(/\[bot\]$/i, '') : byline.login]);
+    if (byline.avatarSrc !== null) {
+      const avatar = createElement('img', { class: 'geld-review__avatar', 'data-kind': byline.bot ? 'bot' : 'user', src: byline.avatarSrc, alt: '', width: '24', height: '24', ...who });
+      if (byline.via === undefined) line.append(avatar);
+      else {
+        // Posted through an App: its mark on the picture's corner, as GitHub's timeline draws it; the hovercard names it.
+        // The pair carries the person's card too, so the mark's overhang past the picture opens it as the picture does.
+        const pair = createElement('span', { class: 'geld-review__chat-avatar-pair', title: `via ${byline.via.name}`, ...who }, [avatar, createElement('img', { class: 'geld-review__chat-via', src: byline.via.src, alt: '', width: '14', height: '14' })]);
+        line.append(pair);
+        armViaHovercard(pair, byline.login, byline.via);
+        armViaHovercard(name, byline.login, byline.via);
+      }
+    }
+    line.append(name);
+    if (byline.author === true) line.append(createElement('span', { class: 'geld-review__chat-author', title: 'The pull request\u2019s author' }, ['Author']));
+    if (byline.edited !== undefined) {
+      // The bubble is the comment as it reads now, so the time beside the name is the edit's (GitHub's own live
+      // element, which keeps it current); the clock says when the comment was first posted. The created time is
+      // not refreshed into this cell (no `ATTR_TIME_FOR`).
+      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null));
+    } else if (byline.time !== '') {
+      line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
+    }
+    if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
+    else if (byline.latest !== undefined) line.append(latestControl(byline.latest));
+    chat.append(line);
+  }
+  const body = createElement('div', { class: 'geld-review__chat-body' });
+  chat.append(body);
+  if (threads.length > 0 && onOpenThread !== null) {
+    const list = createElement('div', { class: 'geld-review__chat-threads', role: 'list', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} from this comment` });
+    list.append(createElement('span', { class: 'geld-review__chat-threads-label' }, [threads.length === 1 ? '1 thread' : `${threads.length} threads`]));
+    const fileOf = (thread: ChatThreadLink): string => thread.path.split('/').pop() ?? thread.path;
+    for (const thread of threads) {
+      const file = fileOf(thread);
+      const shared = thread.line === undefined && threads.some((other) => other !== thread && other.line === undefined && fileOf(other) === file);
+      const chip = createElement('button', { type: 'button', class: 'geld-review__chat-thread', role: 'listitem', 'data-state': thread.done ? 'done' : 'open', title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` }, [
+        icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE),
+        createElement('code', {}, [thread.line === undefined ? file : `${file}:${thread.line}`]),
+        ...(shared && thread.preview !== '' ? [createElement('span', { class: 'geld-review__chat-thread-words' }, inlineText(thread.preview))] : []),
+        icon(ICON_CHEVRON_RIGHT),
+      ]);
+      chip.addEventListener('click', () => onOpenThread(thread.anchor));
+      list.append(chip);
+    }
+    chat.append(list);
+  }
+  slot.replaceChildren(createElement('div', { class: 'geld-review__chats' }, [chat]));
+  teleportInto(body, [node]);
+  if (body.childElementCount === 0) {
+    body.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+    return;
+  }
+  openMinimized(body);
+  annotateMessages(messagesIn(node, false), viewerLogin(), true);
+  if (byline?.rerun !== undefined || byline?.latest !== undefined) hideAgentRerunControls(body);
+  // The bot's view badge goes to the byline, before Rerun / See latest (the first control wears the gap to the
+  // name; see the stylesheet). Only with a byline to carry it: headless, the badge stays in the bubble.
+  if (byline?.bot === true) {
+    const view = takeAgentViewLink(body);
+    const line = chat.querySelector('.geld-review__chat-byline');
+    if (view !== null && line !== null) {
+      const control = line.querySelector('.geld-review__rerun-wrap');
+      if (control === null) line.append(viewControl(view));
+      else control.before(viewControl(view));
+    }
+  }
+}
+
+/**
+ * The strip at the top of a thread's chat naming the comment it came from:
+ * its author's picture, "CodeRabbit's run summary", the first line. Open,
+ * that comment stands under the strip as one bubble, moved here like the
+ * thread (so it is in one place at a time: its own row is closed while this
+ * one is open). A bot's summary that has been rewritten since the thread
+ * was opened stands here as it read then instead (`source.revision`: a
+ * rendered copy from GitHub's edit history, not the live node), with a line
+ * under it saying so and when it was last edited; its first line on the
+ * closed strip is that reading's too. The reader's choice is kept across
+ * rebuilds by the caller.
+ */
+function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHandlers, viewer: string): HTMLElement {
+  const open = handlers.sourceOpen(thread);
+  const revision = source.revision?.state === 'revision' ? source.revision : null;
+  const preview = revision === null ? source.preview : firstLineOf(revision.body) || source.preview;
+  const children: Node[] = [createElement('span', { class: 'geld-review__chat-pin-glyph', 'aria-hidden': 'true' }, [icon(ICON_PIN)])];
+  if (source.avatarSrc !== null) children.push(createElement('img', { class: 'geld-review__avatar', 'data-kind': source.bot ? 'bot' : 'user', src: source.avatarSrc, alt: '', width: '20', height: '20' }));
+  children.push(createElement('span', { class: 'geld-review__chat-pin-label' }, [source.label]));
+  // The reading's own time, when worth saying ("Greptile's run summary · 2 hours ago"): a past revision's, the
+  // rewrite's for a live summary rewritten since, or the summary's for one from before this run (the bot wrote
+  // none for this one). Never the created time of a comment that reads differently now.
+  const when = revision?.at ?? source.at;
+  if (when !== undefined) children.push(relativeTimeElement(when, 'geld-review__chat-pin-when'));
+  if (preview !== '' && !open) children.push(createElement('span', { class: 'geld-review__chat-pin-preview' }, inlineText(preview)));
+  const button = createElement('button', { type: 'button', class: 'geld-review__chat-pin', 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} ${source.label}`, title: `${open ? 'Hide' : 'Show'} ${source.label}`, 'data-geld-focus': sourceFocusKey(thread) }, children);
+  button.addEventListener('click', () => handlers.onToggleSource(thread));
+  // The expand/collapse chevron is the rightmost thing on the row, after any control (Rerun / See latest), so the
+  // control reads as the button and the chevron as the strip's own toggle. A pointer affordance only — the strip
+  // button carries the label and aria-expanded for the keyboard and screen readers.
+  const chevron = createElement('button', { type: 'button', class: 'geld-review__chat-pin-chevron', tabindex: '-1', 'aria-hidden': 'true' }, [icon(ICON_CHEVRON_DOWN)]);
+  chevron.addEventListener('click', () => handlers.onToggleSource(thread));
+  const row = createElement('div', { class: 'geld-review__chat-pin-row' }, [button, chevron]);
+  const wrap = createElement('div', { class: 'geld-review__chat-context', 'data-open': String(open) }, [row]);
+  if (open) {
+    // On the strip's right, while the comment is in view: Rerun when this is the bot's latest word; "See latest"
+    // when it is not — an earlier run's summary (`latestAnchor`), or an earlier reading of this one (the page's
+    // node is the current reading, in the bot's own row). Nothing while the reading is still being decided.
+    const control = sourceControl(source, revision !== null, handlers);
+    if (control !== null) chevron.before(control);
+    const body = createElement('div', { class: 'geld-review__chat-context-body' });
+    wrap.append(body);
+    if (revision !== null) {
+      body.setAttribute('data-geld-revision', '');
+      // The bot's own re-run badge is a control, and a stale one here; the byline's Rerun is the control. Its view
+      // badge leads to the same run on the bot's site whichever reading this is, so it stands on the strip as View.
+      hideAgentRerunControls(revision.body);
+      placeViewControl(takeAgentViewLink(revision.body), control, chevron);
+      body.append(createElement('div', { class: 'geld-review__chat-then' }, [revision.body]));
+      // "As it read when this thread was opened · edited 3 times since, last 2 days ago": the live comment is the
+      // bot's current word, which its own row shows; this is the word these threads answered.
+      const since = revision.editsSince === 1 ? 'edited once since' : `edited ${revision.editsSince} times since`;
+      body.append(createElement('p', { class: 'geld-review__chat-then-note' }, ['As it read when this thread was opened · ', since, ', last ', relativeTimeElement(revision.editedAt, 'geld-review__chat-then-time')]));
+    } else if (source.revision?.state === 'loading') {
+      body.append(createElement('p', { class: 'geld-review__chat-then-note' }, ['Reading how it read when this thread was opened…']));
+    } else {
+      teleportInto(body, [source.node]);
+      openMinimized(body);
+      const messages = messagesIn(source.node, false);
+      annotateMessages(messages, viewer, true);
+      for (const message of messages) placeControls(message);
+      // The same comment as in its own row, so the same rule: the bot's badges are hidden wherever the chat shows it,
+      // and its view badge stands on the strip as View, before Rerun / See latest.
+      if (source.bot) {
+        hideAgentRerunControls(body);
+        placeViewControl(takeAgentViewLink(body), control, chevron);
+      }
+    }
+  }
+  return wrap;
+}
+
+/** View on the strip's right: before the strip's control when it has one, else before the chevron. */
+function placeViewControl(view: AgentViewLink | null, control: HTMLElement | null, chevron: HTMLElement): void {
+  if (view !== null) (control ?? chevron).before(viewControl(view));
+}
+
+/** What stands on an open strip's right for a bot's source, if anything (see `pinnedContext`). */
+function sourceControl(source: ChatSource, showingRevision: boolean, handlers: ChatHandlers): HTMLElement | null {
+  if (!source.bot) return null;
+  // The bot's latest word: a newer summary it posted since, else this comment's current reading (its own row).
+  const latest = source.latestAnchor ?? (showingRevision ? source.anchor : null);
+  if (latest !== null) return latestControl({ bot: source.name, onOpen: () => handlers.onOpenAnchor(latest) });
+  if (source.revision?.state === 'loading') return null;
+  return source.rerun === undefined ? null : rerunControl(source.rerun);
+}
+
+/** The first line of a rendered body, for a strip's preview: its first block's text, whitespace collapsed. */
+function firstLineOf(body: HTMLElement): string {
+  for (const block of body.children) {
+    const text = (block.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (text !== '') return text;
+  }
+  return (body.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+const REPLY_AREA = '.review-thread-reply, .js-inline-comment-form-container';
+const RESOLVE_FORM = 'form.js-resolvable-timeline-thread-form, form[action*="/resolve"], form[action*="/unresolve"]';
+/** On GitHub's own label and sentence while Geld's short forms stand in for them. */
+const ATTR_SPOKEN_FOR = 'data-geld-spoken-for';
+
+/**
+ * The composer's right hand: GitHub's Resolve form, which it renders (for a
+ * reader who may resolve) somewhere inside the reply area, wording it
+ * "Resolve conversation" and, once resolved, "<name> marked this
+ * conversation as resolved." Here it is moved to the end of the reply area
+ * (a loan like any other, home on restore), so the field and the form share
+ * one line collapsed and the form sits on the editor's action row open, and
+ * it speaks the chat's way: the button says "Resolve" or "Unresolve", the
+ * sentence is the resolver's picture and "marked resolved". GitHub's own
+ * words stay in the node, hidden by an attribute, and it is GitHub's button
+ * that is pressed.
+ */
+function dressComposer(thread: HTMLElement): void {
+  const area = thread.querySelector<HTMLElement>('.review-thread-reply') ?? thread.querySelector<HTMLElement>(REPLY_AREA);
+  const form = thread.querySelector<HTMLElement>(RESOLVE_FORM);
+  if (area === null || form === null || form.closest('.geld-review__composer-side') !== null) return;
+  const side = createElement('div', { class: 'geld-review__composer-side' });
+  area.append(side);
+  teleportInto(side, [form]);
+  labelComposer(thread, form, side);
+  onRestore(() => {
+    // The form goes home through the loan; the side it stood in is Geld's.
+    side.remove();
+  });
+}
+
+/**
+ * GitHub answered a Resolve by swapping the form in place (chat.ts moved the
+ * old one into the side slot, and the new one took its position there, its
+ * loan adopted by the watcher): the new form arrives in GitHub's words, and
+ * nothing else rebuilds when only the form changed. Dress it where it is.
+ */
+export function redressComposer(form: HTMLElement): void {
+  const side = form.closest<HTMLElement>('.geld-review__composer-side');
+  const thread = form.closest<HTMLElement>('.js-resolvable-timeline-thread-container, [data-testid="review-thread"], .review-thread-component');
+  if (side === null || thread === null) return;
+  for (const stale of side.querySelectorAll('.geld-review__composer-resolved')) stale.remove();
+  labelComposer(thread, form, side);
+}
+
+/**
+ * Whether the thread stands resolved, read from every sign GitHub gives:
+ * `data-resolved` on the container (or on the collapsible inside it, when
+ * the container is a wrapper), the form's action, the button's name, value
+ * or words ("Unresolve conversation"), and the sentence GitHub writes next
+ * to the button once someone has resolved it. Any one is enough.
+ */
+function isResolvedThread(thread: HTMLElement, form: HTMLElement, button: HTMLElement): boolean {
+  if (thread.getAttribute('data-resolved') === 'true' || thread.querySelector('[data-resolved="true"]') !== null) return true;
+  if (/unresolve/i.test(form.getAttribute('action') ?? '')) return true;
+  if (/unresolve/i.test(`${button.getAttribute('name') ?? ''} ${button.getAttribute('value') ?? ''} ${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`)) return true;
+  return /\bmarked (?:this )?(?:conversation )?as resolved\b/i.test((form.textContent ?? '').replace(/\s+/g, ' '));
+}
+
+/** The chat's words on GitHub's form: Resolve or Unresolve on the button, the resolver's picture and "marked resolved" for the sentence. */
+function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement): void {
+  const button = form.querySelector<HTMLElement>('button[type="submit"], button');
+  if (button === null) return;
+  // A form dressed on an earlier pass and not undressed (GitHub swapped the thread under it) is dressed afresh.
+  for (const stale of form.querySelectorAll('.geld-review__composer-label')) stale.remove();
+  for (const stale of form.querySelectorAll(`[${ATTR_SPOKEN_FOR}]`)) stale.removeAttribute(ATTR_SPOKEN_FOR);
+  button.removeAttribute(ATTR_SPOKEN_FOR);
+  const resolved = isResolvedThread(thread, form, button);
+  const label = button.querySelector<HTMLElement>('.Button-label') ?? button;
+  const spokenFor: Element[] = [];
+  const speakFor = (element: Element): void => {
+    element.setAttribute(ATTR_SPOKEN_FOR, '');
+    spokenFor.push(element);
+  };
+  const added: Element[] = [];
+  if (label === button) {
+    // A bare button holds its words as text: they cannot be hidden alone, so the whole button is sized to the short label drawn over it.
+    speakFor(button);
+    const short = createElement('span', { class: 'geld-review__composer-label' }, [resolved ? 'Unresolve' : 'Resolve']);
+    button.append(short);
+    added.push(short);
+  } else {
+    speakFor(label);
+    const short = createElement('span', { class: 'geld-review__composer-label' }, [resolved ? 'Unresolve' : 'Resolve']);
+    label.after(short);
+    added.push(short);
+  }
+  const hadTitle = button.getAttribute('title');
+  button.setAttribute('title', resolved ? 'Unresolve conversation' : 'Resolve conversation');
+  // "<name> marked this conversation as resolved.": the name is the one element in it, the rest is text.
+  const name = [...form.querySelectorAll<HTMLElement>('strong, a.author, a[data-hovercard-type="user"]')].find((node) => !button.contains(node)) ?? null;
+  if (name !== null) {
+    const login = (name.textContent ?? '').replace(/^@/, '').trim();
+    const sentence = name.parentElement !== null && name.parentElement !== form ? name.parentElement : name;
+    speakFor(sentence);
+    const avatar = avatarSrcForLogin(login);
+    const who = createElement('span', { class: 'geld-review__composer-resolved', title: `${login} marked this conversation as resolved` });
+    if (avatar !== null) who.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: avatar, alt: login, width: '20', height: '20', 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(login)}/hovercard` }));
+    else who.append(createElement('span', { class: 'geld-review__composer-resolved-name' }, [login]));
+    who.append(createElement('span', {}, ['marked resolved']));
+    side.append(who);
+    added.push(who);
+  }
+  onRestore(() => {
+    for (const element of spokenFor) element.removeAttribute(ATTR_SPOKEN_FOR);
+    for (const element of added) element.remove();
+    if (hadTitle === null) button.removeAttribute('title');
+    else button.setAttribute('title', hadTitle);
+  });
+}
+
+/** The comment's own ⋯ menu, most specific first; the reaction trigger is a `details` too and must not be taken for it. */
+const COMMENT_MENU = 'details.js-comment-header-actions-menu, .timeline-comment-actions details:not(.js-add-reaction):not(.js-reaction-popover-container), [data-testid="comment-header"] button[aria-label="Show options" i], button[aria-label="Comment actions" i]';
+
+/** GitHub's reactions row proper (the pills' parent, which its scripts observe and replace). */
+const REACTIONS_ROW = '.comment-reactions, .js-reactions-container';
+/** The reaction picker, GitHub's: a custom element round a `details` on current pages, the `details` alone on older ones. */
+const REACTION_PICKER = ':scope > reactions-menu, :scope > details.js-add-reaction';
+
+/**
+ * A message's controls stand beside its bubble, on the empty side of the
+ * row, and its reaction pills sit under the bubble; the stylesheet lays both
+ * out from two slots this makes (own UI, gone on restore; every node in them
+ * a loan, home on restore):
+ *
+ * - `geld-review__msg-side`, appended to the message, takes the comment's
+ *   reaction picker out of the reactions row and the ⋯ menu out of the
+ *   author line. GitHub's reaction handler finds the comment from the picker
+ *   with `closest('.js-comment')`, which the message is, so a reaction still
+ *   posts and still redraws the row.
+ * - `geld-review__msg-reactions` holds the reactions row when the row is the
+ *   part itself (a direct child of the message, or nested in the bubble's
+ *   wrapper): the pills need a box of their own under the bubble, and the row
+ *   cannot be it — GitHub's scripts watch the row's size and hide pills when
+ *   it wraps.
+ *
+ * A ⋯ already worn by a panel row (a single comment's line wears its own) is
+ * left there: `teleportInto` skips a node on loan.
+ */
+function placeControls(message: HTMLElement): void {
+  const meta = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta']`);
+  const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
+  if (meta === null || reactions === null) return;
+  const row = reactions.matches(REACTIONS_ROW) ? reactions : reactions.querySelector<HTMLElement>(REACTIONS_ROW);
+  if (row !== null && row === reactions) {
+    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
+    const bubble = message.querySelector(`:scope > [${ATTR_PART}='bubble']`);
+    if (bubble !== null) bubble.after(box);
+    else message.append(box);
+    teleportInto(box, [row]);
+    onRestore(() => box.remove());
+  }
+  const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
+  message.append(side);
+  const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
+  if (picker !== null && !isTeleported(picker)) {
+    teleportInto(side, [picker]);
+    // GitHub's tooltip opens under the button; here the ⋯ can stand right there (the two stack when the bubble
+    // takes the row), and a tooltip over it swallowed the click. Above, nothing of ours is in the way. The
+    // tooltip is the one the button names (`reactions-menu` holds it; the older `details` alone has it as a
+    // sibling, which comes along so the stylesheet can hide it while the palette is open).
+    const button = picker.querySelector<HTMLElement>('summary[id]');
+    const tip = (button === null ? null : document.querySelector<HTMLElement>(`tool-tip[for="${CSS.escape(button.id)}"]`)) ?? picker.querySelector<HTMLElement>('tool-tip');
+    if (tip !== null) {
+      if (!picker.contains(tip) && !isTeleported(tip)) teleportInto(side, [tip]);
+      const direction = tip.getAttribute('data-direction');
+      tip.setAttribute('data-direction', 'n');
+      onRestore(() => {
+        if (direction === null) tip.removeAttribute('data-direction');
+        else tip.setAttribute('data-direction', direction);
+      });
+    }
+  }
+  const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
+  if (menu !== null && !isTeleported(menu)) {
+    // The ⋯ opens a menu of its own; a slot of its own keeps that menu anchored to the round button.
+    const actions = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
+    side.append(actions);
+    teleportInto(actions, [menu]);
+    if (actions.childElementCount === 0) actions.remove();
+    else {
+      installMenuFlip();
+      // A menu still open when its chat is rebuilt goes home open; its watcher and mark go with the slot.
+      if (menu instanceof HTMLDetailsElement) onRestore(() => unwatchMenu(menu));
+    }
+  }
+  // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
+  if (side.childElementCount === 0) {
+    side.remove();
+    return;
+  }
+  onRestore(() => side.remove());
+}
+
+/** On a ⋯ `details` beside a bubble whose menu opens upward (see `installMenuFlip`). */
+const ATTR_MENU_UP = 'data-geld-menu-up';
+/** The menu's caret (16px) and the gap the stylesheet leaves under the button: what the menu needs beyond its own height. */
+const MENU_CLEARANCE = 24;
+
+let menuFlipInstalled = false;
+/** The ⋯ menus open beside a bubble right now, each with the observer following its menu's height. */
+const openMenus = new Map<HTMLDetailsElement, { menu: HTMLElement; observer: ResizeObserver }>();
+
+function placeMenu(details: HTMLDetailsElement, menu: HTMLElement): void {
+  const button = details.getBoundingClientRect();
+  const need = menu.offsetHeight + MENU_CLEARANCE;
+  const below = window.innerHeight - button.bottom;
+  const above = button.top - stickyHeaderBottomAt(window.scrollY);
+  details.toggleAttribute(ATTR_MENU_UP, need > below && above > below);
+}
+
+/** Stop following `details`' menu and drop its mark (closed, or gone home). */
+function unwatchMenu(details: HTMLDetailsElement): void {
+  openMenus.get(details)?.observer.disconnect();
+  openMenus.delete(details);
+  details.removeAttribute(ATTR_MENU_UP);
+}
+
+/**
+ * GitHub's ⋯ menu always drops down from its button (`dropdown-menu-sw`),
+ * even at the foot of the viewport where only its first items show. Each
+ * time one opens beside a bubble it is placed on the side with the room: down
+ * by default, up when down would cut it off and up would not (or cuts off
+ * less). The menu's items arrive after it opens (`details-menu[src]`), so its
+ * height is watched while it is open and the side re-decided as it grows, and
+ * again as the page scrolls or the viewport resizes under an open menu.
+ * `toggle` does not bubble; a capturing listener on the document sees it.
+ */
+function installMenuFlip(): void {
+  if (menuFlipInstalled) return;
+  menuFlipInstalled = true;
+  document.addEventListener(
+    'toggle',
+    (event) => {
+      const details = event.target;
+      if (!(details instanceof HTMLDetailsElement) || !details.matches('.geld-review__msg-actions > details')) return;
+      unwatchMenu(details);
+      if (!details.open) return;
+      const menu = details.querySelector<HTMLElement>('.dropdown-menu');
+      if (menu === null) return;
+      placeMenu(details, menu);
+      const observer = new ResizeObserver(() => placeMenu(details, menu));
+      observer.observe(menu);
+      openMenus.set(details, { menu, observer });
+    },
+    true,
+  );
+  const replaceOpen = (): void => {
+    for (const [details, { menu }] of openMenus) placeMenu(details, menu);
+  };
+  window.addEventListener('scroll', replaceOpen, { capture: true, passive: true });
+  window.addEventListener('resize', replaceOpen, { passive: true });
+}
+
+/** On a minimized comment's <details> the chat opened itself: not the reader's doing, so not an interaction GitHub's refresh must wait for. */
+export const ATTR_OPENED_BY_GELD = 'data-geld-opened';
+
+/** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
+export function openMinimized(root: HTMLElement): void {
+  // Only the minimizing <details> itself: a comment's ⋯ menu and reaction picker are <details> too.
+  for (const details of root.querySelectorAll<HTMLDetailsElement>('.minimized-comment > details, details.minimized-comment')) {
+    if (details.open) continue;
+    details.open = true;
+    details.setAttribute(ATTR_OPENED_BY_GELD, '');
+    // The reader closing it takes it over: from then on its state is theirs, and an open one counts as an
+    // interaction again. (The `toggle` our own open fires has `open` true and passes.)
+    const taken = (): void => {
+      if (details.open) return;
+      details.removeAttribute(ATTR_OPENED_BY_GELD);
+      details.removeEventListener('toggle', taken);
+    };
+    details.addEventListener('toggle', taken);
+    onRestore(() => {
+      details.removeEventListener('toggle', taken);
+      details.open = false;
+      details.removeAttribute(ATTR_OPENED_BY_GELD);
+    });
+  }
+}
+
+/** A resolved thread arrives collapsed (GitHub's own header plus a hidden body); the chat shows the body. */
+function liftCollapsedBody(thread: HTMLElement): void {
+  for (const hidden of thread.querySelectorAll<HTMLElement>('[data-target="review-thread-collapsible.body"][hidden], .js-resolvable-timeline-thread-container > [hidden]')) {
+    hidden.removeAttribute('hidden');
+    onRestore(() => hidden.setAttribute('hidden', ''));
+  }
+}
+
+/**
+ * GitHub loads a resolved thread's replies only when its own toggle runs, by
+ * giving the placeholder inside the body its URL; showing the body directly
+ * would leave that placeholder spinning forever.
+ */
+function loadDeferredReplies(thread: HTMLElement): void {
+  const deferred = thread.getAttribute('data-deferred-content-url') ?? thread.querySelector('[data-deferred-content-url]')?.getAttribute('data-deferred-content-url') ?? null;
+  if (deferred === null) return;
+  for (const fragment of thread.querySelectorAll('include-fragment:not([src])')) {
+    if (fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') !== null) continue;
+    fragment.setAttribute('src', deferred);
+    break;
+  }
+}
+
+/**
+ * The messages inside a moved node, outermost first: in a thread, each
+ * `discussion_r` comment (its comments are siblings, but GitHub repeats ids
+ * on wrappers and permalinks); elsewhere the comment cards. A message holds
+ * a body and is not part of a form. Exported for its test only.
+ */
+export function messagesIn(root: HTMLElement, thread: boolean): readonly HTMLElement[] {
+  const selector = thread ? '[id^="discussion_r"], [data-testid="review-thread-comment"]' : MESSAGE_SELECTOR;
+  const candidates = [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll<HTMLElement>(selector)];
+  // A minimized comment is wrapped in a `.minimized-comment.js-comment` holding a <details> (the "This comment has
+  // been minimized" summary, then the comment proper): the wrapper would be the outermost match, with the details
+  // as its bubble and the header inside unmarked. The comment proper is GitHub's compact card, whose header and
+  // body are only siblings inside `.review-comment-contents`, so that is the message; the stylesheet drops the
+  // summary and the card's picture and ⋯ holder left outside it.
+  const compact = [...root.querySelectorAll<HTMLElement>(COMPACT_CARD)];
+  // The wrapper of a minimized comment is told by the <details> it holds: a review's own card carries the
+  // `minimized-comment` class too (with `timeline-comment` and `js-comment`, the header a direct child), and read
+  // as a wrapper it had no message at all — the card showed raw in its chat, header and all (server#7851).
+  const minimizedWrapper = (node: HTMLElement): boolean => node.matches(MINIMIZED_WRAPPER) && (node instanceof HTMLDetailsElement || node.querySelector(':scope > details') !== null);
+  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !minimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
+  return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
+}
+
+/** The message's direct child holding `inner`, or null when `inner` is not inside it. */
+function partHolding(message: HTMLElement, inner: Element | null): HTMLElement | null {
+  let cursor: Element | null = inner;
+  while (cursor !== null && cursor.parentElement !== message) cursor = cursor.parentElement;
+  return cursor instanceof HTMLElement && cursor !== message ? cursor : null;
+}
+
+/**
+ * Read each message as parts the stylesheet lays out (author line, bubble,
+ * edit form, reactions), decide whose it is and where it stands in a run of
+ * one author's messages. Marks only; every attribute goes when the node
+ * goes home.
+ */
+function annotateMessages(messages: readonly HTMLElement[], viewer: string, pinned: boolean): void {
+  const marked: [Element, string][] = [];
+  const mark = (element: Element, name: string, value: string): void => {
+    element.setAttribute(name, value);
+    marked.push([element, name]);
+  };
+  const logins = messages.map((message) => (authorOf(message)?.login ?? '').toLowerCase());
+  messages.forEach((message, index) => {
+    mark(message, ATTR_MESSAGE, '');
+    if (pinned) mark(message, ATTR_LONE, '');
+    const login = logins[index] ?? '';
+    if (!pinned && viewer !== '' && login === viewer.toLowerCase()) mark(message, ATTR_MINE, '');
+    const before = !pinned && index > 0 && logins[index - 1] === login;
+    const after = !pinned && index < messages.length - 1 && logins[index + 1] === login;
+    mark(message, ATTR_RUN, before && after ? 'mid' : before ? 'last' : after ? 'first' : 'only');
+    const bubble = partHolding(message, message.querySelector(BODY_SELECTOR));
+    const reactionsRow = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
+    const reactionsHolder = partHolding(message, reactionsRow);
+    const meta = partHolding(message, message.querySelector(META_SELECTOR));
+    // The author's picture carries the same card as their name: GitHub's hovercard for a person (its script picks
+    // the attributes up on any element), Geld's identity card for an App. Marks only, gone on restore.
+    const avatar = (meta ?? message).querySelector<HTMLElement>('img.avatar, img[class*="avatar" i]');
+    const authorLink = message.querySelector<HTMLElement>('a.author, a[data-testid="author-link"]');
+    if (avatar !== null && authorLink !== null && !avatar.hasAttribute('data-hovercard-url') && !avatar.hasAttribute(ATTR_WHO)) {
+      const card = authorLink.getAttribute('data-hovercard-url');
+      if (card !== null) {
+        mark(avatar, 'data-hovercard-type', authorLink.getAttribute('data-hovercard-type') ?? 'user');
+        mark(avatar, 'data-hovercard-url', card);
+      } else if (login !== '' && /\[bot\]$/i.test(login)) {
+        mark(avatar, ATTR_WHO, login);
+      }
+    }
+    if (meta !== null && meta !== bubble) mark(meta, ATTR_PART, 'meta');
+    if (bubble !== null) mark(bubble, ATTR_PART, 'bubble');
+    // Review comments keep their reactions in a wrapper of their own beside the body's; an issue comment nests
+    // them inside the body's wrapper. The part is the row itself then, so it lays out and floats the same way.
+    if (reactionsHolder !== null && reactionsHolder !== bubble && reactionsHolder !== meta) mark(reactionsHolder, ATTR_PART, 'reactions');
+    else if (reactionsRow !== null && reactionsRow !== bubble && !reactionsRow.matches('[data-geld-part]')) mark(reactionsRow, ATTR_PART, 'reactions');
+    for (const form of message.querySelectorAll<HTMLFormElement>(':scope > form.js-comment-update, :scope > form[data-testid="comment-edit-form"]')) mark(form, ATTR_PART, 'edit');
+  });
+  onRestore(() => {
+    for (const [element, name] of marked) element.removeAttribute(name);
+  });
+}

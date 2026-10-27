@@ -22,6 +22,14 @@ export interface TreeFileNode {
   readonly element: HTMLElement;
   /** GitHub's status icon for the file (file-added / file-removed / file-moved / file-diff; the React tree's leading visual, the classic tree's trailing one), when the view shows one. */
   readonly statusIcon: SVGElement | null;
+  /**
+   * The row's trailing marks, when it has any: the comment count and the
+   * check-annotation icon (warning, notice, failure). Cloned into a category
+   * panel so a hidden file keeps them.
+   */
+  readonly trailingVisual: HTMLElement | null;
+  /** GitHub's anchor id for the file's diff (`diff-<sha256>`) when the tree row links to it. */
+  readonly anchor: string | null;
 }
 
 /** The parts of a diff page that Geld manipulates. */
@@ -29,6 +37,15 @@ export interface DiffView {
   readonly kind: 'legacy' | 'react';
   /** Element whose direct children are diff entry roots (plus GitHub chrome). */
   readonly container: HTMLElement;
+  /**
+   * The React view's experimental mode for large pull requests
+   * (`?mode=virtualization`): the container is a spacer as tall as every
+   * file's estimated height, and only the rows near the viewport are mounted,
+   * absolutely positioned at `top`s the virtualiser computes from measured
+   * heights. Flex order cannot move them, `entries` is never the whole diff,
+   * and a row hidden in place measures 0 so the rows below close up over it.
+   */
+  readonly virtualized: boolean;
   readonly entries: readonly DiffEntry[];
   /** `ul[role=tree]` of the file tree, when the page has one. */
   readonly treeRoot: HTMLElement | null;

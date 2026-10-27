@@ -83,7 +83,7 @@ export default function HomePage() {
       <Section id="install" eyebrow="Install" title="Works where you review." description="Chrome, Edge, Firefox and Safari, on github.com and GitHub Enterprise Server." className="border-t">
         <InstallButtons />
         <p className="mt-6 text-sm text-muted-foreground">
-          MIT licensed.{' '}
+          AGPL-3.0 licensed.{' '}
           <ExternalLink href={REPO_URL} className="underline underline-offset-3 hover:text-foreground">
             Read the source
           </ExternalLink>{' '}

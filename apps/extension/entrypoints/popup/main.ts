@@ -5,7 +5,7 @@ import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabSt
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, fieldsFor, isCategoryEnabled, isCategoryInPicker, plainText } from '@geld/core';
+import { allHosts, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
 import type { TabRepoConfig, TabRepoConfigFile } from '../../src/lib/messages';
 import { loadCatalog } from '../../src/lib/catalog';
@@ -15,6 +15,11 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { popupMaxHeight, popupNeedsScroll } from '../../src/ui/popup-size';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
+import { svgFromString } from '../../src/github/dom';
+import { describePage } from '../../src/github/page';
+import type { PageKind } from '../../src/github/page';
+import { ICON_BEAKER, ICON_EYE_CLOSED } from '../../src/github/ui/icons';
+import { wireFeedbackLink } from '../../src/ui/feedback-link';
 
 interface ActiveTab {
   readonly id: number;
@@ -88,6 +93,50 @@ async function main(): Promise<void> {
   const toggles: Array<{ field: ToggleField; set: (checked: boolean) => void }> = [];
   const categoryInputs = new Map<string, HTMLInputElement>();
 
+  /** A section's eyebrow with its glyph before the word: the eye with a slash for Hide, the beaker for Experiments. */
+  function eyebrow(text: string, icon: string, className: string): HTMLParagraphElement {
+    const heading = document.createElement('p');
+    heading.className = `geld-eyebrow popup__eyebrow ${className}`;
+    // The glyph sits in a checkbox-sized box, so it is centred on the column of checkboxes below it.
+    const box = document.createElement('span');
+    box.className = 'popup__eyebrow-icon';
+    box.setAttribute('aria-hidden', 'true');
+    box.append(svgFromString(icon));
+    heading.append(box, document.createTextNode(text));
+    return heading;
+  }
+
+  /**
+   * An experiment in the popup: one per row, shaped like a Hide row (checkbox,
+   * then the title, which has the whole width), the description as the row's
+   * tooltip rather than a paragraph.
+   */
+  function renderExperiment(field: ToggleField): HTMLElement {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'geld-checkbox';
+    input.id = field.key;
+    input.checked = settings[field.key];
+    input.addEventListener('change', async () => {
+      settings = await settingsItem.patch({ [field.key]: input.checked });
+      saved();
+    });
+    toggles.push({
+      field,
+      set: (checked) => {
+        input.checked = checked;
+      },
+    });
+    const text = document.createElement('span');
+    text.className = 'popup__experiment-label';
+    text.textContent = field.label;
+    const row = document.createElement('label');
+    row.className = 'popup__experiment';
+    row.title = plainText(field.popupDescription ?? field.description);
+    row.append(input, text);
+    return row;
+  }
+
   function renderToggle(field: ToggleField): HTMLElement {
     const label = document.createElement('span');
     label.className = 'geld-label';
@@ -125,9 +174,7 @@ async function main(): Promise<void> {
     const section = document.createElement('section');
     section.className = 'popup__section popup__categories';
     section.setAttribute('aria-label', 'Categories');
-    const heading = document.createElement('p');
-    heading.className = 'geld-eyebrow popup__categories-title';
-    heading.textContent = field.label;
+    const heading = eyebrow(field.label, ICON_EYE_CLOSED, 'popup__categories-title');
     const grid = document.createElement('div');
     grid.className = 'popup__categories-grid';
     // Built-in and user-defined categories alike; a new custom category appears here after a reload of the popup.
@@ -153,10 +200,24 @@ async function main(): Promise<void> {
     return section;
   }
 
-  for (const field of fieldsFor('extension', true)) {
-    if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
-    else if (field.kind === 'categories') settingsHost.append(renderCategories(field));
-    // Test groups and list fields are never flagged for the popup; the options page renders them.
+  // Sections whose popup fields are experiments get a heading, so an experiment is never taken for a settled setting.
+  for (const section of sectionsFor('extension')) {
+    const fields = section.fields.filter((field) => field.popup);
+    if (fields.length === 0) continue;
+    if (section.id === 'experiments') {
+      const experiments = document.createElement('section');
+      experiments.className = 'popup__section popup__experiments';
+      experiments.setAttribute('aria-label', section.title);
+      experiments.append(eyebrow(section.title, ICON_BEAKER, 'popup__categories-title'));
+      for (const field of fields) if (field.kind === 'toggle') experiments.append(renderExperiment(field));
+      settingsHost.append(experiments);
+      continue;
+    }
+    for (const field of fields) {
+      if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
+      else if (field.kind === 'categories') settingsHost.append(renderCategories(field));
+      // Test groups and list fields are never flagged for the popup; the options page renders them.
+    }
   }
 
   /* Tab context */
@@ -329,7 +390,9 @@ async function main(): Promise<void> {
    */
   function renderRepoConfig(config: TabRepoConfig | null): void {
     repoConfigHost.replaceChildren();
-    if (config === null || config.mode === 'never' || (config.files.length === 0 && !config.loading)) {
+    // Nothing found, or still looking: nothing to say. A lookup can be under way whenever the page re-applies (the
+    // cache runs out after 30 min), and a "Looking for…" box appearing mid-visit only moved everything below it.
+    if (config === null || config.mode === 'never' || config.files.length === 0) {
       repoConfigHost.hidden = true;
       return;
     }
@@ -346,11 +409,7 @@ async function main(): Promise<void> {
     eyebrow.className = 'geld-eyebrow';
     const text = document.createElement('p');
     text.className = 'geld-alert__text';
-    if (config.files.length === 0) {
-      eyebrow.textContent = 'Repository config';
-      text.textContent = 'Looking for a repository config…';
-      title.dataset.tone = 'muted';
-    } else if (config.decision === 'use') {
+    if (config.decision === 'use') {
       eyebrow.textContent = usable.length > 0 ? 'Using repository config' : 'Repository config';
       const brokenNames = broken.map((file) => file.path).join(' and ');
       text.textContent =
@@ -399,6 +458,16 @@ async function main(): Promise<void> {
 
   const tab = await activeGitHubTab(allHosts(settings));
   let repo: string | null = tab === null ? null : repoFromPathname(tab.url.pathname);
+  // The feedback form's "Where" field: the kind of page, never its URL.
+  const PAGE_WORDS: Readonly<Record<PageKind, string>> = {
+    'pull-files': 'pull request files',
+    'pull-conversation': 'pull request conversation',
+    'pull-other': 'pull request',
+    commit: 'commit',
+    compare: 'compare',
+    other: tab === null ? '' : /\/pulls\b|\/issues\b/.test(tab.url.pathname) ? 'pull request list' : 'other GitHub page',
+  };
+  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), tab === null ? null : PAGE_WORDS[describePage(tab.url).kind]);
 
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
