@@ -13,6 +13,7 @@ import {
   normalizePlan,
   planDelta,
   planSignatures,
+  refSignature,
   remapProposals,
   reviewComplete,
   rulesPlan,
@@ -101,6 +102,27 @@ describe('rules producer', () => {
     const plan = rulesPlan(tiny, 'now');
     expect(plan.steps).toHaveLength(1);
     expect(plan.steps[0]?.title).toBe('Update a.ts');
+  });
+
+  it('keeps every step when the producer repeats a key, so no hunk goes missing', () => {
+    const three: PlanInput = { ...input, commits: [], files: [file('a.ts', [hunk(0, ['a'])]), file('b.ts', [hunk(0, ['b'])]), file('c.ts', [hunk(0, ['c'])])], findings: [] };
+    const proposals: StepProposal[] = [
+      { key: 'dup', title: 'First', kind: 'feature', gist: null, touches: [{ path: 'a.ts', hunk: 0 }], dependsOn: [], watch: [] },
+      { key: 'dup', title: 'Second', kind: 'feature', gist: null, touches: [{ path: 'b.ts', hunk: 0 }], dependsOn: [], watch: [] },
+      { key: 'last', title: 'Third', kind: 'feature', gist: null, touches: [{ path: 'c.ts', hunk: 0 }], dependsOn: ['dup'], watch: [] },
+    ];
+    const plan = normalizePlan(three, proposals, { producer: 'ai', model: 'm', madeAt: 'now' });
+    expect(plan.steps.map((step) => step.title)).toEqual(['First', 'Second', 'Third']);
+    expect(plan.steps.flatMap((step) => step.touches.map((ref) => ref.path))).toEqual(['a.ts', 'b.ts', 'c.ts']);
+  });
+
+  it("signs a whole file by its content identity, so a replaced binary is not the reviewed one", () => {
+    const before = file('img.png', [], { binary: true, identity: 'index 1111111..2222222 100644' });
+    const after = { ...before, identity: 'index 1111111..3333333 100644' };
+    const ref = { path: 'img.png', hunk: 0 };
+    expect(refSignature(new Map([['img.png', before]]), ref)).not.toBe(refSignature(new Map([['img.png', after]]), ref));
+    const mode = file('run.sh', [], { identity: 'old mode 100644\nnew mode 100755' });
+    expect(refSignature(new Map([['run.sh', mode]]), { path: 'run.sh', hunk: 0 })).not.toBe(refSignature(new Map([['run.sh', file('run.sh', [])]]), { path: 'run.sh', hunk: 0 }));
   });
 
   it('splits an oversized step by file', () => {

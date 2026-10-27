@@ -59,7 +59,10 @@ export function describePage(url: URL): PageInfo {
     const base = `/${owner}/${repo}/pull/${number}`;
     // `/files` is the classic tab; `/changes` is the newer React experience.
     const files = tab === 'files' || tab === 'changes';
-    const kind: PageKind = files ? (isReviewTabUrl(url) ? 'pull-review' : 'pull-files') : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
+    // Geld's tabs plan the whole pull request, so only over its whole files view: narrowed to a commit or a range, GitHub
+    // renders that scope's files alone, and a plan of the whole diff would ask for files the page does not have.
+    const reviewTab = isReviewTabUrl(url) && spec === undefined;
+    const kind: PageKind = files ? (reviewTab ? 'pull-review' : 'pull-files') : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
     // Narrowed to one commit or a range of them: GitHub's header counts that commit or range, and so does Geld. A range
     // in a pull request (`<before>..<head>`) is the direct comparison of its two ends, as `compare/a..b` is.
     if (kind === 'pull-files' && spec !== undefined) {

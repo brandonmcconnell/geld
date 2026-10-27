@@ -159,6 +159,8 @@ export interface PlanFile {
   readonly previousPath?: string;
   readonly status: 'added' | 'deleted' | 'renamed' | 'modified';
   readonly binary: boolean;
+  /** The diff header's blob ids and modes (`FileHunks.identity`): a file without text hunks is signed by them. */
+  readonly identity?: string;
   /** The Geld category hiding this file (id and title), or null when the file stays visible. */
   readonly hidden: { readonly id: string; readonly title: string } | null;
   readonly hunks: readonly PlanHunk[];
@@ -227,8 +229,9 @@ export function refsOf(file: PlanFile): readonly HunkRef[] {
   return file.hunks.map((hunk) => ({ path: file.path, hunk: hunk.index }));
 }
 
+/** A whole file's signature: its content identity too, so a binary replaced or a mode changed after a push reads as new. */
 function fileSignature(file: PlanFile): string {
-  return hashText(`${file.path}\n${file.status}\n${file.binary ? 'binary' : ''}`);
+  return hashText(`${file.path}\n${file.status}\n${file.binary ? 'binary' : ''}\n${file.identity ?? ''}`);
 }
 
 /** The signature of a ref: the hunk's own, or the file's for a whole-file ref. */
@@ -724,28 +727,29 @@ function leftoverTitle(files: readonly PlanFile[]): { readonly title: string; re
   return { title: 'Supporting changes', kind: 'chore' };
 }
 
-/** Kahn's ordering by `dependsOn`, ties and cycles broken by the producer's order. */
+/**
+ * Kahn's ordering by `dependsOn`, ties and cycles broken by the producer's order. Steps, not keys, are what get placed:
+ * a key two steps share is done once both are, and neither is dropped.
+ */
 function topologicalOrder<T extends { readonly key: string; readonly dependsOn: readonly string[] }>(steps: readonly T[]): readonly T[] {
-  const byKey = new Map(steps.map((step) => [step.key, step] as const));
-  const indegree = new Map<string, number>();
-  const dependents = new Map<string, string[]>();
+  const byKey = new Map<string, T[]>();
+  for (const step of steps) byKey.set(step.key, [...(byKey.get(step.key) ?? []), step]);
+  const indegree = new Map<T, number>();
+  const dependents = new Map<string, T[]>();
   for (const step of steps) {
-    const deps = step.dependsOn.filter((dep) => byKey.has(dep) && dep !== step.key);
-    indegree.set(step.key, deps.length);
-    for (const dep of deps) {
-      const list = dependents.get(dep) ?? [];
-      list.push(step.key);
-      dependents.set(dep, list);
-    }
+    const deps = [...new Set(step.dependsOn)].filter((dep) => byKey.has(dep) && dep !== step.key);
+    indegree.set(step, deps.length);
+    for (const dep of deps) dependents.set(dep, [...(dependents.get(dep) ?? []), step]);
   }
   const ordered: T[] = [];
-  const placed = new Set<string>();
+  const placed = new Set<T>();
   while (ordered.length < steps.length) {
     // The first (in producer order) step with no unplaced dependency; a cycle leaves none, so the first unplaced goes.
-    const next = steps.find((step) => !placed.has(step.key) && (indegree.get(step.key) ?? 0) === 0) ?? steps.find((step) => !placed.has(step.key));
+    const next = steps.find((step) => !placed.has(step) && (indegree.get(step) ?? 0) === 0) ?? steps.find((step) => !placed.has(step));
     if (next === undefined) break;
-    placed.add(next.key);
+    placed.add(next);
     ordered.push(next);
+    if (!(byKey.get(next.key) ?? []).every((step) => placed.has(step))) continue;
     for (const dependent of dependents.get(next.key) ?? []) indegree.set(dependent, (indegree.get(dependent) ?? 1) - 1);
   }
   return ordered;

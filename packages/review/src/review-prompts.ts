@@ -340,10 +340,19 @@ export function parsePlanOutput(text: string, handles: ReadonlyMap<string, HunkR
   if (!parsed.success) return { ok: false, issues: issuesOf(parsed.error) };
   const keys = new Set(parsed.data.steps.map((step) => step.key));
   const overview = parsed.data.overview === null || parsed.data.overview === undefined ? null : overviewOf(parsed.data.overview, keys);
+  // A key the model gave twice names its first step everywhere it is referred to (dependencies, the overview); the
+  // later ones get keys of their own, or ordering would place one of them and drop the rest with the hunks they claim.
+  const taken = new Set<string>();
+  const ownKey = (key: string): string => {
+    let own = key;
+    for (let copy = 2; taken.has(own); copy += 1) own = `${key}~${copy}`;
+    taken.add(own);
+    return own;
+  };
   const proposals: StepProposal[] = parsed.data.steps.map((step) => {
     const gist = step.gist?.trim() ?? '';
     return {
-      key: step.key,
+      key: ownKey(step.key),
       title: step.title.trim().replace(/\.$/, ''),
       kind: isStepKind(step.kind) ? step.kind : 'other',
       gist: gist === '' ? null : gist,

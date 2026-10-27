@@ -34,6 +34,13 @@ index 5555555..0000000
 `;
 
 describe('parseUnifiedDiffHunks', () => {
+  it("keeps each file's header identity: its blob ids and modes", () => {
+    const files = parseUnifiedDiffHunks(SAMPLE);
+    expect(files.map((file) => file.identity)).toEqual(['index 1111111..2222222 100644', undefined, 'index 0000000..4444444', 'index 5555555..0000000']);
+    const modeOnly = parseUnifiedDiffHunks('diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n');
+    expect(modeOnly[0]?.identity).toBe('old mode 100644\nnew mode 100755');
+  });
+
   it('reads every hunk with its ranges and changed lines', () => {
     const files = parseUnifiedDiffHunks(SAMPLE);
     expect(files.map((file) => file.path)).toEqual(['src/a.ts', 'docs/new.md', 'img.png', 'gone.ts']);

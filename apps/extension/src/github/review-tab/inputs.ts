@@ -49,7 +49,9 @@ export function diffHunksFor(diffUrl: string, headSha: string | null, onChange: 
     // One page's text at a time: the previous head's hunks are megabytes nobody reads again.
     for (const other of [...diffs.keys()]) if (other !== key && other.startsWith(`${diffUrl}@`)) diffs.delete(other);
   }
-  if (!entry.pending && entry.state.status !== 'ready' && Date.now() >= entry.retryAt) {
+  // A definite failure (signed out, not a diff, too large) stays failed for this head: asking again on every pass would
+  // keep the worker busy and hit GitHub with the same request. A new head is a new key, and a reload a fresh cache.
+  if (!entry.pending && entry.state.status === 'loading' && Date.now() >= entry.retryAt) {
     entry.pending = true;
     const current = entry;
     void fetchText(diffUrl, headSha).then((result) => {
@@ -218,6 +220,7 @@ export function planInputFor(sources: PlanInputSources): PlanInputState {
       ...(file.previousPath === undefined ? {} : { previousPath: file.previousPath }),
       status: file.status,
       binary: file.binary,
+      ...(file.identity === undefined ? {} : { identity: file.identity }),
       hidden: category === null ? null : { id: category.id, title: category.title },
       hunks: file.hunks.map((hunk) => ({ index: hunk.index, header: hunk.header, oldStart: hunk.oldStart, oldLines: hunk.oldLines, newStart: hunk.newStart, newLines: hunk.newLines, added: hunk.added, addedAt: hunk.addedAt, removed: hunk.removed, removedAt: hunk.removedAt, signature: hunk.signature })),
     };

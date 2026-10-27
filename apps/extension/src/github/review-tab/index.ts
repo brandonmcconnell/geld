@@ -134,6 +134,12 @@ function switchView(target: TabTarget, reapply: () => void): void {
   const url = files === null ? new URL(location.href) : reviewTabUrl(files.href);
   url.hash = target === 'review' ? REVIEW_TAB_HASH : target === 'diagram' ? DIAGRAM_TAB_HASH : '';
   const next = `${url.pathname}${url.search}${url.hash}`;
+  // From a files view narrowed to a commit or a range the whole view is another page: GitHub renders it only on a load,
+  // and a fragment pushed over the narrowed one left the plan of the whole diff borrowing the narrowed scope's files.
+  if (url.pathname !== location.pathname) {
+    location.assign(next);
+    return;
+  }
   if (next !== `${location.pathname}${location.search}${location.hash}`) history.pushState(history.state, '', next);
   reapply();
 }
@@ -262,9 +268,12 @@ export function applyReviewTab(context: ReviewTabContext): void {
     helpOpen: current.helpOpen,
     shownRuns: current.shownRuns,
   };
-  current.wanted.clear();
+  // Only a render says which files its steps want: a pass that renders nothing (the same signature, or a field being
+  // typed in) keeps the last render's, or the seek for a file not yet loaded would stop on its first miss.
+  const previous = current.wanted;
+  current.wanted = new Set();
   const handlers = makeHandlers(context, current);
-  mount(current, model, handlers, view);
+  if (!mount(current, model, handlers, view)) current.wanted = previous;
   seekWanted(current, view, context.reapply);
   trackReading(current, mode === 'review' && !finish ? (currentStep?.id ?? null) : null);
 }
@@ -484,19 +493,20 @@ function signatureOf(model: ReviewTabModel): string {
   ].join('\u0000');
 }
 
-function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandlers, view: DiffView | null): void {
+/** Build the tab when its signature changed; true when it rendered. */
+function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandlers, view: DiffView | null): boolean {
   const signature = signatureOf(model);
   const root = current.root;
   if (root !== null && root.isConnected && signature === current.signature) {
     current.rebuildAsked = false;
-    return;
+    return false;
   }
   // Typing in a GitHub form inside a loaned diff (a comment), or in the flag note: a rebuild for something that
   // landed meanwhile (a story, a file) would move the field mid-typing. A click on the view's own controls still
   // rebuilds at once (`rebuildAsked`), since the reader asked for what the rebuild shows.
   const active = document.activeElement;
   const typing = active !== null && root?.contains(active) === true && (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement || (active instanceof HTMLElement && active.isContentEditable));
-  if (typing && !current.rebuildAsked) return;
+  if (typing && !current.rebuildAsked) return false;
   current.rebuildAsked = false;
   if (typing && active instanceof HTMLElement) active.blur();
   // The loans go home before the new build takes them back, and anything that forces a layout in between (GitHub's
@@ -516,7 +526,7 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
     // No files view yet (it is still streaming in): stand where it will be, under the tab bar.
     const nav = filesTabLink()?.closest('nav') ?? null;
     const header = nav?.closest<HTMLElement>('[class*="header"], .gh-header, [data-component="PageHeader"]') ?? nav;
-    if (header === null) return;
+    if (header === null) return false;
     header.insertAdjacentElement('afterend', next);
   }
   current.root = next;
@@ -534,6 +544,7 @@ function mount(current: Visit, model: ReviewTabModel, handlers: ReviewTabHandler
     const top = next.getBoundingClientRect().top;
     if (top < 0 || top > 120) next.scrollIntoView({ block: 'start', behavior: 'instant' });
   }
+  return true;
 }
 
 /**

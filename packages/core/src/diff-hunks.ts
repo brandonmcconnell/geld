@@ -43,6 +43,12 @@ export interface FileHunks {
   readonly status: FileStatus;
   readonly binary: boolean;
   readonly hunks: readonly DiffHunk[];
+  /**
+   * What the file's header says of its content and mode: the `index <old>..<new> [mode]` blob ids and any `old mode` /
+   * `new mode`. The only identity a file without text hunks has (a binary, a mode change), so a replaced binary is not
+   * taken for the one already reviewed. Absent when the header carries none.
+   */
+  readonly identity?: string;
 }
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -79,6 +85,7 @@ interface OpenFile {
   deleted: boolean;
   created: boolean;
   binary: boolean;
+  identity: string[];
   hunks: DiffHunk[];
   open: OpenHunk | null;
 }
@@ -110,7 +117,8 @@ export function parseUnifiedDiffHunks(diffText: string): readonly FileHunks[] {
     if (current === null) return;
     closeHunk(current);
     const status: FileStatus = current.deleted ? 'deleted' : current.created ? 'added' : current.renamed ? 'renamed' : 'modified';
-    const file: FileHunks = { path: current.path, status, binary: current.binary, hunks: current.hunks };
+    const base: FileHunks = { path: current.path, status, binary: current.binary, hunks: current.hunks };
+    const file: FileHunks = current.identity.length === 0 ? base : { ...base, identity: current.identity.join('\n') };
     files.push(current.previousPath === null || current.previousPath === current.path ? file : { ...file, previousPath: current.previousPath });
     current = null;
   };
@@ -119,7 +127,7 @@ export function parseUnifiedDiffHunks(diffText: string): readonly FileHunks[] {
     if (line.startsWith('diff --git ')) {
       flush();
       const path = pathFromGitHeader(line);
-      current = path === null ? null : { path, previousPath: null, renamed: false, deleted: false, created: false, binary: false, hunks: [], open: null };
+      current = path === null ? null : { path, previousPath: null, renamed: false, deleted: false, created: false, binary: false, identity: [], hunks: [], open: null };
       continue;
     }
     if (current === null) continue;
@@ -155,6 +163,7 @@ export function parseUnifiedDiffHunks(diffText: string): readonly FileHunks[] {
       } else if (line.startsWith('deleted file mode ')) file.deleted = true;
       else if (line.startsWith('new file mode ')) file.created = true;
       else if (line.startsWith('Binary files ') || line === 'GIT binary patch') file.binary = true;
+      if (line.startsWith('index ') || line.startsWith('old mode ') || line.startsWith('new mode ')) file.identity.push(line);
       continue;
     }
     const open = file.open;
