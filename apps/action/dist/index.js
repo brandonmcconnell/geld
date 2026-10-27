@@ -19919,7 +19919,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id) });
+        const pendingAsk = statusOnly.get(asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: pendingAsk === void 0 ? Number.isNaN(at) ? null : at : pendingAsk.askedAt ?? pendingAsk.at });
       }
       continue;
     }
@@ -19971,7 +19972,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       unthreadedBy.delete(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const triggered = commandReply(comment.body) === "started" || statusOnly.get(id)?.triggered === true;
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered });
+      const pending = statusOnly.get(id);
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === void 0 ? Number.isNaN(at) ? null : at : pending.askedAt ?? pending.at });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
@@ -20092,8 +20094,9 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (check2.conclusion === "skipped") {
-      const pendingAt = statusOnly.get(bot.id)?.at;
-      const thisRun = pendingAt === void 0 || pendingAt === null || started >= pendingAt;
+      const pending = statusOnly.get(bot.id);
+      const askedAt = pending === void 0 ? void 0 : pending.askedAt ?? pending.at;
+      const thisRun = askedAt === void 0 || askedAt === null || started >= askedAt;
       byId.set(bot.id, { ...existing, ...options.partial === true || !thisRun ? {} : { runJudged: true } });
       continue;
     }

@@ -1085,6 +1085,9 @@ describe('a bot that refuses to run', () => {
     // A skip begun before "Review triggered" is the run before's: not this run's judgement.
     const earlierSkip = { ...skipped, startedAt: '2026-10-27T16:40:00Z', completedAt: '2026-10-27T16:40:01Z' };
     expect(verdictsFrom([earlierSkip], triggered.slice(2), 'head', [], later).find((v) => v.id === 'coderabbit')?.runJudged).toBeUndefined();
+    // Asked at 16:55:43, the check began at 16:55:45 and the status line came at 16:55:50: the skip is this run's.
+    const askedSkip = { ...skipped, startedAt: '2026-10-27T16:55:45Z', completedAt: '2026-10-27T16:55:46Z' };
+    expect(verdictsFrom([askedSkip], triggered.slice(2), 'head', [], later).find((v) => v.id === 'coderabbit')?.runJudged).toBe(true);
     // The skip alone is the word on the head.
     expect(verdictsFrom([skipped], [], 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'failed', reason: 'Check skipped', reviewedSha: 'head' });
     // A status line after "Review triggered" in the same run keeps it triggered.

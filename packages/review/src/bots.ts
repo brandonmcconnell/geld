@@ -1137,7 +1137,7 @@ export function verdictsFrom(
    * took the request (Greptile's 👀) — the one case where its silence afterwards is the run's failure rather than
    * no word at all.
    */
-  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean; readonly triggered?: boolean }>();
+  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean; readonly triggered?: boolean; readonly askedAt?: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
   /** The latest summary's findings with no thread of their own, for the run its threads go on to build. */
   const unthreadedBy = new Map<string, { readonly count: number; readonly anchor: string }>();
@@ -1220,7 +1220,8 @@ export function verdictsFrom(
         if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id) });
+        const pendingAsk = statusOnly.get(asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id), askedAt: pendingAsk === undefined ? (Number.isNaN(at) ? null : at) : (pendingAsk.askedAt ?? pendingAsk.at) });
       }
       continue;
     }
@@ -1280,7 +1281,9 @@ export function verdictsFrom(
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       // "Review triggered" marks the run, whatever status line follows it before the bot reports.
       const triggered = commandReply(comment.body) === 'started' || statusOnly.get(id)?.triggered === true;
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered });
+      // When the run was first asked for (the request, or this line when there was none) places a skipped check by it.
+      const pending = statusOnly.get(id);
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === undefined ? (Number.isNaN(at) ? null : at) : (pending.askedAt ?? pending.at) });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
@@ -1473,8 +1476,9 @@ export function verdictsFrom(
     // skip itself with its reason), never the check's "failed" over it. Judged only when the skip is the current run's
     // (no request or status line after it began) and the whole timeline is read, since what places it may not have loaded.
     if (check.conclusion === 'skipped') {
-      const pendingAt = statusOnly.get(bot.id)?.at;
-      const thisRun = pendingAt === undefined || pendingAt === null || started >= pendingAt;
+      const pending = statusOnly.get(bot.id);
+      const askedAt = pending === undefined ? undefined : (pending.askedAt ?? pending.at);
+      const thisRun = askedAt === undefined || askedAt === null || started >= askedAt;
       byId.set(bot.id, { ...existing, ...(options.partial === true || !thisRun ? {} : { runJudged: true }) });
       continue;
     }
