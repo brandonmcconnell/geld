@@ -1081,6 +1081,7 @@ describe('a bot that refuses to run', () => {
     const datedSkip = { ...skipped, startedAt: '2026-10-27T16:52:00Z', completedAt: '2026-10-27T16:52:01Z' };
     expect(verdictsFrom([datedSkip], before, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1, reviewedSha: UNKNOWN_SHA, runJudged: true });
     expect(verdictsFrom([datedSkip], [], 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'failed', reason: 'Check skipped' });
+    expect(verdictsFrom([datedSkip], before, 'head', [], now, { partial: true }).find((v) => v.id === 'coderabbit')?.runJudged).toBeUndefined();
     // The skip alone is the word on the head.
     expect(verdictsFrom([skipped], [], 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'failed', reason: 'Check skipped', reviewedSha: 'head' });
     // A status line after "Review triggered" in the same run keeps it triggered.
