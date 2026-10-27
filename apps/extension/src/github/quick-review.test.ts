@@ -123,6 +123,16 @@ describe("the tab bar button while GitHub's counts load", () => {
     expect(document.querySelector('.geld-quick-review')).toBeNull();
     expect(quickReviewStandBusy()).toBe(false);
   });
+
+  it('reads nothing busy while the group rides in the compact sticky header, whatever that row holds', () => {
+    wrapper().innerHTML = '<div class="counts">+3 −1</div>';
+    const counts = wrapper().querySelector<HTMLElement>('.counts');
+    if (counts === null) throw new Error('fixture');
+    document.body.insertAdjacentHTML('beforeend', '<div class="PageHeader stickyHeader__x prHeader__y is-stuck"><div class="PageHeader-TitleArea"><h2>Title</h2></div></div>');
+    applyQuickReview(true, { page, groups: [groupAt(counts)], headSha: () => SHA });
+    expect(document.querySelector('.PageHeader-TitleArea > .geld-quick-review')).not.toBeNull();
+    expect(quickReviewStandBusy()).toBe(false);
+  });
 });
 
 describe('the tab bar button', () => {

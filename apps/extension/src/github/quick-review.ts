@@ -265,7 +265,8 @@ function standAnchor(): HTMLElement | null {
 export function quickReviewStandBusy(): boolean {
   const group = mounted?.root ?? null;
   const wrapper = group?.isConnected === true ? group.parentElement : null;
-  if (group === null || wrapper === null) return false;
+  // Only in a counts wrapper: riding in the sticky header or toolbar, the group's row is GitHub's and always holds more.
+  if (group === null || wrapper === null || !wrapper.matches(`[class*="rightContentWrapper"], .${STAND_CLASS}`)) return false;
   const next = group.nextElementSibling;
   const onCounts = next !== null && !next.classList.contains(MARK_CLASS) && !isCountsStandIn(next) && next.querySelector('.sr-only, [class*="VisuallyHidden"]') !== null;
   return !onCounts && countsWrapperBusy(wrapper);
