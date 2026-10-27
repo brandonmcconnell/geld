@@ -1526,6 +1526,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       ? null
       : {
           anchors: new Set([...lastPush.items.flatMap((item) => item.sources.map((source) => source.anchor)), ...[...lastPush.comments, ...lastPush.previewComments, ...lastPush.seatedElsewhere].map((comment) => comment.anchor), ...lastPush.reviews.map((review) => review.anchor)]),
+          row: lastPush.commits[0] ?? null,
           at: startOf(lastPush),
         };
   return rounds.map((round, position) => {
@@ -1772,7 +1773,7 @@ let botLineAnchors = new Set<string>();
 /** The anchors of the Reports row's lines (each reporter's latest report comment), seated there the same way. */
 let reportLineAnchors = new Set<string>();
 /** What landed after the latest push (the anchors in its round) and when that push was, as the rounds last read; null with no push on the page. */
-let latestPush: { readonly anchors: ReadonlySet<string>; readonly at: number | null } | null = null;
+let latestPush: { readonly anchors: ReadonlySet<string>; readonly row: HTMLElement | null; readonly at: number | null } | null = null;
 
 /**
  * A bot posts its run summary and its threads moments apart, in either
@@ -2881,22 +2882,26 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
   });
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
-  // A bot whose verdict comes from something posted after the latest push (its round), or rewritten since, has run on
-  // this commit. Posting is read by the round, never by time: a round's start may be a commit's date, which can precede
-  // the push, so a report posted between the two would pass. Only a rewrite in place (Greptile's summary) needs the time.
+  // A bot has run on this commit when its verdict's source or its latest summary was posted after the latest push or
+  // rewritten since. Posting is read by place, never by time (a round's start may be a commit's date, which can precede
+  // the push): in the push's round, or after its commit row in the timeline — a thread merged into an item seated at an
+  // older thread is still after it. Only a rewrite in place (Greptile's summary) is read by when it was made.
   const pushed = latestPush;
+  const reportedSince = (anchor: string): boolean => {
+    if (pushed === null) return false;
+    if (pushed.anchors.has(anchor)) return true;
+    const node = document.getElementById(anchor);
+    if (node === null) return false;
+    if (pushed.row !== null && pushed.row.isConnected && compareHome(pushed.row, node) < 0) return true;
+    const edited = pushed.at === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
+    return !Number.isNaN(edited) && pushed.at !== null && edited >= pushed.at;
+  };
   const ranSincePush =
     pushed === null
       ? null
       : new Set(
           meta.bots
-            .filter((bot) => {
-              if (bot.sourceId === undefined) return false;
-              if (pushed.anchors.has(bot.sourceId)) return true;
-              const node = document.getElementById(bot.sourceId);
-              const edited = node === null || pushed.at === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
-              return !Number.isNaN(edited) && pushed.at !== null && edited >= pushed.at;
-            })
+            .filter((bot) => [bot.sourceId, botLines.find((line) => line.bot.id === bot.id)?.anchor].some((anchor) => typeof anchor === 'string' && reportedSince(anchor)))
             .map((bot) => bot.id),
         );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
