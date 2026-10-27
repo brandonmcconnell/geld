@@ -1059,7 +1059,8 @@ describe('a bot that refuses to run', () => {
     ];
     // The chat reply votes nothing: the last review stands, its count its own, and the skip's reason is not its.
     const standing = verdictsFrom([skipped], before, 'head', [], now).find((v) => v.id === 'coderabbit');
-    expect(standing).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-1' });
+    // Not of the head: the check on the head was skipped, so the review is of an earlier commit no comment names.
+    expect(standing).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-1', reviewedSha: UNKNOWN_SHA });
     expect(standing?.reason).toBeUndefined();
     // "@coderabbitai review", answered "Review triggered": the run is under way, whatever the skipped check from before says.
     const triggered = [
@@ -1073,7 +1074,11 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([skipped], triggered, 'head', [], later).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1 });
     // A clean review over a skipped check is clean: the skip is a run not made, not a failed one.
     const cleanAfter = [{ author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-11', createdAt: '2026-10-27T16:50:00Z' }];
-    expect(verdictsFrom([skipped], cleanAfter, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
+    expect(verdictsFrom([skipped], cleanAfter, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'clean', reviewedSha: UNKNOWN_SHA });
+    const threadsOnly = [{ author: 'coderabbitai[bot]', body: 'Guard the empty list.', anchor: 'discussion_r12', createdAt: '2026-10-27T16:50:00Z', resolved: true }];
+    expect(verdictsFrom([skipped], threadsOnly, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 0, reviewedSha: UNKNOWN_SHA });
+    // The skip alone is the word on the head.
+    expect(verdictsFrom([skipped], [], 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'failed', reason: 'Check skipped', reviewedSha: 'head' });
     // A status line after "Review triggered" in the same run keeps it triggered.
     const processing = [...triggered, { author: 'coderabbitai[bot]', body: 'Review in progress', anchor: 'issuecomment-9', createdAt: '2026-10-27T16:55:52Z' }];
     expect(verdictsFrom([skipped], processing, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('running');

@@ -1092,6 +1092,11 @@ export function verdictsFrom(
   const checkFinishedAt = new Map<string, number>();
   /** Bots whose check was skipped: a run the bot did not make. */
   const checkSkipped = new Set<string>();
+  /**
+   * The commit an earlier review stands for when it takes over a record: not the skipped check's, which is a commit the
+   * bot did not review; the comments do not say which it is, so it reads as behind (`UNKNOWN_SHA`).
+   */
+  const shaOver = (existing: DerivedBotVerdict): string => (checkSkipped.has(existing.id) && existing.verdict === 'failed' && existing.reason === 'Check skipped' ? UNKNOWN_SHA : existing.reviewedSha);
 
   for (const check of checks) {
     const bot = botByCheckName(check.name);
@@ -1297,8 +1302,9 @@ export function verdictsFrom(
       // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
       // A skipped check's reason is about a run not made; the comment is a review, so it does not carry over.
       const { reason: _skipped, ...reviewed } = existing;
+      const reviewedSha = shaOver(existing);
       const base: DerivedBotVerdict =
-        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : reviewed;
+        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : { ...reviewed, reviewedSha };
       byId.set(id, withOptionalCount({ ...base, verdict, sourceId: comment.anchor, login }, parsed));
       continue;
     }
@@ -1390,7 +1396,7 @@ export function verdictsFrom(
   // every one resolved nothing is outstanding, and the check (when there is one) says how that run ended.
   for (const [id, run] of threadRuns) {
     const existing = byId.get(id);
-    const reviewedSha = existing?.reviewedSha ?? headSha;
+    const reviewedSha = existing === undefined ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === undefined ? {} : { checkName };
     // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not.
@@ -1418,7 +1424,8 @@ export function verdictsFrom(
     // the request menu still offers a rerun for.
     // ...and a neutral that means findings says the run found these threads, which are resolved: "resolved" too.
     const fromCheck = checkName === undefined ? null : checkVerdict.get(id) ?? null;
-    if (fromCheck !== null && fromCheck !== 'clean' && fromCheck !== 'findings') {
+    // A skipped check is a run not made, not a failed one: the threads' run stands (behind, by `shaOver`).
+    if (fromCheck !== null && fromCheck !== 'clean' && fromCheck !== 'findings' && !checkSkipped.has(id)) {
       byId.set(id, { id, login: run.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run.lastAnchor });
       continue;
     }

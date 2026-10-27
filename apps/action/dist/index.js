@@ -19845,6 +19845,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkStartedAt = /* @__PURE__ */ new Map();
   const checkFinishedAt = /* @__PURE__ */ new Map();
   const checkSkipped = /* @__PURE__ */ new Set();
+  const shaOver = (existing) => checkSkipped.has(existing.id) && existing.verdict === "failed" && existing.reason === "Check skipped" ? UNKNOWN_SHA : existing.reviewedSha;
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
@@ -19987,7 +19988,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (existing !== void 0) {
       const verdict2 = parsed.clean && existing.verdict === "failed" && !checkSkipped.has(id) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
       const { reason: _skipped, ...reviewed } = existing;
-      const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : reviewed;
+      const reviewedSha = shaOver(existing);
+      const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : { ...reviewed, reviewedSha };
       byId.set(id, withOptionalCount({ ...base, verdict: verdict2, sourceId: comment.anchor, login }, parsed));
       continue;
     }
@@ -20041,7 +20043,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   for (const [id, run2] of threadRuns) {
     const existing = byId.get(id);
-    const reviewedSha = existing?.reviewedSha ?? headSha;
+    const reviewedSha = existing === void 0 ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
     const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
@@ -20055,7 +20057,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const rewriteSpeaks = existing?.verdict === "clean" || existing?.verdict === "findings" && existing.sourceId !== void 0 && countedSummaries.has(existing.sourceId);
     if (existing?.sourceId !== void 0 && rewriteSpeaks && edited !== void 0 && run2.lastAt !== null && edited > run2.lastAt + RERUN_EDIT_GAP_MS) continue;
     const fromCheck = checkName === void 0 ? null : checkVerdict.get(id) ?? null;
-    if (fromCheck !== null && fromCheck !== "clean" && fromCheck !== "findings") {
+    if (fromCheck !== null && fromCheck !== "clean" && fromCheck !== "findings" && !checkSkipped.has(id)) {
       byId.set(id, { id, login: run2.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run2.lastAnchor });
       continue;
     }
