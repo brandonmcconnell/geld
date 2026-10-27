@@ -21,7 +21,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
@@ -115,6 +115,8 @@ interface VisitState {
   /** GitHub's checks list has been asked to render (its gear lives there). */
   checksExpanded: boolean;
   autoLoads: number;
+  /** The most items GitHub's "Load more" has said it hides this visit, and the furthest the reading has got (0 to 1). */
+  ingest: { hiddenPeak: number; hiddenLast: number; progress: number };
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
   /**
@@ -166,6 +168,7 @@ const visit: VisitState = {
   lastReviews: null,
   checksExpanded: false,
   autoLoads: 0,
+  ingest: { hiddenPeak: 0, hiddenLast: 0, progress: 0 },
   manualDone: new Set(),
   settling: null,
   pinnedEntry: null,
@@ -1033,6 +1036,25 @@ function fragmentWanted(fragment: Element, src: string): boolean {
  * fetches everything; with it off the lazy fragments stay GitHub's, and
  * nothing here is "still coming".
  */
+/**
+ * How far the timeline's reading has got, 0 to 1: the items "Load more" has brought in out of the most it has said it
+ * hides, with the deferred fragments fetched out of those fetched or still wanted. The units differ (a page of items,
+ * a thread's replies) and pages bring more fragments, so it is a rough share, and it never goes back.
+ */
+function ingestProgress(): number {
+  // Between a press and the rows landing GitHub shows no count: that is not "nothing left", so the last reading stands.
+  const read = hiddenTimelineItems();
+  const hiddenNow = read === 0 && loadMorePending() ? visit.ingest.hiddenLast : read;
+  visit.ingest.hiddenLast = hiddenNow;
+  visit.ingest.hiddenPeak = Math.max(visit.ingest.hiddenPeak, hiddenNow);
+  const fetched = Math.max(0, eagerFragments - fragmentsInFlight.size);
+  const wanted = Math.min(Math.max(0, MAX_EAGER_FRAGMENTS - eagerFragments), deferredFragments().filter(({ fragment, src }) => fragmentWanted(fragment, src)).length);
+  const total = visit.ingest.hiddenPeak + eagerFragments + wanted;
+  const done = visit.ingest.hiddenPeak - hiddenNow + fetched;
+  visit.ingest.progress = Math.max(visit.ingest.progress, total === 0 ? 0 : Math.min(1, done / total));
+  return visit.ingest.progress;
+}
+
 function timelineIngesting(hidingTimeline: boolean): boolean {
   if (fragmentsInFlight.size > 0) return true;
   if (!hidingTimeline) return false;
@@ -2675,6 +2697,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
+    visit.ingest = { hiddenPeak: 0, hiddenLast: 0, progress: 0 };
     resetFragments();
     forgetThreads();
     resetEditTimes();
@@ -2776,6 +2799,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const roundEntries = [...awaiting, ...timelineEntries];
   const comments = pinOpenEntry([...roundEntries, ...provisionalReviewLines(sidebar, timelineEntries)]);
   const ingesting = timelineIngesting(hidingTimeline);
+  // The bar shows only while the digest is Geld's own reading: the Action's summary for this head is whole already.
+  const progress = ingesting && composed.freshness !== 'fresh' ? ingestProgress() : null;
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
@@ -2917,6 +2942,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     canRequestReviewers: reviewRequestForm() !== null,
     canDismissReviews: hasReviewActions(),
     ingesting,
+    progress,
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
     refsVersion: refsVersion(),

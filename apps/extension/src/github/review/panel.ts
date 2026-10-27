@@ -381,6 +381,8 @@ export interface PanelModel {
    * but the lines and the comment count are not yet, and the row says so.
    */
   readonly ingesting: boolean;
+  /** How far Geld's own reading of the timeline has got, 0 to 1, for the bar along the digest's top; null when not reading. */
+  readonly progress: number | null;
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
@@ -2481,6 +2483,47 @@ export interface MountOptions {
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  const mounted = buildPanel(model, handlers, options);
+  if (mounted !== null) syncProgress(mounted.root, model.progress);
+  return mounted;
+}
+
+/** The last width the progress bar showed: a rebuilt panel's new bar starts there, so it never jumps back to empty. */
+let shownProgress = 0;
+
+/**
+ * A thin accent bar along the digest's top edge while Geld reads the timeline (`PanelModel.progress`), kept in place
+ * across passes rather than in the signature, so it moves without rebuilding the panel. When the reading ends it fills
+ * and fades out.
+ */
+function syncProgress(root: HTMLElement, progress: number | null): void {
+  let bar = root.querySelector<HTMLElement>(`:scope > .${PANEL_CLASS}__progress`);
+  if (progress === null) {
+    if (bar === null || bar.hasAttribute('data-done')) return;
+    bar.setAttribute('data-done', '');
+    bar.setAttribute('aria-valuenow', '100');
+    bar.style.setProperty('--geld-progress', '1');
+    const leaving = bar;
+    window.setTimeout(() => leaving.remove(), 600);
+    shownProgress = 0;
+    return;
+  }
+  const percent = String(Math.round(progress * 100));
+  if (bar === null || bar.hasAttribute('data-done')) {
+    bar?.remove();
+    bar = createElement('div', { class: `${PANEL_CLASS}__progress`, [OWN_UI_ATTRIBUTE]: '', role: 'progressbar', 'aria-label': 'Reading the timeline', 'aria-valuemin': '0', 'aria-valuemax': '100' }, [createElement('div', { class: `${PANEL_CLASS}__progress-fill` })]);
+    bar.style.setProperty('--geld-progress', String(shownProgress));
+    root.prepend(bar);
+    const fresh = bar;
+    requestAnimationFrame(() => fresh.style.setProperty('--geld-progress', String(progress)));
+  } else {
+    bar.style.setProperty('--geld-progress', String(progress));
+  }
+  bar.setAttribute('aria-valuenow', percent);
+  shownProgress = progress;
+}
+
+function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
   const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}`;

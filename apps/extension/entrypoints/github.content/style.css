@@ -2385,6 +2385,37 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   font-variant-numeric: tabular-nums;
 }
 
+/* Geld reading the timeline: a thin accent bar over the digest's top edge, filling as it goes, gone when it is done. */
+.geld-review__progress {
+  position: absolute;
+  z-index: 3;
+  top: -1px;
+  right: -1px;
+  left: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.geld-review__progress-fill {
+  width: calc(var(--geld-progress, 0) * 100%);
+  height: 100%;
+  background: var(--bgColor-accent-emphasis, var(--color-accent-emphasis, #0969da));
+  transition:
+    width 300ms ease-out,
+    opacity 300ms ease-out 250ms;
+}
+
+.geld-review__progress[data-done] > .geld-review__progress-fill {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-review__progress-fill {
+    transition: none;
+  }
+}
+
 /* ---- summary strip ----------------------------------------------------- */
 
 .geld-review__head {
