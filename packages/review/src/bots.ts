@@ -497,7 +497,9 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
         /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text);
-  if (shaped !== null) count = shaped;
+  // CodeRabbit counts only in its review's shape: "0 issues remain" in a chat reply is no count of its.
+  if (botId === 'coderabbit') count = shaped;
+  else if (shaped !== null) count = shaped;
   // Greptile's summary (the one headed "Confidence Score: N/5") lists what it found under a "Findings" heading, one
   // bold title per finding ("1. **Review cards lack test coverage** ▶" raw, "**Review cards lack test coverage** ▶"
   // as the page reads a list item); a summary with no such section found nothing, whatever its risk sentence says
@@ -547,7 +549,7 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // word, or a review that counts none, is clean.
   const clean =
     botId === 'coderabbit'
-      ? (count === null || count === 0) && (/\bno actionable comments\b/i.test(text) || (count === 0 && shaped !== null))
+      ? (count === null || count === 0) && (/\bno actionable comments were generated\b/i.test(text) || (count === 0 && shaped !== null))
       : !needsHuman &&
         (count === null || count === 0) &&
         (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) ||
@@ -1269,7 +1271,9 @@ export function verdictsFrom(
       threadRuns.delete(id);
       unthreadedBy.delete(id);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered: commandReply(comment.body) === 'started' });
+      // "Review triggered" marks the run, whatever status line follows it before the bot reports.
+      const triggered = commandReply(comment.body) === 'started' || statusOnly.get(id)?.triggered === true;
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
@@ -1344,7 +1348,7 @@ export function verdictsFrom(
     // An undated skip after CodeRabbit's answer that the review asked for is triggered is the run before's: a skip is a
     // run not made, and this one is under way (geld#94 read failed until its check turned in progress). Only that answer:
     // another bot's "Starting…" over a skipped check may be the skip itself, and must not read running for 45 minutes.
-    const skippedBefore = triggered === true && !stale && before === undefined && checkSkipped.has(id);
+    const skippedBefore = id === 'coderabbit' && triggered === true && !stale && before === undefined && checkSkipped.has(id);
     const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved

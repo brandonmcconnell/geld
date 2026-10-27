@@ -1068,6 +1068,9 @@ describe('a bot that refuses to run', () => {
       { author: 'coderabbitai[bot]', body: 'Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits.', anchor: 'issuecomment-4', createdAt: '2026-10-27T16:55:50Z' },
     ];
     expect(verdictsFrom([skipped], triggered, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-4' });
+    // A status line after "Review triggered" in the same run keeps it triggered.
+    const processing = [...triggered, { author: 'coderabbitai[bot]', body: 'Review in progress', anchor: 'issuecomment-9', createdAt: '2026-10-27T16:55:52Z' }];
+    expect(verdictsFrom([skipped], processing, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('running');
     // A review with an inline finding and one outside the diff: resolving the thread leaves the outside one standing,
     // and the chip opens the review that holds it; a later clean review is the bot's word on both.
     const mixed = [
@@ -1081,6 +1084,11 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
     // A chat reply in anyone's words ("No issues found") is not CodeRabbit's clean word: the finding stands.
     expect(parseBotBody('The fix is correct. No issues found.', 'coderabbit').clean).toBe(false);
+    for (const reply of ['No actionable comments remain.', 'Thanks, 0 issues remain.']) {
+      expect(isReviewShaped(parseBotBody(reply, 'coderabbit'))).toBe(false);
+      const after = [...before, { author: 'coderabbitai[bot]', body: reply, anchor: 'issuecomment-8', createdAt: '2026-10-27T16:50:00Z' }];
+      expect(verdictsFrom([skipped], after, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1 });
+    }
     expect(parseBotBody('No actionable comments were generated in the recent review. 🎉', 'coderabbit').clean).toBe(true);
     const thanked = [...before, { author: 'coderabbitai[bot]', body: 'The fix is correct. No issues found.', anchor: 'issuecomment-6', createdAt: '2026-10-27T16:50:00Z' }];
     expect(verdictsFrom([skipped], thanked, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-1' });
