@@ -49,6 +49,18 @@ describe('syncCountsStandIn', () => {
     expect(findHeaderStatGroups().every((group) => isCountsStandIn(group.host))).toBe(true);
   });
 
+  it("waits while GitHub's skeleton holds the wrapper, and stands in once it resolves to nothing", () => {
+    header('<div class="rightContentWrapper__DE7XPN"><!--$--><div class="skeleton__c5fLaY"></div><!--/$--></div>');
+    expect(syncCountsStandIn(true)).toBe(false);
+    expect(document.querySelector('[data-geld-counts-stand-in]')).toBeNull();
+    document.querySelector('[class*="skeleton"]')!.remove();
+    expect(syncCountsStandIn(true)).toBe(true);
+    // A skeleton coming back (GitHub suspending again) takes the stand-in away until it resolves.
+    document.querySelector('[class*="rightContentWrapper"]')!.insertAdjacentHTML('afterbegin', '<div class="skeleton__c5fLaY"></div>');
+    expect(syncCountsStandIn(true)).toBe(true);
+    expect(document.querySelector('[data-geld-counts-stand-in]')).toBeNull();
+  });
+
   it('makes a wrapper of its own where GitHub renders none, and leaves when not wanted', () => {
     header(null);
     expect(syncCountsStandIn(true)).toBe(true);

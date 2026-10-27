@@ -215,11 +215,21 @@ function pullTabRow(): HTMLElement | null {
  * Not marked as Geld's UI, which the header scan skips (`isInsideDiffEntry`): it is read and rewritten as GitHub's are.
  * True when the page changed.
  */
+/**
+ * Whether GitHub's counts wrapper holds anything of GitHub's own: its counts, or the skeleton it shows while they load
+ * (a Suspense fallback, `skeleton__…`). Geld's group, mark and stand-in do not count. Until it holds nothing of GitHub's,
+ * the counts may yet arrive, and anything Geld put there in their place would stand beside the skeleton, then jump.
+ */
+export function countsWrapperBusy(wrapper: Element): boolean {
+  return [...wrapper.children].some((child) => !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
+}
+
 export function syncCountsStandIn(want: boolean): boolean {
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
   const row = pullTabRow();
   const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
-  if (!want || row === null || real) {
+  const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
+  if (!want || row === null || real || (wrapper !== null && countsWrapperBusy(wrapper))) {
     if (existing === null) return false;
     removeCountsStandIn();
     return true;

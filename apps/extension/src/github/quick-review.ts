@@ -5,6 +5,7 @@ export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
+import { countsWrapperBusy } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
 import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
@@ -235,6 +236,12 @@ function standAnchor(): HTMLElement | null {
     return null;
   }
   let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
+  // GitHub's skeleton (or its counts, hidden on a narrow header) is still there: the group waits for the counts rather
+  // than standing beside the skeleton and jumping when they replace it.
+  if (home !== null && countsWrapperBusy(home)) {
+    removeStand();
+    return null;
+  }
   if (home === null) {
     home = row.querySelector<HTMLElement>(`:scope > .${STAND_CLASS}`) ?? createElement('div', { class: STAND_CLASS, [OWN_UI_ATTRIBUTE]: '' });
     if (home.parentElement !== row) row.prepend(home);
