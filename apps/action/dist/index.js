@@ -19919,8 +19919,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
-        const pendingAsk = statusOnly.get(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: pendingAsk === void 0 ? Number.isNaN(at) ? null : at : pendingAsk.askedAt ?? pendingAsk.at });
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }

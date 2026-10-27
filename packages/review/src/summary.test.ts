@@ -1088,6 +1088,9 @@ describe('a bot that refuses to run', () => {
     // Asked at 16:55:43, the check began at 16:55:45 and the status line came at 16:55:50: the skip is this run's.
     const askedSkip = { ...skipped, startedAt: '2026-10-27T16:55:45Z', completedAt: '2026-10-27T16:55:46Z' };
     expect(verdictsFrom([askedSkip], triggered.slice(2), 'head', [], later).find((v) => v.id === 'coderabbit')?.runJudged).toBe(true);
+    // Asked again after that skip: the retry is a new run, and the skip before it is not its judgement.
+    const retried = [...triggered.slice(2), { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-10', createdAt: '2026-10-27T17:00:00Z' }];
+    expect(verdictsFrom([askedSkip], retried, 'head', [], later).find((v) => v.id === 'coderabbit')?.runJudged).toBeUndefined();
     // The skip alone is the word on the head.
     expect(verdictsFrom([skipped], [], 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'failed', reason: 'Check skipped', reviewedSha: 'head' });
     // A status line after "Review triggered" in the same run keeps it triggered.

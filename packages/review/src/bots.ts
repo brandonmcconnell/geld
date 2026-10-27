@@ -1220,8 +1220,8 @@ export function verdictsFrom(
         if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
-        const pendingAsk = statusOnly.get(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id), askedAt: pendingAsk === undefined ? (Number.isNaN(at) ? null : at) : (pendingAsk.askedAt ?? pendingAsk.at) });
+        // A request, even a retry, asks for a new run: it is when this run was asked for.
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
