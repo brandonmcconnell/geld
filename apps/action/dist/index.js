@@ -20091,6 +20091,10 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
       continue;
     }
+    if (check2.conclusion === "skipped") {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
     const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
     byId.set(bot.id, {

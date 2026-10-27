@@ -1469,6 +1469,12 @@ export function verdictsFrom(
       byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
       continue;
     }
+    // A skip is a run not made: whatever stands keeps its verdict (an earlier review, already behind by `shaOver`, or the
+    // skip itself with its reason), never the check's "failed" over it.
+    if (check.conclusion === 'skipped') {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
     byId.set(bot.id, {
