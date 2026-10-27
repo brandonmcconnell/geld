@@ -4,7 +4,7 @@ import type { RawPullRequest } from './build';
 import { encodePayloadAttribute, extractPayloadText, looksLikeSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, botsTriggeredBy, botTitle, commandReply, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, botTitle, commandReply, UNKNOWN_SHA, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
@@ -1029,14 +1029,15 @@ describe('a bot that refuses to run', () => {
     ];
     const now = Date.parse('2026-10-26T22:10:00Z');
     // Merged: the run cannot go on, and the last real review (its one finding, resolved) stands.
-    expect(verdictsFrom([pending], comments, 'head', [], now, { closed: true })[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, runJudged: true });
+    // Its commit is not the refused check's (the run there was refused), and the comments do not say which it is: behind.
+    expect(verdictsFrom([pending], comments, 'head', [], now, { closed: true })[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, runJudged: true, reviewedSha: UNKNOWN_SHA });
     // Still open and the status carries no start: an old refusal must not end a run that may be new.
     expect(verdictsFrom([pending], comments, 'head', [], now)[0]?.verdict).toBe('running');
     // A known start: a refusal after it ends that run, one before it does not.
-    expect(verdictsFrom([{ ...pending, startedAt: '2026-10-26T21:51:59Z' }], comments, 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0 });
+    expect(verdictsFrom([{ ...pending, startedAt: '2026-10-26T21:51:59Z' }], comments, 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, reviewedSha: UNKNOWN_SHA });
     expect(verdictsFrom([{ ...pending, startedAt: '2026-10-26T22:05:00Z' }], comments, 'head', [], now)[0]?.verdict).toBe('running');
     // A bot that never reviewed here reads skipped, with its reason.
-    expect(verdictsFrom([pending], [comments[0]!], 'head', [], now, { closed: true })[0]).toMatchObject({ verdict: 'failed', reason: 'The pull request is closed' });
+    expect(verdictsFrom([pending], [comments[0]!], 'head', [], now, { closed: true })[0]).toMatchObject({ verdict: 'failed', reason: 'The pull request is closed', reviewedSha: 'head' });
   });
 
   it("reads CodeRabbit's answer to a command as no review (geld#68)", () => {

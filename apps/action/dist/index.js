@@ -19863,7 +19863,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const lastWordBy = /* @__PURE__ */ new Map();
   const refusedAt = /* @__PURE__ */ new Map();
   const answeredBy = /* @__PURE__ */ new Map();
-  const refusedRuns = /* @__PURE__ */ new Set();
+  const refusedRuns = /* @__PURE__ */ new Map();
   const reported = (id, comment) => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time3 = at === void 0 ? NaN : Date.parse(at);
@@ -19963,7 +19963,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const started = checkStartedAt.get(id);
     if (started !== void 0 ? refused > started : options.closed === true) {
       checkVerdict.delete(id);
-      refusedRuns.add(id);
+      refusedRuns.set(id, byId.get(id)?.reviewedSha ?? headSha);
     }
   }
   for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged }] of statusOnly) {
@@ -20057,12 +20057,15 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runJudged: true
     });
   }
-  for (const id of refusedRuns) {
+  for (const [id, refusedSha] of refusedRuns) {
     const record3 = byId.get(id);
-    if (record3 !== void 0 && record3.verdict !== "running") byId.set(id, { ...record3, runJudged: true });
+    if (record3 === void 0 || record3.verdict === "running") continue;
+    const refusal = record3.verdict === "failed" && record3.reason !== void 0;
+    byId.set(id, { ...record3, runJudged: true, ...refusal || record3.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
   }
   return [...byId.values()];
 }
+var UNKNOWN_SHA = "0".repeat(40);
 var REPORT_GRACE_MS = 90 * 1e3;
 function reactedBy(comment, id) {
   const bot = botById(id);
