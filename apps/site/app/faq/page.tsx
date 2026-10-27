@@ -160,7 +160,7 @@ acme            # off in the whole organisation
     question: 'Is it open source?',
     answer: (
       <p>
-        Yes, MIT licensed at{' '}
+        Yes, AGPL-3.0 licensed at{' '}
         <ExternalLink href={REPO_URL}>github.com/{REPO_SLUG}</ExternalLink>
         . The extension is built with WXT from one codebase for Chrome, Edge, Firefox and Safari, and this website is in the same repository.
       </p>

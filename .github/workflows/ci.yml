@@ -8,7 +8,84 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Same-repository pull requests only (a fork's gets no secrets anyway): the
+  # pattern catalog is built from the branch here, in a job that holds no
+  # secret, and signed in the next one, which checks out the default branch
+  # and runs none of the branch's code. The signing key never shares a runner
+  # with pull request code: anything that runs there — the build, pnpm's
+  # scripts, a process left behind, a `node` put on $GITHUB_PATH — could read a
+  # secret given to a later step of the same job. The branch contributes data
+  # only (the generated JSON, its bumped categories.ts, its public key, which
+  # the signer reads with a regex to verify its own output), so a branch that
+  # rotates the public key still signs and checks consistently.
+  catalog-build:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm catalog:build --auto-version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geld-catalog-unsigned
+          path: |
+            catalog/patterns.json
+            packages/core/src/categories.ts
+            packages/core/src/catalog-key.ts
+          if-no-files-found: error
+  catalog-sign:
+    needs: catalog-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
+    steps:
+      # The default branch, not the pull request: the signer that runs with
+      # the key is the one already reviewed and merged.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-catalog-unsigned
+          path: .
+      # Plain node on the checked-out script: no install, no pnpm, nothing
+      # from the artifact is executed.
+      - id: sign
+        env:
+          GELD_CATALOG_PRIVATE_KEY: ${{ secrets.GELD_CATALOG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GELD_CATALOG_PRIVATE_KEY" ]; then
+            echo "::notice title=Catalog::GELD_CATALOG_PRIVATE_KEY is not available to this run; the committed signature is checked instead."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/catalog-sign.mjs
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - if: steps.sign.outputs.signed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: geld-catalog-signature
+          path: catalog/patterns.sig
+          if-no-files-found: error
   check-and-pack:
+    needs: [catalog-build, catalog-sign]
+    # Runs after the signing jobs on a same-repository pull request, and on its
+    # own (those jobs skipped) for pushes and forks. A failed build or signing
+    # fails the check too: a skipped catalog-sign after a failed catalog-build
+    # must not read as "nothing to sign" and let the committed catalog stand in.
+    if: ${{ !cancelled() && needs.catalog-build.result != 'failure' && needs.catalog-sign.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       # The catalog step commits signed pattern updates back to main.
@@ -69,6 +146,25 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "::notice title=Catalog::Published patterns ${version}."
+      # Pull requests from this repository: use the catalog the two jobs above
+      # built and signed, so the checks below validate a current signature
+      # instead of the branch's committed one (necessarily stale once a pull
+      # request changes the patterns; only the push to main can commit a new
+      # one). Nothing is committed here. Without the secret, or on a fork's
+      # pull request, the committed signature is checked as before.
+      - name: Use the catalog built for this check
+        if: needs.catalog-sign.outputs.signed == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: geld-catalog-unsigned
+          path: .
+      # A one-file artifact is stored flat, so this one lands by its directory.
+      - name: Use the signature made for this check
+        if: needs.catalog-sign.outputs.signed == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: geld-catalog-signature
+          path: catalog
       # Typechecks and unit tests for every workspace package (core + extension),
       # plus lint and a production build of the site.
       - run: pnpm check
@@ -125,7 +221,7 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
             echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|packages/core/|packages/github/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|apps/action/|packages/core/|packages/review/|packages/github/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "Only the site changed; no release."

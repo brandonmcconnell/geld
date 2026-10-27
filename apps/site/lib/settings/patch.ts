@@ -153,6 +153,10 @@ export function validateList(key: ListSettingKey, rawLines: readonly string[]): 
       const problem = lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
       return problem === null ? { ok: true, lines } : { ok: false, message: problem };
     }
+    case 'reviewBots': {
+      const problem = lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+      return problem === null ? { ok: true, lines } : { ok: false, message: problem };
+    }
   }
 }
 

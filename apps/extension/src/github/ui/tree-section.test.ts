@@ -1,7 +1,7 @@
 import type { DirNode, TreeNode } from './tree-section';
 import { buildTree, sortedChildren } from './tree-section';
 
-const file = (path: string) => ({ path, available: true, statusIcon: null, status: null });
+const file = (path: string) => ({ path, available: true, statusIcon: null, trailingVisual: null, annotationLabel: null, status: null });
 
 function outline(dir: DirNode, depth = 0): string[] {
   const lines: string[] = [];

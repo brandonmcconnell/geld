@@ -33,6 +33,11 @@ describe('validateSettingsDocument', () => {
     expect(issuesOf('{"a": [1, 2')).toEqual(['$: The file is not valid JSON: expected "," or "]" after the item at line 1, column 12.']);
   });
 
+  it('checks the Submit review switch like every other one', () => {
+    expect(issuesOf('{"quickReview": "false"}')).toEqual(['$.quickReview: Expected true or false, got "false".']);
+    expect(issuesOf('{"quickReview": false}')).toEqual([]);
+  });
+
   it('reports an empty or non-object file', () => {
     expect(issuesOf('   ')).toEqual(['$: The file is empty.']);
     expect(issuesOf('[1, 2]')).toEqual(['$: Expected a JSON object at the top level, got a list of 2.']);
@@ -162,6 +167,12 @@ describe('validateSettingsValue', () => {
 describe('collectSettingsIssues', () => {
   it('finds nothing wrong with the defaults', () => {
     expect(collectSettingsIssues(DEFAULT_SETTINGS)).toEqual([]);
+  });
+
+  it('rejects an unknown compactTimeline value', () => {
+    expect(collectSettingsIssues({ ...DEFAULT_SETTINGS, compactTimeline: 'loud' })).toEqual([
+      { path: 'settings.compactTimeline', message: 'Expected one of "off", "compact", "minimal", got "loud".' },
+    ]);
   });
 });
 

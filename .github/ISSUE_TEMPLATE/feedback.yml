@@ -1,0 +1,34 @@
+name: Feedback
+description: Something Geld got wrong, or something you wish it did. Opened from the extension's Feedback link with the context filled in.
+title: '[Feedback] '
+labels: [feedback]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, or what would you like?
+      description: A page URL helps when it is a public repository. Screenshots are welcome.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Geld version
+      placeholder: 0.1.2
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 148 on macOS
+  - type: input
+    id: page
+    attributes:
+      label: Where
+      description: The kind of page it happened on.
+      placeholder: pull request conversation, files changed, pull request list
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Options page → Copy diagnostics, pasted here, when counts were slow or missing. It names pull requests by number only.
+      render: text

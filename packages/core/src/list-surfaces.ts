@@ -81,10 +81,10 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'react-list',
     description:
-      'Primer ListView PR list rolling out to /pulls since 2026-09 (li[id*="-list-view-node-"] rows, a[data-testid="listitem-title-link"] titles, a Description-module__container line: "#N · author opened … · Review required · checks"), and the earlier React issues list (li[role="listitem"]).',
+      'Primer ListView PR list rolling out to /pulls since 2026-09 (li[id*="-list-view-node-"] rows, a[data-testid="listitem-title-link"] titles, a description line — Description-module__container until Oct 2026, container__x description__y since GitHub dropped the module prefix from its class names: "#N · author opened … · Review required · checks"), and the earlier React issues list (li[role="listitem"]).',
     row: 'li[id*="-list-view-node-"], li[role="listitem"]',
-    notInside: '[class*="StackState"]',
-    chipAnchors: [{ selector: '[class*="Description-module__container"], [data-testid="issue-pr-description"]', placement: 'append' }],
+    notInside: '[class*="StackState"], [class*="stackNavList"]',
+    chipAnchors: [{ selector: '[class*="Description-module__container"], [class*="description__"], [data-testid="issue-pr-description"]', placement: 'append' }],
     authors: [
       { selector: 'a[data-testid="author-filter-link"], a[data-testid*="author"]', from: 'label' },
       { selector: 'a[data-testid="author-filter-link"], a[data-testid*="author"]', from: 'href' },
@@ -97,10 +97,10 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'stack-popover',
     description:
-      'The "Stack N/M" popover on a stacked pull request: ActionList items inside [class*="StackState"], "#N · branch" in an ActionList.Description ellipsized on one line. Names no author.',
+      'The "Stack N/M" popover on a stacked pull request: ActionList items inside the popover\'s nav ([class*="StackState"] until Oct 2026; a nav.stackNavList__x inside a Primer AnchoredOverlay since), "#N · branch" in an ActionList.Description ellipsized on one line. Names no author.',
     row: 'li[data-component="ActionList.Item"]',
     // ActionList items appear in many menus; only inside a stack do they count.
-    inside: '[class*="StackState"]',
+    inside: '[class*="StackState"], [class*="AnchoredOverlay"] [class*="stackNavList"]',
     // Prepended and floated right: the counts keep their full width on the
     // right of the line and the branch name is what gets the ellipsis. The
     // "•" separator is dropped there — the counts sit against the edge, not
@@ -116,9 +116,9 @@ export const BUNDLED_LIST_SURFACES: readonly ListSurfaceSpec[] = [
   {
     id: 'stack-list',
     description:
-      'The merge box\'s "Stacked pull requests list" nav at the bottom of a PR: NavList items inside [class*="StackList"], "#N · branch" in an ActionList.Description with a status label ("Ready" / "Not ready") trailing the row. The counts follow the branch name inline — floated right they would butt against labels of differing widths and never line up.',
+      'The merge box\'s "Stacked pull requests list" nav at the bottom of a PR (NavList items inside [class*="StackList"], since Oct 2026 a nav.stackNavList__x carrying that aria-label) and the "Preview stack" dialog that proposes a stack from sequential PRs (the same NavList inside [class*="PreviewStackDialog"], in a Primer portal): "#N · branch" in a block ActionList.Description, a status label ("Ready" / "Not ready") trailing the merge box\'s rows. The counts follow the branch name inline — floated right they would butt against labels of differing widths and never line up.',
     row: 'li[data-component="ActionList.Item"]',
-    inside: '[class*="StackList"], nav[aria-label="Stacked pull requests list"]',
+    inside: '[class*="StackList"], nav[aria-label="Stacked pull requests list"], [class*="PreviewStackDialog"], [role="region"][aria-label="Proposed stack of pull requests"]',
     chipAnchors: [{ selector: '[data-component="ActionList.Description"]', placement: 'append' }],
     authors: [],
     css: `.geld-pr-stat[data-geld-surface='stack-list'] { --geld-chip-gap: 6px; font-size: 11px; }`,

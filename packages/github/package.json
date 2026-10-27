@@ -4,7 +4,7 @@
   "description": "GitHub App access shared by the Geld extension and website: user authorization (device and web flows), token refresh, and the API clients built on it. Pure TypeScript, no browser APIs.",
   "private": true,
   "type": "module",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*.ts"

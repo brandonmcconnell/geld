@@ -6,9 +6,21 @@ export interface PageInfo {
   readonly diffUrl: string | null;
   /** Key used to remember per-page UI state (expanded/collapsed) across tab switches. */
   readonly stateKey: string;
+  /**
+   * The commits a pull request's Files tab is narrowed to (`/changes/<sha>`, `/files/<base>..<head>`): its diff is
+   * that commit's or that range's, not the whole pull request's.
+   */
+  readonly commits?: string;
 }
 
-const PULL = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/([^/]+))?/;
+const PULL = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/([^/]+)(?:\/([^/?#]+))?)?/;
+const ONE_COMMIT = /^[0-9a-f]{7,64}$/i;
+const COMMIT_RANGE = /^([0-9a-f]{7,64})\.{2,3}([0-9a-f]{7,64})$/i;
+
+/** The newest commit a narrowed Files tab shows: the commit itself, or a range's head. */
+export function narrowedHead(commits: string): string {
+  return COMMIT_RANGE.exec(commits)?.[2] ?? commits;
+}
 const COMMIT = /^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]{7,64})/i;
 const COMPARE = /^\/([^/]+)\/([^/]+)\/compare\/([^?#]+)/;
 
@@ -17,10 +29,18 @@ export function describePage(url: URL): PageInfo {
 
   const pull = PULL.exec(path);
   if (pull !== null) {
-    const [, owner, repo, number, tab] = pull;
+    const [, owner, repo, number, tab, spec] = pull;
     const base = `/${owner}/${repo}/pull/${number}`;
     // `/files` is the classic tab; `/changes` is the newer React experience.
-    const kind: PageKind = tab === 'files' || tab === 'changes' ? 'pull-files' : tab === undefined ? 'pull-conversation' : 'pull-other';
+    const kind: PageKind =
+      tab === 'files' || tab === 'changes' ? 'pull-files' : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
+    // Narrowed to one commit or a range of them: GitHub's header counts that commit or range, and so does Geld. A range
+    // in a pull request (`<before>..<head>`) is the direct comparison of its two ends, as `compare/a..b` is.
+    if (kind === 'pull-files' && spec !== undefined) {
+      if (ONE_COMMIT.test(spec)) return { kind, diffUrl: `${url.origin}/${owner}/${repo}/commit/${spec}.diff`, stateKey: base, commits: spec };
+      const range = COMMIT_RANGE.exec(spec);
+      if (range !== null) return { kind, diffUrl: `${url.origin}/${owner}/${repo}/compare/${range[1]}..${range[2]}.diff`, stateKey: base, commits: spec };
+    }
     return { kind, diffUrl: `${url.origin}${base}.diff`, stateKey: base };
   }
 
@@ -39,4 +59,30 @@ export function describePage(url: URL): PageInfo {
   }
 
   return { kind: 'other', diffUrl: null, stateKey: path };
+}
+
+/**
+ * GitHub answered a repository URL with a sign-in page: the login form, an
+ * organisation's single sign-on prompt ("Single sign-on to Mintlify"), or a
+ * two-factor check. The URL still reads as a pull request, so without this
+ * the pass would ask for the page's JSON (the files-tab summaries, the
+ * Commits tab, the repository's directory listing) and every one would
+ * answer 401 — a red console error on a page Geld has nothing to do on.
+ * GitHub marks those pages with `session-authentication` on `<body>`; a
+ * repository page never carries it. Before `<body>` exists nothing is known,
+ * and nothing is fetched that early either.
+ */
+export function isSignInInterstitial(doc: Document = document): boolean {
+  return doc.body?.classList.contains('session-authentication') === true;
+}
+
+/**
+ * The pull request's state as the header's label says it ("Status: Draft",
+ * "Open", "Merged"): the React header's `[data-component="StateLabel"]`, the
+ * classic `.State`. GitHub rewrites it in place when the pull request is
+ * converted to a draft, marked ready, merged, closed or reopened.
+ */
+export function pullRequestStateWords(doc: Document = document): string {
+  const label = doc.querySelector('[data-component="StateLabel"], .gh-header-meta .State, .State[title]');
+  return (label?.getAttribute('title') ?? label?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }

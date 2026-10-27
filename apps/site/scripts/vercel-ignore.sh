@@ -4,7 +4,7 @@
 # Exit 0 = skip the build, exit 1 = build. We build whenever something the
 # site renders from changed since the LAST SUCCESSFUL DEPLOYMENT of this
 # branch: its own sources, @geld/core (the patterns page and the demo matcher
-# come from it), the extension's package.json (the version shown on the site),
+# come from it), @geld/review (the repository-config page lists its bots), the extension's package.json (the version shown on the site),
 # the brand assets and screenshots, or the workspace/lockfile. Commits that only change the
 # extension itself are skipped.
 #
@@ -19,6 +19,7 @@ SITE_PATHS=(
   apps/site
   packages/core
   packages/github
+  packages/review
   apps/extension/package.json
   assets/brand
   assets/screenshots

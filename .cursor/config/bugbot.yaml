@@ -1,0 +1,20 @@
+# Cursor Bugbot, per-repository settings (read from the default branch only,
+# so a pull request cannot change how it is reviewed). "Run only when
+# mentioned" is not a field here: it is set per repository in the Cursor
+# dashboard (or `manualTriggerOnly` via the Admin API). Trigger a review with a
+# PR comment of `bugbot run` or `cursor review`.
+version: 1
+
+triggers:
+  drafts: false
+  frequency: oncePerPr # a manual re-run reviews the new commits
+
+review:
+  effort: high
+  incremental: true
+
+prSummary:
+  mode: disabled # the PR description is the summary; keep the timeline quiet
+
+autofix:
+  mode: disabled # never push to a contributor's branch
