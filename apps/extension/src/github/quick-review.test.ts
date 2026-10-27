@@ -66,6 +66,54 @@ describe('reviewErrorText', () => {
   });
 });
 
+describe("the tab bar button while GitHub's counts load", () => {
+  const page = { kind: 'pull-conversation' as const, diffUrl: null, stateKey: '/acme/widgets/pull/7' };
+  const wrapper = (): HTMLElement => {
+    const element = document.querySelector('[class*="rightContentWrapper"]');
+    if (!(element instanceof HTMLElement)) throw new Error('fixture');
+    return element;
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"Not Found"}', { status: 404 })));
+    document.head.innerHTML = '<meta name="user-login" content="alice">';
+    // The tab row as GitHub first renders it: its counts wrapper holds a skeleton (a Suspense fallback) until they load.
+    document.body.innerHTML = `
+      <div data-component="PageHeader">
+        <a class="text-bold" href="/bob">bob</a>
+        <div class="prc-PageHeader-Navigation--uLav">
+          <div class="rightContentWrapper__DE7XPN"><div class="skeleton__c5fLaY"></div></div>
+          <div class="flex-auto"><nav class="TabNav__qHkBGx"><a id="prs-files-anchor-tab" href="/acme/widgets/pull/7/changes">Files changed</a></nav></div>
+        </div>
+      </div>`;
+    window.history.replaceState(null, '', '/acme/widgets/pull/7');
+  });
+
+  afterEach(() => {
+    removeQuickReview();
+    vi.unstubAllGlobals();
+  });
+
+  it('stays out until the counts replace the skeleton, then first appears directly before them', () => {
+    applyQuickReview(true, { page, groups: [], headSha: () => SHA });
+    expect(document.querySelector('.geld-quick-review')).toBeNull();
+    expect(document.querySelector('.geld-quick-review__mark')).toBeNull();
+    wrapper().innerHTML = '<div class="counts">+3 −1</div>';
+    const counts = wrapper().querySelector<HTMLElement>('.counts');
+    if (counts === null) throw new Error('fixture');
+    applyQuickReview(true, { page, groups: [groupAt(counts)], headSha: () => SHA });
+    expect(counts.previousElementSibling?.classList.contains('geld-quick-review')).toBe(true);
+  });
+
+  it('takes the end of the row once the skeleton resolves to nothing (a change of binary files only)', () => {
+    applyQuickReview(true, { page, groups: [], headSha: () => SHA });
+    expect(document.querySelector('.geld-quick-review')).toBeNull();
+    wrapper().replaceChildren();
+    applyQuickReview(true, { page, groups: [], headSha: () => SHA });
+    expect(wrapper().querySelector('.geld-quick-review + .geld-quick-review__mark')).not.toBeNull();
+  });
+});
+
 describe('the tab bar button', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"Not Found"}', { status: 404 })));
