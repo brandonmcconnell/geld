@@ -153,6 +153,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The same list feeds `reportsFromChecks`.
   **A check's conclusion is read in the bot's words** (`ReviewBot.neutralConclusion`, `notCheckNames`): Bugbot documents `success` = nothing found, `neutral` = findings (its default;
   `failure` only when configured to fail on unresolved findings), and a separate `Cursor Bugbot Autofix` check that is not the review — so Bugbot's neutral is `findings` with no count until its threads say one, the Autofix row matches no bot, `skipped` is a refused run (`failed` with reason "Check skipped"), and `action_required`/`stale` fail like `timed_out`.
+  **Bugbot's neutral is findings only from a Bugbot that has posted them**: it posts every finding as a review thread, and it also concludes neutral when it skips a commit whose patch matches its last review ("Bugbot skipped this commit because its changes match the last review", completed in a second, mint#13635), which read "findings" with nothing to open;
+  with no Bugbot thread on the whole timeline the neutral is that last review standing, `clean`, and while the timeline is still being read it stays findings (`postedThreads` in `verdictsFrom`).
   CodeRabbit's check is neutral on completion and says nothing about the code.
   A run a person started on the bot's own site may post no check at all;
   its review is then read from the comments when it lands, as always.

@@ -461,7 +461,11 @@ describe('bots + prompts', () => {
   it("reads a check's conclusion in the bot's own words", () => {
     // Bugbot's docs: `neutral` is its default for a run that found something; `failure` only when configured to
     // fail on unresolved findings. CodeRabbit's check is neutral on completion and says nothing about the code.
-    expect(verdictsFrom([{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa' }], [], 'aaa')[0]).toMatchObject({ id: 'bugbot', verdict: 'findings', checkName: 'Cursor Bugbot' });
+    // But Bugbot posts every finding as a thread, and is neutral too when it skips a commit whose patch matches its last
+    // review (mint#13635: "Completed in 1s", nothing posted): with no thread from it, the neutral is no findings.
+    expect(verdictsFrom([{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa' }], [], 'aaa')[0]).toMatchObject({ id: 'bugbot', verdict: 'clean', checkName: 'Cursor Bugbot' });
+    // While the timeline is still being read its threads may simply not be on the page yet.
+    expect(verdictsFrom([{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa' }], [], 'aaa', [], Date.now(), { partial: true })[0]).toMatchObject({ verdict: 'findings' });
     expect(verdictsFrom([{ name: 'CodeRabbit', status: 'completed', conclusion: 'neutral', sha: 'aaa' }], [], 'aaa')[0]).toMatchObject({ id: 'coderabbit', verdict: 'clean' });
     // Findings the bot then posted as threads carry the count.
     const threads = verdictsFrom(
@@ -473,13 +477,14 @@ describe('bots + prompts', () => {
       'aaa',
     );
     expect(threads[0]).toMatchObject({ verdict: 'findings', count: 1 });
-    // A request the bot answered only through its check (the partial shows no start): the neutral still speaks.
+    // A request the bot answered only through its check (the partial shows no start): the neutral speaks, and with no
+    // thread from the bot it says nothing was found.
     const asked = verdictsFrom(
       [{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa' }],
       [{ author: 'octocat', body: 'bugbot run', anchor: 'issuecomment-9', createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }],
       'aaa',
     );
-    expect(asked[0]).toMatchObject({ id: 'bugbot', verdict: 'findings' });
+    expect(asked[0]).toMatchObject({ id: 'bugbot', verdict: 'clean' });
     // Every thread of a neutral run resolved: resolved, as with a green check.
     const resolved = verdictsFrom(
       [{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa' }],
@@ -489,10 +494,10 @@ describe('bots + prompts', () => {
     expect(resolved[0]).toMatchObject({ verdict: 'findings', count: 0 });
     // A skipped check is a run the bot did not make, in its word.
     expect(verdictsFrom([{ name: 'CodeRabbit', status: 'completed', conclusion: 'skipped', sha: 'aaa' }], [], 'aaa')[0]).toMatchObject({ verdict: 'failed', reason: 'Check skipped' });
-    // A finished check whose start is known and that no word followed: neutral is still findings.
+    // A finished check whose start is known and that no word followed: judged by the check, and with no thread clean.
     const started = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const finished = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    expect(verdictsFrom([{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa', startedAt: started, completedAt: finished }], [], 'aaa')[0]).toMatchObject({ verdict: 'findings', runJudged: true });
+    expect(verdictsFrom([{ name: 'Cursor Bugbot', status: 'completed', conclusion: 'neutral', sha: 'aaa', startedAt: started, completedAt: finished }], [], 'aaa')[0]).toMatchObject({ verdict: 'clean', runJudged: true });
     // The Autofix check is the same App's other job, not the review.
     expect(verdictsFrom([{ name: 'Cursor Bugbot Autofix', status: 'completed', conclusion: 'success', sha: 'aaa' }], [], 'aaa')).toEqual([]);
     // Two readings of the head's checks: the page's live rows win by name, the commit partial fills in the rest.

@@ -19828,6 +19828,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkVerdict = /* @__PURE__ */ new Map();
   const checkStartedAt = /* @__PURE__ */ new Map();
   const checkFinishedAt = /* @__PURE__ */ new Map();
+  const postedThreads = /* @__PURE__ */ new Set();
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
@@ -19903,6 +19904,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     if (id === null) continue;
     if (comment.resolved !== void 0) {
+      postedThreads.add(id);
       reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
@@ -19966,6 +19968,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const verdict = parsed.clean ? "clean" : "findings";
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
+  }
+  if (options.partial !== true) {
+    for (const [id, verdict] of checkVerdict) {
+      const record3 = byId.get(id);
+      if (verdict !== "findings" || postedThreads.has(id) || record3 === void 0 || record3.sourceId !== void 0) continue;
+      checkVerdict.set(id, "clean");
+      byId.set(id, { ...record3, verdict: "clean" });
+    }
   }
   for (const [id, verdict] of checkVerdict) {
     const refused = refusedAt.get(id);
