@@ -826,10 +826,42 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 4; i += 1) await settle();
     expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('No options available');
     expect(document.querySelector('.geld-quick-review__status-menu button')).toBeNull();
-    // Closed, the pill steps aside for GitHub's own label: this reader has nothing to switch to here.
-    pill()?.click();
+    // Closed with Escape, the pill steps aside for GitHub's own label (this reader has nothing to switch to here), and
+    // the keyboard lands on the review group rather than on a button that has left the page.
+    document.querySelector('.geld-quick-review__status-menu')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();
     expect(pill()?.hasAttribute('aria-haspopup') ?? false).toBe(false);
+    expect(document.activeElement?.closest('.geld-quick-review__group')).not.toBeNull();
+  });
+
+  it('shows options that a later read finds while the menu says there are none', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    rememberStatusHint('acme/widgets', true);
+    let offer = false;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    stubBox(() =>
+      offer
+        ? mergeBox('MERGEABLE', true)
+        : JSON.stringify({
+            pullRequest: { state: 'OPEN', isDraft: false, viewerCanMarkReadyForReview: false, viewerCanConvertToDraft: false, latestOpinionatedReviews: [], viewerCanClose: false, viewerCanAdminBypassMergeRequirements: false, viewerMergeActions: [] },
+            mergeRequirements: { state: 'BLOCKED', conditions: [], commitMessageHeadline: 'Title (#7)', commitMessageBody: '' },
+          }),
+    );
+    pill()?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('No options available');
+    // A check lands and the reader may now merge: the next read (here, the tab shown again) fills the open menu.
+    offer = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(menuRows()).toEqual([
+      ['merged', 'Squash and merge'],
+      ['closed', 'Close pull request'],
+    ]);
   });
 
   it('shows the options when the newest read lands, even after an older read finished first', async () => {

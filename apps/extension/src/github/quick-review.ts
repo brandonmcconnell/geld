@@ -1346,7 +1346,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
       } else if (event.key === 'Escape') {
         event.preventDefault();
         closeStatusMenu(state);
-        pill.focus({ preventScroll: true });
+        returnStatusFocus(state, pill);
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         const list = inSubmenu && submenu !== null ? [...submenu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')] : items();
@@ -1429,12 +1429,18 @@ function positionStatusMenu(state: Mounted): void {
   menu.style.top = `${Math.round(rect.bottom + 4)}px`;
 }
 
-/** A menu still on its loading line takes what the read that just finished says: the options, or why there are none. */
+/** A menu on its placeholder line takes what the read that just finished says: the options, or why there are none. */
 function refreshPlaceholderMenu(state: Mounted): void {
   const pill = state.statusOpener;
-  if (state.statusMenu?.dataset.placeholder !== 'loading' || pill === null || !pill.isConnected) return;
+  if (state.statusMenu?.dataset.placeholder === undefined || pill === null || !pill.isConnected) return;
   closeStatusMenu(state, false);
   openStatusMenu(state, pill);
+}
+
+/** Back to the pill, or, when closing took the pill away (nothing to offer), to the review group's first control. */
+function returnStatusFocus(state: Mounted, pill: HTMLButtonElement): void {
+  const target = pill.isConnected ? pill : state.root.isConnected ? state.root.querySelector<HTMLButtonElement>('button:not([hidden]):not([disabled])') : null;
+  target?.focus({ preventScroll: true });
 }
 
 function closeStatusMenu(state: Mounted, settle = true): void {
