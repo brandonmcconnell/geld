@@ -332,6 +332,8 @@ export interface PanelModel {
   readonly folds: readonly FoldRow[];
   readonly batches: readonly Batch[];
   readonly requestable: readonly InstalledBot[];
+  /** Bots that reported after the latest push, so on this commit; null when the page shows no push to tell by. */
+  readonly ranSincePush: ReadonlySet<string> | null;
   /** The Review bots row's list: each bot's latest run summary, in the chips' order. */
   readonly botLines: readonly BotLine[];
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
@@ -1263,15 +1265,15 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
 }
 
 /** What a bot's line in the request menu says about its last run here, and whether it is ticked to begin with. */
-interface BotRunState {
+export interface BotRunState {
   readonly health: Health | null;
   readonly word: string;
-  /** Ticked when the menu opens: a failed run, one on an earlier commit, or one that had findings (resolved since or not). */
+  /** Ticked when the menu opens: a failed run, one on an earlier commit, or one whose findings came before the latest push. */
   readonly preselect: boolean;
 }
 
-function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
-  const record = model.meta.bots.find((entry) => entry.id === bot.id);
+export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush'> & { readonly meta: Pick<PanelModel['meta'], 'bots' | 'headSha'> }): BotRunState {
+  const record = model.meta.bots.find((entry) => entry.id === botId);
   if (record === undefined) return { health: null, word: 'Not run', preselect: false };
   const health = botHealth(record);
   if (health === 'pending') return { health, word: record.verdict === 'loading' ? 'Loading' : record.verdict === 'unknown' ? 'No word' : 'Running', preselect: false };
@@ -1279,12 +1281,13 @@ function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
   // A refused run ("disabled for this repository") is Skipped, and not ticked: asking again changes nothing until
   // the bot's setup does.
   if (record.verdict === 'failed' && record.reason !== undefined) return { health, word: 'Skipped', preselect: false };
-  // A run that had findings is worth running again whether or not its threads have been resolved since: the chip
-  // shows the green check once they are, but the bot has not looked at the fixes. The line keeps saying "Findings"
-  // beside that check so the tick explains itself.
+  // A run that had findings says "Findings" whether or not its threads have been resolved since (the chip shows the
+  // green check once they are). It is ticked only when the bot has not reported since the latest push: then it has
+  // not seen the fixes, while a bot that already reviewed this commit would say the same again.
   const findings = record.verdict === 'findings';
-  const word = health === 'bad' ? 'Failed' : findings || health === 'warn' ? 'Findings' : 'Passed';
-  return { health, word, preselect: health === 'bad' || findings };
+  const word = record.verdict === 'failed' ? 'Failed' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
+  const reviewedThisCommit = model.ranSincePush?.has(botId) ?? true;
+  return { health, word, preselect: record.verdict === 'failed' || (findings && !reviewedThisCommit) };
 }
 
 /** How Geld knows the bot is here, for the line's tooltip. */
@@ -1305,8 +1308,8 @@ function presenceWords(bot: InstalledBot): string {
  * Request a review: a checkbox per bot, with what its last run here said
  * (failed, findings, passed, running, on an earlier commit, not run), so
  * the reader can run only the ones that need it. Failed and stale runs
- * start ticked, and so does a run that had findings — resolved since or
- * not, the bot has not seen the fixes. Bots with a sign of being here (active on the page,
+ * start ticked, and so does a run whose findings came before the latest
+ * push, resolved since or not: the bot has not seen the fixes. Bots with a sign of being here (active on the page,
  * declared by the repository, configured in it) are listed first; the rest
  * of the registry waits behind "Other bots", since a trigger for a bot that
  * is not installed is a public comment with a handle in it. Run posts one
@@ -1340,7 +1343,7 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     run.toggleAttribute('disabled', picked === 0);
   };
   const line = (bot: InstalledBot): HTMLElement => {
-    const state = botRunState(bot, model);
+    const state = botRunState(bot.id, model);
     const input = createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': `${bot.label}, ${state.word.toLowerCase()}` });
     input.checked = state.preselect;
     checks.set(bot.id, input);

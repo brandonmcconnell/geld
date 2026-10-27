@@ -1450,31 +1450,31 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   // precede its push (committed Monday, pushed Friday); an edit in that gap would seat early. Accepted: a bot
   // edits its summary in answer to a push, so its edits never fall there, and a human's edit of a bot comment is
   // their own. Doing this exactly needs the API's push times, which belongs in the Action's payload.
-  if (rounds.length > 1) {
-    // Null when no time is known yet — such a round is not a move target, so a missing time never pulls a summary
-    // forward by mistake. Content that landed in the round is the last resort; an anchor not on the page is skipped.
-    const startOf = (round: Round): number | null => {
-      let best: number | null = null;
-      const take = (time: number): void => {
-        if (!Number.isNaN(time)) best = best === null ? time : Math.min(best, time);
-      };
-      for (const row of round.commits) {
-        if (pushRoots.has(row)) {
-          take(Date.parse(createdAtOf(row)));
-          continue;
-        }
-        const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
-        const times = sha === undefined ? null : commitTimes(sha, reapplySoon);
-        if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
-      }
-      if (best !== null) return best;
-      const at = (anchor: string): number => {
-        const element = document.getElementById(anchor);
-        return element === null ? Number.NaN : Date.parse(createdAtOf(element));
-      };
-      const content = [...[...round.comments, ...round.seatedElsewhere].map((comment) => Date.parse(createdAtOf(comment.node))), ...round.reviews.map((review) => at(review.anchor)), ...round.items.flatMap((item) => item.sources.map((source) => at(source.anchor)))].filter((time) => !Number.isNaN(time));
-      return content.length === 0 ? null : Math.min(...content);
+  // Null when no time is known yet — such a round is not a move target, so a missing time never pulls a summary
+  // forward by mistake. Content that landed in the round is the last resort; an anchor not on the page is skipped.
+  const startOf = (round: Round): number | null => {
+    let best: number | null = null;
+    const take = (time: number): void => {
+      if (!Number.isNaN(time)) best = best === null ? time : Math.min(best, time);
     };
+    for (const row of round.commits) {
+      if (pushRoots.has(row)) {
+        take(Date.parse(createdAtOf(row)));
+        continue;
+      }
+      const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+      const times = sha === undefined ? null : commitTimes(sha, reapplySoon);
+      if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
+    }
+    if (best !== null) return best;
+    const at = (anchor: string): number => {
+      const element = document.getElementById(anchor);
+      return element === null ? Number.NaN : Date.parse(createdAtOf(element));
+    };
+    const content = [...[...round.comments, ...round.seatedElsewhere].map((comment) => Date.parse(createdAtOf(comment.node))), ...round.reviews.map((review) => at(review.anchor)), ...round.items.flatMap((item) => item.sources.map((source) => at(source.anchor)))].filter((time) => !Number.isNaN(time));
+    return content.length === 0 ? null : Math.min(...content);
+  };
+  if (rounds.length > 1) {
     const starts = rounds.map(startOf);
     for (let from = 0; from < rounds.length; from += 1) {
       for (const comment of [...rounds[from]?.comments ?? []]) {
@@ -1519,6 +1519,15 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? round.previewComments[0]?.anchor ?? round.seatedElsewhere[0]?.anchor;
     return first ?? `at-${position + 1}`;
   };
+  let lastPush: Round | undefined;
+  for (const round of rounds) if (round.commits.length > 0) lastPush = round;
+  latestPush =
+    lastPush === undefined
+      ? null
+      : {
+          anchors: new Set([...lastPush.items.flatMap((item) => item.sources.map((source) => source.anchor)), ...[...lastPush.comments, ...lastPush.previewComments, ...lastPush.seatedElsewhere].map((comment) => comment.anchor), ...lastPush.reviews.map((review) => review.anchor)]),
+          at: startOf(lastPush),
+        };
   return rounds.map((round, position) => {
     const avatars: Avatar[] = [];
     const names: string[] = [];
@@ -1762,6 +1771,8 @@ let sourceFacts = new Map<string, SourceFacts>();
 let botLineAnchors = new Set<string>();
 /** The anchors of the Reports row's lines (each reporter's latest report comment), seated there the same way. */
 let reportLineAnchors = new Set<string>();
+/** What landed after the latest push (the anchors in its round) and when that push was, as the rounds last read; null with no push on the page. */
+let latestPush: { readonly anchors: ReadonlySet<string>; readonly at: number | null } | null = null;
 
 /**
  * A bot posts its run summary and its threads moments apart, in either
@@ -2870,6 +2881,23 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
   });
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
+  // A bot whose verdict comes from something posted, or rewritten, after the latest push has run on this commit.
+  const pushed = latestPush;
+  const ranSincePush =
+    pushed === null
+      ? null
+      : new Set(
+          meta.bots
+            .filter((bot) => {
+              if (bot.sourceId === undefined) return false;
+              if (pushed.anchors.has(bot.sourceId)) return true;
+              const node = document.getElementById(bot.sourceId);
+              if (node === null || pushed.at === null) return false;
+              const times = [Date.parse(createdAtOf(node)), Date.parse(editedAt(node, reapplySoon) ?? '')].filter((time) => !Number.isNaN(time));
+              return times.some((time) => time >= (pushed.at ?? Number.POSITIVE_INFINITY));
+            })
+            .map((bot) => bot.id),
+        );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
   const model: PanelModel = {
@@ -2885,6 +2913,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     folds: foldRows(groups),
     batches,
     requestable,
+    ranSincePush,
     botLines,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
