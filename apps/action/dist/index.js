@@ -20092,7 +20092,9 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (check2.conclusion === "skipped") {
-      byId.set(bot.id, { ...existing, ...options.partial === true ? {} : { runJudged: true } });
+      const pendingAt = statusOnly.get(bot.id)?.at;
+      const thisRun = pendingAt === void 0 || pendingAt === null || started >= pendingAt;
+      byId.set(bot.id, { ...existing, ...options.partial === true || !thisRun ? {} : { runJudged: true } });
       continue;
     }
     const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);

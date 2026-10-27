@@ -1470,10 +1470,12 @@ export function verdictsFrom(
       continue;
     }
     // A skip is a run not made: whatever stands keeps its verdict (an earlier review, already behind by `shaOver`, or the
-    // skip itself with its reason), never the check's "failed" over it. Judged only once the whole timeline is read: the
-    // request or report that places the skip may not have loaded yet.
+    // skip itself with its reason), never the check's "failed" over it. Judged only when the skip is the current run's
+    // (no request or status line after it began) and the whole timeline is read, since what places it may not have loaded.
     if (check.conclusion === 'skipped') {
-      byId.set(bot.id, { ...existing, ...(options.partial === true ? {} : { runJudged: true }) });
+      const pendingAt = statusOnly.get(bot.id)?.at;
+      const thisRun = pendingAt === undefined || pendingAt === null || started >= pendingAt;
+      byId.set(bot.id, { ...existing, ...(options.partial === true || !thisRun ? {} : { runJudged: true }) });
       continue;
     }
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
