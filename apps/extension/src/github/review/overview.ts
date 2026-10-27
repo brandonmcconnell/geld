@@ -964,6 +964,11 @@ function resetFragments(): void {
   failedFragments = new Map();
 }
 
+/** Whether `src` has been read: its fetched markup stands in the page (a failed or skipped fetch has none). */
+function fragmentRead(src: string): boolean {
+  return fetchedFragments.get(src)?.some((node) => node.isConnected) === true;
+}
+
 /** Whether `src` is in the page right now: fetched and still standing, in flight, or failed too recently to try again. */
 function fragmentSatisfied(src: string): boolean {
   if (fragmentsInFlight.has(src)) return true;
@@ -2732,9 +2737,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // open thread is never deferred — GitHub minimizes only reviews whose threads are all resolved — so a thread the
   // crawl cannot see is a resolved one, or one past that fold).
   const complete = !partial && !hasLoadMore();
-  // And every thread's comments too: a resolved thread's stay behind its fragment until fetched, which the full timeline
-  // and the fetch limit leave to GitHub, so a bot's resolved thread may be there unread.
-  const threadsRead = complete && !deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
+  // And every thread's comments too: a resolved thread's stay behind its fragment until fetched, which the full timeline,
+  // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
+  // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
+  const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
   const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
