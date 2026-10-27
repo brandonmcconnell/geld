@@ -20077,7 +20077,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (record3 === void 0 || (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) > answer.at) continue;
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
-    const ours = started !== void 0 ? ranForAnswer(id, started) : record3.checkName !== void 0 && checkVerdict.get(id) !== "running" && (finished === void 0 || finished >= answer.askedAt);
+    const ours = started !== void 0 ? ranForAnswer(id, started) : record3.checkName !== void 0 && checkVerdict.get(id) !== "running" && (finished !== void 0 ? finished >= answer.askedAt && finished <= answer.at + REPORT_GRACE_MS : checkVerdict.get(id) === "clean");
     if (ours) byId.set(id, { ...afterAnswer(record3), runJudged: true });
   }
   for (const [id, refusedSha] of refusedRuns) {

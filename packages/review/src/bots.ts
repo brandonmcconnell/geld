@@ -1420,8 +1420,9 @@ export function verdictsFrom(
   // Requests the bot answered with no review, settled last so no pass before can drop what they leave: the run each set
   // aside, or no word for a bot with none, marked judged so an Action summary saved while the check ran (running) gives
   // way to it in `withLiveRuns`. The check is the answered run when its known start falls in the answer's window, or,
-  // with no start (a commit status, which the Action dates by its finish alone), when it finished after the request
-  // and is not still under way — one open with no start may be a new run, and reads running.
+  // with no start (a commit status, which the Action dates by its finish alone), when it finished between the request
+  // and the report's grace after the answer; with no time at all, only a green one, whose "clean" is the claim to undo
+  // (a failure is never hidden behind an old reply). One still under way with no start may be a new run, and reads running.
   for (const [id, answer] of answeredBy) {
     const record = byId.get(id);
     if (record === undefined || (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) > answer.at) continue;
@@ -1430,7 +1431,9 @@ export function verdictsFrom(
     const ours =
       started !== undefined
         ? ranForAnswer(id, started)
-        : record.checkName !== undefined && checkVerdict.get(id) !== 'running' && (finished === undefined || finished >= answer.askedAt);
+        : record.checkName !== undefined &&
+          checkVerdict.get(id) !== 'running' &&
+          (finished !== undefined ? finished >= answer.askedAt && finished <= answer.at + REPORT_GRACE_MS : checkVerdict.get(id) === 'clean');
     if (ours) byId.set(id, { ...afterAnswer(record), runJudged: true });
   }
   // An earlier review standing in a refused run took the refused check's commit with the check's record: it is not of
