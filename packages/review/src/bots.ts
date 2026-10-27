@@ -1120,6 +1120,17 @@ export function verdictsFrom(
    * against a finished check is, and an earlier review standing in it is not of that commit.
    */
   const refusedRuns = new Map<string, string>();
+  /**
+   * Whether a check begun at `started` is the run of a request the bot answered with "Review finished": begun after the
+   * request and before the answer's rewrite (the run's finish), or, with that rewrite not known yet, within the report's
+   * grace of the answer's first posting, since the bot posts the answer moments before it starts the check; and the bot
+   * has voted nothing since. A check begun after that is a newer run (one started on the bot's own site, say).
+   */
+  const ranForAnswer = (id: string, started: number): boolean => {
+    const answer = answeredBy.get(id);
+    if (answer === undefined || started < answer.askedAt || started > (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS)) return false;
+    return (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) <= answer.at;
+  };
   const reported = (id: string, comment: BotComment): void => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time = at === undefined ? NaN : Date.parse(at);
@@ -1245,6 +1256,13 @@ export function verdictsFrom(
       refusedRuns.set(id, byId.get(id)?.reviewedSha ?? headSha);
     }
   }
+  // A check still under way for a request the bot answered with "Review finished": nothing new is coming, so the run
+  // the request set aside stands while the check closes, rather than reading running for as long as it stays open. Only
+  // with a start to place it by; a check begun after the answer is a newer run and reads running as any other.
+  for (const [id, verdict] of checkVerdict) {
+    const started = checkStartedAt.get(id);
+    if (verdict === 'running' && started !== undefined && ranForAnswer(id, started)) checkVerdict.delete(id);
+  }
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
   // check to go by the bot is running until it says more.
@@ -1367,13 +1385,8 @@ export function verdictsFrom(
       continue;
     }
     // The run this check made was the one the bot answered with "Review finished": nothing new, so the run before it
-    // stands rather than the check's bare conclusion. It starts after the request and before the answer's rewrite, the
-    // run's finish; with that rewrite not known yet, within the report's grace of the answer's first posting, since the
-    // bot posts the answer moments before it starts the check. A check begun after that is a newer run (one started on
-    // the bot's own site, say), judged on its own.
-    const answer = answeredBy.get(bot.id);
-    const ranForAnswer = answer !== undefined && started >= answer.askedAt && started <= (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS);
-    if (answer !== undefined && ranForAnswer && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
+    // stands rather than the check's bare conclusion.
+    if (ranForAnswer(bot.id, started)) {
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }

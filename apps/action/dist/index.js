@@ -19864,6 +19864,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const refusedAt = /* @__PURE__ */ new Map();
   const answeredBy = /* @__PURE__ */ new Map();
   const refusedRuns = /* @__PURE__ */ new Map();
+  const ranForAnswer = (id, started) => {
+    const answer = answeredBy.get(id);
+    if (answer === void 0 || started < answer.askedAt || started > (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS)) return false;
+    return (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) <= answer.at;
+  };
   const reported = (id, comment) => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time3 = at === void 0 ? NaN : Date.parse(at);
@@ -19966,6 +19971,10 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       refusedRuns.set(id, byId.get(id)?.reviewedSha ?? headSha);
     }
   }
+  for (const [id, verdict] of checkVerdict) {
+    const started = checkStartedAt.get(id);
+    if (verdict === "running" && started !== void 0 && ranForAnswer(id, started)) checkVerdict.delete(id);
+  }
   for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged }] of statusOnly) {
     const existing = byId.get(id);
     const edited = lastEditBy.get(id);
@@ -20039,9 +20048,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }
-    const answer = answeredBy.get(bot.id);
-    const ranForAnswer = answer !== void 0 && started >= answer.askedAt && started <= (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS);
-    if (answer !== void 0 && ranForAnswer && (lastWordBy.get(bot.id) ?? Number.NEGATIVE_INFINITY) <= answer.at) {
+    if (ranForAnswer(bot.id, started)) {
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }

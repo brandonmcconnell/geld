@@ -1074,6 +1074,12 @@ describe('a bot that refuses to run', () => {
     // bot's own site, no trigger comment) that closes green with no report is the newer, clean run.
     const after = { ...dated, startedAt: '2026-10-26T05:03:44Z', completedAt: '2026-10-26T05:06:00Z' };
     expect(verdictsFrom([after], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', runJudged: true });
+    // Still under way, the same check leaves the restored run standing rather than reading running until it closes; one
+    // begun after the answer's finish is a newer run, running.
+    const underWay = { ...status('in_progress'), startedAt: dated.startedAt };
+    expect(verdictsFrom([underWay], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0 });
+    expect(verdictsFrom([underWay], [...before, unedited], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0 });
+    expect(verdictsFrom([{ ...underWay, startedAt: '2026-10-26T05:03:44Z' }], [...before, finished], 'head', [], now)[0]?.verdict).toBe('running');
     // A check begun hours after the answer is a newer run, judged on its own.
     const later = { ...dated, startedAt: '2026-10-26T09:00:00Z', completedAt: '2026-10-26T09:05:00Z' };
     expect(verdictsFrom([later], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', runJudged: true });
