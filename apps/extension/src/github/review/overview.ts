@@ -2331,11 +2331,17 @@ function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHan
       return;
     }
     handlers.onOpenAnchor(anchor);
+    // With the full timeline the anchor only scrolls there and nothing moves into the panel: after a moment, Edit
+    // replays from the comment where it stands, which is then in view.
     const started = performance.now();
     const wait = (): void => {
       const comment = shown();
       if (comment !== null) replay(comment);
-      else if (performance.now() - started < 3000) requestAnimationFrame(wait);
+      else if (performance.now() - started < 1500) requestAnimationFrame(wait);
+      else {
+        const home = jsCommentFor(anchor);
+        if (home !== null) replay(home);
+      }
     };
     requestAnimationFrame(wait);
   };
