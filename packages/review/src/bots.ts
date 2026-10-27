@@ -1114,7 +1114,7 @@ export function verdictsFrom(
    * whether that time is its rewrite (the run's finish) or only its first posting. A check that ran for that request ends
    * with nothing new, so the run the request set aside stands over its conclusion.
    */
-  const answeredBy = new Map<string, { readonly askedAt: number; readonly at: number; readonly finished: boolean }>();
+  const answeredBy = new Map<string, { readonly askedAt: number; readonly at: number; readonly finished: boolean; readonly anchor: string }>();
   /**
    * Bots whose running check a refusal ended, with the commit that check ran on: their verdict is judged, as one read
    * against a finished check is, and an earlier review standing in it is not of that commit.
@@ -1126,6 +1126,16 @@ export function verdictsFrom(
    * grace of the answer's first posting, since the bot posts the answer moments before it starts the check; and the bot
    * has voted nothing since. A check begun after that is a newer run (one started on the bot's own site, say).
    */
+  /**
+   * What an answered request leaves: the run it set aside, or, for a bot with none (a summary, a review, threads), no
+   * word at all — the check that ran for it is all its record holds, and "clean" or "running" from that check would
+   * claim a review the reply says did not happen. It opens the reply.
+   */
+  const afterAnswer = (record: DerivedBotVerdict): DerivedBotVerdict => {
+    const answer = answeredBy.get(record.id);
+    if (record.sourceId !== undefined || answer === undefined) return record;
+    return { id: record.id, login: record.login, verdict: 'unknown', reviewedSha: record.reviewedSha, ...(record.checkName === undefined ? {} : { checkName: record.checkName }), sourceId: answer.anchor };
+  };
   const ranForAnswer = (id: string, started: number): boolean => {
     const answer = answeredBy.get(id);
     if (answer === undefined || started < answer.askedAt || started > (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS)) return false;
@@ -1185,7 +1195,7 @@ export function verdictsFrom(
       const posted = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       const rewritten = comment.editedAt === undefined ? NaN : Date.parse(comment.editedAt);
       const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
-      if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten) });
+      if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten), anchor: comment.anchor });
       statusOnly.delete(id);
       const prior = runsBeforeAsk.get(id);
       if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
@@ -1261,7 +1271,10 @@ export function verdictsFrom(
   // with a start to place it by; a check begun after the answer is a newer run and reads running as any other.
   for (const [id, verdict] of checkVerdict) {
     const started = checkStartedAt.get(id);
-    if (verdict === 'running' && started !== undefined && ranForAnswer(id, started)) checkVerdict.delete(id);
+    if (verdict !== 'running' || started === undefined || !ranForAnswer(id, started)) continue;
+    checkVerdict.delete(id);
+    const record = byId.get(id);
+    if (record !== undefined) byId.set(id, afterAnswer(record));
   }
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
@@ -1387,7 +1400,7 @@ export function verdictsFrom(
     // The run this check made was the one the bot answered with "Review finished": nothing new, so the run before it
     // stands rather than the check's bare conclusion.
     if (ranForAnswer(bot.id, started)) {
-      byId.set(bot.id, { ...existing, runJudged: true });
+      byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
       continue;
     }
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
