@@ -1050,6 +1050,13 @@ describe('a bot that refuses to run', () => {
     expect(commandReply(triggeredPage)).toBe('started');
     expect(isStatusLineComment(triggeredPage)).toBe(true);
     expect(commandReply('Actionable comments posted: 1')).toBeNull();
+    // "@coderabbitai review" on a commit it had already reviewed (geld#114): no review either, so it inherits no count.
+    const notCompletedRaw =
+      '<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated reply by CodeRabbit -->\n<!-- CodeRabbit review command invocation: v2:3fdea57d -->\n<details>\n<summary>⚠️ Action not completed</summary>\n<dl>\n<dd>\n\nAlready reviewed the last commit. Use `@coderabbitai full review` to rerun a review of the entire changeset.\n\n> Note: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.\n\n</dd>\n</dl>\n</details>';
+    const notCompletedPage = '⚠️ Action not completed\nAlready reviewed the last commit. Use `@coderabbitai full review` to rerun a review of the entire changeset.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.';
+    expect(commandReply(notCompletedRaw)).toBe('done');
+    expect(commandReply(notCompletedPage)).toBe('done');
+    expect(isStatusLineComment(notCompletedPage)).toBe(false);
     const before = [
       { author: 'coderabbitai[bot]', body: 'Actionable comments posted: 1', anchor: 'pullrequestreview-1', createdAt: '2026-10-22T22:49:37Z' },
       { author: 'coderabbitai[bot]', body: 'Guard the empty list.', anchor: 'discussion_r1', createdAt: '2026-10-22T22:49:36Z', resolved: true },
@@ -1060,6 +1067,8 @@ describe('a bot that refuses to run', () => {
     // Nothing new to review: the earlier run stands whole, its one finding resolved, not that finding's count.
     const finished = { author: 'coderabbitai[bot]', body: finishedPage, anchor: 'issuecomment-2', createdAt: '2026-10-26T04:57:10Z', editedAt: '2026-10-26T05:03:14Z' };
     expect(verdictsFrom([status('completed')], [...before, finished], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, sourceId: 'discussion_r1' });
+    const notCompleted = { author: 'coderabbitai[bot]', body: notCompletedPage, anchor: 'issuecomment-3', createdAt: '2026-10-26T04:57:10Z' };
+    expect(verdictsFrom([status('completed')], [...before, notCompleted], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 0, sourceId: 'discussion_r1' });
     // The check the request started, dated (the Action dates commit statuses): it began moments after the reply was
     // posted and closed green when the reply turned "finished". The run before stands, and the green check does not
     // turn it into "clean" once the report's grace runs out, whether or not the reply's rewrite is known yet.

@@ -894,7 +894,8 @@ function reviewBotIdFor(login: string, extraLogins: readonly string[]): string |
 /**
  * CodeRabbit's answer to a command (`@coderabbitai review`, `resume`): "✅ Action performed" in a disclosure, then what
  * it did, edited in place from "Review triggered." to "Review finished." — the second with "does not re-review already
- * reviewed commits" when there was nothing new. `started` is a run under way; `done` answers the request and reviews
+ * reviewed commits" when there was nothing new, or "⚠️ Action not completed" with why (the last commit already
+ * reviewed). `started` is a run under way; `done` answers the request and reviews
  * nothing, so the run before it stands (geld#68 read the inherited count of a resolved finding as "1 issue").
  */
 export function commandReply(body: string): 'started' | 'done' | null {
@@ -904,7 +905,8 @@ export function commandReply(body: string): 'started' | 'done' | null {
     .replace(/[`*_>~#]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!/^(?:✅\s*)?actions? performed\b/i.test(text)) return null;
+  // "⚠️ Action not completed" ("Already reviewed the last commit", geld#114) answers the request with no review just the same.
+  if (!/^[^\p{L}\p{N}]*actions? (?:performed|not completed)\b/iu.test(text)) return null;
   return /\breviews? triggered\b/i.test(text) ? 'started' : 'done';
 }
 

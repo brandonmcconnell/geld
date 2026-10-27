@@ -19802,7 +19802,7 @@ function reviewBotIdFor(login, extraLogins) {
 }
 function commandReply(body) {
   const text = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
-  if (!/^(?:✅\s*)?actions? performed\b/i.test(text)) return null;
+  if (!/^[^\p{L}\p{N}]*actions? (?:performed|not completed)\b/iu.test(text)) return null;
   return /\breviews? triggered\b/i.test(text) ? "started" : "done";
 }
 function isStatusLineComment(body) {
