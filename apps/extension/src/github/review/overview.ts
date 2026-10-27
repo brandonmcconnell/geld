@@ -2304,8 +2304,19 @@ function jsCommentFor(anchor: string): HTMLElement | null {
  * is null) and did nothing. Such a click is replayed from a hidden copy of the item inside the comment, so GitHub's own
  * handler runs as at home. Edit wants the comment in view: a closed row is opened first.
  */
+/** Each worn menu's relay, with what the latest wear gave it. */
+const relayedMenus = new WeakMap<HTMLElement, { readonly anchor: string; readonly handlers: PanelHandlers }>();
+
 function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHandlers): void {
+  // One listener per menu, whatever it has been through: a menu can go home without its restore hooks (a rebuild that
+  // keeps the CI slot) and be worn again, and a second listener replayed Quote reply twice. It reads the latest wear.
+  const known = relayedMenus.has(menu);
+  relayedMenus.set(menu, { anchor, handlers });
+  if (known) return;
   const relay = (event: MouseEvent): void => {
+    const worn = relayedMenus.get(menu);
+    if (worn === undefined || menu.closest(`[${ATTR_CTL_SLOT}]`) === null) return;
+    const { anchor, handlers } = worn;
     const item = event.target instanceof Element ? event.target.closest<HTMLElement>(COMMENT_SCOPED_ITEMS) : null;
     if (item === null || !menu.contains(item)) return;
     event.preventDefault();
@@ -2346,7 +2357,6 @@ function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHan
     requestAnimationFrame(wait);
   };
   menu.addEventListener('click', relay, { capture: true });
-  onRestore(() => menu.removeEventListener('click', relay, { capture: true }));
 }
 
 const COMMENT_CONTAINER_SELECTOR = '.js-comment-container, .review-comment, .timeline-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="comment-viewer-outer-box"], [id^="issuecomment-"], [id^="discussion_r"]';
