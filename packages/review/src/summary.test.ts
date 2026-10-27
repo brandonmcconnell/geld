@@ -1079,6 +1079,14 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], openMixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 2, sourceId: 'discussion_r9' });
     const reviewedAgain = [...mixed, { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-10', createdAt: '2026-10-27T10:00:00Z' }];
     expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
+    // A chat reply in anyone's words ("No issues found") is not CodeRabbit's clean word: the finding stands.
+    expect(parseBotBody('The fix is correct. No issues found.', 'coderabbit').clean).toBe(false);
+    expect(parseBotBody('No actionable comments were generated in the recent review. 🎉', 'coderabbit').clean).toBe(true);
+    const thanked = [...before, { author: 'coderabbitai[bot]', body: 'The fix is correct. No issues found.', anchor: 'issuecomment-6', createdAt: '2026-10-27T16:50:00Z' }];
+    expect(verdictsFrom([skipped], thanked, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-1' });
+    // Another bot's own "reviewing" line over an undated skipped check may be that skip: it stays the skip.
+    const bugbotSays = [{ author: 'cursor[bot]', body: 'Bugbot is reviewing your changes', anchor: 'issuecomment-7', createdAt: '2026-10-27T16:55:43Z' }];
+    expect(verdictsFrom([{ ...skipped, name: 'Cursor Bugbot' }], bugbotSays, 'head', [], now).find((v) => v.id === 'bugbot')?.verdict).toBe('failed');
     // A person's request the bot answers only with a skipped check is still the skip (Bugbot skips drafts).
     const asked = [{ author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-5', createdAt: '2026-10-27T16:55:43Z' }];
     expect(verdictsFrom([{ ...skipped, name: 'Cursor Bugbot' }], asked, 'head', [], now).find((v) => v.id === 'bugbot')?.verdict).toBe('failed');

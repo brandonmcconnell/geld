@@ -19536,7 +19536,7 @@ function parseBotBody(body, botId) {
   const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ""));
   const readyToMerge = /\bready to merge\b/i.test(text) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
   !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
-  const clean = !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
+  const clean = botId === "coderabbit" ? (count === null || count === 0) && (/\bno actionable comments\b/i.test(text) || count === 0 && shaped !== null) : !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
   const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
@@ -19967,7 +19967,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       threadRuns.delete(id);
       unthreadedBy.delete(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false });
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered: commandReply(comment.body) === "started" });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
@@ -20007,7 +20007,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const record3 = byId.get(id);
     if (record3 !== void 0) byId.set(id, afterAnswer(record3));
   }
-  for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged }] of statusOnly) {
+  for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged, triggered }] of statusOnly) {
     const existing = byId.get(id);
     const edited = lastEditBy.get(id);
     if (existing !== void 0 && at !== null && edited !== void 0 && edited > at) continue;
@@ -20015,7 +20015,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
     const before = started !== void 0 ? started : finished;
-    const skippedBefore = own2 && !stale && before === void 0 && checkSkipped.has(id);
+    const skippedBefore = triggered === true && !stale && before === void 0 && checkSkipped.has(id);
     const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at) && !skippedBefore;
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);

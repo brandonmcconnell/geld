@@ -543,15 +543,19 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
     !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) &&
     // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
     !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
+  // CodeRabbit's chat answers in anyone's words ("The fix is correct. No issues found."): only its review's own clean
+  // word, or a review that counts none, is clean.
   const clean =
-    !needsHuman &&
-    (count === null || count === 0) &&
-    (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) ||
-      /\bno actionable comments\b/i.test(text) ||
-      /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) ||
-      readyToMerge ||
-      approved ||
-      (count === 0 && (score === null || botId === 'greptile' || shaped !== null)));
+    botId === 'coderabbit'
+      ? (count === null || count === 0) && (/\bno actionable comments\b/i.test(text) || (count === 0 && shaped !== null))
+      : !needsHuman &&
+        (count === null || count === 0) &&
+        (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) ||
+          /\bno actionable comments\b/i.test(text) ||
+          /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) ||
+          readyToMerge ||
+          approved ||
+          (count === 0 && (score === null || botId === 'greptile' || shaped !== null)));
   // A severity word under a negation is not a severity: "no established behavioral blocker", "no critical issues",
   // "without security risk". The denied phrase goes before the words are weighed.
   const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
@@ -1124,7 +1128,7 @@ export function verdictsFrom(
    * took the request (Greptile's 👀) — the one case where its silence afterwards is the run's failure rather than
    * no word at all.
    */
-  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean }>();
+  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean; readonly triggered?: boolean }>();
   const threadRuns = new Map<string, ThreadRun>();
   /** The latest summary's findings with no thread of their own, for the run its threads go on to build. */
   const unthreadedBy = new Map<string, { readonly count: number; readonly anchor: string }>();
@@ -1265,7 +1269,7 @@ export function verdictsFrom(
       threadRuns.delete(id);
       unthreadedBy.delete(id);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false });
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered: commandReply(comment.body) === 'started' });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
@@ -1320,7 +1324,7 @@ export function verdictsFrom(
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
   // check to go by the bot is running until it says more.
-  for (const [id, { login, anchor, at, own, acknowledged }] of statusOnly) {
+  for (const [id, { login, anchor, at, own, acknowledged, triggered }] of statusOnly) {
     const existing = byId.get(id);
     // The bot rewrote its summary after the run was asked for: that is the report, and the summary's verdict (read
     // above, from its words as they are now) stands. Greptile re-reviews into the same comment.
@@ -1337,9 +1341,10 @@ export function verdictsFrom(
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
     const before = started !== undefined ? started : finished;
-    // An undated skip after the bot's own word that a run began ("Review triggered") is the run before's: a skip is a run
-    // not made, and this one is under way (geld#94 read failed until CodeRabbit's check turned in progress).
-    const skippedBefore = own && !stale && before === undefined && checkSkipped.has(id);
+    // An undated skip after CodeRabbit's answer that the review asked for is triggered is the run before's: a skip is a
+    // run not made, and this one is under way (geld#94 read failed until its check turned in progress). Only that answer:
+    // another bot's "Starting…" over a skipped check may be the skip itself, and must not read running for 45 minutes.
+    const skippedBefore = triggered === true && !stale && before === undefined && checkSkipped.has(id);
     const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved
