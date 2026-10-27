@@ -993,10 +993,11 @@ html[data-geld-quick-review] details.js-reviews-container {
   gap: 3px;
 }
 
+/* The glyphs are the buttons' own, at the buttons' size and on their line: each stands level with its counterpart. */
 .geld-quick-review__tally-part > svg {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .geld-quick-review__tally-part[data-tone='approved'] > svg {
@@ -1009,6 +1010,8 @@ html[data-geld-quick-review] details.js-reviews-container {
 
 .geld-quick-review__tally-part[data-tone='commented'] > svg {
   color: var(--fgColor-muted, #59636e);
+  /* As in its button: the bubble fills y 1 to 12 of 16, so centred by its box it reads high. */
+  transform: translateY(1px);
 }
 
 /* The snapshot card under the tally: one line per reviewer, a link to their review. */
