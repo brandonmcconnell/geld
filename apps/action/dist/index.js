@@ -19541,9 +19541,10 @@ function parseBotBody(body, botId) {
   const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
-  const verdict = needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
-  const unthreaded = botId === "coderabbit" ? outsideDiffCount(text) : 0;
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
+  const coderabbit = botId === "coderabbit";
+  const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
+  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
 function refusalReason(body) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<\/?(?:h[1-6]|p|div|br|li|ul|ol|details|summary|blockquote)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, "");
@@ -19984,7 +19985,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
-      const verdict2 = parsed.clean && existing.verdict === "failed" ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
+      const verdict2 = parsed.clean && existing.verdict === "failed" && !checkSkipped.has(id) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
       const { reason: _skipped, ...reviewed } = existing;
       const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : reviewed;
       byId.set(id, withOptionalCount({ ...base, verdict: verdict2, sourceId: comment.anchor, login }, parsed));
@@ -20017,7 +20018,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
     const before = started !== void 0 ? started : finished;
-    const skippedBefore = id === "coderabbit" && triggered === true && !stale && before === void 0 && checkSkipped.has(id);
+    const skippedBefore = id === "coderabbit" && triggered === true && before === void 0 && checkSkipped.has(id);
     const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at) && !skippedBefore;
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);

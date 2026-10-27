@@ -569,9 +569,11 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
         ? 'low'
         : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
-  const verdict = needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
-  const unthreaded = botId === 'coderabbit' ? outsideDiffCount(text) : 0;
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
+  // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
+  const coderabbit = botId === 'coderabbit';
+  const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
+  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
 }
 
 export interface RawCheckRun {
@@ -1290,7 +1292,8 @@ export function verdictsFrom(
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== undefined) {
-      const verdict = parsed.clean && existing.verdict === 'failed' ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
+      // A clean word over a failed check is findings; over a skipped one it is clean (the skip is a run not made).
+      const verdict = parsed.clean && existing.verdict === 'failed' && !checkSkipped.has(id) ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
       // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
       // A skipped check's reason is about a run not made; the comment is a review, so it does not carry over.
       const { reason: _skipped, ...reviewed } = existing;
@@ -1348,7 +1351,8 @@ export function verdictsFrom(
     // An undated skip after CodeRabbit's answer that the review asked for is triggered is the run before's: a skip is a
     // run not made, and this one is under way (geld#94 read failed until its check turned in progress). Only that answer:
     // another bot's "Starting…" over a skipped check may be the skip itself, and must not read running for 45 minutes.
-    const skippedBefore = id === 'coderabbit' && triggered === true && !stale && before === undefined && checkSkipped.has(id);
+    // Whose skip it is does not change with time; the run going stale is decided below, as for a run with no check.
+    const skippedBefore = id === 'coderabbit' && triggered === true && before === undefined && checkSkipped.has(id);
     const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved

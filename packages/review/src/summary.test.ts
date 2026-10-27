@@ -1068,6 +1068,12 @@ describe('a bot that refuses to run', () => {
       { author: 'coderabbitai[bot]', body: 'Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits.', anchor: 'issuecomment-4', createdAt: '2026-10-27T16:55:50Z' },
     ];
     expect(verdictsFrom([skipped], triggered, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-4' });
+    // Unanswered for 45 minutes, the old skip is still the run before's: the earlier review stands, not a failed run.
+    const later = Date.parse('2026-10-27T17:45:00Z');
+    expect(verdictsFrom([skipped], triggered, 'head', [], later).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1 });
+    // A clean review over a skipped check is clean: the skip is a run not made, not a failed one.
+    const cleanAfter = [{ author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-11', createdAt: '2026-10-27T16:50:00Z' }];
+    expect(verdictsFrom([skipped], cleanAfter, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
     // A status line after "Review triggered" in the same run keeps it triggered.
     const processing = [...triggered, { author: 'coderabbitai[bot]', body: 'Review in progress', anchor: 'issuecomment-9', createdAt: '2026-10-27T16:55:52Z' }];
     expect(verdictsFrom([skipped], processing, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('running');
@@ -1084,7 +1090,7 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
     // A chat reply in anyone's words ("No issues found") is not CodeRabbit's clean word: the finding stands.
     expect(parseBotBody('The fix is correct. No issues found.', 'coderabbit').clean).toBe(false);
-    for (const reply of ['No actionable comments remain.', 'Thanks, 0 issues remain.']) {
+    for (const reply of ['No actionable comments remain.', 'Thanks, 0 issues remain.', 'The fix is correct; I rate it 5/5.', 'Verdict: request changes until the guard lands.']) {
       expect(isReviewShaped(parseBotBody(reply, 'coderabbit'))).toBe(false);
       const after = [...before, { author: 'coderabbitai[bot]', body: reply, anchor: 'issuecomment-8', createdAt: '2026-10-27T16:50:00Z' }];
       expect(verdictsFrom([skipped], after, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1 });
