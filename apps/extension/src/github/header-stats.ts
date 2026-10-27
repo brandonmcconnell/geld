@@ -193,6 +193,67 @@ export function findHeaderStatGroups(): HeaderStatGroup[] {
   return groups;
 }
 
+/** Geld's line counts where GitHub shows none (`syncCountsStandIn`), found and rewritten like GitHub's own. */
+export const ATTR_COUNTS_STAND_IN = 'data-geld-counts-stand-in';
+const COUNTS_STAND_CLASS = 'geld-counts-stand';
+
+export function isCountsStandIn(element: Element): boolean {
+  return element.hasAttribute(ATTR_COUNTS_STAND_IN);
+}
+
+/** The pull request header's tab row, where GitHub floats its line counts. */
+function pullTabRow(): HTMLElement | null {
+  return queryAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]').find((row) => row.querySelector('#prs-files-anchor-tab') !== null) ?? null;
+}
+
+/**
+ * GitHub leaves the tab bar's line counts out when there are no line changes (a change of binary files only:
+ * mintlify/landing#886), rendering their wrapper empty, so the header showed no counts and no breakdown. `want` (the
+ * page's diff is loaded and has no added or removed lines) puts a stand-in of GitHub's shape in that wrapper, or in a
+ * wrapper of Geld's where there is none, for the header pass to rewrite as it does GitHub's. GitHub's own counts always
+ * win: once a push brings line changes they render, and the stand-in goes; when a push takes them away, it comes back.
+ * Not marked as Geld's UI, which the header scan skips (`isInsideDiffEntry`): it is read and rewritten as GitHub's are.
+ * True when the page changed.
+ */
+export function syncCountsStandIn(want: boolean): boolean {
+  const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
+  const row = pullTabRow();
+  const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
+  if (!want || row === null || real) {
+    if (existing === null) return false;
+    removeCountsStandIn();
+    return true;
+  }
+  if (existing !== null && row.contains(existing)) return false;
+  removeCountsStandIn();
+  let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
+  if (home === null) {
+    home = createElement('div', { class: COUNTS_STAND_CLASS });
+    row.prepend(home);
+  }
+  home.append(
+    createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: '' }, [
+      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, ['+0']),
+      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, ['-0']),
+      createElement('span', { class: 'sr-only' }, ['Lines changed: 0 additions & 0 deletions']),
+    ]),
+  );
+  return true;
+}
+
+export function removeCountsStandIn(): void {
+  for (const host of queryAll<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`)) {
+    detachBreakdownTooltip(host);
+    host.remove();
+  }
+  for (const stand of queryAll<HTMLElement>(`.${COUNTS_STAND_CLASS}`)) stand.remove();
+  // Its narrow-screen copy in the state row; GitHub's counts, if they took its place, make their own.
+  for (const mirror of queryAll<HTMLElement>(`.${MIRROR_CLASS}`)) {
+    detachBreakdownTooltip(mirror);
+    mirror.remove();
+  }
+}
+
 const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
 
 /**
@@ -280,12 +341,17 @@ export function applyHeaderStats(
   }
   const nounPlural = hiddenNounPlural(activeCategories, hidden);
   const tooltipAnchor = renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
+  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   if (!hidesAnything(hidden)) {
-    restoreNumbers(group);
-    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
+    // GitHub's numbers stand, and the breakdown is still there to read (the files and their counts) unless there is
+    // nothing at all: a change of binary files only reads "+0 −0" over a file that changed (mintlify/landing#886).
+    const changed = all.files > 0 || all.additions > 0 || all.deletions > 0;
+    const whole = changed ? statsBreakdown(all, hidden, nounPlural, activeCategories) : null;
+    restoreNumbers(group, whole !== null);
+    if (whole !== null) attachBreakdownTooltip(group.host, tooltipAnchor, () => whole, { align: 'end', flush: true });
+    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, whole === null ? null : () => whole);
     return;
   }
-  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   const breakdown = statsBreakdown(all, hidden, nounPlural, activeCategories);
   const { visible } = breakdown;
 
@@ -378,7 +444,7 @@ export function restoreHeaderStats(group: HeaderStatGroup): void {
 }
 
 /** Put GitHub's original numbers back and drop the tooltip, keeping the label. */
-function restoreNumbers(group: HeaderStatGroup): void {
+function restoreNumbers(group: HeaderStatGroup, keepTooltip = false): void {
   for (const element of [group.additions, group.deletions, group.srOnly, ...group.fileCounts]) {
     if (element === null) continue;
     restoreManagedText(element);
@@ -388,5 +454,6 @@ function restoreNumbers(group: HeaderStatGroup): void {
       element.removeAttribute('data-geld-original-title');
     }
   }
-  detachBreakdownTooltip(group.host);
+  // Detaching forgets the host while its listeners stay bound, so a tooltip about to be attached again stays attached.
+  if (!keepTooltip) detachBreakdownTooltip(group.host);
 }

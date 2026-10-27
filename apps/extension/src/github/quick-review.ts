@@ -218,6 +218,43 @@ function anchorOf(groups: readonly HeaderStatGroup[]): HTMLElement | null {
   return null;
 }
 
+const STAND_CLASS = 'geld-quick-review__stand';
+const MARK_CLASS = 'geld-quick-review__mark';
+
+/**
+ * Where the group stands when the tab bar has no line counts: GitHub leaves them out for a change of binary files only
+ * (mintlify/landing#886), its counts wrapper rendered empty, and the group had nowhere to go. A mark of Geld's goes
+ * into that wrapper — floated to the row's end, hidden on a narrow header — or, with no wrapper at all, into a stand
+ * of Geld's own in its place and shape. Only while it shows, so GitHub's own review button is never hidden with
+ * nothing in its place.
+ */
+function standAnchor(): HTMLElement | null {
+  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"]') !== null) ?? null;
+  if (row === null) {
+    removeStand();
+    return null;
+  }
+  let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
+  if (home === null) {
+    home = row.querySelector<HTMLElement>(`:scope > .${STAND_CLASS}`) ?? createElement('div', { class: STAND_CLASS, [OWN_UI_ATTRIBUTE]: '' });
+    if (home.parentElement !== row) row.prepend(home);
+  } else {
+    row.querySelector(`:scope > .${STAND_CLASS}`)?.remove();
+  }
+  let mark = home.querySelector<HTMLElement>(`:scope > .${MARK_CLASS}`);
+  if (mark === null) {
+    document.querySelector(`.${MARK_CLASS}`)?.remove();
+    mark = createElement('span', { class: MARK_CLASS, [OWN_UI_ATTRIBUTE]: '' });
+    home.append(mark);
+  }
+  return home.checkVisibility() ? mark : null;
+}
+
+function removeStand(): void {
+  document.querySelector(`.${MARK_CLASS}`)?.remove();
+  document.querySelector(`.${STAND_CLASS}`)?.remove();
+}
+
 /** What 💬's box posts: a comment on the conversation, or a review (which carries the pending comments). */
 export type CommentKind = 'comment' | 'review';
 
@@ -323,7 +360,9 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   }
   // The controls' state lives on the pull request page whether or not the review group has somewhere to stand: the
   // status pill in the header needs it, and on narrow screens (GitHub hides the counts) the group stands aside alone.
-  const anchor = anchorOf(context.groups);
+  const counted = anchorOf(context.groups);
+  if (counted !== null) removeStand();
+  const anchor = counted ?? standAnchor();
   if (mounted === null) mounted = createControls(pullPath, context);
   if (mounted.pullPath !== pullPath) {
     closePanel();
@@ -469,6 +508,7 @@ function unplace(state: Mounted): void {
 
 export function removeQuickReview(): void {
   if (document.documentElement.hasAttribute(ATTR_ACTIVE)) document.documentElement.removeAttribute(ATTR_ACTIVE);
+  removeStand();
   // Pills the hint put in place before the controls were made go too.
   removeStatusPills();
   if (mounted === null) return;
