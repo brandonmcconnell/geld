@@ -1723,6 +1723,18 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
   padding: 6px 8px;
 }
 
+/* The one line of a menu with nothing to offer ("No options available", "Loading options…"): words, not a control. */
+.geld-quick-review__status-menu .geld-quick-review__menu-item.geld-quick-review__menu-empty {
+  color: var(--fgColor-muted, #59636e);
+  background: transparent;
+  cursor: default;
+}
+
+/* Focused itself when it holds no control, so Escape still reaches it. */
+.geld-quick-review__status-menu:focus {
+  outline: none;
+}
+
 .geld-quick-review__status-menu .geld-quick-review__menu-visual {
   padding-top: 0;
 }

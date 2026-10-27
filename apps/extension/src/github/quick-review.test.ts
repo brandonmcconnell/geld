@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { HeaderStatGroup } from './header-stats';
-import { resetStatusHints } from './status-pill';
+import { rememberStatusHint, resetStatusHints } from './status-pill';
 import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
 const SHA = 'a'.repeat(40);
@@ -794,6 +794,40 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 3; i += 1) await settle();
     // The squash commit stays out of a merge commit's fields.
     expect(title.value).toBe('');
+  });
+
+  it('opens the status menu with a line that says why when there is nothing to offer', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    // An earlier visit could change this repository's status, so the pill is a menu at once; every read of the merge box
+    // fails (GitHub busy), and the menu still opens, says it is loading, then that it could not.
+    rememberStatusHint('acme/widgets', true);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
+    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('The options could not be read. Try again shortly.');
+    pill()?.click();
+    expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();
+    // The merge box answers while the menu is open, offering this reader nothing: the menu says so.
+    stubBox(() =>
+      JSON.stringify({
+        pullRequest: { state: 'OPEN', isDraft: false, viewerCanMarkReadyForReview: false, viewerCanConvertToDraft: false, latestOpinionatedReviews: [], viewerCanClose: false, viewerCanAdminBypassMergeRequirements: false, viewerMergeActions: [] },
+        mergeRequirements: { state: 'BLOCKED', conditions: [], commitMessageHeadline: 'Title (#7)', commitMessageBody: '' },
+      }),
+    );
+    pill()?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('No options available');
+    expect(document.querySelector('.geld-quick-review__status-menu button')).toBeNull();
+    // Closed, the pill steps aside for GitHub's own label: this reader has nothing to switch to here.
+    pill()?.click();
+    expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();
+    expect(pill()?.hasAttribute('aria-haspopup') ?? false).toBe(false);
   });
 
   it('turns the header’s status pill into a menu of the statuses the reader may switch to, closed last', async () => {
