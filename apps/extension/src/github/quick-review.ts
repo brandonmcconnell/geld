@@ -537,7 +537,8 @@ export function removeQuickReview(): void {
   removeStatusPills();
   if (mounted === null) return;
   closePanel();
-  closeStatusMenu(mounted);
+  // Not settled: a placeholder menu's close would put back the pills this teardown has just removed.
+  closeStatusMenu(mounted, false);
   window.clearTimeout(mounted.submittedTimer);
   window.clearTimeout(mounted.mergeTimer);
   hideSnapshot(mounted);
@@ -870,6 +871,7 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
   state.mergeLoading = false;
   if (actions !== null) state.mergeActions = actions;
   showStatus(state);
+  refreshPlaceholderMenu(state);
   showReviewers();
   state.mergeTimer = window.setTimeout(() => {
     if (mounted === state && !document.hidden) void loadMergeActions(state);
@@ -1227,13 +1229,8 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   }
   // Opened before the merge box answered (on the hint, or after a read that failed): the read starts first, so the menu
   // says it is loading, and the options take its place when they land.
-  const loading = loadMergeActions(state);
+  void loadMergeActions(state);
   openStatusMenu(state, pill);
-  void loading.then(() => {
-    if (mounted !== state || state.statusOpener !== pill || !pill.isConnected || state.statusMenu === null || state.statusMenu.dataset.placeholder === undefined) return;
-    closeStatusMenu(state, false);
-    openStatusMenu(state, pill);
-  });
 }
 
 /**
@@ -1333,7 +1330,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   pill.setAttribute('aria-expanded', 'true');
   document.body.append(menu);
   positionStatusMenu(state);
-  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>(':scope > .geld-quick-review__menu-item')];
+  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>(':scope > button.geld-quick-review__menu-item')];
   (items()[0] ?? menu).focus({ preventScroll: true });
   menu.addEventListener(
     'keydown',
@@ -1430,6 +1427,14 @@ function positionStatusMenu(state: Mounted): void {
   const left = Math.max(8, Math.min(rect.left, document.documentElement.clientWidth - menu.offsetWidth - 8));
   menu.style.left = `${Math.round(left)}px`;
   menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+}
+
+/** A menu still on its loading line takes what the read that just finished says: the options, or why there are none. */
+function refreshPlaceholderMenu(state: Mounted): void {
+  const pill = state.statusOpener;
+  if (state.statusMenu?.dataset.placeholder !== 'loading' || pill === null || !pill.isConnected) return;
+  closeStatusMenu(state, false);
+  openStatusMenu(state, pill);
 }
 
 function closeStatusMenu(state: Mounted, settle = true): void {

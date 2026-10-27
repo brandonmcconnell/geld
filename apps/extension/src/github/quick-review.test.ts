@@ -809,6 +809,8 @@ describe('the tab bar button', () => {
     pill()?.click();
     expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
     expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+    // The menu holds focus itself, having no control to give it to, so Escape reaches it.
+    expect(document.activeElement).toBe(document.querySelector('.geld-quick-review__status-menu'));
     for (let i = 0; i < 4; i += 1) await settle();
     expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('The options could not be read. Try again shortly.');
     pill()?.click();
@@ -828,6 +830,47 @@ describe('the tab bar button', () => {
     pill()?.click();
     expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();
     expect(pill()?.hasAttribute('aria-haspopup') ?? false).toBe(false);
+  });
+
+  it('shows the options when the newest read lands, even after an older read finished first', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    rememberStatusHint('acme/widgets', true);
+    const answers: Array<(response: Response) => void> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).includes('/page_data/merge_box') && answers.length > 0 ? new Promise<Response>((resolve) => answers.push(resolve)) : new Response('busy', { status: 503 }))));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    answers.push(() => undefined);
+    pill()?.click();
+    document.dispatchEvent(new Event('visibilitychange'));
+    for (let i = 0; i < 2; i += 1) await settle();
+    const [, older, newer] = answers;
+    if (older === undefined || newer === undefined) throw new Error('two reads expected');
+    older(new Response(mergeBox('MERGEABLE', true), { status: 200 }));
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+    newer(new Response(mergeBox('MERGEABLE', true), { status: 200 }));
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(menuRows()).toEqual([
+      ['merged', 'Squash and merge'],
+      ['closed', 'Close pull request'],
+    ]);
+  });
+
+  it('takes the pill away with the controls even while its menu is on the loading line', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    rememberStatusHint('acme/widgets', true);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })));
+    const label = withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    pill()?.click();
+    expect(document.querySelector('.geld-quick-review__menu-empty')).not.toBeNull();
+    removeQuickReview();
+    expect(pill()).toBeNull();
+    expect(label.hasAttribute('data-geld-status-hidden')).toBe(false);
   });
 
   it('turns the header’s status pill into a menu of the statuses the reader may switch to, closed last', async () => {
