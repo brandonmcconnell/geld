@@ -22,7 +22,7 @@ import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
-import { applyQuickReview, reassertStatusPills, removeQuickReview } from './quick-review';
+import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
@@ -424,6 +424,8 @@ export class GeldController {
       if (chipRemoved(records)) this.applyListChips();
       // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
       if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
+      // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
+      if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
       this.schedule(false);
     });
     this.observer.observe(document.documentElement, {

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { HeaderStatGroup } from './header-stats';
 import { resetStatusHints } from './status-pill';
-import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
+import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
 const SHA = 'a'.repeat(40);
 
@@ -111,6 +111,17 @@ describe("the tab bar button while GitHub's counts load", () => {
     wrapper().replaceChildren();
     applyQuickReview(true, { page, groups: [], headSha: () => SHA });
     expect(wrapper().querySelector('.geld-quick-review + .geld-quick-review__mark')).not.toBeNull();
+  });
+
+  it('reads its fallback stand as busy the moment the skeleton comes back, and leaves on the pass that asks', () => {
+    wrapper().replaceChildren();
+    applyQuickReview(true, { page, groups: [], headSha: () => SHA });
+    expect(quickReviewStandBusy()).toBe(false);
+    wrapper().insertAdjacentHTML('afterbegin', '<div class="skeleton__c5fLaY"></div>');
+    expect(quickReviewStandBusy()).toBe(true);
+    applyQuickReview(true, { page, groups: [], headSha: () => SHA });
+    expect(document.querySelector('.geld-quick-review')).toBeNull();
+    expect(quickReviewStandBusy()).toBe(false);
   });
 });
 

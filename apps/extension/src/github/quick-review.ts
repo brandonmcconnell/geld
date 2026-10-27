@@ -5,7 +5,7 @@ export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
-import { countsWrapperBusy } from './header-stats';
+import { countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
 import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
@@ -255,6 +255,20 @@ function standAnchor(): HTMLElement | null {
     home.append(mark);
   }
   return home.checkVisibility() ? mark : null;
+}
+
+/**
+ * Whether the group stands in a counts wrapper GitHub has filled again (its skeleton back while the counts reload)
+ * without standing before GitHub's own counts: on its fallback mark, or before Geld's counts stand-in, which steps
+ * aside before paint and would leave the group beside the skeleton. The mutation callback asks before paint.
+ */
+export function quickReviewStandBusy(): boolean {
+  const group = mounted?.root ?? null;
+  const wrapper = group?.isConnected === true ? group.parentElement : null;
+  if (group === null || wrapper === null) return false;
+  const next = group.nextElementSibling;
+  const onCounts = next !== null && !next.classList.contains(MARK_CLASS) && !isCountsStandIn(next) && next.querySelector('.sr-only, [class*="VisuallyHidden"]') !== null;
+  return !onCounts && countsWrapperBusy(wrapper);
 }
 
 function removeStand(): void {
