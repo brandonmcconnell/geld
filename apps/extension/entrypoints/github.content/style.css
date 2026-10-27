@@ -2386,7 +2386,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /* Geld reading the timeline: a thin accent bar over the digest's top edge, filling as it goes, gone when it is done. */
-.geld-review__progress {
+.geld-review__reading {
   position: absolute;
   z-index: 3;
   top: -1px;
@@ -2397,7 +2397,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   pointer-events: none;
 }
 
-.geld-review__progress-fill {
+.geld-review__reading-fill {
   width: calc(var(--geld-progress, 0) * 100%);
   height: 100%;
   background: var(--bgColor-accent-emphasis, var(--color-accent-emphasis, #0969da));
@@ -2406,12 +2406,12 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
     opacity 300ms ease-out 250ms;
 }
 
-.geld-review__progress[data-done] > .geld-review__progress-fill {
+.geld-review__reading[data-done] > .geld-review__reading-fill {
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .geld-review__progress-fill {
+  .geld-review__reading-fill {
     transition: none;
   }
 }

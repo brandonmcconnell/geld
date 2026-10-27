@@ -2483,8 +2483,12 @@ export interface MountOptions {
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  // A rebuild (the reading ending changes the signature) must not drop the bar mid-way: the new panel takes it.
+  const bar = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}] > .${PANEL_CLASS}__reading`);
   const mounted = buildPanel(model, handlers, options);
-  if (mounted !== null) syncProgress(mounted.root, model.progress);
+  if (mounted === null) return null;
+  if (bar !== null && !mounted.root.contains(bar) && mounted.root.querySelector(`:scope > .${PANEL_CLASS}__reading`) === null) mounted.root.prepend(bar);
+  syncProgress(mounted.root, model.progress);
   return mounted;
 }
 
@@ -2497,7 +2501,7 @@ let shownProgress = 0;
  * and fades out.
  */
 function syncProgress(root: HTMLElement, progress: number | null): void {
-  let bar = root.querySelector<HTMLElement>(`:scope > .${PANEL_CLASS}__progress`);
+  let bar = root.querySelector<HTMLElement>(`:scope > .${PANEL_CLASS}__reading`);
   if (progress === null) {
     if (bar === null || bar.hasAttribute('data-done')) return;
     bar.setAttribute('data-done', '');
@@ -2511,8 +2515,9 @@ function syncProgress(root: HTMLElement, progress: number | null): void {
   const percent = String(Math.round(progress * 100));
   if (bar === null || bar.hasAttribute('data-done')) {
     bar?.remove();
-    bar = createElement('div', { class: `${PANEL_CLASS}__progress`, [OWN_UI_ATTRIBUTE]: '', role: 'progressbar', 'aria-label': 'Reading the timeline', 'aria-valuemin': '0', 'aria-valuemax': '100' }, [createElement('div', { class: `${PANEL_CLASS}__progress-fill` })]);
-    bar.style.setProperty('--geld-progress', String(shownProgress));
+    bar = createElement('div', { class: `${PANEL_CLASS}__reading`, [OWN_UI_ATTRIBUTE]: '', role: 'progressbar', 'aria-label': 'Reading the timeline', 'aria-valuemin': '0', 'aria-valuemax': '100' }, [createElement('div', { class: `${PANEL_CLASS}__reading-fill` })]);
+    // Never ahead of this visit's own reading: a value above it is a previous pull request's.
+    bar.style.setProperty('--geld-progress', String(Math.min(shownProgress, progress)));
     root.prepend(bar);
     const fresh = bar;
     requestAnimationFrame(() => fresh.style.setProperty('--geld-progress', String(progress)));
@@ -2732,6 +2737,7 @@ function railIndent(nudge: HTMLElement): number {
 }
 
 export function unmountPanel(): void {
+  shownProgress = 0;
   restoreAll();
   const panel = document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   if (panel !== null) reclaimOrphans(panel);

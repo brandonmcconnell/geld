@@ -48,9 +48,12 @@ const PRESS_TIMEOUT_MS = 15_000;
  * submit nobody prevented is stopped here and fetched the same way GitHub
  * would, the form replaced with what comes back.
  */
-/** A "Load more" Geld pressed is still on its way: GitHub swaps the form for its rows, so the count is briefly gone. */
+/**
+ * A "Load more" Geld pressed is still on its way: the form stands, showing GitHub's "Loading…" rather than its count,
+ * until the rows land and replace it.
+ */
 export function loadMorePending(): boolean {
-  return pressed !== null && Date.now() - pressed.at < PRESS_TIMEOUT_MS && !pressed.form.isConnected && !hasLoadMore();
+  return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at < PRESS_TIMEOUT_MS;
 }
 
 /** How many items GitHub's "Load more" says it still hides ("169 hidden items" beside the button); 0 with none. */

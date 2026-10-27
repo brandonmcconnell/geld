@@ -2799,8 +2799,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const roundEntries = [...awaiting, ...timelineEntries];
   const comments = pinOpenEntry([...roundEntries, ...provisionalReviewLines(sidebar, timelineEntries)]);
   const ingesting = timelineIngesting(hidingTimeline);
-  // The bar shows only while the digest is Geld's own reading: the Action's summary for this head is whole already.
-  const progress = ingesting && composed.freshness !== 'fresh' ? ingestProgress() : null;
+  // The bar shows only while the digest is Geld's own reading: the Action's summary for this head is whole already, unless
+  // it was truncated, when the page fills in what it left out.
+  const progress = ingesting && (composed.freshness !== 'fresh' || found?.meta.truncated === true) ? ingestProgress() : null;
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
