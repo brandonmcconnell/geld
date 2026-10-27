@@ -1091,8 +1091,11 @@ export function verdictsFrom(
   const lastWordBy = new Map<string, number>();
   /** When each bot last refused, posted or rewritten: a run its check still shows under way may be the one it gave up. */
   const refusedAt = new Map<string, number>();
-  /** Bots whose running check a refusal ended: their verdict is judged, as one read against a finished check is. */
-  const refusedRuns = new Set<string>();
+  /**
+   * Bots whose running check a refusal ended, with the commit that check ran on: their verdict is judged, as one read
+   * against a finished check is, and an earlier review standing in it is not of that commit.
+   */
+  const refusedRuns = new Map<string, string>();
   const reported = (id: string, comment: BotComment): void => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time = at === undefined ? NaN : Date.parse(at);
@@ -1203,7 +1206,7 @@ export function verdictsFrom(
     const started = checkStartedAt.get(id);
     if (started !== undefined ? refused > started : options.closed === true) {
       checkVerdict.delete(id);
-      refusedRuns.add(id);
+      refusedRuns.set(id, byId.get(id)?.reviewedSha ?? headSha);
     }
   }
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
@@ -1341,13 +1344,20 @@ export function verdictsFrom(
   }
   // Judged by the bot's own words, so a summary the Action wrote while the check still ran gives way to it
   // (`withLiveRuns` replaces a saved "running" only with a judged verdict).
-  for (const id of refusedRuns) {
+  // An earlier review standing in a refused run took the refused check's commit with the check's record: it is not of
+  // that commit (the run there was refused), and which one it is the comments do not say, so it reads as behind.
+  for (const [id, refusedSha] of refusedRuns) {
     const record = byId.get(id);
-    if (record !== undefined && record.verdict !== 'running') byId.set(id, { ...record, runJudged: true });
+    if (record === undefined || record.verdict === 'running') continue;
+    const refusal = record.verdict === 'failed' && record.reason !== undefined;
+    byId.set(id, { ...record, runJudged: true, ...(refusal || record.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA }) });
   }
 
   return [...byId.values()];
 }
+
+/** A commit no head matches (`mergeWithCrawler` reads it as no head at all): a verdict whose commit is not known. */
+export const UNKNOWN_SHA = '0'.repeat(40);
 
 /**
  * How long after a bot's check finishes its report (a summary posted or
