@@ -96,7 +96,10 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     .sort((a, b) => Number(b.isDefault === true) - Number(a.isDefault === true))
     .map((method) => method.name)
     .filter(isMethod);
-  const email = stringOf(requirements.defaultCommitAuthorEmail);
+  // GitHub's merge box sends the default email only while it offers emails to pick from: with none (a pull request a bot
+  // opened, whose noreply address is the default) it sends no email and GitHub takes the reader's own, which the bot's is not.
+  const offered = Array.isArray(requirements.possibleCommitAuthorEmails) && requirements.possibleCommitAuthorEmails.length > 0;
+  const email = offered ? stringOf(requirements.defaultCommitAuthorEmail) : '';
   const conditions = Array.isArray(requirements.conditions) ? requirements.conditions : [];
   const stacked = conditions.some((condition) => isRecord(condition) && condition.type === 'STACK' && condition.isStacked === true);
   const reviews = Array.isArray(pull.latestOpinionatedReviews) ? pull.latestOpinionatedReviews : [];

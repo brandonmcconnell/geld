@@ -4,7 +4,7 @@ import type { MergeSubmission } from './merge-actions';
 import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
-function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean } = {}): unknown {
+function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null } = {}): unknown {
   return {
     pullRequest: {
       state: 'OPEN',
@@ -35,7 +35,8 @@ function payload(overrides: { readonly state?: string; readonly draft?: boolean;
     mergeRequirements: {
       state: overrides.state ?? 'MERGEABLE',
       conditions: [{ type: 'STACK', result: 'PASSED', isStacked: overrides.stacked ?? false }],
-      defaultCommitAuthorEmail: 'brandon@dreamthinkbuild.com',
+      defaultCommitAuthorEmail: overrides.email ?? 'brandon@dreamthinkbuild.com',
+      ...(overrides.emails === null ? {} : { possibleCommitAuthorEmails: overrides.emails ?? ['brandon@dreamthinkbuild.com', 'brandonmcconnell@users.noreply.github.com'] }),
       commitMessageHeadline: 'Submit review from any pull request tab (#74)',
       commitMessageBody: '* Submit review from any pull request tab',
     },
@@ -67,6 +68,13 @@ describe('parseMergeBox', () => {
       canAutoMerge: false,
     });
     expect(parseMergeBox({ nope: true })).toBeNull();
+  });
+
+  it('sends no commit email where GitHub offers none to pick, as its merge box does', () => {
+    // mintlify/docs#8081 (Oct 2026): a pull request mintlify[bot] opened defaults to the bot's noreply address with no
+    // emails to pick, and sending it answered "Invalid email for web commit".
+    expect(parseMergeBox(payload({ email: '109931778+mintlify[bot]@users.noreply.github.com', emails: [] }))?.authorEmail).toBeNull();
+    expect(parseMergeBox(payload({ emails: null }))?.authorEmail).toBeNull();
   });
 
   it('knows the reader’s own standing verdict, whatever the case of their login', () => {
