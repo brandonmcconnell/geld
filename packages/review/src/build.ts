@@ -268,7 +268,8 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
       return a.rank - b.rank;
     })
     .map((entry) => entry.comment);
-  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now());
+  // The API gives every review thread, so a bot's silence in threads is evidence (`VerdictOptions.complete`).
+  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now(), { complete: true });
   const previews = pr.comments.flatMap((comment) => parsePreviews(previewDocFromMarkdown(comment.author, `issuecomment-${comment.databaseId}`, comment.body, comment.createdAt)));
   const meta: GeldPrMeta = {
     v: META_VERSION,
