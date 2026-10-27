@@ -334,6 +334,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **Single-comment rows (bot run summaries, review entries) wear their comment's own ⋯ menu, open or closed** (`wearControls`, `[data-geld-ctl]`): GitHub's menu is moved live into the row so it is GitHub's (Copy link, Quote reply, Edit, Hide, Delete);
   a classic `details-menu` takes "Show in timeline" (`.geld-review__gh-item`, removed on restore) and Geld's small menu steps aside (`data-gh-controls="menu merged"`);
   a React menu renders elsewhere on open, so Geld's stays beside it.
+  **Items that find their comment from themselves are relayed** (`relayCommentItems`): GitHub's Edit, Hide and Quote reply look up `closest('.js-comment')` from the clicked item, which on the row has no comment above it, so they threw and did nothing (mint#13760);
+  a click on one is stopped, the menu closed, and replayed from a hidden copy of the item inside the comment's `.js-comment` (kept two seconds, since the edit form loads lazily), and Edit on a closed row opens the row first so the form is in view.
   Rows carry no reaction control (reacting without reading was judged not worth the space) and item rows no quick-reply: replies happen per thread.
   **An opened conversation is a chat** (`review/chat.ts`, stylesheet section "chats").
   An item's row opens to `renderChatView`: one `.geld-review__chat` per thread container with a head (the fitted path, a copy button, GitHub's link to the diff), a pinned strip for the comment the thread came from (`threadSourceOf`: the review body holding it, else the bot's run summary, described from the crawl: avatar, "CodeRabbit's review", first line;

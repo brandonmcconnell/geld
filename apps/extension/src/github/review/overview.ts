@@ -5,7 +5,7 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
-import { createElement } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
@@ -35,7 +35,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -2266,6 +2266,7 @@ function wearControls(root: HTMLElement, handlers: PanelHandlers): void {
     const menu = menuEl === null ? null : (menuEl.closest('details') ?? menuEl);
     if (!(menu instanceof HTMLElement) || menu.closest(THREAD_SELECTOR) !== null) continue;
     teleportInto(slot, [menu]);
+    relayCommentItems(menu, anchor, handlers);
     // A classic details-menu takes Geld's items in GitHub's own style; a React menu renders elsewhere on open, so
     // Geld's ⋯ stays beside it.
     const list = menu.querySelector('details-menu, .dropdown-menu, [role="menu"]');
@@ -2282,6 +2283,64 @@ function wearControls(root: HTMLElement, handlers: PanelHandlers): void {
       });
     }
   }
+}
+
+/** GitHub's menu items whose handler finds the comment from the item itself (`closest('.js-comment')`). */
+const COMMENT_SCOPED_ITEMS = '.js-comment-edit-button, .js-comment-hide-button, .js-comment-quote-reply';
+
+/** The comment's `.js-comment` wherever it stands now: on loan in an open row, or at home. */
+function jsCommentFor(anchor: string): HTMLElement | null {
+  const nodes = [entryNodes.get(anchor), ...document.querySelectorAll<HTMLElement>(`[id="${CSS.escape(anchor)}"]`)];
+  for (const node of nodes) {
+    if (node === undefined || !node.isConnected) continue;
+    const comment = node.matches('.js-comment') ? node : node.querySelector<HTMLElement>('.js-comment');
+    if (comment !== null) return comment;
+  }
+  return null;
+}
+
+/**
+ * Worn on the row, GitHub's ⋯ menu has no comment above it, so Edit, Hide and Quote reply threw (`closest('.js-comment')`
+ * is null) and did nothing. Such a click is replayed from a hidden copy of the item inside the comment, so GitHub's own
+ * handler runs as at home. Edit wants the comment in view: a closed row is opened first.
+ */
+function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHandlers): void {
+  const relay = (event: MouseEvent): void => {
+    const item = event.target instanceof Element ? event.target.closest<HTMLElement>(COMMENT_SCOPED_ITEMS) : null;
+    if (item === null || !menu.contains(item)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (menu instanceof HTMLDetailsElement) menu.open = false;
+    const replay = (comment: HTMLElement): void => {
+      const proxy = item.cloneNode(true);
+      if (!(proxy instanceof HTMLElement)) return;
+      proxy.hidden = true;
+      proxy.setAttribute(OWN_UI_ATTRIBUTE, '');
+      comment.append(proxy);
+      proxy.click();
+      // GitHub's handlers may read the item again after an await (the edit form loads lazily): keep it a moment.
+      window.setTimeout(() => proxy.remove(), 2000);
+    };
+    const shown = (): HTMLElement | null => {
+      const comment = jsCommentFor(anchor);
+      return comment !== null && comment.closest(`.${PANEL_CLASS}`) !== null ? comment : null;
+    };
+    if (!item.matches('.js-comment-edit-button') || shown() !== null) {
+      const comment = shown() ?? jsCommentFor(anchor);
+      if (comment !== null) replay(comment);
+      return;
+    }
+    handlers.onOpenAnchor(anchor);
+    const started = performance.now();
+    const wait = (): void => {
+      const comment = shown();
+      if (comment !== null) replay(comment);
+      else if (performance.now() - started < 3000) requestAnimationFrame(wait);
+    };
+    requestAnimationFrame(wait);
+  };
+  menu.addEventListener('click', relay, { capture: true });
+  onRestore(() => menu.removeEventListener('click', relay, { capture: true }));
 }
 
 const COMMENT_CONTAINER_SELECTOR = '.js-comment-container, .review-comment, .timeline-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="comment-viewer-outer-box"], [id^="issuecomment-"], [id^="discussion_r"]';
