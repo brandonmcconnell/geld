@@ -366,6 +366,11 @@ export interface ParsedBotBody {
   /** Worst severity the bot named ("high severity", "critical", "security"). */
   readonly severity: FindingSeverity | null;
   /**
+   * Findings in `count` that have no review thread of their own and so are never resolved: CodeRabbit's "Outside diff
+   * range comments (N)". The threads of the same review leave them standing.
+   */
+  readonly unthreaded?: number;
+  /**
    * The comment states a verdict in so many words without a count or a
    * score to show for it: "Needs a human reviewer." (Sourcery), "Needs Human
    * Approval" (Macroscope), "Verdict: request changes" (a Cursor automation
@@ -406,6 +411,12 @@ export function isReviewShaped(parsed: ParsedBotBody): boolean {
  *   only; "Outside diff range comments (N)" are findings on top (a review can
  *   hold nothing else, geld#94).
  */
+/** CodeRabbit's "Outside diff range comments (N)": findings it could not post as threads. */
+function outsideDiffCount(text: string): number {
+  const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
+  return match?.[1] === undefined ? 0 : Number.parseInt(match[1], 10);
+}
+
 function countShapedBy(botId: string, text: string): number | null {
   switch (botId) {
     case 'claude': {
@@ -459,9 +470,9 @@ function countShapedBy(botId: string, text: string): number | null {
     }
     case 'coderabbit': {
       const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
-      const outside = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
-      if (actionable === null && outside === null) return null;
-      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + (outside?.[1] === undefined ? 0 : Number.parseInt(outside[1], 10));
+      const outside = outsideDiffCount(text);
+      if (actionable === null && outside === 0) return null;
+      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + outside;
     }
     default:
       return null;
@@ -553,7 +564,8 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
         : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
   const verdict = needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict };
+  const unthreaded = botId === 'coderabbit' ? outsideDiffCount(text) : 0;
+  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
 }
 
 export interface RawCheckRun {
@@ -1002,6 +1014,8 @@ interface ThreadRun {
   readonly lastAnchor: string;
   /** When the latest of these threads was posted (epoch ms), when known. */
   readonly lastAt: number | null;
+  /** Findings the run's summary holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that summary. */
+  readonly unthreaded?: { readonly count: number; readonly anchor: string };
 }
 
 /**
@@ -1112,6 +1126,8 @@ export function verdictsFrom(
    */
   const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean }>();
   const threadRuns = new Map<string, ThreadRun>();
+  /** The latest summary's findings with no thread of their own, for the run its threads go on to build. */
+  const unthreadedBy = new Map<string, { readonly count: number; readonly anchor: string }>();
   /** The thread run a request set aside, in case the request is refused and that run is still the bot's last real one. */
   const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
@@ -1190,6 +1206,7 @@ export function verdictsFrom(
         const prior = threadRuns.get(asked.id);
         if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
+        unthreadedBy.delete(asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id) });
       }
       continue;
@@ -1205,7 +1222,8 @@ export function verdictsFrom(
       const openAnchor = run?.openAnchor ?? (comment.resolved ? null : comment.anchor);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? (run?.lastAt ?? null) : Math.max(at, run?.lastAt ?? Number.NEGATIVE_INFINITY);
-      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt });
+      const unthreaded = run === undefined ? unthreadedBy.get(id) : run.unthreaded;
+      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt, ...(unthreaded === undefined ? {} : { unthreaded }) });
       continue;
     }
     if (commandReply(comment.body) === 'done') {
@@ -1245,6 +1263,7 @@ export function verdictsFrom(
       const prior = threadRuns.get(id);
       if (prior !== undefined) runsBeforeAsk.set(id, prior);
       threadRuns.delete(id);
+      unthreadedBy.delete(id);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false });
       continue;
@@ -1254,6 +1273,8 @@ export function verdictsFrom(
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
+    if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    else unthreadedBy.delete(id);
     threadRuns.delete(id);
     statusOnly.delete(id);
     // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
@@ -1361,9 +1382,11 @@ export function verdictsFrom(
     const named = checkName === undefined ? {} : { checkName };
     // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not.
     const scored = existing?.verdict === 'findings' && existing.score !== undefined ? { score: existing.score } : {};
-    if (run.open > 0) {
+    // Findings the summary holds with no thread (CodeRabbit's outside the diff) stand whatever becomes of its threads.
+    const unthreaded = run.unthreaded?.count ?? 0;
+    if (run.open + unthreaded > 0) {
       const severity = existing?.verdict === 'findings' && existing.severity !== undefined ? { severity: existing.severity } : {};
-      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.lastAnchor });
+      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.unthreaded?.anchor ?? run.lastAnchor });
       continue;
     }
     // Every thread resolved, and the bot rewrote its summary well after the last of them: that rewrite reports a

@@ -19454,6 +19454,10 @@ function botTitle(id, login) {
 function isReviewShaped(parsed) {
   return parsed.count !== null || parsed.score !== null || parsed.clean || parsed.verdict !== void 0;
 }
+function outsideDiffCount(text) {
+  const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
+  return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
+}
 function countShapedBy(botId, text) {
   switch (botId) {
     case "claude": {
@@ -19501,9 +19505,9 @@ function countShapedBy(botId, text) {
     }
     case "coderabbit": {
       const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
-      const outside = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
-      if (actionable === null && outside === null) return null;
-      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + (outside?.[1] === void 0 ? 0 : Number.parseInt(outside[1], 10));
+      const outside = outsideDiffCount(text);
+      if (actionable === null && outside === 0) return null;
+      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + outside;
     }
     default:
       return null;
@@ -19537,7 +19541,8 @@ function parseBotBody(body, botId) {
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
   const verdict = needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict };
+  const unthreaded = botId === "coderabbit" ? outsideDiffCount(text) : 0;
+  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
 function refusalReason(body) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<\/?(?:h[1-6]|p|div|br|li|ul|ol|details|summary|blockquote)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, "");
@@ -19868,6 +19873,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   const statusOnly = /* @__PURE__ */ new Map();
   const threadRuns = /* @__PURE__ */ new Map();
+  const unthreadedBy = /* @__PURE__ */ new Map();
   const runsBeforeAsk = /* @__PURE__ */ new Map();
   const lastEditBy = /* @__PURE__ */ new Map();
   const editedAtOf = /* @__PURE__ */ new Map();
@@ -19909,6 +19915,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         const prior = threadRuns.get(asked.id);
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
+        unthreadedBy.delete(asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id) });
       }
       continue;
@@ -19923,7 +19930,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const openAnchor = run2?.openAnchor ?? (comment.resolved ? null : comment.anchor);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? run2?.lastAt ?? null : Math.max(at, run2?.lastAt ?? Number.NEGATIVE_INFINITY);
-      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt });
+      const unthreaded = run2 === void 0 ? unthreadedBy.get(id) : run2.unthreaded;
+      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded } });
       continue;
     }
     if (commandReply(comment.body) === "done") {
@@ -19957,6 +19965,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const prior = threadRuns.get(id);
       if (prior !== void 0) runsBeforeAsk.set(id, prior);
       threadRuns.delete(id);
+      unthreadedBy.delete(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false });
       continue;
@@ -19965,6 +19974,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
+    if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    else unthreadedBy.delete(id);
     threadRuns.delete(id);
     statusOnly.delete(id);
     runsBeforeAsk.delete(id);
@@ -20031,9 +20042,10 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
     const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
-    if (run2.open > 0) {
+    const unthreaded = run2.unthreaded?.count ?? 0;
+    if (run2.open + unthreaded > 0) {
       const severity = existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
-      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.lastAnchor });
+      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.unthreaded?.anchor ?? run2.lastAnchor });
       continue;
     }
     const edited = existing?.sourceId === void 0 ? void 0 : editedAtOf.get(existing.sourceId);

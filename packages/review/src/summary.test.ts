@@ -1068,6 +1068,17 @@ describe('a bot that refuses to run', () => {
       { author: 'coderabbitai[bot]', body: 'Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits.', anchor: 'issuecomment-4', createdAt: '2026-10-27T16:55:50Z' },
     ];
     expect(verdictsFrom([skipped], triggered, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-4' });
+    // A review with an inline finding and one outside the diff: resolving the thread leaves the outside one standing,
+    // and the chip opens the review that holds it; a later clean review is the bot's word on both.
+    const mixed = [
+      { author: 'coderabbitai[bot]', body: '**Actionable comments posted: 1**\n\n> **⚠️ Outside diff range comments (1)**', anchor: 'pullrequestreview-9', createdAt: '2026-10-27T09:00:00Z' },
+      { author: 'coderabbitai[bot]', body: 'Guard the empty list.', anchor: 'discussion_r9', createdAt: '2026-10-27T09:00:01Z', resolved: true },
+    ];
+    expect(verdictsFrom([], mixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-9' });
+    const openMixed = mixed.map((comment) => (comment.anchor === 'discussion_r9' ? { ...comment, resolved: false } : comment));
+    expect(verdictsFrom([], openMixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 2, sourceId: 'discussion_r9' });
+    const reviewedAgain = [...mixed, { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-10', createdAt: '2026-10-27T10:00:00Z' }];
+    expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
     // A person's request the bot answers only with a skipped check is still the skip (Bugbot skips drafts).
     const asked = [{ author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-5', createdAt: '2026-10-27T16:55:43Z' }];
     expect(verdictsFrom([{ ...skipped, name: 'Cursor Bugbot' }], asked, 'head', [], now).find((v) => v.id === 'bugbot')?.verdict).toBe('failed');

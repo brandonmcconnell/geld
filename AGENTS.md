@@ -217,6 +217,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **CodeRabbit is `conversational`**: "@coderabbitai" anywhere starts a chat, and its replies ("The current code addresses the finding… No further change is needed") vote nothing, where they used to read as a summary inheriting the last review's count (geld#94);
   its reviews always carry a count or its clean word.
   **Its count is its inline comments plus the ones outside the diff** (`countShapedBy`): "Actionable comments posted: N" counts only what it could post as threads, "Outside diff range comments (N)" come on top, and a review can hold nothing else.
+  They have no thread to resolve, so they stand when the review's inline threads are resolved (`ParsedBotBody.unthreaded`, carried by the run its threads build): the chip reads findings, opening the review, until CodeRabbit reviews again.
   **An undated skipped check does not end a run the bot says it began**: after CodeRabbit's own "Review triggered", the skip still on its check row is the run before's (a skip is a run not made), so the chip reads running until the check or a comment says how this run went, where it read failed (geld#94);
   a person's request answered only by a skipped check is still the skip.
   A request on a commit it has already reviewed gets "⚠️ Action not completed · Already reviewed the last commit" instead, which is the same answer with no review (`done`), so it no longer reads as a summary inheriting a resolved finding's count (geld#114 said "CodeRabbit 1 issue").
