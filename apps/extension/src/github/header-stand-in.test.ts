@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
-import { findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { allCategories, DEFAULT_SETTINGS } from '@geld/core';
+import { EMPTY_BREAKDOWN } from './breakdown';
+import { applyHeaderStats, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
 
 /** A pull request header's tab row as GitHub renders it, its counts wrapper empty for a change of binary files only. */
 function header(wrapper: string | null): void {
@@ -60,5 +62,21 @@ describe('syncCountsStandIn', () => {
     document.body.innerHTML = '<div data-component="PageHeader"><div class="prc-PageHeader-Navigation--uLav"><nav class="TabNav__qHkBGx"></nav></div></div>';
     expect(syncCountsStandIn(true)).toBe(false);
     expect(document.querySelector('[data-geld-counts-stand-in]')).toBeNull();
+  });
+});
+
+describe('applyHeaderStats with nothing hidden', () => {
+  it('offers the breakdown on every pass without binding its hover listeners again', () => {
+    header(EMPTY_WRAPPER);
+    syncCountsStandIn(true);
+    const group = findHeaderStatGroups()[0]!;
+    const bind = vi.spyOn(group.host, 'addEventListener');
+    const categories = allCategories(DEFAULT_SETTINGS);
+    for (let pass = 0; pass < 3; pass += 1) applyHeaderStats(group, EMPTY_BREAKDOWN, categories, 1);
+    expect(bind.mock.calls.filter(([type]) => type === 'mouseenter')).toHaveLength(1);
+    expect(group.host.querySelector('[data-geld-tooltip-anchor]')).not.toBeNull();
+    // A change of nothing at all has nothing to read: no tooltip.
+    applyHeaderStats(group, EMPTY_BREAKDOWN, categories, 0);
+    expect(group.host.querySelector('[data-geld-tooltip-anchor]')).toBeNull();
   });
 });

@@ -345,9 +345,9 @@ export function applyHeaderStats(
   if (!hidesAnything(hidden)) {
     // GitHub's numbers stand, and the breakdown is still there to read (the files and their counts) unless there is
     // nothing at all: a change of binary files only reads "+0 −0" over a file that changed (mintlify/landing#886).
-    restoreNumbers(group);
     const changed = all.files > 0 || all.additions > 0 || all.deletions > 0;
     const whole = changed ? statsBreakdown(all, hidden, nounPlural, activeCategories) : null;
+    restoreNumbers(group, whole !== null);
     if (whole !== null) attachBreakdownTooltip(group.host, tooltipAnchor, () => whole, { align: 'end', flush: true });
     syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, whole === null ? null : () => whole);
     return;
@@ -444,7 +444,7 @@ export function restoreHeaderStats(group: HeaderStatGroup): void {
 }
 
 /** Put GitHub's original numbers back and drop the tooltip, keeping the label. */
-function restoreNumbers(group: HeaderStatGroup): void {
+function restoreNumbers(group: HeaderStatGroup, keepTooltip = false): void {
   for (const element of [group.additions, group.deletions, group.srOnly, ...group.fileCounts]) {
     if (element === null) continue;
     restoreManagedText(element);
@@ -454,5 +454,6 @@ function restoreNumbers(group: HeaderStatGroup): void {
       element.removeAttribute('data-geld-original-title');
     }
   }
-  detachBreakdownTooltip(group.host);
+  // Detaching forgets the host while its listeners stay bound, so a tooltip about to be attached again stays attached.
+  if (!keepTooltip) detachBreakdownTooltip(group.host);
 }

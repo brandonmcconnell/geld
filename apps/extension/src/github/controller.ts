@@ -1737,6 +1737,8 @@ export class GeldController {
     removeAuthorHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
+    // Cleared first: the stand-in is not Geld's UI, so its removal is a mutation, and the observer would put it back.
+    this.countsStandInWanted = false;
     removeCountsStandIn();
     for (const element of queryAll('[data-geld-original]')) restoreManagedText(element);
     for (const element of queryAll('[data-geld-stat-host]')) detachBreakdownTooltip(element);
