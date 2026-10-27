@@ -2881,7 +2881,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
   });
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
-  // A bot whose verdict comes from something posted, or rewritten, after the latest push has run on this commit.
+  // A bot whose verdict comes from something posted after the latest push (its round), or rewritten since, has run on
+  // this commit. Posting is read by the round, never by time: a round's start may be a commit's date, which can precede
+  // the push, so a report posted between the two would pass. Only a rewrite in place (Greptile's summary) needs the time.
   const pushed = latestPush;
   const ranSincePush =
     pushed === null
@@ -2892,9 +2894,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
               if (bot.sourceId === undefined) return false;
               if (pushed.anchors.has(bot.sourceId)) return true;
               const node = document.getElementById(bot.sourceId);
-              if (node === null || pushed.at === null) return false;
-              const times = [Date.parse(createdAtOf(node)), Date.parse(editedAt(node, reapplySoon) ?? '')].filter((time) => !Number.isNaN(time));
-              return times.some((time) => time >= (pushed.at ?? Number.POSITIVE_INFINITY));
+              const edited = node === null || pushed.at === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
+              return !Number.isNaN(edited) && pushed.at !== null && edited >= pushed.at;
             })
             .map((bot) => bot.id),
         );
