@@ -1417,6 +1417,22 @@ export function verdictsFrom(
   }
   // Judged by the bot's own words, so a summary the Action wrote while the check still ran gives way to it
   // (`withLiveRuns` replaces a saved "running" only with a judged verdict).
+  // Requests the bot answered with no review, settled last so no pass before can drop what they leave: the run each set
+  // aside, or no word for a bot with none, marked judged so an Action summary saved while the check ran (running) gives
+  // way to it in `withLiveRuns`. The check is the answered run when its known start falls in the answer's window, or,
+  // with no start (a commit status, which the Action dates by its finish alone), when it finished after the request
+  // and is not still under way — one open with no start may be a new run, and reads running.
+  for (const [id, answer] of answeredBy) {
+    const record = byId.get(id);
+    if (record === undefined || (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) > answer.at) continue;
+    const started = checkStartedAt.get(id);
+    const finished = checkFinishedAt.get(id);
+    const ours =
+      started !== undefined
+        ? ranForAnswer(id, started)
+        : record.checkName !== undefined && checkVerdict.get(id) !== 'running' && (finished === undefined || finished >= answer.askedAt);
+    if (ours) byId.set(id, { ...afterAnswer(record), runJudged: true });
+  }
   // An earlier review standing in a refused run took the refused check's commit with the check's record: it is not of
   // that commit (the run there was refused), and which one it is the comments do not say, so it reads as behind.
   for (const [id, refusedSha] of refusedRuns) {

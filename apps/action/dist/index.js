@@ -20072,6 +20072,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runJudged: true
     });
   }
+  for (const [id, answer] of answeredBy) {
+    const record3 = byId.get(id);
+    if (record3 === void 0 || (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) > answer.at) continue;
+    const started = checkStartedAt.get(id);
+    const finished = checkFinishedAt.get(id);
+    const ours = started !== void 0 ? ranForAnswer(id, started) : record3.checkName !== void 0 && checkVerdict.get(id) !== "running" && (finished === void 0 || finished >= answer.askedAt);
+    if (ours) byId.set(id, { ...afterAnswer(record3), runJudged: true });
+  }
   for (const [id, refusedSha] of refusedRuns) {
     const record3 = byId.get(id);
     if (record3 === void 0 || record3.verdict === "running") continue;

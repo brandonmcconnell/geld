@@ -1085,6 +1085,13 @@ describe('a bot that refuses to run', () => {
     const firstOnly = [before[2]!, finished];
     expect(verdictsFrom([dated], firstOnly, 'head', [], now)[0]).toMatchObject({ verdict: 'unknown', sourceId: 'issuecomment-2', runJudged: true });
     expect(verdictsFrom([underWay], firstOnly, 'head', [], now)[0]).toMatchObject({ verdict: 'unknown', sourceId: 'issuecomment-2' });
+    // The Action dates a commit status by its finish alone: a first request's green status with no start still claims
+    // no review, and one finished before the request is not this request's.
+    const statusOnlyFinish = { ...status('completed'), completedAt: '2026-10-26T05:03:12Z' };
+    expect(verdictsFrom([statusOnlyFinish], firstOnly, 'head', [], now)[0]).toMatchObject({ verdict: 'unknown', sourceId: 'issuecomment-2', runJudged: true });
+    expect(verdictsFrom([{ ...statusOnlyFinish, completedAt: '2026-10-26T04:00:00Z' }], firstOnly, 'head', [], now)[0]?.verdict).toBe('clean');
+    // The run a still-open check left standing is judged, so an Action summary saved while the check ran gives way to it.
+    expect(verdictsFrom([underWay], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, runJudged: true });
     // A check begun hours after the answer is a newer run, judged on its own.
     const later = { ...dated, startedAt: '2026-10-26T09:00:00Z', completedAt: '2026-10-26T09:05:00Z' };
     expect(verdictsFrom([later], [...before, finished], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', runJudged: true });
