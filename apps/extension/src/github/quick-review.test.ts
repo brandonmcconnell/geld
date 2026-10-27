@@ -834,6 +834,32 @@ describe('the tab bar button', () => {
     expect(document.activeElement?.closest('.geld-quick-review__group')).not.toBeNull();
   });
 
+  it('gives Escape’s focus to the control after the status label where the review group has no place', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    rememberStatusHint('acme/widgets', true);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })));
+    const label = withLabel('Open', 'pullOpened');
+    label.insertAdjacentHTML('afterend', '<a href="/rexdotsh" class="author">rexdotsh</a>');
+    // Narrow: GitHub hides the counts, so the review group is not on the page, while the pill still works.
+    counts().style.display = 'none';
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(document.querySelector('.geld-quick-review')).toBeNull();
+    stubBox(() =>
+      JSON.stringify({
+        pullRequest: { state: 'OPEN', isDraft: false, viewerCanMarkReadyForReview: false, viewerCanConvertToDraft: false, latestOpinionatedReviews: [], viewerCanClose: false, viewerCanAdminBypassMergeRequirements: false, viewerMergeActions: [] },
+        mergeRequirements: { state: 'BLOCKED', conditions: [], commitMessageHeadline: 'Title (#7)', commitMessageBody: '' },
+      }),
+    );
+    pill()?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('No options available');
+    document.querySelector('.geld-quick-review__status-menu')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(pill()?.hasAttribute('aria-haspopup') ?? false).toBe(false);
+    expect(document.activeElement).toBe(document.querySelector('a.author'));
+  });
+
   it('shows options that a later read finds while the menu says there are none', async () => {
     window.localStorage.clear();
     resetStatusHints();

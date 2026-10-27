@@ -1345,8 +1345,9 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
         closeSubmenu(true);
       } else if (event.key === 'Escape') {
         event.preventDefault();
+        const label = pill.previousElementSibling;
         closeStatusMenu(state);
-        returnStatusFocus(state, pill);
+        returnStatusFocus(state, pill, label);
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         const list = inSubmenu && submenu !== null ? [...submenu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')] : items();
@@ -1437,10 +1438,26 @@ function refreshPlaceholderMenu(state: Mounted): void {
   openStatusMenu(state, pill);
 }
 
-/** Back to the pill, or, when closing took the pill away (nothing to offer), to the review group's first control. */
-function returnStatusFocus(state: Mounted, pill: HTMLButtonElement): void {
-  const target = pill.isConnected ? pill : state.root.isConnected ? state.root.querySelector<HTMLButtonElement>('button:not([hidden]):not([disabled])') : null;
-  target?.focus({ preventScroll: true });
+const shown = (el: HTMLElement): boolean => el.closest('[hidden]') === null && (typeof el.checkVisibility !== 'function' || el.checkVisibility());
+
+/** The first control after GitHub's status label, nearest first: the author's link, in GitHub's header. */
+function controlAfter(label: Element | null): HTMLElement | null {
+  if (label === null || !label.isConnected) return null;
+  for (let at = label.parentElement; at !== null && at !== document.body; at = at.parentElement) {
+    const next = [...at.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')].find((el) => (label.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 && el.closest(`[${OWN_UI_ATTRIBUTE}]`) === null && shown(el));
+    if (next !== undefined) return next;
+  }
+  return null;
+}
+
+/**
+ * Back to the pill, or, when closing took the pill away (nothing to offer), to the review group's first control, or
+ * where GitHub hides the group's place (narrow screens), the control after the status label the pill stood beside.
+ */
+function returnStatusFocus(state: Mounted, pill: HTMLButtonElement, label: Element | null): void {
+  if (pill.isConnected) return pill.focus({ preventScroll: true });
+  const group = state.root.isConnected ? state.root.querySelector<HTMLButtonElement>('button:not([hidden]):not([disabled])') : null;
+  (group !== null && shown(group) ? group : controlAfter(label))?.focus({ preventScroll: true });
 }
 
 function closeStatusMenu(state: Mounted, settle = true): void {
