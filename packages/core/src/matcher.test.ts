@@ -109,6 +109,8 @@ describe('migration snapshots (Generated)', () => {
     'drizzle/relations.ts',
     'src/meta/config.json',
     'src/meta/entity_aliases_snapshot.json',
+    'reports/meta/2024_q3_snapshot.json',
+    'drizzle/meta/123456_snapshot.json',
     'data/snapshot.json',
     '3rd_party/snapshot.json',
     'reports/2024_q3/snapshot.json',
