@@ -19246,7 +19246,10 @@ var REVIEW_BOTS = [
     logins: ["coderabbitai[bot]"],
     checkNames: ["CodeRabbit"],
     triggers: ["@coderabbitai review", "@coderabbitai full review", "@coderabbitai"],
-    configFiles: [".coderabbit.yaml", ".coderabbit.yml"]
+    configFiles: [".coderabbit.yaml", ".coderabbit.yml"],
+    // "@coderabbitai" anywhere starts a chat, and its replies ("The current code addresses the finding…") are not
+    // reviews; its reviews always say so in their own shape ("Actionable comments posted: N", "No actionable comments").
+    conversational: true
   },
   {
     id: "gemini",
@@ -19495,6 +19498,12 @@ function countShapedBy(botId, text) {
         break;
       }
       return count;
+    }
+    case "coderabbit": {
+      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
+      const outside = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
+      if (actionable === null && outside === null) return null;
+      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + (outside?.[1] === void 0 ? 0 : Number.parseInt(outside[1], 10));
     }
     default:
       return null;
@@ -19828,6 +19837,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkVerdict = /* @__PURE__ */ new Map();
   const checkStartedAt = /* @__PURE__ */ new Map();
   const checkFinishedAt = /* @__PURE__ */ new Map();
+  const checkSkipped = /* @__PURE__ */ new Set();
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
@@ -19838,6 +19848,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
     const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
     checkVerdict.set(bot.id, verdict);
+    if (skipped) checkSkipped.add(bot.id);
+    else checkSkipped.delete(bot.id);
     const started = check2.startedAt === void 0 ? NaN : Date.parse(check2.startedAt);
     if (Number.isNaN(started)) checkStartedAt.delete(bot.id);
     else checkStartedAt.set(bot.id, started);
@@ -19960,7 +19972,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const login = comment.author;
     if (existing !== void 0) {
       const verdict2 = parsed.clean && existing.verdict === "failed" ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
-      const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : existing;
+      const { reason: _skipped, ...reviewed } = existing;
+      const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : reviewed;
       byId.set(id, withOptionalCount({ ...base, verdict: verdict2, sourceId: comment.anchor, login }, parsed));
       continue;
     }
@@ -19991,7 +20004,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
     const before = started !== void 0 ? started : finished;
-    const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at);
+    const skippedBefore = own2 && !stale && before === void 0 && checkSkipped.has(id);
+    const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at) && !skippedBefore;
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);
       if (prior !== void 0 && !threadRuns.has(id)) {

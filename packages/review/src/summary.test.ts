@@ -1040,6 +1040,39 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([pending], [comments[0]!], 'head', [], now, { closed: true })[0]).toMatchObject({ verdict: 'failed', reason: 'The pull request is closed', reviewedSha: 'head' });
   });
 
+  it("reads CodeRabbit's chat as no review, and a run it says it began over an undated skipped check as running (geld#94)", () => {
+    const review =
+      '<!-- coderabbit-ai-generated:v1 -->\n\n> [!CAUTION]\n> Some comments are outside the diff and can’t be posted inline due to GitHub limitations.\n> \n> **⚠️ Outside diff range comments (1)**\n> \n> <details>\n> <summary><strong>Minor</strong> · Do not rebuild the custom category before the pattern editor reports success. · <code>main.ts:443</code></summary>';
+    const chat =
+      '<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated reply by CodeRabbit -->\n> [!TIP]\n> For best results, initiate chat on the files or code changes.\n\n@brandonmcconnell The current code addresses the detached-status finding. `renderCustom` keeps the rebuild, then opens the replacement card and uses its status reporter to show “Saved N lines”.\n\nYou are right that removing the rebuild would leave the draft callback with `existing === null`. My proposed remedy was too broad.\n\nNo further change is needed for this finding.';
+    // Outside-diff findings are findings: alone, and on top of the inline ones "Actionable comments posted" counts.
+    expect(parseBotBody(review, 'coderabbit').count).toBe(1);
+    expect(parseBotBody('**Actionable comments posted: 1**\n\n> **⚠️ Outside diff range comments (1)**', 'coderabbit').count).toBe(2);
+    expect(parseBotBody('**Actionable comments posted: 0**\n\n> **⚠️ Outside diff range comments (2)**', 'coderabbit')).toMatchObject({ count: 2, clean: false });
+    expect(isReviewShaped(parseBotBody(chat, 'coderabbit'))).toBe(false);
+    const skipped = { name: 'CodeRabbit', status: 'completed' as const, conclusion: 'skipped' as const, sha: 'head' };
+    const now = Date.parse('2026-10-27T16:55:55Z');
+    const before = [
+      { author: 'coderabbitai[bot]', body: review, anchor: 'pullrequestreview-1', createdAt: '2026-10-27T08:59:01Z' },
+      { author: 'brandonmcconnell', body: '@coderabbitai Re the outside-diff finding: fixed in 05b58fd.', anchor: 'issuecomment-1', createdAt: '2026-10-27T16:47:30Z' },
+      { author: 'coderabbitai[bot]', body: chat, anchor: 'issuecomment-2', createdAt: '2026-10-27T16:48:40Z' },
+    ];
+    // The chat reply votes nothing: the last review stands, its count its own, and the skip's reason is not its.
+    const standing = verdictsFrom([skipped], before, 'head', [], now).find((v) => v.id === 'coderabbit');
+    expect(standing).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-1' });
+    expect(standing?.reason).toBeUndefined();
+    // "@coderabbitai review", answered "Review triggered": the run is under way, whatever the skipped check from before says.
+    const triggered = [
+      ...before,
+      { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-3', createdAt: '2026-10-27T16:55:43Z' },
+      { author: 'coderabbitai[bot]', body: 'Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits.', anchor: 'issuecomment-4', createdAt: '2026-10-27T16:55:50Z' },
+    ];
+    expect(verdictsFrom([skipped], triggered, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-4' });
+    // A person's request the bot answers only with a skipped check is still the skip (Bugbot skips drafts).
+    const asked = [{ author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-5', createdAt: '2026-10-27T16:55:43Z' }];
+    expect(verdictsFrom([{ ...skipped, name: 'Cursor Bugbot' }], asked, 'head', [], now).find((v) => v.id === 'bugbot')?.verdict).toBe('failed');
+  });
+
   it("reads CodeRabbit's answer to a command as no review (geld#68)", () => {
     const finishedRaw =
       '<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated reply by CodeRabbit -->\n<details>\n<summary>✅ Action performed</summary>\n<dl>\n<dd>\n\nReview finished.\n\n> Note: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.\n\n</dd>\n</dl>\n</details>';

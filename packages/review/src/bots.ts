@@ -129,6 +129,9 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     checkNames: ['CodeRabbit'],
     triggers: ['@coderabbitai review', '@coderabbitai full review', '@coderabbitai'],
     configFiles: ['.coderabbit.yaml', '.coderabbit.yml'],
+    // "@coderabbitai" anywhere starts a chat, and its replies ("The current code addresses the finding…") are not
+    // reviews; its reviews always say so in their own shape ("Actionable comments posted: N", "No actionable comments").
+    conversational: true,
   },
   {
     id: 'gemini',
@@ -399,6 +402,9 @@ export function isReviewShaped(parsed: ParsedBotBody): boolean {
  *   on the rows since fixed.
  * - Entelligence: the "**Issues found:**" list under its scorecard; a
  *   scorecard with no such list found nothing.
+ * - CodeRabbit: "Actionable comments posted: N" counts its inline comments
+ *   only; "Outside diff range comments (N)" are findings on top (a review can
+ *   hold nothing else, geld#94).
  */
 function countShapedBy(botId: string, text: string): number | null {
   switch (botId) {
@@ -450,6 +456,12 @@ function countShapedBy(botId: string, text: string): number | null {
         break;
       }
       return count;
+    }
+    case 'coderabbit': {
+      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
+      const outside = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
+      if (actionable === null && outside === null) return null;
+      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + (outside?.[1] === undefined ? 0 : Number.parseInt(outside[1], 10));
     }
     default:
       return null;
@@ -1056,6 +1068,8 @@ export function verdictsFrom(
   const checkStartedAt = new Map<string, number>();
   /** When each bot's check finished (epoch ms), when known: places the run only when its start is unknown (a commit status). */
   const checkFinishedAt = new Map<string, number>();
+  /** Bots whose check was skipped: a run the bot did not make. */
+  const checkSkipped = new Set<string>();
 
   for (const check of checks) {
     const bot = botByCheckName(check.name);
@@ -1069,6 +1083,8 @@ export function verdictsFrom(
     const neutralFindings = check.conclusion === 'neutral' && bot.neutralConclusion === 'findings';
     const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings ? 'findings' : 'clean';
     checkVerdict.set(bot.id, verdict);
+    if (skipped) checkSkipped.add(bot.id);
+    else checkSkipped.delete(bot.id);
     // The start goes with the verdict: a later check for the same bot with no start of its own must not keep
     // the earlier one's, or its verdict would be read as the earlier run's below.
     const started = check.startedAt === undefined ? NaN : Date.parse(check.startedAt);
@@ -1247,8 +1263,10 @@ export function verdictsFrom(
     if (existing !== undefined) {
       const verdict = parsed.clean && existing.verdict === 'failed' ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
       // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
+      // A skipped check's reason is about a run not made; the comment is a review, so it does not carry over.
+      const { reason: _skipped, ...reviewed } = existing;
       const base: DerivedBotVerdict =
-        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : existing;
+        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : reviewed;
       byId.set(id, withOptionalCount({ ...base, verdict, sourceId: comment.anchor, login }, parsed));
       continue;
     }
@@ -1298,7 +1316,10 @@ export function verdictsFrom(
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
     const before = started !== undefined ? started : finished;
-    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at);
+    // An undated skip after the bot's own word that a run began ("Review triggered") is the run before's: a skip is a run
+    // not made, and this one is under way (geld#94 read failed until CodeRabbit's check turned in progress).
+    const skippedBefore = own && !stale && before === undefined && checkSkipped.has(id);
+    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved
     // reads "resolved" below, not as its summary's count from before they were, and a bot that only ever posted
