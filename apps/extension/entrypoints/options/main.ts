@@ -283,7 +283,9 @@ async function main(): Promise<void> {
     checkbox.checked = isAutoViewed(settings, id);
     checkbox.dataset.autoViewed = id;
     checkbox.addEventListener('change', async () => {
-      settings = await settingsItem.update((current) => ({ autoViewed: { ...current.autoViewed, [id]: checkbox.checked } }));
+      // Read now: a storage notice from an earlier save can reset the box before this update runs.
+      const checked = checkbox.checked;
+      settings = await settingsItem.update((current) => ({ autoViewed: { ...current.autoViewed, [id]: checked } }));
       showAutoViewed(checkbox, id);
     });
     const copy = categoriesField.autoViewed;
