@@ -3236,36 +3236,78 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /*
- * The reviewers on the Reviews row, one group per verdict: the verdict's glyph
- * (the same one their lines wear below), their avatars, "2 approved". The
- * words go on narrow screens; the glyph carries the meaning.
+ * The reviewers on the Reviews row, one pill per verdict: the verdict's glyph (the same one their lines wear below),
+ * how many, their avatars. Commented and awaiting wear the neutral tint of the comment chips, approved and changes
+ * requested GitHub's success and danger colours (its tokens, so a colour-blind theme's come through). The pill is
+ * opaque, mixed over the row's own surface, so the ring between its squeezed avatars can be the pill's colour.
  */
 .geld-review__reviewers {
+  --geld-pill-tone: var(--geld-review-muted);
+  --geld-pill-bg: color-mix(in srgb, var(--geld-pill-tone) 12%, var(--geld-row-bg, var(--geld-review-bg)));
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  height: 20px;
+  padding: 0 2px 0 7px;
+  border-radius: 2em;
+  background: var(--geld-pill-bg);
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-review__reviewers[data-state='approved'] {
+  --geld-pill-tone: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+  color: var(--geld-pill-tone);
+}
+
+.geld-review__reviewers[data-state='changes_requested'] {
+  --geld-pill-tone: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+  color: var(--geld-pill-tone);
 }
 
 .geld-review__reviewers-glyph {
   display: inline-flex;
-  color: var(--geld-review-muted);
 }
 
 .geld-review__reviewers-glyph .octicon {
-  width: 14px;
-  height: 14px;
-}
-
-.geld-review__reviewers[data-state='approved'] .geld-review__reviewers-glyph {
-  color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
-}
-
-.geld-review__reviewers[data-state='changes_requested'] .geld-review__reviewers-glyph {
-  color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__reviewers[data-state='awaiting'] .geld-review__reviewers-glyph {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
+}
+
+/* 16px faces in a 20px pill; three at a 5px overlap make 38px, and four to six share those 38px between them. */
+.geld-review__avatars--pill {
+  margin-left: 1px;
+}
+
+.geld-review__avatars--pill .geld-review__avatar {
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+}
+
+.geld-review__avatars--pill .geld-review__avatar + .geld-review__avatar {
+  margin-left: calc(22px / var(--geld-avatar-steps, 2) - 16px);
+  box-shadow: 0 0 0 1.5px var(--geld-pill-bg);
+}
+
+.geld-review__avatar--more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--geld-pill-tone) 22%, var(--geld-row-bg, var(--geld-review-bg)));
+  color: var(--geld-pill-tone);
+}
+
+.geld-review__avatar--more .octicon {
+  width: 10px;
+  height: 10px;
 }
 
 /* Every row says who and when itself; a worn header only lends its actions (react, ⋯), so open and closed read alike. */
@@ -7440,7 +7482,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__deploy-sum-text,
   .geld-review__push-compare > span,
   .geld-review__label-long,
-  .geld-review__reviewers-text,
   .geld-review__row .geld-review__time {
     display: none;
   }
