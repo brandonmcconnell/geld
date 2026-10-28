@@ -55,8 +55,8 @@ export interface TestFold {
 }
 
 const QUOTE = String.raw`(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>).)*)\k<q>`;
-/** `name`, `name.only`, `name.each([…])`, `name.each\`…\`` and the like, then `(` or a space, then a quoted title. */
-const CHAIN = String.raw`(?:\.[A-Za-z_$][\w$]*(?:\([^()]*\)|\x60[^\x60]*\x60)?)*`;
+/** `name`, `name.only`, `name.each([…])` (arguments nested two deep), `name.each\`…\`` and the like, then `(` or a space, then a quoted title. */
+const CHAIN = String.raw`(?:\.[A-Za-z_$][\w$]*(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\x60[^\x60]*\x60)?)*`;
 
 function callSyntax(kind: TestBlockKind, names: readonly string[]): TestSyntax {
   const alternatives = names.map((name) => name.replace(/[.$]/g, (char) => `\\${char}`)).join('|');

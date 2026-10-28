@@ -131,14 +131,16 @@ const painted = new WeakMap<HTMLElement, Painted>();
  */
 export function applyTestFolds(root: HTMLElement, anchor: string, syntaxes: readonly TestSyntax[], opened: Set<string>): void {
   const sides = readSides(root, anchor);
-  let state = painted.get(root);
-  if (state === undefined || state.signature !== sides.signature || state.syntaxes !== syntaxes) {
-    const folds = outlineTestFolds({ old: sides.old.map((read) => read.line), new: sides.new.map((read) => read.line) }, syntaxes);
-    const lines = new Map<string, ReadLine>();
-    for (const read of [...sides.old, ...sides.new]) lines.set(read.line.key, read);
-    state = { signature: sides.signature, syntaxes, folds, lines };
-    painted.set(root, state);
-  }
+  const cached = painted.get(root);
+  const folds =
+    cached !== undefined && cached.signature === sides.signature && cached.syntaxes === syntaxes
+      ? cached.folds
+      : outlineTestFolds({ old: sides.old.map((read) => read.line), new: sides.new.map((read) => read.line) }, syntaxes);
+  // The cells and rows are this pass's: switching unified and split views replaces them under the same line keys.
+  const lines = new Map<string, ReadLine>();
+  for (const read of [...sides.old, ...sides.new]) lines.set(read.line.key, read);
+  const state: Painted = { signature: sides.signature, syntaxes, folds, lines };
+  painted.set(root, state);
   openLinkedFold(anchor, state, opened);
   paint(root, anchor, state, syntaxes, opened);
 }

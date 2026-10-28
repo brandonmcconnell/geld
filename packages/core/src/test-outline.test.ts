@@ -113,6 +113,11 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "saves the token" R1 body=2 +3 -0', 'modified test "keeps the token" R4 body=4 +1 -1']);
   });
 
+  it('reads `.each` arguments with calls inside them, on the line and before a wrapped title', () => {
+    const diff = ["+it.each(cases.map((c) => make(c)))('handles %s', (c) => {", '+  run(c);', '+});', '+test.each(cases.map(makeCase))(', "+  'wraps %s',", '+  (c) => {', '+    run(c);', '+  },', '+);'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "handles %s" R1 body=2 +3 -0', 'added test "wraps %s" R4 body=4 +6 -0']);
+  });
+
   it('folds a dotted hook the reader declared', () => {
     const diff = ['+t.beforeEach(() => {', '+  reset();', '+});'].join('\n');
     expect(brief(outlineTestFolds(sides(diff), testSyntaxesFrom(['hook: t.beforeEach'])))).toEqual(['added hook "t.beforeEach" R1 body=2 +3 -0']);
