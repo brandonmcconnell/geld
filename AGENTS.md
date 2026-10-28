@@ -617,6 +617,15 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `local:debugScopes` (set from the harness, never the UI) runs the full pass after every scoped one and logs `[geld] scope disagreement`.
   Numbers at the end of this work (vitest#10554): the review pass 149 ms → 36 ms mean (`checksSection()` used to scan the whole page's text on every call on a merged PR), the crawl 7.4 → 2.9 ms, main-thread time in the first 30 s of the conversation page 4.5 s → 2.85 s, a 14-row `/pulls` page 14 + 12 storage writes → 3 + 4;
   the largest item left is the files adapters' DOM read (`read`, ~13 ms a pass on a 124-file diff).
+- **Hidden files can be marked as viewed for the reader** (`autoViewed`, per category, built-in or custom, off for all by default;
+  a checkbox in each category's Advanced disclosure and custom category editor on the options page, not the popup;
+  a personal key a repository config cannot set).
+  `GeldController.autoMarkViewed` runs after the files pass and presses GitHub's own Viewed control (`findViewedControls` / `activateControl`, as the hidden row's Mark as viewed button does), so GitHub's counter and its saved state are its own.
+  A file is pressed once per page and head commit (`autoViewedFiles`): a press GitHub took (the file read as viewed since) is never repeated, so a file the reader marks unviewed stays so until the next push re-arms it, and only a push both readings know (the head is often read after the first pass, and re-arming on that change once pressed every file twice).
+  GitHub's React headers ignore clicks until hydrated, which is after Geld's first passes, so a press that has not shown after `AUTO_VIEWED_RETRY_MS` (1.5 s) is made again, `AUTO_VIEWED_TRIES` (3) times at most, with a pass scheduled for the check.
+  Verified on wxt-dev/wxt#2544 with writes answered by the harness: one `file_review` `{"viewed":"viewed"}` per hidden test file, none for the rest.
+  geld.sh's settings page does not offer the checkbox yet;
+  it keeps the value when it saves.
 - **Two layouts** (`settings.groupHidden`).
   Grouped (default): hidden entries are reordered to the bottom with CSS `order` behind the "N files hidden" row, and the sidebar becomes the accordion.
   Inline (`groupHidden: false`): nothing moves;

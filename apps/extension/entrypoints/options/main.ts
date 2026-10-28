@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import type { BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
+import type { AnyCategoryId, BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
 import {
   CATEGORY_ICON_NAMES,
   categoryIconLabel,
@@ -16,6 +16,7 @@ import {
   hiddenCategoryFromCustom,
   isCategoryEnabled,
   isCategoryInPicker,
+  isAutoViewed,
   isGroupEnabled,
   choiceFields,
   listFields,
@@ -250,6 +251,23 @@ async function main(): Promise<void> {
     return el('details', 'options__group', [el('summary', '', [el('span', 'options__chevron', ['\u203a']), heading, count]), patternChips(group.patterns)]);
   }
 
+  /** The category's "Mark as viewed automatically" checkbox (`autoViewed`). */
+  function autoViewedRow(id: AnyCategoryId): HTMLElement {
+    const checkbox = el('input', 'geld-checkbox options__checkbox');
+    checkbox.type = 'checkbox';
+    checkbox.checked = isAutoViewed(settings, id);
+    checkbox.addEventListener('change', async () => {
+      settings = await settingsItem.update((current) => ({ autoViewed: { ...current.autoViewed, [id]: checkbox.checked } }));
+    });
+    const copy = categoriesField.autoViewed;
+    return el('div', 'options__group options__group--static options__auto-viewed', [
+      el('label', 'options__group-heading options__group-heading--checkbox', [
+        checkbox,
+        el('span', '', [el('span', 'options__group-title', [copy.label]), el('span', 'options__group-description', richText(copy.description))]),
+      ]),
+    ]);
+  }
+
   /** Textarea + save button for a pattern list; `onSave` receives the cleaned lines. */
   function patternEditor(
     copy: { readonly label: string; readonly description: string; readonly placeholder: string; readonly rows: number; readonly syntax: readonly string[]; readonly saveLabel: string },
@@ -300,7 +318,7 @@ async function main(): Promise<void> {
   function renderBuiltIn(category: BuiltInCategory): HTMLElement {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
-    const customised = describeAdvancedSettings(settings, category.id, catalog);
+    const customised = [describeAdvancedSettings(settings, category.id, catalog), isAutoViewed(settings, category.id) ? 'marked as viewed' : null].filter((part) => part !== null).join(' · ') || null;
     const help = el('p', 'geld-help options__category-description', richText(category.description));
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
@@ -324,7 +342,7 @@ async function main(): Promise<void> {
       runTester();
       return null;
     });
-    const body = el('div', 'options__advanced', [el('p', 'geld-help options__advanced-intro', [categoriesField.advanced.description]), groups, editor.root]);
+    const body = el('div', 'options__advanced', [el('p', 'geld-help options__advanced-intro', [categoriesField.advanced.description]), autoViewedRow(category.id), groups, editor.root]);
     const card = el('details', 'options__category', [
       el('summary', 'options__category-summary', [
         el('span', 'options__chevron', ['\u203a']),
@@ -337,7 +355,7 @@ async function main(): Promise<void> {
     ]);
     card.dataset.categoryId = category.id;
     // Open when anything beyond the switch is in use, so those settings are seen.
-    card.open = hasAdvancedSettings(settings, category.id, catalog);
+    card.open = hasAdvancedSettings(settings, category.id, catalog) || isAutoViewed(settings, category.id);
     return card;
   }
 
@@ -463,6 +481,7 @@ async function main(): Promise<void> {
         el('p', 'geld-help', [customField.nounDescription]),
         el('div', 'options__noun-row', [nounInput, nounPluralInput]),
       ]),
+      ...(existing === null ? [] : [autoViewedRow(existing.id)]),
       editor.root,
       el('div', 'geld-row options__actions options__actions--start', [remove]),
     ]);
@@ -526,7 +545,7 @@ async function main(): Promise<void> {
 
   /** Signature of everything the two category lists render, to skip needless rebuilds. */
   const categorySignature = (value: GeldSettings): string =>
-    JSON.stringify([value.categories, value.groups, value.categoryPatterns, value.customCategories]);
+    JSON.stringify([value.categories, value.groups, value.categoryPatterns, value.customCategories, value.autoViewed]);
 
   /* Repository rules */
   applySchemaCopy('repositories');

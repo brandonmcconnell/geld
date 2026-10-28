@@ -82,6 +82,8 @@ export interface CategoriesField extends FieldBase {
     readonly groupsDescription: string;
   };
   readonly extraPatterns: PatternEditorCopy;
+  /** The per-category "mark hidden files as viewed" checkbox, also shown in each custom category's editor. */
+  readonly autoViewed: { readonly label: string; readonly description: string };
 }
 
 /** Editor for user-defined categories: title, icon and patterns. */
@@ -274,6 +276,11 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
             '`[acme/*]` scopes the lines below it to those repositories; `[*]` returns to all.',
           ],
           saveLabel: 'Save patterns',
+        },
+        autoViewed: {
+          label: 'Mark as viewed automatically',
+          description:
+            'On pull requests, tick GitHub’s Viewed box for this category’s hidden files, so “N of M files viewed” only waits on what is left to review. Untick one by hand and it stays unticked until the next push.',
         },
       },
     ],

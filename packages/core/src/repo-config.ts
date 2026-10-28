@@ -76,6 +76,7 @@ const PERSONAL_KEYS = [
   'aiBaseUrl',
   'aiModel',
   'suggestedFixes',
+  'autoViewed',
 ] as const;
 
 /**

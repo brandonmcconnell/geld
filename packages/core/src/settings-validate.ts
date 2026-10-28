@@ -265,6 +265,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
+  checkBooleanMap(issues, `${path}.autoViewed`, value.autoViewed, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
   checkBooleanMap(issues, `${path}.groups`, value.groups, catalogGroupKeys(catalog), (key) => isGroupKey(key, catalog) || isWellFormedGroupKey(key), 'pattern group');
   checkCategoryPatterns(issues, `${path}.categoryPatterns`, value.categoryPatterns);
   checkCustomCategories(issues, `${path}.customCategories`, value.customCategories);

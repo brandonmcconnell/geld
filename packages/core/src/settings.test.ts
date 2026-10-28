@@ -3,6 +3,7 @@ import {
   allCategories,
   describeAdvancedSettings,
   hasAdvancedSettings,
+  isAutoViewed,
   isCategoryEnabled,
   isGroupEnabled,
   isTestGroupEnabled,
@@ -13,6 +14,19 @@ import {
   withCustomCategory,
   withoutCustomCategory,
 } from './settings';
+
+describe('autoViewed', () => {
+  it('is off for every category unless set, keeps built-in and existing custom ids, and goes with a deleted category', () => {
+    expect(isAutoViewed(DEFAULT_SETTINGS, 'tests')).toBe(false);
+    const settings = normalizeSettings({
+      customCategories: [{ id: 'custom:agent', title: 'Agent files', icon: 'tag', patterns: ['*.spec.ts'] }],
+      autoViewed: { tests: true, docs: 'yes', 'custom:agent': true, 'custom:gone': true },
+    });
+    expect(settings.autoViewed).toEqual({ tests: true, 'custom:agent': true });
+    expect(isAutoViewed(settings, 'custom:agent')).toBe(true);
+    expect(withoutCustomCategory(settings, 'custom:agent').autoViewed).toEqual({ tests: true });
+  });
+});
 
 describe('normalizeSettings', () => {
   it('returns defaults for garbage', () => {
