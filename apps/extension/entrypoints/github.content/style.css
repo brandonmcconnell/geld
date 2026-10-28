@@ -6461,6 +6461,7 @@ a.geld-review__rerun:hover {
   padding: 6px 12px;
 }
 
+.geld-review__chat-context-body:has(> [data-geld-message][data-geld-lone]),
 .geld-review__chat-context-body :has(> [data-geld-message][data-geld-lone]) {
   padding: 0 !important;
 }
