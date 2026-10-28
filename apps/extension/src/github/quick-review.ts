@@ -2197,13 +2197,14 @@ const IN_PLACE: { readonly [K in StatusAction]?: { readonly done: string; readon
 const REACHED_POLL_MS = 3000;
 
 /**
- * Null once the merge box shows the action done, read every few seconds until `signal` aborts (else never): GitHub can
- * take far longer to answer the request than to queue the pull request, and the spinner waited on the answer.
+ * Null once the merge box shows the action done, read every few seconds until `signal` aborts or `here` says the reader
+ * left (the controls' teardown included), else never: GitHub can take far longer to answer the request than to queue
+ * the pull request, and the spinner waited on the answer.
  */
-async function reachedInPlace(pullPath: string, reached: (box: MergeBox) => boolean, signal: AbortSignal): Promise<null> {
-  while (!signal.aborted) {
+async function reachedInPlace(pullPath: string, reached: (box: MergeBox) => boolean, signal: AbortSignal, here: () => boolean): Promise<null> {
+  while (!signal.aborted && here()) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, REACHED_POLL_MS));
-    if (signal.aborted) break;
+    if (signal.aborted || !here()) break;
     const box = await fetchMergeBox(pullPath, 'SQUASH', false);
     if (box !== null && reached(box)) return null;
   }
@@ -2250,7 +2251,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
       })();
       const stepPath = pullPathOf(step.request.url);
       const watch = new AbortController();
-      const failed = inPlace === undefined || stepPath === null ? await answer : await Promise.race([answer, reachedInPlace(stepPath, inPlace.reached, watch.signal)]);
+      const failed = inPlace === undefined || stepPath === null ? await answer : await Promise.race([answer, reachedInPlace(stepPath, inPlace.reached, watch.signal, here)]);
       watch.abort();
       if (failed !== null) {
         // The ones before it went through: the menu is read again so it offers nothing they already did.

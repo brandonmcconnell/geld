@@ -1130,6 +1130,44 @@ describe('the tab bar button', () => {
     vi.useRealTimers();
   });
 
+  it('stops reading the merge box for a slow Merge when ready once the controls are gone', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    let reads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/page_data/merge_box')) {
+          reads += 1;
+          return new Response(
+            JSON.stringify({
+              pullRequest: { state: 'OPEN', isDraft: false, isInMergeQueue: false, viewerCanClose: true, latestOpinionatedReviews: [], viewerMergeActions: [{ name: 'MERGE_QUEUE', allowableStatus: 'ALLOWED', mergeMethods: [] }] },
+              mergeRequirements: { state: 'BLOCKED', conditions: [] },
+            }),
+            { status: 200 },
+          );
+        }
+        if (init?.method === 'POST') return new Promise<Response>(() => undefined);
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.useFakeTimers();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
+    await vi.advanceTimersByTimeAsync(3100);
+    const polled = reads;
+    removeQuickReview();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(reads).toBe(polled);
+    vi.useRealTimers();
+  });
+
   it('opens GitHub’s reason when converting to a draft is refused', async () => {
     window.localStorage.clear();
     resetStatusHints();
