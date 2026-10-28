@@ -636,9 +636,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a checkbox in each category's Advanced disclosure and custom category editor on the options page, not the popup;
   a personal key a repository config cannot set).
   `GeldController.autoMarkViewed` runs after the files pass and presses GitHub's own Viewed control (`findViewedControls` / `activateControl`, as the hidden row's Mark as viewed button does), so GitHub's counter and its saved state are its own.
-  A file is pressed once per page and head commit (`autoViewedFiles`): a press GitHub took (the file read as viewed since) is never repeated, so a file the reader marks unviewed stays so until the next push re-arms it, and only a push both readings know (the head is often read after the first pass, and re-arming on that change once pressed every file twice).
+  A file is pressed once per page and head commit (`autoViewedFiles`): a press GitHub took (the file read as viewed since) is never repeated, so a file the reader marks unviewed stays so until the next push re-arms it, the head often read only after the first pass is filled in then rather than taken for a push (taken as one, it pressed every file twice).
   GitHub's React headers ignore clicks until hydrated, which is after Geld's first passes, so a press that has not shown after `AUTO_VIEWED_RETRY_MS` (1.5 s) is made again, `AUTO_VIEWED_TRIES` (3) times at most, with a pass scheduled for the check.
   Verified on wxt-dev/wxt#2544 with writes answered by the harness: one `file_review` `{"viewed":"viewed"}` per hidden test file, none for the rest.
+  In the virtualised files view only mounted rows are pressed, each as it mounts, so a hidden file far down is marked once the reader scrolls near it;
+  the checkbox only updates its category's summary in place, since rebuilding the category lists would drop a custom category's unsaved edits.
   geld.sh's settings page does not offer the checkbox yet;
   it keeps the value when it saves.
 - **Two layouts** (`settings.groupHidden`).
