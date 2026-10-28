@@ -734,8 +734,10 @@ export class GeldController {
       if (view.filteredPaths.has(entry.path)) continue;
       const key = `${stateKey}|${entry.path}`;
       let press = this.autoViewedFiles.get(key);
-      // A new push re-arms the file, but only one both readings know: the head is often read after the first pass.
-      if (press !== undefined && press.head !== '' && head !== '' && press.head !== head) press = undefined;
+      // The head is often read after the first pass: that first reading fills it in, it is not a push.
+      if (press !== undefined && press.head === '' && head !== '') press.head = head;
+      // A new push re-arms the file.
+      if (press !== undefined && head !== '' && press.head !== head) press = undefined;
       if (press?.took === true) continue;
       if (press !== undefined && (press.tries >= AUTO_VIEWED_TRIES || now - press.at < AUTO_VIEWED_RETRY_MS)) {
         if (findViewedControls(entry.root).unviewed.length === 0) press.took = true;

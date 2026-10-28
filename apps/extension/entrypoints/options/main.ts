@@ -17,6 +17,7 @@ import {
   isCategoryEnabled,
   isCategoryInPicker,
   isAutoViewed,
+  isCategoryId,
   isGroupEnabled,
   choiceFields,
   listFields,
@@ -251,6 +252,11 @@ async function main(): Promise<void> {
     return el('details', 'options__group', [el('summary', '', [el('span', 'options__chevron', ['\u203a']), heading, count]), patternChips(group.patterns)]);
   }
 
+  /** What a built-in category's summary says is customised: groups, extra patterns, marked as viewed. */
+  function customisedText(id: BuiltInCategory['id']): string | null {
+    return [describeAdvancedSettings(settings, id, catalog), isAutoViewed(settings, id) ? 'marked as viewed' : null].filter((part) => part !== null).join(' · ') || null;
+  }
+
   /** The category's "Mark as viewed automatically" checkbox (`autoViewed`). */
   function autoViewedRow(id: AnyCategoryId): HTMLElement {
     const checkbox = el('input', 'geld-checkbox options__checkbox');
@@ -258,6 +264,17 @@ async function main(): Promise<void> {
     checkbox.checked = isAutoViewed(settings, id);
     checkbox.addEventListener('change', async () => {
       settings = await settingsItem.update((current) => ({ autoViewed: { ...current.autoViewed, [id]: checkbox.checked } }));
+      // In place: rebuilding the category lists would throw away a custom category's unsaved name and patterns.
+      const summary = checkbox.closest('details.options__category')?.querySelector('summary');
+      if (summary instanceof HTMLElement && isCategoryId(id)) {
+        const text = customisedText(id);
+        let badge = summary.querySelector('.options__customised');
+        if (text === null) badge?.remove();
+        else if (badge === null) {
+          badge = el('span', 'options__customised', [text]);
+          summary.querySelector('button.geld-switch')?.before(badge);
+        } else badge.textContent = text;
+      }
     });
     const copy = categoriesField.autoViewed;
     return el('div', 'options__group options__group--static options__auto-viewed', [
@@ -318,7 +335,7 @@ async function main(): Promise<void> {
   function renderBuiltIn(category: BuiltInCategory): HTMLElement {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
-    const customised = [describeAdvancedSettings(settings, category.id, catalog), isAutoViewed(settings, category.id) ? 'marked as viewed' : null].filter((part) => part !== null).join(' · ') || null;
+    const customised = customisedText(category.id);
     const help = el('p', 'geld-help options__category-description', richText(category.description));
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
@@ -545,7 +562,7 @@ async function main(): Promise<void> {
 
   /** Signature of everything the two category lists render, to skip needless rebuilds. */
   const categorySignature = (value: GeldSettings): string =>
-    JSON.stringify([value.categories, value.groups, value.categoryPatterns, value.customCategories, value.autoViewed]);
+    JSON.stringify([value.categories, value.groups, value.categoryPatterns, value.customCategories]);
 
   /* Repository rules */
   applySchemaCopy('repositories');
