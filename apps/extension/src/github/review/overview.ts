@@ -21,6 +21,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
+import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
@@ -1009,12 +1010,12 @@ function deferredFragments(): readonly { readonly fragment: Element; readonly sr
   const timeline = document.querySelector('.js-discussion, .pull-discussion-timeline') ?? document;
   // Threads first (they are the items), then minimized reviews and comments.
   for (const thread of timeline.querySelectorAll('review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container')) {
-    const fragment = thread.querySelector('include-fragment');
+    const fragment = threadFragmentOf(thread);
     const src = thread.getAttribute('data-deferred-content-url');
     // A thread whose first comment shows still defers its replies behind the same fragment. GitHub's element sets
     // the fragment's `src` when the pointer rests on the header (preload); lazy, it then waits to be scrolled into
     // view, which a folded thread never is, so a fragment with a `src` still needs fetching here.
-    if (fragment !== null && src !== null && fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') === null) pending.push({ fragment, src });
+    if (fragment !== null && src !== null) pending.push({ fragment, src });
   }
   for (const fragment of timeline.querySelectorAll('.minimized-comment include-fragment[src]')) {
     const src = fragment.getAttribute('src');
@@ -1077,7 +1078,7 @@ function timelineIngesting(hidingTimeline: boolean): boolean {
 function liveFragmentFor(fragment: Element, src: string): Element | null {
   if (fragment.isConnected) return fragment;
   for (const container of document.querySelectorAll(`[data-deferred-content-url="${CSS.escape(src)}"]`)) {
-    const inner = container.querySelector('include-fragment');
+    const inner = threadFragmentOf(container);
     if (inner !== null && inner.closest('.geld-review__qv, .geld-review__chat') === null) return inner;
   }
   return document.querySelector(`include-fragment[src="${CSS.escape(src)}"]`);
