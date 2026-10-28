@@ -257,24 +257,32 @@ async function main(): Promise<void> {
     return [describeAdvancedSettings(settings, id, catalog), isAutoViewed(settings, id) ? 'marked as viewed' : null].filter((part) => part !== null).join(' · ') || null;
   }
 
+  /**
+   * A category's checkbox and summary as the settings say, in place: rebuilding the category lists would throw away a
+   * custom category's unsaved name and patterns.
+   */
+  function showAutoViewed(checkbox: HTMLInputElement, id: AnyCategoryId): void {
+    checkbox.checked = isAutoViewed(settings, id);
+    const summary = checkbox.closest('details.options__category')?.querySelector('summary');
+    if (!(summary instanceof HTMLElement) || !isCategoryId(id)) return;
+    const text = customisedText(id);
+    let badge = summary.querySelector('.options__customised');
+    if (text === null) badge?.remove();
+    else if (badge === null) {
+      badge = el('span', 'options__customised', [text]);
+      summary.querySelector('button.geld-switch')?.before(badge);
+    } else badge.textContent = text;
+  }
+
   /** The category's "Mark as viewed automatically" checkbox (`autoViewed`). */
   function autoViewedRow(id: AnyCategoryId): HTMLElement {
     const checkbox = el('input', 'geld-checkbox options__checkbox');
     checkbox.type = 'checkbox';
     checkbox.checked = isAutoViewed(settings, id);
+    checkbox.dataset.autoViewed = id;
     checkbox.addEventListener('change', async () => {
       settings = await settingsItem.update((current) => ({ autoViewed: { ...current.autoViewed, [id]: checkbox.checked } }));
-      // In place: rebuilding the category lists would throw away a custom category's unsaved name and patterns.
-      const summary = checkbox.closest('details.options__category')?.querySelector('summary');
-      if (summary instanceof HTMLElement && isCategoryId(id)) {
-        const text = customisedText(id);
-        let badge = summary.querySelector('.options__customised');
-        if (text === null) badge?.remove();
-        else if (badge === null) {
-          badge = el('span', 'options__customised', [text]);
-          summary.querySelector('button.geld-switch')?.before(badge);
-        } else badge.textContent = text;
-      }
+      showAutoViewed(checkbox, id);
     });
     const copy = categoriesField.autoViewed;
     return el('div', 'options__group options__group--static options__auto-viewed', [
@@ -1297,6 +1305,12 @@ async function main(): Promise<void> {
     if (signature !== lastSignature && !(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) {
       lastSignature = signature;
       renderAll();
+    }
+    // Not in the signature (that rebuild would drop unsaved category edits): an import, a reset or another window is shown in place.
+    for (const checkbox of document.querySelectorAll<HTMLInputElement>('input[data-auto-viewed]')) {
+      const id = checkbox.dataset.autoViewed ?? '';
+      const category = isCategoryId(id) ? id : settings.customCategories.find((custom) => custom.id === id)?.id;
+      if (category !== undefined) showAutoViewed(checkbox, category);
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
