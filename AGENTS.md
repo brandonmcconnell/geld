@@ -629,7 +629,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `ui/test-folds.ts` reads the rendered rows: the React view's code cells name both line numbers (`data-diff-line-key` `b:10-l:10-r:10`) and their half (`data-diff-side`) but anchor a context line by its new number on both halves, so keys are made from those numbers there (a context cell is both lines unified, its own half's line split), while the classic view's number-cell `id`s say the side;
   hunk rows carry a line anchor in the React view and are skipped.
   A row hides (`data-geld-test-fold="hidden"`) only when every line it shows is folded, and the toggle ("12 lines +13 new", "Fold" when open, the old title in its label for a rename) is prepended to the head's code cell and floated right, never inside GitHub's code;
-  opened folds are kept per page (`openedTestFolds`).
+  opened folds are kept per page (`openedTestFolds`), a link into a test's body (`#diff-<digest>R30`, a range too) opens its fold once per hash and brings the row into view (the browser cannot scroll to a row that is not displayed), and the folds are made again when the syntaxes change (the cache compares them) or the repository's patterns arrive (`testFileMatchers` cleared with `matchers`).
   Test files are told by a matcher that knows only the Tests category, on, with the reader's and the repository's patterns (`testFileMatcher`), so it applies whether tests are hidden or not.
   Verified on vitest-dev/vitest#11737 (React, split) and its compare page (classic, unified): three new tests fold to their titles.
 - **Hidden files can be marked as viewed for the reader** (`autoViewed`, per category, built-in or custom, off for all by default;

@@ -529,6 +529,7 @@ export class GeldController {
    */
   private onRepoConfigChange(): void {
     this.matchers.clear();
+    this.testFileMatchers.clear();
     this.settledHeader = null;
     this.applyHeaderNow();
     this.schedule();
@@ -1799,6 +1800,8 @@ export class GeldController {
 
   private readonly onHashChange = (): void => {
     onReviewHashChange(this.settings);
+    // A link into a folded test's body: the pass opens its fold (`ui/test-folds.ts`).
+    if (this.settings.testOutline) this.schedule();
   };
 
   private readonly onBeforeMatch = (event: Event): void => {

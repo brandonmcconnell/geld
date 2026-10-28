@@ -118,6 +118,7 @@ function readSides(root: HTMLElement, anchor: string): { readonly old: ReadLine[
 
 interface Painted {
   readonly signature: string;
+  readonly syntaxes: readonly TestSyntax[];
   readonly folds: readonly TestFold[];
   readonly lines: ReadonlyMap<string, ReadLine>;
 }
@@ -131,14 +132,35 @@ const painted = new WeakMap<HTMLElement, Painted>();
 export function applyTestFolds(root: HTMLElement, anchor: string, syntaxes: readonly TestSyntax[], opened: Set<string>): void {
   const sides = readSides(root, anchor);
   let state = painted.get(root);
-  if (state === undefined || state.signature !== sides.signature) {
+  if (state === undefined || state.signature !== sides.signature || state.syntaxes !== syntaxes) {
     const folds = outlineTestFolds({ old: sides.old.map((read) => read.line), new: sides.new.map((read) => read.line) }, syntaxes);
     const lines = new Map<string, ReadLine>();
     for (const read of [...sides.old, ...sides.new]) lines.set(read.line.key, read);
-    state = { signature: sides.signature, folds, lines };
+    state = { signature: sides.signature, syntaxes, folds, lines };
     painted.set(root, state);
   }
+  openLinkedFold(anchor, state, opened);
   paint(root, anchor, state, syntaxes, opened);
+}
+
+/** The location hash a fold was last opened for, so a fold the reader closes again is not reopened by the same link. */
+let linkedHash = '';
+
+/**
+ * A link into a test's body (`#diff-<digest>R30`, or a range `…R30-R34`) opens the fold holding it, once per hash:
+ * the browser cannot scroll to a row that is not displayed.
+ */
+function openLinkedFold(anchor: string, state: Painted, opened: Set<string>): void {
+  const hash = window.location.hash.slice(1);
+  if (!hash.startsWith(anchor) || hash === linkedHash) return;
+  const keys = [...hash.slice(anchor.length).matchAll(/([LR])(\d+)/g)].map((match) => `${match[1]}${match[2]}`);
+  const fold = state.folds.find((candidate) => keys.some((key) => candidate.bodyKeys.includes(key)));
+  if (fold === undefined) return;
+  linkedHash = hash;
+  opened.add(`${anchor}:${fold.id}`);
+  // The browser gave up on a row that was not displayed when it looked: bring it into view once it is.
+  const row = keys.map((key) => state.lines.get(key)?.rowElement).find((element) => element !== undefined);
+  if (row !== undefined) window.requestAnimationFrame(() => row.scrollIntoView({ block: 'center' }));
 }
 
 function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: readonly TestSyntax[], opened: Set<string>): void {
