@@ -108,6 +108,16 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "%s mocks prototype methods" R1 body=4 +6 -0']);
   });
 
+  it('pairs an edited test by its title when a new one is inserted just before it in the same run', () => {
+    const diff = ["-  it('keeps the token', async () => {", "+  it('saves the token', () => {", '+    save();', '+  });', "+  it('keeps the token', () => {", '     expect(token).toBeDefined();', '   });'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "saves the token" R1 body=2 +3 -0', 'modified test "keeps the token" R4 body=4 +1 -1']);
+  });
+
+  it('folds a dotted hook the reader declared', () => {
+    const diff = ['+t.beforeEach(() => {', '+  reset();', '+});'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff), testSyntaxesFrom(['hook: t.beforeEach'])))).toEqual(['added hook "t.beforeEach" R1 body=2 +3 -0']);
+  });
+
   it('never joins lines across a gap in the numbering', () => {
     const { new: lines } = sides(["+it('a', () => {", '+  one();'].join('\n'));
     const after: OutlineLine = { key: 'R10', number: 10, text: '  far();', changed: false, row: 9, run: 9 };

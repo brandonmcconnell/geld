@@ -250,14 +250,25 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
   const news = foldsOf(sides.new, syntaxes);
   const paired = new Set<SideFold>();
   const folds: TestFold[] = [];
+  const sameRun = (old: SideFold, fold: SideFold): boolean =>
+    !paired.has(old) && old.kind === fold.kind && (fold.head.changed ? old.head.changed && old.head.run === fold.head.run : !old.head.changed && old.head.row === fold.head.row);
+  // Titles first: a test inserted just before an edited one in the same run must not take the edited one's old body.
+  const partners = new Map<SideFold, SideFold>();
   for (const fold of news) {
-    const partner = olds.find(
-      (old) =>
-        !paired.has(old) &&
-        old.kind === fold.kind &&
-        (fold.head.changed ? old.head.changed && old.head.run === fold.head.run : !old.head.changed && old.head.row === fold.head.row),
-    );
-    if (partner !== undefined) paired.add(partner);
+    const partner = olds.find((old) => sameRun(old, fold) && old.title === fold.title);
+    if (partner === undefined) continue;
+    partners.set(fold, partner);
+    paired.add(partner);
+  }
+  for (const fold of news) {
+    if (partners.has(fold)) continue;
+    const partner = olds.find((old) => sameRun(old, fold));
+    if (partner === undefined) continue;
+    partners.set(fold, partner);
+    paired.add(partner);
+  }
+  for (const fold of news) {
+    const partner = partners.get(fold);
     const additions = changedIn(fold.heading) + changedIn(fold.body);
     const deletions = partner === undefined ? 0 : changedIn(partner.heading) + changedIn(partner.body);
     const renamed = partner !== undefined && partner.title !== fold.title;
@@ -311,8 +322,8 @@ export function parseTestSyntax(line: string): { readonly syntax: TestSyntax } |
       return { problem: `"${line}" is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}` };
     }
   }
-  if (kind === 'hook' && /^[A-Za-z_$][\w$]*$/.test(body)) {
-    return { syntax: { kind, pattern: new RegExp(String.raw`^\s*(?<title>${body.replace(/\$/g, '\\$')})\b\s*(?:[({]|do\b)`) } };
+  if (kind === 'hook' && /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(body)) {
+    return { syntax: { kind, pattern: new RegExp(String.raw`^\s*(?<title>${body.replace(/[.$]/g, (char) => `\\${char}`)})\b\s*(?:[({]|do\b)`) } };
   }
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(body)) {
     return { problem: `"${line}": expected a name such as \`scenario\` or \`t.test\`, \`suite: name\`, or a /regex/.` };

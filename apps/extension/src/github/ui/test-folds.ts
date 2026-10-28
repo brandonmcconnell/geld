@@ -197,13 +197,19 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
   for (const toggle of root.querySelectorAll(`[${ATTR_TOGGLE}]`)) if (!toggles.has(toggle)) toggle.remove();
 }
 
+/** Each toggle's current action: a button kept across passes (its label unchanged) must act on the latest reading of the file. */
+const toggleActions = new WeakMap<Element, () => void>();
+
 const STATUS_WORD: Readonly<Record<TestFold['status'], string | null>> = { added: 'new', removed: 'removed', renamed: 'renamed', modified: null, unchanged: null };
 
 function ensureToggle(cell: Element, id: string, fold: TestFold, rows: number, open: boolean, onToggle: () => void): Element {
   const existing = [...cell.children].find((child) => child.getAttribute(ATTR_TOGGLE) === id);
   const label = open ? 'Fold' : `${formatCount(rows)} ${rows === 1 ? 'line' : 'lines'}`;
   const state = `${open}|${label}|${fold.status}|${fold.additions}|${fold.deletions}`;
-  if (existing instanceof HTMLElement && existing.dataset.state === state) return existing;
+  if (existing instanceof HTMLElement && existing.dataset.state === state) {
+    toggleActions.set(existing, onToggle);
+    return existing;
+  }
   const parts: Node[] = [createElement('span', { class: `${TOGGLE_CLASS}__chevron`, 'aria-hidden': 'true' }, [open ? '▾' : '▸']), createElement('span', { class: `${TOGGLE_CLASS}__label` }, [label])];
   if (!open && fold.additions > 0) parts.push(createElement('span', { class: `${TOGGLE_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
   if (!open && fold.deletions > 0) parts.push(createElement('span', { class: `${TOGGLE_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
@@ -224,10 +230,11 @@ function ensureToggle(cell: Element, id: string, fold: TestFold, rows: number, o
     },
     parts,
   );
+  toggleActions.set(button, onToggle);
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    onToggle();
+    toggleActions.get(button)?.();
   });
   if (existing !== undefined) existing.replaceWith(button);
   // First in the cell and floated right: after GitHub's code it would wrap under a long line in the React view.
