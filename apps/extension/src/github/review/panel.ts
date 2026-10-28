@@ -332,6 +332,8 @@ export interface PanelModel {
   readonly folds: readonly FoldRow[];
   readonly batches: readonly Batch[];
   readonly requestable: readonly InstalledBot[];
+  /** Bots that reported after the latest push, so on this commit; null when the page shows no push to tell by. */
+  readonly ranSincePush: ReadonlySet<string> | null;
   /** The Review bots row's list: each bot's latest run summary, in the chips' order. */
   readonly botLines: readonly BotLine[];
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
@@ -381,6 +383,8 @@ export interface PanelModel {
    * but the lines and the comment count are not yet, and the row says so.
    */
   readonly ingesting: boolean;
+  /** How far Geld's own reading of the timeline has got, 0 to 1, for the bar along the digest's top; null when not reading. */
+  readonly progress: number | null;
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
@@ -1263,15 +1267,15 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
 }
 
 /** What a bot's line in the request menu says about its last run here, and whether it is ticked to begin with. */
-interface BotRunState {
+export interface BotRunState {
   readonly health: Health | null;
   readonly word: string;
-  /** Ticked when the menu opens: a failed run, one on an earlier commit, or one that had findings (resolved since or not). */
+  /** Ticked when the menu opens: a failed run, one on an earlier commit, or one whose findings came before the latest push. */
   readonly preselect: boolean;
 }
 
-function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
-  const record = model.meta.bots.find((entry) => entry.id === bot.id);
+export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush'> & { readonly meta: Pick<PanelModel['meta'], 'bots' | 'headSha'> }): BotRunState {
+  const record = model.meta.bots.find((entry) => entry.id === botId);
   if (record === undefined) return { health: null, word: 'Not run', preselect: false };
   const health = botHealth(record);
   if (health === 'pending') return { health, word: record.verdict === 'loading' ? 'Loading' : record.verdict === 'unknown' ? 'No word' : 'Running', preselect: false };
@@ -1279,12 +1283,13 @@ function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
   // A refused run ("disabled for this repository") is Skipped, and not ticked: asking again changes nothing until
   // the bot's setup does.
   if (record.verdict === 'failed' && record.reason !== undefined) return { health, word: 'Skipped', preselect: false };
-  // A run that had findings is worth running again whether or not its threads have been resolved since: the chip
-  // shows the green check once they are, but the bot has not looked at the fixes. The line keeps saying "Findings"
-  // beside that check so the tick explains itself.
+  // A run that had findings says "Findings" whether or not its threads have been resolved since (the chip shows the
+  // green check once they are). It is ticked only when the bot has not reported since the latest push: then it has
+  // not seen the fixes, while a bot that already reviewed this commit would say the same again.
   const findings = record.verdict === 'findings';
-  const word = health === 'bad' ? 'Failed' : findings || health === 'warn' ? 'Findings' : 'Passed';
-  return { health, word, preselect: health === 'bad' || findings };
+  const word = record.verdict === 'failed' ? 'Failed' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
+  const reviewedThisCommit = model.ranSincePush?.has(botId) ?? true;
+  return { health, word, preselect: record.verdict === 'failed' || (findings && !reviewedThisCommit) };
 }
 
 /** How Geld knows the bot is here, for the line's tooltip. */
@@ -1305,8 +1310,8 @@ function presenceWords(bot: InstalledBot): string {
  * Request a review: a checkbox per bot, with what its last run here said
  * (failed, findings, passed, running, on an earlier commit, not run), so
  * the reader can run only the ones that need it. Failed and stale runs
- * start ticked, and so does a run that had findings — resolved since or
- * not, the bot has not seen the fixes. Bots with a sign of being here (active on the page,
+ * start ticked, and so does a run whose findings came before the latest
+ * push, resolved since or not: the bot has not seen the fixes. Bots with a sign of being here (active on the page,
  * declared by the repository, configured in it) are listed first; the rest
  * of the registry waits behind "Other bots", since a trigger for a bot that
  * is not installed is a public comment with a handle in it. Run posts one
@@ -1340,7 +1345,7 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     run.toggleAttribute('disabled', picked === 0);
   };
   const line = (bot: InstalledBot): HTMLElement => {
-    const state = botRunState(bot, model);
+    const state = botRunState(bot.id, model);
     const input = createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': `${bot.label}, ${state.word.toLowerCase()}` });
     input.checked = state.preselect;
     checks.set(bot.id, input);
@@ -2481,6 +2486,52 @@ export interface MountOptions {
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  // A rebuild (the reading ending changes the signature) must not drop the bar mid-way: the new panel takes it.
+  const bar = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}] > .${PANEL_CLASS}__reading`);
+  const mounted = buildPanel(model, handlers, options);
+  if (mounted === null) return null;
+  if (bar !== null && !mounted.root.contains(bar) && mounted.root.querySelector(`:scope > .${PANEL_CLASS}__reading`) === null) mounted.root.prepend(bar);
+  syncProgress(mounted.root, model.progress);
+  return mounted;
+}
+
+/** The last width the progress bar showed: a rebuilt panel's new bar starts there, so it never jumps back to empty. */
+let shownProgress = 0;
+
+/**
+ * A thin accent bar along the digest's top edge while Geld reads the timeline (`PanelModel.progress`), kept in place
+ * across passes rather than in the signature, so it moves without rebuilding the panel. When the reading ends it fills
+ * and fades out.
+ */
+function syncProgress(root: HTMLElement, progress: number | null): void {
+  let bar = root.querySelector<HTMLElement>(`:scope > .${PANEL_CLASS}__reading`);
+  if (progress === null) {
+    if (bar === null || bar.hasAttribute('data-done')) return;
+    bar.setAttribute('data-done', '');
+    bar.setAttribute('aria-valuenow', '100');
+    bar.style.setProperty('--geld-progress', '1');
+    const leaving = bar;
+    window.setTimeout(() => leaving.remove(), 600);
+    shownProgress = 0;
+    return;
+  }
+  const percent = String(Math.round(progress * 100));
+  if (bar === null || bar.hasAttribute('data-done')) {
+    bar?.remove();
+    bar = createElement('div', { class: `${PANEL_CLASS}__reading`, [OWN_UI_ATTRIBUTE]: '', role: 'progressbar', 'aria-label': 'Reading the timeline', 'aria-valuemin': '0', 'aria-valuemax': '100' }, [createElement('div', { class: `${PANEL_CLASS}__reading-fill` })]);
+    // Never ahead of this visit's own reading: a value above it is a previous pull request's.
+    bar.style.setProperty('--geld-progress', String(Math.min(shownProgress, progress)));
+    root.prepend(bar);
+    const fresh = bar;
+    requestAnimationFrame(() => fresh.style.setProperty('--geld-progress', String(progress)));
+  } else {
+    bar.style.setProperty('--geld-progress', String(progress));
+  }
+  bar.setAttribute('aria-valuenow', percent);
+  shownProgress = progress;
+}
+
+function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
   const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}`;
@@ -2689,6 +2740,7 @@ function railIndent(nudge: HTMLElement): number {
 }
 
 export function unmountPanel(): void {
+  shownProgress = 0;
   restoreAll();
   const panel = document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   if (panel !== null) reclaimOrphans(panel);
