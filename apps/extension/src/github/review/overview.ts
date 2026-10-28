@@ -2889,7 +2889,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // GitHub's "N hidden items · Load more" bar stays out of sight while Geld is the one pressing it (the reading bar
   // says how far it has got); once Geld stops (done, or at its limit) it shows again for the reader to load the rest.
   // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
-  setAutoLoading(hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && (hasLoadMore() || loadMorePending()));
+  setAutoLoading(hidingTimeline && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
   if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.

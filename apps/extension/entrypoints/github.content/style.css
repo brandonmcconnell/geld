@@ -2393,7 +2393,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
  * sight, the reading bar standing for it. Pressed with click(), which a hidden control still takes. Back as soon as
  * Geld stops pressing (done, or at its limit), so the reader can load the rest.
  */
-html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline']) {
+html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline'], .ajax-pagination-btn, button.js-ajax-pagination-btn) {
   display: none !important;
 }
 
