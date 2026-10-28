@@ -2314,8 +2314,9 @@ function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHan
   relayedMenus.set(menu, { anchor, handlers });
   if (known) return;
   const relay = (event: MouseEvent): void => {
+    // A retired copy (`lastSettings` nulled by teardown) is inert: the copy that took over has its own listener here.
     const worn = relayedMenus.get(menu);
-    if (worn === undefined || menu.closest(`[${ATTR_CTL_SLOT}]`) === null) return;
+    if (lastSettings === null || worn === undefined || menu.closest(`[${ATTR_CTL_SLOT}]`) === null) return;
     const { anchor, handlers } = worn;
     const item = event.target instanceof Element ? event.target.closest<HTMLElement>(COMMENT_SCOPED_ITEMS) : null;
     if (item === null || !menu.contains(item)) return;
