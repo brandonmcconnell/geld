@@ -1,0 +1,1205 @@
+/**
+ * The Review tab's unit of work: a plan of steps over a pull request's
+ * hunks. A step is one body of work (a feature slice, a fix, a refactor)
+ * that may span several files and languages; every hunk of every file Geld
+ * leaves visible belongs to exactly one step's `touches`, and the hunks of
+ * files Geld hides (tests, generated output, fixtures, lockfiles) ride along
+ * as the `supporting` changes of the step they exist for. Two producers fill
+ * the same shape - the rules here (free, synchronous, deterministic) and a
+ * chat model (`review-prompts.ts`) that refines the rules' candidates - and
+ * `normalizePlan` holds both to the same invariants afterwards.
+ *
+ * Nothing in here touches a browser or the network.
+ */
+
+import type { MovedBlock } from './moves';
+import { detectMoves } from './moves';
+
+/** FNV-1a over the text as a short base-36 key (the same shape `@geld/core`'s `hashText` gives, kept here so this package stays dependency-free). */
+export function hashText(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${text.length.toString(36)}-${hash.toString(36)}`;
+}
+
+export const STEP_KINDS = ['feature', 'fix', 'refactor', 'tests', 'docs', 'chore', 'generated', 'other'] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
+
+export function isStepKind(value: unknown): value is StepKind {
+  return typeof value === 'string' && STEP_KINDS.some((kind) => kind === value);
+}
+
+/** One hunk of one file at the plan's head, by its index among that file's hunks (0 for a file with no hunks: a binary, a pure rename). */
+export interface HunkRef {
+  readonly path: string;
+  readonly hunk: number;
+}
+
+export interface ReviewStep {
+  /** Stable across replans while the step's first hunk is the same change (a hash of that hunk's signature). */
+  readonly id: string;
+  /** Three to seven words, imperative or a noun phrase ("Debounce the search box"). */
+  readonly title: string;
+  readonly kind: StepKind;
+  /** The step's account in plain words, written when the step is reached; null until then. */
+  readonly story: string | null;
+  /** One sentence tying the step to the pull request's goal, or null. */
+  readonly why: string | null;
+  /** A one-line gist from the planner, shown in the stepper and used as the story's seed. */
+  readonly gist: string | null;
+  /** Every hunk of the step, in reading order. */
+  readonly touches: readonly HunkRef[];
+  /** Hidden files' hunks that exist because of this step: tests, fixtures, snapshots, generated output. */
+  readonly supporting: readonly HunkRef[];
+  /** Step ids to read first. */
+  readonly dependsOn: readonly string[];
+  /** Up to three things worth a second look, model-written. */
+  readonly watch: readonly string[];
+  /** Digest item ids whose source lines fall inside this step's hunks. */
+  readonly findings: readonly string[];
+  /** A hash of the step's hunk signatures: progress remembers it, so a step whose hunks changed after a replan reads `changed`. */
+  readonly fingerprint: string;
+  /** The signature of each hunk in `touches` then `supporting`, so the step can be laid over a later diff ({@link remapProposals}). */
+  readonly signatures: readonly string[];
+}
+
+export type PlanProducer = 'rules' | 'ai';
+
+/* ------------------------------------------------------------------------- */
+/* The overview: what the pull request does, before and after, as a flow     */
+/* ------------------------------------------------------------------------- */
+
+export type BeforeAfterKind = 'same' | 'before' | 'after';
+
+/** One line of the behaviour diff: unchanged behaviour plain, the old way as `before`, the new as `after`, each pointing at the step that shows it. */
+export interface BeforeAfterLine {
+  readonly kind: BeforeAfterKind;
+  readonly text: string;
+  /** Nesting under the line above, 0 to 3. */
+  readonly depth: number;
+  /** The step (id) where this behaviour is read, or null. */
+  readonly step: string | null;
+}
+
+export const FLOW_NODE_KINDS = ['new', 'changed', 'existing', 'decision'] as const;
+export type FlowNodeKind = (typeof FLOW_NODE_KINDS)[number];
+
+export function isFlowNodeKind(value: unknown): value is FlowNodeKind {
+  return typeof value === 'string' && FLOW_NODE_KINDS.some((kind) => kind === value);
+}
+
+/** A box in the before/after flow: a function or a decision, named by file, pointing at its step. */
+export interface FlowNode {
+  readonly id: string;
+  readonly label: string;
+  readonly file: string | null;
+  readonly kind: FlowNodeKind;
+  readonly step: string | null;
+}
+
+export interface FlowEdge {
+  readonly from: string;
+  readonly to: string;
+  /** "yes", "no", or null. */
+  readonly label: string | null;
+}
+
+export interface PlanOverview {
+  /** Three or four sentences: what the system did, what the pull request turns it into, how, why. */
+  readonly summary: string;
+  /** One line per mechanism, in reading order. */
+  readonly points: readonly string[];
+  /** The behaviour diff: a caption naming the path through the system, then its lines. */
+  readonly beforeAfter: { readonly caption: string; readonly lines: readonly BeforeAfterLine[] } | null;
+  /** The same path as boxes and arrows, for the Diagram tab. */
+  readonly flow: { readonly caption: string; readonly nodes: readonly FlowNode[]; readonly edges: readonly FlowEdge[] } | null;
+}
+
+export interface ReviewPlan {
+  /** Binds progress to a plan: a hash of the head and the step ids. */
+  readonly id: string;
+  readonly headSha: string;
+  readonly madeAt: string;
+  readonly producer: PlanProducer;
+  readonly model: string | null;
+  readonly steps: readonly ReviewStep[];
+  /** Hunks no step claimed; empty after normalisation, which gives them a trailing step. */
+  readonly unassigned: readonly HunkRef[];
+  /** The model saw hunk headers only (a very large pull request): the view says so once. */
+  readonly fromHeaders: boolean;
+  /** The model's account of the whole pull request, with step ids resolved; absent for a rules plan (and in plans stored before it existed). */
+  readonly overview?: PlanOverview;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Planner input                                                              */
+/* ------------------------------------------------------------------------- */
+
+export interface PlanHunk {
+  readonly index: number;
+  readonly header: string;
+  readonly oldStart: number;
+  readonly oldLines: number;
+  readonly newStart: number;
+  readonly newLines: number;
+  readonly added: readonly string[];
+  /** The new-file line number of each added line. */
+  readonly addedAt: readonly number[];
+  readonly removed: readonly string[];
+  /** The old-file line number of each removed line. */
+  readonly removedAt: readonly number[];
+  readonly signature: string;
+}
+
+export interface PlanFile {
+  readonly path: string;
+  readonly previousPath?: string;
+  readonly status: 'added' | 'deleted' | 'renamed' | 'modified';
+  readonly binary: boolean;
+  /** The diff header's blob ids and modes (`FileHunks.identity`): a file without text hunks is signed by them. */
+  readonly identity?: string;
+  /** The Geld category hiding this file (id and title), or null when the file stays visible. */
+  readonly hidden: { readonly id: string; readonly title: string } | null;
+  readonly hunks: readonly PlanHunk[];
+}
+
+export interface PlanCommit {
+  readonly sha: string;
+  /** The first line of the message. */
+  readonly message: string;
+  /** Paths the commit touched, when known. */
+  readonly files?: readonly string[];
+}
+
+export interface PlanFinding {
+  readonly id: string;
+  readonly path: string;
+  readonly line?: number;
+}
+
+export interface PlanInput {
+  readonly title: string;
+  readonly body: string | null;
+  readonly headSha: string;
+  readonly commits: readonly PlanCommit[];
+  readonly files: readonly PlanFile[];
+  readonly findings: readonly PlanFinding[];
+  /** Blocks moved between hunks ({@link detectMoves}); computed from `files` when absent. */
+  readonly moves?: readonly MovedBlock[];
+}
+
+/** The input's moves, from the field or the files. */
+export function movesOf(input: PlanInput): readonly MovedBlock[] {
+  return input.moves ?? detectMoves(input.files);
+}
+
+/** A step as a producer proposes it, before normalisation assigns ids, supporting changes and order. */
+export interface StepProposal {
+  /** The producer's own handle, for `dependsOn`; replaced by the stable id. */
+  readonly key: string;
+  readonly title: string;
+  readonly kind: StepKind;
+  readonly gist: string | null;
+  readonly touches: readonly HunkRef[];
+  readonly dependsOn: readonly string[];
+  readonly watch: readonly string[];
+}
+
+/* ------------------------------------------------------------------------- */
+/* Refs                                                                       */
+/* ------------------------------------------------------------------------- */
+
+export function refKey(ref: HunkRef): string {
+  return `${ref.path}#${ref.hunk}`;
+}
+
+export function parseRefKey(key: string): HunkRef | null {
+  const at = key.lastIndexOf('#');
+  if (at <= 0) return null;
+  const hunk = Number(key.slice(at + 1));
+  return Number.isInteger(hunk) && hunk >= 0 ? { path: key.slice(0, at), hunk } : null;
+}
+
+/** The refs of a file: one per hunk, or one whole-file ref when the diff shows none (binary, rename, mode change). */
+export function refsOf(file: PlanFile): readonly HunkRef[] {
+  if (file.hunks.length === 0) return [{ path: file.path, hunk: 0 }];
+  return file.hunks.map((hunk) => ({ path: file.path, hunk: hunk.index }));
+}
+
+/** A whole file's signature: its content identity too, so a binary replaced or a mode changed after a push reads as new. */
+function fileSignature(file: PlanFile): string {
+  return hashText(`${file.path}\n${file.status}\n${file.binary ? 'binary' : ''}\n${file.identity ?? ''}`);
+}
+
+/** The signature of a ref: the hunk's own, or the file's for a whole-file ref. */
+export function refSignature(files: ReadonlyMap<string, PlanFile>, ref: HunkRef): string {
+  const file = files.get(ref.path);
+  if (file === undefined) return hashText(refKey(ref));
+  const hunk = file.hunks[ref.hunk];
+  return hunk === undefined ? fileSignature(file) : hunk.signature;
+}
+
+/** Changed lines of a ref (added plus removed), one for a whole-file ref. */
+function refSize(files: ReadonlyMap<string, PlanFile>, ref: HunkRef): number {
+  const hunk = files.get(ref.path)?.hunks[ref.hunk];
+  return hunk === undefined ? 1 : hunk.added.length + hunk.removed.length;
+}
+
+function compareRefs(order: ReadonlyMap<string, number>): (a: HunkRef, b: HunkRef) => number {
+  return (a, b) => {
+    const byFile = (order.get(a.path) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.path) ?? Number.MAX_SAFE_INTEGER);
+    return byFile !== 0 ? byFile : a.hunk - b.hunk;
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Naming hunks from the diff                                                 */
+/* ------------------------------------------------------------------------- */
+
+const FILE_NAME = /[^/]+$/;
+
+/** `src/search.ts` → `search`; `Button.test.tsx` → `button`; `test_api.py` → `api`; `__snapshots__/Foo.tsx.snap` → `foo`. */
+export function stemOf(path: string): string {
+  const name = (FILE_NAME.exec(path)?.[0] ?? path).toLowerCase();
+  let stem = name;
+  // Snapshot files name the file they snapshot with its own extension.
+  stem = stem.replace(/\.snap$/, '');
+  // Test and story suffixes, then the extension itself.
+  stem = stem.replace(/\.(test|spec|stories|story|bench|e2e|cy|d)\.[a-z0-9]+$/, '');
+  stem = stem.replace(/[._-](test|spec|tests)\.[a-z0-9]+$/, '');
+  stem = stem.replace(/^test_/, '').replace(/_test$/, '');
+  stem = stem.replace(/\.[a-z0-9]+$/, '');
+  return stem;
+}
+
+function directoryOf(path: string): string {
+  const at = path.lastIndexOf('/');
+  return at === -1 ? '' : path.slice(0, at);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Symbols: cheap tokens, no parser                                           */
+/* ------------------------------------------------------------------------- */
+
+/** A name introduced by an added line, as the common languages spell a definition. Deliberately a handful of shapes. */
+const DEFINITIONS: readonly RegExp[] = [
+  /\b(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/,
+  /\b(?:export\s+(?:default\s+)?)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/,
+  /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*[=:]/,
+  /\b(?:export\s+)?(?:type|interface|enum)\s+([A-Za-z_$][\w$]*)/,
+  /\bdef\s+([A-Za-z_][\w]*)\s*\(/,
+  /\b(?:pub\s+)?(?:fn|struct|enum|trait)\s+([A-Za-z_][\w]*)/,
+  /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)\s*\(/,
+  /^\s*\.([A-Za-z_-][\w-]*)\s*[{,]/,
+  /^\s*(--[A-Za-z_-][\w-]*)\s*:/,
+];
+
+const STOP_WORDS = new Set([
+  'const',
+  'let',
+  'var',
+  'function',
+  'return',
+  'import',
+  'export',
+  'default',
+  'class',
+  'this',
+  'that',
+  'self',
+  'true',
+  'false',
+  'null',
+  'undefined',
+  'string',
+  'number',
+  'boolean',
+  'void',
+  'async',
+  'await',
+  'from',
+  'type',
+  'interface',
+  'props',
+  'state',
+  'value',
+  'data',
+  'item',
+  'items',
+  'index',
+  'error',
+  'result',
+  'options',
+  'config',
+  'context',
+  'name',
+  'text',
+  'test',
+  'describe',
+  'expect',
+  'main',
+  'init',
+  'setup',
+  'render',
+  'handle',
+  'update',
+  'create',
+  'delete',
+  'remove',
+  'get',
+  'set',
+  'new',
+  'use',
+]);
+
+const MIN_SYMBOL_LENGTH = 4;
+
+/** Names an added line defines, filtered to ones specific enough to tie two hunks together. */
+export function definedSymbols(added: readonly string[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const line of added) {
+    for (const pattern of DEFINITIONS) {
+      const match = pattern.exec(line);
+      const name = match?.[1];
+      if (name === undefined) continue;
+      const lower = name.toLowerCase();
+      if (name.length >= MIN_SYMBOL_LENGTH && !STOP_WORDS.has(lower)) names.add(name);
+    }
+  }
+  return names;
+}
+
+const WORD = /[A-Za-z_$][\w$-]{3,}/g;
+
+/** Every identifier-shaped token in the added lines (a superset of the definitions), for cheap reference checks. */
+export function mentionedSymbols(added: readonly string[]): ReadonlySet<string> {
+  const words = new Set<string>();
+  for (const line of added) for (const match of line.matchAll(WORD)) words.add(match[0]);
+  return words;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Rules producer                                                             */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * A step larger than this many changed lines is split: by file first, then a
+ * file still over it by runs of its hunks. Sized for one sitting: a step is
+ * read, understood and marked before the next, and a reader who has to
+ * scroll through four hundred changed lines to find the point stops reading
+ * (the one lesson every guided-review product reports is "more bite-sized").
+ */
+export const STEP_SIZE_CAP = 240;
+
+/** File stems that name a convention, not a thing: four `package.json`s or `index.ts`s share nothing but the name. */
+const GENERIC_STEMS = new Set(['index', 'package', 'main', 'mod', 'lib', 'types', 'type', 'utils', 'util', 'helpers', 'config', 'constants', 'readme', 'changelog', 'license', 'setup', 'init', 'app', 'server', 'client', 'test', 'tests', 'spec', '__init__', 'makefile', 'dockerfile', 'cargo', 'go', 'gemfile', 'pnpm-lock', 'yarn', 'package-lock', 'tsconfig', 'vite', 'vitest', 'jest', 'eslint', 'prettier', 'schema', 'styles', 'style', 'page', 'layout', 'route', 'routes', 'model', 'models', 'component', 'components']);
+
+class Groups {
+  private readonly parent = new Map<string, string>();
+  private readonly size = new Map<string, number>();
+  /** The commit (index) that first brought a group together, for its title. */
+  readonly commitOf = new Map<string, number>();
+
+  add(key: string, size: number): void {
+    if (this.parent.has(key)) return;
+    this.parent.set(key, key);
+    this.size.set(key, size);
+  }
+
+  find(key: string): string {
+    let root = key;
+    while (this.parent.get(root) !== root) root = this.parent.get(root) ?? root;
+    // Path compression keeps the next lookups short.
+    let cursor = key;
+    while (cursor !== root) {
+      const next = this.parent.get(cursor) ?? root;
+      this.parent.set(cursor, root);
+      cursor = next;
+    }
+    return root;
+  }
+
+  sizeOf(key: string): number {
+    return this.size.get(this.find(key)) ?? 0;
+  }
+
+  /** Join two groups when the union stays under `cap` (or `cap` is null); returns whether it did. */
+  union(a: string, b: string, cap: number | null, commit: number | null): boolean {
+    const rootA = this.find(a);
+    const rootB = this.find(b);
+    if (rootA === rootB) return true;
+    const merged = (this.size.get(rootA) ?? 0) + (this.size.get(rootB) ?? 0);
+    if (cap !== null && merged > cap) return false;
+    this.parent.set(rootB, rootA);
+    this.size.set(rootA, merged);
+    const known = this.commitOf.get(rootA) ?? this.commitOf.get(rootB) ?? commit;
+    if (known !== null && known !== undefined) this.commitOf.set(rootA, known);
+    return true;
+  }
+
+  members(keys: readonly string[]): ReadonlyMap<string, string[]> {
+    const groups = new Map<string, string[]>();
+    for (const key of keys) {
+      const root = this.find(key);
+      const list = groups.get(root) ?? [];
+      list.push(key);
+      groups.set(root, list);
+    }
+    return groups;
+  }
+}
+
+const KIND_WORDS: ReadonlyArray<readonly [RegExp, StepKind]> = [
+  [/\b(fix|fixes|fixed|bug|crash|regression|hotfix|patch|broken|leak|race)\b/i, 'fix'],
+  [/\b(refactor|refactors|cleanup|clean up|tidy|simplify|rename|move|extract|inline|reorganis|reorganiz|dedupe|restructure)\b/i, 'refactor'],
+  [/\b(test|tests|spec|specs|coverage)\b/i, 'tests'],
+  [/\b(docs?|readme|documentation|changelog|comment|typo)\b/i, 'docs'],
+  [/\b(chore|bump|deps|dependency|dependencies|ci|lint|format|prettier|eslint|version|release)\b/i, 'chore'],
+  [/\b(add|adds|added|feat|feature|implement|implements|support|introduce|introduces|new|allow|enable)\b/i, 'feature'],
+];
+
+const DOC_FILE = /\.(md|mdx|rst|txt|adoc)$/i;
+const CONFIG_FILE = /(^|\/)(\.[^/]+|[^/]+\.(json|ya?ml|toml|ini|cfg|lock|config\.[cm]?[jt]sx?|rc))$/i;
+
+/** The kind a commit message or a set of paths suggests. */
+export function kindFor(messages: readonly string[], paths: readonly string[]): StepKind {
+  for (const message of messages) {
+    for (const [pattern, kind] of KIND_WORDS) if (pattern.test(message)) return kind;
+  }
+  if (paths.length > 0 && paths.every((path) => DOC_FILE.test(path))) return 'docs';
+  if (paths.length > 0 && paths.every((path) => CONFIG_FILE.test(path))) return 'chore';
+  return 'other';
+}
+
+/** A commit message's first line, with conventional-commit prefixes and trailing issue references trimmed. */
+export function cleanCommitTitle(message: string): string {
+  const first = message.split('\n')[0]?.trim() ?? '';
+  return first
+    .replace(/^(?:feat|fix|chore|docs|refactor|test|tests|perf|build|ci|style|revert)(?:\([^)]*\))?!?:\s*/i, '')
+    .replace(/\s*\(#\d+\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fileTitle(file: PlanFile): string {
+  const name = FILE_NAME.exec(file.path)?.[0] ?? file.path;
+  switch (file.status) {
+    case 'added':
+      return `Add ${name}`;
+    case 'deleted':
+      return `Remove ${name}`;
+    case 'renamed':
+      return `Rename ${FILE_NAME.exec(file.previousPath ?? file.path)?.[0] ?? name} to ${name}`;
+    default:
+      return `Update ${name}`;
+  }
+}
+
+function groupTitle(files: readonly PlanFile[]): string {
+  const [first] = files;
+  if (first === undefined) return 'Changes';
+  if (files.length === 1) return fileTitle(first);
+  const names = new Set(files.map((file) => FILE_NAME.exec(file.path)?.[0] ?? file.path));
+  if (names.size === 1) return `Update ${[...names][0] ?? 'files'} (${files.length} files)`;
+  const stems = new Set(files.map((file) => stemOf(file.path)));
+  if (stems.size === 1) return `Update ${[...stems][0] ?? 'files'} (${files.length} files)`;
+  const directories = new Set(files.map((file) => directoryOf(file.path)));
+  if (directories.size === 1) {
+    const directory = [...directories][0] ?? '';
+    return directory === '' ? `Update ${files.length} files` : `Update ${FILE_NAME.exec(directory)?.[0] ?? directory} (${files.length} files)`;
+  }
+  return `Update ${files.length} files`;
+}
+
+/**
+ * The rules producer. Hidden files are held back for `supporting`; the rest
+ * is grouped by commit co-change (files one commit touched are one candidate,
+ * merged while the union stays under the size cap), then by a symbol one hunk
+ * defines and another mentions, then by a shared file stem and finally a
+ * shared directory between lone files. Titles come from the first commit
+ * that formed a group, else the files' names.
+ */
+export function rulesProposals(input: PlanInput): readonly StepProposal[] {
+  const files = new Map(input.files.map((file) => [file.path, file] as const));
+  const visible = input.files.filter((file) => file.hidden === null);
+  const refs = visible.flatMap((file) => refsOf(file));
+  const visibleKeys = new Set(refs.map(refKey));
+  const groups = new Groups();
+  for (const ref of refs) groups.add(refKey(ref), refSize(files, ref));
+  const refsByPath = new Map<string, HunkRef[]>();
+  for (const ref of refs) {
+    const list = refsByPath.get(ref.path) ?? [];
+    list.push(ref);
+    refsByPath.set(ref.path, list);
+  }
+
+  // A file's hunks stay together unless the file alone is over the cap; the commit pass joins whole files.
+  for (const list of refsByPath.values()) {
+    for (let index = 1; index < list.length; index += 1) {
+      const a = list[0];
+      const b = list[index];
+      if (a !== undefined && b !== undefined) groups.union(refKey(a), refKey(b), null, null);
+    }
+  }
+
+  // 1. Commit co-change.
+  input.commits.forEach((commit, commitIndex) => {
+    const touched = (commit.files ?? []).filter((path) => refsByPath.has(path));
+    const [first, ...rest] = touched;
+    if (first === undefined) return;
+    const anchor = refsByPath.get(first)?.[0];
+    if (anchor === undefined) return;
+    const root = groups.find(refKey(anchor));
+    if (!groups.commitOf.has(root)) groups.commitOf.set(root, commitIndex);
+    for (const path of rest) {
+      const other = refsByPath.get(path)?.[0];
+      if (other !== undefined) groups.union(refKey(anchor), refKey(other), STEP_SIZE_CAP, commitIndex);
+    }
+  });
+
+  // 2. Symbol co-occurrence: a hunk defining a name joins a hunk whose added lines mention it.
+  const defined = new Map<string, HunkRef[]>();
+  const mentioned: Array<{ readonly ref: HunkRef; readonly words: ReadonlySet<string> }> = [];
+  for (const ref of refs) {
+    const hunk = files.get(ref.path)?.hunks[ref.hunk];
+    if (hunk === undefined) continue;
+    for (const name of definedSymbols(hunk.added)) {
+      const list = defined.get(name) ?? [];
+      list.push(ref);
+      defined.set(name, list);
+    }
+    mentioned.push({ ref, words: mentionedSymbols(hunk.added) });
+  }
+  for (const [name, definers] of defined) {
+    const definer = definers[0];
+    if (definer === undefined) continue;
+    for (const entry of mentioned) {
+      if (entry.ref.path === definer.path || !entry.words.has(name)) continue;
+      groups.union(refKey(definer), refKey(entry.ref), STEP_SIZE_CAP, null);
+    }
+  }
+
+  // 3. Moves: a block cut from one hunk and pasted into another is read in one place, both ends together.
+  for (const move of movesOf(input)) {
+    if (!visibleKeys.has(refKey(move.from)) || !visibleKeys.has(refKey(move.to))) continue;
+    groups.union(refKey(move.from), refKey(move.to), STEP_SIZE_CAP, null);
+  }
+
+  // 4. Path: the same stem anywhere (search.ts, search.css, Search.tsx), then the same directory between lone files.
+  const byStem = new Map<string, string[]>();
+  for (const path of refsByPath.keys()) {
+    const stem = stemOf(path);
+    if (GENERIC_STEMS.has(stem) || stem.length < 3) continue;
+    const list = byStem.get(stem) ?? [];
+    list.push(path);
+    byStem.set(stem, list);
+  }
+  for (const paths of byStem.values()) {
+    const [first, ...rest] = paths;
+    const anchor = first === undefined ? undefined : refsByPath.get(first)?.[0];
+    if (anchor === undefined) continue;
+    for (const path of rest) {
+      const other = refsByPath.get(path)?.[0];
+      if (other !== undefined) groups.union(refKey(anchor), refKey(other), STEP_SIZE_CAP, null);
+    }
+  }
+  // Lone files that share a whole name (three `package.json`s) or a directory join each other.
+  const pathsPerGroup = new Map<string, Set<string>>();
+  for (const [root, keys] of groups.members(refs.map(refKey))) pathsPerGroup.set(root, new Set(keys.map((key) => parseRefKey(key)?.path ?? '')));
+  const lone = [...refsByPath.keys()].filter((path) => {
+    const first = refsByPath.get(path)?.[0];
+    return first !== undefined && (pathsPerGroup.get(groups.find(refKey(first)))?.size ?? 0) === 1;
+  });
+  const byName = new Map<string, string[]>();
+  const byDirectory = new Map<string, string[]>();
+  for (const path of lone) {
+    const name = (FILE_NAME.exec(path)?.[0] ?? path).toLowerCase();
+    const named = byName.get(name) ?? [];
+    named.push(path);
+    byName.set(name, named);
+    const list = byDirectory.get(directoryOf(path)) ?? [];
+    list.push(path);
+    byDirectory.set(directoryOf(path), list);
+  }
+  for (const paths of [...byName.values(), ...byDirectory.values()]) {
+    const [first, ...rest] = paths;
+    const anchor = first === undefined ? undefined : refsByPath.get(first)?.[0];
+    if (anchor === undefined) continue;
+    for (const path of rest) {
+      const other = refsByPath.get(path)?.[0];
+      if (other !== undefined) groups.union(refKey(anchor), refKey(other), STEP_SIZE_CAP, null);
+    }
+  }
+
+  // Steps, in the order of the first commit that touched them, then by path.
+  const fileOrder = new Map(input.files.map((file, index) => [file.path, index] as const));
+  const firstCommitOf = new Map<string, number>();
+  input.commits.forEach((commit, index) => {
+    for (const path of commit.files ?? []) if (!firstCommitOf.has(path)) firstCommitOf.set(path, index);
+  });
+  const proposals: Array<StepProposal & { readonly order: readonly [number, number] }> = [];
+  let counter = 0;
+  for (const [root, keys] of groups.members(refs.map(refKey))) {
+    const touches = keys
+      .map(parseRefKey)
+      .filter((ref): ref is HunkRef => ref !== null)
+      .sort(compareRefs(fileOrder));
+    const paths = [...new Set(touches.map((ref) => ref.path))];
+    const stepFiles = paths.map((path) => files.get(path)).filter((file): file is PlanFile => file !== undefined);
+    const commitIndex = groups.commitOf.get(root);
+    const commit = commitIndex === undefined ? undefined : input.commits[commitIndex];
+    const commitTitle = commit === undefined ? '' : cleanCommitTitle(commit.message);
+    const title = commitTitle !== '' ? commitTitle : groupTitle(stepFiles);
+    counter += 1;
+    proposals.push({
+      key: `r${counter}`,
+      title,
+      kind: kindFor(commit === undefined ? [] : [commit.message], paths),
+      gist: null,
+      touches,
+      dependsOn: [],
+      watch: [],
+      order: [Math.min(...paths.map((path) => firstCommitOf.get(path) ?? Number.MAX_SAFE_INTEGER)), fileOrder.get(paths[0] ?? '') ?? 0],
+    });
+  }
+  proposals.sort((a, b) => a.order[0] - b.order[0] || a.order[1] - b.order[1]);
+  // Two steps with one name (two `Update index.ts`) are told apart by their directories.
+  const titleCounts = new Map<string, number>();
+  for (const proposal of proposals) titleCounts.set(proposal.title, (titleCounts.get(proposal.title) ?? 0) + 1);
+  return proposals.map((proposal) => {
+    let title = proposal.title;
+    if ((titleCounts.get(title) ?? 0) > 1) {
+      const directory = directoryOf(proposal.touches[0]?.path ?? '');
+      if (directory !== '') title = `${title} · ${directory}`;
+    }
+    return { key: proposal.key, title, kind: proposal.kind, gist: proposal.gist, touches: proposal.touches, dependsOn: proposal.dependsOn, watch: proposal.watch };
+  });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Normalisation: the invariants every plan keeps                             */
+/* ------------------------------------------------------------------------- */
+
+export interface NormalizeOptions {
+  readonly producer: PlanProducer;
+  readonly model: string | null;
+  readonly madeAt: string;
+  readonly fromHeaders?: boolean;
+  /** The producer's overview, its step references in the producer's keys (or in step ids, for a plan laid over a new diff). */
+  readonly overview?: PlanOverview;
+}
+
+/** The overview with every step reference mapped through `idOf`; a reference to no step reads null. */
+function resolveOverview(overview: PlanOverview, idOf: (key: string | null) => string | null): PlanOverview {
+  return {
+    summary: overview.summary,
+    points: overview.points,
+    beforeAfter: overview.beforeAfter === null ? null : { caption: overview.beforeAfter.caption, lines: overview.beforeAfter.lines.map((line) => ({ ...line, step: idOf(line.step) })) },
+    flow: overview.flow === null ? null : { caption: overview.flow.caption, nodes: overview.flow.nodes.map((node) => ({ ...node, step: idOf(node.step) })), edges: overview.flow.edges },
+  };
+}
+
+/** Which touched file a hidden file supports: the same stem in the same directory first, then the same stem anywhere. */
+function supportTarget(hidden: PlanFile, touchedPaths: readonly string[]): string | null {
+  const stem = stemOf(hidden.path);
+  const directory = directoryOf(hidden.path).replace(/\/(__tests__|__snapshots__|__mocks__|tests?|specs?|__fixtures__|fixtures)$/i, '');
+  let best: string | null = null;
+  for (const path of touchedPaths) {
+    if (stemOf(path) !== stem) continue;
+    if (directoryOf(path) === directory) return path;
+    best ??= path;
+  }
+  return best;
+}
+
+/** Title for the trailing step that gathers hidden files no step claimed, by what hides them. */
+function leftoverTitle(files: readonly PlanFile[]): { readonly title: string; readonly kind: StepKind } {
+  const ids = new Set(files.map((file) => file.hidden?.id ?? ''));
+  if (ids.size === 1) {
+    const [only] = files;
+    const id = only?.hidden?.id ?? '';
+    const title = only?.hidden?.title ?? 'Supporting changes';
+    return { title, kind: id === 'tests' ? 'tests' : id === 'generated' ? 'generated' : id === 'docs' ? 'docs' : 'chore' };
+  }
+  return { title: 'Supporting changes', kind: 'chore' };
+}
+
+/**
+ * Kahn's ordering by `dependsOn`, ties and cycles broken by the producer's order. Steps, not keys, are what get placed:
+ * a key two steps share is done once both are, and neither is dropped.
+ */
+function topologicalOrder<T extends { readonly key: string; readonly dependsOn: readonly string[] }>(steps: readonly T[]): readonly T[] {
+  const byKey = new Map<string, T[]>();
+  for (const step of steps) byKey.set(step.key, [...(byKey.get(step.key) ?? []), step]);
+  const indegree = new Map<T, number>();
+  const dependents = new Map<string, T[]>();
+  for (const step of steps) {
+    const deps = [...new Set(step.dependsOn)].filter((dep) => byKey.has(dep) && dep !== step.key);
+    indegree.set(step, deps.length);
+    for (const dep of deps) dependents.set(dep, [...(dependents.get(dep) ?? []), step]);
+  }
+  const ordered: T[] = [];
+  const placed = new Set<T>();
+  while (ordered.length < steps.length) {
+    // The first (in producer order) step with no unplaced dependency; a cycle leaves none, so the first unplaced goes.
+    const next = steps.find((step) => !placed.has(step) && (indegree.get(step) ?? 0) === 0) ?? steps.find((step) => !placed.has(step));
+    if (next === undefined) break;
+    placed.add(next);
+    ordered.push(next);
+    if (!(byKey.get(next.key) ?? []).every((step) => placed.has(step))) continue;
+    for (const dependent of dependents.get(next.key) ?? []) indegree.set(dependent, (indegree.get(dependent) ?? 1) - 1);
+  }
+  return ordered;
+}
+
+/**
+ * Hold a producer's proposals to the plan's rules: every visible hunk in
+ * exactly one step (duplicates dropped from the later step, omissions
+ * gathered into a trailing step), hidden files as `supporting` of the step
+ * whose file they name (else a trailing step of their own), steps ordered by
+ * `dependsOn` and then as proposed, oversized steps split by file, and ids
+ * that follow the first hunk's signature across replans.
+ */
+export function normalizePlan(input: PlanInput, proposals: readonly StepProposal[], options: NormalizeOptions): ReviewPlan {
+  const files = new Map(input.files.map((file) => [file.path, file] as const));
+  const fileOrder = new Map(input.files.map((file, index) => [file.path, index] as const));
+  const visibleRefs = new Map<string, HunkRef>();
+  const hiddenRefs = new Map<string, HunkRef>();
+  for (const file of input.files) {
+    for (const ref of refsOf(file)) (file.hidden === null ? visibleRefs : hiddenRefs).set(refKey(ref), ref);
+  }
+
+  // Claim hunks in producer order; a hidden ref named in `touches` becomes that step's supporting change.
+  const claimed = new Set<string>();
+  interface Draft {
+    readonly key: string;
+    readonly title: string;
+    readonly kind: StepKind;
+    readonly gist: string | null;
+    readonly touches: HunkRef[];
+    readonly supporting: HunkRef[];
+    readonly dependsOn: readonly string[];
+    readonly watch: readonly string[];
+  }
+  const drafts: Draft[] = [];
+  for (const proposal of proposals) {
+    const draft: Draft = { key: proposal.key, title: proposal.title.trim() || 'Changes', kind: proposal.kind, gist: proposal.gist, touches: [], supporting: [], dependsOn: proposal.dependsOn, watch: proposal.watch.slice(0, 3) };
+    for (const ref of proposal.touches) {
+      const key = refKey(ref);
+      if (claimed.has(key)) continue;
+      if (visibleRefs.has(key)) {
+        claimed.add(key);
+        draft.touches.push(ref);
+      } else if (hiddenRefs.has(key)) {
+        claimed.add(key);
+        draft.supporting.push(ref);
+      }
+    }
+    if (draft.touches.length > 0 || draft.supporting.length > 0) drafts.push(draft);
+  }
+
+  const unassigned = [...visibleRefs.values()].filter((ref) => !claimed.has(refKey(ref))).sort(compareRefs(fileOrder));
+  if (unassigned.length > 0) {
+    drafts.push({ key: '__unassigned', title: 'Everything else', kind: 'other', gist: null, touches: [...unassigned], supporting: [], dependsOn: [], watch: [] });
+    for (const ref of unassigned) claimed.add(refKey(ref));
+  }
+
+  // Hidden hunks follow the step they are about, one hunk at a time: first the step whose own added lines define a
+  // name the hunk mentions (a test for a function this step adds goes with this step, whatever file it sits in),
+  // then the step touching the file the hidden file names; the rest form a trailing step.
+  const leftovers: HunkRef[] = [];
+  const touchedPathsOf = (draft: Draft): readonly string[] => [...new Set(draft.touches.map((ref) => ref.path))];
+  const definedBy = new Map<Draft, ReadonlySet<string>>();
+  for (const draft of drafts) {
+    const names = new Set<string>();
+    for (const ref of draft.touches) for (const name of definedSymbols(files.get(ref.path)?.hunks[ref.hunk]?.added ?? [])) names.add(name);
+    definedBy.set(draft, names);
+  }
+  const bySymbol = (ref: HunkRef): Draft | undefined => {
+    const hunk = files.get(ref.path)?.hunks[ref.hunk];
+    if (hunk === undefined) return undefined;
+    const words = mentionedSymbols(hunk.added);
+    let best: { readonly draft: Draft; readonly hits: number } | null = null;
+    for (const draft of drafts) {
+      let hits = 0;
+      for (const name of definedBy.get(draft) ?? []) if (words.has(name)) hits += 1;
+      if (hits > 0 && (best === null || hits > best.hits)) best = { draft, hits };
+    }
+    return best?.draft;
+  };
+  // A hidden hunk that is one end of a move (a test moved with the code it tests) goes where the other end went.
+  const moves = movesOf(input);
+  const byMove = (ref: HunkRef): Draft | undefined => {
+    for (const move of moves) {
+      const other = refKey(move.from) === refKey(ref) ? move.to : refKey(move.to) === refKey(ref) ? move.from : null;
+      if (other === null) continue;
+      const owner = drafts.find((draft) => [...draft.touches, ...draft.supporting].some((candidate) => refKey(candidate) === refKey(other)));
+      if (owner !== undefined) return owner;
+    }
+    return undefined;
+  };
+  for (const ref of hiddenRefs.values()) {
+    if (claimed.has(refKey(ref))) continue;
+    const file = files.get(ref.path);
+    const target = file === undefined ? null : supportTarget(file, drafts.flatMap(touchedPathsOf));
+    const owner = byMove(ref) ?? bySymbol(ref) ?? (target === null ? undefined : drafts.find((draft) => touchedPathsOf(draft).includes(target)));
+    if (owner === undefined) leftovers.push(ref);
+    else owner.supporting.push(ref);
+    claimed.add(refKey(ref));
+  }
+  if (leftovers.length > 0) {
+    const leftoverFiles = [...new Set(leftovers.map((ref) => ref.path))].map((path) => files.get(path)).filter((file): file is PlanFile => file !== undefined);
+    const { title, kind } = leftoverTitle(leftoverFiles);
+    drafts.push({ key: '__supporting', title, kind, gist: null, touches: [], supporting: leftovers.sort(compareRefs(fileOrder)), dependsOn: [], watch: [] });
+  }
+
+  // Oversized steps are split by file ("Title · file"), and a file still over the cap by runs of its hunks
+  // ("Title · file · 2 of 3"); each part reads after the one before it, and the supporting changes stay with the first.
+  const sized: Draft[] = [];
+  // A proposal split into parts: what depended on it reads after its last part.
+  const lastPart = new Map<string, string>();
+  const sizeOf = (refs: readonly HunkRef[]): number => refs.reduce((sum, ref) => sum + refSize(files, ref), 0);
+  const chain = (parts: readonly HunkRef[][], base: Draft, name: (index: number) => string): void => {
+    lastPart.set(base.key, `${base.key}/${parts.length - 1}`);
+    parts.forEach((touches, index) => {
+      sized.push({
+        ...base,
+        key: `${base.key}/${index}`,
+        title: name(index),
+        touches,
+        supporting: index === 0 ? base.supporting : [],
+        dependsOn: index === 0 ? base.dependsOn : [`${base.key}/${index - 1}`],
+      });
+    });
+  };
+  const hunkRuns = (refs: readonly HunkRef[]): HunkRef[][] => {
+    const runs: HunkRef[][] = [];
+    let run: HunkRef[] = [];
+    for (const ref of refs) {
+      if (run.length > 0 && sizeOf(run) + refSize(files, ref) > STEP_SIZE_CAP) {
+        runs.push(run);
+        run = [];
+      }
+      run.push(ref);
+    }
+    if (run.length > 0) runs.push(run);
+    return runs;
+  };
+  for (const draft of drafts) {
+    const paths = touchedPathsOf(draft);
+    if (sizeOf(draft.touches) <= STEP_SIZE_CAP) {
+      sized.push(draft);
+      continue;
+    }
+    const byFile = paths.map((path) => draft.touches.filter((ref) => ref.path === path));
+    const parts: Array<{ readonly refs: HunkRef[]; readonly title: string }> = [];
+    for (const refs of byFile) {
+      const path = refs[0]?.path ?? '';
+      const name = FILE_NAME.exec(path)?.[0] ?? path;
+      const fileTitle = paths.length === 1 ? draft.title : `${draft.title} · ${name}`;
+      const runs = sizeOf(refs) <= STEP_SIZE_CAP ? [refs] : hunkRuns(refs);
+      runs.forEach((run, index) => parts.push({ refs: run, title: runs.length === 1 ? fileTitle : `${fileTitle} · ${index + 1} of ${runs.length}` }));
+    }
+    if (parts.length < 2) {
+      sized.push(draft);
+      continue;
+    }
+    chain(
+      parts.map((part) => part.refs),
+      draft,
+      (index) => parts[index]?.title ?? draft.title,
+    );
+  }
+
+  const ordered = topologicalOrder(sized.map((draft) => ({ ...draft, dependsOn: draft.dependsOn.map((dep) => lastPart.get(dep) ?? dep) })));
+  // Stable ids: the first hunk's signature (first in file order, then hunk order); a collision takes a suffix.
+  const idByKey = new Map<string, string>();
+  const used = new Set<string>();
+  for (const draft of ordered) {
+    draft.touches.sort(compareRefs(fileOrder));
+    draft.supporting.sort(compareRefs(fileOrder));
+    const first = draft.touches[0] ?? draft.supporting[0];
+    let id = first === undefined ? hashText(draft.title) : `s-${refSignature(files, first)}`;
+    while (used.has(id)) id = `${id}'`;
+    used.add(id);
+    idByKey.set(draft.key, id);
+  }
+  const lineAt = (ref: HunkRef): readonly [number, number] => {
+    const hunk = files.get(ref.path)?.hunks[ref.hunk];
+    return hunk === undefined ? [0, Number.MAX_SAFE_INTEGER] : [hunk.newStart, hunk.newStart + Math.max(1, hunk.newLines)];
+  };
+  const steps: ReviewStep[] = ordered.map((draft) => {
+    const id = idByKey.get(draft.key) ?? draft.key;
+    const signatures = [...draft.touches, ...draft.supporting].map((ref) => refSignature(files, ref));
+    const findings = input.findings
+      .filter((finding) =>
+        draft.touches.some((ref) => {
+          if (ref.path !== finding.path) return false;
+          if (finding.line === undefined) return true;
+          const [start, end] = lineAt(ref);
+          return finding.line >= start && finding.line < end;
+        }),
+      )
+      .map((finding) => finding.id);
+    return {
+      id,
+      title: draft.title,
+      kind: draft.kind,
+      story: null,
+      why: null,
+      gist: draft.gist,
+      touches: draft.touches,
+      supporting: draft.supporting,
+      dependsOn: draft.dependsOn.map((dep) => idByKey.get(dep)).filter((dep): dep is string => dep !== undefined && dep !== id),
+      watch: draft.watch,
+      findings,
+      fingerprint: hashText([...signatures].sort().join('\n')),
+      signatures,
+    };
+  });
+
+  // A split step's parts share the proposal's key with a suffix: a reference to the key lands on its first part.
+  const stepIds = new Set(steps.map((step) => step.id));
+  const idOf = (key: string | null): string | null => {
+    if (key === null) return null;
+    const direct = idByKey.get(key) ?? idByKey.get(`${key}/0`);
+    if (direct !== undefined) return direct;
+    return stepIds.has(key) ? key : null;
+  };
+  const plan: ReviewPlan = {
+    id: hashText(`${input.headSha}\n${steps.map((step) => step.id).join('\n')}`),
+    headSha: input.headSha,
+    madeAt: options.madeAt,
+    producer: options.producer,
+    model: options.model,
+    steps,
+    unassigned,
+    fromHeaders: options.fromHeaders === true,
+  };
+  return options.overview === undefined ? plan : { ...plan, overview: resolveOverview(options.overview, idOf) };
+}
+
+/** The rules producer end to end. */
+export function rulesPlan(input: PlanInput, madeAt: string): ReviewPlan {
+  return normalizePlan(input, rulesProposals(input), { producer: 'rules', model: null, madeAt });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Progress                                                                   */
+/* ------------------------------------------------------------------------- */
+
+export type StepState = 'accepted' | 'flagged';
+
+export interface StepProgress {
+  readonly state: StepState;
+  readonly at: string;
+  readonly note?: string;
+  /** The step's fingerprint when the mark was made; a different one now means the hunks changed since. */
+  readonly fingerprint: string;
+  /** The step's hunk signatures when marked: a step whose id changed (its first hunk edited) is found again by them. */
+  readonly signatures?: readonly string[];
+}
+
+export interface ReviewProgress {
+  readonly planId: string;
+  readonly steps: Readonly<Record<string, StepProgress>>;
+  readonly current: string | null;
+  /** Milliseconds the reader spent with each step open and the tab visible, by step id; kept on this device only. */
+  readonly reading?: Readonly<Record<string, number>>;
+}
+
+/** Add `ms` of reading to a step. */
+export function withReading(progress: ReviewProgress, stepId: string, ms: number): ReviewProgress {
+  if (ms <= 0) return progress;
+  return { ...progress, reading: { ...progress.reading, [stepId]: (progress.reading?.[stepId] ?? 0) + ms } };
+}
+
+export interface ReadingSummary {
+  /** Steps the reader opened at all. */
+  readonly stepsRead: number;
+  readonly stepsTotal: number;
+  readonly ms: number;
+}
+
+/** What the finish says about the reading: steps opened and the time spent over the plan's steps. */
+export function readingSummary(plan: ReviewPlan, progress: ReviewProgress | null): ReadingSummary {
+  const reading = progress?.reading ?? {};
+  let stepsRead = 0;
+  let ms = 0;
+  for (const step of plan.steps) {
+    const spent = reading[step.id] ?? 0;
+    if (spent > 0) stepsRead += 1;
+    ms += spent;
+  }
+  return { stepsRead, stepsTotal: plan.steps.length, ms };
+}
+
+/** "under a minute", "about 12 min", "1 h 05 min". */
+export function formatReadingTime(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 60) return `about ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
+/** What the stepper shows for a step: pending, accepted, flagged, or changed since it was marked. */
+export type StepDisplayState = 'pending' | 'accepted' | 'flagged' | 'changed';
+
+export function stepDisplayState(step: ReviewStep, progress: ReviewProgress | null): StepDisplayState {
+  const mark = progress?.steps[step.id];
+  if (mark === undefined) return 'pending';
+  if (mark.fingerprint !== step.fingerprint) return 'changed';
+  return mark.state;
+}
+
+/**
+ * Progress for `next`, keeping every mark whose step still exists; the plan id follows the new plan. With the plan the
+ * progress was kept for, a step whose id changed (an edit to its first hunk) hands its mark, note and reading to the new
+ * step sharing most of its hunks; the mark keeps its fingerprint, so the step reads `changed`, not unmarked.
+ */
+export function carryProgress(progress: ReviewProgress | null, next: ReviewPlan, previous: ReviewPlan | null = null): ReviewProgress {
+  if (progress === null) return { planId: next.id, steps: {}, current: null };
+  const ids = new Set(next.steps.map((step) => step.id));
+  const steps: Record<string, StepProgress> = Object.fromEntries(Object.entries(progress.steps).filter(([id]) => ids.has(id)));
+  const reading: Record<string, number> = Object.fromEntries(Object.entries(progress.reading ?? {}).filter(([id]) => ids.has(id)));
+  let current = progress.current !== null && ids.has(progress.current) ? progress.current : null;
+  const before = previous !== null && previous.id === progress.planId ? new Map(previous.steps.map((step) => [step.id, step.signatures] as const)) : new Map<string, readonly string[]>();
+  const nextSignatures = next.steps.map((step) => ({ step, signatures: new Set(step.signatures) }));
+  const orphans = new Set([...Object.keys(progress.steps), ...Object.keys(progress.reading ?? {}), ...(progress.current === null ? [] : [progress.current])].filter((id) => !ids.has(id)));
+  for (const id of orphans) {
+    const mark = progress.steps[id];
+    // The mark's own signatures first: the plan it was made under may be gone (a reload after a second push).
+    const signatures = mark?.signatures ?? before.get(id);
+    if (signatures === undefined) continue;
+    let successor: ReviewStep | null = null;
+    let shared = 0;
+    for (const candidate of nextSignatures) {
+      const count = signatures.filter((signature) => candidate.signatures.has(signature)).length;
+      if (count > shared) {
+        successor = candidate.step;
+        shared = count;
+      }
+    }
+    if (successor === null) continue;
+    if (mark !== undefined && steps[successor.id] === undefined) steps[successor.id] = mark;
+    const ms = progress.reading?.[id] ?? 0;
+    if (ms > 0) reading[successor.id] = (reading[successor.id] ?? 0) + ms;
+    if (current === null && progress.current === id) current = successor.id;
+  }
+  return { planId: next.id, steps, current, ...(Object.keys(reading).length === 0 ? {} : { reading }) };
+}
+
+/** The first step that is neither accepted nor flagged (a changed step counts as pending), after `after` when given. */
+export function nextPendingStep(plan: ReviewPlan, progress: ReviewProgress | null, after: string | null = null): ReviewStep | null {
+  const start = after === null ? 0 : plan.steps.findIndex((step) => step.id === after) + 1;
+  const pending = (step: ReviewStep): boolean => {
+    const state = stepDisplayState(step, progress);
+    return state === 'pending' || state === 'changed';
+  };
+  return plan.steps.slice(start).find(pending) ?? plan.steps.find(pending) ?? null;
+}
+
+export function reviewComplete(plan: ReviewPlan, progress: ReviewProgress | null): boolean {
+  return plan.steps.length > 0 && plan.steps.every((step) => {
+    const state = stepDisplayState(step, progress);
+    return state === 'accepted' || state === 'flagged';
+  });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Replan                                                                     */
+/* ------------------------------------------------------------------------- */
+
+/** How a new diff relates to the one a plan was made from, hunk by hunk, for the replan prompt. */
+export interface PlanDelta {
+  /** Signatures present now that the previous plan did not know. */
+  readonly added: readonly string[];
+  /** Signatures the previous plan had that are gone now. */
+  readonly removed: readonly string[];
+}
+
+export function planDelta(previousSignatures: ReadonlySet<string>, input: PlanInput): PlanDelta {
+  const files = new Map(input.files.map((file) => [file.path, file] as const));
+  const current = new Set(input.files.flatMap((file) => refsOf(file).map((ref) => refSignature(files, ref))));
+  return {
+    added: [...current].filter((signature) => !previousSignatures.has(signature)),
+    removed: [...previousSignatures].filter((signature) => !current.has(signature)),
+  };
+}
+
+/** The signatures of every hunk a plan assigned, for {@link planDelta}. */
+export function planSignatures(plan: ReviewPlan): ReadonlySet<string> {
+  return new Set(plan.steps.flatMap((step) => step.signatures));
+}
+
+/**
+ * A plan made for an earlier head, laid over the diff as it is now: each
+ * step keeps the hunks whose signatures it knows (wherever they sit now),
+ * and the hunks the plan never saw are left for `normalizePlan` to gather
+ * into its trailing step. What a push leaves readable without a model call;
+ * the replan prompt starts from these too.
+ */
+export function remapProposals(plan: ReviewPlan, input: PlanInput): readonly StepProposal[] {
+  const files = new Map(input.files.map((file) => [file.path, file] as const));
+  const bySignature = new Map<string, HunkRef[]>();
+  for (const file of input.files) {
+    for (const ref of refsOf(file)) {
+      const signature = refSignature(files, ref);
+      const list = bySignature.get(signature) ?? [];
+      list.push(ref);
+      bySignature.set(signature, list);
+    }
+  }
+  const taken = new Set<string>();
+  const claim = (signature: string): HunkRef | undefined => {
+    const ref = (bySignature.get(signature) ?? []).find((candidate) => !taken.has(refKey(candidate)));
+    if (ref !== undefined) taken.add(refKey(ref));
+    return ref;
+  };
+  return plan.steps.flatMap((step) => {
+    const touches = step.signatures.map(claim).filter((ref): ref is HunkRef => ref !== undefined);
+    if (touches.length === 0) return [];
+    return [{ key: step.id, title: step.title, kind: step.kind, gist: step.gist, touches, dependsOn: step.dependsOn, watch: step.watch }];
+  });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Words                                                                      */
+/* ------------------------------------------------------------------------- */
+
+export const STEP_KIND_LABELS: Readonly<Record<StepKind, string>> = {
+  feature: 'Feature',
+  fix: 'Fix',
+  refactor: 'Refactor',
+  tests: 'Tests',
+  docs: 'Docs',
+  chore: 'Chore',
+  generated: 'Generated',
+  other: 'Other',
+};
+
+/** Paths a step touches, each once, with how many hunks: for a "Touches" line. */
+export function touchesSummary(step: ReviewStep): readonly { readonly path: string; readonly hunks: number }[] {
+  const counts = new Map<string, number>();
+  for (const ref of step.touches) counts.set(ref.path, (counts.get(ref.path) ?? 0) + 1);
+  return [...counts].map(([path, hunks]) => ({ path, hunks }));
+}
+
+/** The review body Geld prefills at the finish: flagged steps and their notes under one line the reader may delete. */
+export function finishBody(plan: ReviewPlan, progress: ReviewProgress | null): string {
+  // A flagged step that changed since is pending re-review: its note was about hunks that are no longer there.
+  const flagged = plan.steps.filter((step) => stepDisplayState(step, progress) === 'flagged');
+  const lines: string[] = [`Reviewed in ${plan.steps.length} ${plan.steps.length === 1 ? 'step' : 'steps'} with Geld.`];
+  if (flagged.length > 0) {
+    lines.push('');
+    for (const step of flagged) {
+      const note = progress?.steps[step.id]?.note?.trim() ?? '';
+      lines.push(note === '' ? `- **${step.title}**` : `- **${step.title}**: ${note}`);
+    }
+  }
+  return lines.join('\n');
+}

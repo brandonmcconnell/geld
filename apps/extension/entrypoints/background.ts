@@ -10,7 +10,7 @@ import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
-import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import type { FetchDiffResponse, FetchDiffTextResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
@@ -21,6 +21,7 @@ import {
   isColorSchemeMessage,
   isEnsureContentMessage,
   isFetchDiffRequest,
+  isFetchDiffTextRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
   isTabStateMessage,
@@ -230,6 +231,76 @@ function writeCache(url: string, response: FetchDiffResponse): void {
   cache.set(url, { response, at: Date.now() });
 }
 
+/*
+ * The raw text of the last few diffs fetched, for the Review tab (it needs
+ * hunks and lines, which the parsed response drops). A handful of entries
+ * under a byte cap: a text request for the page's own diff usually follows
+ * the header's parsed request within seconds, so it is served from here
+ * without a second trip to the diff host.
+ */
+const TEXT_CACHE_MAX_ENTRIES = 6;
+const TEXT_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+const textCache = new Map<string, { readonly text: string; readonly at: number; readonly head: string | null }>();
+
+/** `head` is the head the text was fetched for, null when the request named none. */
+function writeTextCache(url: string, text: string, head: string | null): void {
+  // An unnamed request never replaces a head's own text: it cannot tell whether it started before that head's push.
+  if (head === null && (textCache.get(url)?.head ?? null) !== null) return;
+  textCache.delete(url);
+  textCache.set(url, { text, at: Date.now(), head });
+  let bytes = 0;
+  for (const entry of textCache.values()) bytes += entry.text.length;
+  while (textCache.size > TEXT_CACHE_MAX_ENTRIES || (bytes > TEXT_CACHE_MAX_BYTES && textCache.size > 1)) {
+    const oldest = textCache.keys().next().value;
+    if (oldest === undefined) break;
+    bytes -= textCache.get(oldest)?.text.length ?? 0;
+    textCache.delete(oldest);
+  }
+}
+
+/** Text for `head`; text fetched under no head is taken only when `untagged` says the head has not moved since. */
+function readTextCache(url: string, head: string | null, untagged: boolean): string | null {
+  const hit = textCache.get(url);
+  if (hit === undefined) return null;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    textCache.delete(url);
+    return null;
+  }
+  if (head !== null && hit.head !== head && !(hit.head === null && untagged)) return null;
+  return hit.text;
+}
+
+/** The head each diff URL's text was last asked for: the URL is the same before and after a push. */
+const textHeads = new Map<string, string>();
+
+/** A request that writes the caches only while it still owns its URL's head, and keeps its own text. */
+interface DiffOwner {
+  readonly head: string | null;
+  owns(): boolean;
+  onText(text: string): void;
+}
+
+/** The page's own diff as text: the text cache first (unless the head moved since), else one `page` fetch. */
+async function fetchDiffText(url: string, headSha: string | null): Promise<FetchDiffTextResponse> {
+  const unmoved = headSha === null || textHeads.get(url) === headSha;
+  if (headSha !== null) textHeads.set(url, headSha);
+  const cached = readTextCache(url, headSha, unmoved);
+  if (cached !== null) return { ok: true, text: cached };
+  let text: string | null = null;
+  const owns = (): boolean => headSha === null || textHeads.get(url) === headSha;
+  const result = await fetchDiff(url, 'page', {
+    head: headSha,
+    owns,
+    onText: (fetched) => {
+      text = fetched;
+    },
+  });
+  // A newer head was asked for while this one's text was on its way: that request fetches its own.
+  if (!owns()) return { ok: false, reason: 'queued' };
+  if (!result.ok) return { ok: false, reason: result.reason, ...(result.retryAfterMs === undefined ? {} : { retryAfterMs: result.retryAfterMs }) };
+  return text === null ? { ok: false, reason: 'no-text' } : { ok: true, text };
+}
+
 /**
  * `https://github.com/<owner>/<repo>/pull/<n>.diff` redirects to
  * `patch-diff.githubusercontent.com`, which does not send CORS headers. Content
@@ -237,7 +308,7 @@ function writeCache(url: string, response: FetchDiffResponse): void {
  * the extension's host permissions. Cookies are included so private
  * repositories work for signed-in users.
  */
-async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiffResponse> {
+async function fetchDiff(url: string, priority: DiffPriority, owner?: DiffOwner): Promise<FetchDiffResponse> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -249,7 +320,8 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   }
 
   const subject = diagnosticSubject(parsed.toString()) ?? undefined;
-  const cached = readCache(parsed.toString());
+  // A parsed answer has no text, so a text request always fetches.
+  const cached = owner === undefined ? readCache(parsed.toString()) : null;
   if (cached !== null) {
     recordDiagnostic({ kind: 'fetch', subject, outcome: cached.ok ? 'memory-hit' : `memory-hit:${cached.reason}` });
     return cached;
@@ -314,6 +386,8 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
           result = { ok: false, reason: looksLikeSignInPage(text) ? 'signed-out' : 'not-a-diff' };
         } else {
           result = { ok: true, files: parseUnifiedDiff(text) };
+          owner?.onText(text);
+          if (owner === undefined || owner.owns()) writeTextCache(parsed.toString(), text, owner?.head ?? null);
           await recordSuccess();
         }
       }
@@ -337,7 +411,8 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   // is what a private repository answers to a signed-out browser (its diff
   // as much as its pages), so it is not held either: signed in, the next
   // request must succeed at once.
-  if (result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404')) {
+  const definitive = result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404');
+  if (definitive && (owner === undefined || owner.owns())) {
     writeCache(parsed.toString(), result);
   }
   if (!result.ok && result.reason === 'too-large') await rememberTooLarge(parsed.toString());
@@ -522,6 +597,7 @@ export default defineBackground(() => {
     }
     if (isClearDiffCacheMessage(message)) {
       cache.clear();
+      textCache.clear();
       recordDiagnostic({ kind: 'cache-clear' });
       sendResponse(true);
       return undefined;
@@ -548,6 +624,10 @@ export default defineBackground(() => {
     }
     if (isFetchFileRequest(message)) {
       void fetchFile(message.url).then(sendResponse);
+      return true;
+    }
+    if (isFetchDiffTextRequest(message)) {
+      void fetchDiffText(message.url, message.headSha).then(sendResponse);
       return true;
     }
     if (isAiModelsRequest(message)) {

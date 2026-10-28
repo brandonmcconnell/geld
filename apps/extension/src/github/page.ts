@@ -1,4 +1,30 @@
-export type PageKind = 'pull-files' | 'pull-conversation' | 'pull-other' | 'commit' | 'compare' | 'other';
+/**
+ * `pull-review` is Geld's own tab: the files page (`/files` or `/changes`)
+ * opened at `#review`, where the Review view stands in for GitHub's
+ * files layout. GitHub serves its files view underneath, which is what the
+ * steps borrow their diffs from. A hash, not a query: GitHub's page script
+ * `replaceState`s the files URL to its canonical form once loaded, dropping
+ * any query it does not know (`?geld=review` was gone within a second,
+ * measured Oct 2026) and keeping the fragment.
+ */
+export type PageKind = 'pull-files' | 'pull-review' | 'pull-conversation' | 'pull-other' | 'commit' | 'compare' | 'other';
+
+/** The plain word, not a `geld-` prefix: GitHub's pull request pages carry no element with that id (checked Oct 2026), and the generic name is the one worth owning. */
+export const REVIEW_TAB_HASH = '#review';
+/** The Diagram tab: the same page, the plan's flow drawn large in place of the steps. */
+export const DIAGRAM_TAB_HASH = '#diagram';
+
+export type ReviewTabMode = 'review' | 'diagram';
+
+/** Which of Geld's tabs a files URL asks for, or null for GitHub's own files view. */
+export function reviewTabModeOf(url: URL): ReviewTabMode | null {
+  return url.hash === REVIEW_TAB_HASH ? 'review' : url.hash === DIAGRAM_TAB_HASH ? 'diagram' : null;
+}
+
+/** Whether a URL asks for one of Geld's tabs (the files page at `#review` or `#diagram`). */
+export function isReviewTabUrl(url: URL): boolean {
+  return reviewTabModeOf(url) !== null;
+}
 
 export interface PageInfo {
   readonly kind: PageKind;
@@ -32,8 +58,11 @@ export function describePage(url: URL): PageInfo {
     const [, owner, repo, number, tab, spec] = pull;
     const base = `/${owner}/${repo}/pull/${number}`;
     // `/files` is the classic tab; `/changes` is the newer React experience.
-    const kind: PageKind =
-      tab === 'files' || tab === 'changes' ? 'pull-files' : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
+    const files = tab === 'files' || tab === 'changes';
+    // Geld's tabs plan the whole pull request, so only over its whole files view: narrowed to a commit or a range, GitHub
+    // renders that scope's files alone, and a plan of the whole diff would ask for files the page does not have.
+    const reviewTab = isReviewTabUrl(url) && spec === undefined;
+    const kind: PageKind = files ? (reviewTab ? 'pull-review' : 'pull-files') : tab === undefined || tab === 'conversation' ? 'pull-conversation' : 'pull-other';
     // Narrowed to one commit or a range of them: GitHub's header counts that commit or range, and so does Geld. A range
     // in a pull request (`<before>..<head>`) is the direct comparison of its two ends, as `compare/a..b` is.
     if (kind === 'pull-files' && spec !== undefined) {

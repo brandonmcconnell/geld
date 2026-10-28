@@ -43,6 +43,12 @@ describe('describePage', () => {
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/commits')).kind).toBe('pull-other');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/files/abc123')).kind).toBe('pull-files');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/changes')).kind).toBe('pull-files');
+    expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/files?w=1#review')).kind).toBe('pull-review');
+    expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/changes#review')).stateKey).toBe('/wxt-dev/wxt/pull/2544');
+    expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/files#diff-abc')).kind).toBe('pull-files');
+    // Geld's tabs plan the whole pull request: on a files view narrowed to a commit or a range they stay GitHub's files view.
+    expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/changes/abc1234#review'))).toMatchObject({ kind: 'pull-files', commits: 'abc1234' });
+    expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/files/abc1234..def5678#diagram')).kind).toBe('pull-files');
   });
 
   it('reads a Files tab narrowed to one commit or a range from that commit’s or range’s diff, keyed by the pull request', () => {

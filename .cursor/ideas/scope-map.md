@@ -1,6 +1,8 @@
 # Idea: a map of what a pull request, or its stack, touches
 
-Status: parked (Oct 2026). No code change yet. Written to be carried out without further input: every open question has a default. Companion idea: `review-tab.md` (the same inputs read as steps). Working name **Scope** (the surface shows the pull request's footprint on the repository). "Diagram" was considered and set aside: it names the drawing, not what the reader learns from it.
+Status: parked (Oct 2026). No code change yet. Written to be carried out without further input: every open question has a default. Companion idea: `review-tab.md` (the same inputs read as steps). Working name **Scope** (the surface shows the pull request's footprint on the repository). "Diagram" was considered and set aside: it names the drawing, not what the reader learns from it (and the Review tab's companion tab now carries that name for the plan's before/after flow, which is a different drawing: a path through the system, not a footprint on the tree).
+
+**A caution before building it** (Oct 2026): guided-review products that tried footprint views of this family under use ("blast radius lanes", dot maps of touched surfaces, a what-to-check column per surface) dropped them as gimmicks that told the reader nothing they acted on, while the account of the change in words and the behaviour as a before/after diff survived. If this is built, it has to answer a question the steps and the before/after do not: *where else* the change can reach (callers, importers, the stack's other pull requests), not *where* it landed, which the file list already says. Parked, not dropped.
 
 ## What
 
