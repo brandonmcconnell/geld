@@ -43,6 +43,10 @@ export interface MergeBox {
   readonly canQueue: boolean;
   /** Whether GitHub offers "Enable auto-merge": the repository allows it and the pull request cannot merge yet; false once it is on. */
   readonly canAutoMerge: boolean;
+  /** In the repository's merge queue now. */
+  readonly queued: boolean;
+  /** Auto-merge is on: GitHub merges it once its requirements are met. */
+  readonly autoMerging: boolean;
 }
 
 export interface ReviewVerdict {
@@ -127,6 +131,8 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     stacked,
     canQueue: queue?.allowableStatus === 'ALLOWED' && pull.isInMergeQueue !== true,
     canAutoMerge: pull.viewerCanEnableAutoMerge === true && !isRecord(pull.autoMergeRequest),
+    queued: pull.isInMergeQueue === true,
+    autoMerging: isRecord(pull.autoMergeRequest),
   };
 }
 

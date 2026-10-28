@@ -2185,13 +2185,38 @@ function boxFooter(left: readonly HTMLElement[], cancel: HTMLButtonElement, subm
 
 const ACTION_STATUS: { readonly [K in StatusAction]: string } = { merge: 'Merging…', queue: 'Adding to merge queue…', auto: 'Enabling auto-merge…', close: 'Closing…', ready: 'Marking ready…', draft: 'Converting to draft…', reopen: 'Reopening…' };
 
+/**
+ * Actions that leave the page in place, since its header and tabs stay as they were: GitHub's merge box and timeline
+ * update themselves, and the controls read the merge box again. The rest reload.
+ */
+const IN_PLACE: { readonly [K in StatusAction]?: { readonly done: string; readonly reached: (box: MergeBox) => boolean } } = {
+  queue: { done: 'Added to the merge queue', reached: (box) => box.queued },
+  auto: { done: 'Auto-merge enabled', reached: (box) => box.autoMerging },
+};
+
+const REACHED_POLL_MS = 3000;
+
+/**
+ * Null once the merge box shows the action done, read every few seconds until `signal` aborts (else never): GitHub can
+ * take far longer to answer the request than to queue the pull request, and the spinner waited on the answer.
+ */
+async function reachedInPlace(pullPath: string, reached: (box: MergeBox) => boolean, signal: AbortSignal): Promise<null> {
+  while (!signal.aborted) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, REACHED_POLL_MS));
+    if (signal.aborted) break;
+    const box = await fetchMergeBox(pullPath, 'SQUASH', false);
+    if (box !== null && reached(box)) return null;
+  }
+  return new Promise<null>(() => undefined);
+}
+
 interface Step {
   /** The pull request it changes, named in a failure among several; null for the page's own alone. */
   readonly number: number | null;
   readonly request: { readonly url: string; readonly init: RequestInit };
 }
 
-/** Send a merge, close or ready for review; on success the page reloads, since every part of it (header, timeline, tabs) changes with the state. */
+/** Send a merge, close or ready for review; on success the page reloads, since every part of it (header, timeline, tabs) changes with the state (a place in the queue and auto-merge excepted, `IN_PLACE`). */
 async function sendAction(state: Mounted, kind: StatusAction, request: Step['request'], done: () => void = () => undefined): Promise<string | null> {
   // An answer that comes back after the reader moved to another pull request completes nothing there and reloads nothing.
   const pullPath = state.pullPath;
@@ -2209,18 +2234,24 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = ACTION_STATUS[kind];
   for (const pill of state.pills) pill.setAttribute('aria-busy', 'true');
+  const inPlace = IN_PLACE[kind];
   try {
     for (const [index, step] of steps.entries()) {
       if (!here()) return null;
-      let failed: string | null;
-      try {
-        const response = await fetch(step.request.url, step.request.init);
-        const payload: unknown = await response.json().catch(() => null);
-        const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
-        failed = !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
-      } catch {
-        failed = actionErrorText(kind, 0, null);
-      }
+      const answer = (async (): Promise<string | null> => {
+        try {
+          const response = await fetch(step.request.url, step.request.init);
+          const payload: unknown = await response.json().catch(() => null);
+          const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
+          return !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
+        } catch {
+          return actionErrorText(kind, 0, null);
+        }
+      })();
+      const stepPath = pullPathOf(step.request.url);
+      const watch = new AbortController();
+      const failed = inPlace === undefined || stepPath === null ? await answer : await Promise.race([answer, reachedInPlace(stepPath, inPlace.reached, watch.signal)]);
+      watch.abort();
       if (failed !== null) {
         // The ones before it went through: the menu is read again so it offers nothing they already did.
         if (index > 0) void loadMergeActions(state);
@@ -2229,7 +2260,17 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
     }
     if (!here()) return null;
     done();
-    window.location.reload();
+    if (inPlace === undefined) {
+      window.location.reload();
+      return null;
+    }
+    showDone(state, inPlace.done);
+    // Read again a moment later too: right after the request the merge box can still answer from before it.
+    void loadMergeActions(state);
+    window.setTimeout(() => {
+      if (mounted === state && state.pullPath === pullPathOf(window.location.pathname)) void loadMergeActions(state);
+    }, REACHED_POLL_MS);
+    void catchUpAfterPost();
     return null;
   } finally {
     state.sending = false;

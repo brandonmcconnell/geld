@@ -66,8 +66,17 @@ describe('parseMergeBox', () => {
       stacked: false,
       canQueue: false,
       canAutoMerge: false,
+      queued: false,
+      autoMerging: false,
     });
     expect(parseMergeBox({ nope: true })).toBeNull();
+  });
+
+  it('knows when the pull request is in the merge queue or set to merge automatically', () => {
+    const queued = parseMergeBox(payload({ queue: 'ALLOWED', queued: true }));
+    expect([queued?.queued, queued?.autoMerging, queued?.canQueue]).toEqual([true, false, false]);
+    const auto = parseMergeBox(payload({ auto: true, autoOn: true }));
+    expect([auto?.queued, auto?.autoMerging, auto?.canAutoMerge]).toEqual([false, true, false]);
   });
 
   it('sends no commit email where GitHub offers none to pick, as its merge box does', () => {

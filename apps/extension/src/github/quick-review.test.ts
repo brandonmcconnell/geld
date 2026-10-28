@@ -1075,11 +1075,59 @@ describe('the tab bar button', () => {
     ]);
     const confirm = vi.fn(() => true);
     vi.stubGlobal('confirm', confirm);
-    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
     expect(confirm).toHaveBeenCalledWith('Add this pull request to the merge queue?');
-    await settle();
+    for (let i = 0; i < 3; i += 1) await settle();
     expect(sent).toEqual(['enable_auto_merge']);
+    // The header stays as it was: nothing reloads, GitHub's merge box and timeline update themselves.
+    expect(reload).not.toHaveBeenCalled();
+    expect(document.querySelector('.geld-quick-review__status')?.textContent).toBe('Added to the merge queue');
+  });
+
+  it('ends a slow Merge when ready once the merge box shows the pull request queued, without waiting on GitHub’s answer', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    let queued = false;
+    const queueBox = (): string =>
+      JSON.stringify({
+        pullRequest: {
+          state: 'OPEN',
+          isDraft: false,
+          isInMergeQueue: queued,
+          viewerCanClose: true,
+          latestOpinionatedReviews: [],
+          viewerMergeActions: [{ name: 'MERGE_QUEUE', allowableStatus: 'ALLOWED', mergeMethods: [{ name: 'MERGE', allowableStatus: 'ALLOWED', isDefault: true }] }],
+        },
+        mergeRequirements: { state: 'BLOCKED', conditions: [], commitMessageHeadline: '', commitMessageBody: '' },
+      });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/page_data/merge_box')) return new Response(queueBox(), { status: 200 });
+        if (init?.method === 'POST') {
+          queued = true;
+          return new Promise<Response>(() => undefined);
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.useFakeTimers();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.querySelector('.geld-quick-review__root, .geld-quick-review')?.getAttribute('aria-busy')).toBe('true');
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(document.querySelector('.geld-quick-review__status')?.textContent).toBe('Added to the merge queue');
+    expect(document.querySelector('.geld-quick-review__root, .geld-quick-review')?.hasAttribute('aria-busy')).toBe(false);
+    vi.useRealTimers();
   });
 
   it('opens GitHub’s reason when converting to a draft is refused', async () => {
