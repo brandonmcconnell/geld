@@ -3297,7 +3297,8 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   box-shadow: 0 0 0 1.5px var(--geld-pill-bg);
 }
 
-.geld-review__avatar--more {
+/* Within the pill, so it outranks the base `.geld-review__avatar` rule that comes later in this file. */
+.geld-review__avatars--pill .geld-review__avatar--more {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3305,7 +3306,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   color: var(--geld-pill-tone);
 }
 
-.geld-review__avatar--more .octicon {
+.geld-review__avatars--pill .geld-review__avatar--more .octicon {
   width: 10px;
   height: 10px;
 }
