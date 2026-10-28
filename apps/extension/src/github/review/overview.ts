@@ -21,7 +21,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
@@ -2890,6 +2890,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // says how far it has got); once Geld stops (done, or at its limit) it shows again for the reader to load the rest.
   // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
   setAutoLoading(hidingTimeline && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
+  // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
+  const pressUntil = loadMorePendingUntil();
+  if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);
   if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
