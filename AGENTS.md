@@ -617,6 +617,21 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `local:debugScopes` (set from the harness, never the UI) runs the full pass after every scoped one and logs `[geld] scope disagreement`.
   Numbers at the end of this work (vitest#10554): the review pass 149 ms → 36 ms mean (`checksSection()` used to scan the whole page's text on every call on a merged PR), the crawl 7.4 → 2.9 ms, main-thread time in the first 30 s of the conversation page 4.5 s → 2.85 s, a 14-row `/pulls` page 14 + 12 storage writes → 3 + 4;
   the largest item left is the files adapters' DOM read (`read`, ~13 ms a pass on a 124-file diff).
+- **Test files read as their titles** (`testOutline`, on by default, and `testSyntaxes`, the reader's own declarations;
+  the "Test files" card on the options page and geld.sh, not the popup;
+  both personal keys).
+  `@geld/core/test-outline.ts` finds declarations by their leading syntax (`BUILT_IN_TEST_SYNTAXES`: Jest/Vitest/Mocha/Jasmine/Bun/node:test/Playwright/Cypress/Deno calls with chains such as `.only`, `.each([…])` and a title on the next line after a bare `it(`, pytest and unittest, Go tests and `t.Run` subtests, annotations that make the next function a test — JUnit, TestNG, Kotlin, Swift Testing, xUnit, NUnit, MSTest, Rust `#[test]` — PHPUnit/XCTest `test…` methods, RSpec, minitest, ExUnit, Dart, busted, hspec, ScalaTest and Kotest strings, clojure.test, testthat, Gherkin) and reads each block's extent from indentation (following lines deeper than the declaration, then a closing line at its indent;
+  Allman braces allowed), never across a gap in the line numbers.
+  Leaf tests and hooks fold, suites stay open, and a test holding tests (a Go test with subtests) stays open too.
+  Each side of the diff is read on its own and the two are paired (`outlineTestFolds`): a context declaration folds both bodies together, a declaration rewritten within one run of changes is the same test renamed, and an unpaired one is added or removed.
+  Custom syntaxes (`parseTestSyntax`) are a name (`scenario`), `suite:` / `hook:` before a name, or a `/regex/` with a `(?<title>…)` group, read before the built-ins;
+  `testSyntaxProblem` validates them on both settings surfaces.
+  `ui/test-folds.ts` reads the rendered rows: the React view's code cells name both line numbers (`data-diff-line-key` `b:10-l:10-r:10`) and their half (`data-diff-side`) but anchor a context line by its new number on both halves, so keys are made from those numbers there (a context cell is both lines unified, its own half's line split), while the classic view's number-cell `id`s say the side;
+  hunk rows carry a line anchor in the React view and are skipped.
+  A row hides (`data-geld-test-fold="hidden"`) only when every line it shows is folded, and the toggle ("12 lines +13 new", "Fold" when open, the old title in its label for a rename) is prepended to the head's code cell and floated right, never inside GitHub's code;
+  opened folds are kept per page (`openedTestFolds`).
+  Test files are told by a matcher that knows only the Tests category, on, with the reader's and the repository's patterns (`testFileMatcher`), so it applies whether tests are hidden or not.
+  Verified on vitest-dev/vitest#11737 (React, split) and its compare page (classic, unified): three new tests fold to their titles.
 - **Hidden files can be marked as viewed for the reader** (`autoViewed`, per category, built-in or custom, off for all by default;
   a checkbox in each category's Advanced disclosure and custom category editor on the options page, not the popup;
   a personal key a repository config cannot set).

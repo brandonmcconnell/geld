@@ -59,6 +59,16 @@ export interface GeldSettings {
    */
   readonly hideCommentLines: boolean;
   /**
+   * In test files, fold each test's body under its declaration line, so the diff reads as the titles that were
+   * added, removed, renamed or changed; a fold opens to the full source.
+   */
+  readonly testOutline: boolean;
+  /**
+   * The reader's own test declaration syntaxes, one per line, read before the built-ins: a name (`scenario`), a
+   * kind and a name (`suite: feature`), or a `/regex/` with a `(?<title>…)` group (`parseTestSyntax`).
+   */
+  readonly testSyntaxes: readonly string[];
+  /**
    * Hide files with 1000+ changed lines. Deliberately separate from the normal
    * category picker: large diffs are often the work that most needs review.
    */
@@ -190,6 +200,8 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   groupHidden: true,
   expandedByDefault: false,
   hideCommentLines: false,
+  testOutline: true,
+  testSyntaxes: [],
   hideLargeDiffs: false,
   expandLargeDiffs: true,
   showListStats: true,
@@ -427,6 +439,8 @@ export function normalizeSettings(value: unknown): GeldSettings {
     groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
     hideCommentLines: bool(record, 'hideCommentLines', DEFAULT_SETTINGS.hideCommentLines),
+    testOutline: bool(record, 'testOutline', DEFAULT_SETTINGS.testOutline),
+    testSyntaxes: isStringArray(record.testSyntaxes) ? record.testSyntaxes : DEFAULT_SETTINGS.testSyntaxes,
     hideLargeDiffs: bool(record, 'hideLargeDiffs', DEFAULT_SETTINGS.hideLargeDiffs),
     expandLargeDiffs: bool(record, 'expandLargeDiffs', DEFAULT_SETTINGS.expandLargeDiffs),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),

@@ -77,6 +77,8 @@ const PERSONAL_KEYS = [
   'aiModel',
   'suggestedFixes',
   'autoViewed',
+  'testOutline',
+  'testSyntaxes',
 ] as const;
 
 /**

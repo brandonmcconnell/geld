@@ -31,6 +31,7 @@ import {
   serializeSettingsPayload,
   splitInlineCode,
   toggleFields,
+  testSyntaxProblem,
   validateSettingsDocument,
   withCustomCategory,
   withoutCustomCategory,
@@ -209,6 +210,7 @@ async function main(): Promise<void> {
 
   renderToggleSection('general', 'general-rows');
   applySchemaCopy('hide');
+  renderToggleSection('tests', 'tests-rows');
   renderToggleSection('large-diffs', 'large-diffs-rows');
 
   /* Categories: built-ins with an "advanced" disclosure, then the user's own. */
@@ -607,6 +609,37 @@ async function main(): Promise<void> {
     show(settings);
     choiceSetters.push(show);
     choiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
+  }
+
+  /* Test files: the reader's own test declaration syntaxes. */
+  const syntaxField = listFields(sections.find((candidate) => candidate.id === 'tests')?.fields ?? []).find((field) => field.key === 'testSyntaxes');
+  if (syntaxField !== undefined) {
+    const label = el('span', 'geld-label', [syntaxField.label]);
+    const help = el('p', 'geld-help', richText(syntaxField.description));
+    const area = el('textarea', 'geld-textarea geld-code options__textarea');
+    area.rows = syntaxField.rows;
+    area.placeholder = syntaxField.placeholder;
+    area.spellcheck = false;
+    area.value = settings.testSyntaxes.join('\n');
+    area.setAttribute('aria-label', syntaxField.label);
+    const syntax = el('ul', 'geld-help options__syntax', syntaxField.syntax.map((line) => el('li', '', richText(line))));
+    const statusNode = el('span', 'geld-status');
+    const status = statusReporter(statusNode);
+    const save = el('button', 'geld-button geld-button--primary', [syntaxField.saveLabel]);
+    save.type = 'button';
+    area.addEventListener('input', () => status(parsePatternList(area.value).join('\n') !== settings.testSyntaxes.join('\n') ? 'Unsaved changes' : '', 'neutral'));
+    save.addEventListener('click', async () => {
+      const testSyntaxes = parsePatternList(area.value);
+      const problem = testSyntaxes.map(testSyntaxProblem).find((entry): entry is string => entry !== null) ?? null;
+      if (problem !== null) {
+        status(problem, 'error');
+        return;
+      }
+      settings = await settingsItem.patch({ testSyntaxes });
+      area.value = testSyntaxes.join('\n');
+      status(`Saved ${pluralize(testSyntaxes.length, 'syntax', 'syntaxes')}`, 'success');
+    });
+    requireElement('test-syntaxes', HTMLDivElement).replaceChildren(el('div', 'options__editor', [label, help, area, syntax, el('div', 'geld-row options__actions', [statusNode, save])]));
   }
 
   /* Pull request lists: authors to hide */

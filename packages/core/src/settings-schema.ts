@@ -149,7 +149,7 @@ export interface ActionsField extends FieldBase {
 
 export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
 
-export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
+export type SettingsSectionId = 'general' | 'hide' | 'tests' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -282,6 +282,37 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           description:
             'On pull requests, tick GitHub’s Viewed box for this category’s hidden files, so “N of M files viewed” only waits on what is left to review. Untick one by hand and it stays unticked until the next push.',
         },
+      },
+    ],
+  },
+  {
+    id: 'tests',
+    title: 'Test files',
+    intro:
+      'In a test file Geld folds each test’s body under its line, so the diff reads as the tests that were added, removed, renamed or changed. Open a test to read its source. Suites stay open so titles nest, and hooks such as `beforeEach` fold too.',
+    fields: [
+      {
+        kind: 'toggle',
+        key: 'testOutline',
+        label: 'Fold tests to their titles',
+        description:
+          'Applies to the files the Tests category recognises, whether hidden or not. Each fold says what changed inside it. Known syntaxes: Jest, Vitest, Mocha, Jasmine, Bun, node:test, Playwright, Cypress, Deno, pytest and unittest, Go and its subtests, Rust, JUnit, TestNG, Kotest, xUnit, NUnit, MSTest, XCTest and Swift Testing, PHPUnit and Pest, RSpec and minitest, ExUnit, Dart, busted, hspec, ScalaTest, clojure.test, testthat and Gherkin.',
+        popup: false,
+      },
+      {
+        kind: 'list',
+        key: 'testSyntaxes',
+        label: 'Your test syntaxes',
+        description: 'Declarations Geld does not know yet, one per line. They are read before the built-in ones.',
+        popup: false,
+        rows: 4,
+        placeholder: 'scenario\nsuite: feature\nhook: givenEach\ntest: /^\\s*verify\\s+"(?<title>[^"]+)"/',
+        syntax: [
+          'A name, such as `scenario` or `t.test`: a call or keyword followed by a quoted title declares a test.',
+          '`suite: feature` declares a suite, which stays open with titles nested under it. `hook: givenEach` declares a hook, which folds under its own name.',
+          'A `/regex/` matches the whole declaration line, with the title in a `(?<title>…)` group or the first group; put a kind before it the same way.',
+        ],
+        saveLabel: 'Save syntaxes',
       },
     ],
   },

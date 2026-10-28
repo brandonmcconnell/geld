@@ -9,6 +9,7 @@ export * from './catalog-key';
 export * from './categories';
 export * from './change-kinds';
 export * from './comment-lines';
+export * from './test-outline';
 export * from './category-icons';
 export * from './diff-parse';
 export * from './diff-summaries';
