@@ -32,6 +32,8 @@ this file lists what a reviewer must check.
   purpose, once per page or head, as the page itself does on navigation: the files-tab summaries
   (`/pull/N/changes?_json=1`), the Commits tab (`/pull/N/commits` with `Accept: application/json`),
   directory listings and raw files for `.github/geld.yml`.
+- Workflow syntax highlighting must leave diff nodes intact, tokenize old and new sides separately and clear its own CSS highlights on teardown.
+  Use fixed `StaticRange` endpoints so a temporary DOM detach cannot collapse the colors.
 - New or widened manifest permissions / host permissions.
   These disable the extension on update
   until every user re-approves.

@@ -1,0 +1,212 @@
+import hljs from 'highlight.js/lib/core';
+import bash from 'highlight.js/lib/languages/bash';
+import type { DiffEntry } from './model';
+
+hljs.registerLanguage('bash', bash);
+
+const SCOPES = ['plain', 'keyword', 'built_in', 'literal', 'number', 'string', 'comment', 'variable', 'subst', 'title', 'meta', 'attr'] as const;
+type Scope = (typeof SCOPES)[number];
+type SyntaxRanges = Map<Scope, StaticRange[]>;
+interface SourceText { readonly node: Text; readonly text: string }
+interface Line { readonly number: number; readonly nodes: readonly SourceText[]; readonly text: string }
+interface PaintedFile { readonly lines: readonly Line[]; readonly beforeCount: number; readonly ranges: SyntaxRanges }
+const painted = new Map<HTMLElement, PaintedFile>();
+
+function textNodes(root: Node): SourceText[] {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: SourceText[] = [];
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (node instanceof Text) nodes.push({ node, text: node.data });
+  }
+  return nodes;
+}
+
+function linesOf(root: HTMLElement, side: 'L' | 'R'): Line[] {
+  const lines: Line[] = [];
+  for (const content of root.querySelectorAll<HTMLElement>('.blob-code-inner[data-code-marker], .diff-text:not(.hunk) .diff-text-inner')) {
+    const cell = content.closest('td');
+    if (cell === null) continue;
+    const code = content.closest('.diff-text');
+    const deleted = cell.classList.contains('blob-code-deletion') || code?.classList.contains('deletion') === true;
+    const added = cell.classList.contains('blob-code-addition') || code?.classList.contains('addition') === true;
+    if ((side === 'L' && added) || (side === 'R' && deleted)) continue;
+    const numbers: Element[] = [];
+    for (let sibling = cell.previousElementSibling; sibling !== null; sibling = sibling.previousElementSibling) {
+      if (sibling.matches('.blob-code, .diff-text-cell')) break;
+      if (sibling.matches('.blob-num, .diff-line-number')) numbers.unshift(sibling);
+    }
+    const anchor = /([LR])(\d+)$/.exec(cell.getAttribute('data-line-anchor') ?? '');
+    const numbered = numbers.find((number) => /([LR])\d+$/.exec(number.id)?.[1] === side);
+    let number: number;
+    if (numbered !== undefined) number = Number(numbered.getAttribute('data-line-number'));
+    else if (numbers.length === 2) number = Number(numbers[side === 'L' ? 0 : 1]?.textContent);
+    else if (anchor?.[1] === side) number = Number(anchor[2]);
+    else continue;
+    if (!Number.isInteger(number) || number <= 0) continue;
+    const nodes = textNodes(content);
+    lines.push({ number, nodes, text: nodes.map((part) => part.text).join('') });
+  }
+  return lines;
+}
+
+function sameLines(before: readonly Line[], after: readonly Line[]): boolean {
+  return before.length === after.length && before.every((line, i) => {
+    const next = after[i];
+    return next !== undefined && line.number === next.number && line.nodes.length === next.nodes.length &&
+      line.nodes.every((part, j) => part.node === next.nodes[j]?.node && part.text === next.nodes[j]?.text);
+  });
+}
+
+function scopeOf(node: Node): Scope {
+  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+    for (const scope of SCOPES) if (parent.classList.contains(`hljs-${scope}`)) return scope;
+  }
+  return 'plain';
+}
+
+function paintBlock(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
+  const source = lines.map((line) => line.text).join('\n');
+  if (source.length > 100_000) return;
+  // Only highlight.js's escaped output is parsed, in a detached template. GitHub's nodes stay untouched.
+  const template = document.createElement('template');
+  template.innerHTML = hljs.highlight(source, { language: 'bash', ignoreIllegals: true }).value;
+  const sourceNodes: { readonly node: Text; readonly start: number; readonly end: number }[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    for (const part of line.nodes) {
+      sourceNodes.push({ node: part.node, start: offset, end: offset + part.text.length });
+      offset += part.text.length;
+    }
+    offset += 1;
+  }
+  let index = 0;
+  offset = 0;
+  for (const part of textNodes(template.content)) {
+    const end = offset + part.text.length;
+    const scope = scopeOf(part.node);
+    while (index < sourceNodes.length) {
+      const original = sourceNodes[index];
+      if (original === undefined || original.start >= end) break;
+      const start = Math.max(offset, original.start);
+      const stop = Math.min(end, original.end);
+      if (start < stop && !skipNodes.has(original.node)) {
+        const range = new StaticRange({
+          startContainer: original.node, startOffset: start - original.start,
+          endContainer: original.node, endOffset: stop - original.start,
+        });
+        const group = ranges.get(scope) ?? [];
+        group.push(range);
+        ranges.set(scope, group);
+      }
+      if (original.end > end) break;
+      index += 1;
+    }
+    offset = end;
+  }
+}
+
+function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
+  let block: Line[] = [];
+  let runIndent = -1;
+  let stepIndent = -1;
+  let workflowShell = '';
+  let defaultShell = '';
+  let runnerShell = '';
+  let jobIndent = -1;
+  let jobsIndent = -1;
+  let shell = '';
+  let previous = 0;
+  const flush = (): void => {
+    if (block.length > 0 && (shell === '' || /^(?:bash|sh)(?:\s|$)/.test(shell))) paintBlock(block, ranges, skipNodes);
+    block = [];
+    runIndent = -1;
+  };
+  for (const line of lines) {
+    const indent = line.text.search(/\S/);
+    if (line.number !== previous + 1) {
+      flush();
+      stepIndent = -1;
+      shell = defaultShell || runnerShell;
+    }
+    previous = line.number;
+    if (runIndent >= 0 && (indent === -1 || indent > runIndent)) {
+      block.push(line);
+      continue;
+    }
+    runIndent = -1;
+    const jobs = /^(\s*)jobs:\s*(?:#.*)?$/.exec(line.text);
+    if (jobs !== null) jobsIndent = jobs[1]?.length ?? 0;
+    else if (jobsIndent >= 0 && jobIndent < 0 && indent > jobsIndent && !line.text.trimStart().startsWith('#')) jobIndent = indent;
+    if (jobIndent >= 0 && indent >= 0 && indent <= jobIndent) {
+      flush();
+      stepIndent = -1;
+      defaultShell = workflowShell;
+      runnerShell = '';
+      shell = defaultShell;
+    }
+    const runner = /^(\s*)runs-on:\s*(.*)$/.exec(line.text);
+    if (runner !== null) {
+      jobIndent = (runner[1]?.length ?? 0) - 2;
+      runnerShell = /windows/i.test(runner[2] ?? '') ? 'pwsh' : /\$\{\{/.test(runner[2] ?? '') ? 'unknown' : '';
+      shell = defaultShell || runnerShell;
+    }
+    const step = /^(\s*)-\s+\w[^:]*:/.exec(line.text);
+    if (step !== null || (stepIndent >= 0 && indent >= 0 && indent <= stepIndent)) {
+      flush();
+      stepIndent = step?.[1]?.length ?? -1;
+      shell = defaultShell || runnerShell;
+    }
+    const shellMatch = /^\s*(?:-\s+)?shell:\s*['"]?([^'"#]+?)['"]?\s*(?:#.*)?$/.exec(line.text);
+    if (shellMatch?.[1] !== undefined && (stepIndent < 0 || indent === stepIndent + 2 || (step !== null && indent === stepIndent))) {
+      shell = shellMatch[1].trim();
+      if (stepIndent < 0) {
+        defaultShell = shell;
+        if (jobIndent < 0) workflowShell = shell;
+      }
+    }
+    const run = /^(\s*)(-\s+)?run:\s*[|>][1-9+-]*\s*(?:#.*)?$/.exec(line.text);
+    if (run !== null) {
+      runIndent = (run[1]?.length ?? 0) + (run[2]?.length ?? 0);
+      if (stepIndent < 0) stepIndent = runIndent - 2;
+    }
+  }
+  flush();
+}
+
+function setHighlights(): void {
+  for (const scope of SCOPES) {
+    const highlight = new Highlight();
+    for (const file of painted.values()) for (const range of file.ranges.get(scope) ?? []) highlight.add(range);
+    if (highlight.size === 0) CSS.highlights.delete(`geld-shell-${scope}`);
+    else CSS.highlights.set(`geld-shell-${scope}`, highlight);
+  }
+}
+
+export function applyWorkflowSyntax(entries: readonly DiffEntry[]): void {
+  if (typeof CSS === 'undefined' || CSS.highlights === undefined || typeof Highlight === 'undefined' || typeof StaticRange === 'undefined') return;
+  const roots = new Set<HTMLElement>();
+  let changed = false;
+  for (const entry of entries) {
+    if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(entry.path)) continue;
+    roots.add(entry.root);
+    const before = linesOf(entry.root, 'L');
+    const after = linesOf(entry.root, 'R');
+    const lines = [...before, ...after];
+    const cached = painted.get(entry.root);
+    if (cached !== undefined && cached.beforeCount === before.length && sameLines(cached.lines, lines)) continue;
+    const ranges: SyntaxRanges = new Map();
+    // Shared context is painted from the new side, where an edited quote may give it a different meaning.
+    highlightRuns(before, ranges, new Set(after.flatMap((line) => line.nodes.map((part) => part.node))));
+    highlightRuns(after, ranges, new Set());
+    painted.set(entry.root, { lines, beforeCount: before.length, ranges });
+    changed = true;
+  }
+  for (const root of painted.keys()) if (!roots.has(root)) { painted.delete(root); changed = true; }
+  if (changed) setHighlights();
+}
+
+export function removeWorkflowSyntax(): void {
+  painted.clear();
+  if (typeof CSS === 'undefined' || CSS.highlights === undefined) return;
+  for (const scope of SCOPES) CSS.highlights.delete(`geld-shell-${scope}`);
+}

@@ -7482,3 +7482,41 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     flex-wrap: wrap;
   }
 }
+
+
+/* Embedded shell in workflow run blocks, without replacing GitHub's diff nodes. */
+::highlight(geld-shell-plain),
+::highlight(geld-shell-subst) {
+  color: var(--fgColor-default);
+}
+
+::highlight(geld-shell-keyword) {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+::highlight(geld-shell-built_in),
+::highlight(geld-shell-title) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+::highlight(geld-shell-literal),
+::highlight(geld-shell-number),
+::highlight(geld-shell-attr) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+::highlight(geld-shell-string) {
+  color: var(--color-prettylights-syntax-string);
+}
+
+::highlight(geld-shell-comment) {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+::highlight(geld-shell-variable) {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+::highlight(geld-shell-meta) {
+  color: var(--color-prettylights-syntax-meta-diff-header);
+}
