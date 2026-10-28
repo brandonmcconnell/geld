@@ -123,6 +123,11 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff), testSyntaxesFrom(['hook: t.beforeEach'])))).toEqual(['added hook "t.beforeEach" R1 body=2 +3 -0']);
   });
 
+  it('reads a Go raw-string subtest title that ends in a backslash', () => {
+    const diff = ['+func TestPaths(t *testing.T) {', '+\tt.Run(`C:\\`, func(t *testing.T) {', '+\t\tcheck(t)', '+\t})', '+}'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "C:\\" R2 body=2 +3 -0']);
+  });
+
   it('reads a line of backslashes with no closing quote in linear time', () => {
     const lines = ['it(', 'test.Run(', 't.Run('].map((opener, row) => ({ key: `R${row + 1}`, number: row + 1, text: `${opener}'${'\\'.repeat(20_000)}`, changed: true, row, run: 1 }));
     const started = performance.now();

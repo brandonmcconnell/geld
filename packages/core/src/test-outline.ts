@@ -85,7 +85,9 @@ export const BUILT_IN_TEST_SYNTAXES: readonly TestSyntax[] = [
   { kind: 'test', pattern: /^\s*(?:(?:public|protected|private|final|static|override|open|internal|suspend)\s+)*(?:function|func|fun|void)\s+(?<title>test\w*)\s*\(/ },
   // Go: TestXxx, BenchmarkXxx, FuzzXxx and subtests.
   { kind: 'test', pattern: /^func\s+(?:\([^)]*\)\s*)?(?<title>(?:Test|Benchmark|Fuzz)\w*)\s*\(/ },
-  { kind: 'test', pattern: /^\s*(?:t|b|s|f|suite)\.Run\(\s*(?<q>["`])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>/ },
+  { kind: 'test', pattern: /^\s*(?:t|b|s|f|suite)\.Run\(\s*"(?<title>(?:\\.|[^"\\])*)"/ },
+  // A raw string: Go reads its backslashes literally.
+  { kind: 'test', pattern: /^\s*(?:t|b|s|f|suite)\.Run\(\s*`(?<title>[^`]*)`/ },
   // Clojure, Kotest/ScalaTest strings.
   { kind: 'test', pattern: /^\s*\(deftest\s+(?<title>[^\s()]+)/ },
   { kind: 'suite', pattern: /^\s*"(?<title>[^"]+)"\s+(?:should|must|can|when|-)\s*[{-]/ },
