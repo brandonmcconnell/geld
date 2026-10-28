@@ -15,7 +15,7 @@ import type { PendingComment } from './pending-review';
 import { discardPendingReview, fetchPendingComments, linkOnFilesTab, pendingCountOnPage } from './pending-review';
 import { inlineText } from './review/inline-text';
 import type { SidebarReviewer, SidebarReviewerState } from './review/crawler';
-import { catchUpTimeline } from './review/timeline-catchup';
+import { catchUpAfterPost } from './review/timeline-catchup';
 import type { ReviewTally } from './review-tally';
 import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
 import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
@@ -1807,7 +1807,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
       showCount(state);
     }
     // The review in the conversation as GitHub's live update would put it there (a no-op off the classic conversation).
-    void catchUpTimeline();
+    void catchUpAfterPost();
     void loadMergeActions(state);
     return null;
   } catch {
@@ -1845,10 +1845,11 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
     if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return null;
     showCommentKind(state);
     showDone(state, 'Commented');
-    // The comment in the conversation as GitHub's live update would put it there; a reload where that cannot be done.
+    // The comment in the conversation as GitHub's live update would put it there; a reload only where there is no marker
+    // to read (a read that keeps missing is left to GitHub's own live update: reloading a long conversation took seconds).
     if (state.context.page.kind === 'pull-conversation') {
-      void catchUpTimeline().then((caught) => {
-        if (!caught && pullPathOf(window.location.pathname) === pullPath) window.location.reload();
+      void catchUpAfterPost().then((caught) => {
+        if (caught === null && pullPathOf(window.location.pathname) === pullPath) window.location.reload();
       });
     }
     return null;
@@ -1984,21 +1985,19 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
       refresh();
     });
   };
-  const send = async (): Promise<void> => {
+  // The box closes at the click and the pressed segment spins until GitHub answers; a refusal opens the box again with the words (still the draft until the send succeeds) and GitHub's reason.
+  const send = (): void => {
     if (submit.disabled) return;
-    error.hidden = true;
-    submit.textContent = posting() ? 'Posting…' : 'Submitting…';
-    const pending = posting() ? sendComment(state, body.value) : sendReview(state, draft.event, body.value);
-    refresh();
-    const failed = await pending;
-    showVerdict();
-    if (failed === null) {
-      if (state.panel === panel) closePanel(true);
-      return;
-    }
-    error.textContent = failed;
-    error.hidden = false;
-    refresh();
+    const event = draft.event;
+    const kindNow = kind();
+    const text = body.value;
+    draft.body = text;
+    const pending = posting() ? sendComment(state, text) : sendReview(state, event, text);
+    if (state.panel === panel) closePanel(true);
+    const sentFrom = state.pullPath;
+    void pending.then((failed) => {
+      if (failed !== null && mounted === state && state.pullPath === sentFrom && state.panel === null) openComposer(state, event, failed, kindNow);
+    });
   };
 
   // On the box, not the field: GitHub's toolbar writes through `input` too, and the field is swapped when the writer lands.

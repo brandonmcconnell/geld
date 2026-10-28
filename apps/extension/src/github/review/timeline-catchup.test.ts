@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { postTopLevelComments } from './actions';
-import { catchUpTimeline } from './timeline-catchup';
+import { catchUpAfterPost, catchUpTimeline } from './timeline-catchup';
 
 const MARKER = (since: string): string => `<div id="partial-timeline" class="js-timeline-marker" data-url="/acme/widgets/pull/7/partials/unread_timeline?since=${since}"></div>`;
 
@@ -41,6 +41,58 @@ describe('catchUpTimeline', () => {
     expect(document.querySelector('#partial-timeline')?.getAttribute('data-url')).toContain('since=1');
     document.body.innerHTML = '';
     expect(await catchUpTimeline()).toBe(false);
+  });
+});
+
+describe('catchUpAfterPost', () => {
+  it('reads again while GitHub’s partial answers 404 (nothing since yet) right after a post', async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = MARKER('1');
+    let reads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        reads += 1;
+        return reads < 3 ? new Response('', { status: 404 }) : new Response(`<div class="js-timeline-item" id="posted"></div>${MARKER('2')}`, { status: 200 });
+      }),
+    );
+    const caught = catchUpAfterPost();
+    await vi.runAllTimersAsync();
+    expect(await caught).toBe(true);
+    expect(reads).toBe(3);
+    expect(document.getElementById('posted')).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('gives up after a few reads without a reload signal, and says null where there is no marker', async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = MARKER('1');
+    const fetch = vi.fn(async () => new Response('', { status: 404 }));
+    vi.stubGlobal('fetch', fetch);
+    const caught = catchUpAfterPost();
+    await vi.runAllTimersAsync();
+    expect(await caught).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    document.body.innerHTML = '';
+    expect(await catchUpAfterPost()).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('waits out a read already out from before the post, then reads afresh', async () => {
+    document.body.innerHTML = MARKER('1');
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        return new Response(MARKER(String(urls.length + 1)), { status: 200 });
+      }),
+    );
+    const earlier = catchUpTimeline();
+    const caught = catchUpAfterPost();
+    expect(await earlier).toBe(true);
+    expect(await caught).toBe(true);
+    expect(urls.map((url) => /since=(\d)/.exec(url)?.[1])).toEqual(['1', '2']);
   });
 });
 

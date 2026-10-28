@@ -44,3 +44,23 @@ export function catchUpTimeline(): Promise<boolean> {
   inFlight = { marker, src, promise, token };
   return promise;
 }
+
+/** Waits between the reads after a post: the partial answers 404 ("nothing since") for a moment after the write lands. */
+const AFTER_POST_RETRY_MS = [300, 700, 1500] as const;
+
+/**
+ * Catch the timeline up after Geld posted to it itself: a read already out
+ * began before the post and cannot hold it, so it is waited out and a fresh
+ * one follows, tried again while GitHub's partial does not carry the post
+ * yet. Null when the page has no marker to read (the React conversation).
+ */
+export async function catchUpAfterPost(): Promise<boolean | null> {
+  if (document.querySelector(MARKER) === null) return null;
+  if (inFlight !== null) await inFlight.promise;
+  if (await catchUpTimeline()) return true;
+  for (const wait of AFTER_POST_RETRY_MS) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, wait));
+    if (await catchUpTimeline()) return true;
+  }
+  return false;
+}

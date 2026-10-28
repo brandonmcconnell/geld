@@ -282,7 +282,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Lines are ordered by how the bot is known (`BotPresence`): `seen` on the page (`/apps/<slug>` links in comments, the checks list and the reviewers box, payload verdicts and item sources, check runs by name, trigger comments), `declared` by the repository's `reviewBots`, `configured` by one of its own files in the repository (both from the controller's `repoBotsHint`, declared only once the config applies under the reader's `repoConfigs` choice), then `other`, the rest of the registry behind an "Other bots (N)" disclosure, since a trigger for a bot that is not installed is a public comment with a handle in it;
   with nothing pointing at any bot the registry is the list.
   Under a separator, Run ("Run Bugbot", "Run 2 bots", disabled with nothing ticked) posts one trigger comment per ticked bot in sequence and Cancel, Escape or a click outside closes.
-  `postTopLevelComments` posts each trigger straight to `page_data/create_timeline_comment` (what GitHub's composer sends, `timeline-comment.ts`), never through the comment box at the foot of the conversation, which scrolled the reader to it and focused it, then catches the timeline up (`catchUpTimeline`) so the triggers show, and their bots read as running, without a reload.
+  `postTopLevelComments` posts each trigger straight to `page_data/create_timeline_comment` (what GitHub's composer sends, `timeline-comment.ts`), never through the comment box at the foot of the conversation, which scrolled the reader to it and focused it, then catches the timeline up (`catchUpAfterPost`) so the triggers show, and their bots read as running, without a reload.
   `mountPanel` does not rebuild while the menu is open (the picks would be lost);
   closing it calls `onRequestMenuClosed` → `reapplySoon`, so whatever changed meanwhile renders then.
   The Review bots row therefore shows on every PR conversation, with "No reviews yet" until a verdict exists.
@@ -1030,7 +1030,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   With comments pending a review is the default (they go with it, as before), without them a comment, until the reader chooses;
   a plain comment needs words and leaves pending comments pending.
   It is GitHub's conversation composer's request (`timelineCommentRequest`: `POST page_data/create_timeline_comment` `{ text }`, read from its bundle;
-  an empty text answers 422 "Comment text is required."), after which the conversation is caught up to show it (`catchUpTimeline`, reloading only where that cannot be done) and screen readers hear "Commented".
+  an empty text answers 422 "Comment text is required."), after which the conversation is caught up to show it (`catchUpAfterPost`) and screen readers hear "Commented".
+  **The box closes at the click** (`send` in `openComposer`): the pressed segment spins until GitHub answers, the words stay the draft until the send succeeds, and a refusal opens the box again with them and GitHub's reason, as an instant send's does.
+  **Catching up after Geld's own post** (`catchUpAfterPost`, timeline-catchup.ts) waits out a read already out (its answer predates the post), then reads the marker's partial afresh, and again after 300, 700 and 1500 ms while it misses: right after a write GitHub's `unread_timeline` answers 404 for a moment (its "nothing since"), and that miss used to reload the whole conversation, seconds on a long one.
+  A read that keeps missing is left to GitHub's own live update, and only a page with no marker to read (the React conversation) reloads.
   ✓ and ✗ open the box with no choice.
   **With comments pending, ⌘-click on 💬 submits them at once** as a comment review with no words (`isInstantClick(…, pending)`, `data-pending` on the group): its glyph gains the arrow while the key is held (`ICON_COMMENT_SEND`, the arrow below the bubble's edge, the bubble where it stands) and its tooltip reads "Comment" over "⌘ 1-click review", or "Submit pending comments" while held;
   a refusal opens the box with GitHub's reason, as for ✓ and ✗.
@@ -1107,7 +1110,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **On success the review is shown at once and held** (`showOwnReview`, `heldReview`, `OWN_REVIEW_HOLD_MS` 90 s): ✓ or ✗ pressed in and the tally counting the reader's review (`withOwnReview`;
   a comment leaves a standing verdict standing), over GitHub's merge box and Reviewers partial, which answer from before the review for some seconds and took both back;
   only Files changed with pending comments just published reloads (its view still draws them as pending), after the review is shown;
-  elsewhere screen readers hear what was sent ("Approved", "Changes requested", "Review submitted"), the pending count goes to none when they went with it, and the conversation is caught up (`catchUpTimeline`) so the review shows without a reload.
+  elsewhere screen readers hear what was sent ("Approved", "Changes requested", "Review submitted"), the pending count goes to none when they went with it, and the conversation is caught up (`catchUpAfterPost`) so the review shows without a reload.
   Verified on brandonmcconnell/geld#68 with the harness answering the request itself (`block` command), so nothing was posted;
   the success response's body was not seen.
   In the tab bar GitHub floats the counts right and drops their line with 12px of top padding;
