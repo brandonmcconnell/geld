@@ -2150,9 +2150,14 @@ const WRITER_CUSHION = 16;
 
 /** The box as wide as GitHub's writer needs for every toolbar button, plus the cushion, inside the viewport. */
 function fitWriter(panel: HTMLElement, bodyBox: HTMLElement, writer: HTMLElement): void {
+  // The toolbar sets the width, never the words: GitHub's field grows to its text (`field-sizing: content`), so a draft
+  // reopened with long lines measured the box past the window's width. The field and preview sit out of the measure.
+  const words = [...writer.querySelectorAll<HTMLElement>('textarea, .js-preview-body')].map((element) => ({ element, display: element.style.display }));
+  for (const { element } of words) element.style.display = 'none';
   writer.style.width = 'max-content';
   const natural = writer.offsetWidth;
   writer.style.width = '';
+  for (const { element, display } of words) element.style.display = display;
   const box = getComputedStyle(bodyBox);
   const chrome = panel.offsetWidth - panel.clientWidth + parseFloat(box.paddingLeft) + parseFloat(box.paddingRight);
   writerWidth = Math.round(natural + chrome + WRITER_CUSHION);
