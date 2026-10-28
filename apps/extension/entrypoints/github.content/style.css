@@ -2388,6 +2388,15 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * GitHub's "N hidden items · Load more" bar while Geld presses it itself (`data-geld-autoloading` on the root): out of
+ * sight, the reading bar standing for it. Pressed with click(), which a hidden control still takes. Back as soon as
+ * Geld stops pressing (done, or at its limit), so the reader can load the rest.
+ */
+html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline']) {
+  display: none !important;
+}
+
 /* Geld reading the timeline: a thin accent bar over the digest's top edge, filling as it goes, gone when it is done. */
 .geld-review__reading {
   position: absolute;

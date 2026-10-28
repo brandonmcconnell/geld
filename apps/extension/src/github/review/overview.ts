@@ -62,6 +62,13 @@ const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
 /** "Load more" rounds we click while a deeplinked anchor is still off the page. */
 const MAX_LOAD_MORE = 8;
+/** On the root while Geld keeps pressing GitHub's "Load more": the stylesheet hides that bar, fresh copies included. */
+const ATTR_AUTOLOADING = 'data-geld-autoloading';
+
+function setAutoLoading(on: boolean): void {
+  document.documentElement.toggleAttribute(ATTR_AUTOLOADING, on);
+}
+
 /** "Load more" presses per visit in compact mode (each brings a page of hidden items). */
 const MAX_AUTO_LOADS = 40;
 
@@ -2879,6 +2886,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
   if (hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  // GitHub's "N hidden items · Load more" bar stays out of sight while Geld is the one pressing it (the reading bar
+  // says how far it has got); once Geld stops (done, or at its limit) it shows again for the reader to load the rest.
+  // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
+  setAutoLoading(hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && (hasLoadMore() || loadMorePending()));
   if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
@@ -3558,6 +3569,7 @@ export function teardownReviewOverview(): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);
   loadSettleArmed = false;
