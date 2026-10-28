@@ -2386,6 +2386,7 @@ function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHan
     // replays from the comment where it stands, which is then in view.
     const started = performance.now();
     const wait = (): void => {
+      if (lastSettings === null) return;
       const comment = shown();
       if (comment !== null) replay(comment);
       else if (performance.now() - started < 1500) requestAnimationFrame(wait);
