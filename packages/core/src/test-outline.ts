@@ -54,7 +54,9 @@ export interface TestFold {
   readonly deletions: number;
 }
 
-const QUOTE = String.raw`(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>).)*)\k<q>`;
+// A backslash only ever starts an escape: were it also a plain character, a line of backslashes with no closing quote
+// would backtrack exponentially on diff text a pull request's author controls.
+const QUOTE = String.raw`(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>`;
 /** `name`, `name.only`, `name.each([…])` (arguments nested two deep), `name.each\`…\`` and the like, then `(` or a space, then a quoted title. */
 const CHAIN = String.raw`(?:\.[A-Za-z_$][\w$]*(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\x60[^\x60]*\x60)?)*`;
 
@@ -83,7 +85,7 @@ export const BUILT_IN_TEST_SYNTAXES: readonly TestSyntax[] = [
   { kind: 'test', pattern: /^\s*(?:(?:public|protected|private|final|static|override|open|internal|suspend)\s+)*(?:function|func|fun|void)\s+(?<title>test\w*)\s*\(/ },
   // Go: TestXxx, BenchmarkXxx, FuzzXxx and subtests.
   { kind: 'test', pattern: /^func\s+(?:\([^)]*\)\s*)?(?<title>(?:Test|Benchmark|Fuzz)\w*)\s*\(/ },
-  { kind: 'test', pattern: /^\s*(?:t|b|s|f|suite)\.Run\(\s*(?<q>["`])(?<title>(?:\\.|(?!\k<q>).)*)\k<q>/ },
+  { kind: 'test', pattern: /^\s*(?:t|b|s|f|suite)\.Run\(\s*(?<q>["`])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>/ },
   // Clojure, Kotest/ScalaTest strings.
   { kind: 'test', pattern: /^\s*\(deftest\s+(?<title>[^\s()]+)/ },
   { kind: 'suite', pattern: /^\s*"(?<title>[^"]+)"\s+(?:should|must|can|when|-)\s*[{-]/ },
@@ -102,7 +104,7 @@ const ANNOTATED_FUNCTION = /^\s*(?:(?:public|protected|private|internal|static|f
 /** `it(` alone on its line, its title on the next: the declaration opens a line early. */
 const BARE_OPENER = new RegExp(String.raw`^\s*(?:test\.describe|describe|context|suite|it|test|specify|bench|scenario|group|testWidgets)${CHAIN}\s*\(\s*$`);
 const OPENER_KIND = /^\s*(?:test\.describe|describe|context|suite|group)\b/;
-const TITLE_LINE = /^\s*(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>).)*)\k<q>/;
+const TITLE_LINE = /^\s*(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>/;
 /** A line that closes a block at the declaration's own indent. */
 const CLOSER = /^\s*(?:[}\])][\s\w.,;:)\]}'"\x60=>()-]*|end\b.*|```.*)$/;
 

@@ -123,6 +123,13 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff), testSyntaxesFrom(['hook: t.beforeEach'])))).toEqual(['added hook "t.beforeEach" R1 body=2 +3 -0']);
   });
 
+  it('reads a line of backslashes with no closing quote in linear time', () => {
+    const lines = ['it(', 'test.Run(', 't.Run('].map((opener, row) => ({ key: `R${row + 1}`, number: row + 1, text: `${opener}'${'\\'.repeat(20_000)}`, changed: true, row, run: 1 }));
+    const started = performance.now();
+    expect(outlineTestFolds({ old: [], new: lines })).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it('never joins lines across a gap in the numbering', () => {
     const { new: lines } = sides(["+it('a', () => {", '+  one();'].join('\n'));
     const after: OutlineLine = { key: 'R10', number: 10, text: '  far();', changed: false, row: 9, run: 9 };
