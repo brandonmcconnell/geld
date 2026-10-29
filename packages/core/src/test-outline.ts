@@ -42,8 +42,6 @@ export interface TestFold {
   /** Stable for the page: the side and line key of its declaration. */
   readonly id: string;
   readonly kind: TestBlockKind;
-  /** The folded suite it sits in (its `id`): while that suite is folded, so is this. */
-  readonly parentId?: string;
   readonly title: string;
   /** The old title, for a test whose declaration line changed its title. */
   readonly previousTitle?: string;
@@ -287,11 +285,9 @@ interface SideFold {
   readonly kind: TestBlockKind;
   readonly title: string;
   readonly head: OutlineLine;
-  /** Its first and last line on this side, as indices, so the suites holding it can be found. */
+  /** Its first and last line on this side, as indices, so a folded suite holding it can be found. */
   readonly from: number;
   readonly to: number;
-  /** The innermost folded suite holding it. */
-  parent: SideFold | null;
   /** The declaration's own lines: the head, and the title's line under a bare `it(`. They stay in view. */
   readonly heading: readonly OutlineLine[];
   readonly body: readonly OutlineLine[];
@@ -309,7 +305,7 @@ const blankToFold = (lines: readonly OutlineLine[], index: number, neighbour: nu
 
 /**
  * The blocks that fold: tests with no test or suite inside them (a Go test with subtests stays open), hooks, and
- * suites added or removed whole (their tests fold inside them, each a fold of its own once the suite is open).
+ * suites added or removed whole (one fold, opening to all of their source).
  * A single added or removed blank line just below a test, or just above one the test before has not taken, folds
  * with it, so a run of folded tests is not broken up by the blank lines between them; two or more blank lines in a
  * row, and the file's unchanged spacing, stay in view.
@@ -342,13 +338,10 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
       if (line !== undefined) body.push(line);
       taken.add(below);
     }
-    folds.push({ kind: block.kind, title: block.title, head, from: block.start, to: block.last, parent: null, heading: lines.slice(block.start, block.first), body });
+    folds.push({ kind: block.kind, title: block.title, head, from: block.start, to: block.last, heading: lines.slice(block.start, block.first), body });
   }
-  for (const fold of folds) {
-    const holders = folds.filter((other) => other !== fold && other.kind === 'suite' && other.from < fold.from && fold.to <= other.to);
-    fold.parent = holders.reduce<SideFold | null>((inner, other) => (inner === null || other.from > inner.from ? other : inner), null);
-  }
-  return folds;
+  // A folded suite opens to its whole source: the tests and hooks in it are its lines, not folds of their own.
+  return folds.filter((fold) => !folds.some((other) => other !== fold && other.kind === 'suite' && other.from < fold.from && fold.to <= other.to));
 }
 
 const changedIn = (body: readonly OutlineLine[]): number => body.filter((line) => line.changed).length;
@@ -381,20 +374,6 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
     partners.set(fold, partner);
     paired.add(partner);
   }
-  // A suite rewritten in place keeps the new side's id, so an old child's parent is found under that id.
-  const partnerOf = new Map<SideFold, SideFold>([...partners].map(([fold, old]) => [old, fold]));
-  const idOf = (fold: SideFold, side: 'new' | 'old'): string => {
-    const standing = side === 'old' ? partnerOf.get(fold) : undefined;
-    return standing === undefined ? `${side}:${fold.head.key}` : `new:${standing.head.key}`;
-  };
-  const parentOf = (fold: SideFold, side: 'new' | 'old', partner?: SideFold): { readonly parentId?: string } => {
-    if (fold.parent === null) return {};
-    const parentId = idOf(fold.parent, side);
-    // A test paired across sides is inside a folded suite only when both its sides are: a test moved into an added
-    // suite keeps its old lines outside that suite, and they must keep a button of their own.
-    if (partner !== undefined && (partner.parent === null || idOf(partner.parent, 'old') !== parentId)) return {};
-    return { parentId };
-  };
   for (const fold of news) {
     const partner = partners.get(fold);
     const additions = changedIn(fold.heading) + changedIn(fold.body);
@@ -404,7 +383,6 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
     folds.push({
       id: `new:${fold.head.key}`,
       kind: fold.kind,
-      ...parentOf(fold, 'new', partner),
       title: fold.title,
       ...(renamed ? { previousTitle: partner.title } : {}),
       status,
@@ -421,7 +399,6 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
     folds.push({
       id: `old:${fold.head.key}`,
       kind: fold.kind,
-      ...parentOf(fold, 'old'),
       title: fold.title,
       status: fold.head.changed ? 'removed' : deletions > 0 ? 'modified' : 'unchanged',
       headKey: fold.head.key,
