@@ -493,7 +493,7 @@ export function threadChipFocusKey(anchor: string): string {
  * findings never takes the reader somewhere else in the digest.
  */
 export function threadChips(threads: readonly ChatThreadLink[], onToggle: (anchor: string) => void, openThread: string | null, from: string): HTMLElement {
-  const list = createElement('div', { class: 'geld-review__chat-threads', role: 'list', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} ${from}` });
+  const list = createElement('div', { class: 'geld-review__chat-threads', role: 'group', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} ${from}` });
   list.append(createElement('span', { class: 'geld-review__chat-threads-label' }, [threads.length === 1 ? '1 thread' : `${threads.length} threads`]));
   const fileOf = (thread: ChatThreadLink): string => thread.path.split('/').pop() ?? thread.path;
   for (const thread of threads) {
@@ -502,7 +502,7 @@ export function threadChips(threads: readonly ChatThreadLink[], onToggle: (ancho
     const open = thread.anchor === openThread;
     const chip = createElement(
       'button',
-      { type: 'button', class: 'geld-review__chat-thread', role: 'listitem', 'aria-expanded': String(open), 'data-state': thread.done ? 'done' : 'open', 'data-geld-focus': threadChipFocusKey(thread.anchor), title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` },
+      { type: 'button', class: 'geld-review__chat-thread', 'aria-expanded': String(open), 'data-state': thread.done ? 'done' : 'open', 'data-geld-focus': threadChipFocusKey(thread.anchor), title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` },
       [
         icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE),
         createElement('code', {}, [thread.line === undefined ? file : `${file}:${thread.line}`]),
