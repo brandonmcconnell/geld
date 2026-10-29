@@ -130,6 +130,19 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "C:\\" R2 body=2 +3 -0']);
   });
 
+  it('reads a line of spaces after a test name, or after an annotated function’s type, in linear time', () => {
+    const spaces = ' '.repeat(50_000);
+    const lines = [`it${spaces}x`, `"title"${spaces}x`, '@Test', `void${spaces}x`].map((text, row) => ({ key: `R${row + 1}`, number: row + 1, text, changed: true, row, run: 1 }));
+    const started = performance.now();
+    expect(outlineTestFolds({ old: [], new: lines })).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('leaves a hook-shaped line inside a test as the test’s own code', () => {
+    const diff = ["+it('mounts', () => {", '+  const Comp = {', '+    setup() {', '+      return {}', '+    },', '+  }', '+  mount(Comp)', '+})'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "mounts" R1 body=7 +8 -0']);
+  });
+
   it('reads a line of backslashes with no closing quote in linear time', () => {
     const lines = ['it(', 'test.Run(', 't.Run('].map((opener, row) => ({ key: `R${row + 1}`, number: row + 1, text: `${opener}'${'\\'.repeat(20_000)}`, changed: true, row, run: 1 }));
     const started = performance.now();

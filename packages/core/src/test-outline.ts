@@ -56,6 +56,8 @@ export interface TestFold {
   readonly deletions: number;
 }
 
+// No two neighbouring quantifiers in these patterns may match the same characters (`\s*\s+`, `[\w ]+?\s*`): they read
+// diff text a pull request's author controls, and overlapping runs backtrack quadratically on a line of spaces.
 // A backslash only ever starts an escape: were it also a plain character, a line of backslashes with no closing quote
 // would backtrack exponentially on diff text a pull request's author controls.
 const QUOTE = String.raw`(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>`;
@@ -64,7 +66,7 @@ const CHAIN = String.raw`(?:\.[A-Za-z_$][\w$]*(?:\((?:[^()]|\((?:[^()]|\([^()]*\
 
 function callSyntax(kind: TestBlockKind, names: readonly string[]): TestSyntax {
   const alternatives = names.map((name) => name.replace(/[.$]/g, (char) => `\\${char}`)).join('|');
-  return { kind, pattern: new RegExp(String.raw`^\s*(?:${alternatives})${CHAIN}\s*(?:\(\s*|\s+)${QUOTE}`) };
+  return { kind, pattern: new RegExp(String.raw`^\s*(?:${alternatives})${CHAIN}(?:\s*\(\s*|\s+)${QUOTE}`) };
 }
 
 /**
@@ -93,7 +95,7 @@ export const BUILT_IN_TEST_SYNTAXES: readonly TestSyntax[] = [
   // Clojure, Kotest/ScalaTest strings.
   { kind: 'test', pattern: /^\s*\(deftest\s+(?<title>[^\s()]+)/ },
   { kind: 'suite', pattern: /^\s*"(?<title>[^"]+)"\s+(?:should|must|can|when|-)\s*[{-]/ },
-  { kind: 'test', pattern: /^\s*"(?<title>[^"]+)"\s+(?:in|\{)\s*\{?\s*$/ },
+  { kind: 'test', pattern: /^\s*"(?<title>[^"]+)"\s+(?:in(?:\s+\{)?|\{)\s*$/ },
 ];
 
 /**
@@ -104,7 +106,7 @@ export const BUILT_IN_TEST_SYNTAXES: readonly TestSyntax[] = [
 const TEST_ANNOTATION =
   /^\s*(?:@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|Property|Theory|DisplayName|Disabled|Tag)\b(?:\(\s*"(?<title>[^"]*)"[^)]*\))?|\[(?:Fact|Theory|Test|TestMethod|DataTestMethod|TestCase|TestCaseSource|InlineData)\b[^\]]*\]|#\[(?:[\w:]+::)?(?:test|rstest|test_case|quickcheck)\b[^\]]*\])/;
 /** A function declaration after test annotations, in the languages that use them. */
-const ANNOTATED_FUNCTION = /^\s*(?:(?:public|protected|private|internal|static|final|async|override|open|suspend|unsafe|pub(?:\([^)]*\))?)\s+)*(?:fun|func|fn|void|def|Task|async\s+Task|[\w<>[\],.?]+)\s+`?(?<title>[\w ]+?)`?\s*[(<]/;
+const ANNOTATED_FUNCTION = /^\s*(?:(?:public|protected|private|internal|static|final|async|override|open|suspend|unsafe|pub(?:\([^)]*\))?)\s+)*(?:fun|func|fn|void|def|Task|async\s+Task|[\w<>[\],.?]+)\s+(?:`(?<title>[^`]+)`|(?<name>\w+))\s*[(<]/;
 /** `it(` alone on its line, its title on the next: the declaration opens a line early. */
 const BARE_OPENER = new RegExp(String.raw`^\s*(?:test\.describe|describe|context|suite|it|test|specify|bench|scenario|group|testWidgets)${CHAIN}\s*\(\s*$`);
 const OPENER_KIND = /^\s*(?:test\.describe|describe|context|suite|group)\b/;
@@ -113,7 +115,7 @@ const TITLE_LINE = /^\s*(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>/;
 const CLOSER = /^\s*(?:[}\])][\s\w.,;:)\]}'"\x60=>()-]*|end\b.*|```.*)$/;
 
 function titleOf(match: RegExpExecArray): string {
-  return (match.groups?.title ?? match[1] ?? match[0]).trim();
+  return (match.groups?.title ?? match.groups?.name ?? match[1] ?? match[0]).trim();
 }
 
 function indentOf(text: string): number {
@@ -236,6 +238,8 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
     if (block.kind === 'suite' || block.last < block.first) continue;
     const container = block.kind === 'test' && blocks.some((other) => other !== block && other.kind !== 'hook' && other.head > block.head && other.head <= block.last);
     if (container) continue;
+    // A hook-shaped line inside a test or hook (a component's `setup() {` in a test) is that test's code, not a hook.
+    if (block.kind === 'hook' && blocks.some((other) => other !== block && other.kind !== 'suite' && other.head < block.head && block.head <= other.last)) continue;
     const head = lines[block.head];
     if (head === undefined) continue;
     folds.push({ kind: block.kind, title: block.title, head, heading: lines.slice(block.head, block.first), body: lines.slice(block.first, block.last + 1) });

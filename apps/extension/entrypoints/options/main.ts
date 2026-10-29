@@ -640,6 +640,7 @@ async function main(): Promise<void> {
 
   /* Test files: the reader's own test declaration syntaxes. */
   const syntaxField = listFields(sections.find((candidate) => candidate.id === 'tests')?.fields ?? []).find((field) => field.key === 'testSyntaxes');
+  let syntaxArea: HTMLTextAreaElement | null = null;
   if (syntaxField !== undefined) {
     const label = el('span', 'geld-label', [syntaxField.label]);
     const help = el('p', 'geld-help', richText(syntaxField.description));
@@ -649,6 +650,7 @@ async function main(): Promise<void> {
     area.spellcheck = false;
     area.value = settings.testSyntaxes.join('\n');
     area.setAttribute('aria-label', syntaxField.label);
+    syntaxArea = area;
     const syntax = el('ul', 'geld-help options__syntax', syntaxField.syntax.map((line) => el('li', '', richText(line))));
     const statusNode = el('span', 'geld-status');
     const status = statusReporter(statusNode);
@@ -1349,6 +1351,7 @@ async function main(): Promise<void> {
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
+    if (syntaxArea !== null && document.activeElement !== syntaxArea) syntaxArea.value = next.testSyntaxes.join('\n');
     if (reviewBotsArea !== null && document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();

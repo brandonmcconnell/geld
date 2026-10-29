@@ -111,12 +111,13 @@ function readSides(root: HTMLElement, anchor: string): { readonly old: ReadLine[
       if (target.has(key)) continue;
       const text = code.querySelector(CODE)?.textContent ?? '';
       target.set(key, { line: { key, number, text, changed: change === (side === 'L' ? 'deletion' : 'addition'), row, run }, cell: code, rowElement });
-      keys.push(key);
+      // The words and the markers too: an update can rewrite a line under the same key and the same file element.
+      keys.push(`${key}\t${change ?? ''}\t${text}`);
     }
     row += 1;
   }
   const ordered = (lines: Map<string, ReadLine>): ReadLine[] => [...lines.values()].sort((a, b) => a.line.number - b.line.number);
-  return { old: ordered(old), new: ordered(next), signature: keys.join(',') };
+  return { old: ordered(old), new: ordered(next), signature: keys.join('\n') };
 }
 
 interface Painted {
@@ -278,6 +279,8 @@ function digitWidth(font: string): number {
 function alignRanges(): void {
   const columns = new Map<string, NumberColumn | null>();
   const bodies = new Map<Element, number>();
+  // Every read first, then every write: a write between reads would make the next read lay the table out again.
+  const writes: { readonly lines: HTMLElement; readonly offset: string; readonly font: string }[] = [];
   for (const row of document.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_TEST_ROW}]`)) {
     const body = row.parentElement;
     const lines = row.querySelector<HTMLElement>(`.${ROW_CLASS}__lines`);
@@ -296,9 +299,11 @@ function alignRanges(): void {
         : column.align === 'left' || column.align === 'start'
           ? column.left + column.paddingLeft
           : column.left + (column.width - width) / 2;
-    const offset = `${Math.max(0, Math.round((start - row.getBoundingClientRect().left) * 10) / 10)}px`;
+    writes.push({ lines, offset: `${Math.max(0, Math.round((start - row.getBoundingClientRect().left) * 10) / 10)}px`, font: column.font });
+  }
+  for (const { lines, offset, font } of writes) {
     if (lines.style.marginLeft !== offset) lines.style.marginLeft = offset;
-    if (lines.style.font !== column.font) lines.style.font = column.font;
+    if (lines.style.font !== font) lines.style.font = font;
   }
 }
 
