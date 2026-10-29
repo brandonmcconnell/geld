@@ -21,7 +21,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
@@ -2885,11 +2885,14 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
-  if (hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  // A press that failed leaves its form standing: pressing it again on every pass would keep the bar hidden through
+  // the whole budget, so Geld stops and the bar is the reader's.
+  const stalled = loadMoreStalled();
+  if (hidingTimeline && !stalled && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
   // GitHub's "N hidden items · Load more" bar stays out of sight while Geld is the one pressing it (the reading bar
   // says how far it has got); once Geld stops (done, or at its limit) it shows again for the reader to load the rest.
   // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
-  setAutoLoading(hidingTimeline && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
+  setAutoLoading(hidingTimeline && !stalled && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
   // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
   const pressUntil = loadMorePendingUntil();
   if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);

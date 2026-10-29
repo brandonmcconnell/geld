@@ -61,6 +61,11 @@ export function loadMorePendingUntil(): number | null {
   return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at < PRESS_TIMEOUT_MS ? pressed.at + PRESS_TIMEOUT_MS : null;
 }
 
+/** A press that never landed: its form still stands after the press timed out (the load failed). */
+export function loadMoreStalled(): boolean {
+  return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at >= PRESS_TIMEOUT_MS;
+}
+
 /** How many items GitHub's "Load more" says it still hides ("169 hidden items" beside the button); 0 with none. */
 export function hiddenTimelineItems(root: ParentNode = document): number {
   const scopes = new Set<Element>();
