@@ -2283,6 +2283,11 @@ tr[data-geld-test-fold='hidden'] {
   border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
 }
 
+/* A test inside a folded suite: out of sight with the suite. */
+.geld-test-row[hidden] {
+  display: none !important;
+}
+
 /* Folded tests one after another share a border, not two (test-folds.ts marks a row whose shown neighbour above is one). */
 .geld-test-row[data-joined] > .geld-test-row__cell {
   border-top: 0;
@@ -2328,10 +2333,6 @@ tr[data-geld-test-fold='hidden'] {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.geld-test-row__title[data-kind='hook'] {
-  font-weight: 400;
 }
 
 .geld-test-row__changes {

@@ -87,7 +87,7 @@ describe('outlineTestFolds', () => {
 
   it('reads Python, Go subtests, Rust and JUnit annotations, xUnit, RSpec, Elixir and Gherkin', () => {
     const cases: readonly (readonly [string, readonly string[]])[] = [
-      [['+class TestDeploy:', '+    def setUp(self):', '+        self.x = 1', '+', '+    def test_saves_token(self):', '+        assert save()', '+'].join('\n'), ['added hook "setUp" R2 body=2 +3 -0', 'added test "test_saves_token" R5 body=2 +3 -0']],
+      [['+class TestDeploy:', '+    def setUp(self):', '+        self.x = 1', '+', '+    def test_saves_token(self):', '+        assert save()', '+'].join('\n'), ['added suite "TestDeploy" R1 body=6 +7 -0', 'added hook "setUp" R2 body=2 +3 -0', 'added test "test_saves_token" R5 body=2 +3 -0']],
       [
         ['+func TestParse(t *testing.T) {', '+\tt.Run("empty input", func(t *testing.T) {', '+\t\tif Parse("") != nil {', '+\t\t\tt.Fatal()', '+\t\t}', '+\t})', '+}'].join('\n'),
         ['added test "empty input" R2 body=4 +5 -0'],
@@ -98,7 +98,7 @@ describe('outlineTestFolds', () => {
       [['+  @Test("adds two numbers") func adds() {', '+    #expect(add(1, 1) == 2)', '+  }'].join('\n'), ['added test "adds two numbers" R1 body=2 +3 -0']],
       [['+  it "persists the token" do', '+    expect(token).to be_present', '+  end'].join('\n'), ['added test "persists the token" R1 body=2 +3 -0']],
       [['+  test "saves the token", %{conn: conn} do', '+    assert save(conn)', '+  end'].join('\n'), ['added test "saves the token" R1 body=2 +3 -0']],
-      [['+Feature: Deploy', '+  Scenario: Saving the token', '+    Given a token', '+    Then it is saved'].join('\n'), ['added test "Saving the token" R2 body=2 +3 -0']],
+      [['+Feature: Deploy', '+  Scenario: Saving the token', '+    Given a token', '+    Then it is saved'].join('\n'), ['added suite "Deploy" R1 body=3 +4 -0', 'added test "Saving the token" R2 body=2 +3 -0']],
       [['+    fun `adds two numbers`() {', '+        assertEquals(2, add(1, 1))', '+    }'].join('\n'), []],
       [['+    @Test', '+    fun `adds two numbers`() {', '+        assertEquals(2, add(1, 1))', '+    }'].join('\n'), ['added test "adds two numbers" R2 body=2 +4 -0']],
     ];
@@ -167,6 +167,28 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "a" R3 body=3 +4 -0']);
   });
 
+  it('folds a suite removed whole into one line holding its hook and test, and leaves a suite that stays open', () => {
+    const diff = [
+      " describe('LinearRouter', () => {",
+      "-  describe('Trailing slash', () => {",
+      '-    const router = new LinearRouter()',
+      '-',
+      '-    beforeEach(() => {',
+      "-      router.add('GET', '/book')",
+      '-    })',
+      '-',
+      "-    it('GET /book/', () => {",
+      "-      expect(router.match('GET', '/book/')).toHaveLength(1)",
+      '-    })',
+      '-  })',
+      '-',
+      ' })',
+    ].join('\n');
+    const folds = outlineTestFolds(sides(diff));
+    expect(brief(folds)).toEqual(['removed suite "Trailing slash" L2 body=11 +0 -12', 'removed hook "beforeEach" L5 body=4 +0 -5', 'removed test "GET /book/" L9 body=2 +0 -3']);
+    expect(folds.map((fold) => fold.parentId ?? null)).toEqual([null, 'old:L2', 'old:L2']);
+  });
+
   it('folds the annotations that make a function a test into its declaration', () => {
     const folds = outlineTestFolds(sides(['+    @Test', '+    void adds() {', '+        check();', '+    }'].join('\n')));
     expect(folds[0]?.headingKeys).toEqual(['R1', 'R2']);
@@ -182,6 +204,7 @@ describe('outlineTestFolds', () => {
     const diff = ["+scenario('checks out', () => {", '+  pay();', '+});', "+feature('cart', () => {", "+  check('has items', () => {", '+    expect(cart).not.toBeEmpty();', '+  });', '+});'].join('\n');
     expect(brief(outlineTestFolds(sides(diff), testSyntaxesFrom(['check', 'suite: feature'])))).toEqual([
       'added test "checks out" R1 body=2 +3 -0',
+      'added suite "cart" R4 body=4 +5 -0',
       'added test "has items" R5 body=2 +3 -0',
     ]);
   });

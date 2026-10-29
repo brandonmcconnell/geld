@@ -182,6 +182,14 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
   for (const row of hidden) if (row.getAttribute(ATTR_TEST_FOLD) !== 'hidden') row.setAttribute(ATTR_TEST_FOLD, 'hidden');
 
   const kept = new Set<Element>();
+  const byId = new Map(state.folds.map((fold) => [fold.id, fold]));
+  // A test inside a folded suite is out of sight with it: its own row too, whatever its own state.
+  const insideFolded = (fold: TestFold): boolean => {
+    for (let parent = fold.parentId === undefined ? undefined : byId.get(fold.parentId); parent !== undefined; parent = parent.parentId === undefined ? undefined : byId.get(parent.parentId)) {
+      if (!opened.has(`${anchor}:${parent.id}`)) return true;
+    }
+    return false;
+  };
   for (const fold of state.folds) {
     // The test's rows in the order they stand; its title row goes before the first of them.
     const reads = [...fold.headingKeys, ...fold.bodyKeys].map((key) => state.lines.get(key)).filter((read): read is ReadLine => read !== undefined);
@@ -200,6 +208,7 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
       else opened.add(id);
       paint(root, anchor, state, syntaxes, opened);
     });
+    if (row instanceof HTMLElement && row.hidden !== insideFolded(fold)) row.hidden = insideFolded(fold);
     kept.add(row);
   }
   for (const row of root.querySelectorAll(`[${ATTR_TEST_ROW}]`)) if (!kept.has(row)) row.remove();
@@ -207,7 +216,7 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
   // cannot tell, and the row says it here.
   for (const row of kept) {
     let previous = row.previousElementSibling;
-    while (previous !== null && previous.getAttribute(ATTR_TEST_FOLD) === 'hidden') previous = previous.previousElementSibling;
+    while (previous !== null && (previous.getAttribute(ATTR_TEST_FOLD) === 'hidden' || (previous instanceof HTMLElement && previous.hidden))) previous = previous.previousElementSibling;
     const joined = previous !== null && previous.hasAttribute(ATTR_TEST_ROW);
     if (row.hasAttribute('data-joined') !== joined) row.toggleAttribute('data-joined', joined);
   }
@@ -322,8 +331,8 @@ function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold,
   if (fold.additions > 0) changes.push(createElement('span', { class: `${ROW_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
   if (fold.deletions > 0) changes.push(createElement('span', { class: `${ROW_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
   const title = fold.kind === 'hook' ? `${fold.title} hook` : fold.title;
-  const changed = [fold.additions > 0 ? `${fold.additions} added` : '', fold.deletions > 0 ? `${fold.deletions} removed` : ''].filter((part) => part !== '').join(', ');
-  const word = fold.status === 'added' ? 'new test' : fold.status === 'removed' ? 'removed test' : fold.status === 'renamed' ? `renamed from ${fold.previousTitle ?? ''}` : '';
+  const changed = [fold.additions > 0 ? `${fold.additions} ${fold.additions === 1 ? 'line' : 'lines'} added` : '', fold.deletions > 0 ? `${fold.deletions} ${fold.deletions === 1 ? 'line' : 'lines'} removed` : ''].filter((part) => part !== '').join(', ');
+  const word = fold.status === 'added' ? `new ${fold.kind}` : fold.status === 'removed' ? `removed ${fold.kind}` : fold.status === 'renamed' ? `renamed from ${fold.previousTitle ?? ''}` : '';
   const label = [`${open ? 'Hide' : 'Show'} ${title}`, `from line ${span}`, word, changed].filter((part) => part !== '').join(', ');
   const button = createElement('button', { type: 'button', class: `${ROW_CLASS}__toggle`, 'aria-expanded': String(open), 'aria-label': label, title: fold.previousTitle === undefined ? title : `${title} (was “${fold.previousTitle}”)` }, [
     createElement('span', { class: `${ROW_CLASS}__lines`, 'aria-hidden': 'true' }, [span]),

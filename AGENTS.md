@@ -622,7 +622,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   both personal keys).
   `@geld/core/test-outline.ts` finds declarations by their leading syntax (`BUILT_IN_TEST_SYNTAXES`: Jest/Vitest/Mocha/Jasmine/Bun/node:test/Playwright/Cypress/Deno calls with chains such as `.only`, `.each([…])` and a title on the next line after a bare `it(`, pytest and unittest, Go tests and `t.Run` subtests, annotations that make the next function a test — JUnit, TestNG, Kotlin, Swift Testing, xUnit, NUnit, MSTest, Rust `#[test]` — PHPUnit/XCTest `test…` methods, RSpec, minitest, ExUnit, Dart, busted, hspec, ScalaTest and Kotest strings, clojure.test, testthat, Gherkin) and reads each block's extent from indentation (following lines deeper than the declaration, then a closing line at its indent;
   Allman braces allowed), never across a gap in the line numbers.
-  Leaf tests and hooks fold, suites stay open, and a test holding tests (a Go test with subtests) stays open too.
+  Leaf tests and hooks fold, and so does a suite added or removed whole (every line of it changed on that side): it folds to one row, its tests and hooks rows of their own inside it once it is open (`TestFold.parentId`, a title row hidden while a suite holding it is folded);
+  a suite that stays in the file stays open so the titles of its changed tests nest under it, and a test holding tests (a Go test with subtests) stays open too.
+  Every title row is set the same (hooks were once lighter, which read as inconsistent).
   Each side of the diff is read on its own and the two are paired (`outlineTestFolds`): a context declaration folds both bodies together, a declaration rewritten within one run of changes is the same test renamed, and an unpaired one is added or removed.
   Custom syntaxes (`parseTestSyntax`) are a name (`scenario`), `suite:` / `hook:` before a name, or a `/regex/` with a `(?<title>…)` group, read before the built-ins;
   `testSyntaxProblem` validates them on both settings surfaces.
