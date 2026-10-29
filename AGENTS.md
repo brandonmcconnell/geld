@@ -473,7 +473,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   asking `include-fragment` itself to go eager made it error) and puts the markup in place, so a PR whose findings were all resolved still shows its threads.
   **A URL is fetched again once the nodes it produced have left the document**, not once per visit: every timeline item is a `js-updatable-content` container that GitHub replaces from its partial on the next socket message about the PR, and the partial carries a resolved thread as its header with the comments deferred behind the same URL, so on a busy PR the thread the crawl had just read vanished (and the bot's chip fell back from "resolved" to its summary's "findings") until a reload (`fetchedFragments`;
   a fragment that carries a fragment of its own cannot loop, since what it put in the page is connected).
-  A response whose fragment GitHub replaced meanwhile fills the fresh fragment standing for the same URL (`liveFragmentFor`);
+  A response whose fragment GitHub replaced meanwhile fills the fresh fragment standing for the same URL (`liveFragmentFor`), the thread's own (`threadFragmentOf`: not one in a comment's menu or edit form, which a thread whose first comment shows also holds;
+  taking the first `include-fragment` there once put a whole thread inside a comment's ⋯ menu);
   a failed fetch is retried after `FRAGMENT_RETRY_MS`;
   a fragment GitHub's element gave a `src` on hover (preload) is still fetched, since lazy loading never reaches a folded thread;
   and the edit-form and saved-replies fragments inside a loaded comment are left alone.
