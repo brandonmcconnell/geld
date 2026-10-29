@@ -80,7 +80,9 @@ describe('outlineTestFolds', () => {
 
   it('opens a declaration whose title sits on the next line, and leaves a one-line test alone', () => {
     const diff = ['+test(', "+  'handles a very long title that wrapped',", '+  async () => {', '+    await run();', '+  },', '+);', "+it('is short', () => expect(1).toBe(1));"].join('\n');
-    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "handles a very long title that wrapped" R1 body=4 +6 -0']);
+    const folds = outlineTestFolds(sides(diff));
+    expect(brief(folds)).toEqual(['added test "handles a very long title that wrapped" R1 body=4 +6 -0']);
+    expect(folds[0]?.headingKeys).toEqual(['R1', 'R2']);
   });
 
   it('reads Python, Go subtests, Rust and JUnit annotations, xUnit, RSpec, Elixir and Gherkin', () => {

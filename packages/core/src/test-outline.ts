@@ -1,7 +1,7 @@
 /**
- * Test outlines: a test file's diff read down to its test titles. Each test's
- * body folds under its declaration line ("it('persists the token', …)"),
- * suites stay open so titles nest, and a fold says what changed inside it.
+ * Test outlines: a test file's diff read down to its test titles. Each test
+ * (declaration and body) folds to one line with its title ("persists the
+ * token"), suites stay open so titles nest, and a fold says what changed in it.
  *
  * Declarations are recognised by their leading syntax, in every framework the
  * built-ins know (below) plus the reader's own (`parseTestSyntax`). A block's
@@ -48,7 +48,9 @@ export interface TestFold {
   readonly status: TestFoldStatus;
   /** The line its toggle stands on (the new side's declaration, or the old one for a removed test). */
   readonly headKey: string;
-  /** Every line of its body on either side: these fold. */
+  /** The declaration's own lines on either side (its head, and a title on the line after a bare `it(`). */
+  readonly headingKeys: readonly string[];
+  /** Every line of its body on either side. */
   readonly bodyKeys: readonly string[];
   readonly additions: number;
   readonly deletions: number;
@@ -284,6 +286,7 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
       ...(renamed ? { previousTitle: partner.title } : {}),
       status,
       headKey: fold.head.key,
+      headingKeys: [...fold.heading.map((line) => line.key), ...(partner?.heading.map((line) => line.key) ?? [])],
       bodyKeys: [...fold.body.map((line) => line.key), ...(partner?.body.map((line) => line.key) ?? [])],
       additions,
       deletions,
@@ -298,6 +301,7 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
       title: fold.title,
       status: fold.head.changed ? 'removed' : deletions > 0 ? 'modified' : 'unchanged',
       headKey: fold.head.key,
+      headingKeys: fold.heading.map((line) => line.key),
       bodyKeys: fold.body.map((line) => line.key),
       additions: 0,
       deletions,

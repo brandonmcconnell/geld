@@ -2272,55 +2272,127 @@ tr[data-geld-test-fold='hidden'] {
   display: none !important;
 }
 
-/* On the declaration's row, floated to the right edge of its code cell: GitHub's code beside it is never touched. */
-.geld-test-fold {
-  float: right;
-  display: inline-flex;
+/* One full-width row per test, of Geld's own: chevron, title, then what it holds and what changed, at the right. */
+.geld-test-row__cell {
+  padding: 0 !important;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  background: var(--bgColor-muted, var(--color-canvas-subtle)) !important;
+}
+
+/* Folded tests one after another share a border, not two. */
+.geld-test-row + .geld-test-row > .geld-test-row__cell {
+  border-top: 0;
+}
+
+.geld-test-row__toggle {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  height: 18px;
-  margin: 1px 4px 0 12px;
-  padding: 0 8px;
-  border: 1px solid var(--borderColor-default, var(--color-border-default));
-  border-radius: 2em;
-  background: var(--bgColor-default, var(--color-canvas-default));
-  color: var(--fgColor-muted, var(--color-fg-muted));
-  font: 500 12px/16px var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-}
-
-.geld-test-fold:hover {
-  border-color: var(--fgColor-muted, var(--color-fg-muted));
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  background: none;
   color: var(--fgColor-default, var(--color-fg-default));
+  font: 400 13px/20px var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  text-align: left;
+  cursor: pointer;
 }
 
-.geld-test-fold__chevron {
-  font-size: 10px;
+.geld-test-row__toggle:hover {
+  background: var(--bgColor-neutral-muted, var(--color-neutral-muted));
 }
 
-.geld-test-fold__add {
+.geld-test-row__toggle:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg));
+  outline-offset: -2px;
+}
+
+.geld-test-row__chevron,
+.geld-test-row__glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-test-row__chevron .octicon {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease;
+}
+
+.geld-test-row[data-open='true'] .geld-test-row__chevron .octicon {
+  transform: rotate(90deg);
+}
+
+.geld-test-row__glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-test-row__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-test-row__title[data-kind='hook'] {
+  font-weight: 400;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-test-row[data-status='removed'] .geld-test-row__title {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  text-decoration: line-through;
+}
+
+.geld-test-row__was {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-test-row__meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-test-row__add {
   color: var(--geld-diff-addition-fg);
 }
 
-.geld-test-fold__del {
+.geld-test-row__del {
   color: var(--geld-diff-deletion-fg);
 }
 
-.geld-test-fold__status {
-  padding: 0 6px;
+.geld-test-row__status {
+  padding: 0 7px;
   border-radius: 2em;
   background: var(--bgColor-neutral-muted, var(--color-neutral-muted));
   font-size: 11px;
+  line-height: 18px;
 }
 
-.geld-test-fold__status[data-status='added'] {
+.geld-test-row__status[data-status='added'] {
   background: var(--bgColor-success-muted, var(--color-success-subtle));
   color: var(--fgColor-success, var(--color-success-fg));
 }
 
-.geld-test-fold__status[data-status='removed'] {
+.geld-test-row__status[data-status='removed'] {
   background: var(--bgColor-danger-muted, var(--color-danger-subtle));
   color: var(--fgColor-danger, var(--color-danger-fg));
 }

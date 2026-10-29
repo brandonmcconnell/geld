@@ -1,20 +1,22 @@
 import type { OutlineLine, TestFold, TestSyntax } from '@geld/core';
 import { formatCount, outlineTestFolds } from '@geld/core';
-import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { ICON_BEAKER, ICON_CHEVRON_RIGHT } from './icons';
 
 /**
- * Test files read as their titles: every test's body folds under its
- * declaration row, with a toggle on that row that says how much is folded
- * and what changed in it ("12 lines · +3 −1", "new", "renamed"). Keyed on
+ * Test files read as their titles: every test, declaration and body, folds
+ * to one full-width row of Geld's own that says its title, how many lines it
+ * holds and what changed in it ("+3 −1", "new", "renamed"); opened, the
+ * test's whole source shows under that row, declaration included. Keyed on
  * GitHub's own line anchors (`diff-<digest>R30` / `L91`, `data-line-anchor`
  * in the React view, `id` in the classic one) like the comment-only rows, so
  * a re-render is simply re-applied. GitHub's nodes are never rewritten: rows
- * are hidden by attribute and the toggle stands beside the code, not in it.
+ * are hidden by attribute and the title row is a row of Geld's beside them.
  */
 
 export const ATTR_TEST_FOLD = 'data-geld-test-fold';
-const ATTR_TOGGLE = 'data-geld-test-toggle';
-const TOGGLE_CLASS = 'geld-test-fold';
+const ATTR_TEST_ROW = 'data-geld-test-row';
+const ROW_CLASS = 'geld-test-row';
 const CODE = '.blob-code-inner, .diff-text-inner';
 
 interface ReadLine {
@@ -156,7 +158,7 @@ function openLinkedFold(anchor: string, state: Painted, opened: Set<string>): vo
   const hash = window.location.hash.slice(1);
   if (!hash.startsWith(anchor) || hash === linkedHash) return;
   const keys = [...hash.slice(anchor.length).matchAll(/([LR])(\d+)/g)].map((match) => `${match[1]}${match[2]}`);
-  const fold = state.folds.find((candidate) => keys.some((key) => candidate.bodyKeys.includes(key)));
+  const fold = state.folds.find((candidate) => keys.some((key) => candidate.bodyKeys.includes(key) || candidate.headingKeys.includes(key)));
   if (fold === undefined) return;
   linkedHash = hash;
   opened.add(`${anchor}:${fold.id}`);
@@ -167,85 +169,96 @@ function openLinkedFold(anchor: string, state: Painted, opened: Set<string>): vo
 
 function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: readonly TestSyntax[], opened: Set<string>): void {
   const folded = new Set<string>();
-  for (const fold of state.folds) if (!opened.has(`${anchor}:${fold.id}`)) for (const key of fold.bodyKeys) folded.add(key);
+  for (const fold of state.folds) if (!opened.has(`${anchor}:${fold.id}`)) for (const key of [...fold.headingKeys, ...fold.bodyKeys]) folded.add(key);
 
   // A row folds only when every line it shows is folded (a split row pairs two lines; a code line never goes with a test's).
   const rowKeys = new Map<HTMLTableRowElement, string[]>();
   for (const [key, read] of state.lines) rowKeys.set(read.rowElement, [...(rowKeys.get(read.rowElement) ?? []), key]);
   const hidden = new Set<HTMLTableRowElement>();
   for (const [row, keys] of rowKeys) if (keys.every((key) => folded.has(key))) hidden.add(row);
+  // Blank lines between folded tests go with them, so the title rows read as one list; beside code they stay.
+  const blank = (row: HTMLTableRowElement): boolean => (rowKeys.get(row) ?? []).every((key) => (state.lines.get(key)?.line.text.trim() ?? '') === '');
+  const ordered = [...rowKeys.keys()].sort((a, b) => (state.lines.get(rowKeys.get(a)?.[0] ?? '')?.line.row ?? 0) - (state.lines.get(rowKeys.get(b)?.[0] ?? '')?.line.row ?? 0));
+  for (let at = 0; at < ordered.length; at += 1) {
+    const row = ordered[at];
+    if (row === undefined || hidden.has(row) || !blank(row)) continue;
+    let end = at;
+    while (end + 1 < ordered.length && blank(ordered[end + 1] ?? row) && !hidden.has(ordered[end + 1] ?? row)) end += 1;
+    const before = ordered[at - 1];
+    const after = ordered[end + 1];
+    if (before !== undefined && after !== undefined && hidden.has(before) && hidden.has(after)) for (const gap of ordered.slice(at, end + 1)) hidden.add(gap);
+    at = end;
+  }
   for (const row of root.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_TEST_FOLD}]`)) if (!hidden.has(row)) row.removeAttribute(ATTR_TEST_FOLD);
   for (const row of hidden) if (row.getAttribute(ATTR_TEST_FOLD) !== 'hidden') row.setAttribute(ATTR_TEST_FOLD, 'hidden');
 
-  const toggles = new Set<Element>();
+  const kept = new Set<Element>();
   for (const fold of state.folds) {
-    const head = state.lines.get(fold.headKey);
-    if (head === undefined) continue;
-    const rows = new Set<HTMLTableRowElement>();
-    for (const key of fold.bodyKeys) {
-      const row = state.lines.get(key)?.rowElement;
-      if (row !== undefined) rows.add(row);
-    }
-    if (rows.size === 0) continue;
+    // The test's rows in the order they stand; its title row goes before the first of them.
+    const reads = [...fold.headingKeys, ...fold.bodyKeys].map((key) => state.lines.get(key)).filter((read): read is ReadLine => read !== undefined);
+    if (reads.length === 0 || fold.bodyKeys.length === 0) continue;
+    const first = reads.reduce((top, read) => (read.line.row < top.line.row ? read : top));
+    const rows = new Set(reads.map((read) => read.rowElement));
     const id = `${anchor}:${fold.id}`;
-    const open = opened.has(id);
-    const toggle = ensureToggle(head.cell, id, fold, rows.size, open, () => {
+    const row = ensureTitleRow(first.rowElement, id, fold, rows.size, opened.has(id), () => {
       if (opened.has(id)) opened.delete(id);
       else opened.add(id);
       paint(root, anchor, state, syntaxes, opened);
     });
-    toggles.add(toggle);
+    kept.add(row);
   }
-  for (const toggle of root.querySelectorAll(`[${ATTR_TOGGLE}]`)) if (!toggles.has(toggle)) toggle.remove();
+  for (const row of root.querySelectorAll(`[${ATTR_TEST_ROW}]`)) if (!kept.has(row)) row.remove();
 }
 
-/** Each toggle's current action: a button kept across passes (its label unchanged) must act on the latest reading of the file. */
-const toggleActions = new WeakMap<Element, () => void>();
+/** Each title row's current action: a row kept across passes (nothing in it changed) must act on the latest reading of the file. */
+const rowActions = new WeakMap<Element, () => void>();
 
 const STATUS_WORD: Readonly<Record<TestFold['status'], string | null>> = { added: 'new', removed: 'removed', renamed: 'renamed', modified: null, unchanged: null };
 
-function ensureToggle(cell: Element, id: string, fold: TestFold, rows: number, open: boolean, onToggle: () => void): Element {
-  const existing = [...cell.children].find((child) => child.getAttribute(ATTR_TOGGLE) === id);
-  const label = open ? 'Fold' : `${formatCount(rows)} ${rows === 1 ? 'line' : 'lines'}`;
-  const state = `${open}|${label}|${fold.status}|${fold.additions}|${fold.deletions}`;
-  if (existing instanceof HTMLElement && existing.dataset.state === state) {
-    toggleActions.set(existing, onToggle);
+function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold, rows: number, open: boolean, onToggle: () => void): Element {
+  const columns = [...before.cells].reduce((sum, cell) => sum + cell.colSpan, 0) || 1;
+  const state = `${open}|${rows}|${fold.status}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
+  const existing = before.parentElement?.querySelector(`tr[${ATTR_TEST_ROW}="${CSS.escape(id)}"]`);
+  if (existing instanceof HTMLTableRowElement && existing.dataset.state === state) {
+    rowActions.set(existing, onToggle);
+    if (before.previousElementSibling !== existing) before.before(existing);
     return existing;
   }
-  const parts: Node[] = [createElement('span', { class: `${TOGGLE_CLASS}__chevron`, 'aria-hidden': 'true' }, [open ? '▾' : '▸']), createElement('span', { class: `${TOGGLE_CLASS}__label` }, [label])];
-  if (!open && fold.additions > 0) parts.push(createElement('span', { class: `${TOGGLE_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
-  if (!open && fold.deletions > 0) parts.push(createElement('span', { class: `${TOGGLE_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
+  const lines = `${formatCount(rows)} ${rows === 1 ? 'line' : 'lines'}`;
+  const meta: Node[] = [];
+  if (fold.additions > 0) meta.push(createElement('span', { class: `${ROW_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
+  if (fold.deletions > 0) meta.push(createElement('span', { class: `${ROW_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
   const word = STATUS_WORD[fold.status];
-  if (!open && word !== null) parts.push(createElement('span', { class: `${TOGGLE_CLASS}__status`, 'data-status': fold.status }, [word]));
-  const title = fold.previousTitle === undefined ? fold.title : `${fold.title} (was “${fold.previousTitle}”)`;
+  if (word !== null) meta.push(createElement('span', { class: `${ROW_CLASS}__status`, 'data-status': fold.status }, [word]));
+  meta.push(createElement('span', { class: `${ROW_CLASS}__lines` }, [lines]));
+  const title = fold.kind === 'hook' ? `${fold.title} hook` : fold.title;
   const button = createElement(
     'button',
-    {
-      type: 'button',
-      class: TOGGLE_CLASS,
-      [OWN_UI_ATTRIBUTE]: '',
-      [ATTR_TOGGLE]: id,
-      'data-state': state,
-      'aria-expanded': String(open),
-      'aria-label': open ? `Fold ${title}` : `Show ${title}: ${label}`,
-      title: open ? 'Fold this test' : 'Show this test’s source',
-    },
-    parts,
+    { type: 'button', class: `${ROW_CLASS}__toggle`, 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} the source of ${title}${fold.previousTitle === undefined ? '' : `, renamed from ${fold.previousTitle}`}, ${lines}` },
+    [
+      createElement('span', { class: `${ROW_CLASS}__chevron`, 'aria-hidden': 'true' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
+      createElement('span', { class: `${ROW_CLASS}__glyph`, 'aria-hidden': 'true' }, [svgFromString(ICON_BEAKER)]),
+      createElement('span', { class: `${ROW_CLASS}__title`, 'data-kind': fold.kind }, [title]),
+      ...(fold.previousTitle === undefined ? [] : [createElement('span', { class: `${ROW_CLASS}__was` }, [`was ${fold.previousTitle}`])]),
+      createElement('span', { class: `${ROW_CLASS}__meta`, 'aria-hidden': 'true' }, meta),
+    ],
   );
-  toggleActions.set(button, onToggle);
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    toggleActions.get(button)?.();
+    rowActions.get(row)?.();
   });
-  if (existing !== undefined) existing.replaceWith(button);
-  // First in the cell and floated right: after GitHub's code it would wrap under a long line in the React view.
-  else cell.prepend(button);
-  return button;
+  const row = createElement('tr', { class: ROW_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_TEST_ROW]: id, 'data-state': state, 'data-open': String(open), 'data-status': fold.status }, [
+    createElement('td', { class: `${ROW_CLASS}__cell`, colspan: String(columns) }, [button]),
+  ]);
+  rowActions.set(row, onToggle);
+  if (existing !== null && existing !== undefined) existing.remove();
+  before.before(row);
+  return row;
 }
 
 /** Undo everything in `root` (a file, or the document). */
 export function clearTestFolds(root: ParentNode): void {
   for (const row of root.querySelectorAll(`[${ATTR_TEST_FOLD}]`)) row.removeAttribute(ATTR_TEST_FOLD);
-  for (const toggle of root.querySelectorAll(`[${ATTR_TOGGLE}]`)) toggle.remove();
+  for (const row of root.querySelectorAll(`[${ATTR_TEST_ROW}]`)) row.remove();
 }
