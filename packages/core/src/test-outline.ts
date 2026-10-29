@@ -95,7 +95,7 @@ export const BUILT_IN_TEST_SYNTAXES: readonly TestSyntax[] = [
   // Clojure, Kotest/ScalaTest strings.
   { kind: 'test', pattern: /^\s*\(deftest\s+(?<title>[^\s()]+)/ },
   { kind: 'suite', pattern: /^\s*"(?<title>[^"]+)"\s+(?:should|must|can|when|-)\s*[{-]/ },
-  { kind: 'test', pattern: /^\s*"(?<title>[^"]+)"\s+(?:in(?:\s+\{)?|\{)\s*$/ },
+  { kind: 'test', pattern: /^\s*"(?<title>[^"]+)"\s+(?:in(?:\s*\{)?|\{)\s*$/ },
 ];
 
 /**
@@ -115,7 +115,12 @@ const TITLE_LINE = /^\s*(?<q>['"\x60])(?<title>(?:\\.|(?!\k<q>)[^\\])*)\k<q>/;
 const CLOSER = /^\s*(?:[}\])][\s\w.,;:)\]}'"\x60=>()-]*|end\b.*|```.*)$/;
 
 function titleOf(match: RegExpExecArray): string {
-  return (match.groups?.title ?? match.groups?.name ?? match[1] ?? match[0]).trim();
+  return (match.groups?.title ?? match[1] ?? match[0]).trim();
+}
+
+/** An annotated function's title: its backtick name, else its identifier. */
+function functionName(match: RegExpExecArray): string {
+  return (match.groups?.title ?? match.groups?.name ?? match[0]).trim();
 }
 
 function indentOf(text: string): number {
@@ -164,12 +169,12 @@ function annotatedAt(lines: readonly OutlineLine[], index: number): { readonly h
       title ??= annotation.groups?.title ?? null;
       // Swift Testing and Kotlin often keep the function on the annotation's line.
       const inline = ANNOTATED_FUNCTION.exec(line.text.slice(annotation[0].length));
-      if (inline !== null) return { head: at, title: title ?? titleOf(inline) };
+      if (inline !== null) return { head: at, title: title ?? functionName(inline) };
       continue;
     }
     if (/^\s*(?:@\w|\[\w|#\[|\/\/\/|\/\*\*?|\*)/.test(line.text) || isBlank(line.text)) continue;
     const fn = ANNOTATED_FUNCTION.exec(line.text);
-    return fn === null ? null : { head: at, title: title ?? titleOf(fn) };
+    return fn === null ? null : { head: at, title: title ?? functionName(fn) };
   }
   return null;
 }

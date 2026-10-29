@@ -138,6 +138,13 @@ describe('outlineTestFolds', () => {
     expect(performance.now() - started).toBeLessThan(500);
   });
 
+  it('reads a ScalaTest `in{` with no space, and a custom regex’s first group whatever other groups it names', () => {
+    const scala = ['+  "handles input" in{', '+    assert(run())', '+  }'].join('\n');
+    expect(brief(outlineTestFolds(sides(scala)))).toEqual(['added test "handles input" R1 body=2 +3 -0']);
+    const custom = ['+check "the cart" for (?<x>items) {', '+  pay()', '+}'].join('\n');
+    expect(brief(outlineTestFolds(sides(custom), testSyntaxesFrom(['/^check "(.*?)" for \\(\\?<x>(?<name>\\w+)\\)/'])))).toEqual(['added test "the cart" R1 body=2 +3 -0']);
+  });
+
   it('leaves a hook-shaped line inside a test as the test’s own code', () => {
     const diff = ["+it('mounts', () => {", '+  const Comp = {', '+    setup() {', '+      return {}', '+    },', '+  }', '+  mount(Comp)', '+})'].join('\n');
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "mounts" R1 body=7 +8 -0']);
