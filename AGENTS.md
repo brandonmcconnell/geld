@@ -306,7 +306,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **An open row wears its first comment's header** (`wearHeader`: everything before the body in the comment container — author, time, labels, reactions trigger, ⋯ — into the row's `head-slot`) and shows the body alone below;
   the crawler reads worn pieces through `wornPiecesOf` (transitive) so a comment keeps its author, time, avatar and — for a review — its comment while on loan. *Reviews* row: review verdicts (`crawlReviews`, `pullrequestreview-N`, state from the row's own sentence, never the comment's words) fold out of the timeline in compact mode and list under the row as an index of people's reviews and remarks (`renderCommentsList`: state glyph, avatar, name, one-line preview, thread count, time, a right chevron;
   each line goes to the round where it opens);
-  the heading names every reviewer once by their latest verdict (`reviewerGroups`: ✓ approved, ✕ changes requested, comment, ● awaiting — glyph, avatars, "2 approved";
+  the heading names every reviewer once by their latest verdict (`reviewerGroups`: ✓ approved, ✕ changes requested, comment, ● awaiting — one pill per verdict, `[glyph] N [avatars]` (`pillAvatars`: up to three faces at the usual overlap, four or five squeezed into the width of three, more as five plus an ellipsis circle in that same width, so the row never wraps), neutral for comment and awaiting as the comment chips are, GitHub's success and danger colours for approved and changes requested, the words in the label and title only;
   a later comment-only review does not withdraw a verdict;
   a re-request does not either — the reviewer stands in their verdict's group *and* in awaiting, as GitHub's merge box has it ("Changes approved · 1 approval, 1 pending review") while its sidebar names only the request, and the awaiting title says "asked again;
   approved";
@@ -336,7 +336,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   not a skeleton, since the verdicts shown are real.
   Preceded by `approvals/required approvals` only when the page states a requirement — the merge box says "At least N approving reviews" while unmet and "N approving reviews by…" (a count) once met, the sidebar's Reviewers block keeps saying "At least N approving review is required to merge" while the PR is open (`reviewersSidebarText`), and a merged or closed PR states it nowhere, so there the groups alone carry it (no "N approved" beside "✓ N approved");
   the requirement seen is remembered per visit.
-  Narrow (`@container` ≤ 640px): the fraction alone and the glyph-plus-avatars groups, no words.
+  Narrow (`@container` ≤ 640px): the fraction alone beside the pills.
   **Each conversation has one home**: the round (by type) or the push and its Needs attention row (by push).
   The Reviews row's list is an index (`renderCommentsList`, `entryRow(…, 'pointer')`, `[data-pointer]`, chevron right): one line per verdict, remark or pending request with a "N threads" count, and a click goes to the round through `onOpenAnchor` (`seatFor`, `revealRow`);
   threads are not listed there (`ReviewEntry.parent` still records a person's review for the crawl).
