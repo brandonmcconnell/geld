@@ -2272,12 +2272,15 @@ tr[data-geld-test-fold='hidden'] {
   display: none !important;
 }
 
-/* One full-width row per test, of Geld's own: chevron, title, then what it holds and what changed, at the right. */
+/*
+ * One full-width row per test, of Geld's own, unshaded like GitHub's own rows: the lines it spans in GitHub's
+ * line-number type, started where the numbers above start (test-folds.ts `alignRanges` sets the margin and font),
+ * the title, then what changed in it and the chevron at the right.
+ */
 .geld-test-row__cell {
   padding: 0 !important;
   border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
   border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
-  background: var(--bgColor-muted, var(--color-canvas-subtle)) !important;
 }
 
 /* Folded tests one after another share a border, not two. */
@@ -2288,10 +2291,9 @@ tr[data-geld-test-fold='hidden'] {
 .geld-test-row__toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   min-height: 32px;
-  padding: 0 12px 0 10px;
+  padding: 0 12px 0 0;
   border: 0;
   background: none;
   color: var(--fgColor-default, var(--color-fg-default));
@@ -2301,7 +2303,7 @@ tr[data-geld-test-fold='hidden'] {
 }
 
 .geld-test-row__toggle:hover {
-  background: var(--bgColor-neutral-muted, var(--color-neutral-muted));
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
 }
 
 .geld-test-row__toggle:focus-visible {
@@ -2309,11 +2311,55 @@ tr[data-geld-test-fold='hidden'] {
   outline-offset: -2px;
 }
 
-.geld-test-row__chevron,
-.geld-test-row__glyph {
+.geld-test-row__lines {
+  flex: 0 0 auto;
+  margin-left: 12px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font: 12px/20px var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.geld-test-row__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 16px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-test-row__title[data-kind='hook'] {
+  font-weight: 400;
+}
+
+.geld-test-row__changes {
   display: inline-flex;
   flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 16px;
+  font: 600 12px/20px var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+.geld-test-row__add {
+  color: var(--fgColor-success, var(--color-success-fg));
+}
+
+.geld-test-row__del {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-test-row__chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: 12px;
   color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-test-row__changes:empty + .geld-test-row__chevron {
+  margin-left: auto;
 }
 
 .geld-test-row__chevron .octicon {
@@ -2324,77 +2370,6 @@ tr[data-geld-test-fold='hidden'] {
 
 .geld-test-row[data-open='true'] .geld-test-row__chevron .octicon {
   transform: rotate(90deg);
-}
-
-.geld-test-row__glyph .octicon {
-  width: 14px;
-  height: 14px;
-}
-
-.geld-test-row__title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.geld-test-row__title[data-kind='hook'] {
-  font-weight: 400;
-  color: var(--fgColor-muted, var(--color-fg-muted));
-}
-
-.geld-test-row[data-status='removed'] .geld-test-row__title {
-  color: var(--fgColor-muted, var(--color-fg-muted));
-  text-decoration: line-through;
-}
-
-.geld-test-row__was {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--fgColor-muted, var(--color-fg-muted));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.geld-test-row__meta {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  padding-left: 12px;
-  color: var(--fgColor-muted, var(--color-fg-muted));
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.geld-test-row__add {
-  color: var(--geld-diff-addition-fg);
-}
-
-.geld-test-row__del {
-  color: var(--geld-diff-deletion-fg);
-}
-
-.geld-test-row__status {
-  padding: 0 7px;
-  border-radius: 2em;
-  background: var(--bgColor-neutral-muted, var(--color-neutral-muted));
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.geld-test-row__status[data-status='added'] {
-  background: var(--bgColor-success-muted, var(--color-success-subtle));
-  color: var(--fgColor-success, var(--color-success-fg));
-}
-
-.geld-test-row__status[data-status='removed'] {
-  background: var(--bgColor-danger-muted, var(--color-danger-subtle));
-  color: var(--fgColor-danger, var(--color-danger-fg));
 }
 
 /* Pull requests hidden by author (pr-authors.ts) ------------------------------ */

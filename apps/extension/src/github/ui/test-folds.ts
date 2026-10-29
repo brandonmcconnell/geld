@@ -1,13 +1,14 @@
 import type { OutlineLine, TestFold, TestSyntax } from '@geld/core';
 import { formatCount, outlineTestFolds } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_BEAKER, ICON_CHEVRON_RIGHT } from './icons';
+import { ICON_CHEVRON_RIGHT } from './icons';
 
 /**
  * Test files read as their titles: every test, declaration and body, folds
- * to one full-width row of Geld's own that says its title, how many lines it
- * holds and what changed in it ("+3 −1", "new", "renamed"); opened, the
- * test's whole source shows under that row, declaration included. Keyed on
+ * to one full-width row of Geld's own: the lines it spans ("274–286", set as
+ * GitHub's line numbers are and lined up with them), its title, and at the
+ * right what changed in it ("+3 −1"); opened, the test's whole source shows
+ * under that row, declaration included. Keyed on
  * GitHub's own line anchors (`diff-<digest>R30` / `L91`, `data-line-anchor`
  * in the React view, `id` in the classic one) like the comment-only rows, so
  * a re-render is simply re-applied. GitHub's nodes are never rewritten: rows
@@ -198,9 +199,12 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     const reads = [...fold.headingKeys, ...fold.bodyKeys].map((key) => state.lines.get(key)).filter((read): read is ReadLine => read !== undefined);
     if (reads.length === 0 || fold.bodyKeys.length === 0) continue;
     const first = reads.reduce((top, read) => (read.line.row < top.line.row ? read : top));
-    const rows = new Set(reads.map((read) => read.rowElement));
+    // The lines it spans on its declaration's side: new numbers for a test that stands, old ones for a removed test.
+    const side: 'L' | 'R' = fold.headKey.charAt(0) === 'L' ? 'L' : 'R';
+    const numbers = reads.filter((read) => read.line.key.charAt(0) === side).map((read) => read.line.number);
+    const range = { side, start: Math.min(...numbers), end: Math.max(...numbers) };
     const id = `${anchor}:${fold.id}`;
-    const row = ensureTitleRow(first.rowElement, id, fold, rows.size, opened.has(id), () => {
+    const row = ensureTitleRow(first.rowElement, id, fold, range, opened.has(id), () => {
       if (opened.has(id)) opened.delete(id);
       else opened.add(id);
       paint(root, anchor, state, syntaxes, opened);
@@ -208,47 +212,128 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     kept.add(row);
   }
   for (const row of root.querySelectorAll(`[${ATTR_TEST_ROW}]`)) if (!kept.has(row)) row.remove();
+  scheduleAlign();
+}
+
+let alignFrame: number | null = null;
+
+/** Lines the title rows' ranges up with GitHub's line numbers once per frame, after layout, never on the apply path. */
+function scheduleAlign(): void {
+  if (alignFrame !== null) return;
+  alignFrame = window.requestAnimationFrame(() => {
+    alignFrame = null;
+    alignRanges();
+  });
+}
+
+const NUMBER_CELL = ':scope > td.blob-num, :scope > td.diff-line-number, :scope > td.new-diff-line-number';
+
+/** Where one side's line numbers stand in this table: a shown row of GitHub's with a number on that side, read once. */
+interface NumberColumn {
+  readonly left: number;
+  readonly width: number;
+  readonly align: string;
+  readonly paddingLeft: number;
+  readonly paddingRight: number;
+  readonly ch: number;
+  readonly font: string;
+}
+
+function numberColumn(body: Element, side: 'L' | 'R'): NumberColumn | null {
+  for (const row of body.querySelectorAll<HTMLTableRowElement>(':scope > tr')) {
+    if (row.hasAttribute(OWN_UI_ATTRIBUTE) || row.getAttribute(ATTR_TEST_FOLD) === 'hidden') continue;
+    const cells = [...row.querySelectorAll<HTMLTableCellElement>(NUMBER_CELL)];
+    if (cells.length < 2) continue;
+    const cell = side === 'L' ? cells[0] : cells[cells.length - 1];
+    // The classic view draws its numbers from `data-line-number` with a `::before`, so there may be no text to read.
+    const text = cell?.textContent?.trim() || cell?.getAttribute('data-line-number') || '';
+    if (cell === undefined || !/^\d+$/.test(text)) continue;
+    const box = cell.getBoundingClientRect();
+    if (box.width === 0) continue;
+    const style = getComputedStyle(cell);
+    const numbers = style.content === 'none' || style.content === 'normal' ? getComputedStyle(cell, '::before') : style;
+    const font = `${numbers.fontWeight || style.fontWeight} ${numbers.fontSize || style.fontSize} ${numbers.fontFamily || style.fontFamily}`;
+    const ch = digitWidth(font);
+    if (ch === 0) continue;
+    return { left: box.left, width: box.width, align: style.textAlign, paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), ch, font };
+  }
+  return null;
+}
+
+let measure: CanvasRenderingContext2D | null = null;
+
+/** One digit's width in `font` (tabular figures, so every digit is as wide). */
+function digitWidth(font: string): number {
+  measure ??= document.createElement('canvas').getContext('2d');
+  if (measure === null) return 0;
+  measure.font = font;
+  return measure.measureText('0000000000').width / 10;
+}
+
+/**
+ * Each title row's first number starts where a number of its width stands in GitHub's column above: centred in the
+ * React view's cells, right-aligned in the classic view's, in GitHub's own font, so "274–286" reads as the number
+ * column carried on into the page.
+ */
+function alignRanges(): void {
+  const columns = new Map<string, NumberColumn | null>();
+  const bodies = new Map<Element, number>();
+  for (const row of document.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_TEST_ROW}]`)) {
+    const body = row.parentElement;
+    const lines = row.querySelector<HTMLElement>(`.${ROW_CLASS}__lines`);
+    if (body === null || lines === null || row.getClientRects().length === 0) continue;
+    const side = row.dataset.side === 'L' ? 'L' : 'R';
+    if (!bodies.has(body)) bodies.set(body, bodies.size);
+    const key = `${bodies.get(body) ?? 0}:${side}`;
+    if (!columns.has(key)) columns.set(key, numberColumn(body, side));
+    const column = columns.get(key);
+    if (column === null || column === undefined) continue;
+    const digits = (row.dataset.start ?? '').length;
+    const width = digits * column.ch;
+    const start =
+      column.align === 'right' || column.align === 'end'
+        ? column.left + column.width - column.paddingRight - width
+        : column.align === 'left' || column.align === 'start'
+          ? column.left + column.paddingLeft
+          : column.left + (column.width - width) / 2;
+    const offset = `${Math.max(0, Math.round((start - row.getBoundingClientRect().left) * 10) / 10)}px`;
+    if (lines.style.marginLeft !== offset) lines.style.marginLeft = offset;
+    if (lines.style.font !== column.font) lines.style.font = column.font;
+  }
 }
 
 /** Each title row's current action: a row kept across passes (nothing in it changed) must act on the latest reading of the file. */
 const rowActions = new WeakMap<Element, () => void>();
 
-const STATUS_WORD: Readonly<Record<TestFold['status'], string | null>> = { added: 'new', removed: 'removed', renamed: 'renamed', modified: null, unchanged: null };
-
-function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold, rows: number, open: boolean, onToggle: () => void): Element {
+function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold, range: { readonly side: 'L' | 'R'; readonly start: number; readonly end: number }, open: boolean, onToggle: () => void): Element {
   const columns = [...before.cells].reduce((sum, cell) => sum + cell.colSpan, 0) || 1;
-  const state = `${open}|${rows}|${fold.status}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
+  const state = `${open}|${range.side}${range.start}-${range.end}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
   const existing = before.parentElement?.querySelector(`tr[${ATTR_TEST_ROW}="${CSS.escape(id)}"]`);
   if (existing instanceof HTMLTableRowElement && existing.dataset.state === state) {
     rowActions.set(existing, onToggle);
     if (before.previousElementSibling !== existing) before.before(existing);
     return existing;
   }
-  const lines = `${formatCount(rows)} ${rows === 1 ? 'line' : 'lines'}`;
-  const meta: Node[] = [];
-  if (fold.additions > 0) meta.push(createElement('span', { class: `${ROW_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
-  if (fold.deletions > 0) meta.push(createElement('span', { class: `${ROW_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
-  const word = STATUS_WORD[fold.status];
-  if (word !== null) meta.push(createElement('span', { class: `${ROW_CLASS}__status`, 'data-status': fold.status }, [word]));
-  meta.push(createElement('span', { class: `${ROW_CLASS}__lines` }, [lines]));
+  const span = range.start === range.end ? String(range.start) : `${range.start}–${range.end}`;
+  const changes: Node[] = [];
+  if (fold.additions > 0) changes.push(createElement('span', { class: `${ROW_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
+  if (fold.deletions > 0) changes.push(createElement('span', { class: `${ROW_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
   const title = fold.kind === 'hook' ? `${fold.title} hook` : fold.title;
-  const button = createElement(
-    'button',
-    { type: 'button', class: `${ROW_CLASS}__toggle`, 'aria-expanded': String(open), 'aria-label': `${open ? 'Hide' : 'Show'} the source of ${title}${fold.previousTitle === undefined ? '' : `, renamed from ${fold.previousTitle}`}, ${lines}` },
-    [
-      createElement('span', { class: `${ROW_CLASS}__chevron`, 'aria-hidden': 'true' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
-      createElement('span', { class: `${ROW_CLASS}__glyph`, 'aria-hidden': 'true' }, [svgFromString(ICON_BEAKER)]),
-      createElement('span', { class: `${ROW_CLASS}__title`, 'data-kind': fold.kind }, [title]),
-      ...(fold.previousTitle === undefined ? [] : [createElement('span', { class: `${ROW_CLASS}__was` }, [`was ${fold.previousTitle}`])]),
-      createElement('span', { class: `${ROW_CLASS}__meta`, 'aria-hidden': 'true' }, meta),
-    ],
-  );
+  const changed = [fold.additions > 0 ? `${fold.additions} added` : '', fold.deletions > 0 ? `${fold.deletions} removed` : ''].filter((part) => part !== '').join(', ');
+  const word = fold.status === 'added' ? 'new test' : fold.status === 'removed' ? 'removed test' : fold.status === 'renamed' ? `renamed from ${fold.previousTitle ?? ''}` : '';
+  const label = [`${open ? 'Hide' : 'Show'} ${title}`, `lines ${span}`, word, changed].filter((part) => part !== '').join(', ');
+  const button = createElement('button', { type: 'button', class: `${ROW_CLASS}__toggle`, 'aria-expanded': String(open), 'aria-label': label, title: fold.previousTitle === undefined ? title : `${title} (was “${fold.previousTitle}”)` }, [
+    createElement('span', { class: `${ROW_CLASS}__lines`, 'aria-hidden': 'true' }, [span]),
+    createElement('span', { class: `${ROW_CLASS}__title`, 'data-kind': fold.kind, 'aria-hidden': 'true' }, [title]),
+    createElement('span', { class: `${ROW_CLASS}__changes`, 'aria-hidden': 'true' }, changes),
+    createElement('span', { class: `${ROW_CLASS}__chevron`, 'aria-hidden': 'true' }, [svgFromString(ICON_CHEVRON_RIGHT)]),
+  ]);
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
     rowActions.get(row)?.();
   });
-  const row = createElement('tr', { class: ROW_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_TEST_ROW]: id, 'data-state': state, 'data-open': String(open), 'data-status': fold.status }, [
+  const row = createElement('tr', { class: ROW_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_TEST_ROW]: id, 'data-state': state, 'data-open': String(open), 'data-side': range.side, 'data-start': String(range.start) }, [
     createElement('td', { class: `${ROW_CLASS}__cell`, colspan: String(columns) }, [button]),
   ]);
   rowActions.set(row, onToggle);
