@@ -1,6 +1,7 @@
 import type { OutlineLine, TestFold, TestSyntax } from '@geld/core';
 import { formatCount, outlineTestFolds } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { ATTR_LINE, ATTR_LINE_NOTE } from './comment-rows';
 import { ICON_CHEVRON_RIGHT } from './icons';
 
 /**
@@ -184,6 +185,12 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
   for (const [key, read] of state.lines) rowKeys.set(read.rowElement, [...(rowKeys.get(read.rowElement) ?? []), key]);
   const hidden = new Set<HTMLTableRowElement>();
   for (const [row, keys] of rowKeys) if (keys.every((key) => folded.has(key))) hidden.add(row);
+  // The note a comment-only run leaves before its first line (comment-rows.ts) goes with its lines when a test folds over them all.
+  for (const note of root.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_LINE_NOTE}]`)) {
+    const run: Element[] = [];
+    for (let next = note.nextElementSibling; next !== null && (next.hasAttribute(ATTR_LINE) || next.hasAttribute(ATTR_TEST_ROW)); next = next.nextElementSibling) if (next.hasAttribute(ATTR_LINE)) run.push(next);
+    if (run.length > 0 && run.every((line) => line instanceof HTMLTableRowElement && hidden.has(line))) hidden.add(note);
+  }
   for (const row of root.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_TEST_FOLD}]`)) if (!hidden.has(row)) row.removeAttribute(ATTR_TEST_FOLD);
   for (const row of hidden) if (row.getAttribute(ATTR_TEST_FOLD) !== 'hidden') row.setAttribute(ATTR_TEST_FOLD, 'hidden');
 
@@ -201,7 +208,10 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     const numbers = fold.headingKeys.filter((key) => key.charAt(0) === side).map((key) => state.lines.get(key)?.line.number ?? Number.POSITIVE_INFINITY);
     const range = { side, start: Math.min(...numbers) };
     const id = `${anchor}:${fold.id}`;
-    const row = ensureTitleRow(first.rowElement, id, fold, range, opened.has(id), () => {
+    // Above the note of a comment-only run that starts the test, so the note stays beside the lines it names.
+    const note = first.rowElement.previousElementSibling;
+    const at = note instanceof HTMLTableRowElement && note.hasAttribute(ATTR_LINE_NOTE) ? note : first.rowElement;
+    const row = ensureTitleRow(at, id, fold, range, opened.has(id), () => {
       if (opened.has(id)) opened.delete(id);
       else opened.add(id);
       paint(root, anchor, state, syntaxes, opened);

@@ -12,7 +12,7 @@ import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
  */
 
 export const ATTR_LINE = 'data-geld-line';
-const ATTR_NOTE = 'data-geld-line-note';
+export const ATTR_LINE_NOTE = 'data-geld-line-note';
 const ATTR_RUN = 'data-geld-run';
 const NOTE_CLASS = 'geld-line-note';
 
@@ -72,26 +72,26 @@ export function applyCommentRows(root: HTMLElement, anchor: string, lines: Comme
         for (const row of run) row.setAttribute(ATTR_LINE, shown ? 'shown' : 'hidden');
         const rows = run;
         if (shown) {
-          first.parentElement?.querySelector(`[${ATTR_NOTE}][${ATTR_RUN}="${key}"]`)?.remove();
+          first.parentElement?.querySelector(`[${ATTR_LINE_NOTE}][${ATTR_RUN}="${key}"]`)?.remove();
         } else {
           ensureNote(first, key, rows.length, () => {
             shownRuns.add(key);
             for (const row of rows) row.setAttribute(ATTR_LINE, 'shown');
-            first.parentElement?.querySelector(`[${ATTR_NOTE}][${ATTR_RUN}="${key}"]`)?.remove();
+            first.parentElement?.querySelector(`[${ATTR_LINE_NOTE}][${ATTR_RUN}="${key}"]`)?.remove();
           });
         }
       }
       run = [];
     };
     for (const row of table.rows) {
-      if (row.hasAttribute(ATTR_NOTE)) continue;
+      if (row.hasAttribute(ATTR_LINE_NOTE)) continue;
       if (collapsible.has(row)) run.push(row);
       else flush();
     }
     flush();
   }
   // Notes whose run is gone.
-  for (const note of root.querySelectorAll<HTMLElement>(`[${ATTR_NOTE}]`)) {
+  for (const note of root.querySelectorAll<HTMLElement>(`[${ATTR_LINE_NOTE}]`)) {
     if (!validRuns.has(note.getAttribute(ATTR_RUN) ?? '')) note.remove();
   }
 }
@@ -128,7 +128,7 @@ function ensureNote(first: HTMLTableRowElement, key: string, count: number, onSh
     createElement('span', { class: `${NOTE_CLASS}__text` }, [noteText(count)]),
     button,
   ]);
-  const note = createElement('tr', { class: NOTE_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_NOTE]: '', [ATTR_RUN]: key }, [cell]);
+  const note = createElement('tr', { class: NOTE_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_LINE_NOTE]: '', [ATTR_RUN]: key }, [cell]);
   first.insertAdjacentElement('beforebegin', note);
 }
 
@@ -139,5 +139,5 @@ function noteText(count: number): string {
 /** Undo everything in `root` (a file, or the document). */
 export function clearCommentRows(root: ParentNode): void {
   for (const row of root.querySelectorAll(`[${ATTR_LINE}]`)) row.removeAttribute(ATTR_LINE);
-  for (const note of root.querySelectorAll(`[${ATTR_NOTE}]`)) note.remove();
+  for (const note of root.querySelectorAll(`[${ATTR_LINE_NOTE}]`)) note.remove();
 }
