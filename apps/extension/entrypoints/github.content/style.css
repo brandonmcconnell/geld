@@ -6496,6 +6496,35 @@ a.geld-review__rerun:hover {
   line-height: 18px;
 }
 
+/* The opened pinned comment is part of the chat's own box, not a card inside it: full width and square, set off
+ * from its strip by one rule. A rounded, bordered card 12px inside the chat's border read as a second frame. */
+.geld-review__chat-context-body[data-geld-revision] {
+  gap: 0;
+  padding: 0;
+}
+
+.geld-review__chat-then {
+  padding: 12px;
+  border-width: 1px 0 0;
+  border-radius: 0;
+}
+
+.geld-review__chat-then-note {
+  padding: 6px 12px;
+}
+
+.geld-review__chat-context-body:has(> [data-geld-message][data-geld-lone]),
+.geld-review__chat-context-body :has(> [data-geld-message][data-geld-lone]) {
+  padding: 0 !important;
+}
+
+.geld-review__chat-context-body [data-geld-lone] > [data-geld-part='bubble'] {
+  border-width: 1px 0 0 !important;
+  border-style: solid !important;
+  border-color: var(--geld-review-border-muted) !important;
+  border-radius: 0 !important;
+}
+
 /* ---- rounds --------------------------------------------------------------- */
 
 .geld-review__status--progress {
