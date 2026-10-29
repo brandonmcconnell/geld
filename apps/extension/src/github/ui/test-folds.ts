@@ -310,7 +310,7 @@ const rowActions = new WeakMap<Element, () => void>();
 
 function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold, range: { readonly side: 'L' | 'R'; readonly start: number }, open: boolean, onToggle: () => void): Element {
   const columns = [...before.cells].reduce((sum, cell) => sum + cell.colSpan, 0) || 1;
-  const state = `${open}|${range.side}${range.start}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
+  const state = `${open}|${fold.kind}|${fold.status}|${range.side}${range.start}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
   const existing = before.parentElement?.querySelector(`tr[${ATTR_TEST_ROW}="${CSS.escape(id)}"]`);
   if (existing instanceof HTMLTableRowElement && existing.dataset.state === state) {
     rowActions.set(existing, onToggle);
