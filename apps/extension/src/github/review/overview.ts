@@ -50,8 +50,8 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadChipFocusKey, threadChips } from './chat';
-import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
+import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, openThreadUnder, threadAnchorOf, threadChipFocusKey, threadChips } from './chat';
+import type { ChatByline, ChatRerun, ChatThreadLink, OpenThread } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -90,7 +90,7 @@ interface VisitState {
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
   /** A thread opened from its chip under the open line's comment (`sub` is that line's key): it shows right below the chips. */
-  openThread: { readonly sub: string; readonly anchor: string } | null;
+  openThread: OpenThread | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
   archivedPreviewsOpen: boolean;
@@ -1251,8 +1251,7 @@ let lastSettings: GeldSettings | null = null;
 
 /** The thread open under the open line's chips, while that line is still the one open. */
 function openThreadNow(): string | null {
-  const open = visit.openThread;
-  return open !== null && open.sub === visit.openSubKey ? open.anchor : null;
+  return openThreadUnder(visit.openThread, visit.openSubKey);
 }
 
 /** Open the row `key` names; an item opens inside its round, `sub` names a line inside a round, and the section holding either unfolds. */

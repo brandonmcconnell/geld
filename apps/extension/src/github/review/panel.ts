@@ -157,7 +157,7 @@ export interface ReviewEntry {
   readonly lane?: CommentLane;
   /** A review thread posted as part of a person's review: that review's anchor. The line is listed under it. */
   readonly parent?: string;
-  /** A review verdict's threads, or a bot run summary's findings in its round. The line counts them; each is a row of its own in the round. */
+  /** A review verdict's threads, or a bot run summary's findings. The line counts them and opens to them (each is also a row of its own in its round). */
   readonly threads?: readonly ReviewThreadRef[];
 }
 
@@ -171,8 +171,8 @@ export interface ReviewThreadRef {
  * One line under the Review bots row: a bot's latest word on the pull
  * request — its newest run summary (a comment or a review body), with the
  * threads that run opened. A bot that wrote no summary (threads only, or
- * nothing yet) has a line with no comment to open; with threads it points at
- * the first.
+ * nothing yet) has a line with no comment to open; with threads it opens to
+ * them.
  */
 export interface BotLine {
   readonly bot: BotVerdictRecord;
@@ -2117,9 +2117,10 @@ function reportAvatar(entry: Report, model: PanelModel): CheckAvatar | null {
  * bot's mark, its name and detail ("4/5 · 1 issue"), the summary's first
  * line and how many threads the run opened, the time, the comment's own ⋯
  * and a chevron; open (`openSubKey` is its anchor) the summary stands under
- * it as a one-bubble chat with the run's threads linked at its foot. A bot
- * without a summary but with threads points at its first thread, as a
- * wordless review does; one with neither is a line with nothing to open.
+ * it as a one-bubble chat with the run's threads as chips at its foot. A bot
+ * without a summary but with threads opens to those chips alone, as a
+ * wordless review opens to its threads; one with neither is a line with
+ * nothing to open.
  */
 function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, reserveChevron: boolean): { readonly row: HTMLElement; readonly open: boolean } {
   const { bot } = line;

@@ -470,6 +470,17 @@ export interface ChatThreadLink {
   readonly done: boolean;
 }
 
+/** A thread opened from its chip and the line it was opened under (that line's key). */
+export interface OpenThread {
+  readonly sub: string;
+  readonly anchor: string;
+}
+
+/** The thread open under the chips of the line open now: none once another line (or none) is open. */
+export function openThreadUnder(open: OpenThread | null, openSub: string | null): string | null {
+  return open !== null && open.sub === openSub ? open.anchor : null;
+}
+
 /** Focus key of a thread's chip, so the chip stays under the pointer when its thread opens below it. */
 export function threadChipFocusKey(anchor: string): string {
   return `chip:${anchor}`;
