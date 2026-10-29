@@ -157,7 +157,7 @@ export interface ReviewEntry {
   readonly lane?: CommentLane;
   /** A review thread posted as part of a person's review: that review's anchor. The line is listed under it. */
   readonly parent?: string;
-  /** A review verdict's threads, or a bot run summary's findings in its round. The line counts them; each is a row of its own in the round. */
+  /** A review verdict's threads, or a bot run summary's findings. The line counts them and opens to them (each is also a row of its own in its round). */
   readonly threads?: readonly ReviewThreadRef[];
 }
 
@@ -171,8 +171,8 @@ export interface ReviewThreadRef {
  * One line under the Review bots row: a bot's latest word on the pull
  * request — its newest run summary (a comment or a review body), with the
  * threads that run opened. A bot that wrote no summary (threads only, or
- * nothing yet) has a line with no comment to open; with threads it points at
- * the first.
+ * nothing yet) has a line with no comment to open; with threads it opens to
+ * them.
  */
 export interface BotLine {
   readonly bot: BotVerdictRecord;
@@ -204,13 +204,13 @@ export function isVerdict(entry: ReviewEntry): boolean {
 }
 
 /**
- * Whether the line opens: only on a comment of its own, as a one-bubble
- * chat. A verdict without words is a line with a glyph and, when it came
- * with threads, a count of them: the threads are rows of their own in the
- * same round, so nothing here repeats them.
+ * Whether the line opens: on a comment of its own (a one-bubble chat), or a
+ * verdict without words that came with threads (it opens to them). A pending
+ * request is a fact, not a conversation, and a line the sidebar alone
+ * vouches for (the review's row is not on the page yet) has nothing to show.
  */
 export function entryOpens(entry: ReviewEntry): boolean {
-  return entry.hasBody;
+  return entry.hasBody || (entry.state !== 'awaiting' && !isProvisional(entry) && isVerdict(entry) && (entry.threads?.length ?? 0) > 0);
 }
 
 /** The reviewers on the Reviews row's heading, one group per state, in the order the groups are shown. */
@@ -387,6 +387,8 @@ export interface PanelModel {
   readonly progress: number | null;
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
+  /** The thread open under the open line's chips (its first comment's anchor). */
+  readonly openThread: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
   readonly openSources: ReadonlySet<string>;
   /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
@@ -565,6 +567,26 @@ function avatarStack(avatars: readonly Avatar[], fallback: string, bot: boolean,
     return stack;
   }
   for (const entry of avatars.slice(0, max)) stack.append(avatarImg(entry));
+  return stack;
+}
+
+/** Avatars a verdict pill shows before the rest go behind an ellipsis. */
+const PILL_AVATARS = 5;
+/** Avatars at the stack's usual overlap; more are squeezed into the width these take. */
+const PILL_ROOMY = 3;
+
+/**
+ * A verdict pill's faces: up to three at the usual overlap, four or five squeezed into the width of three, and more
+ * as five plus an ellipsis circle in that same width, so a long list never wraps the row.
+ */
+function pillAvatars(reviewers: readonly Avatar[]): HTMLElement {
+  const shown = reviewers.filter((reviewer) => reviewer.src !== '');
+  const faces = shown.length > PILL_AVATARS ? shown.slice(0, PILL_AVATARS) : shown;
+  const items: HTMLElement[] = faces.map(avatarImg);
+  if (shown.length > PILL_AVATARS) items.push(createElement('span', { class: `${PANEL_CLASS}__avatar ${PANEL_CLASS}__avatar--more` }, [icon(ICON_KEBAB_HORIZONTAL)]));
+  const stack = createElement('span', { class: `${PANEL_CLASS}__avatars ${PANEL_CLASS}__avatars--pill`, 'aria-hidden': 'true' }, items);
+  // The stack's width at three faces, shared out among however many stand in it (CSS turns the step into the overlap).
+  if (items.length > PILL_ROOMY) stack.style.setProperty('--geld-avatar-steps', String(items.length - 1));
   return stack;
 }
 
@@ -1736,8 +1758,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         ]),
       );
     }
-    // Every reviewer, grouped by their latest verdict: the state's glyph, their avatars, how many (the words go on
-    // narrow screens; the glyph says it).
+    // Every reviewer, grouped by their latest verdict, as a pill: the state's glyph, how many, their avatars, tinted
+    // by the verdict (the words are the label's and the title's).
     const verdictOf = new Map(model.reviewerGroups.filter((group) => group.state !== 'awaiting').flatMap((group) => group.reviewers.map((reviewer) => [reviewer.login.toLowerCase(), REVIEWER_GROUP_WORD[group.state]] as const)));
     for (const group of model.reviewerGroups) {
       // Someone awaited who already gave a verdict was asked again; their verdict still stands in its own group.
@@ -1751,8 +1773,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       content.push(
         createElement('span', { class: `${PANEL_CLASS}__reviewers`, 'data-state': group.state, title: `${REVIEWER_GROUP_TITLE[group.state]}: ${names}`, role: 'img', 'aria-label': `${label}: ${names}` }, [
           createElement('span', { class: `${PANEL_CLASS}__reviewers-glyph`, 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[group.state])]),
-          avatarStack(group.reviewers.filter((reviewer) => reviewer.src !== ''), group.reviewers[0]?.login ?? '', false, group.reviewers.length),
-          createElement('span', { class: `${PANEL_CLASS}__status-text ${PANEL_CLASS}__reviewers-text`, 'aria-hidden': 'true' }, [label]),
+          createElement('span', { class: `${PANEL_CLASS}__reviewers-count`, 'aria-hidden': 'true' }, [String(group.reviewers.length)]),
+          pillAvatars(group.reviewers),
         ]),
       );
     }
@@ -2095,9 +2117,10 @@ function reportAvatar(entry: Report, model: PanelModel): CheckAvatar | null {
  * bot's mark, its name and detail ("4/5 · 1 issue"), the summary's first
  * line and how many threads the run opened, the time, the comment's own ⋯
  * and a chevron; open (`openSubKey` is its anchor) the summary stands under
- * it as a one-bubble chat with the run's threads linked at its foot. A bot
- * without a summary but with threads points at its first thread, as a
- * wordless review does; one with neither is a line with nothing to open.
+ * it as a one-bubble chat with the run's threads as chips at its foot. A bot
+ * without a summary but with threads opens to those chips alone, as a
+ * wordless review opens to its threads; one with neither is a line with
+ * nothing to open.
  */
 function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, reserveChevron: boolean): { readonly row: HTMLElement; readonly open: boolean } {
   const { bot } = line;
@@ -2107,43 +2130,43 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health])]);
   const iconSrc = model.botIconFor(bot.id) ?? line.avatarSrc;
   const picture = avatarStack(iconSrc === null ? [] : [{ src: iconSrc, bot: true, login: bot.login }], botTitle(bot.id, bot.login), true);
-  const opens = line.anchor !== null;
-  const firstThread = line.threads[0]?.anchor ?? null;
-  const goes = !opens && firstThread !== null;
-  const open = opens && model.openSubKey === line.anchor;
-  const act = (): void => {
-    if (opens && line.anchor !== null) handlers.onToggleSub(line.anchor);
-    else if (firstThread !== null) handlers.onOpenAnchor(firstThread);
-  };
+  // A bot with threads but no summary opens to its threads, under a key of its own.
+  const subKey = botLineKey(line);
+  const opens = line.anchor !== null || line.threads.length > 0;
+  const open = opens && model.openSubKey === subKey;
+  const act = (): void => handlers.onToggleSub(subKey);
   const mainChildren: Node[] = [
     createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(bot.login, true) }, [botTitle(bot.id, bot.login)]),
     createElement('span', { class: `${PANEL_CLASS}__bot-detail ${PANEL_CLASS}__bot-line-detail` }, [botDetail(bot)]),
   ];
   if (line.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(line.preview)));
   if (line.threads.length > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(line.threads.length, 'thread')]));
-  const focusKey = goes ? `main:ptr:bot:${bot.id}` : `main:sub:${line.anchor ?? `bot:${bot.id}`}`;
-  const main =
-    opens || goes
-      ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, ...(opens ? { 'aria-expanded': String(open) } : {}), [ATTR_FOCUS]: focusKey }, mainChildren)
-      : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
-  if (opens || goes) mainClickToggles(main, act);
+  const focusKey = `main:sub:${subKey}`;
+  const main = opens
+    ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: focusKey }, mainChildren)
+    : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
+  if (opens) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (line.time !== '' && line.anchor !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: line.anchor }, [line.time]));
   const spacer = (): HTMLElement => createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' });
-  if (opens && line.anchor !== null) right.append(controlSlot(line.anchor, true), chevron(open, act));
-  else if (goes) {
-    if (reserveChevron) right.append(spacer());
-    right.append(pointerChevron(act));
-  } else if (reserveChevron) right.append(spacer(), spacer());
+  if (line.anchor !== null) right.append(controlSlot(line.anchor, true));
+  else if (reserveChevron) right.append(spacer());
+  if (opens) right.append(chevron(open, act));
+  else if (reserveChevron) right.append(spacer());
   const row = createElement(
     'li',
-    { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--bot-line`, 'data-geld-sub': line.anchor ?? `bot:${bot.id}`, 'data-health': health, ...(current ? {} : { 'data-current': 'false' }), ...(goes ? { 'data-pointer': '' } : {}) },
+    { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--bot-line`, 'data-geld-sub': subKey, 'data-health': health, ...(current ? {} : { 'data-current': 'false' }) },
     [lead, picture, main, right],
   );
   if (open) row.setAttribute('data-open', '');
   if (line.anchor !== null && model.viewingAnchor === line.anchor) row.setAttribute('data-viewing', '');
-  if (opens || goes) rowClickToggles(row, act);
+  if (opens) rowClickToggles(row, act);
   return { row, open };
+}
+
+/** The key a bot's line opens under: its summary's anchor, or the bot's own for a bot with threads and no summary. */
+export function botLineKey(line: BotLine): string {
+  return line.anchor ?? `bot:${line.bot.id}`;
 }
 
 /**
@@ -2155,7 +2178,7 @@ export function renderBotsList(slot: HTMLElement, model: PanelModel, handlers: P
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   let nested: HTMLElement | null = null;
   let openLine: BotLine | null = null;
-  const reserve = model.botLines.some((line) => line.anchor !== null);
+  const reserve = model.botLines.some((line) => line.anchor !== null || line.threads.length > 0);
   for (const line of model.botLines) {
     const { row, open } = botLine(line, model, handlers, reserve);
     list.append(row);
@@ -2248,41 +2271,47 @@ const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
 
 
 /**
- * The Reviews row's list is an index of people's reviews: one line per
- * verdict, remark or pending request (state glyph, avatar, name, the first
- * line, how many threads it came with, the time) pointing at the round where
- * it opens. Threads are not listed here: each is a row in its round, counted
- * on its review's line. Nothing opens in this list, so it never repeats a
- * conversation the rounds already hold.
+ * The Reviews row's list: one line per person's verdict, remark or pending
+ * request (state glyph, avatar, name, the first line, how many threads it
+ * came with, the time). A line opens right here to the review as GitHub's
+ * timeline sets it: its words, then each of its threads (`openEntry` names
+ * the open one for the caller to render into `nested`).
  */
-export function renderCommentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
+export function renderCommentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly openEntry: ReviewEntry | null } {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
   const entries = orderEntries(model.comments.filter((entry) => entry.state !== 'thread'));
+  let nested: HTMLElement | null = null;
+  let openEntry: ReviewEntry | null = null;
   if (entries.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet.']));
-  for (const entry of entries) list.append(entryRow(entry, model, handlers, true, 'pointer').row);
+  for (const entry of entries) {
+    const { row, open } = entryRow(entry, model, handlers, true, 'index');
+    list.append(row);
+    if (!open) continue;
+    const sub = nestedSlot();
+    list.append(sub.item);
+    nested = sub.body;
+    openEntry = entry;
+  }
   // Lines are still arriving from the timeline (the verdicts above are whole: the sidebar's).
   if (model.ingesting && entries.length > 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty ${PANEL_CLASS}__empty--ingesting` }, [ingestingMark('Still reading the timeline'), 'Reading the rest of the timeline…']));
   slot.replaceChildren(list);
+  return { nested, openEntry };
 }
 
 /**
  * One line for a review verdict, a person's remark or a bot's run summary:
  * state glyph, avatar, name, the first line, then the time, GitHub's own ⋯
- * (worn from the comment) and a chevron. In a round the line opens to its
- * one-bubble chat (`openSubKey` is its anchor); as a `pointer` (the Reviews
- * index) it takes the reader to that round instead. `reserveChevron`: some
- * sibling line has a chevron, so a line without one leaves that square blank
- * and its ⋯ and time stay in the column.
+ * (worn from the comment) and a chevron. The line opens in place
+ * (`openSubKey` is its anchor) to its words and its threads. In the Reviews
+ * row's list (`index`) a person's verdict wears Geld's ⋯ (dismiss, ask
+ * again) instead. `reserveChevron`: some sibling line has a chevron, so a
+ * line without one leaves that square blank and its ⋯ and time stay in the
+ * column.
  */
-function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers, reserveChevron = false, mode: 'open' | 'pointer' = 'open'): { readonly row: HTMLElement; readonly open: boolean } {
-  const pointer = mode === 'pointer';
+function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers, reserveChevron = false, mode: 'open' | 'index' = 'open'): { readonly row: HTMLElement; readonly open: boolean } {
+  const index = mode === 'index';
   const threadCount = entry.threads?.length ?? 0;
-  // A verdict without words but with threads is a way to them: in its round the line points at its first thread
-  // (the others stand right beside it), so a review is never a dead line. A pending request is a fact, not a
-  // conversation: nothing to open, nowhere to go.
-  const opens = !pointer && entryOpens(entry);
-  // A line the sidebar alone vouches for (the review's row is not on the page yet) has nowhere to go either.
-  const goes = entry.state !== 'awaiting' && !isProvisional(entry) && (pointer || (!opens && isVerdict(entry) && threadCount > 0));
+  const opens = entryOpens(entry);
   const open = opens && model.openSubKey === entry.anchor;
   const bot = /\[bot\]$/i.test(entry.author);
   const lead =
@@ -2302,12 +2331,7 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
       : entry.lane === 'finding'
         ? createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': 'finding', title: 'A finding to act on', role: 'img', 'aria-label': 'A finding to act on' }, [icon(ICON_ALERT)])
         : createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-verdict': entry.state, title: ENTRY_LABEL[entry.state], role: 'img', 'aria-label': ENTRY_LABEL[entry.state] }, [icon(ENTRY_GLYPH[entry.state])]);
-  const firstThread = entry.threads?.[0]?.anchor ?? null;
-  const act = (): void => {
-    if (pointer) handlers.onOpenAnchor(entry.anchor);
-    else if (goes && firstThread !== null) handlers.onOpenAnchor(firstThread);
-    else handlers.onToggleSub(entry.anchor);
-  };
+  const act = (): void => handlers.onToggleSub(entry.anchor);
   const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(entry.author, bot) }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
   // A verdict without words shows only the name: the glyph already says approved / requested changes.
   if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(entry.preview)));
@@ -2315,44 +2339,31 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
   if (entry.replies > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(entry.replies, 'reply', 'replies')]));
   // How many threads the review (or a bot's run summary) came with: they are rows of their own in its round, this is the count.
   if ((isVerdict(entry) || entry.state === 'comment') && threadCount > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(threadCount, 'thread')]));
-  const focusKey = goes ? `main:ptr:${entry.anchor}` : `main:sub:${entry.anchor}`;
-  const main =
-    opens || goes
-      ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, ...(opens ? { 'aria-expanded': String(open) } : {}), [ATTR_FOCUS]: focusKey }, mainChildren)
-      : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
-  if (opens || goes) mainClickToggles(main, act);
+  const focusKey = `main:sub:${entry.anchor}`;
+  const main = opens
+    ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: focusKey }, mainChildren)
+    : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
+  if (opens) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
   if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: entry.anchor }, [entry.time]));
-  // The times read as one column: a line with fewer squares after its time than a sibling leaves the missing
-  // ones blank. In a round an opening line has a ⋯ and a chevron (two squares); in the Reviews index every line
-  // that goes somewhere has one chevron and nothing else.
+  // The times read as one column: every line has two squares after its time (a ⋯ or its blank, then a chevron or
+  // its blank) whenever a sibling line has them.
   const spacer = (): HTMLElement => createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' });
-  // In the Reviews index a person's verdict wears a ⋯ (dismiss, ask again, show in timeline, copy link), so every
-  // line there has two squares: the ⋯ or its blank, then the chevron or its blank.
-  const reviewMenu = pointer && !bot && isVerdict(entry) && !isProvisional(entry) ? reviewActions(entry, model, handlers) : null;
-  const siblingSquares = reserveChevron ? 2 : 0;
-  if (pointer) {
-    right.append(reviewMenu ?? spacer());
-    if (goes) right.append(pointerChevron(act));
-    else if (siblingSquares === 2) right.append(spacer());
-  } else if (goes) {
-    // A verdict with threads beside reviews with comments: the ⋯ square stays blank, the chevron lines up.
-    if (siblingSquares === 2) right.append(spacer());
-    right.append(pointerChevron(act));
-  } else if (entry.hasBody) {
-    right.append(controlSlot(entry.anchor, true), chevron(open, act));
-  } else {
-    for (let square = 0; square < siblingSquares; square += 1) right.append(spacer());
-  }
-  const row = createElement(
-    'li',
-    { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state, ...(goes ? { 'data-pointer': '' } : {}) },
-    [lead, avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot, login: entry.author }], entry.author, bot), main, right],
-  );
+  const reviewMenu = index && !bot && isVerdict(entry) && !isProvisional(entry) ? reviewActions(entry, model, handlers) : null;
+  const menuSquare = reviewMenu ?? (entry.hasBody && !index ? controlSlot(entry.anchor, true) : opens || reserveChevron ? spacer() : null);
+  if (menuSquare !== null) right.append(menuSquare);
+  if (opens) right.append(chevron(open, act));
+  else if (reserveChevron) right.append(spacer());
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub`, 'data-geld-sub': entry.anchor, 'data-state': entry.state === 'thread' ? (entry.done ? 'done' : 'open') : entry.state }, [
+    lead,
+    avatarStack(entry.avatarSrc === null ? [] : [{ src: entry.avatarSrc, bot, login: entry.author }], entry.author, bot),
+    main,
+    right,
+  ]);
   if (open) row.setAttribute('data-open', '');
   // The line holding the comment the URL points at wears the target ring with its slot, as the item rows do.
-  if (!pointer && model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
-  if (opens || goes) rowClickToggles(row, act);
+  if (model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
+  if (opens) rowClickToggles(row, act);
   return { row, open };
 }
 
@@ -2423,6 +2434,7 @@ function signatureOf(model: PanelModel): string {
     canDismissReviews: model.canDismissReviews,
     ingesting: model.ingesting,
     openSubKey: model.openSubKey,
+    openThread: model.openThread,
     openSources: [...model.openSources].sort(),
     refs: model.refsVersion,
     edits: model.editsVersion,
@@ -2566,7 +2578,6 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // The description card may hang past the timeline rail (`ml-n3`); share its horizontal geometry.
   const cardStyle = getComputedStyle(card);
   const cardMargins = { left: cardStyle.marginLeft, right: cardStyle.marginRight };
-
   const { open, done } = splitItems(model.meta.items);
   const total = model.meta.items.length;
   const doneCount = doneItemCount(model.meta.items);

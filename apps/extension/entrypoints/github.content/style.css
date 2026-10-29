@@ -2356,6 +2356,11 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   display: none !important;
 }
 
+/* The reader's own description is framed in GitHub's accent (`.current-user`); the digest under it takes the same frame. */
+[data-geld-attached].current-user + .geld-review {
+  --geld-card-border: var(--borderColor-accent-muted, var(--color-accent-muted, rgba(84, 174, 255, 0.4)));
+}
+
 .geld-review {
   container-type: inline-size;
   container-name: geld-review;
@@ -2374,9 +2379,13 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   --geld-review-danger-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, #ffebe9));
   --geld-review-danger-fg: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
   --geld-review-accent: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  /* The rows' hover and open surface: GitHub's ActionList item, made opaque so the avatars' ring can take it. */
+  --geld-review-row-hover: color-mix(in srgb, var(--fgColor-default, var(--color-fg-default, #1f2328)) 5%, var(--geld-review-bg));
   position: relative;
   margin: -1px 0 0;
-  border: 1px solid var(--geld-review-border);
+  /* The description card's own border, so the digest reads as the card's lower half and its top edge as one rule
+   * across the card. */
+  border: 1px solid var(--geld-card-border, var(--geld-review-border));
   border-radius: 0 0 6px 6px;
   background: var(--geld-review-bg);
   color: var(--fgColor-default, var(--color-fg-default));
@@ -2386,6 +2395,15 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
    * line shifts only when the number of digits does. Inherited by everything in the panel, GitHub's loaned
    * checks list included. */
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * GitHub's "N hidden items · Load more" bar while Geld presses it itself (`data-geld-autoloading` on the root): out of
+ * sight, the reading bar standing for it. Pressed with click(), which a hidden control still takes. Back as soon as
+ * Geld stops pressing (done, or at its limit), so the reader can load the rest.
+ */
+html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline'], .ajax-pagination-btn, button.js-ajax-pagination-btn) {
+  display: none !important;
 }
 
 /* Geld reading the timeline: a thin accent bar over the digest's top edge, filling as it goes, gone when it is done. */
@@ -2427,9 +2445,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   align-items: center;
   gap: 6px 12px;
   min-height: 40px;
-  padding: 6px 8px 6px 16px;
-  border-bottom: 1px solid var(--geld-review-border-muted);
-  background: var(--geld-review-subtle);
+  padding: 8px 8px 0 16px;
   font-size: 12px;
 }
 
@@ -3010,16 +3026,10 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 
 /* ---- status rows: review bots · CI checks · reviews ------------------------ */
 
+/* The one rule inside the digest: the state of the pull request above, its conversation below. */
 .geld-review__rows--status {
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--geld-review-border-muted);
-}
-
-/* One hairline between neighbours: the head already draws the line above the first status row, and the
- * status block draws the one above whatever follows it. */
-.geld-review__rows--status > .geld-review__row:first-child,
-.geld-review__rows--status + .geld-review__timeline,
-.geld-review__rows--status + .geld-review__rows > .geld-review__row:first-child {
-  border-top: 0;
 }
 
 /* GitHub's expanded checks draw their own top rule; the slot's is enough. */
@@ -3112,32 +3122,19 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 
 /* One level down: reviews, threads and people's comments inside the Reviews row. */
 .geld-review__slot[data-kind='list'] > .geld-review__slot-body {
-  padding: 0;
+  padding: 4px;
 }
 
 .geld-review__rows--sub {
+  padding: 0;
   border-bottom: 0;
 }
 
-.geld-review__rows--sub > .geld-review__row--sub:first-child,
-.geld-review__slot--sub {
-  border-top: 0;
-}
-
-/* Sub-lists sit on the header grid: glyph at the row edge, 10px, then the words where the headers' words start. */
+/* Lines inside an open row are its rows again, one step smaller, on the same grid: glyph, 10px, then the words. */
 .geld-review__rows--sub > .geld-review__row--sub {
   min-height: 36px;
   gap: 10px;
-  padding-left: 16px;
-}
-
-/* Every line in a sub-list is closed by the border-top of what follows it (the next line, a heading, or the next
-   top-level row), so a hovered line always ends in a border and a heading never reads as part of the list above. */
-.geld-review__rows--sub > .geld-review__row--sub + .geld-review__row--sub,
-.geld-review__rows--sub > .geld-review__slot--sub + .geld-review__row--sub,
-.geld-review__rows--sub > .geld-review__row + .geld-review__subhead,
-.geld-review__rows--sub > .geld-review__slot + .geld-review__subhead {
-  border-top: 1px solid var(--geld-review-border-muted);
+  padding-left: 8px;
 }
 
 .geld-review__main--entry {
@@ -3236,36 +3233,79 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /*
- * The reviewers on the Reviews row, one group per verdict: the verdict's glyph
- * (the same one their lines wear below), their avatars, "2 approved". The
- * words go on narrow screens; the glyph carries the meaning.
+ * The reviewers on the Reviews row, one pill per verdict: the verdict's glyph (the same one their lines wear below),
+ * how many, their avatars. Commented and awaiting wear the neutral tint of the comment chips, approved and changes
+ * requested GitHub's success and danger colours (its tokens, so a colour-blind theme's come through). The pill is
+ * opaque, mixed over the row's own surface, so the ring between its squeezed avatars can be the pill's colour.
  */
 .geld-review__reviewers {
+  --geld-pill-tone: var(--geld-review-muted);
+  --geld-pill-bg: color-mix(in srgb, var(--geld-pill-tone) 12%, var(--geld-row-bg, var(--geld-review-bg)));
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  height: 20px;
+  padding: 0 2px 0 7px;
+  border-radius: 2em;
+  background: var(--geld-pill-bg);
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-review__reviewers[data-state='approved'] {
+  --geld-pill-tone: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+  color: var(--geld-pill-tone);
+}
+
+.geld-review__reviewers[data-state='changes_requested'] {
+  --geld-pill-tone: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+  color: var(--geld-pill-tone);
 }
 
 .geld-review__reviewers-glyph {
   display: inline-flex;
-  color: var(--geld-review-muted);
 }
 
 .geld-review__reviewers-glyph .octicon {
-  width: 14px;
-  height: 14px;
-}
-
-.geld-review__reviewers[data-state='approved'] .geld-review__reviewers-glyph {
-  color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
-}
-
-.geld-review__reviewers[data-state='changes_requested'] .geld-review__reviewers-glyph {
-  color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__reviewers[data-state='awaiting'] .geld-review__reviewers-glyph {
   color: var(--fgColor-attention, var(--color-attention-fg, #bf8700));
+}
+
+/* 16px faces in a 20px pill; three at a 5px overlap make 38px, and four to six share those 38px between them. */
+.geld-review__avatars--pill {
+  margin-left: 1px;
+}
+
+.geld-review__avatars--pill .geld-review__avatar {
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+}
+
+.geld-review__avatars--pill .geld-review__avatar + .geld-review__avatar {
+  margin-left: calc(22px / var(--geld-avatar-steps, 2) - 16px);
+  box-shadow: 0 0 0 1.5px var(--geld-pill-bg);
+}
+
+/* Within the pill, so it outranks the base `.geld-review__avatar` rule that comes later in this file. */
+.geld-review__avatars--pill .geld-review__avatar--more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--geld-pill-tone) 22%, var(--geld-row-bg, var(--geld-review-bg)));
+  color: var(--geld-pill-tone);
+}
+
+.geld-review__avatars--pill .geld-review__avatar--more .octicon {
+  width: 10px;
+  height: 10px;
 }
 
 /* Every row says who and when itself; a worn header only lends its actions (react, ⋯), so open and closed read alike. */
@@ -3874,51 +3914,58 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 
 /* ---- groups and rows (the merge box checks list, borrowed) --------------- */
 
+/*
+ * The digest is set the way GitHub sets its own lists (Primer's inset ActionList): no rule between rows, each row a
+ * rounded surface that shows only under the pointer or while open, inset 8px from the card's edges. Three levels:
+ *  - a section heading ("2 rounds to review", "Other activity") is a small muted label that folds, ActionList's
+ *    group heading;
+ *  - a row is 14px on the card's own surface;
+ *  - what opens under a row stands in a rounded box of its own (GitHub's Box), held to the row by the row's open
+ *    surface right above it; the headings inside ("1 unresolved thread", "3 bot comments") are small-caps labels.
+ * Nothing is told apart by a band of colour or a full-width rule, so the digest reads as the description card's own
+ * lower half rather than as a table bolted under it.
+ */
 .geld-review__rows {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.geld-review__group + .geld-review__group,
-.geld-review__row,
-.geld-review__slot,
-.geld-review__row + .geld-review__group,
-.geld-review__slot + .geld-review__group {
-  border-top: 1px solid var(--geld-review-border-muted);
+.geld-review > .geld-review__rows {
+  padding: 8px;
 }
 
-/*
- * Three levels, told apart by surface and type rather than by indent (every level keeps the same glyph column):
- *  - a section heading ("2 rounds to review", "Other activity") is a muted band with semibold text - a divider that
- *    happens to fold, not a row;
- *  - a row is white at 14px;
- *  - what opens under a row is held to it by a 2px accent rail along the left edge of the row and everything
- *    beneath it, and its own headings ("1 unresolved thread", "3 bot comments") are small-caps labels.
- */
+.geld-review > .geld-review__rows--status {
+  padding-top: 4px;
+}
+
 .geld-review__group {
-  background: var(--geld-review-subtle);
+  margin-top: 6px;
+}
+
+.geld-review__rows > .geld-review__group:first-child {
+  margin-top: 0;
 }
 
 .geld-review__group-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 32px;
-  padding: 0 16px;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
   border: 0;
+  border-radius: 6px;
   background: none;
-  color: var(--fgColor-default, var(--color-fg-default));
+  color: var(--geld-review-muted);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
 
 .geld-review__group-btn:hover {
-  color: var(--geld-review-accent);
+  color: var(--fgColor-default, var(--color-fg-default));
 }
 
 .geld-review__group-btn .octicon {
@@ -3939,13 +3986,40 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
    * sub-lists and the thread rows all sat on it; the round and fold rows were two pixels in from it. */
   gap: 10px;
   min-height: 40px;
-  padding: 0 8px 0 16px;
-  background: var(--geld-review-bg);
+  padding: 0 0 0 8px;
+  border-radius: 6px;
+  background: transparent;
 }
 
-.geld-review__row:hover,
-.geld-review__row[data-open] {
+.geld-review__row:hover {
+  background: var(--geld-review-row-hover);
+}
+
+/*
+ * Open, a row and what it opened are one of GitHub's boxes: the row its header (the muted surface, rounded on top),
+ * the slot its body (rounded below). A closed row has no edge at all, so the transparent border keeps its height.
+ */
+.geld-review > .geld-review__rows > .geld-review__row {
+  border: 1px solid transparent;
+}
+
+.geld-review > .geld-review__rows > .geld-review__row[data-open] {
+  border-color: var(--geld-review-border-muted);
+  border-radius: 6px 6px 0 0;
   background: var(--geld-review-subtle);
+}
+
+/* A line open inside a box keeps its hover surface, so what opened under it reads as its own. */
+.geld-review__slot .geld-review__row[data-open] {
+  --geld-row-bg: var(--geld-review-row-hover);
+  background: var(--geld-review-row-hover);
+}
+
+.geld-review > .geld-review__rows > .geld-review__slot {
+  margin-bottom: 6px;
+  border: 1px solid var(--geld-review-border-muted);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
 }
 
 /* The row a click elsewhere landed on (overview.ts `flashRow`): an accent tint over its surface that fades, so
@@ -3983,69 +4057,22 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   cursor: pointer;
 }
 
-/*
- * The rail: the open row and what it opened share one left edge, so the nested list reads as the row's. It is
- * drawn on an overlay (`::after`, above the children, no pointer events): the rows inside a slot paint their own
- * surface and borders, and a shadow on the slot itself showed only between them, in pieces. The overlay starts
- * 1px above its box to run over the border between it and the element before, so the line is unbroken from the
- * row through the last line of its slot.
- */
-.geld-review__rows > .geld-review__row[data-open],
-.geld-review__rows > .geld-review__slot {
-  position: relative;
-}
-
-.geld-review__rows > .geld-review__row[data-open]::after,
-.geld-review__rows > .geld-review__slot::after {
-  content: '';
-  position: absolute;
-  z-index: 5;
-  inset: -1px 0 0 0;
-  box-shadow: inset 2px 0 0 var(--geld-review-accent);
-  pointer-events: none;
-}
-
 /* ---- tones: a row that has settled wears its colour ------------------------
- * GitHub's own muted success/attention/danger surfaces and their foreground colours. The background is a
- * gradient from the tone at the left to a faint wash at the right, so the row reads as coloured without
- * flooding the line; the text that belongs to the row (title, meter, counts, glyph) takes the tone's
- * foreground, while the metadata and controls on the right (time, ⋯, chevron) stay grey. Hovered or open,
- * the row is the plain muted surface. */
+ * GitHub's own success/attention/danger foregrounds, on the row's glyph, meter and count chip only: the words and
+ * the row's surface stay the card's, so a column of settled rounds reads as a column of green checks, not a
+ * column of green bars. */
 .geld-review__row[data-tone='good'] {
-  --geld-tone-bg: var(--geld-review-done);
   --geld-tone-fg: var(--geld-review-done-fg);
 }
 
 .geld-review__row[data-tone='warn'] {
-  --geld-tone-bg: var(--geld-review-attention-bg);
   --geld-tone-fg: var(--geld-review-attention-fg);
 }
 
 .geld-review__row[data-tone='bad'] {
-  --geld-tone-bg: var(--geld-review-danger-bg);
   --geld-tone-fg: var(--geld-review-danger-fg);
 }
 
-/* Light: GitHub's muted tone surface, thinned onto the canvas. Dark: those surfaces are translucent washes that
- * all but vanish once thinned, so the tint is mixed from the tone's foreground - vivid in both schemes - at a
- * share that reads on the dark canvas without shouting. `light-dark()` follows the page's `color-scheme`, which
- * Primer sets per theme. */
-.geld-review__row[data-tone] {
-  --geld-tone-strong: light-dark(color-mix(in srgb, var(--geld-tone-bg) 45%, var(--geld-review-bg)), color-mix(in srgb, var(--geld-tone-fg) 22%, var(--geld-review-bg)));
-  --geld-tone-faint: light-dark(color-mix(in srgb, var(--geld-tone-bg) 10%, var(--geld-review-bg)), color-mix(in srgb, var(--geld-tone-fg) 6%, var(--geld-review-bg)));
-  --geld-tone-flat: light-dark(var(--geld-tone-bg), color-mix(in srgb, var(--geld-tone-fg) 28%, var(--geld-review-bg)));
-  /* The avatars' mask ring is a solid colour; the tone at their position is close to the strong end. */
-  --geld-row-bg: var(--geld-tone-strong);
-  background: linear-gradient(90deg, var(--geld-tone-strong), var(--geld-tone-faint));
-}
-
-.geld-review__row[data-tone]:hover,
-.geld-review__row[data-tone][data-open] {
-  --geld-row-bg: var(--geld-tone-flat);
-  background: var(--geld-tone-flat);
-}
-
-/* The tone colours the surface, the glyph and the meter — never the words. */
 .geld-review__row[data-tone] .geld-review__status,
 .geld-review__row[data-tone] .geld-review__status--muted {
   color: var(--geld-tone-fg);
@@ -4072,13 +4099,19 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   position: relative;
 }
 
-.geld-review__rows > .geld-review__row[data-viewing]::after {
+.geld-review__rows > .geld-review__row[data-viewing]::after,
+.geld-review__rows > .geld-review__row[data-viewing][data-open] + .geld-review__slot::after {
   content: '';
   position: absolute;
   z-index: 5;
-  inset: -1px 0 0 0;
+  inset: -1px;
+  border-radius: inherit;
   box-shadow: inset 0 0 0 2px var(--geld-review-accent);
   pointer-events: none;
+}
+
+.geld-review__rows > .geld-review__row[data-viewing][data-open] + .geld-review__slot {
+  position: relative;
 }
 
 .geld-review__rows > .geld-review__row[data-viewing][data-open]::after {
@@ -4089,6 +4122,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 .geld-review__rows > .geld-review__row[data-viewing][data-open] + .geld-review__slot::after {
+  inset: 0 -1px -1px;
   box-shadow:
     inset 2px 0 0 0 var(--geld-review-accent),
     inset -2px 0 0 0 var(--geld-review-accent),
@@ -4182,8 +4216,11 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   --geld-row-bg: var(--geld-review-bg);
 }
 
-.geld-review__row:hover,
-.geld-review__row[data-open] {
+.geld-review__row:hover {
+  --geld-row-bg: var(--geld-review-row-hover);
+}
+
+.geld-review > .geld-review__rows > .geld-review__row[data-open] {
   --geld-row-bg: var(--geld-review-subtle);
 }
 
@@ -6372,6 +6409,35 @@ a.geld-review__rerun:hover {
   color: var(--geld-review-done-fg);
 }
 
+.geld-review__chat-thread > .octicon:last-child {
+  transition: transform 120ms ease;
+}
+
+/* The chip whose thread is open below: pressed, its chevron turned up. */
+.geld-review__chat-thread[aria-expanded='true'] {
+  border-color: var(--geld-review-muted);
+  background: var(--geld-review-hover);
+}
+
+.geld-review__chat-thread[aria-expanded='true'] > .octicon:last-child {
+  transform: rotate(180deg);
+}
+
+/* A thread opened in place, under the comment it came from: on the comment's own gutter, so it reads as its child. */
+.geld-review__chat-below {
+  margin-top: 8px;
+  padding-left: 32px;
+}
+
+/* A wordless review's threads have no comment above them to hang from. */
+.geld-review__chat-below[data-flush] {
+  padding-left: 0;
+}
+
+.geld-review__chat-below[data-flush]:first-child {
+  margin-top: 0;
+}
+
 
 
 .geld-review__chat [data-geld-message][data-geld-lone] {
@@ -6442,6 +6508,35 @@ a.geld-review__rerun:hover {
   color: var(--geld-review-muted);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* The opened pinned comment is part of the chat's own box, not a card inside it: full width and square, set off
+ * from its strip by one rule. A rounded, bordered card 12px inside the chat's border read as a second frame. */
+.geld-review__chat-context-body[data-geld-revision] {
+  gap: 0;
+  padding: 0;
+}
+
+.geld-review__chat-then {
+  padding: 12px;
+  border-width: 1px 0 0;
+  border-radius: 0;
+}
+
+.geld-review__chat-then-note {
+  padding: 6px 12px;
+}
+
+.geld-review__chat-context-body:has(> [data-geld-message][data-geld-lone]),
+.geld-review__chat-context-body :has(> [data-geld-message][data-geld-lone]) {
+  padding: 0 !important;
+}
+
+.geld-review__chat-context-body [data-geld-lone] > [data-geld-part='bubble'] {
+  border-width: 1px 0 0 !important;
+  border-style: solid !important;
+  border-color: var(--geld-review-border-muted) !important;
+  border-radius: 0 !important;
 }
 
 /* ---- rounds --------------------------------------------------------------- */
@@ -7039,10 +7134,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-review__timeline {
   display: flex;
   justify-content: center;
-  padding: 6px 16px;
-  border-top: 1px solid var(--geld-review-border-muted);
-  background: var(--geld-review-subtle);
-  border-radius: 0 0 6px 6px;
+  padding: 0 16px 10px;
 }
 
 .geld-review__timeline-btn {
@@ -7440,7 +7532,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   .geld-review__deploy-sum-text,
   .geld-review__push-compare > span,
   .geld-review__label-long,
-  .geld-review__reviewers-text,
   .geld-review__row .geld-review__time {
     display: none;
   }

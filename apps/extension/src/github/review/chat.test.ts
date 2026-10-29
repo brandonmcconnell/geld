@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { dressArrivals, hideAgentRerunControls, messagesIn, renderChatView, takeAgentViewLink } from './chat';
+import { dressArrivals, hideAgentRerunControls, messagesIn, openThreadUnder, renderChatView, renderCommentChat, takeAgentViewLink, threadChipFocusKey, threadChips } from './chat';
+import { restoreAll } from './teleport';
 
 /**
  * Two shapes carry the `minimized-comment` class. A review's own body card
@@ -176,5 +177,81 @@ describe('dressArrivals', () => {
     expect(reply.querySelector('[data-geld-part="bubble"]')).not.toBeNull();
     // Nothing left to dress: the pass that follows has no reason to rebuild the chat.
     expect(dressArrivals(document)).toBe(false);
+  });
+});
+
+const NO_HANDLERS = {
+  pathOf: () => '',
+  sourceOf: () => null,
+  sourceOpen: () => false,
+  onCopy: () => undefined,
+  onToggleSource: () => undefined,
+  onOpenAnchor: () => undefined,
+};
+
+const LINKS = [
+  { anchor: 'discussion_r11', path: 'src/a.ts', line: 3, preview: '', done: false },
+  { anchor: 'discussion_r12', path: 'src/b.ts', preview: '', done: true },
+];
+
+describe('threadChips', () => {
+  it('marks only the open thread\'s chip as expanded and hands the clicked chip\'s thread to the toggle', () => {
+    const toggled: string[] = [];
+    const list = threadChips(LINKS, (anchor) => toggled.push(anchor), 'discussion_r12', 'from this comment');
+    const chips = [...list.querySelectorAll<HTMLButtonElement>('.geld-review__chat-thread')];
+    expect(chips.map((chip) => chip.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+    expect(chips.map((chip) => chip.getAttribute('data-geld-focus'))).toEqual([threadChipFocusKey('discussion_r11'), threadChipFocusKey('discussion_r12')]);
+    expect(chips.map((chip) => chip.querySelector('code')?.textContent)).toEqual(['a.ts:3', 'b.ts']);
+    chips[0]?.click();
+    chips[1]?.click();
+    expect(toggled).toEqual(['discussion_r11', 'discussion_r12']);
+  });
+});
+
+describe('openThreadUnder', () => {
+  it('keeps a chip\'s thread open only while the line it was opened under is the open one', () => {
+    const open = { sub: 'issuecomment-1', anchor: 'discussion_r11' };
+    expect(openThreadUnder(open, 'issuecomment-1')).toBe('discussion_r11');
+    // Another summary opened (or the line closed): the thread belongs to the line it was opened under, and closes.
+    expect(openThreadUnder(open, 'issuecomment-2')).toBeNull();
+    expect(openThreadUnder(open, null)).toBeNull();
+    expect(openThreadUnder(null, 'issuecomment-1')).toBeNull();
+  });
+});
+
+describe('a thread opened in place under its summary', () => {
+  it('borrows the summary and the open thread, and sends both home when the selection changes', () => {
+    document.body.replaceChildren();
+    const timeline = document.createElement('div');
+    timeline.innerHTML = '<div class="js-timeline-item"><div id="issuecomment-1" class="timeline-comment"><div class="comment-body markdown-body js-comment-body"><p>Confidence Score: 4/5</p></div></div></div>';
+    const summary = timeline.querySelector<HTMLElement>('#issuecomment-1');
+    const first = threadWith([{ id: 'discussion_r11', author: 'greptile-apps[bot]' }]);
+    const second = threadWith([{ id: 'discussion_r12', author: 'greptile-apps[bot]' }]);
+    if (summary === null) throw new Error('fixture');
+    timeline.append(first, second);
+    document.body.append(timeline);
+    const nested = document.createElement('div');
+    document.body.append(nested);
+    const draw = (open: string | null): void => {
+      renderCommentChat(nested, summary, null, LINKS, () => undefined, open);
+      const below = document.createElement('div');
+      nested.append(below);
+      if (open !== null) renderChatView(below, [open === 'discussion_r11' ? first : second], NO_HANDLERS);
+    };
+    draw('discussion_r11');
+    expect(nested.contains(summary)).toBe(true);
+    expect(nested.contains(first)).toBe(true);
+    expect(timeline.contains(second)).toBe(true);
+    // The reader opens the other chip: the panel sends every loan home before it renders again.
+    restoreAll();
+    expect(timeline.contains(summary)).toBe(true);
+    expect(timeline.contains(first)).toBe(true);
+    draw('discussion_r12');
+    expect(nested.contains(second)).toBe(true);
+    expect(timeline.contains(first)).toBe(true);
+    expect(nested.querySelector('.geld-review__chat-thread[aria-expanded="true"] code')?.textContent).toBe('b.ts');
+    restoreAll();
+    expect(timeline.contains(second)).toBe(true);
+    expect(nested.contains(summary)).toBe(false);
   });
 });

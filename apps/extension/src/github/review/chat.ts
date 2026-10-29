@@ -17,7 +17,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_TIME_FOR } from './panel';
 import { isTeleported, onRestore, teleportInto } from './teleport';
@@ -470,6 +470,52 @@ export interface ChatThreadLink {
   readonly done: boolean;
 }
 
+/** A thread opened from its chip and the line it was opened under (that line's key). */
+export interface OpenThread {
+  readonly sub: string;
+  readonly anchor: string;
+}
+
+/** The thread open under the chips of the line open now: none once another line (or none) is open. */
+export function openThreadUnder(open: OpenThread | null, openSub: string | null): string | null {
+  return open !== null && open.sub === openSub ? open.anchor : null;
+}
+
+/** Focus key of a thread's chip, so the chip stays under the pointer when its thread opens below it. */
+export function threadChipFocusKey(anchor: string): string {
+  return `chip:${anchor}`;
+}
+
+/**
+ * The threads a comment came with, one chip per thread naming its file. A
+ * chip opens its thread right below the chips (`openThread` is the open
+ * one's anchor; its chip turns its chevron down), so reading a run's
+ * findings never takes the reader somewhere else in the digest.
+ */
+export function threadChips(threads: readonly ChatThreadLink[], onToggle: (anchor: string) => void, openThread: string | null, from: string): HTMLElement {
+  const list = createElement('div', { class: 'geld-review__chat-threads', role: 'group', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} ${from}` });
+  list.append(createElement('span', { class: 'geld-review__chat-threads-label' }, [threads.length === 1 ? '1 thread' : `${threads.length} threads`]));
+  const fileOf = (thread: ChatThreadLink): string => thread.path.split('/').pop() ?? thread.path;
+  for (const thread of threads) {
+    const file = fileOf(thread);
+    const shared = thread.line === undefined && threads.some((other) => other !== thread && other.line === undefined && fileOf(other) === file);
+    const open = thread.anchor === openThread;
+    const chip = createElement(
+      'button',
+      { type: 'button', class: 'geld-review__chat-thread', 'aria-expanded': String(open), 'data-state': thread.done ? 'done' : 'open', 'data-geld-focus': threadChipFocusKey(thread.anchor), title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` },
+      [
+        icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE),
+        createElement('code', {}, [thread.line === undefined ? file : `${file}:${thread.line}`]),
+        ...(shared && thread.preview !== '' ? [createElement('span', { class: 'geld-review__chat-thread-words' }, inlineText(thread.preview))] : []),
+        icon(ICON_CHEVRON_DOWN),
+      ],
+    );
+    chip.addEventListener('click', () => onToggle(thread.anchor));
+    list.append(chip);
+  }
+  return list;
+}
+
 /**
  * A top-level comment (a bot's run summary, a review body, a person's
  * remark) as a chat of one message: a byline with the author's picture, name
@@ -480,7 +526,7 @@ export interface ChatThreadLink {
  * leading to the thread where it opens (the threads are rows of their own).
  * The comment's own header stays hidden: its ⋯ is worn by the row above.
  */
-export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null): void {
+export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null, openThread: string | null = null): void {
   // Without a byline the row above is the header, and the body needs no gutter to sit under a name.
   const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment', ...(byline === null ? { 'data-geld-headless': '' } : {}) });
   if (byline !== null) {
@@ -515,24 +561,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
   }
   const body = createElement('div', { class: 'geld-review__chat-body' });
   chat.append(body);
-  if (threads.length > 0 && onOpenThread !== null) {
-    const list = createElement('div', { class: 'geld-review__chat-threads', role: 'list', 'aria-label': `${threads.length} thread${threads.length === 1 ? '' : 's'} from this comment` });
-    list.append(createElement('span', { class: 'geld-review__chat-threads-label' }, [threads.length === 1 ? '1 thread' : `${threads.length} threads`]));
-    const fileOf = (thread: ChatThreadLink): string => thread.path.split('/').pop() ?? thread.path;
-    for (const thread of threads) {
-      const file = fileOf(thread);
-      const shared = thread.line === undefined && threads.some((other) => other !== thread && other.line === undefined && fileOf(other) === file);
-      const chip = createElement('button', { type: 'button', class: 'geld-review__chat-thread', role: 'listitem', 'data-state': thread.done ? 'done' : 'open', title: thread.line === undefined ? thread.path : `${thread.path}:${thread.line}` }, [
-        icon(thread.done ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE),
-        createElement('code', {}, [thread.line === undefined ? file : `${file}:${thread.line}`]),
-        ...(shared && thread.preview !== '' ? [createElement('span', { class: 'geld-review__chat-thread-words' }, inlineText(thread.preview))] : []),
-        icon(ICON_CHEVRON_RIGHT),
-      ]);
-      chip.addEventListener('click', () => onOpenThread(thread.anchor));
-      list.append(chip);
-    }
-    chat.append(list);
-  }
+  if (threads.length > 0 && onOpenThread !== null) chat.append(threadChips(threads, onOpenThread, openThread, 'from this comment'));
   slot.replaceChildren(createElement('div', { class: 'geld-review__chats' }, [chat]));
   teleportInto(body, [node]);
   if (body.childElementCount === 0) {

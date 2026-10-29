@@ -113,11 +113,16 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The Action applies the same author gate when it looks for the comment to update (`findSummaryComment(comments, [tokenLogin])`: `github-actions[bot]`, the Geld Apps, or whatever login the token answers `GET /user` with — the workflow token answers 403 there and writes as `github-actions[bot]`): a participant posting the marker or heading cannot make the Action PATCH a comment it does not own and fail instead of publishing.
   Fresh `headSha` → render the panel from the payload (zero crawl).
   Stale/partial/missing → crawler fallback with the same layout, "Updating…" when a summary exists but is behind.
-  **The panel (`review/panel.ts`, `.geld-review`) grows out of the bottom of the description card**: inserted right after the card (`[data-geld-attached]` squares its bottom corners, the panel's top ones are square too, `margin-top: -1px` shares the border), so the two read as one box.
+  **The panel (`review/panel.ts`, `.geld-review`) grows out of the bottom of the description card**: inserted right after the card (`[data-geld-attached]` squares its bottom corners, the panel's top ones are square too, `margin-top: -1px` shares the border), so the two read as one box: the panel takes the card's own border colour (the reader's own description is `.current-user`, framed in `--borderColor-accent-muted`), its top edge is the one full-width rule under the description, and nothing inside it is a band of colour.
+  **It is set the way GitHub sets its own lists** (Primer's inset ActionList;
+  stylesheet note above `.geld-review__rows`): rows inset 8px from the card's edges with no rule between them, a rounded surface only under the pointer;
+  section headings are small muted labels that fold;
+  one hairline separates the status rows from the conversation;
+  an open row and its slot are one of GitHub's boxes, the row its muted header rounded on top and the slot its body rounded below.
   Inside it borrows the merge box's checks list: a summary strip (progress meter, needs-reply chip, copy), then **the status rows** (`statusRows`, in triage order: *Reviews*, *Review bots*, *Reports*, *CI checks*, *Previews*;
   each only when it has something to say — *Review bots*: one outlined pill per bot with the page's icon, name, detail and a traffic-light glyph via `botHealth` (5/5 or clean → green check, 3–4/5 or findings → yellow dot, 1–2/5, high severity or failed → red X); **the row opens** (`BOTS_KEY`, `renderBotsList`) to one line per bot (`botLine`, `PanelModel.botLines` from `buildBotLines`): the verdict's light, the bot's mark, name and `botDetail`, its **latest run summary's** first line (`botSummaryFor(bot, NaN)`: the comment or review body its chip opens), a "N threads" pill, time, the comment's ⋯ and a chevron;
-  open (`openSubKey` = the summary's anchor) the summary stands under it as a one-bubble chat with Rerun / View on the byline and **the run's threads as chips at its foot** (the threads whose source, read as a thread's pinned strip reads it — the review holding the thread, else `botSummaryFor` at the thread's time — is that summary), each leading to its row in its round (`onOpenAnchor`).
-  A bot with threads but no summary points at its first thread;
+  open (`openSubKey` = the summary's anchor) the summary stands under it as a one-bubble chat with Rerun / View on the byline and **the run's threads as chips at its foot** (the threads whose source, read as a thread's pinned strip reads it — the review holding the thread, else `botSummaryFor` at the thread's time — is that summary), **each opening its thread right below the chips** (`threadChips`, `visit.openThread` — the thread and the line's key it hangs under, `openThreadNow`, in the signature as `openThread` — rendered by `renderWithThreadChips` without its pinned strip, since the summary stands right above it), so reading a run's findings never takes the reader elsewhere in the digest.
+  A bot with threads but no summary opens to those chips alone (`botLineKey`: `bot:<id>`);
   one with neither is a plain line.
   **A bot's latest summary is seated here, not in its round** (`botLineAnchors`, set before `buildBatches`;
   `seatFor` answers `{ BOTS_KEY, sub }` for it, so the chip, a permalink, "See latest" and a reaction all open this line;
@@ -126,7 +131,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The chips under a summary are read per thread source, not per item (an item can merge several of one bot's threads, from one run or several).
   **The line is remembered** (`botLineMemo`): a summary on loan to the panel (its line open, or pinned in a thread) is crawled bodiless at home, `summary` reads false and the bot's latest fell back to the run before, which changed the line's anchor and dropped the open key;
   a bot's latest word only gets newer while the comment stands, so the last line read whole is kept (anchor, words, threads — their state refreshed) while its comment is in the document and nothing newer has been read.
-  Clicking a chip opens the bot's line **where the reader is** (`onOpenAnchor`);
+  Clicking a bot's pill opens its line in the Review bots row (`onOpenAnchor`), the row the pill stands in;
   the row's Request a review menu (`requestMenu`) re-runs one bot or all, with an in-menu confirm, posting one comment per bot in sequence — its control wears the **send glyph** (`ICON_PAPER_AIRPLANE`) while idle, since it is an action that posts, not a ⋯ of choices, and the spinning sync while a review runs. *CI checks*: the merge box's checks section is located **by its own headings** ("1 in progress check", "8 successful checks" — the nearest ancestor holding all of them), not by container markup, which differs between the Rails and React merge boxes;
   its counts (`checkCountsFrom`) sit behind a GitHub-style status ring, and **in compact mode the section is folded out of the merge box** (it joins the fold targets under the key `checks`, not shown as a fold row) and shown in the CI row's slot when opened.
   The section and its original parent are remembered (`checksSectionEl`, `mergeHomeEl`) so counts and the review-requirement text keep reading correctly while the section is away — otherwise the row vanished and flip-flopped.
@@ -306,7 +311,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **An open row wears its first comment's header** (`wearHeader`: everything before the body in the comment container — author, time, labels, reactions trigger, ⋯ — into the row's `head-slot`) and shows the body alone below;
   the crawler reads worn pieces through `wornPiecesOf` (transitive) so a comment keeps its author, time, avatar and — for a review — its comment while on loan. *Reviews* row: review verdicts (`crawlReviews`, `pullrequestreview-N`, state from the row's own sentence, never the comment's words) fold out of the timeline in compact mode and list under the row as an index of people's reviews and remarks (`renderCommentsList`: state glyph, avatar, name, one-line preview, thread count, time, a right chevron;
   each line goes to the round where it opens);
-  the heading names every reviewer once by their latest verdict (`reviewerGroups`: ✓ approved, ✕ changes requested, comment, ● awaiting — glyph, avatars, "2 approved";
+  the heading names every reviewer once by their latest verdict (`reviewerGroups`: ✓ approved, ✕ changes requested, comment, ● awaiting — one pill per verdict, `[glyph] N [avatars]` (`pillAvatars`: up to three faces at the usual overlap, four or five squeezed into the width of three, more as five plus an ellipsis circle in that same width, so the row never wraps), neutral for comment and awaiting as the comment chips are, GitHub's success and danger colours for approved and changes requested, the words in the label and title only;
   a later comment-only review does not withdraw a verdict;
   a re-request does not either — the reviewer stands in their verdict's group *and* in awaiting, as GitHub's merge box has it ("Changes approved · 1 approval, 1 pending review") while its sidebar names only the request, and the awaiting title says "asked again;
   approved";
@@ -336,17 +341,17 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   not a skeleton, since the verdicts shown are real.
   Preceded by `approvals/required approvals` only when the page states a requirement — the merge box says "At least N approving reviews" while unmet and "N approving reviews by…" (a count) once met, the sidebar's Reviewers block keeps saying "At least N approving review is required to merge" while the PR is open (`reviewersSidebarText`), and a merged or closed PR states it nowhere, so there the groups alone carry it (no "N approved" beside "✓ N approved");
   the requirement seen is remembered per visit.
-  Narrow (`@container` ≤ 640px): the fraction alone and the glyph-plus-avatars groups, no words.
-  **Each conversation has one home**: the round (by type) or the push and its Needs attention row (by push).
-  The Reviews row's list is an index (`renderCommentsList`, `entryRow(…, 'pointer')`, `[data-pointer]`, chevron right): one line per verdict, remark or pending request with a "N threads" count, and a click goes to the round through `onOpenAnchor` (`seatFor`, `revealRow`);
-  threads are not listed there (`ReviewEntry.parent` still records a person's review for the crawl).
-  **Times line up down a list**: every right-hand control is a 28px square (`.geld-review__chevron`, `.geld-review__ctl-slot--held`, `.geld-review__spacer`), and `entryRow`'s `reserveChevron` says a sibling line has the most squares a line in that list can have — in a round two (⋯ and chevron) when any line opens, in the Reviews index one (the pointer chevron) — so a line with fewer (a bare verdict: none;
-  a verdict with threads: only its pointer chevron) leaves the missing squares blank.
+  Narrow (`@container` ≤ 640px): the fraction alone beside the pills.
+  **What a line opens, it opens where it stands**: nothing in the digest sends the reader to another row to read what they clicked (a permalink, "See latest" and "Show in timeline" still go where they say).
+  The Reviews row's list (`renderCommentsList`, `entryRow(…, 'index')`) has one line per verdict, remark or pending request with a "N threads" count, and a line opens right there to the review as GitHub's timeline sets it (`renderOpenEntry`): its words as a one-bubble chat, then each of a person's threads as its chat (`renderThreadsBelow`, no pinned strip: the review is right above), a bot's threads as chips;
+  a wordless verdict opens to its threads alone (`data-flush`).
+  The same line in its round opens the same way, so a thread can be read under its review or as its own row in the round, one place at a time (the accordion keeps one open).
+  **Times line up down a list**: every right-hand control is a 28px square (`.geld-review__chevron`, `.geld-review__ctl-slot--held`, `.geld-review__spacer`), and `entryRow`'s `reserveChevron` says a sibling line has two (a ⋯ or its blank, then a chevron or its blank), so a line with fewer leaves the missing squares blank.
   Per list, not per panel: a list where no line has a ⋯ lets every time sit against the edge.
   By push, an open thread listed inside its push is a pointer row to its Needs attention row (`itemRow(…, pointer)`, focus key `main:ptr:`);
   resolved threads open in the push.
-  A verdict opens only when it wrote a comment (`entryOpens` = `hasBody`), as a one-bubble chat;
-  a bare verdict is a static line with its thread count, since its threads are rows of their own in the same round, so no list of threads and no "No comments" callout is rendered anywhere.
+  A verdict opens when it wrote a comment or came with threads (`entryOpens`);
+  a bare verdict with neither is a static line, and no "No comments" callout is rendered anywhere.
   Wording follows GitHub: "requested changes", never "rejected".
   **Single-comment rows (bot run summaries, review entries) wear their comment's own ⋯ menu, open or closed** (`wearControls`, `[data-geld-ctl]`): GitHub's menu is moved live into the row so it is GitHub's (Copy link, Quote reply, Edit, Hide, Delete);
   a classic `details-menu` takes "Show in timeline" (`.geld-review__gh-item`, removed on restore) and Geld's small menu steps aside (`data-gh-controls="menu merged"`);
@@ -416,10 +421,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the link is given the whole subject (the link's `title` is the full message, subject first — the halves must add up to it) and the body loses the tail and the blank line after it (a body left empty is hidden, `data-geld-empty`), text only and put back when the node goes home.
   The row then reads whole: one ellipsized line closed, the full message open.
   The status block is the same in both.
-  **Tones** (`data-tone`, `good`/`warn`/`bad`, from GitHub's muted success/attention/danger surfaces): a gradient from 45% of the tone at the left to a 10% wash at the right colours the surface, the row's glyph and the meter — never the words (labels, titles, counts keep their default colour);
-  hovered or open, the row is the plain muted surface.
+  **Tones** (`data-tone`, `good`/`warn`/`bad`, GitHub's success/attention/danger foregrounds) colour the row's glyph, meter and count chip, never its surface or its words: a column of settled rounds reads as a column of green checks, not of green bars.
   Settled rounds and items are `good`;
-  status rows tint only for `bad` (`alarmTone`) — three adjacent rows in three hues read as a traffic light.
+  status rows take a tone only for `bad` (`alarmTone`).
   Below 640px of panel width (`@container geld-review`) rows drop what only repeats their glyphs: round names, timestamps, "resolved", check labels;
   labels read "Bots"/"CI".
   **The bots' and reports' pills are not on that breakpoint: each row gives way to its own room in two steps** (`review/fit-chips.ts`, rows marked `data-geld-fit` — `ATTR_FIT` — on their `.geld-review__status-content`): the row's pills are measured (widths plus gaps against the row's width) with the row at each step in turn, and the first that fits on one line stays — everything · `names` (every pill's `__bot-name` hidden: the mark says who, "clean", "5/5", "patch 62.50%" still say how) · `details` (`__bot-detail` hidden too: mark and light alone).
@@ -466,12 +470,16 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Times read `relative-time`'s shadow text ("yesterday"), as GitHub shows them.
   In compact mode the timeline's "Load more" is pressed automatically (up to `MAX_AUTO_LOADS`) so everything is on the page to fold — **never before `document.readyState === 'complete'`**, and with a guard on the form's `submit`: GitHub's classic control is a submit button whose native action is `…/timeline_more_items`, and pressed before GitHub's JS has claimed the form the browser navigates there (a page that does not exist);
   a submit nobody prevented is stopped and fetched ourselves, the form replaced with the rows.
+  **GitHub's "N hidden items · Load more" bar is out of sight while Geld presses it** (`setAutoLoading`, `data-geld-autoloading` on the root, a stylesheet rule so the fresh form GitHub swaps in after each page is hidden before any pass): set while Geld will keep pressing, a press still on its way included even when it was the last the budget allows (GitHub disables the button meanwhile, `loadMorePending`), the classic fallback buttons (`.ajax-pagination-btn`) hidden with the form, a pass scheduled for when a press stops counting (`loadMorePendingUntil`: a load that failed leaves its form, which must come back for the reader), after which Geld presses no more (`loadMoreStalled`: pressing the failed form again each pass kept the bar hidden through the whole budget), and cleared when it stops (done, `MAX_AUTO_LOADS` reached, the full timeline, teardown), so the reader can load the rest;
+  the reading bar along the digest's top stands for it meanwhile.
   **GitHub minimizes reviews it "marked as resolved" and defers their contents** — the review behind `.minimized-comment include-fragment[loading=lazy]`, and each resolved thread's comments behind `review-thread-collapsible[data-deferred-content-url]` — both loading only when scrolled into view, which a folded row never is;
-  `loadMinimizedReviews` fetches them the way the elements would (threads first, four at a time, `MAX_EAGER_FRAGMENTS` per visit;
+  `loadMinimizedReviews` fetches them the way the elements would (threads first, twelve at a time (`FRAGMENT_CONCURRENCY`: at four, next.js#52514's 165 fragments took ~44 s;
+  at twelve they keep up with the Load more pages that reveal them, ~24 s, none failing), `MAX_EAGER_FRAGMENTS` per visit;
   asking `include-fragment` itself to go eager made it error) and puts the markup in place, so a PR whose findings were all resolved still shows its threads.
   **A URL is fetched again once the nodes it produced have left the document**, not once per visit: every timeline item is a `js-updatable-content` container that GitHub replaces from its partial on the next socket message about the PR, and the partial carries a resolved thread as its header with the comments deferred behind the same URL, so on a busy PR the thread the crawl had just read vanished (and the bot's chip fell back from "resolved" to its summary's "findings") until a reload (`fetchedFragments`;
   a fragment that carries a fragment of its own cannot loop, since what it put in the page is connected).
-  A response whose fragment GitHub replaced meanwhile fills the fresh fragment standing for the same URL (`liveFragmentFor`);
+  A response whose fragment GitHub replaced meanwhile fills the fresh fragment standing for the same URL (`liveFragmentFor`), the thread's own (`threadFragmentOf`: not one in a comment's menu or edit form, which a thread whose first comment shows also holds;
+  taking the first `include-fragment` there once put a whole thread inside a comment's ⋯ menu);
   a failed fetch is retried after `FRAGMENT_RETRY_MS`;
   a fragment GitHub's element gave a `src` on hover (preload) is still fetched, since lazy loading never reaches a folded thread;
   and the edit-form and saved-replies fragments inside a loaded comment are left alone.
@@ -566,10 +574,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   rows that keep GitHub's words (labels, assignees, deployments, title changes) only lose their time link to that column, with GitHub's floated button ("View deployment") set inline after the words, whole.
   Every row's first line is 20px and every button on it (Compare, Details, Revert, View deployment) is GitHub's own `btn btn-sm`, 22px tall and overhanging that line by a pixel above and below (negative vertical margins keep its margin box at 20) from one shared rule, so the badge, the picture and the time all sit on the first line (`align-items: flex-start`) however far the words wrap, and the words wrap to their own start, never under the picture — GitHub's two layouts (avatar column, or the avatar inline before a title change) are both given a 28px column.
   Everything is undone when a node goes home.
-- **The digest's three levels are told apart by surface and type, never by indent** (every level keeps the same glyph column): a section heading ("2 rounds to review", "Other activity", `.geld-review__group`) is a muted band with 12.5px semibold text - a divider that folds, not a row;
-  a row is white at 14px;
-  what opens under a row is held to it by a 2px accent rail (`box-shadow: inset 2px 0 0`) along the left edge of the open row *and* its slot, and the headings inside ("1 unresolved thread", "3 bot comments", the commits toggle) are 11px small-caps labels.
-  Adding a level means picking one of these treatments, not a new indent.
+- **The digest's three levels are told apart by type and by GitHub's box, never by bands of colour** (every level keeps the same glyph column): a section heading ("2 rounds to review", "Other activity", `.geld-review__group`) is a 12px semibold muted label that folds, ActionList's group heading;
+  a row is 14px on the card's own surface, rounded and tinted only under the pointer;
+  what opens under a row stands in a rounded box (the open row its muted header, the slot its body), the lines inside are rows again, and the headings inside ("1 unresolved thread", "3 bot comments", the commits toggle) are 11px small-caps labels;
+  a line open inside the box keeps its hover surface, and a thread opened from a chip hangs from its comment's 32px gutter (`.geld-review__chat-below`).
+  Adding a level means picking one of these treatments, not a new band or rule.
 - **A loaned node must read the same as it does at home, or the panel loops.**
   The panel is swapped whenever its signature changes;
   a swap returns every loan and re-makes it;
