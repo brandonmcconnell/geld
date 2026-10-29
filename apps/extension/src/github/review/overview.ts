@@ -36,7 +36,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, botLineKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -50,7 +50,7 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadChipFocusKey, threadChips } from './chat';
 import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -89,6 +89,8 @@ interface VisitState {
   landedSettled: boolean;
   /** Comment open inside the Reviews row's list. */
   openSubKey: string | null;
+  /** A thread opened from its chip under the open line's comment (`sub` is that line's key): it shows right below the chips. */
+  openThread: { readonly sub: string; readonly anchor: string } | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
   archivedPreviewsOpen: boolean;
@@ -165,6 +167,7 @@ const visit: VisitState = {
   landedFocusKey: null,
   landedSettled: false,
   openSubKey: null,
+  openThread: null,
   sourcesShown: new Set<string>(),
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
@@ -1246,6 +1249,12 @@ function reapplyAt(when: number): void {
  */
 let lastSettings: GeldSettings | null = null;
 
+/** The thread open under the open line's chips, while that line is still the one open. */
+function openThreadNow(): string | null {
+  const open = visit.openThread;
+  return open !== null && open.sub === visit.openSubKey ? open.anchor : null;
+}
+
 /** Open the row `key` names; an item opens inside its round, `sub` names a line inside a round, and the section holding either unfolds. */
 function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings['reviewGrouping'], sub: string | null = null): void {
   if (key.startsWith('item:')) {
@@ -1273,8 +1282,8 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
     }
     visit.openSubKey = sub;
   }
-  // A line in the Review bots or Reports list opens inside its row the same way.
-  if (key === BOTS_KEY || key === REPORTS_KEY) visit.openSubKey = sub;
+  // A line in the Reviews, Review bots or Reports list opens inside its row the same way.
+  if (key === BOTS_KEY || key === REPORTS_KEY || key === REVIEWS_KEY) visit.openSubKey = sub;
   visit.openKey = key;
 }
 
@@ -2871,13 +2880,58 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   );
   jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews));
   const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done))));
-  // A review's or run summary's threads as chips under its opened bubble, by file, each leading to its row.
+  // A review's or run summary's threads as chips under its opened bubble, by file, each opening its thread below.
   const threadLinks = (threads: readonly ReviewThreadRef[]): ChatThreadLink[] =>
     threads.map((thread) => {
       const root = threadRootOf(thread.anchor);
       const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === thread.anchor));
       return { anchor: thread.anchor, path: root === null ? '' : threadPathOf(root, item, meta), ...(item?.line === undefined ? {} : { line: item.line }), preview: firstSentence(bodies.get(thread.anchor)?.body ?? ''), done: thread.done };
     });
+  // A thread opened in place (from its chip, or one of a review's threads under its words): its chat without the
+  // pinned strip, since the comment it came from stands right above it.
+  const renderThreadsBelow = (parent: HTMLElement, anchors: readonly string[], under = true): void => {
+    for (const anchor of anchors) {
+      const node = threadRootOf(anchor);
+      const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
+      const box = createElement('div', { class: `${PANEL_CLASS}__chat-below`, ...(under ? {} : { 'data-flush': '' }) });
+      parent.append(box);
+      renderChatView(box, node === null ? [] : [node], { ...threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor), sourceOf: () => null });
+    }
+  };
+  const toggleThread = (anchor: string): void => {
+    const sub = visit.openSubKey;
+    if (sub === null) return;
+    keepInPlace(threadChipFocusKey(anchor), () => {
+      visit.openThread = openThreadNow() === anchor ? null : { sub, anchor };
+      reapply();
+    });
+  };
+  // The comment (or the chips alone) drawn by `draw`, then the thread its chips have open, right below them.
+  const renderWithThreadChips = (nested: HTMLElement, links: readonly ChatThreadLink[], draw: (onToggle: (anchor: string) => void, open: string | null) => void): void => {
+    const open = openThreadNow();
+    const shown = open !== null && links.some((link) => link.anchor === open) ? open : null;
+    draw(toggleThread, shown);
+    if (shown !== null) renderThreadsBelow(nested, [shown]);
+  };
+  // A review or remark opened from its line: its words (a bot's with Rerun on the byline and its threads as chips),
+  // then a person's threads one after another, as GitHub's timeline sets a review.
+  const renderOpenEntry = (nested: HTMLElement, entry: ReviewEntry): void => {
+    const bot = /\[bot\]$/i.test(entry.author);
+    const threads = (entry.threads ?? []).map((thread) => thread.anchor);
+    const node = entry.hasBody ? (entryNodes.get(entry.anchor) ?? timelineRootOf(entry.anchor)) : null;
+    if (node === null) {
+      renderThreadsBelow(nested, threads, false);
+      return;
+    }
+    const byline = withRerun(dressByline({ login: entry.author, bot, avatarSrc: entry.avatarSrc, time: entry.time }, entry.anchor), entry.author, entry.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
+    if (bot) {
+      const links = threadLinks(entry.threads ?? []);
+      renderWithThreadChips(nested, links, (onToggle, open) => renderCommentChat(nested, node, byline, links, onToggle, open));
+      return;
+    }
+    renderCommentChat(nested, node, byline);
+    renderThreadsBelow(nested, threads);
+  };
 
   const viewingAnchor = sourceAnchorFromHash(location.hash);
   if (viewingAnchor !== null && document.getElementById(viewingAnchor) === null && visit.loadMoreTries < MAX_LOAD_MORE) {
@@ -3089,6 +3143,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     ingesting,
     progress,
     openSubKey: visit.openSubKey,
+    openThread: openThreadNow(),
     openSources: visit.sourcesShown,
     refsVersion: refsVersion(),
     editsVersion: editsVersion(),
@@ -3368,18 +3423,28 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       }
     } else if (slotNeedsRender(mounted.slot) && readySlotForRender(mounted.slot)) {
       if (visit.openKey === REVIEWS_KEY) {
-        // An index of people's reviews; each line points at the round where its conversation opens.
-        renderCommentsList(mounted.slot, model, panelHandlers);
+        // People's reviews; the open line's review stands under it as GitHub's timeline sets it: its words, then
+        // each of its threads.
+        const view = renderCommentsList(mounted.slot, model, panelHandlers);
+        if (view.nested !== null && view.openEntry !== null) renderOpenEntry(view.nested, view.openEntry);
+        else if (visit.openSubKey !== null && !comments.some((entry) => entry.anchor === visit.openSubKey)) visit.openSubKey = null;
       } else if (visit.openKey === BOTS_KEY) {
         // Each bot's latest run summary; the open line's stands under it as a one-bubble chat with Rerun on its
-        // byline and the run's threads linked at its foot, each leading to its row in its round.
+        // byline and the run's threads as chips at its foot, each opening its thread right there.
         const view = renderBotsList(mounted.slot, model, panelHandlers);
         const line = view.openLine;
         const commentNode = line?.anchor === null || line === null ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
         if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
           const byline = withRerun(dressByline({ login: line.author, bot: true, avatarSrc: line.avatarSrc, time: line.time }, line.anchor), line.author, line.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
-          renderCommentChat(view.nested, commentNode, byline, threadLinks(line.threads), panelHandlers.onOpenAnchor);
-        } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => entry.anchor === visit.openSubKey))) {
+          const nested = view.nested;
+          const links = threadLinks(line.threads);
+          renderWithThreadChips(nested, links, (onToggle, open) => renderCommentChat(nested, commentNode, byline, links, onToggle, open));
+        } else if (view.nested !== null && line !== null && line.anchor === null) {
+          // A bot that opened threads and posted no summary: the threads alone, as chips.
+          const links = threadLinks(line.threads);
+          const nested = view.nested;
+          renderWithThreadChips(nested, links, (onToggle, open) => nested.replaceChildren(createElement('div', { class: `${PANEL_CLASS}__chats` }, [threadChips(links, onToggle, open, `from ${botTitle(line.bot.id, line.author)}`)])));
+        } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => botLineKey(entry) === visit.openSubKey))) {
           // A comment that left the page, or a summary no longer the bot's latest: nothing to keep open.
           visit.openSubKey = null;
         }
@@ -3406,14 +3471,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           // a one-bubble chat; a bot's run summary and a person's remark the same way; a thread as its chat.
           const openEntry = view.openComment === null ? null : ([...batch.reviews, ...batch.comments].find((entry) => entry.anchor === view.openComment) ?? null);
           const thread = openEntry?.state === 'thread' ? threadRootOf(openEntry.anchor) : null;
-          const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (thread === null ? timelineRootOf(view.openComment) : null));
+          const commentNode = view.openComment === null || openEntry?.hasBody !== true ? null : (entryNodes.get(view.openComment) ?? (thread === null ? timelineRootOf(view.openComment) : null));
           if (view.nested !== null && thread !== null) {
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
             renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
-          } else if (view.nested !== null && commentNode !== null) {
-            const byline = openEntry === null ? null : withRerun(dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor), openEntry.author, openEntry.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
-            // The threads the review came with, by file, leading to their rows.
-            renderCommentChat(view.nested, commentNode, byline, threadLinks(openEntry?.threads ?? []), panelHandlers.onOpenAnchor);
+          } else if (view.nested !== null && openEntry !== null && (commentNode !== null || (openEntry.threads?.length ?? 0) > 0)) {
+            renderOpenEntry(view.nested, openEntry);
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
             renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
