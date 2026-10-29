@@ -181,21 +181,51 @@ function annotatedAt(lines: readonly OutlineLine[], index: number): { readonly h
   return null;
 }
 
-/** Quoted strings, dropped before brackets are counted (their contents are no code). */
-const STRINGS = /(['"\x60])(?:\\.|(?!\1)[^\\])*\1/g;
+/** A line that opens with a call: a name, maybe dotted, then its brackets (`it(`, `test.each([`, `it.each\x60`). */
+const OPENS_WITH_CALL = /^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*[([\x60]/;
 
-/** A call that opens and closes on its own line (`…);`), so nothing after it belongs to it. */
+/**
+ * A call that opens and closes on its own line (`…);`), so nothing after it belongs to it. One forward scan over
+ * the line (it is diff text a pull request's author controls): strings skipped, a comment ends the code, brackets
+ * counted, and the last code must be the call's `)`, optionally with `;` or `,` after it.
+ */
 function completeOnItsLine(text: string): boolean {
   // A function declared with its brace on the next line (Allman, PSR-12) ends in `)` as well, and is not a call.
   if (/^\s*(?:(?:public|protected|private|internal|static|final|async|override|open|suspend)\s+)*(?:function|func|fun|void|def|fn)\b/.test(text)) return false;
-  const code = text.replace(STRINGS, '');
-  if (!/\)\s*[;,]?\s*$/.test(code)) return false;
+  if (!OPENS_WITH_CALL.test(text)) return false;
   let depth = 0;
-  for (const char of code) {
+  let quote = '';
+  let last = '';
+  let beforeLast = '';
+  for (let at = 0; at < text.length; at += 1) {
+    const char = text.charAt(at);
+    if (quote !== '') {
+      if (char === '\\') at += 1;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '\x60') {
+      quote = char;
+      beforeLast = last;
+      last = char;
+      continue;
+    }
+    if (char === '/' && text.charAt(at + 1) === '/') break;
+    if (char === '/' && text.charAt(at + 1) === '*') {
+      const end = text.indexOf('*/', at + 2);
+      if (end === -1) break;
+      at = end + 1;
+      continue;
+    }
     if (char === '(' || char === '[' || char === '{') depth += 1;
     else if (char === ')' || char === ']' || char === '}') depth -= 1;
+    if (char.trim() !== '') {
+      beforeLast = last;
+      last = char;
+    }
   }
-  return depth <= 0;
+  if (quote !== '' || depth > 0) return false;
+  return last === ')' || ((last === ';' || last === ',') && beforeLast === ')');
 }
 
 interface Block {

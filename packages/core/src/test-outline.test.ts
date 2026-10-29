@@ -194,6 +194,20 @@ describe('outlineTestFolds', () => {
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "testSavesToken" R1 body=3 +4 -0']);
   });
 
+  it('reads the body of a Gherkin scenario ending in parentheses, and of a call whose comment holds brackets', () => {
+    const gherkin = ['+Feature: Deploy', '+  Scenario: Saving the token (expired)', '+    Given a token', '+    Then it is refreshed'].join('\n');
+    expect(brief(outlineTestFolds(sides(gherkin)))).toEqual(['added suite "Deploy" R1 body=3 +4 -0', 'added test "Saving the token (expired)" R2 body=2 +3 -0']);
+    const commented = ["+it('handles', () => { // })", '+  run();', '+});'].join('\n');
+    expect(brief(outlineTestFolds(sides(commented)))).toEqual(['added test "handles" R1 body=2 +3 -0']);
+  });
+
+  it('checks a line of escaped quotes for a one-line call in linear time', () => {
+    const lines = [`it('t', () => run()) // ${'\\"'.repeat(40_000)}`].map((text, row) => ({ key: `R${row + 1}`, number: row + 1, text, changed: true, row, run: 1 }));
+    const started = performance.now();
+    outlineTestFolds({ old: [], new: lines });
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it('keeps a whole one-line test from taking the deeper line after it', () => {
     const diff = ["+  it('adds', () => expect(add(1, 1)).toBe(2));", '+    unrelated();', "+  it('subtracts', () => {", '+    expect(sub(2, 1)).toBe(1);', '+  });'].join('\n');
     expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "subtracts" R3 body=2 +3 -0']);
