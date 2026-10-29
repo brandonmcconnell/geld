@@ -740,7 +740,9 @@ export class GeldController {
       if (press !== undefined && head !== '' && press.head !== head) press = undefined;
       if (press?.took === true) continue;
       if (press !== undefined && (press.tries >= AUTO_VIEWED_TRIES || now - press.at < AUTO_VIEWED_RETRY_MS)) {
-        if (findViewedControls(entry.root).unviewed.length === 0) press.took = true;
+        // Taken only when GitHub shows the file viewed: a header it has unmounted for a moment shows neither control.
+        const shown = findViewedControls(entry.root);
+        if (shown.unviewed.length === 0 && shown.viewed.length > 0) press.took = true;
         continue;
       }
       const category = this.classify(matcher, entry.path, entry.stats);
