@@ -50,7 +50,7 @@ describe('outlineTestFolds', () => {
     ].join('\n');
     expect(brief(outlineTestFolds(sides(diff)))).toEqual([
       'modified test "persists the exchanged access token for later commands" R2 body=6 +1 -1',
-      'removed test "continues provisioning after keyring save failure" L2 body=4 +0 -5',
+      'removed test "continues provisioning after keyring save failure" L2 body=5 +0 -6',
     ]);
   });
 
@@ -87,20 +87,20 @@ describe('outlineTestFolds', () => {
 
   it('reads Python, Go subtests, Rust and JUnit annotations, xUnit, RSpec, Elixir and Gherkin', () => {
     const cases: readonly (readonly [string, readonly string[]])[] = [
-      [['+class TestDeploy:', '+    def setUp(self):', '+        self.x = 1', '+', '+    def test_saves_token(self):', '+        assert save()', '+'].join('\n'), ['added hook "setUp" R2 body=1 +2 -0', 'added test "test_saves_token" R5 body=1 +2 -0']],
+      [['+class TestDeploy:', '+    def setUp(self):', '+        self.x = 1', '+', '+    def test_saves_token(self):', '+        assert save()', '+'].join('\n'), ['added hook "setUp" R2 body=2 +3 -0', 'added test "test_saves_token" R5 body=2 +3 -0']],
       [
         ['+func TestParse(t *testing.T) {', '+\tt.Run("empty input", func(t *testing.T) {', '+\t\tif Parse("") != nil {', '+\t\t\tt.Fatal()', '+\t\t}', '+\t})', '+}'].join('\n'),
         ['added test "empty input" R2 body=4 +5 -0'],
       ],
-      [['+#[test]', '+fn adds_two() {', '+    assert_eq!(add(1, 1), 2);', '+}'].join('\n'), ['added test "adds_two" R2 body=2 +3 -0']],
-      [['+    @Test', '+    @DisplayName("adds two numbers")', '+    void adds() {', '+        assertEquals(2, add(1, 1));', '+    }'].join('\n'), ['added test "adds two numbers" R3 body=2 +3 -0']],
-      [['+    [Fact]', '+    public async Task SavesToken()', '+    {', '+        await Save();', '+    }'].join('\n'), ['added test "SavesToken" R2 body=3 +4 -0']],
+      [['+#[test]', '+fn adds_two() {', '+    assert_eq!(add(1, 1), 2);', '+}'].join('\n'), ['added test "adds_two" R2 body=2 +4 -0']],
+      [['+    @Test', '+    @DisplayName("adds two numbers")', '+    void adds() {', '+        assertEquals(2, add(1, 1));', '+    }'].join('\n'), ['added test "adds two numbers" R3 body=2 +5 -0']],
+      [['+    [Fact]', '+    public async Task SavesToken()', '+    {', '+        await Save();', '+    }'].join('\n'), ['added test "SavesToken" R2 body=3 +5 -0']],
       [['+  @Test("adds two numbers") func adds() {', '+    #expect(add(1, 1) == 2)', '+  }'].join('\n'), ['added test "adds two numbers" R1 body=2 +3 -0']],
       [['+  it "persists the token" do', '+    expect(token).to be_present', '+  end'].join('\n'), ['added test "persists the token" R1 body=2 +3 -0']],
       [['+  test "saves the token", %{conn: conn} do', '+    assert save(conn)', '+  end'].join('\n'), ['added test "saves the token" R1 body=2 +3 -0']],
       [['+Feature: Deploy', '+  Scenario: Saving the token', '+    Given a token', '+    Then it is saved'].join('\n'), ['added test "Saving the token" R2 body=2 +3 -0']],
       [['+    fun `adds two numbers`() {', '+        assertEquals(2, add(1, 1))', '+    }'].join('\n'), []],
-      [['+    @Test', '+    fun `adds two numbers`() {', '+        assertEquals(2, add(1, 1))', '+    }'].join('\n'), ['added test "adds two numbers" R2 body=2 +3 -0']],
+      [['+    @Test', '+    fun `adds two numbers`() {', '+        assertEquals(2, add(1, 1))', '+    }'].join('\n'), ['added test "adds two numbers" R2 body=2 +4 -0']],
     ];
     for (const [diff, expected] of cases) expect(brief(outlineTestFolds(sides(diff)))).toEqual(expected);
   });
@@ -155,6 +155,21 @@ describe('outlineTestFolds', () => {
     const started = performance.now();
     expect(outlineTestFolds({ old: [], new: lines })).toEqual([]);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('folds one blank line beside a test into it, the test above first, and leaves a run of blank lines in view', () => {
+    const diff = ["+it('a', () => {", '+  one();', '+});', '+', "+it('b', () => {", '+  two();', '+});', '+', '+', "+it('c', () => {", '+  three();', '+});'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "a" R1 body=3 +4 -0', 'added test "b" R5 body=2 +3 -0', 'added test "c" R10 body=2 +3 -0']);
+  });
+
+  it('leaves an unchanged blank line beside an added test in view', () => {
+    const diff = [' })', ' ', "+it('a', () => {", '+  one();', '+});', '+'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "a" R3 body=3 +4 -0']);
+  });
+
+  it('folds the annotations that make a function a test into its declaration', () => {
+    const folds = outlineTestFolds(sides(['+    @Test', '+    void adds() {', '+        check();', '+    }'].join('\n')));
+    expect(folds[0]?.headingKeys).toEqual(['R1', 'R2']);
   });
 
   it('never joins lines across a gap in the numbering', () => {

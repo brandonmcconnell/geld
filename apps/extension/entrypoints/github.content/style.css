@@ -2273,8 +2273,8 @@ tr[data-geld-test-fold='hidden'] {
 }
 
 /*
- * One full-width row per test, of Geld's own, unshaded like GitHub's own rows: the lines it spans in GitHub's
- * line-number type, started where the numbers above start (test-folds.ts `alignRanges` sets the margin and font),
+ * One full-width row per test, of Geld's own, unshaded like GitHub's own rows: the line it starts on in GitHub's
+ * line-number type, set where the numbers above stand (test-folds.ts `alignRanges` sets the margin and font),
  * the title, then what changed in it and the chevron at the right.
  */
 .geld-test-row__cell {
@@ -2283,8 +2283,8 @@ tr[data-geld-test-fold='hidden'] {
   border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
 }
 
-/* Folded tests one after another share a border, not two. */
-.geld-test-row + .geld-test-row > .geld-test-row__cell {
+/* Folded tests one after another share a border, not two (test-folds.ts marks a row whose shown neighbour above is one). */
+.geld-test-row[data-joined] > .geld-test-row__cell {
   border-top: 0;
 }
 

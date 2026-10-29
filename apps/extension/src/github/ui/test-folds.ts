@@ -5,8 +5,8 @@ import { ICON_CHEVRON_RIGHT } from './icons';
 
 /**
  * Test files read as their titles: every test, declaration and body, folds
- * to one full-width row of Geld's own: the lines it spans ("274–286", set as
- * GitHub's line numbers are and lined up with them), its title, and at the
+ * to one full-width row of Geld's own: the line it starts on (set as GitHub's
+ * line numbers are and lined up with them), its title, and at the
  * right what changed in it ("+3 −1"); opened, the test's whole source shows
  * under that row, declaration included. Keyed on
  * GitHub's own line anchors (`diff-<digest>R30` / `L91`, `data-line-anchor`
@@ -178,19 +178,6 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
   for (const [key, read] of state.lines) rowKeys.set(read.rowElement, [...(rowKeys.get(read.rowElement) ?? []), key]);
   const hidden = new Set<HTMLTableRowElement>();
   for (const [row, keys] of rowKeys) if (keys.every((key) => folded.has(key))) hidden.add(row);
-  // Blank lines between folded tests go with them, so the title rows read as one list; beside code they stay.
-  const blank = (row: HTMLTableRowElement): boolean => (rowKeys.get(row) ?? []).every((key) => (state.lines.get(key)?.line.text.trim() ?? '') === '');
-  const ordered = [...rowKeys.keys()].sort((a, b) => (state.lines.get(rowKeys.get(a)?.[0] ?? '')?.line.row ?? 0) - (state.lines.get(rowKeys.get(b)?.[0] ?? '')?.line.row ?? 0));
-  for (let at = 0; at < ordered.length; at += 1) {
-    const row = ordered[at];
-    if (row === undefined || hidden.has(row) || !blank(row)) continue;
-    let end = at;
-    while (end + 1 < ordered.length && blank(ordered[end + 1] ?? row) && !hidden.has(ordered[end + 1] ?? row)) end += 1;
-    const before = ordered[at - 1];
-    const after = ordered[end + 1];
-    if (before !== undefined && after !== undefined && hidden.has(before) && hidden.has(after)) for (const gap of ordered.slice(at, end + 1)) hidden.add(gap);
-    at = end;
-  }
   for (const row of root.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_TEST_FOLD}]`)) if (!hidden.has(row)) row.removeAttribute(ATTR_TEST_FOLD);
   for (const row of hidden) if (row.getAttribute(ATTR_TEST_FOLD) !== 'hidden') row.setAttribute(ATTR_TEST_FOLD, 'hidden');
 
@@ -199,11 +186,14 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     // The test's rows in the order they stand; its title row goes before the first of them.
     const reads = [...fold.headingKeys, ...fold.bodyKeys].map((key) => state.lines.get(key)).filter((read): read is ReadLine => read !== undefined);
     if (reads.length === 0 || fold.bodyKeys.length === 0) continue;
-    const first = reads.reduce((top, read) => (read.line.row < top.line.row ? read : top));
-    // The lines it spans on its declaration's side: new numbers for a test that stands, old ones for a removed test.
+    // Before the first row that folds away with it (a row it shares with code on the other side stays where it is).
+    const own = new Set([...fold.headingKeys, ...fold.bodyKeys]);
+    const foldable = reads.filter((read) => rowKeys.get(read.rowElement)?.every((key) => own.has(key)) === true);
+    const first = (foldable.length > 0 ? foldable : reads).reduce((top, read) => (read.line.row < top.line.row ? read : top));
+    // Where it starts on its declaration's side: its new number for a test that stands, its old one for a removed test.
     const side: 'L' | 'R' = fold.headKey.charAt(0) === 'L' ? 'L' : 'R';
-    const numbers = reads.filter((read) => read.line.key.charAt(0) === side).map((read) => read.line.number);
-    const range = { side, start: Math.min(...numbers), end: Math.max(...numbers) };
+    const numbers = fold.headingKeys.filter((key) => key.charAt(0) === side).map((key) => state.lines.get(key)?.line.number ?? Number.POSITIVE_INFINITY);
+    const range = { side, start: Math.min(...numbers) };
     const id = `${anchor}:${fold.id}`;
     const row = ensureTitleRow(first.rowElement, id, fold, range, opened.has(id), () => {
       if (opened.has(id)) opened.delete(id);
@@ -213,6 +203,14 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     kept.add(row);
   }
   for (const row of root.querySelectorAll(`[${ATTR_TEST_ROW}]`)) if (!kept.has(row)) row.remove();
+  // Folded tests one after another share one border: the rows hidden between them are still siblings, so CSS's `+`
+  // cannot tell, and the row says it here.
+  for (const row of kept) {
+    let previous = row.previousElementSibling;
+    while (previous !== null && previous.getAttribute(ATTR_TEST_FOLD) === 'hidden') previous = previous.previousElementSibling;
+    const joined = previous !== null && previous.hasAttribute(ATTR_TEST_ROW);
+    if (row.hasAttribute('data-joined') !== joined) row.toggleAttribute('data-joined', joined);
+  }
   scheduleAlign();
 }
 
@@ -273,7 +271,7 @@ function digitWidth(font: string): number {
 
 /**
  * Each title row's first number starts where a number of its width stands in GitHub's column above: centred in the
- * React view's cells, right-aligned in the classic view's, in GitHub's own font, so "274–286" reads as the number
+ * React view's cells, right-aligned in the classic view's, in GitHub's own font, so the row's number reads as the number
  * column carried on into the page.
  */
 function alignRanges(): void {
@@ -310,23 +308,23 @@ function alignRanges(): void {
 /** Each title row's current action: a row kept across passes (nothing in it changed) must act on the latest reading of the file. */
 const rowActions = new WeakMap<Element, () => void>();
 
-function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold, range: { readonly side: 'L' | 'R'; readonly start: number; readonly end: number }, open: boolean, onToggle: () => void): Element {
+function ensureTitleRow(before: HTMLTableRowElement, id: string, fold: TestFold, range: { readonly side: 'L' | 'R'; readonly start: number }, open: boolean, onToggle: () => void): Element {
   const columns = [...before.cells].reduce((sum, cell) => sum + cell.colSpan, 0) || 1;
-  const state = `${open}|${range.side}${range.start}-${range.end}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
+  const state = `${open}|${range.side}${range.start}|${fold.additions}|${fold.deletions}|${fold.title}|${fold.previousTitle ?? ''}|${columns}`;
   const existing = before.parentElement?.querySelector(`tr[${ATTR_TEST_ROW}="${CSS.escape(id)}"]`);
   if (existing instanceof HTMLTableRowElement && existing.dataset.state === state) {
     rowActions.set(existing, onToggle);
     if (before.previousElementSibling !== existing) before.before(existing);
     return existing;
   }
-  const span = range.start === range.end ? String(range.start) : `${range.start}–${range.end}`;
+  const span = String(range.start);
   const changes: Node[] = [];
   if (fold.additions > 0) changes.push(createElement('span', { class: `${ROW_CLASS}__add` }, [`+${formatCount(fold.additions)}`]));
   if (fold.deletions > 0) changes.push(createElement('span', { class: `${ROW_CLASS}__del` }, [`−${formatCount(fold.deletions)}`]));
   const title = fold.kind === 'hook' ? `${fold.title} hook` : fold.title;
   const changed = [fold.additions > 0 ? `${fold.additions} added` : '', fold.deletions > 0 ? `${fold.deletions} removed` : ''].filter((part) => part !== '').join(', ');
   const word = fold.status === 'added' ? 'new test' : fold.status === 'removed' ? 'removed test' : fold.status === 'renamed' ? `renamed from ${fold.previousTitle ?? ''}` : '';
-  const label = [`${open ? 'Hide' : 'Show'} ${title}`, `lines ${span}`, word, changed].filter((part) => part !== '').join(', ');
+  const label = [`${open ? 'Hide' : 'Show'} ${title}`, `from line ${span}`, word, changed].filter((part) => part !== '').join(', ');
   const button = createElement('button', { type: 'button', class: `${ROW_CLASS}__toggle`, 'aria-expanded': String(open), 'aria-label': label, title: fold.previousTitle === undefined ? title : `${title} (was “${fold.previousTitle}”)` }, [
     createElement('span', { class: `${ROW_CLASS}__lines`, 'aria-hidden': 'true' }, [span]),
     createElement('span', { class: `${ROW_CLASS}__title`, 'data-kind': fold.kind, 'aria-hidden': 'true' }, [title]),

@@ -182,6 +182,8 @@ function annotatedAt(lines: readonly OutlineLine[], index: number): { readonly h
 interface Block {
   readonly kind: TestBlockKind;
   readonly title: string;
+  /** Its first line: the declaration, or the first of the annotations that make it a test (`@Test`, `#[test]`). */
+  readonly start: number;
   readonly head: number;
   /** First and last body line (inclusive); empty when last < first. */
   readonly first: number;
@@ -192,6 +194,7 @@ interface Block {
 export function testBlocks(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[] = BUILT_IN_TEST_SYNTAXES): readonly Block[] {
   const blocks: Block[] = [];
   for (let index = 0; index < lines.length; index += 1) {
+    const start = index;
     let head = index;
     let declaration = TEST_ANNOTATION.test(lines[index]?.text ?? '') ? null : declarationAt(lines, index, syntaxes);
     if (declaration === null && TEST_ANNOTATION.test(lines[index]?.text ?? '')) {
@@ -221,7 +224,7 @@ export function testBlocks(lines: readonly OutlineLine[], syntaxes: readonly Tes
       break;
     }
     while (last >= first && isBlank(lines[last]?.text ?? '')) last -= 1;
-    blocks.push({ kind: declaration.kind, title: declaration.title, head, first, last });
+    blocks.push({ kind: declaration.kind, title: declaration.title, start, head, first, last });
   }
   return blocks;
 }
@@ -235,10 +238,26 @@ interface SideFold {
   readonly body: readonly OutlineLine[];
 }
 
-/** The blocks that fold: tests with no test or suite inside them (a Go test with subtests stays open), and hooks. */
+/** Whether the line at `index` is blank and follows (or precedes) its neighbour with no gap in the numbering. */
+function blankBeside(lines: readonly OutlineLine[], index: number, neighbour: number): boolean {
+  const line = lines[index];
+  const other = lines[neighbour];
+  return line !== undefined && other !== undefined && isBlank(line.text) && Math.abs(line.number - other.number) === 1;
+}
+
+/** A blank line beside a test that folds with it: one this change added or removed (an unchanged one is the file's own spacing). */
+const blankToFold = (lines: readonly OutlineLine[], index: number, neighbour: number): boolean => blankBeside(lines, index, neighbour) && lines[index]?.changed === true;
+
+/**
+ * The blocks that fold: tests with no test or suite inside them (a Go test with subtests stays open), and hooks.
+ * A single added or removed blank line just below a test, or just above one the test before has not taken, folds
+ * with it, so a run of folded tests is not broken up by the blank lines between them; two or more blank lines in a
+ * row, and the file's unchanged spacing, stay in view.
+ */
 function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[]): readonly SideFold[] {
   const blocks = testBlocks(lines, syntaxes);
   const folds: SideFold[] = [];
+  const taken = new Set<number>();
   for (const block of blocks) {
     if (block.kind === 'suite' || block.last < block.first) continue;
     const container = block.kind === 'test' && blocks.some((other) => other !== block && other.kind !== 'hook' && other.head > block.head && other.head <= block.last);
@@ -247,7 +266,20 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
     if (block.kind === 'hook' && blocks.some((other) => other !== block && other.kind !== 'suite' && other.head < block.head && block.head <= other.last)) continue;
     const head = lines[block.head];
     if (head === undefined) continue;
-    folds.push({ kind: block.kind, title: block.title, head, heading: lines.slice(block.head, block.first), body: lines.slice(block.first, block.last + 1) });
+    const body = lines.slice(block.first, block.last + 1);
+    const above = block.start - 1;
+    if (blankToFold(lines, above, block.start) && !blankBeside(lines, above - 1, above) && !taken.has(above)) {
+      const line = lines[above];
+      if (line !== undefined) body.unshift(line);
+      taken.add(above);
+    }
+    const below = block.last + 1;
+    if (blankToFold(lines, below, block.last) && !blankBeside(lines, below + 1, below)) {
+      const line = lines[below];
+      if (line !== undefined) body.push(line);
+      taken.add(below);
+    }
+    folds.push({ kind: block.kind, title: block.title, head, heading: lines.slice(block.start, block.first), body });
   }
   return folds;
 }
