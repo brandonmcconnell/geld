@@ -189,6 +189,22 @@ describe('outlineTestFolds', () => {
     expect(folds.map((fold) => fold.parentId ?? null)).toEqual([null, 'old:L2', 'old:L2']);
   });
 
+  it('reads a PHPUnit method with its brace on the next line as a test with a body', () => {
+    const diff = ['+    public function testSavesToken()', '+    {', '+        $this->assertTrue(save());', '+    }'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "testSavesToken" R1 body=3 +4 -0']);
+  });
+
+  it('keeps a whole one-line test from taking the deeper line after it', () => {
+    const diff = ["+  it('adds', () => expect(add(1, 1)).toBe(2));", '+    unrelated();', "+  it('subtracts', () => {", '+    expect(sub(2, 1)).toBe(1);', '+  });'].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "subtracts" R3 body=2 +3 -0']);
+  });
+
+  it('leaves a test moved into an added suite outside it when its old lines stand outside', () => {
+    const diff = ["-it('a', () => {", "+describe('group', () => {", "+  it('a', () => {", '     one();', '+  });', '+});', '-});'].join('\n');
+    const folds = outlineTestFolds(sides(diff));
+    expect(folds.find((fold) => fold.title === 'a')?.parentId).toBeUndefined();
+  });
+
   it('folds the annotations that make a function a test into its declaration', () => {
     const folds = outlineTestFolds(sides(['+    @Test', '+    void adds() {', '+        check();', '+    }'].join('\n')));
     expect(folds[0]?.headingKeys).toEqual(['R1', 'R2']);

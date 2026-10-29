@@ -181,6 +181,23 @@ function annotatedAt(lines: readonly OutlineLine[], index: number): { readonly h
   return null;
 }
 
+/** Quoted strings, dropped before brackets are counted (their contents are no code). */
+const STRINGS = /(['"\x60])(?:\\.|(?!\1)[^\\])*\1/g;
+
+/** A call that opens and closes on its own line (`…);`), so nothing after it belongs to it. */
+function completeOnItsLine(text: string): boolean {
+  // A function declared with its brace on the next line (Allman, PSR-12) ends in `)` as well, and is not a call.
+  if (/^\s*(?:(?:public|protected|private|internal|static|final|async|override|open|suspend)\s+)*(?:function|func|fun|void|def|fn)\b/.test(text)) return false;
+  const code = text.replace(STRINGS, '');
+  if (!/\)\s*[;,]?\s*$/.test(code)) return false;
+  let depth = 0;
+  for (const char of code) {
+    if (char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === ')' || char === ']' || char === '}') depth -= 1;
+  }
+  return depth <= 0;
+}
+
 interface Block {
   readonly kind: TestBlockKind;
   readonly title: string;
@@ -212,6 +229,11 @@ export function testBlocks(lines: readonly OutlineLine[], syntaxes: readonly Tes
     const indent = indentOf(headLine.text);
     const first = head + declaration.span;
     let last = first - 1;
+    // `it('adds', () => expect(add(1, 1)).toBe(2));` is whole on its line: a deeper line after it is not its body.
+    if (declaration.span === 1 && head === start && completeOnItsLine(headLine.text)) {
+      blocks.push({ kind: declaration.kind, title: declaration.title, start, head, first, last });
+      continue;
+    }
     let previous = lines[first - 1]?.number ?? headLine.number;
     for (let at = first; at < lines.length; at += 1) {
       const line = lines[at];
@@ -335,7 +357,14 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
     const standing = side === 'old' ? partnerOf.get(fold) : undefined;
     return standing === undefined ? `${side}:${fold.head.key}` : `new:${standing.head.key}`;
   };
-  const parentOf = (fold: SideFold, side: 'new' | 'old'): { readonly parentId?: string } => (fold.parent === null ? {} : { parentId: idOf(fold.parent, side) });
+  const parentOf = (fold: SideFold, side: 'new' | 'old', partner?: SideFold): { readonly parentId?: string } => {
+    if (fold.parent === null) return {};
+    const parentId = idOf(fold.parent, side);
+    // A test paired across sides is inside a folded suite only when both its sides are: a test moved into an added
+    // suite keeps its old lines outside that suite, and they must keep a button of their own.
+    if (partner !== undefined && (partner.parent === null || idOf(partner.parent, 'old') !== parentId)) return {};
+    return { parentId };
+  };
   for (const fold of news) {
     const partner = partners.get(fold);
     const additions = changedIn(fold.heading) + changedIn(fold.body);
@@ -345,7 +374,7 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
     folds.push({
       id: `new:${fold.head.key}`,
       kind: fold.kind,
-      ...parentOf(fold, 'new'),
+      ...parentOf(fold, 'new', partner),
       title: fold.title,
       ...(renamed ? { previousTitle: partner.title } : {}),
       status,

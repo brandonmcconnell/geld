@@ -160,10 +160,11 @@ function openLinkedFold(anchor: string, state: Painted, opened: Set<string>): vo
   const hash = window.location.hash.slice(1);
   if (!hash.startsWith(anchor) || hash === linkedHash) return;
   const keys = [...hash.slice(anchor.length).matchAll(/([LR])(\d+)/g)].map((match) => `${match[1]}${match[2]}`);
-  const fold = state.folds.find((candidate) => keys.some((key) => candidate.bodyKeys.includes(key) || candidate.headingKeys.includes(key)));
-  if (fold === undefined) return;
+  // Every fold holding the line: a test inside a folded suite needs the suite and itself opened.
+  const holding = state.folds.filter((candidate) => keys.some((key) => candidate.bodyKeys.includes(key) || candidate.headingKeys.includes(key)));
+  if (holding.length === 0) return;
   linkedHash = hash;
-  opened.add(`${anchor}:${fold.id}`);
+  for (const fold of holding) opened.add(`${anchor}:${fold.id}`);
   // The browser gave up on a row that was not displayed when it looked: bring it into view once it is.
   const row = keys.map((key) => state.lines.get(key)?.rowElement).find((element) => element !== undefined);
   if (row !== undefined) window.requestAnimationFrame(() => row.scrollIntoView({ block: 'center' }));
