@@ -132,7 +132,7 @@ describe('outlineTestFolds', () => {
 
   it('reads a line of spaces after a test name, or after an annotated function’s type, in linear time', () => {
     const spaces = ' '.repeat(50_000);
-    const lines = [`it${spaces}x`, `"title"${spaces}x`, '@Test', `void${spaces}x`].map((text, row) => ({ key: `R${row + 1}`, number: row + 1, text, changed: true, row, run: 1 }));
+    const lines = [`it${spaces}x`, `"title"${spaces}x`, `it.each(${spaces}cases`, '@Test', `void${spaces}x`].map((text, row) => ({ key: `R${row + 1}`, number: row + 1, text, changed: true, row, run: 1 }));
     const started = performance.now();
     expect(outlineTestFolds({ old: [], new: lines })).toEqual([]);
     expect(performance.now() - started).toBeLessThan(500);

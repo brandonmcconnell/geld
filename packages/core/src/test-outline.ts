@@ -159,7 +159,7 @@ function declarationAt(lines: readonly OutlineLine[], index: number, syntaxes: r
 }
 
 /** `it.each([`, `describe.each(\x60` and the like, its cases on the lines after. */
-const EACH_OPENER = /^\s*(?:test\.describe|describe|context|suite|it|test|bench)(?:\.[A-Za-z_$][\w$]*)*\.each\s*(?:\(\s*[[{(]?|\x60)\s*$/;
+const EACH_OPENER = /^\s*(?:test\.describe|describe|context|suite|it|test|bench)(?:\.[A-Za-z_$][\w$]*)*\.each\s*(?:\((?:\s*[[{(])?|\x60)\s*$/;
 /** The line that closes the cases and calls with the title: `])('handles %s', …`, `\x60('…'`, or `])(` with the title below. */
 const EACH_CLOSE = new RegExp(String.raw`^\s*(?:[\]})]*\)|\x60)\s*\((?:\s*${QUOTE})?`);
 /** Cases read past the opener before giving up on finding the title. */
