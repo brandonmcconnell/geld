@@ -45,7 +45,7 @@ import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
-import { applyTestFolds, clearTestFolds } from './ui/test-folds';
+import { applyTestFolds, clearTestFolds, forgetLinkedFold } from './ui/test-folds';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
@@ -595,6 +595,7 @@ export class GeldController {
     this.inlineTouched.clear();
     this.shownCommentRuns.clear();
     this.openedTestFolds.clear();
+    forgetLinkedFold();
     this.testFileMatchers.clear();
     this.pendingReveal = null;
     // A settings change reaches every tab; the hidden ones tear down and rebuild when they are next shown.

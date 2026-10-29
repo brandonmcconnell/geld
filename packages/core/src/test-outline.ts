@@ -154,6 +154,35 @@ function declarationAt(lines: readonly OutlineLine[], index: number, syntaxes: r
     const title = next !== undefined && next.number === line.number + 1 ? TITLE_LINE.exec(next.text) : null;
     if (title !== null) return { kind: OPENER_KIND.test(line.text) ? 'suite' : 'test', title: titleOf(title), span: 2 };
   }
+  if (EACH_OPENER.test(line.text)) return eachAt(lines, index);
+  return null;
+}
+
+/** `it.each([`, `describe.each(\x60` and the like, its cases on the lines after. */
+const EACH_OPENER = /^\s*(?:test\.describe|describe|context|suite|it|test|bench)(?:\.[A-Za-z_$][\w$]*)*\.each\s*(?:\(\s*[[{(]?|\x60)\s*$/;
+/** The line that closes the cases and calls with the title: `])('handles %s', …`, `\x60('…'`, or `])(` with the title below. */
+const EACH_CLOSE = new RegExp(String.raw`^\s*(?:[\]})]*\)|\x60)\s*\((?:\s*${QUOTE})?`);
+/** Cases read past the opener before giving up on finding the title. */
+const EACH_LIMIT = 200;
+
+/** A parameterised declaration whose cases run over several lines: its title follows the line that closes them. */
+function eachAt(lines: readonly OutlineLine[], index: number): Declaration | null {
+  const opener = lines[index];
+  if (opener === undefined) return null;
+  const kind: TestBlockKind = OPENER_KIND.test(opener.text) ? 'suite' : 'test';
+  const indent = indentOf(opener.text);
+  for (let at = index + 1; at < lines.length && at <= index + EACH_LIMIT; at += 1) {
+    const line = lines[at];
+    const previous = lines[at - 1];
+    if (line === undefined || previous === undefined || line.number !== previous.number + 1) return null;
+    if (isBlank(line.text) || indentOf(line.text) > indent) continue;
+    const close = EACH_CLOSE.exec(line.text);
+    if (close === null) return null;
+    if (close.groups?.title !== undefined) return { kind, title: titleOf(close), span: at - index + 1 };
+    const next = lines[at + 1];
+    const title = next !== undefined && next.number === line.number + 1 ? TITLE_LINE.exec(next.text) : null;
+    return title === null ? null : { kind, title: titleOf(title), span: at - index + 2 };
+  }
   return null;
 }
 

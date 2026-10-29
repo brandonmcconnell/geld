@@ -216,6 +216,27 @@ describe('outlineTestFolds', () => {
     expect(folds[0]?.headingKeys).toEqual(['R1', 'R2']);
   });
 
+  it('reads a parameterised test whose cases run over several lines, its title after them', () => {
+    const diff = [
+      '+      it.each([',
+      "+        '/api/:id{[0-9]?}',",
+      "+        '/user/:id{[0-9]*}',",
+      "+      ])('%s', (path) => {",
+      '+        const router = new RegExpRouter()',
+      "+        expect(() => router.add('GET', path, 'ok')).toThrow()",
+      '+      })',
+      '+      describe.each([',
+      '+        [1, 2],',
+      '+      ])(',
+      "+        'adds %i and %i',",
+      '+        (a, b) => {',
+      '+          check(a, b)',
+      '+        },',
+      '+      )',
+    ].join('\n');
+    expect(brief(outlineTestFolds(sides(diff)))).toEqual(['added test "%s" R1 body=3 +7 -0', 'added suite "adds %i and %i" R8 body=4 +8 -0']);
+  });
+
   it('never joins lines across a gap in the numbering', () => {
     const { new: lines } = sides(["+it('a', () => {", '+  one();'].join('\n'));
     const after: OutlineLine = { key: 'R10', number: 10, text: '  far();', changed: false, row: 9, run: 9 };

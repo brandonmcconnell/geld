@@ -152,6 +152,11 @@ export function applyTestFolds(root: HTMLElement, anchor: string, syntaxes: read
 /** The location hash a fold was last opened for, so a fold the reader closes again is not reopened by the same link. */
 let linkedHash = '';
 
+/** The reader's opened folds were forgotten (settings changed): a link may open its fold again. */
+export function forgetLinkedFold(): void {
+  linkedHash = '';
+}
+
 /**
  * A link into a test's body (`#diff-<digest>R30`, or a range `…R30-R34`) opens the fold holding it, once per hash:
  * the browser cannot scroll to a row that is not displayed.
