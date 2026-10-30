@@ -454,15 +454,24 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
   for (const fold of olds) if (!paired.has(fold)) for (const line of [...fold.heading, ...fold.body]) claimed.add(line.key);
   // Where each removed line stands in the new file: just after the last new line before its run of changes (0 at the
   // top). Before the run, not before the line: split, a run's removals share rows with its additions.
+  // Read once per run, at its first removal, which stands on the run's first row (unified or split).
   const after = new Map<string, number>();
-  const byRow = [...sides.new].sort((a, b) => a.row - b.row);
-  let next = 0;
-  for (const line of [...sides.old].sort((a, b) => a.row - b.row)) {
-    while (next < byRow.length && (byRow[next]?.row ?? Number.POSITIVE_INFINITY) < line.row) next += 1;
-    if (!line.changed) continue;
-    let before = next - 1;
-    while (before >= 0 && byRow[before]?.run === line.run) before -= 1;
-    after.set(line.key, byRow[before]?.number ?? 0);
+  if (whole !== null) {
+    const byRow = [...sides.new].sort((a, b) => a.row - b.row);
+    const runs = new Map<number, number>();
+    let next = 0;
+    for (const line of [...sides.old].sort((a, b) => a.row - b.row)) {
+      while (next < byRow.length && (byRow[next]?.row ?? Number.POSITIVE_INFINITY) < line.row) next += 1;
+      if (!line.changed) continue;
+      let place = runs.get(line.run);
+      if (place === undefined) {
+        let before = next - 1;
+        while (before >= 0 && byRow[before]?.run === line.run) before -= 1;
+        place = byRow[before]?.number ?? 0;
+        runs.set(line.run, place);
+      }
+      after.set(line.key, place);
+    }
   }
   const oldAmong = (fold: SideFold): readonly OutlineLine[] => {
     if (whole === null) return [];

@@ -368,4 +368,16 @@ describe('outlineTestFolds with the whole file', () => {
     const shorter = file.slice(0, 5);
     expect(outlineTestFolds(removed, undefined, shorter)[0]).toMatchObject({ title: 'test_reads', deletions: 1 });
   });
+
+  it('places a long split replacement\'s removals in one pass', () => {
+    const size = 20000;
+    const file = ["it('rewrites', () => {", ...Array.from({ length: size }, (_, index) => `  expect(${index}).toBe(${index})`), '})'];
+    const line = (key: string, number: number, text: string, changed: boolean, row: number, run: number): OutlineLine => ({ key, number, text, changed, row, run });
+    const old = [line('L1', 1, file[0] ?? '', false, 0, 1), ...Array.from({ length: size }, (_, index) => line(`L${index + 2}`, index + 2, `  expect(${index}).toBe(0)`, true, index + 1, 2)), line(`L${size + 2}`, size + 2, '})', false, size + 1, 3)];
+    const next = [line('R1', 1, file[0] ?? '', false, 0, 1), ...Array.from({ length: size }, (_, index) => line(`R${index + 2}`, index + 2, file[index + 1] ?? '', true, index + 1, 2)), line(`R${size + 2}`, size + 2, '})', false, size + 1, 3)];
+    const started = performance.now();
+    const [fold] = outlineTestFolds({ old, new: next }, undefined, file);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(fold).toMatchObject({ title: 'rewrites', additions: size, deletions: size });
+  });
 });
