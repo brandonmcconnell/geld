@@ -201,7 +201,9 @@ jobs:
   # since the previous release and can be edited afterwards on GitHub.
   release:
     needs: check-and-pack
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # check-and-pack's own needs (the catalog jobs) are skipped on a push, and a job whose chain holds a skipped job
+    # is skipped too unless its condition checks the status itself: without `!cancelled()` here no release was made.
+    if: ${{ !cancelled() && needs.check-and-pack.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
