@@ -347,6 +347,20 @@ const blankToFold = (lines: readonly OutlineLine[], index: number, neighbour: nu
  */
 function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[]): readonly SideFold[] {
   const blocks = testBlocks(lines, syntaxes);
+  // Blocks stand in declaration order and nest, so what holds a block is still open when it is reached: one pass with
+  // the open blocks on a stack finds tests that hold tests and hooks inside tests, where comparing every pair of
+  // blocks stalled on a whole file of thousands of tests.
+  const holdsTests = new Set<Block>();
+  const inTest = new Set<Block>();
+  const open: Block[] = [];
+  for (const block of blocks) {
+    while (open.length > 0 && (open[open.length - 1]?.last ?? Number.POSITIVE_INFINITY) < block.head) open.pop();
+    for (const outer of open) {
+      if (outer.kind === 'test' && block.kind !== 'hook') holdsTests.add(outer);
+      if (block.kind === 'hook' && outer.kind !== 'suite') inTest.add(block);
+    }
+    open.push(block);
+  }
   const folds: SideFold[] = [];
   const taken = new Set<number>();
   for (const block of blocks) {
@@ -354,10 +368,9 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
     // A suite folds only when it was added or removed whole: a suite that stays is the structure its tests' titles
     // nest in, and folding it would hide them.
     if (block.kind === 'suite' && !lines.slice(block.start, block.last + 1).every((line) => line.changed)) continue;
-    const container = block.kind === 'test' && blocks.some((other) => other !== block && other.kind !== 'hook' && other.head > block.head && other.head <= block.last);
-    if (container) continue;
+    if (holdsTests.has(block)) continue;
     // A hook-shaped line inside a test or hook (a component's `setup() {` in a test) is that test's code, not a hook.
-    if (block.kind === 'hook' && blocks.some((other) => other !== block && other.kind !== 'suite' && other.head < block.head && block.head <= other.last)) continue;
+    if (inTest.has(block)) continue;
     const head = lines[block.head];
     if (head === undefined) continue;
     const body = lines.slice(block.first, block.last + 1);
@@ -376,7 +389,8 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
     folds.push({ kind: block.kind, title: block.title, head, start: lines[block.start]?.number ?? head.number, from: block.start, to: block.last, heading: lines.slice(block.start, block.first), body });
   }
   // A folded suite opens to its whole source: the tests and hooks in it are its lines, not folds of their own.
-  return folds.filter((fold) => !folds.some((other) => other !== fold && other.kind === 'suite' && other.from < fold.from && fold.to <= other.to));
+  const suites = folds.filter((fold) => fold.kind === 'suite');
+  return suites.length === 0 ? folds : folds.filter((fold) => !suites.some((other) => other !== fold && other.from < fold.from && fold.to <= other.to));
 }
 
 const changedIn = (body: readonly OutlineLine[]): number => body.filter((line) => line.changed).length;
@@ -407,7 +421,8 @@ const shownIn = (fold: SideFold): readonly OutlineLine[] => [...fold.heading, ..
  * between and around the hunks). Each test's extent is then read from the
  * file, so a test the diff shows only part of (its declaration above the
  * hunk, its end below it) folds whole, declaration and closing line
- * included; the old side's lines it holds are those standing among its rows.
+ * included; its old lines are the unchanged ones on its rows and the removed
+ * ones between them.
  */
 export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; readonly new: readonly OutlineLine[] }, syntaxes: readonly TestSyntax[] = BUILT_IN_TEST_SYNTAXES, file: readonly string[] | null = null): readonly TestFold[] {
   const whole = file === null ? null : wholeNewSide(sides.new, file);
@@ -439,12 +454,14 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
   for (const fold of olds) if (!paired.has(fold)) for (const line of [...fold.heading, ...fold.body]) claimed.add(line.key);
   const oldAmong = (fold: SideFold): readonly OutlineLine[] => {
     if (whole === null) return [];
-    const shown = shownIn(fold);
-    const rows = shown.map((line) => line.row);
-    const top = Math.min(...rows);
-    const bottom = Math.max(...rows);
-    const runs = new Set(shown.filter((line) => line.changed).map((line) => line.run));
-    const among = sides.old.filter((line) => !claimed.has(line.key) && ((line.row >= top && line.row <= bottom) || (line.changed && runs.has(line.run))));
+    const rows = new Set(shownIn(fold).map((line) => line.row));
+    // Its unchanged old lines are those on its rows; a removed line is its own only between two of them. A removal
+    // beside a test (a helper deleted in the same run of changes as the test was added, in rows of its own or, split,
+    // in the test's rows) is not the test's, and stays in view.
+    const kept = sides.old.filter((line) => !line.changed && rows.has(line.row)).map((line) => line.number);
+    const low = Math.min(...kept);
+    const high = Math.max(...kept);
+    const among = sides.old.filter((line) => !claimed.has(line.key) && (line.changed ? line.number > low && line.number < high : rows.has(line.row)));
     for (const line of among) claimed.add(line.key);
     return among;
   };

@@ -331,4 +331,30 @@ describe('outlineTestFolds with the whole file', () => {
     // The closing line and the lines before it are the test's, off the page; the old line it replaced is in too.
     expect(fold?.bodyKeys).toEqual(expect.arrayContaining(['R2', 'R3', 'R4', 'R5', 'R6', 'L2', 'L3']));
   });
+
+  it('leaves a helper removed beside an added test in view, unified or split', () => {
+    const file = ["describe('a', () => {", "  it('new', () => {", '    expect(2).toBe(2)', '  })', "  it('old', () => {", '    expect(1).toBe(1)', '  })', '})'];
+    const unified = hunk([" describe('a', () => {", '-  function helper() {', '-    return 1', '-  }', "+  it('new', () => {", '+    expect(2).toBe(2)', '+  })', "   it('old', () => {"].join('\n'), 1, 1);
+    const removed = ['L2', 'L3', 'L4'];
+    const keysOf = (folds: readonly TestFold[]): readonly string[] => folds.flatMap((fold) => [...fold.headingKeys, ...fold.bodyKeys]);
+    const unifiedFolds = outlineTestFolds(unified, undefined, file);
+    expect(unifiedFolds.map((fold) => `${fold.status} "${fold.title}"`)).toEqual(['added "new"', 'unchanged "old"']);
+    expect(keysOf(unifiedFolds).filter((key) => removed.includes(key))).toEqual([]);
+    // Split: each removed helper line shares a row with an added line of the test.
+    const line = (key: string, number: number, text: string, changed: boolean, row: number, run: number): OutlineLine => ({ key, number, text, changed, row, run });
+    const split = {
+      old: [line('L1', 1, file[0] ?? '', false, 0, 1), line('L2', 2, '  function helper() {', true, 1, 2), line('L3', 3, '    return 1', true, 2, 2), line('L4', 4, '  }', true, 3, 2), line('L5', 5, file[4] ?? '', false, 4, 3)],
+      new: [line('R1', 1, file[0] ?? '', false, 0, 1), line('R2', 2, file[1] ?? '', true, 1, 2), line('R3', 3, file[2] ?? '', true, 2, 2), line('R4', 4, file[3] ?? '', true, 3, 2), line('R5', 5, file[4] ?? '', false, 4, 3)],
+    };
+    expect(keysOf(outlineTestFolds(split, undefined, file)).filter((key) => removed.includes(key))).toEqual([]);
+  });
+
+  it('reads a file of thousands of tests in one pass', () => {
+    const file = Array.from({ length: 4000 }, (_, index) => [`it('case ${index}', () => {`, `  expect(${index}).toBe(${index})`, '})']).flat();
+    const shown = hunk([` it('case 2000', () => {`, '-  expect(0).toBe(0)', '+  expect(2000).toBe(2000)', ' })'].join('\n'), 6001, 6001);
+    const started = performance.now();
+    const folds = outlineTestFolds(shown, undefined, file);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(folds.map((fold) => fold.title)).toEqual(['case 2000']);
+  });
 });
