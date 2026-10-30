@@ -32,6 +32,7 @@ Optional “Sign in with GitHub” authorizes Geld’s GitHub App and synchroniz
 
 - github.com: the website whose pull-request and commit diff interface Geld augments.
 - patch-diff.githubusercontent.com: GitHub’s raw diff host, used to calculate accurate file and line counts when the page does not contain every diff.
+- raw.githubusercontent.com: GitHub’s raw file host, reached through github.com’s own raw links, used to read a repository’s optional Geld configuration file and, when a diff shows only part of a test file, that file at the commit being reviewed, so its tests can be outlined whole.
 - api.github.com: used to fetch Geld’s public signed pattern catalog and, only when the user opts in, for GitHub sign-in and gist synchronization.
 - GitHub App device flow: optional. The user approves Geld’s GitHub App on GitHub, with the permissions GitHub shows on that page. Geld uses the resulting token only to read and write the user’s own settings gist.
 - An AI gateway the user configures: optional, experimental and off by default. Only when the user turns it on, enters their own gateway address, model and API key (for example Vercel AI Gateway, OpenRouter, OpenAI or TypeSafe) and asks for a triage does Geld send that pull request’s review comments to that gateway, from the user’s browser. Geld provides no AI service of its own.
