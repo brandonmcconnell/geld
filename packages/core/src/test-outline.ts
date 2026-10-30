@@ -422,7 +422,7 @@ const shownIn = (fold: SideFold): readonly OutlineLine[] => [...fold.heading, ..
  * file, so a test the diff shows only part of (its declaration above the
  * hunk, its end below it) folds whole, declaration and closing line
  * included; its old lines are the unchanged ones on its rows and the removed
- * ones between them.
+ * ones that stand inside it in the new file.
  */
 export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; readonly new: readonly OutlineLine[] }, syntaxes: readonly TestSyntax[] = BUILT_IN_TEST_SYNTAXES, file: readonly string[] | null = null): readonly TestFold[] {
   const whole = file === null ? null : wholeNewSide(sides.new, file);
@@ -452,16 +452,33 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
   const claimed = new Set<string>();
   for (const partner of partners.values()) for (const line of [...partner.heading, ...partner.body]) claimed.add(line.key);
   for (const fold of olds) if (!paired.has(fold)) for (const line of [...fold.heading, ...fold.body]) claimed.add(line.key);
+  // Where each removed line stands in the new file: just after the last new line before its run of changes (0 at the
+  // top). Before the run, not before the line: split, a run's removals share rows with its additions.
+  const after = new Map<string, number>();
+  const byRow = [...sides.new].sort((a, b) => a.row - b.row);
+  let next = 0;
+  for (const line of [...sides.old].sort((a, b) => a.row - b.row)) {
+    while (next < byRow.length && (byRow[next]?.row ?? Number.POSITIVE_INFINITY) < line.row) next += 1;
+    if (!line.changed) continue;
+    let before = next - 1;
+    while (before >= 0 && byRow[before]?.run === line.run) before -= 1;
+    after.set(line.key, byRow[before]?.number ?? 0);
+  }
   const oldAmong = (fold: SideFold): readonly OutlineLine[] => {
     if (whole === null) return [];
     const rows = new Set(shownIn(fold).map((line) => line.row));
-    // Its unchanged old lines are those on its rows; a removed line is its own only between two of them. A removal
-    // beside a test (a helper deleted in the same run of changes as the test was added, in rows of its own or, split,
-    // in the test's rows) is not the test's, and stays in view.
-    const kept = sides.old.filter((line) => !line.changed && rows.has(line.row)).map((line) => line.number);
-    const low = Math.min(...kept);
-    const high = Math.max(...kept);
-    const among = sides.old.filter((line) => !claimed.has(line.key) && (line.changed ? line.number > low && line.number < high : rows.has(line.row)));
+    const end = Math.max(...[...fold.heading, ...fold.body].map((line) => line.number));
+    const indent = indentOf(fold.head.text);
+    // Its unchanged old lines are those on its rows. A removed line is its own when it stands inside the test in the
+    // new file, or right after its last line indented deeper than its declaration (an offside language's test ends at
+    // its last indented line, and the file may end there too). A removal just above a test (a helper deleted in the
+    // run of changes that added the test, in rows of its own or, split, in the test's rows) is not the test's.
+    const own = (line: OutlineLine): boolean => {
+      if (!line.changed) return rows.has(line.row);
+      const at = after.get(line.key) ?? 0;
+      return (at >= fold.start && at < end) || (at === end && indentOf(line.text) > indent);
+    };
+    const among = sides.old.filter((line) => !claimed.has(line.key) && own(line));
     for (const line of among) claimed.add(line.key);
     return among;
   };

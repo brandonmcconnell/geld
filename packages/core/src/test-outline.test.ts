@@ -357,4 +357,15 @@ describe('outlineTestFolds with the whole file', () => {
     expect(performance.now() - started).toBeLessThan(500);
     expect(folds.map((fold) => fold.title)).toEqual(['case 2000']);
   });
+
+  it('keeps a removed last line in a test that runs to the end of the file', () => {
+    const file = ['import pytest', '', 'def test_reads():', '    value = read()', '    other = read()', '    assert value == 2'];
+    // Replaced, and removed outright: the declaration is above the hunk either way, and Python has no closing line.
+    const replaced = hunk(['     value = read()', '     other = read()', '-    assert value == 1', '+    assert value == 2'].join('\n'), 4, 4);
+    expect(outlineTestFolds(replaced, undefined, file)[0]).toMatchObject({ title: 'test_reads', additions: 1, deletions: 1 });
+    expect(outlineTestFolds(replaced, undefined, file)[0]?.bodyKeys).toContain('L6');
+    const removed = hunk(['     value = read()', '     other = read()', '-    assert value == 1'].join('\n'), 4, 4);
+    const shorter = file.slice(0, 5);
+    expect(outlineTestFolds(removed, undefined, shorter)[0]).toMatchObject({ title: 'test_reads', deletions: 1 });
+  });
 });
