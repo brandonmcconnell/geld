@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Geld options</title>
     <meta name="manifest.open_in_tab" content="true">
-    <script type="module" crossorigin src="/chunks/options-DRL-Oj4K.js"></script>
+    <script type="module" crossorigin src="/chunks/options-BWtnLOhC.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/browser-DzJe97Dp.js">
-    <link rel="modulepreload" crossorigin href="/chunks/switch-B14HGWS7.js">
-    <link rel="stylesheet" crossorigin href="/assets/switch-DGtHSGX0.css">
-    <link rel="stylesheet" crossorigin href="/assets/options-BsBDoVBW.css">
+    <link rel="modulepreload" crossorigin href="/chunks/switch-D25VfsRX.js">
+    <link rel="stylesheet" crossorigin href="/assets/switch-CNKlcflu.css">
+    <link rel="stylesheet" crossorigin href="/assets/options-DR3RF5Bb.css">
   </head>
   <body>
     <main class="options">
@@ -42,6 +42,12 @@
           </span>
         </p>
         <p class="geld-help options__catalog-note" id="catalog-note" hidden></p>
+      </section>
+
+      <section class="options__card" data-section="large-diffs">
+        <h2 class="options__title">Large diffs</h2>
+        <p class="geld-help options__intro"></p>
+        <div id="large-diffs-rows"></div>
       </section>
 
       <section class="options__card" data-section="custom-categories">
@@ -85,6 +91,12 @@ big-corp
         </div>
       </section>
 
+      <section class="options__card" data-section="experiments" id="experiments">
+        <h2 class="options__title">Experiments</h2>
+        <p class="geld-help options__intro"></p>
+        <div class="options__stack" id="review-stack"></div>
+      </section>
+
       <section class="options__card" data-section="enterprise">
         <h2 class="options__title">GitHub Enterprise Server</h2>
         <p class="geld-help options__intro">
@@ -115,8 +127,8 @@ big-corp
           Sign in (top right) to keep these settings in sync across browsers and devices. Geld signs you in through
           the <strong>Geld GitHub App</strong> with GitHub's <em>device flow</em>: you confirm a short code on
           github.com. Your settings are stored in a <strong>secret gist on your own account</strong> named
-          <code>geld-settings.json</code>. There is no Geld server and no database — only you can change that gist, and
-          anyone you give its link to could read it, and the sign-in token never leaves this device; it expires after eight
+          <code>geld-settings.json</code>. There is no Geld server and no database — only you can change that gist,
+          though anyone with its link can read it. The sign-in token never leaves this device; it expires after eight
           hours and is renewed here. Signing in on another browser asks whether to keep that device's settings or use
           the account's. The same settings can be edited at
           <a href="https://geld.sh/settings" target="_blank" rel="noreferrer">geld.sh/settings</a>.
@@ -150,7 +162,8 @@ big-corp
       </section>
 
       <footer class="options__footer geld-muted">
-        Geld · <a href="https://github.com/brandonmcconnell/geld" target="_blank" rel="noreferrer">Source on GitHub</a>
+        Geld · <a id="feedback-link" href="https://www.geld.sh/feedback" target="_blank" rel="noreferrer">Feedback</a> ·
+        <a href="https://github.com/brandonmcconnell/geld" target="_blank" rel="noreferrer">Source on GitHub</a>
       </footer>
     </main>
   </body>
