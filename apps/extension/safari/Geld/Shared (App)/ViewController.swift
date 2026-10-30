@@ -42,6 +42,11 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
 
 #if os(iOS)
         self.webView.scrollView.isScrollEnabled = false
+#elseif os(macOS)
+        // The page follows the window's content when `fitWindowToScreen` makes it shorter than the storyboard's.
+        self.webView.translatesAutoresizingMaskIntoConstraints = true
+        self.webView.autoresizingMask = [.width, .height]
+        self.webView.frame = self.view.bounds
 #endif
 
         self.webView.configuration.userContentController.add(self, name: "controller")
@@ -61,6 +66,29 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         }
 #endif
     }
+
+#if os(macOS)
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        fitWindowToScreen()
+    }
+
+    /// The window opens 780 points tall and cannot be resized, so on a short screen (a 1280×800 display) it would run
+    /// past the bottom: it is made as tall as the screen shows instead, and the page scrolls.
+    private func fitWindowToScreen() {
+        guard let window = self.view.window, let screen = window.screen ?? NSScreen.main else {
+            return
+        }
+        let visible = screen.visibleFrame
+        var frame = window.frame
+        guard frame.height > visible.height else {
+            return
+        }
+        frame.size.height = visible.height
+        frame.origin.y = visible.minY
+        window.setFrame(frame, display: true)
+    }
+#endif
 
     deinit {
 #if os(macOS)
