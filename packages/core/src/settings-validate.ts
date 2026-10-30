@@ -64,6 +64,7 @@ const BOOLEAN_KEYS = [
   'showBadge',
   'autoUpdatePatterns',
   'prOverview',
+  'quickReview',
   'collapseDescription',
   'aiEnabled',
   'aiJev',

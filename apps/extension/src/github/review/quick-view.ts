@@ -238,6 +238,14 @@ function compactEvents(list: HTMLElement, headSha: string | null): void {
         if (child === line || child.classList.contains('Details-content--hidden') || child.hasAttribute(ATTR_EVENT_HIDDEN)) continue;
         hide(child);
       }
+      // Its loose words too ("closed this" sits between the links as bare text), which no attribute can hide in place.
+      for (const node of [...body.childNodes]) {
+        if (node.nodeType !== Node.TEXT_NODE || (node.textContent ?? '').trim() === '') continue;
+        const wrap = createElement('span', { [ATTR_EVENT_HIDDEN]: '' });
+        node.replaceWith(wrap);
+        wrap.append(node);
+        undo.push(() => wrap.replaceWith(node));
+      }
     }
     if (when !== null) line.append(relativeTimeElement(when, TIME_CLASS));
     if (kind === null && when === null) continue;

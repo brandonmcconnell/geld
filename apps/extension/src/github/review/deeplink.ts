@@ -48,6 +48,39 @@ const PRESS_TIMEOUT_MS = 15_000;
  * submit nobody prevented is stopped here and fetched the same way GitHub
  * would, the form replaced with what comes back.
  */
+/**
+ * A "Load more" Geld pressed is still on its way: the form stands, showing GitHub's "Loading…" rather than its count,
+ * until the rows land and replace it.
+ */
+export function loadMorePending(): boolean {
+  return loadMorePendingUntil() !== null;
+}
+
+/** When the press on its way stops counting as one (a load that failed and left its form), or null with none. */
+export function loadMorePendingUntil(): number | null {
+  return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at < PRESS_TIMEOUT_MS ? pressed.at + PRESS_TIMEOUT_MS : null;
+}
+
+/** A press that never landed: its form still stands after the press timed out (the load failed). */
+export function loadMoreStalled(): boolean {
+  return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at >= PRESS_TIMEOUT_MS;
+}
+
+/** How many items GitHub's "Load more" says it still hides ("169 hidden items" beside the button); 0 with none. */
+export function hiddenTimelineItems(root: ParentNode = document): number {
+  const scopes = new Set<Element>();
+  for (const button of root.querySelectorAll<HTMLElement>(LOAD_MORE)) {
+    const scope = button.closest('form') ?? button.parentElement;
+    if (scope !== null) scopes.add(scope);
+  }
+  let total = 0;
+  for (const scope of scopes) {
+    const count = /(\d[\d,]*)\s+(?:hidden|remaining)\s+items?\b/i.exec(scope.textContent ?? '')?.[1];
+    if (count !== undefined) total += Number.parseInt(count.replace(/,/g, ''), 10);
+  }
+  return total;
+}
+
 /** Whether the timeline still ends in a "Load more" that can be pressed. */
 export function hasLoadMore(root: ParentNode = document): boolean {
   const button = root.querySelector<HTMLButtonElement>(LOAD_MORE);

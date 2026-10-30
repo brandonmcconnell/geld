@@ -172,12 +172,53 @@ export const ICON_PAPER_AIRPLANE = octicon(
   'octicon-paper-airplane',
 );
 
+export const ICON_TRIANGLE_DOWN = octicon(
+  '<path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"></path>',
+  'octicon-triangle-down',
+);
+
 export const ICON_DOT_FILL = octicon('<path d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"></path>', 'octicon-dot-fill');
 
 export const ICON_X_CIRCLE_FILL = octicon(
   '<path d="M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042L6.94 8 4.97 9.97a.749.749 0 0 0 .326 1.275.749.749 0 0 0 .734-.215L8 9.06l1.97 1.97a.749.749 0 0 0 1.275-.326.749.749 0 0 0-.215-.734L9.06 8l1.97-1.97a.749.749 0 0 0-.326-1.275.749.749 0 0 0-.734.215L8 6.94Z"></path>',
   'octicon-x-circle-fill',
 );
+
+export const ICON_TRASH = octicon(
+  '<path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z"></path>',
+  'octicon-trash',
+);
+
+/**
+ * Octicons has no "send at once" mark: the glyph exactly where the plain one stands (so the swap moves nothing), and an
+ * arrow at the octicons' 1.5 stroke tucked into its free bottom-right corner, overhanging the 16px box where it must.
+ */
+const sendArrow = (dx: number, dy: number): string =>
+  `<path transform="translate(${dx} ${dy})" d="M11.97 9.97a.75.75 0 0 1 1.06 0l2.25 2.25a.75.75 0 0 1 0 1.06l-2.25 2.25a.75.75 0 1 1-1.06-1.06l.97-.97H9.75a.75.75 0 0 1 0-1.5h3.19l-.97-.97a.75.75 0 0 1 0-1.06Z"></path>`;
+
+/** ✓ that sends at once. */
+export const ICON_CHECK_SEND = octicon(`<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path>${sendArrow(0.75, 0.75)}`, 'octicon-check');
+
+/** 💬 that submits the pending comments at once: the bubble's free lower-right corner takes the arrow, below its edge. */
+export const ICON_COMMENT_SEND = octicon(`<path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>${sendArrow(0.75, 2.5)}`, 'octicon-comment');
+
+const CODE_REVIEW_PATH =
+  'M1.75 1h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 13H8.061l-2.574 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25v-8.5C0 1.784.784 1 1.75 1ZM1.5 2.75v8.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25Zm5.28 1.72a.75.75 0 0 1 0 1.06L5.31 7l1.47 1.47a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-2-2a.75.75 0 0 1 0-1.06l2-2a.75.75 0 0 1 1.06 0Zm2.44 0a.75.75 0 0 1 1.06 0l2 2a.75.75 0 0 1 0 1.06l-2 2a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L10.69 7 9.22 5.53a.75.75 0 0 1 0-1.06Z';
+
+/** Octicons' `code-review`: a comment bubble holding code brackets, for a review comment as against a plain one. */
+export const ICON_CODE_REVIEW = octicon(`<path d="${CODE_REVIEW_PATH}"></path>`, 'octicon-code-review');
+
+/**
+ * `code-review` that submits at once. The bubble fills the whole box, so the arrow sits over its lower-right corner and
+ * a mask cuts the bubble back 1.25px around it; the bubble stays where the plain glyph has it.
+ */
+export const ICON_CODE_REVIEW_SEND = octicon(
+  `<defs><mask id="geld-send-cut" maskUnits="userSpaceOnUse" x="-2" y="-2" width="22" height="22"><rect x="-2" y="-2" width="22" height="22" fill="white"></rect><g fill="black" stroke="black" stroke-width="2.5" stroke-linejoin="round">${sendArrow(1, 1.25)}</g></mask></defs><path mask="url(#geld-send-cut)" d="${CODE_REVIEW_PATH}"></path>${sendArrow(1, 1.25)}`,
+  'octicon-code-review',
+);
+
+/** ✗ that sends at once: the cross's lower arm reaches the corner, so the arrow sits further out. */
+export const ICON_X_SEND = octicon(`<path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>${sendArrow(1.5, 2)}`, 'octicon-x');
 
 export const ICON_X = octicon(
   '<path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path>',
@@ -234,6 +275,10 @@ export const ICON_CROSS_REFERENCE = octicon(
   'octicon-cross-reference',
 );
 
+/** Primer's Spinner as its buttons show it while they work: a faint full track and a quarter arc that turns. */
+export const ICON_SPINNER =
+  '<svg class="octicon geld-spinner" viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke"></circle><path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path></svg>';
+
 /** Primer's Spinner, as GitHub's checks list draws an in-progress check: a faint full track and a quarter arc that turns. */
 /** GitHub's in-progress check glyph: Primer's spinner ring with the 8px filled dot the check rows put at its centre. */
 export const ICON_IN_PROGRESS =
@@ -257,6 +302,16 @@ export const ICON_GIT_PULL_REQUEST_CLOSED = octicon(
 export const ICON_GIT_PULL_REQUEST_DRAFT = octicon(
   '<path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z"></path>',
   'octicon-git-pull-request-draft',
+);
+
+export const ICON_LOCK = octicon(
+  '<path d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z"></path>',
+  'octicon-lock',
+);
+
+export const ICON_GIT_MERGE_QUEUE = octicon(
+  '<path d="M3.75 4.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5ZM3 7.75a.75.75 0 0 1 1.5 0v2.878a2.251 2.251 0 1 1-1.5 0Zm.75 5.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm5-7.75a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm5.75 2.5a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-1.5 0a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"></path>',
+  'octicon-git-merge-queue',
 );
 
 export const ICON_GIT_MERGE = octicon(
@@ -284,6 +339,10 @@ export const ICON_ALERT = octicon(
   '<path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path>',
   'octicon-alert',
 );
+
+/** Octicon `alert-fill` at its 12px size: the corner badge on an action that goes past the repository's rules. */
+export const ICON_ALERT_FILL_12 =
+  '<svg aria-hidden="true" focusable="false" class="octicon octicon-alert-fill" viewBox="0 0 12 12" width="12" height="12" fill="currentColor"><path d="M4.855.708c.5-.896 1.79-.896 2.29 0l4.675 8.351a1.312 1.312 0 0 1-1.146 1.954H1.33A1.313 1.313 0 0 1 .183 9.058ZM7 7V3H5v4Zm-1 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"></path></svg>';
 
 /** Octicon `rocket`, the mark GitHub itself puts on deployments in the merge box. */
 export const ICON_ROCKET = octicon(

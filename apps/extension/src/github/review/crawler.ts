@@ -8,6 +8,7 @@
 
 import type { PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
+import { appLoginOf, loginOfLink } from './login';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
 import { count as perfCount } from '../../lib/perf';
 
@@ -59,8 +60,10 @@ export function authorOf(root: Element): Author | null {
   if (text === '') return null;
   const href = link.getAttribute('href') ?? '';
   const labelled = [...(link.parentElement?.querySelectorAll('.Label, [data-testid="bot-label"]') ?? [])].some((label) => /^bot$/i.test((label.textContent ?? '').trim()));
-  const bot = /\[bot\]$/i.test(text) || href.startsWith('/apps/') || labelled;
-  return { login: bot && !/\[bot\]$/i.test(text) ? `${text}[bot]` : text, bot };
+  const bot = /\[bot\]$/i.test(text) || appLoginOf(href) !== null || labelled;
+  if (bot) return { login: appLoginOf(href) ?? (/\[bot\]$/i.test(text) ? text : `${text}[bot]`), bot };
+  // A person by their login, whatever the link reads: "Connor Peet (connor4312)" where full names are shown.
+  return { login: loginOfLink(link) ?? text, bot };
 }
 
 /**
@@ -891,9 +894,12 @@ export function crawlSidebarReviewers(root: ParentNode = document): readonly Sid
     const text = [tip?.textContent ?? '', control?.getAttribute('aria-label') ?? '', row.querySelector('tool-tip')?.textContent ?? ''].join(' ');
     const state = sidebarReviewerState(text, row.querySelector('.reviewers-status-icon svg, .reviewers-status-icon .octicon'));
     if (state === null) continue;
-    const link = who.querySelector('a[href]');
-    const bot = /\[bot\]$/i.test(login) || (link?.getAttribute('href') ?? '').startsWith('/apps/');
-    out.push({ login, avatarSrc: srcOfImage(who.querySelector('img')) ?? avatarSrcForLogin(login), state, bot });
+    const href = who.querySelector('a[href]')?.getAttribute('href') ?? '';
+    const app = /^\/apps\/([^/?#]+)/.exec(href)?.[1];
+    const bot = /\[bot\]$/i.test(login) || app !== undefined;
+    // Copilot's row draws an octicon, not a picture: its App's mark comes from the registry by the App's slug.
+    const appMark = app === undefined ? null : appAvatarForLogin(`${app}[bot]`);
+    out.push({ login, avatarSrc: srcOfImage(who.querySelector('img')) ?? appMark ?? avatarSrcForLogin(login), state, bot });
   }
   return out;
 }

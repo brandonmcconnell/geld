@@ -19246,7 +19246,10 @@ var REVIEW_BOTS = [
     logins: ["coderabbitai[bot]"],
     checkNames: ["CodeRabbit"],
     triggers: ["@coderabbitai review", "@coderabbitai full review", "@coderabbitai"],
-    configFiles: [".coderabbit.yaml", ".coderabbit.yml"]
+    configFiles: [".coderabbit.yaml", ".coderabbit.yml"],
+    // "@coderabbitai" anywhere starts a chat, and its replies ("The current code addresses the finding…") are not
+    // reviews; its reviews always say so in their own shape ("Actionable comments posted: N", "No actionable comments").
+    conversational: true
   },
   {
     id: "gemini",
@@ -19451,6 +19454,10 @@ function botTitle(id, login) {
 function isReviewShaped(parsed) {
   return parsed.count !== null || parsed.score !== null || parsed.clean || parsed.verdict !== void 0;
 }
+function outsideDiffCount(text) {
+  const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
+  return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
+}
 function countShapedBy(botId, text) {
   switch (botId) {
     case "claude": {
@@ -19496,6 +19503,12 @@ function countShapedBy(botId, text) {
       }
       return count;
     }
+    case "coderabbit": {
+      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
+      const outside = outsideDiffCount(text);
+      if (actionable === null && outside === 0) return null;
+      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+    }
     default:
       return null;
   }
@@ -19509,7 +19522,8 @@ function parseBotBody(body, botId) {
   /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
   let count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text);
-  if (shaped !== null) count = shaped;
+  if (botId === "coderabbit") count = shaped;
+  else if (shaped !== null) count = shaped;
   if (botId === "greptile" && count === null && /\bconfidence score\b/i.test(text)) {
     const plain = text.replace(/<[^>]+>/g, "");
     const section = /^\s*(?:#{1,6}\s*)?Findings\s*$\n([\s\S]*?)(?=^\s*(?:#{1,6}\s*)?(?:Summary|Reviews \(\d+\))\b|(?![\s\S]))/im.exec(plain);
@@ -19523,12 +19537,14 @@ function parseBotBody(body, botId) {
   const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ""));
   const readyToMerge = /\bready to merge\b/i.test(text) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
   !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
-  const clean = !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
+  const clean = botId === "coderabbit" ? (count === null || count === 0) && (/\bno actionable comments were generated\b/i.test(text) || count === 0 && shaped !== null) : !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
   const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
-  const verdict = needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity, ...verdict };
+  const coderabbit = botId === "coderabbit";
+  const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
+  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
 function refusalReason(body) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<\/?(?:h[1-6]|p|div|br|li|ul|ol|details|summary|blockquote)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, "");
@@ -19560,6 +19576,8 @@ function refusalReason(body) {
   }
   const skipNotice = /^(?:\[!important\][.\s]*|important[.\s]+)?(?:automatic\s+)?review skipped[.:]?\s+(.+?)(?:[.!?](?:\s|$)|\s+(?:please|to trigger|trigger a|⚙)|$)/i.exec(text);
   if (skipNotice?.[1] !== void 0 && skipNotice[1].trim() !== "") return skipNotice[1].trim();
+  const failNotice = /^(?:(?:\[!caution\][.\s]*|caution[.\s]+)review failed[.:]?|review failed[.:])\s+(.+?)(?:[.!?](?:\s|$)|$)/i.exec(text);
+  if (failNotice?.[1] !== void 0 && failNotice[1].trim() !== "") return failNotice[1].trim();
   if (text.length > 400) return null;
   const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|reviewing|pull request|pr|run|analysis|scan)\b)/i.test(text) || /^[A-Z][\w.-]*(?:\[bot\])?\s+skipped\s+reviewing\b/i.test(text) || /^[A-Z][\w.-]*(?:\[bot\])?\s+encountered an error\b/i.test(text);
   const sentences = text.split(/(?<=[.!?])\s+/);
@@ -19798,7 +19816,13 @@ function reviewBotIdFor(login, extraLogins) {
   if (known !== null) return known.id;
   return extraLogins.some((entry2) => entry2.toLowerCase() === login.toLowerCase()) ? `custom:${login.toLowerCase()}` : null;
 }
+function commandReply(body) {
+  const text = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
+  if (!/^[^\p{L}\p{N}]*actions? (?:performed|not completed)\b/iu.test(text)) return null;
+  return /\breviews? triggered\b/i.test(text) ? "started" : "done";
+}
 function isStatusLineComment(body) {
+  if (commandReply(body) === "started") return true;
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ");
   const firstLine = untagged.split("\n").find((line) => line.trim() !== "") ?? "";
   if (/^\s*reviewing (?:pr|pull request) #?\d+\s*$/i.test(firstLine.replace(/[`*_>~#]/g, " ").replace(/\s+/g, " "))) return true;
@@ -19820,6 +19844,9 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkVerdict = /* @__PURE__ */ new Map();
   const checkStartedAt = /* @__PURE__ */ new Map();
   const checkFinishedAt = /* @__PURE__ */ new Map();
+  const postedThreads = /* @__PURE__ */ new Set();
+  const checkSkipped = /* @__PURE__ */ new Set();
+  const shaOver = (existing) => checkSkipped.has(existing.id) && existing.verdict === "failed" && existing.reason === "Check skipped" ? UNKNOWN_SHA : existing.reviewedSha;
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
@@ -19830,6 +19857,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
     const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
     checkVerdict.set(bot.id, verdict);
+    if (skipped) checkSkipped.add(bot.id);
+    else checkSkipped.delete(bot.id);
     const started = check2.startedAt === void 0 ? NaN : Date.parse(check2.startedAt);
     if (Number.isNaN(started)) checkStartedAt.delete(bot.id);
     else checkStartedAt.set(bot.id, started);
@@ -19848,11 +19877,25 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   const statusOnly = /* @__PURE__ */ new Map();
   const threadRuns = /* @__PURE__ */ new Map();
+  const unthreadedBy = /* @__PURE__ */ new Map();
   const runsBeforeAsk = /* @__PURE__ */ new Map();
   const lastEditBy = /* @__PURE__ */ new Map();
   const editedAtOf = /* @__PURE__ */ new Map();
   const countedSummaries = /* @__PURE__ */ new Set();
   const lastWordBy = /* @__PURE__ */ new Map();
+  const refusedAt = /* @__PURE__ */ new Map();
+  const answeredBy = /* @__PURE__ */ new Map();
+  const refusedRuns = /* @__PURE__ */ new Map();
+  const afterAnswer = (record3) => {
+    const answer = answeredBy.get(record3.id);
+    if (record3.sourceId !== void 0 || answer === void 0) return record3;
+    return { id: record3.id, login: record3.login, verdict: "unknown", reviewedSha: record3.reviewedSha, ...record3.checkName === void 0 ? {} : { checkName: record3.checkName }, sourceId: answer.anchor };
+  };
+  const ranForAnswer = (id, started) => {
+    const answer = answeredBy.get(id);
+    if (answer === void 0 || started < answer.askedAt || started > (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS)) return false;
+    return (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) <= answer.at;
+  };
   const reported = (id, comment) => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time3 = at === void 0 ? NaN : Date.parse(at);
@@ -19876,12 +19919,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         const prior = threadRuns.get(asked.id);
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id) });
+        unthreadedBy.delete(asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
     if (id === null) continue;
     if (comment.resolved !== void 0) {
+      postedThreads.add(id);
       reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
@@ -19890,12 +19935,28 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const openAnchor = run2?.openAnchor ?? (comment.resolved ? null : comment.anchor);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? run2?.lastAt ?? null : Math.max(at, run2?.lastAt ?? Number.NEGATIVE_INFINITY);
-      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt });
+      const unthreaded = run2 === void 0 ? unthreadedBy.get(id) : run2.unthreaded;
+      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded } });
+      continue;
+    }
+    if (commandReply(comment.body) === "done") {
+      const posted = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+      const rewritten = comment.editedAt === void 0 ? NaN : Date.parse(comment.editedAt);
+      const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
+      if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten), anchor: comment.anchor });
+      statusOnly.delete(id);
+      const prior = runsBeforeAsk.get(id);
+      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+      runsBeforeAsk.delete(id);
       continue;
     }
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
       reported(id, comment);
+      for (const at of [comment.createdAt, comment.editedAt]) {
+        const time3 = at === void 0 ? NaN : Date.parse(at);
+        if (!Number.isNaN(time3) && time3 > (refusedAt.get(id) ?? Number.NEGATIVE_INFINITY)) refusedAt.set(id, time3);
+      }
       statusOnly.delete(id);
       const existing2 = byId.get(id);
       const prior = runsBeforeAsk.get(id);
@@ -19909,29 +19970,60 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const prior = threadRuns.get(id);
       if (prior !== void 0) runsBeforeAsk.set(id, prior);
       threadRuns.delete(id);
+      unthreadedBy.delete(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false });
+      const triggered = commandReply(comment.body) === "started" || statusOnly.get(id)?.triggered === true;
+      const pending = statusOnly.get(id);
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === void 0 ? Number.isNaN(at) ? null : at : pending.askedAt ?? pending.at });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
+    if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    else unthreadedBy.delete(id);
     threadRuns.delete(id);
     statusOnly.delete(id);
     runsBeforeAsk.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
-      const verdict2 = parsed.clean && existing.verdict === "failed" ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
-      const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : existing;
+      const verdict2 = parsed.clean && existing.verdict === "failed" && !checkSkipped.has(id) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
+      const { reason: _skipped, ...reviewed } = existing;
+      const reviewedSha = shaOver(existing);
+      const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : { ...reviewed, reviewedSha };
       byId.set(id, withOptionalCount({ ...base, verdict: verdict2, sourceId: comment.anchor, login }, parsed));
       continue;
     }
     const verdict = parsed.clean ? "clean" : "findings";
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
   }
-  for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged }] of statusOnly) {
+  if (options.complete === true) {
+    for (const [id, verdict] of checkVerdict) {
+      if (verdict !== "findings" || postedThreads.has(id)) continue;
+      checkVerdict.set(id, "clean");
+      const record3 = byId.get(id);
+      if (record3 !== void 0 && record3.sourceId === void 0) byId.set(id, { ...record3, verdict: "clean" });
+    }
+  }
+  for (const [id, verdict] of checkVerdict) {
+    const refused = refusedAt.get(id);
+    if (verdict !== "running" || refused === void 0 || refused < (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) continue;
+    const started = checkStartedAt.get(id);
+    if (started !== void 0 ? refused > started : options.closed === true) {
+      checkVerdict.delete(id);
+      refusedRuns.set(id, byId.get(id)?.reviewedSha ?? headSha);
+    }
+  }
+  for (const [id, verdict] of checkVerdict) {
+    const started = checkStartedAt.get(id);
+    if (verdict !== "running" || started === void 0 || !ranForAnswer(id, started)) continue;
+    checkVerdict.delete(id);
+    const record3 = byId.get(id);
+    if (record3 !== void 0) byId.set(id, afterAnswer(record3));
+  }
+  for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged, triggered }] of statusOnly) {
     const existing = byId.get(id);
     const edited = lastEditBy.get(id);
     if (existing !== void 0 && at !== null && edited !== void 0 && edited > at) continue;
@@ -19939,7 +20031,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const started = checkStartedAt.get(id);
     const finished = checkFinishedAt.get(id);
     const before = started !== void 0 ? started : finished;
-    const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at);
+    const skippedBefore = id === "coderabbit" && triggered === true && before === void 0 && checkSkipped.has(id);
+    const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at) && !skippedBefore;
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);
       if (prior !== void 0 && !threadRuns.has(id)) {
@@ -19961,20 +20054,21 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   for (const [id, run2] of threadRuns) {
     const existing = byId.get(id);
-    const reviewedSha = existing?.reviewedSha ?? headSha;
+    const reviewedSha = existing === void 0 ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
     const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
-    if (run2.open > 0) {
+    const unthreaded = run2.unthreaded?.count ?? 0;
+    if (run2.open + unthreaded > 0) {
       const severity = existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
-      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.lastAnchor });
+      byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.unthreaded?.anchor ?? run2.lastAnchor });
       continue;
     }
     const edited = existing?.sourceId === void 0 ? void 0 : editedAtOf.get(existing.sourceId);
     const rewriteSpeaks = existing?.verdict === "clean" || existing?.verdict === "findings" && existing.sourceId !== void 0 && countedSummaries.has(existing.sourceId);
     if (existing?.sourceId !== void 0 && rewriteSpeaks && edited !== void 0 && run2.lastAt !== null && edited > run2.lastAt + RERUN_EDIT_GAP_MS) continue;
     const fromCheck = checkName === void 0 ? null : checkVerdict.get(id) ?? null;
-    if (fromCheck !== null && fromCheck !== "clean" && fromCheck !== "findings") {
+    if (fromCheck !== null && fromCheck !== "clean" && fromCheck !== "findings" && !checkSkipped.has(id)) {
       byId.set(id, { id, login: run2.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run2.lastAnchor });
       continue;
     }
@@ -20004,6 +20098,17 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }
+    if (ranForAnswer(bot.id, started)) {
+      byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
+      continue;
+    }
+    if (check2.conclusion === "skipped") {
+      const pending = statusOnly.get(bot.id);
+      const askedAt = pending === void 0 ? void 0 : pending.askedAt ?? pending.at;
+      const thisRun = askedAt === void 0 || askedAt === null || started >= askedAt;
+      byId.set(bot.id, { ...existing, ...options.partial === true || !thisRun ? {} : { runJudged: true } });
+      continue;
+    }
     const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
     byId.set(bot.id, {
@@ -20016,8 +20121,23 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runJudged: true
     });
   }
+  for (const [id, answer] of answeredBy) {
+    const record3 = byId.get(id);
+    if (record3 === void 0 || (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) > answer.at) continue;
+    const started = checkStartedAt.get(id);
+    const finished = checkFinishedAt.get(id);
+    const ours = started !== void 0 ? ranForAnswer(id, started) : record3.checkName !== void 0 && checkVerdict.get(id) !== "running" && (finished !== void 0 ? finished >= answer.askedAt && finished <= answer.at + REPORT_GRACE_MS : checkVerdict.get(id) === "clean");
+    if (ours) byId.set(id, { ...afterAnswer(record3), runJudged: true });
+  }
+  for (const [id, refusedSha] of refusedRuns) {
+    const record3 = byId.get(id);
+    if (record3 === void 0 || record3.verdict === "running") continue;
+    const refusal = record3.verdict === "failed" && record3.reason !== void 0;
+    byId.set(id, { ...record3, runJudged: true, ...refusal || record3.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
+  }
   return [...byId.values()];
 }
+var UNKNOWN_SHA = "0".repeat(40);
 var REPORT_GRACE_MS = 90 * 1e3;
 function reactedBy(comment, id) {
   const bot = botById(id);
@@ -21301,7 +21421,7 @@ function buildMeta(pr, options) {
     if (!Number.isNaN(a.at) && !Number.isNaN(b.at) && a.at !== b.at) return a.at - b.at;
     return a.rank - b.rank;
   }).map((entry2) => entry2.comment);
-  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now());
+  const bots = verdictsFrom(pr.checks, botComments, pr.headSha, extra, Date.parse(options.generatedAt) || Date.now(), { complete: true });
   const previews = pr.comments.flatMap((comment) => parsePreviews(previewDocFromMarkdown(comment.author, `issuecomment-${comment.databaseId}`, comment.body, comment.createdAt)));
   const meta3 = {
     v: META_VERSION,

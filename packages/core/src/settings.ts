@@ -111,6 +111,11 @@ export interface GeldSettings {
   /** In `minimal` mode, collapse the PR description to its first paragraph. */
   readonly collapseDescription: boolean;
   /**
+   * Put a "Submit review" button in the pull request's tab bar, beside the
+   * line counts, on every tab (the Files changed tab's own button gives way to it).
+   */
+  readonly quickReview: boolean;
+  /**
    * Extra bot logins to treat as review bots (one per line). Built-in bots
    * (Bugbot, Greptile, Copilot, …) are always recognised.
    */
@@ -192,6 +197,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   compactTimeline: 'compact',
   reviewGrouping: 'type',
   collapseDescription: false,
+  quickReview: true,
   reviewBots: [],
   aiEnabled: false,
   aiBaseUrl: '',
@@ -415,6 +421,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,

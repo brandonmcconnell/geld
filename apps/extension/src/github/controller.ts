@@ -22,12 +22,13 @@ import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
+import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
-import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isSrOnlyText, restoreHeaderStats } from './header-stats';
+import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
-import { describePage, isSignInInterstitial } from './page';
+import { describePage, isSignInInterstitial, narrowedHead } from './page';
 import type { Region } from './regions';
 import { regionsOf, scopeWithin } from './regions';
 import { applyCommitHover, removeCommitHover } from './commit-hover';
@@ -36,8 +37,11 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
+import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
+import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
+import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
@@ -45,6 +49,7 @@ import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } fro
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import { categoryIconFor } from './ui/icons';
 import { expandLargeDiffs } from './large-diffs';
+import { applyWorkflowSyntax, removeWorkflowSyntax } from './workflow-syntax';
 import type { TreeSectionFile } from './ui/tree-section';
 import {
   applySidebarLayout,
@@ -59,6 +64,8 @@ import { legacyAdapter } from './views/legacy';
 import { activateTreeItem, ATTR_WRAP, isSelectedTreeItem, liveEntryRoot, reactAdapter } from './views/react';
 import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
 
+/** Away at least this long and the tab is brought up to date on return (checks read again, the timeline caught up). */
+const CATCH_UP_AFTER_MS = 15_000;
 const ATTR_CONTAINER = 'data-geld-container';
 const ATTR_EXPANDED = 'data-geld-expanded';
 const ATTR_ENTRY = 'data-geld';
@@ -304,6 +311,8 @@ export class GeldController {
   /** The last header numbers we settled on, re-applied synchronously if GitHub re-renders the header. */
   private settledHeader: {
     readonly stateKey: string;
+    /** The diff the numbers came from: one pull request's Files tab narrowed to a commit or a range reads another. */
+    readonly diffUrl: string | null;
     readonly sha: string | null;
     readonly hidden: HiddenBreakdown;
     readonly categories: readonly HiddenCategory[];
@@ -319,6 +328,8 @@ export class GeldController {
    */
   private headerScan: { readonly stateKey: string; readonly groups: readonly HeaderStatGroup[] } | null = null;
   private headerDirty = true;
+  /** The last pass's word on Geld's stand-in counts: what the pre-paint path keeps when GitHub's counts come or go. */
+  private countsStandInWanted = false;
   /**
    * Something changed while the tab was hidden. A background tab does no
    * work at all (GitHub keeps mutating it: relative-time ticks, live socket
@@ -328,6 +339,8 @@ export class GeldController {
   private hiddenDirty = false;
   /** A `reapply` (settings or catalog change) arrived while hidden: the catch-up pass starts from a bare page. */
   private hiddenTeardown = false;
+  /** When the tab was last hidden: back after `CATCH_UP_AFTER_MS`, the page is brought up to date before the pass. */
+  private hiddenAt: number | null = null;
   /**
    * The regions the batches since the last pass touched (`regions.ts`). The
    * debounced pass redoes only the subsystems that read them; `unknown` (or
@@ -397,7 +410,11 @@ export class GeldController {
       // Header first, synchronously: this callback runs before the browser
       // paints, so a (re-)rendered header never shows GitHub's number when the
       // filtered one is already known or cached.
-      if (headerNodesAdded(records)) this.headerDirty = true;
+      const headerAdded = headerNodesAdded(records);
+      if (headerAdded) this.headerDirty = true;
+      // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
+      // steps aside, or comes back, in the same frame.
+      if ((headerAdded || this.countsStandInWanted) && syncCountsStandIn(this.countsStandInWanted)) this.onCountsStandInChanged();
       if (this.settledHeader === null) {
         if (this.headerDirty) this.applyHeaderNow();
       } else {
@@ -406,6 +423,10 @@ export class GeldController {
       // Likewise before paint: chips whose row GitHub just re-rendered come
       // straight back from the in-memory diff states, so no frame lacks them.
       if (chipRemoved(records)) this.applyListChips();
+      // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
+      if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
+      // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
+      if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
       this.schedule(false);
     });
     this.observer.observe(document.documentElement, {
@@ -435,8 +456,14 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
+    // A copy that starts on a page already open a while (an update or reload of the extension retired the one before,
+    // and this one was injected) cannot know what GitHub's quiet socket missed meanwhile, so the page's age counts as
+    // time away: caught up now when the tab is in view, on the first return when it is not.
+    const age = performance.now();
+    if (document.hidden) this.hiddenAt = Date.now() - age;
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.apply();
+    if (!document.hidden) this.catchUp(age);
   }
 
   stop(): void {
@@ -618,9 +645,16 @@ export class GeldController {
    * just before the tab went hidden is folded into it.
    */
   private readonly onVisibilityChange = (): void => {
-    if (document.hidden || this.stopped) return;
+    if (this.stopped) return;
+    if (document.hidden) {
+      this.hiddenAt = Date.now();
+      return;
+    }
+    const away = this.hiddenAt === null ? 0 : Date.now() - this.hiddenAt;
+    this.hiddenAt = null;
+    const catchUp = this.catchUp(away);
     const deferred = takeReviewDeferred();
-    if (!this.hiddenDirty && !deferred) {
+    if (!this.hiddenDirty && !deferred && !catchUp) {
       // Nothing to redo, but the clocks moved on while the tab was away.
       refreshReviewTimes();
       return;
@@ -636,6 +670,20 @@ export class GeldController {
     }
     this.apply();
   };
+
+  /**
+   * GitHub's socket goes quiet for a hidden tab and its status timers run late: bots that finished meanwhile still read
+   * as running. After `away` of that, the checks are read again and the timeline caught up (`catchUpTimeline`); what it
+   * puts in the page makes passes of its own. True when it ran.
+   */
+  private catchUp(away: number): boolean {
+    if (away < CATCH_UP_AFTER_MS || !this.mayDressPage()) return false;
+    expireHeadChecks();
+    void catchUpTimeline();
+    // Longer away, GitHub stopped listening: the replies in threads it missed come only by refetching their regions.
+    if (liveCatchUpDue(away)) document.dispatchEvent(new Event(LIVE_CATCH_UP_EVENT));
+    return true;
+  }
 
   /** While hidden, work is noted rather than done; `onVisibilityChange` picks it up. */
   private deferWhileHidden(): boolean {
@@ -731,7 +779,7 @@ export class GeldController {
     const url = new URL(window.location.href);
     const page = describePage(url);
     if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
-    const state = this.diffSource.request(page.diffUrl, this.headShaFor(page, url), 'page');
+    const state = this.diffSource.request(page.diffUrl, this.diffShaFor(page, url), 'page');
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
@@ -755,7 +803,7 @@ export class GeldController {
   private loadDiffFacts(page: PageInfo, url: URL, matcher: PathMatcher): void {
     this.diffFacts = null;
     if ((!matcher.usesChangeKinds && !this.settings.hideCommentLines) || page.diffUrl === null) return;
-    const sha = this.headShaFor(page, url);
+    const sha = this.diffShaFor(page, url);
     const state = this.diffSource.request(page.diffUrl, sha, 'page');
     if (state.status === 'ready') this.diffFacts = new Map(state.files.map((file) => [file.path, file] as const));
   }
@@ -874,6 +922,7 @@ export class GeldController {
       const view = phase('read', () => legacyAdapter.read() ?? reactAdapter.read());
       this.currentView = view;
       if (view !== null) {
+        applyWorkflowSyntax(view.entries);
         const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
         this.lastFiles = { view, breakdown: result.breakdown, expanded: result.expanded, renderedEntryCount: view.entries.length };
         this.consumeRevealHash(page.stateKey);
@@ -886,6 +935,7 @@ export class GeldController {
     const { view, breakdown: hidden, expanded, renderedEntryCount } = this.lastFiles;
 
     const header = phase('header', () => this.applyHeaderTotals(page, url, matcher, view, renderedEntryCount, hidden));
+    this.placeQuickReview(page, url);
     const headerHidden = header.hidden;
     const allTotals = header.all;
     if (this.virtualSection !== null) this.renderVirtualSection(page.stateKey, matcher, this.virtualSection, headerHidden ?? hidden ?? EMPTY_BREAKDOWN, expanded);
@@ -1453,11 +1503,12 @@ export class GeldController {
     renderedEntryCount: number,
     hidden: HiddenBreakdown | null,
   ): { readonly hidden: HiddenBreakdown | null; readonly all: ChangeTotals | null; readonly hasGroups: boolean } {
-    const groups = this.headerGroupsFor(page);
+    const sha = this.diffShaFor(page, url);
+    let groups = this.headerGroupsFor(page);
+    if (this.syncCountsStandIn(page, sha, groups)) groups = this.headerGroupsFor(page);
     const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
     const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
     const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
-    const sha = this.headShaFor(page, url);
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
@@ -1480,16 +1531,43 @@ export class GeldController {
       headerHidden = hidden ?? EMPTY_BREAKDOWN;
     }
     if (headerHidden !== null) {
-      this.settledHeader = { stateKey: page.stateKey, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
+      this.settledHeader = { stateKey: page.stateKey, diffUrl: page.diffUrl, sha, hidden: headerHidden, categories: matcher.activeCategories, files: allTotals?.files ?? 0 };
       this.applyHeader(groups, headerHidden, matcher.activeCategories, allTotals?.files ?? 0);
     } else {
       // A new head commit (or another page) invalidates what we settled on.
-      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.sha !== sha)) {
+      if (this.settledHeader !== null && (this.settledHeader.stateKey !== page.stateKey || this.settledHeader.diffUrl !== page.diffUrl || this.settledHeader.sha !== sha)) {
         this.settledHeader = null;
       }
       this.headerGroups = [];
     }
     return { hidden: headerHidden, all: allTotals, hasGroups: groups.length > 0 };
+  }
+
+  /**
+   * A pull request header with no line counts of GitHub's gets Geld's when the page's diff has no line changes
+   * (`syncCountsStandIn`); asked for here, since without counts nothing else asks for the diff. True when the
+   * header changed (and was marked to be read again).
+   */
+  private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[]): boolean {
+    let want = false;
+    if (page.kind.startsWith('pull') && page.diffUrl !== null && groups.every((group) => isCountsStandIn(group.host))) {
+      const state = this.diffSource.request(page.diffUrl, sha, 'page');
+      want = state.status === 'ready' && state.files.length > 0 && state.files.every((file) => file.additions === 0 && file.deletions === 0);
+    }
+    this.countsStandInWanted = want;
+    const changed = syncCountsStandIn(want);
+    if (changed) this.onCountsStandInChanged();
+    return changed;
+  }
+
+  /**
+   * Geld's own nodes make no passes (`isIgnorableMutation`), so a stand-in put in place or taken away on a path that
+   * does not finish the header (before paint, or while the repository's config is pending) asks for one itself:
+   * without it the stand-in kept GitHub-shaped zeros, unrewritten, and the review group never stood beside it.
+   */
+  private onCountsStandInChanged(): void {
+    this.headerDirty = true;
+    this.schedule();
   }
 
   /** Header-only pass for the pre-paint paths; the full apply() follows debounced. */
@@ -1531,6 +1609,14 @@ export class GeldController {
    * page state, and the diff, header counts and paths follow the new head as
    * they do after the files view's refresh (`onFilesRefresh`).
    */
+  /** The SHA the page's diff is keyed by: a narrowed Files tab's commit (or its range's head), else the head. */
+  private diffShaFor(page: PageInfo, url: URL): string | null {
+    // Narrowed to a commit or a range: that commit keys its diff, never the pull request's head.
+    if (page.commits !== undefined) return narrowedHead(page.commits).toLowerCase();
+    return this.headShaFor(page, url);
+  }
+
+  /** The commit's own SHA on a commit page, the pull request's head on its pages, whatever commit a Files tab is narrowed to. */
   private headShaFor(page: PageInfo, url: URL): string | null {
     if (page.kind === 'commit') return shaFromCommitUrl(url.pathname);
     if (!page.kind.startsWith('pull')) return null;
@@ -1589,6 +1675,9 @@ export class GeldController {
   private reassertHeader(): void {
     const settled = this.settledHeader;
     if (settled === null || this.currentPage?.stateKey !== settled.stateKey) return;
+    // The live URL, not `currentPage`: this runs before paint, and after a move from one narrowed diff to another the
+    // pass that updates `currentPage` has not run yet, so the settled counts would land in the new view's header.
+    if (describePage(new URL(window.location.href)).diffUrl !== settled.diffUrl) return;
     const stale = this.headerGroups.some(
       ({ group, additionsText }) => !group.host.isConnected || (group.additions !== null && group.additions.textContent !== additionsText),
     );
@@ -1596,6 +1685,13 @@ export class GeldController {
     const groups = this.currentPage === null ? findHeaderStatGroups() : this.headerGroupsFor(this.currentPage);
     if (groups.length === 0) return;
     this.applyHeader(groups, settled.hidden, settled.categories, settled.files);
+    // The remounted header took the review button with it.
+    if (this.currentPage !== null) this.placeQuickReview(this.currentPage, new URL(window.location.href));
+  }
+
+  /** The tab bar's "Submit review", before the line counts on every pull request tab (quick-review.ts). */
+  private placeQuickReview(page: PageInfo, url: URL): void {
+    applyQuickReview(this.settings.quickReview, { page, groups: this.headerGroupsFor(page), headSha: () => this.headShaFor(page, url), digest: this.settings.prOverview });
   }
 
   private publish(state: TabState): void {
@@ -1607,6 +1703,7 @@ export class GeldController {
   }
 
   private teardownView(): void {
+    removeWorkflowSyntax();
     for (const element of queryAll(`[${ATTR_CONTAINER}]`)) {
       element.removeAttribute(ATTR_CONTAINER);
       element.removeAttribute(ATTR_EXPANDED);
@@ -1634,6 +1731,13 @@ export class GeldController {
     onReviewBeforeMatch(event, this.settings);
   };
 
+  /** What a pass checks before touching the page, for the work done before paint between passes. */
+  private mayDressPage(): boolean {
+    if (!this.settings.enabled || !extensionAlive() || isSignInInterstitial()) return false;
+    const repo = repoFromPathname(window.location.pathname);
+    return repo === null || decideRepo(this.repoRules, repo).allowed;
+  }
+
   private teardown(): void {
     this.settledHeader = null;
     this.headerGroups = [];
@@ -1641,11 +1745,15 @@ export class GeldController {
     this.headerDirty = true;
     this.teardownView();
     teardownReviewOverview();
+    removeQuickReview();
     removePrListStats();
     removeCommitHover();
     removeAuthorHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
+    // Cleared first: the stand-in is not Geld's UI, so its removal is a mutation, and the observer would put it back.
+    this.countsStandInWanted = false;
+    removeCountsStandIn();
     for (const element of queryAll('[data-geld-original]')) restoreManagedText(element);
     for (const element of queryAll('[data-geld-stat-host]')) detachBreakdownTooltip(element);
     removeTooltipElement();

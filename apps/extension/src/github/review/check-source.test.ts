@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { crawlCheckRuns } from './crawler';
-import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
+import { expireHeadChecks, headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 
 /**
  * Two rows of `/wxt-dev/wxt/commit/<sha>/status-details?popover=true` as
@@ -91,6 +91,19 @@ describe('headChecks', () => {
     const next = nextCheckRefresh(subject, sha);
     expect(next).not.toBeNull();
     expect((next ?? 0) - Date.now()).toBeLessThanOrEqual(20_000);
+  });
+
+  it('reads again at once after the tab was away, keeping the last reading meanwhile', async () => {
+    const fetchMock = respond(PARTIAL);
+    vi.stubGlobal('fetch', fetchMock);
+    const onChange = vi.fn();
+    headChecks(subject, sha, 'box', onChange);
+    await settled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expireHeadChecks();
+    expect(headChecks(subject, sha, 'box', onChange)).toHaveLength(2);
+    await settled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('reads again when the merge box words change, and stays quiet when the partial says the same', async () => {

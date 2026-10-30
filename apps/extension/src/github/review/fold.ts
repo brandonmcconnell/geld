@@ -9,6 +9,7 @@ import type { LeftoverKind } from './crawler';
 
 import { botTitle, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { loginOfLink } from './login';
 import { isTeleported } from './teleport';
 
 export const ATTR_FOLDED = 'data-geld-folded';
@@ -72,7 +73,8 @@ export function eventHeadline(nodes: readonly HTMLElement[]): EventHeadline | nu
     if (node === undefined) continue;
     const kind = closureKindOf(node);
     if (kind === null) continue;
-    const actor = (node.querySelector(EVENT_ACTOR)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const link = node.querySelector(EVENT_ACTOR);
+    const actor = link === null ? '' : (loginOfLink(link) ?? '');
     const avatar = node.querySelector<HTMLImageElement>(EVENT_AVATAR);
     const target = kind === 'merged' ? (node.querySelector('.base-ref')?.textContent ?? '').replace(/\s+/g, '').trim() || null : null;
     return { kind, actor, avatarSrc: avatar === null ? null : avatar.currentSrc || avatar.getAttribute('src') || null, target, anchor: node.id };

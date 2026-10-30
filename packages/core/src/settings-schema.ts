@@ -434,6 +434,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: false,
       },
       {
+        kind: 'toggle',
+        key: 'quickReview',
+        label: 'Submit review from any tab',
+        description: 'Put the Submit review button in the pull request’s tab bar, beside the line counts, on every tab. The Files changed tab’s own button gives way to it.',
+        popup: false,
+      },
+      {
         kind: 'list',
         key: 'reviewBots',
         label: 'Extra review bots',
