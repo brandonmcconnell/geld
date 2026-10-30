@@ -22,7 +22,7 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import { threadFragmentOf } from './thread-fragment';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
@@ -63,6 +63,13 @@ const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
 /** "Load more" rounds we click while a deeplinked anchor is still off the page. */
 const MAX_LOAD_MORE = 8;
+/** On the root while Geld keeps pressing GitHub's "Load more": the stylesheet hides that bar, fresh copies included. */
+const ATTR_AUTOLOADING = 'data-geld-autoloading';
+
+function setAutoLoading(on: boolean): void {
+  document.documentElement.toggleAttribute(ATTR_AUTOLOADING, on);
+}
+
 /** "Load more" presses per visit in compact mode (each brings a page of hidden items). */
 const MAX_AUTO_LOADS = 40;
 
@@ -937,7 +944,12 @@ function alignAnchorCarriers(anchor: string, focusKey: string): void {
 }
 
 const MAX_EAGER_FRAGMENTS = 200;
-const FRAGMENT_CONCURRENCY = 4;
+/**
+ * Deferred fragments fetched at once. Each is a ~0.8 s round trip to github.com (HTTP/2, one connection): at 4, a long
+ * conversation's 165 took ~44 s after the page opened (next.js#52514); at 12 they keep up with the "Load more" pages
+ * that reveal them (~24 s, no failures), the pages themselves being the floor.
+ */
+const FRAGMENT_CONCURRENCY = 12;
 /** A fetch that failed (a 5xx, a blip) is tried again after this long, not on the next pass. */
 const FRAGMENT_RETRY_MS = 30_000;
 const requestedFragments = new WeakSet<Element>();
@@ -1064,7 +1076,7 @@ function ingestProgress(): number {
 function timelineIngesting(hidingTimeline: boolean): boolean {
   if (fragmentsInFlight.size > 0) return true;
   if (!hidingTimeline) return false;
-  if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) return true;
+  if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore() && !loadMoreStalled()) return true;
   if (eagerFragments >= MAX_EAGER_FRAGMENTS) return false;
   return deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
 }
@@ -2879,7 +2891,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
-  if (hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  // A press that failed leaves its form standing: pressing it again on every pass would keep the bar hidden through
+  // the whole budget, so Geld stops and the bar is the reader's.
+  const stalled = loadMoreStalled();
+  if (hidingTimeline && !stalled && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  // GitHub's "N hidden items · Load more" bar stays out of sight while Geld is the one pressing it (the reading bar
+  // says how far it has got); once Geld stops (done, or at its limit) it shows again for the reader to load the rest.
+  // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
+  setAutoLoading(hidingTimeline && !stalled && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
+  // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
+  const pressUntil = loadMorePendingUntil();
+  if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);
   if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
@@ -3559,6 +3581,7 @@ export function teardownReviewOverview(): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);
   loadSettleArmed = false;

@@ -568,6 +568,26 @@ function avatarStack(avatars: readonly Avatar[], fallback: string, bot: boolean,
   return stack;
 }
 
+/** Avatars a verdict pill shows before the rest go behind an ellipsis. */
+const PILL_AVATARS = 5;
+/** Avatars at the stack's usual overlap; more are squeezed into the width these take. */
+const PILL_ROOMY = 3;
+
+/**
+ * A verdict pill's faces: up to three at the usual overlap, four or five squeezed into the width of three, and more
+ * as five plus an ellipsis circle in that same width, so a long list never wraps the row.
+ */
+function pillAvatars(reviewers: readonly Avatar[]): HTMLElement {
+  const shown = reviewers.filter((reviewer) => reviewer.src !== '');
+  const faces = shown.length > PILL_AVATARS ? shown.slice(0, PILL_AVATARS) : shown;
+  const items: HTMLElement[] = faces.map(avatarImg);
+  if (shown.length > PILL_AVATARS) items.push(createElement('span', { class: `${PANEL_CLASS}__avatar ${PANEL_CLASS}__avatar--more` }, [icon(ICON_KEBAB_HORIZONTAL)]));
+  const stack = createElement('span', { class: `${PANEL_CLASS}__avatars ${PANEL_CLASS}__avatars--pill`, 'aria-hidden': 'true' }, items);
+  // The stack's width at three faces, shared out among however many stand in it (CSS turns the step into the overlap).
+  if (items.length > PILL_ROOMY) stack.style.setProperty('--geld-avatar-steps', String(items.length - 1));
+  return stack;
+}
+
 /** The row's chevron. A real button so a click on it opens the row; `tabindex=-1` because the main button is the keyboard stop. */
 function chevron(open: boolean, onToggle: () => void): HTMLElement {
   const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__chevron`, 'data-open': String(open), tabindex: '-1', 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, [icon(ICON_CHEVRON_DOWN)]);
@@ -1736,8 +1756,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         ]),
       );
     }
-    // Every reviewer, grouped by their latest verdict: the state's glyph, their avatars, how many (the words go on
-    // narrow screens; the glyph says it).
+    // Every reviewer, grouped by their latest verdict, as a pill: the state's glyph, how many, their avatars, tinted
+    // by the verdict (the words are the label's and the title's).
     const verdictOf = new Map(model.reviewerGroups.filter((group) => group.state !== 'awaiting').flatMap((group) => group.reviewers.map((reviewer) => [reviewer.login.toLowerCase(), REVIEWER_GROUP_WORD[group.state]] as const)));
     for (const group of model.reviewerGroups) {
       // Someone awaited who already gave a verdict was asked again; their verdict still stands in its own group.
@@ -1751,8 +1771,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       content.push(
         createElement('span', { class: `${PANEL_CLASS}__reviewers`, 'data-state': group.state, title: `${REVIEWER_GROUP_TITLE[group.state]}: ${names}`, role: 'img', 'aria-label': `${label}: ${names}` }, [
           createElement('span', { class: `${PANEL_CLASS}__reviewers-glyph`, 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[group.state])]),
-          avatarStack(group.reviewers.filter((reviewer) => reviewer.src !== ''), group.reviewers[0]?.login ?? '', false, group.reviewers.length),
-          createElement('span', { class: `${PANEL_CLASS}__status-text ${PANEL_CLASS}__reviewers-text`, 'aria-hidden': 'true' }, [label]),
+          createElement('span', { class: `${PANEL_CLASS}__reviewers-count`, 'aria-hidden': 'true' }, [String(group.reviewers.length)]),
+          pillAvatars(group.reviewers),
         ]),
       );
     }

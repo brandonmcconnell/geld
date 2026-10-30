@@ -8,7 +8,7 @@
 
 import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
 import { closestAtHome, wornPiecesOf } from './teleport';
-import { catchUpTimeline } from './timeline-catchup';
+import { catchUpAfterPost } from './timeline-catchup';
 import { fetchNonce, pullPathOf, timelineCommentRequest } from '../timeline-comment';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
@@ -149,12 +149,7 @@ export async function postTopLevelComments(bodies: readonly string[]): Promise<n
     }
     posted += 1;
   }
-  // Twice: the first may be a catch-up already out from before the posts (the tab's return), whose answer cannot hold
-  // them, and one that missed (a failed fetch, GitHub's partial not yet carrying them) is tried again a moment later.
-  if (posted > 0) {
-    if (!(await catchUpTimeline())) await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
-    await catchUpTimeline();
-  }
+  if (posted > 0) await catchUpAfterPost();
   return posted;
 }
 
