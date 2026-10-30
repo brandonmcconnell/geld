@@ -33,6 +33,8 @@ export interface OutlineLine {
   readonly row: number;
   /** Consecutive changed rows share a run; a context row is a run of its own. */
   readonly run: number;
+  /** Not on the page: an unchanged line between or outside the diff's hunks, known from the whole file. */
+  readonly unseen?: boolean;
 }
 
 export type TestFoldStatus = 'added' | 'removed' | 'renamed' | 'modified' | 'unchanged';
@@ -48,6 +50,8 @@ export interface TestFold {
   readonly status: TestFoldStatus;
   /** The line its toggle stands on (the new side's declaration, or the old one for a removed test). */
   readonly headKey: string;
+  /** The line number it starts on, on its head's side (its first annotation or its declaration), seen on the page or not. */
+  readonly start: number;
   /** The declaration's own lines on either side (its head, and a title on the line after a bare `it(`). */
   readonly headingKeys: readonly string[];
   /** Every line of its body on either side. */
@@ -314,6 +318,8 @@ interface SideFold {
   readonly kind: TestBlockKind;
   readonly title: string;
   readonly head: OutlineLine;
+  /** The number of its first line (an annotation, or the declaration). */
+  readonly start: number;
   /** Its first and last line on this side, as indices, so a folded suite holding it can be found. */
   readonly from: number;
   readonly to: number;
@@ -367,7 +373,7 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
       if (line !== undefined) body.push(line);
       taken.add(below);
     }
-    folds.push({ kind: block.kind, title: block.title, head, from: block.start, to: block.last, heading: lines.slice(block.start, block.first), body });
+    folds.push({ kind: block.kind, title: block.title, head, start: lines[block.start]?.number ?? head.number, from: block.start, to: block.last, heading: lines.slice(block.start, block.first), body });
   }
   // A folded suite opens to its whole source: the tests and hooks in it are its lines, not folds of their own.
   return folds.filter((fold) => !folds.some((other) => other !== fold && other.kind === 'suite' && other.from < fold.from && fold.to <= other.to));
@@ -375,15 +381,38 @@ function foldsOf(lines: readonly OutlineLine[], syntaxes: readonly TestSyntax[])
 
 const changedIn = (body: readonly OutlineLine[]): number => body.filter((line) => line.changed).length;
 
+const sameText = (shown: string, file: string): boolean => shown.replace(/\s+/g, ' ').trim() === file.replace(/\s+/g, ' ').trim();
+
+/**
+ * The new side as the whole file has it: GitHub's own lines where the page
+ * shows them, the rest `unseen`. Null when a shown line disagrees with the
+ * file (it is not the revision on the page), so nothing is folded by a wrong
+ * reading.
+ */
+function wholeNewSide(shown: readonly OutlineLine[], file: readonly string[]): readonly OutlineLine[] | null {
+  const byNumber = new Map(shown.map((line) => [line.number, line]));
+  for (const line of shown) if (line.number > file.length || !sameText(line.text, file[line.number - 1] ?? '')) return null;
+  return file.map((text, index) => byNumber.get(index + 1) ?? { key: `R${index + 1}`, number: index + 1, text, changed: false, row: Number.NaN, run: Number.NaN, unseen: true });
+}
+
+const shownIn = (fold: SideFold): readonly OutlineLine[] => [...fold.heading, ...fold.body].filter((line) => line.unseen !== true);
+
 /**
  * Both sides' folds, paired: a test whose declaration is context folds its
  * old and new bodies together; a declaration rewritten in one run of changes
  * is the same test renamed (or edited, title unchanged); an old declaration
  * with no partner is a removed test, a new one an added test.
+ *
+ * `file` is the whole new file, when the page leaves some of it out (lines
+ * between and around the hunks). Each test's extent is then read from the
+ * file, so a test the diff shows only part of (its declaration above the
+ * hunk, its end below it) folds whole, declaration and closing line
+ * included; the old side's lines it holds are those standing among its rows.
  */
-export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; readonly new: readonly OutlineLine[] }, syntaxes: readonly TestSyntax[] = BUILT_IN_TEST_SYNTAXES): readonly TestFold[] {
+export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; readonly new: readonly OutlineLine[] }, syntaxes: readonly TestSyntax[] = BUILT_IN_TEST_SYNTAXES, file: readonly string[] | null = null): readonly TestFold[] {
+  const whole = file === null ? null : wholeNewSide(sides.new, file);
   const olds = foldsOf(sides.old, syntaxes);
-  const news = foldsOf(sides.new, syntaxes);
+  const news = foldsOf(whole ?? sides.new, syntaxes).filter((fold) => shownIn(fold).length > 0);
   const paired = new Set<SideFold>();
   const folds: TestFold[] = [];
   const sameRun = (old: SideFold, fold: SideFold): boolean =>
@@ -403,10 +432,27 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
     partners.set(fold, partner);
     paired.add(partner);
   }
+  // With the whole file, a test's old lines are also those among its rows that no pairing took: its declaration may
+  // be off the page, or its old side cut where a hunk ended.
+  const claimed = new Set<string>();
+  for (const partner of partners.values()) for (const line of [...partner.heading, ...partner.body]) claimed.add(line.key);
+  for (const fold of olds) if (!paired.has(fold)) for (const line of [...fold.heading, ...fold.body]) claimed.add(line.key);
+  const oldAmong = (fold: SideFold): readonly OutlineLine[] => {
+    if (whole === null) return [];
+    const shown = shownIn(fold);
+    const rows = shown.map((line) => line.row);
+    const top = Math.min(...rows);
+    const bottom = Math.max(...rows);
+    const runs = new Set(shown.filter((line) => line.changed).map((line) => line.run));
+    const among = sides.old.filter((line) => !claimed.has(line.key) && ((line.row >= top && line.row <= bottom) || (line.changed && runs.has(line.run))));
+    for (const line of among) claimed.add(line.key);
+    return among;
+  };
   for (const fold of news) {
     const partner = partners.get(fold);
+    const among = oldAmong(fold);
     const additions = changedIn(fold.heading) + changedIn(fold.body);
-    const deletions = partner === undefined ? 0 : changedIn(partner.heading) + changedIn(partner.body);
+    const deletions = (partner === undefined ? 0 : changedIn(partner.heading) + changedIn(partner.body)) + changedIn(among);
     const renamed = partner !== undefined && partner.title !== fold.title;
     const status: TestFoldStatus = fold.head.changed && partner === undefined ? 'added' : renamed ? 'renamed' : additions + deletions > 0 ? 'modified' : 'unchanged';
     folds.push({
@@ -416,8 +462,9 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
       ...(renamed ? { previousTitle: partner.title } : {}),
       status,
       headKey: fold.head.key,
+      start: fold.start,
       headingKeys: [...fold.heading.map((line) => line.key), ...(partner?.heading.map((line) => line.key) ?? [])],
-      bodyKeys: [...fold.body.map((line) => line.key), ...(partner?.body.map((line) => line.key) ?? [])],
+      bodyKeys: [...fold.body.map((line) => line.key), ...(partner?.body.map((line) => line.key) ?? []), ...among.map((line) => line.key)],
       additions,
       deletions,
     });
@@ -431,6 +478,7 @@ export function outlineTestFolds(sides: { readonly old: readonly OutlineLine[]; 
       title: fold.title,
       status: fold.head.changed ? 'removed' : deletions > 0 ? 'modified' : 'unchanged',
       headKey: fold.head.key,
+      start: fold.start,
       headingKeys: fold.heading.map((line) => line.key),
       bodyKeys: fold.body.map((line) => line.key),
       additions: 0,

@@ -28,6 +28,32 @@ function sides(diff: string): { readonly old: OutlineLine[]; readonly new: Outli
   return { old, new: next };
 }
 
+/** One hunk of a unified diff (` `, `+`, `-` lines) starting at the given old and new line numbers, as the page shows it. */
+function hunk(diff: string, oldStart: number, newStart: number): { readonly old: OutlineLine[]; readonly new: OutlineLine[] } {
+  const old: OutlineLine[] = [];
+  const next: OutlineLine[] = [];
+  let oldNumber = oldStart - 1;
+  let newNumber = newStart - 1;
+  let run = 0;
+  let inChange = false;
+  diff.split('\n').forEach((raw, row) => {
+    const marker = raw.charAt(0);
+    const text = raw.slice(1);
+    const changed = marker === '+' || marker === '-';
+    if (!changed || !inChange) run += 1;
+    inChange = changed;
+    if (marker !== '+') {
+      oldNumber += 1;
+      old.push({ key: `L${oldNumber}`, number: oldNumber, text, changed: marker === '-', row, run });
+    }
+    if (marker !== '-') {
+      newNumber += 1;
+      next.push({ key: `R${newNumber}`, number: newNumber, text, changed: marker === '+', row, run });
+    }
+  });
+  return { old, new: next };
+}
+
 const brief = (folds: readonly TestFold[]): readonly string[] =>
   folds.map((fold) => `${fold.status} ${fold.kind} "${fold.title}"${fold.previousTitle === undefined ? '' : ` from "${fold.previousTitle}"`} ${fold.headKey} body=${fold.bodyKeys.length} +${fold.additions} -${fold.deletions}`);
 
@@ -262,5 +288,47 @@ describe('parseTestSyntax', () => {
     expect('syntax' in regex && regex.syntax.kind === 'test' && regex.syntax.pattern.exec('  verify "it works"')?.groups?.title).toBe('it works');
     expect(parseTestSyntax('/(unclosed/')).toMatchObject({ problem: expect.stringMatching(/not a valid regular expression/) });
     expect(parseTestSyntax('two words')).toMatchObject({ problem: expect.stringMatching(/expected a name/) });
+  });
+});
+
+describe('outlineTestFolds with the whole file', () => {
+  const file = [
+    "describe('array', () => {",
+    "  it('spies', () => {",
+    '    const spy = vi.fn()',
+    '    spy()',
+    '    expect(spy).toHaveBeenCalled()',
+    '  })',
+    '',
+    "  it('adds', () => {",
+    '    expect(1).toBe(1)',
+    '  })',
+    '})',
+  ];
+  // The hunk starts inside the first test: its declaration is three lines above what the page shows.
+  const diff = hunk(['     expect(spy).toHaveBeenCalled()', '   })', ' ', "+  it('adds', () => {", '+    expect(1).toBe(1)', '+  })', ' })'].join('\n'), 5, 5);
+
+  it('folds a test the hunk shows only the end of, closing line and all, from where it starts', () => {
+    const folds = outlineTestFolds(diff, undefined, file);
+    expect(folds.map((fold) => `${fold.status} "${fold.title}" ${fold.headKey} start=${fold.start}`)).toEqual(['unchanged "spies" R2 start=2', 'added "adds" R8 start=8']);
+    const spies = folds[0];
+    // Its shown lines on both sides (the closing `})` among them) and the lines above the hunk, which the page does not show.
+    expect(spies?.bodyKeys).toEqual(expect.arrayContaining(['R3', 'R4', 'R5', 'R6', 'L5', 'L6']));
+    expect(spies?.headingKeys).toEqual(['R2']);
+  });
+
+  it('leaves such a test open without the file, and with a file that is not the one on the page', () => {
+    const titles = (folds: readonly TestFold[]): readonly string[] => folds.map((fold) => fold.title);
+    expect(titles(outlineTestFolds(diff))).toEqual(['adds']);
+    expect(titles(outlineTestFolds(diff, undefined, file.map((line) => line.replace('toHaveBeenCalled()', 'toHaveBeenCalledOnce()'))))).toEqual(['adds']);
+  });
+
+  it('reads a test whose end lies below the hunk, and keeps its old lines and counts', () => {
+    const longer = ["it('reads', () => {", '  const value = read()', '  expect(value).toBe(2)', '  expect(other).toBe(3)', '  expect(more).toBe(4)', '})'];
+    const cut = hunk([" it('reads', () => {", '-  const value = read(1)', '+  const value = read()', '   expect(value).toBe(2)'].join('\n'), 1, 1);
+    const [fold] = outlineTestFolds(cut, undefined, longer);
+    expect(fold).toMatchObject({ status: 'modified', title: 'reads', start: 1, additions: 1, deletions: 1 });
+    // The closing line and the lines before it are the test's, off the page; the old line it replaced is in too.
+    expect(fold?.bodyKeys).toEqual(expect.arrayContaining(['R2', 'R3', 'R4', 'R5', 'R6', 'L2', 'L3']));
   });
 });
