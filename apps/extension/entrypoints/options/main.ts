@@ -289,7 +289,7 @@ async function main(): Promise<void> {
       showAutoViewed(checkbox, id);
     });
     const copy = categoriesField.autoViewed;
-    return el('div', 'options__group options__group--static options__auto-viewed', [
+    return el('div', 'options__auto-viewed', [
       el('label', 'options__group-heading options__group-heading--checkbox', [
         checkbox,
         el('span', '', [el('span', 'options__group-title', [copy.label]), el('span', 'options__group-description', richText(copy.description))]),
