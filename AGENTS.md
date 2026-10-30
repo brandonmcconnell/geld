@@ -1211,6 +1211,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Bundle ids `sh.geld.safari` / `sh.geld.safari.Extension`.
   App Review requires a physical-Mac recording and device/OS details in repository variables `SAFARI_REVIEW_VIDEO_URL` / `SAFARI_REVIEW_TEST_DEVICE`;
   CI renders `store/safari-review-notes.txt` into App Review Information and skips Safari rather than submitting without that evidence.
+  App Store Connect takes at most 4,000 characters of App Review notes, so the renderer refuses longer notes once the placeholders are filled;
+  keep the template near 3,000.
   Mac screenshots must be physical Safari captures listed in `store/assets/safari/README.md`, never title art.
 - Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
   Firefox uses `theme_icons`;

@@ -36,4 +36,10 @@ if (unresolved !== null) {
   throw new Error(`Unresolved review-note placeholders: ${unresolved.join(', ')}`);
 }
 
+// App Store Connect refuses App Review notes over 4,000 characters, and the submission with them.
+const APPLE_NOTES_LIMIT = 4000;
+if ([...notes].length > APPLE_NOTES_LIMIT) {
+  throw new Error(`Review notes are ${[...notes].length} characters; App Store Connect takes at most ${APPLE_NOTES_LIMIT}`);
+}
+
 process.stdout.write(notes);
