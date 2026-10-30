@@ -242,8 +242,9 @@ jobs:
           RUN: ${{ github.run_number }}
           TARGET_SHA: ${{ needs.check-and-pack.outputs.sha }}
         run: |
-          # The manifest version stays a plain x.y.z (stores require it); each
-          # build on main gets its own tag so the release is never overwritten.
+          # The zips carry the four-part version x.y.z.RUN (check-and-pack sets
+          # GELD_BUILD_NUMBER); the tag names the same build, so a release is
+          # never overwritten and each one is newer than the last for the stores.
           tag="v${VERSION}-build.${RUN}"
           title="Geld ${VERSION}.${RUN}"
           ls -1 dist
