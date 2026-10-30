@@ -263,6 +263,8 @@ async function main(): Promise<void> {
     textarea.placeholder = copy.placeholder;
     textarea.spellcheck = false;
     textarea.value = lines.join('\n');
+    // What is saved, so a rebuild caught up later (`catchUpRender`) never replaces text the reader has not saved.
+    textarea.dataset.saved = lines.join('\n');
     textarea.setAttribute('aria-label', copy.label);
     const syntax = el(
       'ul',
@@ -286,6 +288,7 @@ async function main(): Promise<void> {
         return;
       }
       textarea.value = cleaned.join('\n');
+      textarea.dataset.saved = textarea.value;
       status(`Saved ${cleaned.length} line${cleaned.length === 1 ? '' : 's'}`, 'success');
     });
     const statusNode = el('span', 'geld-status');
@@ -394,6 +397,7 @@ async function main(): Promise<void> {
     const nameInput = el('input', 'geld-input options__input');
     nameInput.type = 'text';
     nameInput.value = title;
+    nameInput.dataset.saved = title;
     nameInput.placeholder = customField.titlePlaceholder;
     nameInput.maxLength = 40;
     nameInput.setAttribute('aria-label', customField.titleLabel);
@@ -404,6 +408,7 @@ async function main(): Promise<void> {
     const nounInput = el('input', 'geld-input options__input options__input--short');
     nounInput.type = 'text';
     nounInput.value = noun;
+    nounInput.dataset.saved = noun;
     nounInput.placeholder = 'token';
     nounInput.setAttribute('aria-label', 'Count label, singular');
     nounInput.addEventListener('input', () => {
@@ -412,6 +417,7 @@ async function main(): Promise<void> {
     const nounPluralInput = el('input', 'geld-input options__input options__input--short');
     nounPluralInput.type = 'text';
     nounPluralInput.value = nounPlural;
+    nounPluralInput.dataset.saved = nounPlural;
     nounPluralInput.placeholder = 'tokens';
     nounPluralInput.setAttribute('aria-label', 'Count label, plural');
     nounPluralInput.addEventListener('input', () => {
@@ -420,6 +426,7 @@ async function main(): Promise<void> {
     const picker = iconPicker(icon, (next) => {
       icon = next;
       summaryIcon.replaceWith(iconNode(next));
+      picker.closest('details')?.toggleAttribute('data-unsaved', next !== (existing?.icon ?? 'tag'));
     });
 
     const editor = patternEditor(customField.patterns, existing?.patterns ?? [], async (lines) => {
@@ -468,13 +475,30 @@ async function main(): Promise<void> {
     ]);
     const card = el('details', 'options__category options__category--custom', [el('summary', 'options__category-summary', summaryChildren), body]);
     if (hidden !== null) card.dataset.categoryId = hidden.id;
+    // A new category not saved yet is unsaved work as a whole (`hasUnsavedEdits`).
+    else card.dataset.draft = '';
     // A new draft opens ready to edit; saved categories reopen through renderAll's bookkeeping.
     card.open = existing === null;
     return card;
   }
 
+  /**
+   * Focus is in something being edited: a category's pattern editor (its
+   * textarea, or its Save button, since Chrome focuses a clicked button), or
+   * a custom category's name, count labels and icon picker. Rebuilding then
+   * would eat typed input, an unsaved draft or the "Saved" status the click
+   * is about to show.
+   */
+  function isEditingCategory(): boolean {
+    const active = document.activeElement;
+    return active !== null && active.closest('.options__categories .options__editor, .options__custom-editor') !== null;
+  }
+  /** A rebuild was skipped because someone was editing; it runs once focus moves on (see the focusin listener below). */
+  let renderDeferred = false;
+
   /** Rebuild both category lists from the current settings, keeping open disclosures open. */
   function renderAll(): void {
+    renderDeferred = false;
     const wasOpen = new Set(
       Array.from(document.querySelectorAll<HTMLDetailsElement>('details.options__category[open]')).map((card) => card.dataset.categoryId ?? ''),
     );
@@ -1241,7 +1265,8 @@ async function main(): Promise<void> {
     cachedCatalog = next;
     catalog = catalogFromCache(next);
     renderCatalogStatus();
-    if (!(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) renderAll();
+    if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+    else renderAll();
     runTester();
   }
   catalogItem.watch(applyCatalog);
@@ -1257,16 +1282,52 @@ async function main(): Promise<void> {
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
-    // Rebuilding while someone types in a pattern box would eat their input.
-    if (signature !== lastSignature && !(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) {
-      lastSignature = signature;
-      renderAll();
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
+    if (signature !== lastSignature) {
+      if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+      else {
+        lastSignature = signature;
+        renderAll();
+      }
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
     if (reviewBotsArea !== null && document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
+  });
+  /**
+   * Something in the category lists the reader has not saved, which a rebuild would replace: a pattern box's text, a
+   * custom category's name, count labels or icon, or a new custom category not saved yet.
+   */
+  function hasUnsavedEdits(): boolean {
+    const lists = '.options__categories';
+    const patterns = Array.from(document.querySelectorAll<HTMLTextAreaElement>(`${lists} .options__editor textarea`)).some(
+      (textarea) => parsePatternList(textarea.value).join('\n') !== parsePatternList(textarea.dataset.saved ?? textarea.value).join('\n'),
+    );
+    const fields = Array.from(document.querySelectorAll<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`)).some((input) => input.value !== input.dataset.saved);
+    return patterns || fields || document.querySelector(`${lists} [data-unsaved], ${lists} [data-draft]`) !== null;
+  }
+  /**
+   * Catch up on a skipped rebuild once focus is outside the category lists and nothing there is unsaved. Not with
+   * focus inside them: focus moves on mousedown, so rebuilding then would pull the control being clicked (another
+   * card's switch or Save) out from under the click. Unsaved text waits until it is saved or put back.
+   */
+  function catchUpRender(): void {
+    if (!renderDeferred || isEditingCategory() || hasUnsavedEdits()) return;
+    if ((document.activeElement?.closest('.options__categories') ?? null) !== null) return;
+    lastSignature = categorySignature(settings);
+    renderAll();
+  }
+  document.addEventListener('focusin', (event) => {
+    if (event.target instanceof Element && event.target.closest('.options__categories') !== null) return;
+    catchUpRender();
+  });
+  // Focus leaving for no element (a click on the page's background fires no focusin): catch up after that click has
+  // run, so a rebuild never removes what it landed on.
+  document.addEventListener('focusout', (event) => {
+    if (!renderDeferred || event.relatedTarget !== null) return;
+    document.addEventListener('click', () => window.setTimeout(catchUpRender, 0), { once: true });
   });
 }
 
