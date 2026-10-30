@@ -124,6 +124,8 @@ function readSides(root: HTMLElement, anchor: string): { readonly old: ReadLine[
 interface Painted {
   readonly signature: string;
   readonly syntaxes: readonly TestSyntax[];
+  /** The whole new file, when the page shows only part of it (`wholeFile`). */
+  readonly file: readonly string[] | null;
   readonly folds: readonly TestFold[];
   readonly lines: ReadonlyMap<string, ReadLine>;
 }
@@ -134,17 +136,17 @@ const painted = new WeakMap<HTMLElement, Painted>();
  * Fold one test file (idempotent). `opened` holds the folds the reader opened on this page (`TestFold.id`, prefixed
  * with the file's anchor); they show their bodies and keep a toggle to fold again.
  */
-export function applyTestFolds(root: HTMLElement, anchor: string, syntaxes: readonly TestSyntax[], opened: Set<string>): void {
+export function applyTestFolds(root: HTMLElement, anchor: string, syntaxes: readonly TestSyntax[], opened: Set<string>, file: readonly string[] | null = null): void {
   const sides = readSides(root, anchor);
   const cached = painted.get(root);
   const folds =
-    cached !== undefined && cached.signature === sides.signature && cached.syntaxes === syntaxes
+    cached !== undefined && cached.signature === sides.signature && cached.syntaxes === syntaxes && cached.file === file
       ? cached.folds
-      : outlineTestFolds({ old: sides.old.map((read) => read.line), new: sides.new.map((read) => read.line) }, syntaxes);
+      : outlineTestFolds({ old: sides.old.map((read) => read.line), new: sides.new.map((read) => read.line) }, syntaxes, file);
   // The cells and rows are this pass's: switching unified and split views replaces them under the same line keys.
   const lines = new Map<string, ReadLine>();
   for (const read of [...sides.old, ...sides.new]) lines.set(read.line.key, read);
-  const state: Painted = { signature: sides.signature, syntaxes, folds, lines };
+  const state: Painted = { signature: sides.signature, syntaxes, file, folds, lines };
   painted.set(root, state);
   openLinkedFold(anchor, state, opened);
   paint(root, anchor, state, syntaxes, opened);
@@ -185,6 +187,15 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
   for (const [key, read] of state.lines) rowKeys.set(read.rowElement, [...(rowKeys.get(read.rowElement) ?? []), key]);
   const hidden = new Set<HTMLTableRowElement>();
   for (const [row, keys] of rowKeys) if (keys.every((key) => folded.has(key))) hidden.add(row);
+  // A test that runs across two hunks folds the edge between them too: its title row stands for the whole test.
+  for (const fold of state.folds) {
+    if (opened.has(`${anchor}:${fold.id}`)) continue;
+    const rows = [...fold.headingKeys, ...fold.bodyKeys].map((key) => state.lines.get(key)).filter((read): read is ReadLine => read !== undefined);
+    if (rows.length < 2) continue;
+    const top = rows.reduce((first, read) => (read.line.row < first.line.row ? read : first)).rowElement;
+    const bottom = rows.reduce((last, read) => (read.line.row > last.line.row ? read : last)).rowElement;
+    for (let row = top.nextElementSibling; row !== null && row !== bottom; row = row.nextElementSibling) if (row instanceof HTMLTableRowElement && isHunkRow(row)) hidden.add(row);
+  }
   // The note a comment-only run leaves before its first line (comment-rows.ts) goes with its lines when a test folds over them all.
   for (const note of root.querySelectorAll<HTMLTableRowElement>(`tr[${ATTR_LINE_NOTE}]`)) {
     const run: Element[] = [];
@@ -205,9 +216,10 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     const first = (foldable.length > 0 ? foldable : reads).reduce((top, read) => (read.line.row < top.line.row ? read : top));
     // Where it starts on its declaration's side: its new number for a test that stands, its old one for a removed test.
     const side: 'L' | 'R' = fold.headKey.charAt(0) === 'L' ? 'L' : 'R';
-    const numbers = fold.headingKeys.filter((key) => key.charAt(0) === side).map((key) => state.lines.get(key)?.line.number ?? Number.POSITIVE_INFINITY);
-    const range = { side, start: Math.min(...numbers) };
+    const range = { side, start: fold.start };
     const id = `${anchor}:${fold.id}`;
+    if (opened.has(id)) revealMissing(id, fold, state);
+    else pressed.delete(id);
     // Above the note of a comment-only run that starts the test, so the note stays beside the lines it names.
     const note = first.rowElement.previousElementSibling;
     const at = note instanceof HTMLTableRowElement && note.hasAttribute(ATTR_LINE_NOTE) ? note : first.rowElement;
@@ -228,6 +240,83 @@ function paint(root: HTMLElement, anchor: string, state: Painted, syntaxes: read
     if (row.hasAttribute('data-joined') !== joined) row.toggleAttribute('data-joined', joined);
   }
   scheduleAlign();
+}
+
+/** GitHub's controls that show the lines between and around a file's hunks: the React view's and the classic one's. */
+const EXPANDER = 'button[data-direction], .js-expand, button[aria-label^="Expand" i]';
+
+/** Whether a file's diff leaves some of the file out (it has a control to show more): only then is the whole file read. */
+export function hasHiddenLines(root: ParentNode): boolean {
+  return root.querySelector(`tr ${EXPANDER}`) !== null;
+}
+
+function isHunkRow(row: HTMLTableRowElement): boolean {
+  return row.querySelector(EXPANDER) !== null || [...row.cells].some(isHunk);
+}
+
+function expanderIn(row: Element, directions: readonly string[]): HTMLElement | null {
+  const controls = [...row.querySelectorAll<HTMLElement>(EXPANDER)];
+  const directionOf = (control: Element): string | null =>
+    control.getAttribute('data-direction')?.toLowerCase() ?? /\bexpand\b.*?\b(up|down|all)\b/i.exec(control.getAttribute('aria-label') ?? '')?.[1]?.toLowerCase() ?? null;
+  for (const direction of directions) {
+    const control = controls.find((candidate) => directionOf(candidate) === direction);
+    if (control !== undefined) return control;
+  }
+  return null;
+}
+
+/** The hunk row next to `from` going one way, past Geld's own rows and the test's own: none when other code comes first. */
+function hunkRowBeside(from: Element, step: 'previousElementSibling' | 'nextElementSibling', own: ReadonlySet<Element>): HTMLTableRowElement | null {
+  for (let row = from[step]; row !== null; row = row[step]) {
+    if (!(row instanceof HTMLTableRowElement) || row.hasAttribute(OWN_UI_ATTRIBUTE) || own.has(row)) continue;
+    return isHunkRow(row) ? row : null;
+  }
+  return null;
+}
+
+/** An open fold's presses of GitHub's expanders: how many of its lines were missing then, when, and how many so far. */
+const pressed = new Map<string, { readonly missing: number; readonly at: number; readonly presses: number }>();
+const MAX_PRESSES = 24;
+const PRESS_WAIT_MS = 1500;
+
+/**
+ * An open test the page shows only part of (`TestFold` keys with no line on the page): press GitHub's own control
+ * that shows the lines it lacks, above, below or between its hunks, one press per pass until the whole test is
+ * there. GitHub loads the lines; the pass their arrival brings reads them and presses again if some are still
+ * missing. A press that brought nothing is tried again after a wait, and a fold presses at most `MAX_PRESSES` times.
+ */
+function revealMissing(id: string, fold: TestFold, state: Painted): void {
+  const keys = [...fold.headingKeys, ...fold.bodyKeys];
+  const missing = keys.filter((key) => key.startsWith('R') && !state.lines.has(key)).map((key) => Number(key.slice(1)));
+  if (missing.length === 0) {
+    pressed.delete(id);
+    return;
+  }
+  const last = pressed.get(id);
+  const now = Date.now();
+  if (last !== undefined && (last.presses >= MAX_PRESSES || (last.missing === missing.length && now - last.at < PRESS_WAIT_MS))) return;
+  const reads = keys.map((key) => state.lines.get(key)).filter((read): read is ReadLine => read !== undefined);
+  const shown = reads.filter((read) => read.line.key.startsWith('R'));
+  if (shown.length === 0) return;
+  const own = new Set<Element>(reads.map((read) => read.rowElement));
+  const low = shown.reduce((first, read) => (read.line.number < first.line.number ? read : first));
+  const high = shown.reduce((end, read) => (read.line.number > end.line.number ? read : end));
+  const gap = missing.find((number) => number > low.line.number && number < high.line.number);
+  let control: HTMLElement | null = null;
+  if (missing.some((number) => number < low.line.number)) {
+    const row = hunkRowBeside(low.rowElement, 'previousElementSibling', own);
+    control = row === null ? null : expanderIn(row, ['up', 'all']);
+  } else if (gap !== undefined) {
+    const before = shown.filter((read) => read.line.number < gap).reduce((end, read) => (read.line.number > end.line.number ? read : end));
+    const row = hunkRowBeside(before.rowElement, 'nextElementSibling', own);
+    control = row === null ? null : expanderIn(row, ['all', 'up', 'down']);
+  } else {
+    const row = hunkRowBeside(high.rowElement, 'nextElementSibling', own);
+    control = row === null ? null : expanderIn(row, ['down', 'all']);
+  }
+  if (control === null) return;
+  pressed.set(id, { missing: missing.length, at: now, presses: (last?.presses ?? 0) + 1 });
+  control.click();
 }
 
 let alignFrame: number | null = null;

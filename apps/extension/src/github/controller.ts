@@ -45,7 +45,8 @@ import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
-import { applyTestFolds, clearTestFolds, forgetLinkedFold } from './ui/test-folds';
+import { applyTestFolds, clearTestFolds, forgetLinkedFold, hasHiddenLines } from './ui/test-folds';
+import { wholeFile } from './whole-file';
 import { removeHiddenSection, renderHiddenSection } from './ui/hidden-section';
 import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } from './ui/virtual-hidden';
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
@@ -816,6 +817,16 @@ export class GeldController {
     return matcher;
   }
 
+  /** The whole file at the diff's commit, for a test file the page shows only part of (null until it is read, or when it is all there). */
+  private wholeFileFor(root: HTMLElement, path: string): readonly string[] | null {
+    if (!hasHiddenLines(root) || this.currentPage === null) return null;
+    const url = new URL(window.location.href);
+    const sha = this.diffShaFor(this.currentPage, url);
+    const repo = repoFromPathname(url.pathname);
+    if (sha === null || repo === null) return null;
+    return wholeFile(url.origin, repo, sha, path, () => this.schedule());
+  }
+
   private testSyntaxes(): readonly TestSyntax[] {
     if (this.testSyntaxCache?.lines !== this.settings.testSyntaxes) this.testSyntaxCache = { lines: this.settings.testSyntaxes, syntaxes: testSyntaxesFrom(this.settings.testSyntaxes) };
     return this.testSyntaxCache.syntaxes;
@@ -841,7 +852,7 @@ export class GeldController {
     for (const item of items) {
       if (item.commentLines !== undefined && item.entry.anchor !== null) applyCommentRows(item.entry.root, item.entry.anchor, item.commentLines, this.shownCommentRuns);
       else clearCommentRows(item.entry.root);
-      if (tests !== null && item.entry.anchor !== null && !item.filtered && tests.categorize(item.path)?.id === 'tests') applyTestFolds(item.entry.root, item.entry.anchor, this.testSyntaxes(), this.openedTestFolds);
+      if (tests !== null && item.entry.anchor !== null && !item.filtered && tests.categorize(item.path)?.id === 'tests') applyTestFolds(item.entry.root, item.entry.anchor, this.testSyntaxes(), this.openedTestFolds, this.wholeFileFor(item.entry.root, item.path));
       else clearTestFolds(item.entry.root);
     }
     return items;
