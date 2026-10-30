@@ -936,7 +936,12 @@ function alignAnchorCarriers(anchor: string, focusKey: string): void {
 }
 
 const MAX_EAGER_FRAGMENTS = 200;
-const FRAGMENT_CONCURRENCY = 4;
+/**
+ * Deferred fragments fetched at once. Each is a ~0.8 s round trip to github.com (HTTP/2, one connection): at 4, a long
+ * conversation's 165 took ~44 s after the page opened (next.js#52514); at 12 they keep up with the "Load more" pages
+ * that reveal them (~24 s, no failures), the pages themselves being the floor.
+ */
+const FRAGMENT_CONCURRENCY = 12;
 /** A fetch that failed (a 5xx, a blip) is tried again after this long, not on the next pass. */
 const FRAGMENT_RETRY_MS = 30_000;
 const requestedFragments = new WeakSet<Element>();
