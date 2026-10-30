@@ -157,34 +157,36 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
     runIndent = -1;
     if (scalarIndent >= 0 && (indent === -1 || indent > scalarIndent)) continue;
     scalarIndent = -1;
-    const keyMatch = /^(\s*(?:-\s+)?)([\w.-]+)\s*:(.*)$/.exec(line.text);
+    // A key may be quoted (`'defaults':`, `"runs-on":`); it is the same key, so it is read unquoted.
+    const text = line.text.replace(/^(\s*(?:-\s+)?)(['"])([\w.-]+)\2(\s*:)/, '$1$3$4');
+    const keyMatch = /^(\s*(?:-\s+)?)([\w.-]+)\s*:(.*)$/.exec(text);
     if (keyMatch !== null) {
       const keyIndent = keyMatch[1]?.length ?? 0;
       while ((keys[keys.length - 1]?.indent ?? -1) >= keyIndent) keys.pop();
       keys.push({ indent: keyIndent, key: keyMatch[2] ?? '' });
       if (keyMatch[2] !== 'run' && /^\s*[|>][1-9+-]*\s*(?:#.*)?$/.test(keyMatch[3] ?? '')) scalarIndent = keyIndent;
     }
-    const jobs = /^(\s*)jobs:\s*(?:#.*)?$/.exec(line.text);
+    const jobs = /^(\s*)jobs:\s*(?:#.*)?$/.exec(text);
     if (jobs !== null) jobsIndent = jobs[1]?.length ?? 0;
-    else if (jobsIndent >= 0 && jobIndent < 0 && indent > jobsIndent && !line.text.trimStart().startsWith('#')) jobIndent = indent;
+    else if (jobsIndent >= 0 && jobIndent < 0 && indent > jobsIndent && !text.trimStart().startsWith('#')) jobIndent = indent;
     if (jobIndent >= 0 && indent >= 0 && indent <= jobIndent) {
       flush();
       stepIndent = -1;
       job += 1;
       step += 1;
     }
-    const runner = /^(\s*)runs-on:\s*(.*)$/.exec(line.text);
+    const runner = /^(\s*)runs-on:\s*(.*)$/.exec(text);
     if (runner !== null) {
       jobIndent = (runner[1]?.length ?? 0) - 2;
       runnerShells.set(job, /windows/i.test(runner[2] ?? '') ? 'pwsh' : /\$\{\{/.test(runner[2] ?? '') ? 'unknown' : '');
     }
-    const stepLine = /^(\s*)-\s+\w[^:]*:/.exec(line.text);
+    const stepLine = /^(\s*)-\s+\w[^:]*:/.exec(text);
     if (stepLine !== null || (stepIndent >= 0 && indent >= 0 && indent <= stepIndent)) {
       flush();
       stepIndent = stepLine?.[1]?.length ?? -1;
       step += 1;
     }
-    const shellMatch = /^\s*(?:-\s+)?shell:\s*['"]?([^'"#]+?)['"]?\s*(?:#.*)?$/.exec(line.text);
+    const shellMatch = /^\s*(?:-\s+)?shell:\s*['"]?([^'"#]+?)['"]?\s*(?:#.*)?$/.exec(text);
     if (shellMatch?.[1] !== undefined && (stepIndent < 0 || indent === stepIndent + 2 || (stepLine !== null && indent === stepIndent))) {
       const shell = shellMatch[1].trim();
       // Outside a step only `defaults.run.shell` chooses a shell (a `shell` under `env` is a variable): the
@@ -196,7 +198,7 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
         else jobShells.set(job, shell);
       }
     }
-    const run = /^(\s*)(-\s+)?run:\s*[|>][1-9+-]*\s*(?:#.*)?$/.exec(line.text);
+    const run = /^(\s*)(-\s+)?run:\s*[|>][1-9+-]*\s*(?:#.*)?$/.exec(text);
     if (run !== null) {
       runIndent = (run[1]?.length ?? 0) + (run[2]?.length ?? 0);
       if (stepIndent < 0) stepIndent = runIndent - 2;

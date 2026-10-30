@@ -272,3 +272,11 @@ it('takes a default shell only from defaults.run.shell, never from an environmen
   applyWorkflowSyntax([entry]);
   expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(2);
 });
+
+it('reads quoted keys as the keys they are', () => {
+  const text = ["'defaults':", '  "run":', "    'shell': pwsh", '"jobs":', '  linux:', "    'runs-on': ubuntu-latest", '    steps:', '      - "run": |', '          echo powershell', '      - "shell": bash', "        'run': |", '          echo bash'];
+  const entry = fixture(text.map((line, i) => [i + 1, i + 1, line]));
+  applyWorkflowSyntax([entry]);
+  expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(1);
+  expect(words('plain').join('')).not.toContain('powershell');
+});
