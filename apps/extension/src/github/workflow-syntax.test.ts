@@ -248,3 +248,27 @@ it('reads the workflow\'s defaults after its jobs too, and a job\'s own over the
   expect(words('plain').join('')).not.toContain('inherits');
 });
 
+
+it('keeps what a section after a gap reads to itself, since the gap may hide another job', () => {
+  const entry = fixture([
+    [1, 1, 'jobs:'], [2, 2, '  windows:'], [3, 3, '    runs-on: windows-latest'], [4, 4, '    steps:'],
+    [5, 5, '      - run: |'], [6, 6, '          echo powershell'],
+    // Hidden here: the end of that job and the next one's name.
+    [30, 30, '    runs-on: ubuntu-latest'], [31, 31, '    steps:'], [32, 32, '      - run: |'], [33, 33, '          echo bash'],
+  ]);
+  applyWorkflowSyntax([entry]);
+  expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(1);
+  expect(words('plain').join('')).not.toContain('powershell');
+});
+
+it('takes a default shell only from defaults.run.shell, never from an environment variable named shell', () => {
+  const text = [
+    'jobs:', '  linux:', '    runs-on: ubuntu-latest', '    env:', '      shell: python', '    steps:',
+    '      - run: |', '          echo still-bash', '      - with:', '          script: |', '            shell: pwsh',
+    '        run: |', '          echo also-bash',
+    'env:', '  shell: python',
+  ];
+  const entry = fixture(text.map((line, i) => [i + 1, i + 1, line]));
+  applyWorkflowSyntax([entry]);
+  expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(2);
+});

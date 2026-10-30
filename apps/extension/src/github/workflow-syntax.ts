@@ -117,14 +117,19 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
   const stepShells = new Map<number, string>();
   const jobShells = new Map<number, string>();
   const runnerShells = new Map<number, string>();
+  // A job section that follows a gap in the diff: the gap may hide the next job's name, so what it reads is its own,
+  // and it only falls back on what the section before it read.
+  const parents = new Map<number, number>();
   let workflowShell = '';
   let block: Line[] = [];
   let runIndent = -1;
   let stepIndent = -1;
   let jobIndent = -1;
   let jobsIndent = -1;
-  // Which top-level key the lines stand under: `jobs`, another one (`defaults`, `on`…), or not seen yet.
-  let topLevel: 'jobs' | 'other' | null = null;
+  // Another block scalar's text (`script: |`): its lines are a string, never keys.
+  let scalarIndent = -1;
+  // The keys the current line stands under, by indent, so a default shell is told from any other `shell` key.
+  const keys: { readonly indent: number; readonly key: string }[] = [];
   let job = 0;
   let step = 0;
   let previous = 0;
@@ -138,7 +143,11 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
     if (line.number !== previous + 1) {
       flush();
       stepIndent = -1;
+      scalarIndent = -1;
+      keys.length = 0;
       step += 1;
+      parents.set(job + 1, job);
+      job += 1;
     }
     previous = line.number;
     if (runIndent >= 0 && (indent === -1 || indent > runIndent)) {
@@ -146,7 +155,15 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
       continue;
     }
     runIndent = -1;
-    if (indent === 0 && !line.text.startsWith('#')) topLevel = /^jobs:\s*(?:#.*)?$/.test(line.text) ? 'jobs' : 'other';
+    if (scalarIndent >= 0 && (indent === -1 || indent > scalarIndent)) continue;
+    scalarIndent = -1;
+    const keyMatch = /^(\s*(?:-\s+)?)([\w.-]+)\s*:(.*)$/.exec(line.text);
+    if (keyMatch !== null) {
+      const keyIndent = keyMatch[1]?.length ?? 0;
+      while ((keys[keys.length - 1]?.indent ?? -1) >= keyIndent) keys.pop();
+      keys.push({ indent: keyIndent, key: keyMatch[2] ?? '' });
+      if (keyMatch[2] !== 'run' && /^\s*[|>][1-9+-]*\s*(?:#.*)?$/.test(keyMatch[3] ?? '')) scalarIndent = keyIndent;
+    }
     const jobs = /^(\s*)jobs:\s*(?:#.*)?$/.exec(line.text);
     if (jobs !== null) jobsIndent = jobs[1]?.length ?? 0;
     else if (jobsIndent >= 0 && jobIndent < 0 && indent > jobsIndent && !line.text.trimStart().startsWith('#')) jobIndent = indent;
@@ -170,11 +187,14 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
     const shellMatch = /^\s*(?:-\s+)?shell:\s*['"]?([^'"#]+?)['"]?\s*(?:#.*)?$/.exec(line.text);
     if (shellMatch?.[1] !== undefined && (stepIndent < 0 || indent === stepIndent + 2 || (stepLine !== null && indent === stepIndent))) {
       const shell = shellMatch[1].trim();
+      // Outside a step only `defaults.run.shell` chooses a shell (a `shell` under `env` is a variable): the
+      // workflow's when `defaults` is a top-level key, a job's otherwise.
+      const defaults = keys[keys.length - 3];
       if (stepIndent >= 0) stepShells.set(step, shell);
-      // Outside a step: the workflow's defaults when they stand under a top-level key other than `jobs` (or before
-      // any job was seen, as a hunk that starts mid-file reads), a job's otherwise.
-      else if (topLevel === 'other' || (topLevel === null && jobIndent < 0)) workflowShell = shell;
-      else jobShells.set(job, shell);
+      else if (keys[keys.length - 2]?.key === 'run' && defaults?.key === 'defaults') {
+        if (defaults.indent === 0) workflowShell = shell;
+        else jobShells.set(job, shell);
+      }
     }
     const run = /^(\s*)(-\s+)?run:\s*[|>][1-9+-]*\s*(?:#.*)?$/.exec(line.text);
     if (run !== null) {
@@ -183,8 +203,12 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
     }
   }
   flush();
+  const inherited = (settings: ReadonlyMap<number, string>, from: number): string | undefined => {
+    for (let at: number | undefined = from; at !== undefined; at = parents.get(at)) if (settings.has(at)) return settings.get(at);
+    return undefined;
+  };
   for (const found of blocks) {
-    const shell = stepShells.get(found.step) ?? jobShells.get(found.job) ?? (workflowShell || runnerShells.get(found.job) || '');
+    const shell = stepShells.get(found.step) ?? inherited(jobShells, found.job) ?? (workflowShell || inherited(runnerShells, found.job) || '');
     if (shell === '' || /^(?:bash|sh)(?:\s|$)/.test(shell)) paintBlock(found.lines, ranges, skipNodes);
   }
 }

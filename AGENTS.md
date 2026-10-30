@@ -1275,7 +1275,8 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 `src/github/workflow-syntax.ts` colors shell in visible `.github/workflows/*.yml` and `.yaml` multiline `run` blocks on classic and React diffs.
 It uses only highlight.js core and Bash, GitHub's syntax theme tokens and CSS Custom Highlights over `StaticRange`s, leaving GitHub's nodes intact.
 Old and new sides are tokenized separately, with shared context painted from the new side.
-Each script's shell is the step's `shell`, else the job's `defaults.run.shell`, else the workflow's, else the runner's default (PowerShell on Windows), decided once the whole visible side is read, since a job may name its runner or defaults after its steps.
+Each script's shell is the step's `shell`, else the job's `defaults.run.shell`, else the workflow's, else the runner's default (PowerShell on Windows), decided once the whole visible side is read, since a job may name its runner or defaults after its steps;
+a default comes only from `defaults.run.shell` (a `shell` under `env` is a variable), and a section after a gap in the diff keeps what it reads to itself, falling back on the section before it, since the gap may hide another job's name.
 Unknown hunk context, visibly unsupported shells, scripts over 100 KB and browsers without the highlight API keep GitHub's native colors.
 Ranges are refreshed when source nodes change and cleared on teardown.
 
