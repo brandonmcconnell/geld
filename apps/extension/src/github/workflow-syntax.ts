@@ -105,19 +105,31 @@ function paintBlock(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: Rea
   }
 }
 
+/**
+ * Every multiline `run` block on one side, painted with the shell GitHub would run it with: the step's own
+ * `shell`, else the job's `defaults.run.shell`, else the workflow's, else the runner's default (PowerShell on a
+ * Windows runner, Bash otherwise). The blocks are collected first and their shell chosen once the whole visible
+ * side is read, since YAML key order changes nothing: a job may name its runner or its defaults after its steps,
+ * and a step its shell after its script.
+ */
 function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
+  const blocks: { readonly lines: readonly Line[]; readonly job: number; readonly step: number }[] = [];
+  const stepShells = new Map<number, string>();
+  const jobShells = new Map<number, string>();
+  const runnerShells = new Map<number, string>();
+  let workflowShell = '';
   let block: Line[] = [];
   let runIndent = -1;
   let stepIndent = -1;
-  let workflowShell = '';
-  let defaultShell = '';
-  let runnerShell = '';
   let jobIndent = -1;
   let jobsIndent = -1;
-  let shell = '';
+  // Which top-level key the lines stand under: `jobs`, another one (`defaults`, `on`…), or not seen yet.
+  let topLevel: 'jobs' | 'other' | null = null;
+  let job = 0;
+  let step = 0;
   let previous = 0;
   const flush = (): void => {
-    if (block.length > 0 && (shell === '' || /^(?:bash|sh)(?:\s|$)/.test(shell))) paintBlock(block, ranges, skipNodes);
+    if (block.length > 0) blocks.push({ lines: block, job, step });
     block = [];
     runIndent = -1;
   };
@@ -126,7 +138,7 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
     if (line.number !== previous + 1) {
       flush();
       stepIndent = -1;
-      shell = defaultShell || runnerShell;
+      step += 1;
     }
     previous = line.number;
     if (runIndent >= 0 && (indent === -1 || indent > runIndent)) {
@@ -134,35 +146,35 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
       continue;
     }
     runIndent = -1;
+    if (indent === 0 && !line.text.startsWith('#')) topLevel = /^jobs:\s*(?:#.*)?$/.test(line.text) ? 'jobs' : 'other';
     const jobs = /^(\s*)jobs:\s*(?:#.*)?$/.exec(line.text);
     if (jobs !== null) jobsIndent = jobs[1]?.length ?? 0;
     else if (jobsIndent >= 0 && jobIndent < 0 && indent > jobsIndent && !line.text.trimStart().startsWith('#')) jobIndent = indent;
     if (jobIndent >= 0 && indent >= 0 && indent <= jobIndent) {
       flush();
       stepIndent = -1;
-      defaultShell = workflowShell;
-      runnerShell = '';
-      shell = defaultShell;
+      job += 1;
+      step += 1;
     }
     const runner = /^(\s*)runs-on:\s*(.*)$/.exec(line.text);
     if (runner !== null) {
       jobIndent = (runner[1]?.length ?? 0) - 2;
-      runnerShell = /windows/i.test(runner[2] ?? '') ? 'pwsh' : /\$\{\{/.test(runner[2] ?? '') ? 'unknown' : '';
-      shell = defaultShell || runnerShell;
+      runnerShells.set(job, /windows/i.test(runner[2] ?? '') ? 'pwsh' : /\$\{\{/.test(runner[2] ?? '') ? 'unknown' : '');
     }
-    const step = /^(\s*)-\s+\w[^:]*:/.exec(line.text);
-    if (step !== null || (stepIndent >= 0 && indent >= 0 && indent <= stepIndent)) {
+    const stepLine = /^(\s*)-\s+\w[^:]*:/.exec(line.text);
+    if (stepLine !== null || (stepIndent >= 0 && indent >= 0 && indent <= stepIndent)) {
       flush();
-      stepIndent = step?.[1]?.length ?? -1;
-      shell = defaultShell || runnerShell;
+      stepIndent = stepLine?.[1]?.length ?? -1;
+      step += 1;
     }
     const shellMatch = /^\s*(?:-\s+)?shell:\s*['"]?([^'"#]+?)['"]?\s*(?:#.*)?$/.exec(line.text);
-    if (shellMatch?.[1] !== undefined && (stepIndent < 0 || indent === stepIndent + 2 || (step !== null && indent === stepIndent))) {
-      shell = shellMatch[1].trim();
-      if (stepIndent < 0) {
-        defaultShell = shell;
-        if (jobIndent < 0) workflowShell = shell;
-      }
+    if (shellMatch?.[1] !== undefined && (stepIndent < 0 || indent === stepIndent + 2 || (stepLine !== null && indent === stepIndent))) {
+      const shell = shellMatch[1].trim();
+      if (stepIndent >= 0) stepShells.set(step, shell);
+      // Outside a step: the workflow's defaults when they stand under a top-level key other than `jobs` (or before
+      // any job was seen, as a hunk that starts mid-file reads), a job's otherwise.
+      else if (topLevel === 'other' || (topLevel === null && jobIndent < 0)) workflowShell = shell;
+      else jobShells.set(job, shell);
     }
     const run = /^(\s*)(-\s+)?run:\s*[|>][1-9+-]*\s*(?:#.*)?$/.exec(line.text);
     if (run !== null) {
@@ -171,6 +183,10 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
     }
   }
   flush();
+  for (const found of blocks) {
+    const shell = stepShells.get(found.step) ?? jobShells.get(found.job) ?? (workflowShell || runnerShells.get(found.job) || '');
+    if (shell === '' || /^(?:bash|sh)(?:\s|$)/.test(shell)) paintBlock(found.lines, ranges, skipNodes);
+  }
 }
 
 function setHighlights(): void {

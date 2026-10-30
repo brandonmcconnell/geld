@@ -211,3 +211,40 @@ it('respects workflow and job shell defaults without leaking them into another j
   expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(2);
   expect(words('plain').join('')).not.toContain('skipped');
 });
+
+it('reads a job\'s runner and defaults wherever they stand, after its steps too', () => {
+  const text = [
+    'jobs:',
+    '  windows:',
+    '    steps:', '      - run: |', '          echo pwsh-one', '      - run: |', '          echo pwsh-two',
+    '      - shell: bash', '        run: |', '          echo bash-step',
+    '    runs-on: windows-latest',
+    '  python:',
+    '    steps:', '      - run: |', '          echo python-script',
+    '    runs-on: ubuntu-latest',
+    '    defaults:', '      run:', '        shell: python',
+    '  linux:',
+    '    steps:', '      - run: |', '          echo linux-script',
+    '    runs-on: ubuntu-latest',
+  ];
+  const entry = fixture(text.map((line, i) => [i + 1, i + 1, line]));
+  applyWorkflowSyntax([entry]);
+  // Only the step that names bash, and the job with no other say, are Bash.
+  expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(2);
+  const painted = words('plain').join('');
+  for (const word of ['pwsh-one', 'pwsh-two', 'python-script']) expect(painted).not.toContain(word);
+});
+
+it('reads the workflow\'s defaults after its jobs too, and a job\'s own over them', () => {
+  const text = [
+    'jobs:',
+    '  first:', '    runs-on: ubuntu-latest', '    steps:', '      - run: |', '          echo inherits',
+    '  second:', '    runs-on: ubuntu-latest', '    defaults:', '      run:', '        shell: bash', '    steps:', '      - run: |', '          echo own',
+    'defaults:', '  run:', '    shell: pwsh',
+  ];
+  const entry = fixture(text.map((line, i) => [i + 1, i + 1, line]));
+  applyWorkflowSyntax([entry]);
+  expect(words('built_in').filter((word) => word === 'echo')).toHaveLength(1);
+  expect(words('plain').join('')).not.toContain('inherits');
+});
+
