@@ -446,6 +446,7 @@ async function main(): Promise<void> {
     const nameInput = el('input', 'geld-input options__input');
     nameInput.type = 'text';
     nameInput.value = title;
+    nameInput.dataset.saved = title;
     nameInput.placeholder = customField.titlePlaceholder;
     nameInput.maxLength = 40;
     nameInput.setAttribute('aria-label', customField.titleLabel);
@@ -456,6 +457,7 @@ async function main(): Promise<void> {
     const nounInput = el('input', 'geld-input options__input options__input--short');
     nounInput.type = 'text';
     nounInput.value = noun;
+    nounInput.dataset.saved = noun;
     nounInput.placeholder = 'token';
     nounInput.setAttribute('aria-label', 'Count label, singular');
     nounInput.addEventListener('input', () => {
@@ -464,6 +466,7 @@ async function main(): Promise<void> {
     const nounPluralInput = el('input', 'geld-input options__input options__input--short');
     nounPluralInput.type = 'text';
     nounPluralInput.value = nounPlural;
+    nounPluralInput.dataset.saved = nounPlural;
     nounPluralInput.placeholder = 'tokens';
     nounPluralInput.setAttribute('aria-label', 'Count label, plural');
     nounPluralInput.addEventListener('input', () => {
@@ -472,6 +475,7 @@ async function main(): Promise<void> {
     const picker = iconPicker(icon, (next) => {
       icon = next;
       summaryIcon.replaceWith(iconNode(next));
+      picker.closest('details')?.toggleAttribute('data-unsaved', next !== (existing?.icon ?? 'tag'));
     });
 
     const editor = patternEditor(customField.patterns, existing?.patterns ?? [], async (lines) => {
@@ -528,6 +532,8 @@ async function main(): Promise<void> {
     ]);
     const card = el('details', 'options__category options__category--custom', [el('summary', 'options__category-summary', summaryChildren), body]);
     if (hidden !== null) card.dataset.categoryId = hidden.id;
+    // A new category not saved yet is unsaved work as a whole (`hasUnsavedEdits`).
+    else card.dataset.draft = '';
     // A new draft opens ready to edit; saved categories reopen through renderAll's bookkeeping.
     card.open = existing === null;
     if (existing !== null) savedCustomCards.set(existing.id, { card, status: editor.status });
@@ -535,13 +541,15 @@ async function main(): Promise<void> {
   }
 
   /**
-   * Focus is in a category's pattern editor: its textarea, or its Save button
-   * (Chrome focuses a clicked button). Rebuilding then would eat typed input
-   * or the "Saved" status the click is about to show.
+   * Focus is in something being edited: a category's pattern editor (its
+   * textarea, or its Save button, since Chrome focuses a clicked button), or
+   * a custom category's name, count labels and icon picker. Rebuilding then
+   * would eat typed input, an unsaved draft or the "Saved" status the click
+   * is about to show.
    */
-  function isEditingPatterns(): boolean {
+  function isEditingCategory(): boolean {
     const active = document.activeElement;
-    return active !== null && active.closest('.options__categories .options__editor') !== null;
+    return active !== null && active.closest('.options__categories .options__editor, .options__custom-editor') !== null;
   }
   /** A rebuild was skipped because someone was editing; it runs once focus moves on (see the focusin listener below). */
   let renderDeferred = false;
@@ -1355,7 +1363,7 @@ async function main(): Promise<void> {
     cachedCatalog = next;
     catalog = catalogFromCache(next);
     renderCatalogStatus();
-    if (isEditingPatterns() || hasUnsavedPatterns()) renderDeferred = true;
+    if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
     else renderAll();
     runTester();
   }
@@ -1372,9 +1380,9 @@ async function main(): Promise<void> {
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
-    // Rebuilding while someone types in a pattern box (or has just clicked its Save) would eat their input or the Saved status.
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
     if (signature !== lastSignature) {
-      if (isEditingPatterns() || hasUnsavedPatterns()) renderDeferred = true;
+      if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
       else {
         lastSignature = signature;
         renderAll();
@@ -1395,11 +1403,17 @@ async function main(): Promise<void> {
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
   });
-  /** A pattern box holding text the reader has not saved: a rebuild would replace it with the saved patterns. */
-  function hasUnsavedPatterns(): boolean {
-    return Array.from(document.querySelectorAll<HTMLTextAreaElement>('.options__categories .options__editor textarea')).some(
+  /**
+   * Something in the category lists the reader has not saved, which a rebuild would replace: a pattern box's text, a
+   * custom category's name, count labels or icon, or a new custom category not saved yet.
+   */
+  function hasUnsavedEdits(): boolean {
+    const lists = '.options__categories';
+    const patterns = Array.from(document.querySelectorAll<HTMLTextAreaElement>(`${lists} .options__editor textarea`)).some(
       (textarea) => parsePatternList(textarea.value).join('\n') !== parsePatternList(textarea.dataset.saved ?? textarea.value).join('\n'),
     );
+    const fields = Array.from(document.querySelectorAll<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`)).some((input) => input.value !== input.dataset.saved);
+    return patterns || fields || document.querySelector(`${lists} [data-unsaved], ${lists} [data-draft]`) !== null;
   }
   /**
    * Catch up on a skipped rebuild once focus is outside the category lists and nothing there is unsaved. Not with
@@ -1407,7 +1421,7 @@ async function main(): Promise<void> {
    * card's switch or Save) out from under the click. Unsaved text waits until it is saved or put back.
    */
   function catchUpRender(): void {
-    if (!renderDeferred || isEditingPatterns() || hasUnsavedPatterns()) return;
+    if (!renderDeferred || isEditingCategory() || hasUnsavedEdits()) return;
     if ((document.activeElement?.closest('.options__categories') ?? null) !== null) return;
     lastSignature = categorySignature(settings);
     renderAll();
