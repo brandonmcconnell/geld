@@ -1202,12 +1202,19 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   where the property is missing — Safari — the `hyperellipse` polyfill is dynamically imported by `src/ui/corner-shape.ts` from the popup/options entrypoints only, reads the `--corner-shape` twin declared next to the native property, and `--corner-scale: 0` keeps corners square until it runs;
   the site does the same in `components/corner-shape-polyfill.tsx`, gated on `CSS.supports`, so Chrome never downloads the chunk), and uses the site's 36×20 switch with a 12px thumb.
   Change a token in both places or not at all.
-- **Safari ships through a thin Xcode wrapper** in `apps/extension/safari/` (generated once with `pnpm --filter @geld/extension safari:project`, i.e. `xcrun safari-web-extension-converter --copy-resources`;
+- **Safari ships through an Xcode containing app** in `apps/extension/safari/` (generated once with `pnpm --filter @geld/extension safari:project`, i.e. `xcrun safari-web-extension-converter --copy-resources`;
   committed, including the copied extension build under the extension target's `Resources`).
+  Its native shell reports the extension status, explains setup and opens Safari Settings/a public demo;
+  the product itself runs inside Safari.
   Before every App Store archive run `pnpm --filter @geld/extension safari:sync`: it rebuilds the Safari flavour, rsyncs it over `Resources`, sets `MARKETING_VERSION` from `package.json` and bumps `CURRENT_PROJECT_VERSION`.
   Archive/upload happens in Xcode (`safari:open`, Product → Archive, Distribute App → App Store Connect);
   submissions must come from a release Xcode, not a beta.
   Bundle ids `sh.geld.safari` / `sh.geld.safari.Extension`.
+  App Review requires a physical-Mac recording and device/OS details in repository variables `SAFARI_REVIEW_VIDEO_URL` / `SAFARI_REVIEW_TEST_DEVICE`;
+  CI renders `store/safari-review-notes.txt` into App Review Information and skips Safari rather than submitting without that evidence.
+  App Store Connect takes at most 4,000 characters of App Review notes, so the renderer refuses longer notes once the placeholders are filled;
+  keep the template near 3,000.
+  Mac screenshots must be physical Safari captures listed in `store/assets/safari/README.md`, never title art.
 - Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
   Firefox uses `theme_icons`;
   Safari tints template icons.
