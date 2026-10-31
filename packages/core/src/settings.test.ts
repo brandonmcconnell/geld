@@ -4,6 +4,7 @@ import {
   describeAdvancedSettings,
   hasAdvancedSettings,
   isAutoViewed,
+  mergeCustomCategoryEdit,
   isCategoryEnabled,
   isGroupEnabled,
   isTestGroupEnabled,
@@ -14,6 +15,7 @@ import {
   withCustomCategory,
   withoutCustomCategory,
 } from './settings';
+import type { CustomCategory } from './categories';
 
 describe('autoViewed', () => {
   it('is off for every category unless set, keeps built-in and existing custom ids, and goes with a deleted category', () => {
@@ -163,3 +165,27 @@ describe('normalizeHost', () => {
     ]);
   });
 });
+
+describe('mergeCustomCategoryEdit', () => {
+  const base: CustomCategory = { id: 'custom:tokens', title: 'Tokens', icon: 'tag', patterns: ['tokens/**'], noun: 'token', nounPlural: 'tokens' };
+
+  it('keeps what another window changed and writes only what this editor changed', () => {
+    // Elsewhere: a new icon and a new pattern. Here: only the name.
+    const latest: CustomCategory = { ...base, icon: 'paintbrush', patterns: ['tokens/**', 'theme/**'] };
+    const edited: CustomCategory = { ...base, title: 'Design tokens' };
+    expect(mergeCustomCategoryEdit(base, edited, latest)).toEqual({ ...latest, title: 'Design tokens' });
+  });
+
+  it('writes this editor\'s patterns and count labels when they changed, over the stored ones', () => {
+    const latest: CustomCategory = { ...base, patterns: ['tokens/**', 'theme/**'], noun: 'item' };
+    const edited: CustomCategory = { ...base, patterns: ['design/**'], nounPlural: 'design tokens' };
+    expect(mergeCustomCategoryEdit(base, edited, latest)).toEqual({ id: 'custom:tokens', title: 'Tokens', icon: 'tag', patterns: ['design/**'], noun: 'item', nounPlural: 'design tokens' });
+  });
+
+  it('clears a count label this editor emptied, and reports a category deleted elsewhere', () => {
+    const edited: CustomCategory = { id: base.id, title: base.title, icon: base.icon, patterns: base.patterns, noun: 'token' };
+    expect(mergeCustomCategoryEdit(base, edited, base)).toEqual({ id: base.id, title: base.title, icon: base.icon, patterns: base.patterns, noun: 'token' });
+    expect(mergeCustomCategoryEdit(base, { ...base, title: 'Renamed' }, undefined)).toBeNull();
+  });
+});
+

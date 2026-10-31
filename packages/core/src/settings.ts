@@ -517,6 +517,28 @@ export function withoutCustomCategory(settings: GeldSettings, id: AnyCategoryId)
 }
 
 /** Add or replace a custom category (matched by id), keeping the list order for replacements. */
+/**
+ * A saved custom category written from an editor that may be older than the stored one: another window, the popup or
+ * gist sync can change it while the options page holds its editor open (a rebuild waits while someone edits). Each
+ * field the editor changed from what it was built with (`base`) comes from the editor; every other field keeps the
+ * stored category's latest value, so saving a new name never puts back an icon or patterns changed elsewhere. Null
+ * when the category is no longer stored (deleted elsewhere).
+ */
+export function mergeCustomCategoryEdit(base: CustomCategory, edited: CustomCategory, latest: CustomCategory | undefined): CustomCategory | null {
+  if (latest === undefined) return null;
+  const samePatterns = edited.patterns.length === base.patterns.length && edited.patterns.every((pattern, index) => pattern === base.patterns[index]);
+  const noun = (edited.noun ?? '') !== (base.noun ?? '') ? edited.noun : latest.noun;
+  const nounPlural = (edited.nounPlural ?? '') !== (base.nounPlural ?? '') ? edited.nounPlural : latest.nounPlural;
+  return {
+    id: latest.id,
+    title: edited.title !== base.title ? edited.title : latest.title,
+    icon: edited.icon !== base.icon ? edited.icon : latest.icon,
+    patterns: samePatterns ? latest.patterns : edited.patterns,
+    ...(noun !== undefined && noun !== '' ? { noun } : {}),
+    ...(nounPlural !== undefined && nounPlural !== '' ? { nounPlural } : {}),
+  };
+}
+
 export function withCustomCategory(settings: GeldSettings, custom: CustomCategory): GeldSettings {
   const index = settings.customCategories.findIndex((existing) => existing.id === custom.id);
   const customCategories =
