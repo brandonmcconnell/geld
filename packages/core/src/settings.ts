@@ -526,7 +526,10 @@ export function withoutCustomCategory(settings: GeldSettings, id: AnyCategoryId)
  */
 export function mergeCustomCategoryEdit(base: CustomCategory, edited: CustomCategory, latest: CustomCategory | undefined): CustomCategory | null {
   if (latest === undefined) return null;
-  const samePatterns = edited.patterns.length === base.patterns.length && edited.patterns.every((pattern, index) => pattern === base.patterns[index]);
+  // Compared as the editor saves them: a stored list may hold comments, blank lines or spaces the editor drops.
+  const cleanBase = parsePatternList(base.patterns.join('\n'));
+  const cleanEdited = parsePatternList(edited.patterns.join('\n'));
+  const samePatterns = cleanEdited.length === cleanBase.length && cleanEdited.every((pattern, index) => pattern === cleanBase[index]);
   const noun = (edited.noun ?? '') !== (base.noun ?? '') ? edited.noun : latest.noun;
   const nounPlural = (edited.nounPlural ?? '') !== (base.nounPlural ?? '') ? edited.nounPlural : latest.nounPlural;
   return {

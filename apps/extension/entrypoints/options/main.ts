@@ -499,8 +499,13 @@ async function main(): Promise<void> {
         saved = existing === null ? custom : mergeCustomCategoryEdit(existing, custom, current.customCategories.find((entry) => entry.id === existing.id));
         return saved === null ? {} : { customCategories: withCustomCategory(current, saved).customCategories };
       });
-      // Said in this editor (a rebuild would detach it); the lists catch up once editing ends.
-      if (saved === null) return 'This category was deleted in another window.';
+      // Said in this editor (a rebuild would detach it). Nothing on this card holds the lists back any more: it goes
+      // once focus leaves it, when the lists catch up.
+      if (saved === null) {
+        nameInput.closest('details')?.setAttribute('data-gone', '');
+        renderDeferred = true;
+        return 'This category was deleted in another window. Its card goes when you leave it.';
+      }
       const count = saved.patterns.length;
       customStatus(existing === null ? `Added “${cleanTitle}”` : 'Saved', 'success');
       // The rebuild turns a draft into the saved category (a second Save must not add another) and detaches this card,
@@ -1419,11 +1424,13 @@ async function main(): Promise<void> {
    */
   function hasUnsavedEdits(): boolean {
     const lists = '.options__categories';
-    const patterns = Array.from(document.querySelectorAll<HTMLTextAreaElement>(`${lists} .options__editor textarea`)).some(
+    // A card for a category deleted elsewhere (`data-gone`) has nothing left to save.
+    const live = <T extends Element>(selector: string): T[] => Array.from(document.querySelectorAll<T>(selector)).filter((element) => element.closest('[data-gone]') === null);
+    const patterns = live<HTMLTextAreaElement>(`${lists} .options__editor textarea`).some(
       (textarea) => parsePatternList(textarea.value).join('\n') !== parsePatternList(textarea.dataset.saved ?? textarea.value).join('\n'),
     );
-    const fields = Array.from(document.querySelectorAll<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`)).some((input) => input.value !== input.dataset.saved);
-    return patterns || fields || document.querySelector(`${lists} [data-unsaved], ${lists} [data-draft]`) !== null;
+    const fields = live<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`).some((input) => input.value !== input.dataset.saved);
+    return patterns || fields || live(`${lists} [data-unsaved], ${lists} [data-draft]`).length > 0;
   }
   /**
    * Catch up on a skipped rebuild once focus is outside the category lists and nothing there is unsaved. Not with

@@ -182,6 +182,14 @@ describe('mergeCustomCategoryEdit', () => {
     expect(mergeCustomCategoryEdit(base, edited, latest)).toEqual({ id: 'custom:tokens', title: 'Tokens', icon: 'tag', patterns: ['design/**'], noun: 'item', nounPlural: 'design tokens' });
   });
 
+  it('reads stored comments and spacing as no change to the patterns, as the editor saves them', () => {
+    const commented: CustomCategory = { ...base, patterns: ['# note', '', '  tokens/**  '] };
+    const latest: CustomCategory = { ...commented, patterns: ['# note', 'tokens/**', 'theme/**'] };
+    // The editor saves its text cleaned: the comment and spaces go, the one pattern stays.
+    const edited: CustomCategory = { ...commented, title: 'Design tokens', patterns: ['tokens/**'] };
+    expect(mergeCustomCategoryEdit(commented, edited, latest)?.patterns).toEqual(['# note', 'tokens/**', 'theme/**']);
+  });
+
   it('clears a count label this editor emptied, and reports a category deleted elsewhere', () => {
     const edited: CustomCategory = { id: base.id, title: base.title, icon: base.icon, patterns: base.patterns, noun: 'token' };
     expect(mergeCustomCategoryEdit(base, edited, base)).toEqual({ id: base.id, title: base.title, icon: base.icon, patterns: base.patterns, noun: 'token' });
