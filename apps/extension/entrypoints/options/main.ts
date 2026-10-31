@@ -34,6 +34,7 @@ import {
   toggleFields,
   testSyntaxProblem,
   validateSettingsDocument,
+  mergeCustomCategoryEdit,
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
@@ -491,7 +492,21 @@ async function main(): Promise<void> {
         ...(noun.trim() !== '' ? { noun: noun.trim() } : {}),
         ...(nounPlural.trim() !== '' ? { nounPlural: nounPlural.trim() } : {}),
       };
-      settings = await settingsItem.update((current) => ({ customCategories: withCustomCategory(current, custom).customCategories }));
+      // This card may be older than the stored category (a rebuild waits while someone edits): only what was changed
+      // here is written, over the category's latest fields.
+      let saved: CustomCategory | null = custom;
+      settings = await settingsItem.update((current) => {
+        saved = existing === null ? custom : mergeCustomCategoryEdit(existing, custom, current.customCategories.find((entry) => entry.id === existing.id));
+        return saved === null ? {} : { customCategories: withCustomCategory(current, saved).customCategories };
+      });
+      // Said in this editor (a rebuild would detach it). Nothing on this card holds the lists back any more: it goes
+      // once focus leaves it, when the lists catch up.
+      if (saved === null) {
+        nameInput.closest('details')?.setAttribute('data-gone', '');
+        renderDeferred = true;
+        return 'This category was deleted in another window. Its card goes when you leave it.';
+      }
+      const count = saved.patterns.length;
       customStatus(existing === null ? `Added “${cleanTitle}”` : 'Saved', 'success');
       // The rebuild turns a draft into the saved category (a second Save must not add another) and detaches this card,
       // so the editor's "Saved N lines" goes to the card that replaces it, open.
@@ -499,7 +514,7 @@ async function main(): Promise<void> {
       const fresh = savedCustomCards.get(id);
       if (fresh !== undefined) {
         fresh.card.open = true;
-        fresh.status(`Saved ${lines.length} line${lines.length === 1 ? '' : 's'}`, 'success');
+        fresh.status(`Saved ${count} line${count === 1 ? '' : 's'}`, 'success');
       }
       return null;
     });
@@ -1409,11 +1424,13 @@ async function main(): Promise<void> {
    */
   function hasUnsavedEdits(): boolean {
     const lists = '.options__categories';
-    const patterns = Array.from(document.querySelectorAll<HTMLTextAreaElement>(`${lists} .options__editor textarea`)).some(
+    // A card for a category deleted elsewhere (`data-gone`) has nothing left to save.
+    const live = <T extends Element>(selector: string): T[] => Array.from(document.querySelectorAll<T>(selector)).filter((element) => element.closest('[data-gone]') === null);
+    const patterns = live<HTMLTextAreaElement>(`${lists} .options__editor textarea`).some(
       (textarea) => parsePatternList(textarea.value).join('\n') !== parsePatternList(textarea.dataset.saved ?? textarea.value).join('\n'),
     );
-    const fields = Array.from(document.querySelectorAll<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`)).some((input) => input.value !== input.dataset.saved);
-    return patterns || fields || document.querySelector(`${lists} [data-unsaved], ${lists} [data-draft]`) !== null;
+    const fields = live<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`).some((input) => input.value !== input.dataset.saved);
+    return patterns || fields || live(`${lists} [data-unsaved], ${lists} [data-draft]`).length > 0;
   }
   /**
    * Catch up on a skipped rebuild once focus is outside the category lists and nothing there is unsaved. Not with

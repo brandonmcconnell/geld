@@ -664,6 +664,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the checkbox only updates its category's summary in place, since rebuilding the category lists would drop a custom category's unsaved edits.
   geld.sh's settings page does not offer the checkbox yet;
   it keeps the value when it saves.
+- **The options page never rebuilds a category card under the reader** (`entrypoints/options/main.ts`): a settings change from elsewhere (the popup, another window, gist sync, a new catalog) waits while focus is in a pattern editor or a custom category's editor (`isEditingCategory`) or anything there is unsaved (`hasUnsavedEdits`: a pattern box, a custom category's name, count labels or icon, a new draft), and catches up once focus leaves the lists (`renderDeferred`, `catchUpRender`).
+  A card can therefore be older than the stored category, so saving a custom category writes only the fields its editor changed over the stored category's latest ones, inside the same write (`mergeCustomCategoryEdit` in `@geld/core`): a new name never puts back an icon or patterns another window changed (patterns compared as the editor saves them, comments and blank lines dropped), and a category deleted elsewhere is not recreated: the editor says so and the card, marked `data-gone`, no longer holds the lists back and goes when focus leaves it.
 - **Two layouts** (`settings.groupHidden`).
   Grouped (default): hidden entries are reordered to the bottom with CSS `order` behind the "N files hidden" row, and the sidebar becomes the accordion.
   Inline (`groupHidden: false`): nothing moves;
