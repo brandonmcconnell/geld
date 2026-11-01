@@ -1,5 +1,5 @@
 import type { Catalog, ChangeTotals, FileStats, GeldSettings } from '@geld/core';
-import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, LARGE_CHANGE_LINES, pluralize, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
+import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, pluralize, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
 import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } from '../github/breakdown';
 import type { HiddenBreakdown, StatsBreakdown } from '../github/breakdown';
 import type { TabState } from '../lib/messages';
@@ -90,7 +90,7 @@ export class ProviderController {
   private readonly collapsed = new Map<string, ProviderDiffEntry>();
   private readonly viewed = new Map<string, { readonly attempts: number; readonly at: number; readonly confirmed: boolean }>();
   private shownInline = new WeakMap<HTMLElement, string>();
-  private readonly expandedLarge = new WeakMap<HTMLElement, string>();
+  private readonly expandedLarge = new WeakMap<HTMLElement, Set<string>>();
   private rowObserver: IntersectionObserver | null = null;
   private readonly observedRows = new WeakSet<HTMLElement>();
   private readonly visibleRows = new WeakSet<HTMLElement>();
@@ -478,7 +478,7 @@ export class ProviderController {
     }
     const hiddenPaths = new Set(hidden.categories.flatMap((group) => group.paths));
     const categories = new Map(hidden.categories.flatMap((group) => group.paths.map((path) => [path, group.category] as const)));
-    const stats = new Map(files.map((file) => [file.path, file]));
+    const sourcePaths = new Set(files.map((file) => file.path));
     for (const node of this.touched) {
       if (!node.isConnected) this.touched.delete(node);
     }
@@ -516,10 +516,13 @@ export class ProviderController {
           && (attempt === undefined || (attempt.attempts < 8 && Date.now() - attempt.at >= Math.min(45_000, 1000 * 2 ** attempt.attempts)))
           && entry.markViewed?.() === true) this.viewed.set(viewedKey, { attempts: (attempt?.attempts ?? 0) + 1, at: Date.now(), confirmed: false });
       }
-      const file = stats.get(entry.path);
-      if (!hiddenFile && effective.expandLargeDiffs && file !== undefined && file.additions + file.deletions >= LARGE_CHANGE_LINES
-        && this.expandedLarge.get(entry.root) !== entry.path) {
-        if (entry.isExpanded?.() === true || (entry.isExpanded?.() === false && entry.expand())) this.expandedLarge.set(entry.root, entry.path);
+      if (!hiddenFile && !view.filteredPaths.has(entry.path) && sourcePaths.has(entry.path) && effective.expandLargeDiffs
+        && entry.root.isConnected && entry.root.getAttribute('aria-disabled') !== 'true'
+        && entry.root.closest('[hidden], [aria-hidden="true"], [inert]') === null
+        && this.expandedLarge.get(entry.root)?.has(entry.path) !== true && entry.expandLargeDiff?.() === true) {
+        const requested = this.expandedLarge.get(entry.root) ?? new Set<string>();
+        requested.add(entry.path);
+        this.expandedLarge.set(entry.root, requested);
       }
     }
     for (const row of view.tree) {
