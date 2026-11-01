@@ -105,6 +105,28 @@ function input(): ProviderReviewInput {
 }
 
 describe('provider summary ownership and determinism', () => {
+  it('omits explicitly unknown pending requests from the legacy login-only payload without changing its schema', async () => {
+    let body = '';
+    const source: ProviderReviewInput = { ...input(), reviewers: [
+      { author: { id: '1', login: 'approved' }, state: 'approved', reviewRequest: 'pending' },
+      { author: { id: '2', login: 'requested' }, state: 'pending', reviewRequest: 'pending' },
+      { author: { id: '3', login: 'assigned' }, state: 'pending', reviewRequest: 'unknown' },
+      { author: { id: '4', login: 'legacy' }, state: 'pending' },
+    ] };
+    const adapter: ProviderCiAdapter = {
+      identity: async () => 'owner', head: async () => HEAD,
+      load: async () => ({ input: source, comments: [], notes: [] }),
+      upsert: async (_id, value) => { body = value; },
+    };
+    expect(await produceProviderSummary(adapter, DATE)).toBe('created');
+    const parsed = parsePublishedSummaryBody(body);
+    if (!parsed.ok) throw new Error('Invalid fixture summary');
+    expect(parsed.value.reviewers).toEqual([
+      { login: 'approved', state: 'approved' }, { login: 'requested', state: 'pending' }, { login: 'legacy', state: 'pending' },
+    ]);
+    expect(body).not.toContain('@assigned pending');
+    expect(source.reviewers?.[0]?.reviewRequest).toBe('pending');
+  });
   it('rechecks durable ownership immediately before an update on both providers', async () => {
     for (const provider of ['gitlab', 'bitbucket'] as const) {
       const t = transport((url) => {
@@ -295,6 +317,19 @@ describe('provider summary ownership and determinism', () => {
 });
 
 describe('GitLab authenticated protocol fixture', () => {
+  it.each(['unreviewed', 'reviewed'] as const)('keeps a native approval beside its independent %s reviewer state in the typed producer input', async (state) => {
+    const mr = '/api/v4/projects/group%2Fsubgroup%2Fproject/merge_requests/42';
+    const user = { id: 8, username: 'reviewer' };
+    const t = transport((url) => {
+      if (url.pathname === mr) return json({ iid: 42, project_id: 1, sha: HEAD });
+      if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user }] });
+      if (url.pathname.endsWith('/reviewers')) return json([{ user, state }]);
+      return json([]);
+    });
+    const loaded = await new GitLabCiAdapter(new ProviderHttp(config('gitlab'), t.fetcher)).load();
+    expect(loaded.input.reviewers).toEqual([{ author: { id: '8', login: 'reviewer' }, state: 'approved', reviewRequest: state === 'unreviewed' ? 'pending' : 'not-pending' }]);
+    expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
   it('reads the entire review and updates only a freshly verified owned note', async () => {
     const project = '/api/v4/projects/group%2Fsubgroup%2Fproject';
     const mr = `${project}/merge_requests/42`;
@@ -325,6 +360,19 @@ describe('GitLab authenticated protocol fixture', () => {
 });
 
 describe('Bitbucket authenticated protocol fixture', () => {
+  it('keeps native participant standing with explicitly unknown independent review requests', async () => {
+    const root = '/2.0/repositories/workspace/project/pullrequests/42';
+    const t = transport((url) => url.pathname === root ? json({ id: 42, source: { commit: { hash: HEAD } }, destination: { commit: { hash: NEXT } }, participants: [
+      { user: { uuid: '{approved}', nickname: 'approved' }, role: 'REVIEWER', approved: true },
+      { user: { uuid: '{assigned}', nickname: 'assigned' }, role: 'REVIEWER', approved: false },
+    ] }) : json({ values: [] }));
+    const loaded = await new BitbucketCiAdapter(new ProviderHttp(config('bitbucket'), t.fetcher)).load();
+    expect(loaded.input.reviewers).toEqual([
+      { author: { id: '{approved}', login: 'approved' }, state: 'approved', reviewRequest: 'unknown' },
+      { author: { id: '{assigned}', login: 'assigned' }, state: 'pending', reviewRequest: 'unknown' },
+    ]);
+    expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
   it('keeps visible replies when a deleted root has no remaining author, body or permalink', async () => {
     const root = '/2.0/repositories/workspace/project/pullrequests/42';
     const review = 'https://bitbucket.org/workspace/project/pull-requests/42';

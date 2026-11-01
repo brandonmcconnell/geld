@@ -106,13 +106,14 @@ export class GitLabCiAdapter implements ProviderCiAdapter {
       const reviewer = object(value);
       const user = author(reviewer.user ?? reviewer);
       const state = reviewer.state;
-      standings.set(user.id, { author: user, state: state === 'requested_changes' ? 'changes_requested' : state === 'approved' ? 'approved' : state === 'reviewed' ? 'commented' : 'pending' });
+      standings.set(user.id, { author: user, state: state === 'requested_changes' ? 'changes_requested' : state === 'approved' ? 'approved' : state === 'reviewed' ? 'commented' : 'pending', reviewRequest: state === 'unreviewed' ? 'pending' : state === 'approved' || state === 'requested_changes' || state === 'reviewed' ? 'not-pending' : 'unknown' });
     }
     const approvals = object(approvalResponse.value);
     if (!Array.isArray(approvals.approved_by)) throw new ProviderCiError('GitLab omitted approval data.');
     for (const value of approvals.approved_by) {
       const user = author(object(value).user);
-      standings.set(user.id, { author: user, state: 'approved' });
+      const standing = standings.get(user.id);
+      standings.set(user.id, { author: user, state: 'approved', reviewRequest: standing?.reviewRequest ?? 'unknown' });
     }
     const latestChecks = new Map<string, { readonly id: bigint; readonly check: RawCheckRun }>();
     const pipelineIds = new Set<string>();

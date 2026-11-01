@@ -105,8 +105,8 @@ describe('GitLab review acquisition', () => {
     expect(snapshot.approvalsRequired).toBe(2);
     expect(snapshot.approvalsLeft).toBe(1);
     expect(snapshot.input.reviewers).toMatchObject([
-      { author: { id: '10', login: 'approver' }, state: 'approved' },
-      { author: { id: '11', login: 'changes' }, state: 'changes_requested' },
+      { author: { id: '10', login: 'approver' }, state: 'approved', reviewRequest: 'pending' },
+      { author: { id: '11', login: 'changes' }, state: 'changes_requested', reviewRequest: 'not-pending' },
     ]);
     expect(snapshot.checks[0]).toMatchObject({ id: '100', pipelineId: '50', sha: 'b'.repeat(40), reviewHeadSha: SHA, nativeStatus: 'running', status: 'in_progress', conclusion: null });
     expect(snapshot.capabilities.signedIn).toBe(false);
@@ -219,6 +219,73 @@ describe('GitLab review acquisition', () => {
       return json({ iid: 7, sha: SHA, state: 'opened' });
     }));
     await expect(fetchGitLabReview(page, new AbortController().signal)).rejects.toThrow('pagination cursor');
+  });
+});
+
+describe('independent GitLab standing and current review request facts', () => {
+  const user = { id: 10, username: 'reviewer', state: 'active' };
+  function sources(approved: boolean, reviewers: readonly unknown[], status = 200): void {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      if (input.endsWith('/approvals')) return json({ approved_by: approved ? [{ user }] : [] });
+      if (input.includes('/reviewers?')) return json(reviewers, status);
+      if (input.includes('/discussions.json') || input.includes('/pipelines?')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened' });
+    }));
+  }
+
+  it.each([
+    [true, 'unreviewed', 'approved', 'pending'],
+    [true, 'reviewed', 'approved', 'not-pending'],
+    [true, 'approved', 'approved', 'not-pending'],
+    [false, 'unreviewed', 'pending', 'pending'],
+    [false, 'reviewed', 'commented', 'not-pending'],
+    [false, 'requested_changes', 'changes_requested', 'not-pending'],
+  ] as const)('retains approval=%s with native reviewer %s as %s plus %s', async (approved, native, state, request) => {
+    // Protocol cases, not a captured public approved-plus-unreviewed account.
+    sources(approved, [{ user, state: native, created_at: '2020-01-01T00:00:00Z' }]);
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.input.reviewers).toEqual([{ author: { id: '10', login: 'reviewer' }, state, reviewRequest: request }]);
+    expect(snapshot.complete).toBe(true);
+    expect(snapshot.input.reviewers?.[0]).not.toHaveProperty('requestedAt');
+  });
+
+  it('keeps a known approval and explicitly unknown request when the reviewer source is forbidden or unfamiliar', async () => {
+    sources(true, [], 403);
+    const forbidden = await fetchGitLabReview(page, new AbortController().signal);
+    expect(forbidden.input.reviewers).toEqual([{ author: { id: '10', login: 'reviewer' }, state: 'approved', reviewRequest: 'unknown' }]);
+    expect(forbidden.complete).toBe(false);
+    sources(true, [{ user, state: 'future-native-state' }]);
+    const unknown = await fetchGitLabReview(page, new AbortController().signal);
+    expect(unknown.input.reviewers).toEqual(forbidden.input.reviewers);
+    expect(unknown.unavailable).toContainEqual(expect.objectContaining({ area: 'reviews' }));
+    expect(unknown.complete).toBe(false);
+  });
+
+  it('joins paginated review requests by native account id rather than matching logins', async () => {
+    const requested: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      if (input.endsWith('/approvals')) return json({ approved_by: [{ user }] });
+      if (input.includes('/reviewers?')) {
+        const url = new URL(input); requested.push(url.searchParams.get('page') ?? '1');
+        return url.searchParams.get('page') === '2' ? json([{ user, state: 'unreviewed' }])
+          : json([{ user: { ...user, id: 11 }, state: 'reviewed' }], 200, { 'x-next-page': '2' });
+      }
+      if (input.includes('/discussions.json') || input.includes('/pipelines?')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened' });
+    }));
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(requested).toEqual(['1', '2']);
+    expect(snapshot.input.reviewers).toEqual([
+      { author: { id: '10', login: 'reviewer' }, state: 'approved', reviewRequest: 'pending' },
+      { author: { id: '11', login: 'reviewer' }, state: 'commented', reviewRequest: 'not-pending' },
+    ]);
+  });
+
+  it('takes approval withdrawal from the new authoritative snapshot while retaining current request state', async () => {
+    sources(true, [{ user, state: 'unreviewed' }]);
+    expect((await fetchGitLabReview(page, new AbortController().signal)).input.reviewers?.[0]).toMatchObject({ state: 'approved', reviewRequest: 'pending' });
+    sources(false, [{ user, state: 'unreviewed' }]);
+    expect((await fetchGitLabReview(page, new AbortController().signal)).input.reviewers?.[0]).toMatchObject({ state: 'pending', reviewRequest: 'pending' });
   });
 });
 
