@@ -57,10 +57,16 @@ export function bitbucketAuthorRowsSnapshot() {
   const rows = [...document.querySelectorAll('tr[data-qa="pull-request-row"]')].filter((row) => row.closest('[data-geld-ui]') === null).map((row) => {
     const native = (node) => node.closest('[data-geld-ui], [role="tooltip"], [popover]') === null;
     const links = [...row.querySelectorAll('a[href]')].filter(native);
+    // Retained run 41361235160: PR27's native deployment Add action hydrates after its title.
+    const deployments = links.filter((link) => link.href === 'https://bitbucket.org/atlassian/bitbucket-upload-file/deployments' && link.target === '_blank');
+    const deployment = deployments.length === 1 ? deployments[0] : null;
+    const newWindow = deployment?.querySelector('span[id]');
+    const deploymentAction = deployment !== null && deployment.textContent.replace(/\s+/g, ' ').trim() === 'Add, (opens new window)' && newWindow?.textContent.trim() === ', (opens new window)'
+      ? { href: deployment.href, target: deployment.target, newWindowLabelId: newWindow.id } : null;
     const ids = [...new Set(links.flatMap((link) => { try { const url = new URL(link.href);const match = /^\/atlassian\/bitbucket-upload-file\/pull-requests\/([1-9]\d*)\/?$/.exec(url.pathname);return url.origin === location.origin && match !== null ? [match[1]] : []; } catch { return []; } }))];
     const popups = [...row.querySelectorAll('[role="tooltip"], [popover]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ id: node.id, role: node.getAttribute('role'), popover: node.getAttribute('popover'), ids: [node, ...node.querySelectorAll('[id]')].map((child) => child.id).filter(Boolean) }));
     const ariaAssociations = [...row.querySelectorAll('[aria-describedby], [aria-labelledby]')].filter(native).map((node) => ({ tag: node.tagName, id: node.id, describedBy: node.getAttribute('aria-describedby'), labelledBy: node.getAttribute('aria-labelledby'), related: [...new Set(`${node.getAttribute('aria-describedby') ?? ''} ${node.getAttribute('aria-labelledby') ?? ''}`.split(/\s+/).filter(Boolean))].map((id) => { const target = document.getElementById(id);return { id, exists: target !== null, tag: target?.tagName ?? null, role: target?.getAttribute('role') ?? null, popover: target?.getAttribute('popover') ?? null, hidden: target?.hasAttribute('hidden') ?? false }; }) }));
-    return { id: ids.length === 1 ? ids[0] : null, hidden: row.hidden, display: getComputedStyle(row).display, marked: row.hasAttribute('data-geld-provider-author-hidden'), inlineStyle: row.getAttribute('style'), transientNativePopups: popups, ariaAssociations,
+    return { id: ids.length === 1 ? ids[0] : null, hidden: row.hidden, display: getComputedStyle(row).display, marked: row.hasAttribute('data-geld-provider-author-hidden'), inlineStyle: row.getAttribute('style'), transientNativePopups: popups, ariaAssociations, deploymentAction,
       nativeIds: [row, ...row.querySelectorAll('[id]')].filter(native).map((node) => node.id).filter(Boolean), nativeLinks: links.map((link) => ({ href: link.getAttribute('href'), qa: link.getAttribute('data-qa') })) };
   });
   const note = document.querySelector('[data-geld-provider-author-note]');const button = note?.querySelector('button');
@@ -78,8 +84,30 @@ export function bitbucketAuthorRowsSnapshot() {
     focusedHref, showEvent: globalThis.__geldAuthorShow?.event ?? null };
 }
 
+function nativeIdentities(snapshot) {
+  return snapshot.rows.map((row) => ({ id: row.id, ids: row.nativeIds, links: row.nativeLinks, hidden: row.hidden, style: row.inlineStyle }));
+}
+
 function sameNative(before, after) {
-  assert.deepEqual(after.rows.map((row) => ({ id: row.id, ids: row.nativeIds, links: row.nativeLinks, hidden: row.hidden, style: row.inlineStyle })), before.rows.map((row) => ({ id: row.id, ids: row.nativeIds, links: row.nativeLinks, hidden: row.hidden, style: row.inlineStyle })), 'Author hiding/recovery changed native row identities, links, hidden state or inline styles');
+  assert.deepEqual(nativeIdentities(after), nativeIdentities(before), 'Author hiding/recovery changed native row identities, links, hidden state or inline styles');
+}
+
+/** Read-only precondition: actual native deployment hydration, then three unchanged samples at least 250ms apart. */
+export async function waitForBitbucketAuthorBaseline({ read, poll, pause, progress }) {
+  let previous = null;let unchanged = 0;
+  const result = await poll(async () => {
+    const snapshot = await read();
+    const deployment = snapshot.rows.find((row) => row.id === '27')?.deploymentAction;
+    const ready = deployment?.href === 'https://bitbucket.org/atlassian/bitbucket-upload-file/deployments' && deployment.target === '_blank' && typeof deployment.newWindowLabelId === 'string' && deployment.newWindowLabelId !== ''
+      && snapshot.chips === 0 && snapshot.rows.every((row) => !row.marked) && snapshot.note === null;
+    const signature = ready ? JSON.stringify({ identities: nativeIdentities(snapshot), display: snapshot.rows.map((row) => row.display) }) : null;
+    unchanged = ready && signature === previous ? unchanged + 1 : ready ? 1 : 0;
+    previous = signature;
+    progress.baseline = { status: unchanged >= 3 ? 'stable' : 'waiting', nativeDeploymentReady: ready, unchangedSamples: unchanged, minimumSampleIntervalMs: 250 };
+    if (unchanged < 3) await pause(250);
+    return { snapshot, ready, unchanged };
+  }, (value) => value.ready && value.unchanged >= 3, 'Native PR27 deployment action hydrates and all native row identities/visibility settle before author demand');
+  return result.snapshot;
 }
 
 export function assertBitbucketAuthorRowsRestored(before, after) {
@@ -117,7 +145,7 @@ export async function verifyBitbucketHiddenAuthors({ page, patchSettings, poll, 
   const read = () => page.evaluate(bitbucketAuthorRowsSnapshot);
   try {
     await patchSettings({ showListStats: false, hiddenAuthors: ['', ' #comment', ' @ '] });
-    before = await poll(read, (value) => value.rows.some((row) => row.id === '27') && value.chips === 0 && value.rows.every((row) => !row.marked) && value.note === null, 'Stats-off native list remains visible without author demand for semanticempty rules');
+    before = await waitForBitbucketAuthorBaseline({ read, poll, pause, progress });
     progress.before = before;
     await pause(250);
     assert.equal(requests.filter((request) => request.projection).length, 0, 'Semantically empty author rules must perform zero author reads');
