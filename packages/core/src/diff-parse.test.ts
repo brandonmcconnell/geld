@@ -1,4 +1,5 @@
-import { parseUnifiedDiff } from './diff-parse';
+import { parseUnifiedDiff, pathFromGitHeader } from './diff-parse';
+import { parseUnifiedDiffHunks } from './diff-hunks';
 
 const SAMPLE = `diff --git a/src/a.ts b/src/a.ts
 index 1111111..2222222 100644
@@ -84,6 +85,46 @@ describe('parseUnifiedDiff', () => {
 
   it('handles quoted paths and deletions', () => {
     expect(files[4]).toEqual({ path: 'with space.ts', additions: 0, deletions: 2, status: 'deleted', kinds: ['deleted'] });
+  });
+
+  it('decodes Git octal UTF-8 paths and mixed-quoted renames to their native filenames', () => {
+    const headers = [
+      String.raw`diff --git "a/src/caf\303\251.test.ts" "b/src/caf\303\251.test.ts"`,
+      String.raw`diff --git a/src/old.ts "b/src/\346\265\213\350\257\225.test.ts"`,
+      String.raw`diff --git "a/src/\346\265\213\350\257\225.ts" b/src/new.ts`,
+      String.raw`diff --git "a/with\tquote\"\\.ts" "b/with\tquote\"\\.ts"`,
+    ];
+    const parsed = parseUnifiedDiff(headers.map((header) => `${header}\n@@ -1 +1 @@\n-old\n+new`).join('\n'));
+    expect(parsed.map((file) => file.path)).toEqual(['src/café.test.ts', 'src/测试.test.ts', 'src/new.ts', 'with\tquote"\\.ts']);
+    expect(parsed.every((file) => file.additions === 1 && file.deletions === 1)).toBe(true);
+  });
+
+  it('keeps both sides of mixed-quoted renames for hunk source paths', () => {
+    const cases = [
+      { header: String.raw`diff --git "a/src/caf\303\251.ts" "b/src/\346\265\213\350\257\225.ts"`, oldPath: 'src/café.ts', path: 'src/测试.ts' },
+      { header: String.raw`diff --git a/src/old.ts "b/src/caf\303\251.ts"`, oldPath: 'src/old.ts', path: 'src/café.ts' },
+      { header: String.raw`diff --git "a/src/caf\303\251.ts" b/src/new.ts`, oldPath: 'src/café.ts', path: 'src/new.ts' },
+      { header: String.raw`diff --git "a/old\tquote\"\\.ts" "b/new\tquote\"\\.ts"`, oldPath: 'old\tquote"\\.ts', path: 'new\tquote"\\.ts' },
+      { header: 'diff --git a/old name.ts b/new name.ts', oldPath: 'old name.ts', path: 'new name.ts' },
+    ];
+    for (const { header, oldPath, path } of cases) {
+      expect(pathFromGitHeader(header, 'old')).toBe(oldPath);
+      expect(pathFromGitHeader(header, 'new')).toBe(path);
+      expect(pathFromGitHeader(header)).toBe(path);
+      const files = parseUnifiedDiffHunks(`${header}\nsimilarity index 80%\nrename from ${oldPath}\nrename to ${path}\n@@ -1 +1 @@\n-before\n+after\n`);
+      expect(files[0]).toMatchObject({ oldPath, path, status: 'renamed', additions: 1, deletions: 1 });
+      expect(files[0]?.hunks[0]?.lines).toEqual([
+        { kind: 'removed', text: 'before', oldLine: 1, newLine: null },
+        { kind: 'added', text: 'after', oldLine: null, newLine: 1 },
+      ]);
+    }
+  });
+
+  it('declines malformed quoted destinations on either side', () => {
+    for (const header of [String.raw`diff --git "a/old.ts" "b/new.ts`, String.raw`diff --git a/old.ts "b/new.ts`]) {
+      expect(pathFromGitHeader(header, 'old')).toBeNull();
+      expect(pathFromGitHeader(header, 'new')).toBeNull();
+    }
   });
 
   it('spots mode-only and whitespace-only changes', () => {
