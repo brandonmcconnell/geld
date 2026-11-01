@@ -2,9 +2,10 @@
 import { gitLabPathNavigator } from './navigation';
 
 const BASE = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs';
+let visit = 0;
 
 beforeEach(() => {
-  window.location.href = `${BASE}?diff_id=2158520123&w=1`;
+  window.location.href = `${BASE}?diff_id=2158520123&w=1#test-visit-${++visit}`;
   document.body.innerHTML = `<section data-testid="file-tree-container"><a data-testid="file-row" data-file-row="native-file-hash" href="${BASE}?diff_id=2158520123&w=1&file_path=src%2Fmounted.rb#native-file-hash">mounted.rb</a></section>`;
 });
 
@@ -60,4 +61,44 @@ it('accepts a native template pinned to the current displayed version on an unve
   expect(navigate?.('src/other.rb')).toBe(false);
   document.querySelector('article')?.setAttribute('data-app-data', '{"versions":{"source_versions":[{"id":9,"selected":true}]}}');
   expect(gitLabPathNavigator(document, tree())).toBeNull();
+});
+
+it('retains a verified route after the hidden native scroller recycles every source link', () => {
+  const first = gitLabPathNavigator(document, tree());
+  expect(first).not.toBeNull();
+  document.querySelector('a[data-testid="file-row"]')?.remove();
+  const navigate = gitLabPathNavigator(document, tree());
+  expect(navigate).not.toBeNull();
+  const clicked: string[] = [];
+  const listener = (event: MouseEvent): void => {
+    if (event.target instanceof HTMLAnchorElement && event.target.hasAttribute('data-geld-ui')) {
+      clicked.push(event.target.href);
+      event.preventDefault();
+    }
+  };
+  document.addEventListener('click', listener, true);
+  try {
+    expect(navigate?.('spec/unmounted_spec.rb')).toBe(true);
+    expect(new URL(clicked[0] ?? 'https://example.com').searchParams.get('file_path')).toBe('spec/unmounted_spec.rb');
+    expect(new URL(clicked[0] ?? 'https://example.com').searchParams.get('diff_id')).toBe('2158520123');
+  } finally { document.removeEventListener('click', listener, true); }
+});
+
+it('invalidates the recycled route on subject or displayed-version changes without reviving old callbacks', () => {
+  const navigate = gitLabPathNavigator(document, tree());
+  document.querySelector('a')?.remove();
+  const original = window.location.href;
+  window.location.href = original.replace('266334', '266335');
+  expect(gitLabPathNavigator(document, tree())).toBeNull();
+  window.location.href = original;
+  expect(navigate?.('src/other.rb')).toBe(false);
+  expect(gitLabPathNavigator(document, tree())).toBeNull();
+  document.body.insertAdjacentHTML('beforeend', `<a data-testid="file-row" data-file-row="new" href="${BASE}?diff_id=2158520123&w=1&file_path=a">native</a>`);
+  tree()?.append(document.body.lastElementChild ?? document.createElement('span'));
+  const selected = gitLabPathNavigator(document, tree());
+  expect(selected).not.toBeNull();
+  document.querySelector('a')?.remove();
+  document.body.insertAdjacentHTML('beforeend', '<article data-rapid-diffs data-app-data=\'{"versions":{"source_versions":[{"id":9,"selected":true}]}}\'></article>');
+  expect(gitLabPathNavigator(document, tree())).toBeNull();
+  expect(selected?.('src/other.rb')).toBe(false);
 });

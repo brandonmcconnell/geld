@@ -31,7 +31,7 @@ function fixture() {
   return { tree, host, container, row, link, view, revealPath, setExpanded, update };
 }
 function headers(host: HTMLElement): HTMLButtonElement[] { return [...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')]; }
-afterEach(() => { for (const tree of trees) tree.clear(); trees.length = 0; document.body.replaceChildren(); vi.restoreAllMocks(); });
+afterEach(() => { for (const tree of trees) tree.clear(); trees.length = 0; document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it('projects complete compact Essential/category trees without moving native recycler nodes', () => {
   const { host, container, row, update } = fixture();
@@ -150,4 +150,146 @@ it('selects a category before asking the controller to expand its diff roots', (
   expect(calls).toEqual(['select:tests', 'expand:true']);
   required(headers(host)[0]).click();
   expect(calls.slice(-2)).toEqual(['select:essential', 'expand:false']);
+});
+
+it('retains sanitized native presentation when hiding the recycler unmounts the source row', () => {
+  const { tree, host, view, row, update, revealPath } = fixture();
+  const originalComment = required(row.querySelector<HTMLButtonElement>('button'));
+  const originalClick = vi.fn(); originalComment.addEventListener('click', originalClick);
+  originalComment.setAttribute('aria-controls', 'native-popup-that-may-unmount');
+  update(); required(headers(host)[1]).click();
+  const selector = '.geld-provider-category-content [data-geld-category-path="spec/unit.test.ts"]';
+  const before = required(host.querySelector<HTMLElement>(selector));
+  row.remove();
+  tree.update({ ...view, tree: [] }, hidden, all, FILES, { revealPath, setExpanded: vi.fn() });
+  const retained = required(host.querySelector<HTMLElement>(selector));
+  expect(retained).toBe(before);
+  expect(retained.querySelector('.native-added')).not.toBeNull();
+  const comment = required(retained.querySelector<HTMLButtonElement>('button'));
+  expect(comment.getAttribute('aria-label')).toBe('3 unresolved threads');
+  expect(comment.hasAttribute('aria-controls')).toBe(false);
+  expect(document.getElementById('native-warning')).toBeNull();
+  expect(document.getElementById(required(comment.getAttribute('aria-describedby')))?.textContent).toBe('3');
+  comment.click();
+  expect(originalClick).not.toHaveBeenCalled();
+  expect(revealPath).toHaveBeenCalledExactlyOnceWith('spec/unit.test.ts');
+});
+
+it('never relays a cached comment control to a physical native row recycled for another path', () => {
+  const { tree, host, view, row, link, update, revealPath } = fixture();
+  const nativeClick = vi.fn(); required(row.querySelector('button')).addEventListener('click', nativeClick);
+  update(); required(headers(host)[1]).click();
+  const oldComment = required(host.querySelector<HTMLButtonElement>('.geld-provider-category-content button[aria-label="3 unresolved threads"]'));
+  // Native Vue updates the same node between controller passes; its old captured path is no longer valid.
+  link.href = '/review#different-file';
+  link.setAttribute('aria-label', 'main.ts');
+  oldComment.click();
+  expect(nativeClick).not.toHaveBeenCalled();
+  expect(revealPath).toHaveBeenLastCalledWith('spec/unit.test.ts');
+  tree.update({ ...view, tree: [{ path: 'src/main.ts', root: link, presentationRoot: row, link }] }, hidden, all, FILES, { revealPath, setExpanded: vi.fn() });
+  required(host.querySelector<HTMLButtonElement>('.geld-provider-category-content button[aria-label="3 unresolved threads"]')).click();
+  expect(nativeClick).not.toHaveBeenCalled();
+  expect(revealPath).toHaveBeenCalledTimes(2);
+});
+
+it('refreshes a retained snapshot when the real path remounts with updated native marks', () => {
+  const { tree, host, view, row, update, revealPath } = fixture();
+  const parent = required(row.parentElement);
+  update(); required(headers(host)[1]).click();
+  row.remove();
+  tree.update({ ...view, tree: [] }, hidden, all, FILES, { revealPath, setExpanded: vi.fn() });
+  const button = required(row.querySelector('button'));
+  button.setAttribute('aria-label', '5 unresolved threads');
+  required(button.querySelector('span')).textContent = '5';
+  parent.append(row);
+  update();
+  expect(headers(host)[1]?.getAttribute('aria-expanded')).toBe('true');
+  expect(host.querySelector('.geld-provider-category-content button[aria-label="5 unresolved threads"]')).not.toBeNull();
+  expect(host.querySelector('.geld-provider-category-content button[aria-label="3 unresolved threads"]')).toBeNull();
+});
+
+it('drops cached visual and ID references when the selected subject changes on the same host', () => {
+  const { tree, host, view, row } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn() };
+  tree.update(view, hidden, all, FILES, { ...actions, subjectKey: 'review42:head-a' });
+  required(headers(host)[1]).click();
+  const oldDescription = required(host.querySelector('.geld-provider-category-content button[aria-describedby]')?.getAttribute('aria-describedby'));
+  row.remove();
+  tree.update({ ...view, tree: [] }, hidden, all, FILES, { ...actions, subjectKey: 'review42:head-b' });
+  expect(host.querySelector('.geld-provider-category-content .native-added')).toBeNull();
+  expect(host.querySelector('.geld-provider-category-content button[aria-label="3 unresolved threads"]')).toBeNull();
+  expect(document.getElementById(oldDescription)).toBeNull();
+  expect(host.querySelector('[data-geld-category-path="spec/unit.test.ts"]')).not.toBeNull();
+  for (const node of host.querySelectorAll('[data-geld-ui] [aria-labelledby], [data-geld-ui] [aria-describedby], [data-geld-ui] [aria-controls]')) {
+    for (const attribute of ['aria-labelledby', 'aria-describedby', 'aria-controls']) {
+      for (const id of node.getAttribute(attribute)?.split(/\s+/) ?? []) expect(document.getElementById(id)).not.toBeNull();
+    }
+  }
+});
+
+
+it('does not force layout across200 mutation passes; batches attach/viewport sizing and cancels on clear', () => {
+  const { tree, host, update } = fixture();
+  host.style.setProperty('--geld-provider-tree-max-height', '450px', 'important');
+  let frame: FrameRequestCallback | null = null;
+  let notify: (entries: ResizeObserverEntry[]) => void = () => undefined;
+  const disconnected = vi.fn();
+  class Observer implements ResizeObserver {
+    constructor(callback: ResizeObserverCallback) { notify = (entries) => callback(entries, this); }
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void { disconnected(); }
+  }
+  const request = vi.fn((callback: FrameRequestCallback) => { frame = callback; return 7; });
+  const cancel = vi.fn(() => { frame = null; });
+  vi.stubGlobal('ResizeObserver', Observer);
+  vi.stubGlobal('requestAnimationFrame', request);
+  vi.stubGlobal('cancelAnimationFrame', cancel);
+  const measure = vi.spyOn(host, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 240, 400));
+  const flush = (): void => { const pending = frame; frame = null; pending?.(0); };
+  const entry = (width: number, height: number): ResizeObserverEntry => ({ target: host, contentRect: new DOMRectReadOnly(0, 0, width, height), borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] });
+  update();
+  for (let index = 0; index < 200; index += 1) update();
+  expect(measure).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledTimes(1);
+  flush();
+  expect(measure).toHaveBeenCalledTimes(1);
+  notify([entry(240, 400)]);
+  notify([entry(240, 800)]); // Own height changes must not feed another measurement frame.
+  for (let index = 0; index < 200; index += 1) update();
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(measure).toHaveBeenCalledTimes(1);
+  vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(window.innerHeight + 100);
+  window.dispatchEvent(new Event('resize'));
+  window.dispatchEvent(new Event('resize'));
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(measure).toHaveBeenCalledTimes(1);
+  flush();
+  expect(measure).toHaveBeenCalledTimes(2);
+  notify([entry(300, 800)]);
+  expect(request).toHaveBeenCalledTimes(3);
+  tree.clear();
+  expect(disconnected).toHaveBeenCalledTimes(1);
+  expect(cancel).toHaveBeenCalledWith(7);
+  flush();
+  expect(measure).toHaveBeenCalledTimes(2);
+  expect(host.style.getPropertyValue('--geld-provider-tree-max-height')).toBe('450px');
+  expect(host.style.getPropertyPriority('--geld-provider-tree-max-height')).toBe('important');
+  window.dispatchEvent(new Event('resize'));
+  expect(request).toHaveBeenCalledTimes(3);
+});
+
+it('preserves a newer owner of the geometry variable when clearing the accordion', () => {
+  const { tree, host, update } = fixture();
+  let frame: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 1; });
+  vi.stubGlobal('cancelAnimationFrame', () => undefined);
+  vi.spyOn(host, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 240, 400));
+  update();
+  const pending: FrameRequestCallback | null = frame;
+  if (pending !== null) Reflect.apply(pending, undefined, [0]);
+  host.style.setProperty('--geld-provider-tree-max-height', '600px', 'important');
+  tree.clear();
+  expect(host.style.getPropertyValue('--geld-provider-tree-max-height')).toBe('600px');
+  expect(host.style.getPropertyPriority('--geld-provider-tree-max-height')).toBe('important');
 });

@@ -247,4 +247,58 @@ describe('provider conversation digest', () => {
     expect(section?.querySelector('a[href^="javascript:"]')).toBeNull();
     expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
   });
+
+  it('marks an item reviewed locally without resolving its native thread or erasing bot findings', () => {
+    const author = { id: '12345', login: 'native-review-account', automated: true };
+    const source: ProviderReviewInput = { ...input([thread('a', { comments: [{ ...comment('1', '**Fix the credentials cache.**'), author }] })]), bots: [{ id: 'coderabbit', authorId: author.id }], complete: true };
+    const [native] = buildProviderReviewItems(source);
+    if (native === undefined) throw new Error('Missing native item.');
+    const set = vi.fn();
+    const localReviewed = { ids: new Set([native.id]), pending: new Set<string>(), set };
+    const transformItems = (items: readonly typeof native[]) => items.map((item) => ({ ...item, title: 'AI consolidated cache title', context: 'The native words remain below.', rewritten: true }));
+    const panel = renderProviderReviewPanel(host(), source, { localReviewed, transformItems });
+    expect(set).not.toHaveBeenCalled();
+    expect(panel.element.querySelector('[data-geld-review-group="done"] [data-geld-item] > summary')?.textContent).toContain('AI consolidated cache title');
+    expect(panel.element.querySelector('[data-geld-local-review-notice]')?.textContent).toBe('Reviewed on this device. Native status: Open.');
+    expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('1 open finding');
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe('**Fix the credentials cache.**');
+    expect(source.threads[0]?.resolved).toBe(false);
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ id: native.id, title: 'AI consolidated cache title' }), false);
+    panel.update(source, { localReviewed: { ...localReviewed, pending: new Set([native.id]) }, transformItems });
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(panel.element.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('retains native resolved state and includes the distinct local mark in copied digest history', async () => {
+    const source = input([thread('a', { resolved: true })]);
+    const [native] = buildProviderReviewItems(source);
+    if (native === undefined) throw new Error('Missing native item.');
+    let copied = '';
+    const panel = renderProviderReviewPanel(host(), source, { localReviewed: { ids: new Set([native.id]), pending: new Set(), set: () => undefined }, copyText: (text) => { copied = text; }, reviewGrouping: 'batch', events: [{ id: 'native-push', url: reviewUrl, author: comment('1').author, body: 'Actual native push', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }] });
+    expect(panel.element.querySelector('[data-geld-item]')?.getAttribute('data-state')).toBe('resolved');
+    expect(panel.element.querySelector('[data-geld-review-round="native-push"] [data-geld-local-review-notice]')?.textContent).toContain('Native status: Resolved');
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain('Reviewed on this device. Native status: Resolved.'));
+    expect(copied).toContain(`${reviewUrl}#note_1`);
+  });
+
+  it('keeps keyboard focus with a local review action while its item moves between groups', () => {
+    const source = input([thread('a')]);
+    const [item] = buildProviderReviewItems(source);
+    if (item === undefined) throw new Error('Missing native item.');
+    const set = vi.fn();
+    const panel = renderProviderReviewPanel(host(), source, { localReviewed: { ids: new Set(), pending: new Set(), set } });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]');
+    const details = panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (details !== null) details.open = true;
+    button?.focus();
+    panel.update(source, { localReviewed: { ids: new Set(), pending: new Set([item.id]), set } });
+    expect(document.activeElement?.getAttribute('data-geld-local-review-focus')).toBe(item.id);
+    panel.update(source, { localReviewed: { ids: new Set([item.id]), pending: new Set(), set } });
+    expect(document.activeElement?.getAttribute('data-geld-local-reviewed')).toBe(item.id);
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="done"]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+  });
 });

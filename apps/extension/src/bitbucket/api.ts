@@ -311,7 +311,7 @@ export class BitbucketClient {
   }
 
   private async response(url: URL, signal: AbortSignal, raw = false): Promise<Response> {
-    const response = await this.fetcher(url.href, { signal, credentials: 'omit', redirect: 'manual', headers: { Accept: raw ? 'text/plain' : 'application/json' } });
+    const response = await this.fetcher.call(globalThis, url.href, { signal, credentials: 'omit', redirect: 'manual', headers: { Accept: raw ? 'text/plain' : 'application/json' } });
     if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new BitbucketApiError('invalid-response', 'Bitbucket unexpectedly redirected a pinned review source.');
     if (response.url !== '') this.trustedUrl(response.url, url);
     if (response.status === 401) throw new BitbucketApiError('authentication', 'Sign in to Bitbucket to read this review.');

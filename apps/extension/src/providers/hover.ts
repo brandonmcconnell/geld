@@ -224,7 +224,8 @@ export class ProviderHover {
     if (anchor === null || anchor.closest('[data-geld-ui]') !== null) return null;
     try {
       const url = new URL(anchor.href, this.doc.URL);
-      if (url.origin !== new URL(this.doc.URL).origin || url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
+      const current = new URL(this.doc.URL);
+      if (url.origin !== current.origin || url.pathname === current.pathname || url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
       const page = this.adapter.describe(url, this.doc);
       if (page === null || page.provider !== this.adapter.id || page.kind === 'other') return null;
       const settings = this.settings();

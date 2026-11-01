@@ -206,6 +206,23 @@ it('isolates standalone commit and compare cache without fake review identifiers
   expect(cached.get(movingBase, true)).toBeNull();
 });
 
+it('persists Bitbucket standalone commit statistics independently of pull requests and other repositories', async () => {
+  const head = 'a'.repeat(40);
+  const url = `https://bitbucket.org/acme/widgets/commits/${head}`;
+  const commit: ProviderCommitPage = { provider: 'bitbucket', repository: { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'acme/widgets' }, kind: 'commit', ref: head, headSha: head, url, diffPageUrl: url, diffUrl: `https://api.bitbucket.org/2.0/repositories/acme/widgets/diff/${head}`, version: `commit:${head}` };
+  const store = memory();
+  const writer = cache(store.backend);
+  writer.set(commit, { ...result(), revision: `commit:${head}` });
+  await vi.advanceTimersByTimeAsync(0);
+  const reader = cache(store.backend);
+  await reader.load(commit);
+  expect(reader.get(commit, true)).toMatchObject({ exact: true, result: { complete: true, revision: `commit:${head}` } });
+  const different: ProviderCommitPage = { ...commit, repository: { ...commit.repository, path: 'acme/other' }, url: `https://bitbucket.org/acme/other/commits/${head}` };
+  await reader.load(different);
+  expect(reader.get(different, true)).toBeNull();
+  expect(() => providerDiffKey({ ...commit, ref: 'bad/ref', url: 'https://bitbucket.org/acme/widgets/commits/bad%2Fref' })).toThrow();
+});
+
 it('clears only the bounded provider slots and makes an exact cached result unavailable', async () => {
   const store = memory();
   const write = vi.fn(store.backend.write);

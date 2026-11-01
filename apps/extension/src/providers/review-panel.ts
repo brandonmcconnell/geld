@@ -1,4 +1,4 @@
-import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, sourceLink } from '@geld/review';
+import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, sourceLink } from '@geld/review';
 import type { BotVerdictRecord, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -33,6 +33,12 @@ export interface ProviderReviewPanelOptions {
   readonly transformItems?: (items: readonly ReviewItem[]) => readonly ReviewItem[];
   readonly suggestedFixes?: 'all' | 'bots' | 'ai' | 'off';
   readonly reviewGrouping?: 'type' | 'batch';
+  readonly localReviewed?: {
+    readonly ids: ReadonlySet<string>;
+    readonly pending: ReadonlySet<string>;
+    readonly error?: string;
+    readonly set: (item: ReviewItem, reviewed: boolean) => void;
+  };
   readonly ai?: {
     readonly enabled: boolean;
     readonly state: ProviderAiState;
@@ -71,7 +77,7 @@ const STATUS: Readonly<Record<ReviewItemStatus, string>> = {
   open: 'Open',
   'needs-reply': 'Needs reply',
   addressed: 'Addressed',
-  'done-manual': 'Marked done',
+  'done-manual': 'Reviewed on this device',
   resolved: 'Resolved',
   outdated: 'Outdated',
 };
@@ -81,7 +87,7 @@ const GROUPS: readonly { readonly id: string; readonly label: string; readonly s
   { id: 'addressed', label: 'Addressed items', statuses: ['addressed'], open: false },
   { id: 'outdated', label: 'Outdated items', statuses: ['outdated'], open: false },
   { id: 'resolved', label: 'Resolved items', statuses: ['resolved'], open: false },
-  { id: 'done', label: 'Marked done', statuses: ['done-manual'], open: false },
+  { id: 'done', label: 'Reviewed on this device', statuses: ['done-manual'], open: false },
 ];
 
 function safeUrl(value: string, origin?: string): string | null {
@@ -122,6 +128,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let identity = '';
   let destroyed = false;
   let items: readonly ReviewItem[] = [];
+  let nativeItems: ReadonlyMap<string, ReviewItem> = new Map();
   let bots: readonly BotVerdictRecord[] = [];
   let identities: ReviewerIdentityControl[] = [];
   const nativeTimes = new Map<number, string>();
@@ -350,6 +357,27 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       summary.append(node('span', metadata, 'geld-provider-review__muted'));
     }
     if (item.rewritten === true) details.append(node('p', 'AI triage · original comments below', 'geld-provider-review__muted'));
+    const local = options.localReviewed;
+    if (local !== undefined) {
+      const reviewed = local.ids.has(item.id);
+      const pending = local.pending.has(item.id);
+      const controls = node('div', '', 'geld-provider-review__source-actions');
+      const button = node('button', reviewed ? 'Undo local review mark' : 'Mark reviewed on this device');
+      button.type = 'button';
+      button.dataset.geldLocalReviewed = item.id;
+      button.disabled = pending;
+      button.setAttribute('aria-pressed', String(reviewed));
+      if (pending) button.setAttribute('aria-busy', 'true');
+      button.addEventListener('click', () => { if (!destroyed && !button.disabled) local.set(item, !reviewed); });
+      controls.append(button);
+      details.append(controls);
+      if (reviewed) {
+        const native = nativeItems.get(item.id);
+        const note = node('p', `Reviewed on this device. Native status: ${native === undefined ? 'Unavailable' : STATUS[native.status]}.`, 'geld-provider-review__muted');
+        note.dataset.geldLocalReviewNotice = '';
+        details.append(note);
+      }
+    }
     if (item.context !== undefined) {
       const context = node('p');
       inline(context, item.context);
@@ -506,6 +534,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     for (const item of items) {
       lines.push('', `## ${STATUS[item.status]}: ${item.title}`);
+      if (options.localReviewed?.ids.has(item.id) === true) lines.push(`Reviewed on this device. Native status: ${STATUS[nativeItems.get(item.id)?.status ?? 'open']}.`);
       if (item.path !== undefined) lines.push(`${item.path}${item.line === undefined ? '' : `:${item.line}`}`);
       for (const source of item.sources) {
         const url = sourceLink(source, input.subject);
@@ -526,6 +555,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
 
   function render(): void {
     if (destroyed) return;
+    const focused = doc.activeElement;
+    const reviewedFocus = focused !== null && panel.contains(focused) ? focused.getAttribute('data-geld-local-reviewed') ?? focused.getAttribute('data-geld-local-review-focus') : null;
     nativeTimes.clear();
     for (const time of doc.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
       if (time.closest('[data-geld-ui]') !== null) continue;
@@ -533,7 +564,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (Number.isFinite(at) && time.textContent?.trim()) nativeTimes.set(at, time.textContent.trim());
     }
     const ai = options.ai;
-    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
+    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
@@ -556,7 +587,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     try {
       key = providerReviewKey(input.subject);
       items = buildProviderReviewItems(input);
+      nativeItems = new Map(items.map((item) => [item.id, item]));
       items = options.transformItems?.(items) ?? items;
+      if (options.localReviewed !== undefined) items = items.map((item) => options.localReviewed?.ids.has(item.id) === true && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item);
       bots = buildProviderBotVerdicts(input, options.comments ?? []);
     } catch {
       panel.dataset.state = 'unavailable';
@@ -603,6 +636,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       header.append(controls);
     }
     const children: HTMLElement[] = [header];
+    if (options.localReviewed?.error !== undefined) {
+      const error = node('p', `Local review marks: ${options.localReviewed.error}`, 'geld-provider-review__unavailable');
+      error.setAttribute('role', 'alert');
+      children.push(error);
+    }
     if (activeAi?.enabled === true && activeAi.state.error !== undefined) {
       const error = node('p', `AI triage: ${activeAi.state.error}`, 'geld-provider-review__unavailable');
       error.setAttribute('role', 'alert');
@@ -653,6 +691,25 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       children.push(section);
     }
     panel.replaceChildren(...children);
+    if (reviewedFocus !== null) {
+      const button = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-local-reviewed]')].find((candidate) => candidate.dataset.geldLocalReviewed === reviewedFocus);
+      if (button !== undefined) {
+        for (let parent = button.parentElement; parent !== null && parent !== panel; parent = parent.parentElement) {
+          if (!(parent instanceof HTMLDetailsElement)) continue;
+          parent.open = true;
+          const key = parent.dataset.geldReviewKey;
+          if (key !== undefined) expanded.set(key, true);
+        }
+        if (!button.disabled) button.focus({ preventScroll: true });
+        else {
+          const summary = button.closest('details[data-geld-item]')?.querySelector<HTMLElement>(':scope > summary');
+          if (summary !== null && summary !== undefined) {
+            summary.dataset.geldLocalReviewFocus = reviewedFocus;
+            summary.focus({ preventScroll: true });
+          }
+        }
+      }
+    }
   }
 
   render();

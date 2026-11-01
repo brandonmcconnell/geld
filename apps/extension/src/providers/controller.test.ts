@@ -104,6 +104,26 @@ afterEach(() => {
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
 
 describe('provider controller behavior', () => {
+  it('hides excluded authors without taking ownership of the provider native hidden state', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const { adapter } = fixture('gitlab', FILES);
+    const row = document.createElement('li');
+    row.className = '!gl-flex';
+    document.body.append(row);
+    const { controller } = start({ ...adapter, listRows: () => [{ root: row, host: row, author: 'alice', url: new URL('/reviews/1', window.location.href).href }] }, { ...DEFAULT_SETTINGS, hiddenAuthors: ['alice'] });
+    await settle();
+    expect(row.hasAttribute('data-geld-provider-author-hidden')).toBe(true);
+    expect(row.hidden).toBe(false);
+    row.hidden = true;
+    controller.updateSettings({ ...DEFAULT_SETTINGS, hiddenAuthors: [] });
+    await settle();
+    expect(row.hasAttribute('data-geld-provider-author-hidden')).toBe(false);
+    expect(row.hidden).toBe(true);
+    controller.stop();
+    expect(row.hidden).toBe(true);
+    expect(row.hasAttribute('data-geld-provider-author-hidden')).toBe(false);
+  });
+
   it('switches the active category when a popup reveal targets a file in another category', async () => {
     const files: readonly FileStats[] = [...FILES, { path: 'src/generated.ts', additions: 9, deletions: 1 }];
     const { adapter } = fixture('gitlab', files);
@@ -116,6 +136,10 @@ describe('provider controller behavior', () => {
     expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('open');
     expect(headers().find((button) => button.textContent?.startsWith('Tests'))?.getAttribute('aria-expanded')).toBe('true');
     expect(headers().find((button) => button.textContent?.startsWith('Generated'))?.getAttribute('aria-expanded')).toBe('false');
+    controller.updateSettings({ ...DEFAULT_SETTINGS, categories: { tests: false, generated: true }, categoryPatterns: { generated: ['src/generated.ts'] } });
+    await settle();
+    expect(controller.getTabState().expanded).toBe(false);
+    expect(headers()[0]?.getAttribute('aria-expanded')).toBe('true');
   });
 
   it.each([0, 1, 2])('shows %i hidden tests with singular only for one and native semantic line colors', async (count) => {
@@ -373,7 +397,7 @@ it('keeps full-source comment-excluded header and list counts stable when anothe
   expect(list.querySelector('.geld-provider-list-counts')?.textContent).toContain('+12 −5');
 });
 
-it('retries Viewed when native readback does not confirm a click and stops after confirmation', async () => {
+it('retries unconfirmed Viewed clicks but preserves manual unview after confirmation until a new visit', async () => {
   const { adapter, view } = fixture('gitlab', FILES);
   let readback: boolean | null = null;
   const markViewed = vi.fn(() => true);
@@ -402,4 +426,12 @@ it('retries Viewed when native readback does not confirm a click and stops after
   await settle();
   await vi.advanceTimersByTimeAsync(60_000);
   expect(markViewed).toHaveBeenCalledTimes(2);
+  readback = false;
+  controller.requestRefresh();
+  await vi.advanceTimersByTimeAsync(45_000);
+  expect(markViewed).toHaveBeenCalledTimes(2);
+  window.history.replaceState(null, '', '/reviews/2');
+  controller.requestRefresh();
+  await settle();
+  expect(markViewed).toHaveBeenCalledTimes(3);
 });

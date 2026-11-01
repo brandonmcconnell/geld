@@ -19,8 +19,9 @@ const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/26633
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
 const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
-const GL_PROJECT_LIST = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests?state=opened';
-const GL_GROUP_LIST = 'https://gitlab.com/groups/gitlab-org/-/merge_requests?state=opened';
+const GL_LIST_QUERY = new URLSearchParams({ state: 'all', search: 'Return an error when issueMoveList cannot move the issue' });
+const GL_PROJECT_LIST = `https://gitlab.com/gitlab-org/gitlab/-/merge_requests?${GL_LIST_QUERY}`;
+const GL_GROUP_LIST = `https://gitlab.com/groups/gitlab-org/-/merge_requests?${GL_LIST_QUERY}`;
 const BB_PR_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/?state=MERGED';
 const report = {
   schema: 1, startedAt: new Date().toISOString(), mode: 'actual installed unpacked extension on live anonymous public pages',
@@ -30,6 +31,7 @@ const report = {
   installation: null, cases: [], infrastructureErrors: [],
 };
 const cooldowns = new Map();
+const capturedNativeResources = new Set();
 let browser;
 let options;
 let extensionId;
@@ -140,7 +142,10 @@ async function runCase(name, url, body, discovery = false) {
   try {
     const provider = providerOf(url);
     const cooldown = cooldowns.get(provider);
-    if (cooldown !== undefined && cooldown > Date.now()) throw new Error(`Provider rate limited until ${new Date(cooldown).toISOString()}; no navigation attempted`);
+    if (cooldown !== undefined && cooldown > Date.now()) {
+      item.rateLimitedUntil = new Date(cooldown).toISOString();
+      throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
+    }
     page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
     await page.bringToFront();
@@ -171,7 +176,12 @@ async function runCase(name, url, body, discovery = false) {
     item.artifacts = await capture(page, name);
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
-    item.status = discovery ? 'unavailable' : 'failed'; item.error = errorText(error);
+    item.status = discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
+    item.error = errorText(error);
+    if (item.rateLimitedUntil !== undefined) {
+      item.interruptedError = item.error;
+      item.error = `Provider HTTP429 cooldown until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
+    }
     if (page !== undefined && !page.isClosed()) {
       try { item.artifacts = await capture(page, `${name}-failed`); } catch (captureError) { item.captureError = errorText(captureError); }
     }
@@ -223,13 +233,15 @@ async function installedHover(page, selector, interaction, artifactName) {
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
       const anchor = document.querySelector(target);
-      const prior = anchor?.closest('li')?.previousElementSibling?.querySelector('a[href]');
+      const order = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter((node) => node.tabIndex >= 0 && !node.disabled && node.closest('[inert]') === null && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
+      const at = order.indexOf(anchor);
+      const prior = at > 0 ? order[at - 1] : null;
       prior?.focus();
       return prior !== null && prior !== undefined;
     }, selector);
-    assert.equal(previous, true, 'Native previous tab needed for real Tab-key traversal is missing');
+    assert.equal(previous, true, 'Native previous control needed for real Tab-key traversal is missing');
     await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate((target) => document.activeElement === document.querySelector(target), selector), true, 'Tab did not focus the native Changes anchor');
+    assert.equal(await page.evaluate((target) => document.activeElement === document.querySelector(target), selector), true, 'Real Tab did not focus the native count host');
   } else await page.hover(selector);
   const snapshot = await poll(() => page.evaluate((target) => {
     const host = document.querySelector(target);
@@ -238,6 +250,7 @@ async function installedHover(page, selector, interaction, artifactName) {
     const style = getComputedStyle(tip);
     const bounds = tip.getBoundingClientRect();
     return { text: tip.textContent.replace(/\s+/g, ' ').trim(), fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, filter: style.filter,
+      rows: [...tip.querySelectorAll('.geld-provider-hover__row')].map((row) => ({ label: row.querySelector('.geld-provider-hover__label')?.textContent, files: row.querySelector('.geld-provider-hover__files')?.textContent, additions: row.querySelector('.geld-provider-hover__add')?.textContent, deletions: row.querySelector('.geld-provider-hover__del')?.textContent })),
       described: [...document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]')].some((owner) => owner === host || host?.contains(owner)),
       bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
   }, selector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text), 'Installed native count hover breakdown and accessible owner', 12_000);
@@ -246,6 +259,114 @@ async function installedHover(page, selector, interaction, artifactName) {
   await page.keyboard.press('Escape');
   await poll(() => page.evaluate(() => { const tip = document.querySelector('#geld-provider-count-tooltip'); return tip === null || tip.hidden || getComputedStyle(tip).display === 'none'; }), (value) => value, 'Escape dismisses installed hover', 5000);
   return { ...snapshot, interaction, screenshot: `${artifactName}.png`, escapeDismissed: true };
+}
+
+async function browserZoom(page, factor) {
+  const result = await options.evaluate(async (url, factor) => {
+    const tab = (await chrome.tabs.query({})).find((value) => value.url === url);
+    if (tab?.id === undefined) throw new Error('Real Chrome tab missing for zoom');
+    const previous = await chrome.tabs.getZoom(tab.id);
+    await chrome.tabs.setZoom(tab.id, factor);
+    return { tabId: tab.id, previous, actual: await chrome.tabs.getZoom(tab.id), mechanism: 'chrome.tabs.setZoom and chrome.tabs.getZoom on the installed browser tab' };
+  }, page.url(), factor);
+  assert.equal(result.actual, factor, 'Chrome did not apply the requested real browser zoom');
+  return result;
+}
+
+async function responsiveHover(page, selector, name, expectedText) {
+  const viewport = page.viewport();
+  let zoom;
+  try {
+    await page.setViewport({ ...viewport, width: 1000 });
+    zoom = await browserZoom(page, 2);
+    await pause(350);
+    await page.evaluate((selector) => document.querySelector(selector)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), selector);
+    const native = await page.evaluate((selector) => {
+      const node = document.querySelector(selector);
+      const rect = node?.getBoundingClientRect();
+      const available = rect !== undefined && rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.left < innerWidth && rect.bottom > 0 && rect.top < innerHeight && getComputedStyle(node).visibility !== 'hidden' && node.closest('[aria-hidden="true"], [inert]') === null;
+      return { available, width: innerWidth, height: innerHeight, devicePixelRatio, selector, nativeTreeVisible: [...document.querySelectorAll('[data-testid="file-tree-container"], #file-tree')].some((tree) => tree.getBoundingClientRect().width > 0 && tree.getBoundingClientRect().height > 0) };
+    }, selector);
+    let chosen = selector;
+    if (!native.available && page.url().startsWith('https://bitbucket.org/')) chosen = 'a#pull-request-tabs-1[role="tab"]';
+    await page.evaluate((selector) => document.querySelector(selector)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), chosen);
+    const available = await page.evaluate((selector) => { const node = document.querySelector(selector); const rect = node?.getBoundingClientRect(); return rect !== undefined && rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.left < innerWidth && rect.bottom > 0 && rect.top < innerHeight && getComputedStyle(node).visibility !== 'hidden'; }, chosen);
+    if (!available) return { status: 'unavailable', zoom, native, reason: 'The provider hides the verified count control at this responsive width. No replacement control was invented.', artifacts: await capture(page, `${name}-unavailable`) };
+    const hover = await installedHover(page, chosen, 'keyboard', `${name}-keyboard-hover`);
+    if (expectedText !== undefined) assert.equal(hover.text, expectedText, 'Normal and actual200% zoom keyboard breakdown totals diverge');
+    return { status: 'passed', zoom, native, fallback: chosen === selector ? null : { reason: 'Native Lines updated host is hidden/offscreen in the responsive provider layout', selector: chosen }, hover, artifacts: await capture(page, name) };
+  } finally {
+    await browserZoom(page, 1);
+    if (viewport !== null) await page.setViewport(viewport);
+  }
+}
+
+async function reducedMotionProbe(page, provider) {
+  const nativeSelector = provider === 'gitlab' ? 'button[aria-label="Expand all files"]' : '[data-qa="pr-header-actions-drop-down-menu-styles"] button';
+  const sample = () => page.evaluate((nativeSelector) => {
+    const read = (node) => node === null ? null : { transition: getComputedStyle(node).transition, duration: getComputedStyle(node).transitionDuration };
+    return { native: read(document.querySelector(nativeSelector)), owned: read(document.querySelector('.geld-provider-toggle')) };
+  }, nativeSelector);
+  const before = await sample();
+  try {
+    await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+    await pause(150);
+    const reduced = await sample();
+    assert.ok(reduced.native !== null && reduced.owned !== null, 'Native/owned buttons are required for reduced motion comparison');
+    assert.equal(reduced.owned.transition, reduced.native.transition, 'Native and owned reduced-motion button transitions differ');
+    return { mechanism: 'prefers-reduced-motion browser emulation only', before, reduced };
+  } finally { await page.emulateMediaFeatures([]); }
+}
+
+async function captureNativeBitbucketResources(page) {
+  const observed = await page.evaluate(() => [...document.querySelectorAll('link[rel="modulepreload"][href], link[rel="preload"][as="script"][href]')].map((node) => node.href));
+  const resources = [];
+  for (const component of ['action-single-app', 'overview-panel']) {
+    const observedUrl = observed.find((value) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === 'https:' && url.hostname === 'bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net' && url.username === '' && url.password === '' && url.search === '' && url.hash === '' && new RegExp(`^/assets/repo-pull-request-${component}\\.[A-Za-z0-9_-]+\\.js$`).test(url.pathname);
+      } catch { return false; }
+    });
+    if (observedUrl === undefined || capturedNativeResources.has(component)) continue;
+    capturedNativeResources.add(component);
+    try {
+      const result = await page.evaluate(async (url) => {
+        const limit = 2 * 1024 * 1024;
+        const abort = new AbortController();
+        const timer = setTimeout(() => abort.abort(), 15_000);
+        try {
+          const response = await fetch(url, { method: 'GET', credentials: 'omit', signal: abort.signal });
+          const mime = response.headers.get('content-type') ?? '';
+          if (!response.ok || response.url !== url || !/^(?:application|text)\/(?:javascript|ecmascript)(?:;|$)/i.test(mime)) { await response.body?.cancel(); return { status: response.status, mime, unavailable: 'Response status, final URL or JavaScript MIME did not match the observed resource.' }; }
+          if (Number(response.headers.get('content-length')) > limit) { await response.body?.cancel(); return { status: response.status, mime, unavailable: 'Native resource exceeds the2MiB capture limit.' }; }
+          const reader = response.body?.getReader();
+          if (reader === undefined) return { status: response.status, mime, unavailable: 'Native response has no readable body.' };
+          const chunks = []; let total = 0;
+          for (;;) {
+            const next = await reader.read();
+            if (next.done) break;
+            total += next.value.byteLength;
+            if (total > limit) { await reader.cancel(); return { status: response.status, mime, unavailable: 'Native resource exceeds the2MiB capture limit.' }; }
+            chunks.push(next.value);
+          }
+          const bytes = new Uint8Array(total); let offset = 0;
+          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+          let binary = '';
+          for (let at = 0; at < bytes.length; at += 32768) binary += String.fromCharCode(...bytes.subarray(at, at + 32768));
+          return { status: response.status, mime, bytes: total, base64: btoa(binary) };
+        } catch (error) { return { status: null, unavailable: error instanceof Error ? error.message : String(error) }; }
+        finally { clearTimeout(timer); }
+      }, observedUrl);
+      if (result.base64 === undefined) { resources.push({ component, url: observedUrl, ...result }); continue; }
+      const bytes = Buffer.from(result.base64, 'base64');
+      assert.ok(bytes.length <= 2 * 1024 * 1024);
+      const file = new URL(observedUrl).pathname.split('/').at(-1).replace(/\.js$/, '.native.js');
+      await writeFile(resolve(artifacts, file), bytes);
+      resources.push({ component, url: observedUrl, status: result.status, mime: result.mime, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), file, executed: false, basis: 'Exact modulepreload/script-preload URL observed on the native public page. Bounded credential-free browser GET only.' });
+    } catch (error) { resources.push({ component, url: observedUrl, unavailable: errorText(error) }); }
+  }
+  return { observedComponents: observed.filter((value) => /repo-pull-request-(?:action-single-app|overview-panel)\./.test(value)), captures: resources, limit: 'At most two observed component resources,2MiB each. No source maps or downloaded script execution.' };
 }
 async function bitbucketNativeStyles(page) {
   return page.evaluate(() => {
@@ -296,6 +417,21 @@ async function bitbucketFiltering(page, item) {
     item.filteredDom = await poll(() => bitbucketDom(page), (value) => value.files === visible.files && value.additions === visible.additions && value.deletions === visible.deletions && value.hidden.some((file) => file.path === 'pipe/pipe.py' && file.mode === 'closed' && file.display === 'none'), 'Native Bitbucket file count/line totals and actual hidden file wrapper');
     item.filteredArtifacts = await capture(page, 'bitbucket-pattern-filtered');
     item.categoryInteraction = await categoryInteraction(page, 'pipe/pipe.py', 'bitbucket', 'bitbucket-category', true);
+    const summarySelector = '#file-tree :has(> .geld-provider-accessible-counts)';
+    item.spokenFiltered = await poll(() => page.$eval(`${summarySelector} > .geld-provider-accessible-counts`, (node) => node.textContent), (text) => text.includes(`${visible.files} files changed`) && text.includes(`Added ${visible.additions} lines`) && text.includes(`Removed ${visible.deletions} lines`), 'Native Bitbucket screen reader totals follow actual filtering');
+    item.keyboardStatsHover = await installedHover(page, summarySelector, 'keyboard', 'bitbucket-stats-keyboard-hover');
+    item.zoom200 = await responsiveHover(page, summarySelector, 'bitbucket-zoom200', item.keyboardStatsHover.text);
+    assert.equal(await page.$eval(`${summarySelector} > .geld-provider-accessible-counts`, (node) => node.textContent), item.spokenFiltered, 'Bitbucket zoom changed the accessible filtered totals');
+    item.reducedMotion = await reducedMotionProbe(page, 'bitbucket');
+    const light = await bitbucketNativeStyles(page);
+    try {
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+      await pause(350);
+      const dark = await bitbucketNativeStyles(page);
+      const changed = dark.colorMode !== light.colorMode || dark.body?.color !== light.body?.color || dark.body?.backgroundColor !== light.body?.backgroundColor || dark.moreActions?.color !== light.moreActions?.color || dark.moreActions?.backgroundColor !== light.moreActions?.backgroundColor;
+      item.osDarkPreference = { mechanism: 'OS prefers-color-scheme emulation only; no native class or CSS injection', nativeThemeChanged: changed, status: changed ? 'native_scheme_observed' : 'site_did_not_select_dark_theme', before: light, measurement: dark };
+      if (changed) item.osDarkPreference.artifacts = await capture(page, 'bitbucket-os-dark');
+    } finally { await page.emulateMediaFeatures([]); }
   } finally {
     await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} });
   }
@@ -462,6 +598,55 @@ async function unavailableDiscovery(name, reason, extra = {}) {
   await saveReport();
 }
 
+async function gitLabListCounts(page, name) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const read = () => page.evaluate(() => {
+    const title = [...document.querySelectorAll('a[data-testid="issuable-title-link"][href]')].find((link) => new URL(link.href).pathname.replace(/\/$/, '') === '/gitlab-org/gitlab/-/merge_requests/266334');
+    const row = title?.closest('li.merge-request[data-testid="issuable-container"], li.merge-request[data-testid="issuable-item-wrapper"]');
+    if (row == null) return null;
+    const chip = row.querySelector('.geld-provider-list-counts');
+    return { id: row.id, author: row.querySelector('[data-testid="issuable-author"]')?.getAttribute('data-username'), hidden: row.hidden, authorHidden: row.hasAttribute('data-geld-provider-author-hidden'), display: getComputedStyle(row).display,
+      chip: chip === null ? null : { text: chip.textContent.replace(/\s+/g, ' ').trim(), title: chip.getAttribute('title'), tabindex: chip.getAttribute('tabindex') },
+      nativeIds: [row, ...row.querySelectorAll('[id]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.id),
+      nativeLinks: [...row.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ href: node.getAttribute('href'), testid: node.getAttribute('data-testid'), label: node.getAttribute('aria-label') })) };
+  });
+  const settled = (value) => value !== null && value.hidden === false && value.authorHidden === false && value.display !== 'none' && value.chip !== null && /\b1 test\b/.test(value.chip.text) && value.chip.text.includes('+4') && value.chip.text.includes('−0') && !/Counting|unavailable/.test(value.chip.text);
+  try {
+    await patchSettings({ showListStats: true, hiddenAuthors: [] });
+    const initial = await poll(read, settled, 'Known GitLab MR266334 same-row chip settles at1 test and+4−0');
+    assert.ok(initial.id !== '' && typeof initial.author === 'string' && initial.author !== '', 'Native list row ID and author login must be observed');
+    const selector = `[id=${JSON.stringify(initial.id)}] .geld-provider-list-counts`;
+    const pointer = await installedHover(page, selector, 'pointer', `${name}-pointer-hover`);
+    const keyboard = await installedHover(page, selector, 'keyboard', `${name}-keyboard-hover`);
+    const expected = [
+      { label: 'Essential', files: '2 files', additions: '+4', deletions: '−0' },
+      { label: 'Tests', files: '1 file', additions: '+32', deletions: '−0' },
+      { label: 'Total', files: '3 files', additions: '+36', deletions: '−0' },
+    ];
+    for (const value of [pointer, keyboard]) {
+      for (const row of expected) assert.deepEqual(value.rows.find((item) => item.label === row.label), row, 'Actual list breakdown differs from the verified complete MR diff');
+    }
+    assert.equal(pointer.text, keyboard.text, 'Pointer and real Tab-key list breakdowns disagree');
+    await patchSettings({ showListStats: false });
+    const statsOff = await poll(read, (value) => value !== null && value.chip === null && value.display !== 'none', 'Real showListStats storage toggle removes the same-row chip');
+    assert.deepEqual(statsOff.nativeIds, initial.nativeIds, 'List toggle changed native row IDs');
+    assert.deepEqual(statsOff.nativeLinks, initial.nativeLinks, 'List toggle changed native title/status links');
+    await patchSettings({ showListStats: true });
+    const statsRestored = await poll(read, settled, 'Real showListStats restoration restores the settled same-row chip');
+    await patchSettings({ hiddenAuthors: [initial.author] });
+    const authorHidden = await poll(read, (value) => value !== null && value.authorHidden === true && value.display === 'none' && value.chip === null, 'Observed native author rule visually hides the actual list row with its owned attribute');
+    assert.equal(authorHidden.hidden, initial.hidden, 'Author filtering changed the provider-owned hidden property');
+    assert.deepEqual(authorHidden.nativeIds, initial.nativeIds, 'Author filtering removed native row IDs');
+    assert.deepEqual(authorHidden.nativeLinks, initial.nativeLinks, 'Author filtering changed native status/title links');
+    await patchSettings({ hiddenAuthors: [] });
+    const authorRestored = await poll(read, settled, 'Removing the author rule restores the native row and settled chip');
+    assert.equal(authorRestored.hidden, initial.hidden, 'Author restoration changed the provider-owned hidden property');
+    assert.deepEqual(authorRestored.nativeIds, initial.nativeIds, 'Author restoration changed native row IDs');
+    assert.deepEqual(authorRestored.nativeLinks, initial.nativeLinks, 'Author restoration changed native title/status links');
+    return { initial, pointer, keyboard, statsOff, statsRestored, authorHidden, authorRestored, ruleBasis: 'Native selected row data-username, not a guessed author login' };
+  } finally { await patchSettings({ showListStats: original.showListStats ?? true, hiddenAuthors: original.hiddenAuthors ?? [] }); }
+}
+
 await mkdir(artifacts, { recursive: true });
 try {
   const manifestText = await readFile(resolve(extensionPath, 'manifest.json'), 'utf8');
@@ -500,6 +685,9 @@ try {
     item.hoverChangesKeyboard = await installedHover(page, '[data-testid="diffs-tab"] > a', 'keyboard', 'gitlab-changes-keyboard-hover');
     assert.equal(item.hoverChangesPointer.text, item.hoverAdditions.text, 'Native additions and Changes tooltip totals disagree');
     assert.equal(item.hoverChangesKeyboard.text, item.hoverAdditions.text, 'Keyboard and pointer breakdowns disagree');
+    item.zoom200 = await responsiveHover(page, '[data-testid="diffs-tab"] > a', 'gitlab-zoom200', item.hoverChangesKeyboard.text);
+    assert.equal((await countA11y(page)).additions, item.spokenEnabled.additions, 'GitLab zoom changed the accessible visible addition count');
+    item.reducedMotion = await reducedMotionProbe(page, 'gitlab');
     await patchSettings({ enabled: false });
     item.disabledState = await poll(() => tabState(page), (state) => state.hasDiff === false && state.allowed === false, 'Real sync master toggle disable');
     item.disabledDom = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 3 && row.additions === 36 && row.deletions === 0) && value.hidden.length === 0 && value.inlineHidden === 0 && value.ownUi === 0, 'Native count restoration and owned hide-attribute removal');
@@ -570,6 +758,7 @@ try {
       const surfaceLinks = (await nativeSurface(page)).links;
       bitbucketCommit ??= surfaceLinks.find((link) => link.kind === 'commit')?.href ?? null;
       item.nativeStyles = await bitbucketNativeStyles(page);
+      item.nativeComponentResources = await captureNativeBitbucketResources(page);
       assert.ok(Object.keys(item.nativeStyles.tokens).length > 0, 'No computed native --ds tokens were captured');
       assert.ok(item.nativeStyles.moreActions !== null, 'Stable native More actions button sample missing');
       if (name === 'bitbucket-diff') assert.ok(item.nativeStyles.article !== null && item.nativeStyles.header !== null && item.nativeStyles.code !== null, 'Stable native diff computed samples missing');
@@ -586,15 +775,14 @@ try {
     });
   }
 
-  for (const [name, url] of [['gitlab-project-mr-list-discovery', GL_PROJECT_LIST], ['gitlab-group-mr-list-discovery', GL_GROUP_LIST]]) {
+  for (const [name, url] of [['gitlab-project-mr-list', GL_PROJECT_LIST], ['gitlab-group-mr-list', GL_GROUP_LIST]]) {
     await runCase(name, url, async (page, item) => {
-      try { await page.waitForFunction(() => [...document.querySelectorAll('a[href]')].some((link) => /\/-\/merge_requests\/[1-9]\d*(?:\/|$)/.test(new URL(link.href).pathname)), { timeout: 15_000 }); }
-      catch (error) { item.nativeReadiness = errorText(error); }
+      item.listCounts = await gitLabListCounts(page, name);
       item.surface = await nativeSurface(page);
       item.state = await tabState(page);
-      item.featureParity = 'not_evaluated';
-      return { status: item.surface.links.some((link) => link.kind === 'review') ? 'discovery' : 'unavailable', reason: 'Native project/group MR list capture. Counts and list chip parity are not asserted by this discovery case.' };
-    }, true);
+      item.featureParity = 'partial';
+      return { status: 'passed', verified: 'Narrowed native MR list settles on verified complete counts. Pointer/real Tab breakdowns, settings-driven chip removal/restoration and observed-author row hiding/restoration preserve native IDs/status links.' };
+    });
   }
   await runCase('gitlab-native-reference-cards-discovery', GL_OVERVIEW, async (page, item) => {
     try { await page.waitForFunction(() => document.querySelector('a[data-reference-type="merge_request"], a[data-reference-type="commit"]') !== null, { timeout: 15_000 }); }
