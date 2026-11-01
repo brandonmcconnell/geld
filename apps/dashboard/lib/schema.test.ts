@@ -9,7 +9,7 @@ import { getAuth } from './auth';
 describe('database contracts', () => {
   it('applies cleanly and includes every installed Better Auth field', async () => {
     const db = new PGlite();
-    for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql']) await db.exec(await readFile(fileURLToPath(new URL(`../db/migrations/${name}`, import.meta.url)), 'utf8'));
+    for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql']) await db.exec(await readFile(fileURLToPath(new URL(`../db/migrations/${name}`, import.meta.url)), 'utf8'));
     vi.stubEnv('DATABASE_URL', 'postgresql://localhost/geld_schema_test');
     vi.stubEnv('BETTER_AUTH_SECRET', crypto.randomUUID());
     const auth = getAuth();

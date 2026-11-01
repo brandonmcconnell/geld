@@ -7,19 +7,26 @@ import { Dialog } from '@base-ui/react/dialog';
 import { cn } from 'cn';
 import { BookOpen, ChevronDown, ChevronLeft, CircleHelp, GitPullRequest, Layers, Menu, PanelLeftClose, Plus, Search, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { repositoryPath } from '@geld/domain';
+import { z } from 'zod';
+import { parseDashboardRoute, repositoryPath } from '@geld/domain';
 import { queueSchema, sessionSchema } from '@/lib/contracts';
 import type { QueueData, SessionData } from '@/lib/contracts';
 import { Brand } from './brand';
 
+const teamListSchema = z.object({teams:z.array(z.object({id:z.string(),name:z.string()}))});
 const emptyQueue: QueueData = { pulls: [], repositories: [] };
-interface DashboardContext { readonly queue: QueueData; readonly session: SessionData; readonly loading: boolean; readonly error: string | null; readonly refresh: () => void }
-const context = createContext<DashboardContext>({ queue: emptyQueue, session: { user: null, configured: false, demo: false }, loading: true, error: null, refresh: () => undefined });
+interface DashboardContext { readonly queue: QueueData; readonly session: SessionData; readonly loading: boolean; readonly error: string | null; readonly refresh: () => void; readonly teams: readonly {id:string;name:string}[]; readonly activeTeam: string; readonly setActiveTeam: (id:string) => void }
+const context = createContext<DashboardContext>({ queue: emptyQueue, session: { user: null, configured: false, demo: false }, loading: true, error: null, refresh: () => undefined, teams:[],activeTeam:'',setActiveTeam:()=>undefined });
 export function useDashboard() { return useContext(context); }
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const pathname = usePathname();
   const queueOwner = useRef<string | null>(null);
+  const route = parseDashboardRoute(pathname.split('/').filter(Boolean));
+  const repository = route?.kind === 'repository' ? route.ref : null;
+  const repositoryKey = repository ? JSON.stringify(repository) : '';
+  const [teams,setTeams]=useState<{id:string;name:string}[]>([]);
+  const [activeTeam,setActiveTeam]=useState('');
   const [queue, setQueue] = useState<QueueData>(emptyQueue);
   const [session, setSession] = useState<SessionData>({ user: null, configured: false, demo: false });
   const [loading, setLoading] = useState(true);
@@ -28,7 +35,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     const abort = new AbortController();
-    Promise.all([fetch('/api/session', { signal: abort.signal }).then(async (r): Promise<unknown> => r.json()), fetch('/api/queue', { signal: abort.signal }).then(async (r) => ({ ok: r.ok, status: r.status, data: await r.json() }))]).then(([sessionValue, result]) => {
+    fetch('/api/teams',{signal:abort.signal}).then(async r=>{const value:unknown=await r.json();const parsed=teamListSchema.safeParse(value);if(parsed.success)setTeams(parsed.data.teams);}).catch(()=>undefined);
+    Promise.all([fetch('/api/session', { signal: abort.signal }).then(async (r): Promise<unknown> => r.json()), fetch(`/api/queue?team=${encodeURIComponent(activeTeam)}&repository=${encodeURIComponent(repositoryKey)}`, { signal: abort.signal }).then(async (r) => ({ ok: r.ok, status: r.status, data: await r.json() }))]).then(([sessionValue, result]) => {
       if (abort.signal.aborted) return;
       const account = sessionSchema.safeParse(sessionValue);
       const data = queueSchema.safeParse(result.data);
@@ -50,8 +58,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
       setLoading(false);
     }).catch(() => { if (!abort.signal.aborted) { queueOwner.current = null; setQueue(emptyQueue); setSession({ user: null, configured: false, demo: false }); setError('The dashboard could not connect. Try again.'); setLoading(false); } });
     return () => abort.abort();
-  }, [revision]);
-  const data = { queue, session, loading, error, refresh: () => { setQueue(emptyQueue); setLoading(true); setRevision((value) => value + 1); } };
+  }, [revision,activeTeam,repositoryKey]);
+  const data = { queue, session, loading, error, teams, activeTeam, setActiveTeam, refresh: () => { setQueue(emptyQueue); setLoading(true); setRevision((value) => value + 1); } };
   return <context.Provider value={data}><div className="app-shell" data-collapsed={collapsed}>
     <a href="#main" className="skip-link">Skip to content</a>
     <aside className="desktop-sidebar"><Sidebar collapsed={collapsed} onCollapse={() => setCollapsed((value) => !value)} /></aside>
@@ -66,10 +74,10 @@ function NavigationLink({ href, icon: Icon, children, count }: { readonly href: 
   return <Link href={href} className={cn('nav-link', active && 'active')} aria-current={active ? 'page' : undefined}><Icon size={17}/><span className="sidebar-label">{children}</span>{count !== undefined && count > 0 && <span className="nav-count sidebar-label">{count}</span>}</Link>;
 }
 function Sidebar({ collapsed, onCollapse }: { readonly collapsed: boolean; readonly onCollapse?: () => void }) {
-  const { queue, session } = useDashboard();
+  const { queue, session, teams, activeTeam, setActiveTeam } = useDashboard();
   const orgs = Array.from(new Map(queue.repositories.map((repo) => [`${repo.ref.provider}:${repo.ref.owner}`, repo.ref])).values());
   return <div className="sidebar-inner"><div className="sidebar-brand"><Link href="/" aria-label="Geld home"><Brand/></Link>{onCollapse && <button className="icon-button sidebar-label" onClick={onCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}><PanelLeftClose size={16}/></button>}</div>
-    <Link className="workspace-switch" href="/teams"><span className="workspace-avatar">{session.user ? session.user.name.slice(0, 1).toUpperCase() : 'G'}</span><span className="sidebar-label"><strong>Personal workspace</strong><small>Across your teams</small></span><ChevronDown className="sidebar-label" size={14}/></Link>
+    <label className="workspace-switch"><span className="workspace-avatar">{session.user ? session.user.name.slice(0,1).toUpperCase():'G'}</span><span className="sidebar-label"><span className="sr-only">Active team</span><select aria-label="Active team" value={activeTeam} onChange={event=>setActiveTeam(event.target.value)}><option value="">Personal view</option>{teams.map(team=><option value={team.id} key={team.id}>{team.name}</option>)}</select><small>{activeTeam?'Team repositories':'Across your providers'}</small></span></label>
     <nav aria-label="Main navigation"><div className="nav-section"><NavigationLink href="/" icon={GitPullRequest} count={queue.pulls.length}>Review queue</NavigationLink><NavigationLink href="/repositories" icon={Layers}>Repositories</NavigationLink><NavigationLink href="/teams" icon={Users}>Teams</NavigationLink></div>
     <div className="nav-section"><p className="nav-heading sidebar-label">PROVIDERS</p>{orgs.length ? orgs.map((ref) => <details className="provider-group" key={`${ref.provider}:${ref.owner}`} open><summary><span className="provider-letter">{ref.provider === 'github' ? 'GH' : ref.provider === 'gitlab' ? 'GL' : 'BB'}</span><span className="sidebar-label provider-owner">{ref.owner}</span><ChevronDown size={12} className="sidebar-label"/></summary><div className="provider-repos sidebar-label">{queue.repositories.filter((repo) => repo.ref.provider === ref.provider && repo.ref.owner === ref.owner).map((repo) => <Link href={repositoryPath(repo.ref)} key={repo.id}><span className="repo-dot"/>{repo.ref.repo}</Link>)}</div></details>) : <Link href="/connect" className="nav-link"><Plus size={17}/><span className="sidebar-label">Connect a provider</span></Link>}</div>
     <div className="nav-section"><p className="nav-heading sidebar-label">WORKSPACE</p><NavigationLink href="/settings/providers" icon={Sparkles}>AI providers</NavigationLink><NavigationLink href="/settings/models" icon={BookOpen}>Models</NavigationLink><NavigationLink href="/settings/security" icon={ShieldCheck}>Security log</NavigationLink><NavigationLink href="/settings" icon={Settings}>Settings</NavigationLink></div></nav>
