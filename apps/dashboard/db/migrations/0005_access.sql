@@ -42,3 +42,5 @@ CREATE TABLE provider_group_exclusions (
   provider_group_id text NOT NULL,
   PRIMARY KEY(team_id,provider,host,owner,provider_user_id,provider_group_id)
 );
+ALTER TABLE outbox_jobs ADD COLUMN locked_at timestamptz;
+ALTER TABLE outbox_jobs ADD COLUMN lock_token text;

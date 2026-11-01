@@ -1,6 +1,6 @@
 import { connection } from 'next/server';
 import { z } from 'zod';
-import { planFor, repositoryPath, resourceSchema } from '@geld/domain';
+import { repositoryPath, resourceSchema } from '@geld/domain';
 import { currentActor } from '@/lib/session';
 import { database } from '@/lib/db';
 import { transaction } from '@/lib/transactions';
@@ -8,6 +8,8 @@ import { appendAudit } from '@/lib/audit';
 import { teamMembership, listTeams } from '@/lib/workspaces';
 import { accessAdapter, providerAdmin, repoRowSchema, refFor, queueGrant, processGrant } from '@/lib/team-access';
 import { json, sameOrigin } from '@/lib/http';
+import { claimAccessJobs,finishAccessJob } from '@/lib/access-jobs';
+import { addTeamRepository, approveTeamRepository } from '@/lib/team-repositories';
 import { resourceDigest } from '@/lib/resource-digest';
 const inputSchema = z.discriminatedUnion('action',[
   z.object({action:z.literal('settings'),managed:z.boolean(),sync:z.boolean(),approval:z.boolean(),visibility:z.enum(['names','request','count','none']),confirmation:z.string().optional(),outside:z.array(z.string()).default([])}),
@@ -57,10 +59,9 @@ export async function POST(request:Request,{params}:{readonly params:Promise<{id
     if(input.action==='add'){
       if(input.ref.host!==({github:'github.com',gitlab:'gitlab.com',bitbucket:'bitbucket.org'})[input.ref.provider])return json({error:'Register this Enterprise host first'},400);
       const r=await(await accessAdapter(input.ref.provider,id,input.ref.owner)).repository(input.ref);if(!r.ok||r.value.permission==='none')return json({error:'Your own provider account must have repository access'},403);
-      if(team.tier==='free'&&r.value.private&&r.value.permission!=='admin')return json({error:'Free supports public repositories and your own repositories'},402);
-      const max=planFor(team.tier).maxRepositories;const count=z.object({count:z.number()}).parse((await db.query('SELECT count(*)::integer AS count FROM team_repos WHERE team_id=$1 AND removed_at IS NULL',[id])).rows[0]);if(max!==null&&count.count>=max)return json({error:'This team has reached its repository limit'},402);
-      const approved=admin||!team.add_approval;const repoId=crypto.randomUUID();
-      await transaction(db,async sql=>{const row=z.object({id:z.string()}).parse((await sql.query('INSERT INTO team_repos(id,team_id,provider,host,external_id,owner,name,approved,added_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(team_id,provider,host,external_id) DO UPDATE SET removed_at=NULL RETURNING id',[repoId,id,input.ref.provider,input.ref.host,r.value.id,input.ref.owner,input.ref.repo,approved,actor.id])).rows[0]);if(!approved)await sql.query("INSERT INTO access_requests(id,team_id,repo_id,requester_id,kind) VALUES($1,$2,$3,$4,'add_repository') ON CONFLICT DO NOTHING",[crypto.randomUUID(),id,row.id,actor.id]);await appendAudit(sql,{teamId:id,actorId:actor.id,action:'repository.add',resourceType:'repository',resourceId:row.id,outcome:approved?'success':'pending'});});return json({saved:true,pending:!approved});
+      const result=await transaction(db,sql=>addTeamRepository(sql,{teamId:id,actorId:actor.id,ref:input.ref,externalId:r.value.id,private:r.value.private,permission:r.value.permission}));
+      if(!result.ok)return json({error:result.reason==='limit'?'This team has reached its repository limit':result.reason==='free'?'Free supports public repositories and your own repositories':'Team membership or provider access changed'},result.reason==='forbidden'?403:402);
+      return json({saved:true,pending:!result.repository.approved});
     }
     if(input.action==='settings'){
       if(!input.managed){const active=await db.query("SELECT id FROM grants WHERE team_id=$1 AND state<>'revoked' AND provider_grant_id IS NOT NULL LIMIT 1",[id]);if(active.rows.length)return json({error:'Revoke every Geld grant before disabling managed access'},409);}
@@ -87,14 +88,14 @@ export async function POST(request:Request,{params}:{readonly params:Promise<{id
       const req=z.object({repo_id:z.string(),requester_id:z.string(),kind:z.enum(['repository_access','add_repository'])}).safeParse((await db.query("SELECT * FROM access_requests WHERE id=$1 AND team_id=$2 AND state='pending' AND expires_at>now()",[input.requestId,id])).rows[0]);if(!req.success)return json({error:'This request is no longer pending'},409);
       const repo=repoRowSchema.parse((await db.query('SELECT * FROM team_repos WHERE id=$1',[req.data.repo_id])).rows[0]);
       if(req.data.kind==='add_repository'?!admin:!await providerAdmin(repo))return json({error:'Approval needs the matching provider permission'},403);
-      await transaction(db,async sql=>{const updated=await sql.query("UPDATE access_requests SET state=$2,approver_id=$3 WHERE id=$1 AND state='pending' AND expires_at>now() RETURNING id",[input.requestId,input.approve?'approved':'denied',actor.id]);if(!updated.rows.length)return;if(input.approve){if(req.data.kind==='add_repository')await sql.query('UPDATE team_repos SET approved=true WHERE id=$1',[repo.id]);else await queueGrant(sql,repo,req.data.requester_id,actor.id,'request_access');}await appendAudit(sql,{teamId:id,actorId:actor.id,action:input.approve?'request.approve':'request.deny',resourceType:'request',resourceId:input.requestId,outcome:'success'});});return json({saved:true});
+      await transaction(db,async sql=>{await sql.query('SELECT id FROM teams WHERE id=$1 FOR UPDATE',[id]);const updated=await sql.query("UPDATE access_requests SET state=$2,approver_id=$3 WHERE id=$1 AND state='pending' AND expires_at>now() RETURNING id",[input.requestId,input.approve?'approved':'denied',actor.id]);if(!updated.rows.length)return;if(input.approve){if(req.data.kind==='add_repository')await approveTeamRepository(sql,id,repo.id,actor.id);else await queueGrant(sql,repo,req.data.requester_id,actor.id,'request_access');}await appendAudit(sql,{teamId:id,actorId:actor.id,action:input.approve?'request.approve':'request.deny',resourceType:'request',resourceId:input.requestId,outcome:'success'});});return json({saved:true});
     }
     if(input.action==='withdraw'){
       const g=z.object({repo_id:z.string()}).safeParse((await db.query("SELECT repo_id FROM grants WHERE id=$1 AND team_id=$2 AND state IN('active','pending')",[input.grantId,id])).rows[0]);if(!g.success)return json({error:'Grant not found'},404);const repo=repoRowSchema.parse((await db.query('SELECT * FROM team_repos WHERE id=$1',[g.data.repo_id])).rows[0]);if(!await providerAdmin(repo))return json({error:'Provider access management permission is required'},403);await db.query("UPDATE grants SET state='revoking' WHERE id=$1",[input.grantId]);await db.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES($1,$2,'revoke',$3,$4) ON CONFLICT DO NOTHING",[crypto.randomUUID(),id,input.grantId,`revoke:${input.grantId}`]);await audit('access.withdraw',input.grantId,'pending');return json({saved:true,pending:true});
     }
     if(input.action==='run_jobs'){
-      const jobs=z.array(z.object({id:z.string(),resource_id:z.string()})).parse((await db.query("UPDATE outbox_jobs SET state='running',attempts=attempts+1 WHERE id IN(SELECT id FROM outbox_jobs WHERE team_id=$1 AND kind IN('grant','revoke') AND state IN('pending','failed') AND run_after<=now() ORDER BY created_at LIMIT 10 FOR UPDATE SKIP LOCKED) RETURNING id,resource_id",[id])).rows);let completed=0;
-      for(const job of jobs){let ok=false;try{ok=await processGrant(job.resource_id,actor.id);}catch{}await db.query("UPDATE outbox_jobs SET state=$2,run_after=now()+interval '1 minute' WHERE id=$1",[job.id,ok?'completed':'failed']);if(ok)completed++;}return json({saved:true,completed,pending:jobs.length-completed});
+      const jobs=await claimAccessJobs(db,id);let completed=0;
+      for(const job of jobs){let ok=false;try{ok=await processGrant(job.resource_id,actor.id);}catch{}const owned=await finishAccessJob(db,job,ok);if(owned&&ok)completed++;}return json({saved:true,completed,pending:jobs.length-completed});
     }
     if(input.action==='destroy'){
       if(input.confirmation!==team.name)return json({error:'Type the team name to confirm'},400);

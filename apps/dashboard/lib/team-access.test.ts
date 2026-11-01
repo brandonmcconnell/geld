@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ManagedAccessAdapter } from '@geld/providers';
 import type { Permission } from '@geld/domain';
 vi.mock('server-only', () => ({}));
-import { processGrantRecord, type GrantDependencies } from './team-access';
+import { processGrantRecord, queueGrant, repoRowSchema, type GrantDependencies } from './team-access';
 beforeEach(() => vi.stubEnv('TOKEN_ENCRYPTION_KEY','test-security-signing-key-at-least-32-characters'));
 afterEach(() => vi.unstubAllEnvs());
 async function fixture(group = false) {
   const db = new PGlite();
   for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url),'utf8'));
-  await db.exec("INSERT INTO users(id,name,email) VALUES('admin','Admin','admin@example.test'),('u','User','user@example.test'); INSERT INTO teams(id,name,managed_access) VALUES('t','Team',true); INSERT INTO team_members(team_id,user_id,role) VALUES('t','admin','admin'),('t','u','member'); INSERT INTO team_repos(id,team_id,provider,host,external_id,owner,name) VALUES('a','t','github','github.com','a','org','a'),('b','t','github','github.com','b','org','b'),('c','t','github','github.com','c','org','c'); INSERT INTO provider_orgs(id,provider,host,external_id,slug) VALUES('org','github','github.com','org','org'); INSERT INTO provider_teams(id,team_id,org_id,provider,external_id,state) VALUES('pt','t','org','github','group','active')");
+  await db.exec("INSERT INTO users(id,name,email) VALUES('admin','Admin','admin@example.test'),('u','User','user@example.test'); INSERT INTO teams(id,name,managed_access,sync_enabled) VALUES('t','Team',true,true); INSERT INTO team_members(team_id,user_id,role) VALUES('t','admin','admin'),('t','u','member'); INSERT INTO team_repos(id,team_id,provider,host,external_id,owner,name) VALUES('a','t','github','github.com','a','org','a'),('b','t','github','github.com','b','org','b'),('c','t','github','github.com','c','org','c'); INSERT INTO provider_orgs(id,provider,host,external_id,slug) VALUES('org','github','github.com','org','org'); INSERT INTO provider_teams(id,team_id,org_id,provider,external_id,state) VALUES('pt','t','org','github','group','active')");
   const direct = new Map<string, Permission>();
   const shared = new Set(group ? ['a','b'] : []);
   let member = group;
@@ -98,5 +98,25 @@ describe('recoverable managed-access writes', () => {
       expect(await processGrantRecord('g','admin',f.dependencies)).toBe(true);
       expect(f.direct.get('a')).toBe('write'); expect(f.actions).toEqual([]);
     } finally { await f.db.close(); }
+  });
+});
+
+describe('sync checks for outside accounts',()=>{
+  it('requires explicit repository approval before granting an outsider access to a newly synced repository',async()=>{
+    const f=await fixture();
+    try {
+      await f.insert('g','a');
+      await f.db.exec("INSERT INTO provider_user_links(user_id,provider,host,external_id,login) VALUES('u','github','github.com','42','user')");
+      const adapter:ManagedAccessAdapter={...f.adapter,user:async(ref,login)=>{const current=await f.adapter.user(ref,login);return current.ok?{...current,value:{...current.value,organisationMember:false}}:current;}};
+      const dependencies={...f.dependencies,adapter:async()=>adapter};
+      expect(await processGrantRecord('g','admin',dependencies)).toBe(true);
+      expect(f.actions).toEqual([]);
+      expect((await f.db.query('SELECT kind,state FROM access_requests')).rows).toEqual([{kind:'repository_access',state:'pending'}]);
+      const repo=repoRowSchema.parse((await f.db.query("SELECT * FROM team_repos WHERE id='a'")).rows[0]);
+      await queueGrant(f.dependencies.sql,repo,'u','admin','request_access');
+      expect((await f.db.query('SELECT id,source FROM grants')).rows).toEqual([{id:'g',source:'request_access'}]);
+      expect(await processGrantRecord('g','admin',dependencies)).toBe(true);
+      expect(f.actions).toEqual(['grant:a']);
+    } finally {await f.db.close();}
   });
 });

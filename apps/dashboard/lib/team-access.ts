@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { effectivePermission, revocationFor } from '@geld/domain';
 import type { Permission, Provider, RepositoryRef } from '@geld/domain';
 import { managedAccessAdapter } from '@geld/providers';
-import { database, lockDatabase } from './db';
+import { database } from './db';
+import { withGrantLocks } from './grant-locks';
 import type { ManagedAccessAdapter } from '@geld/providers';
 import { providerTokenSource } from './session';
 import { appendAudit } from './audit';
@@ -26,8 +27,9 @@ export async function queueGrant(sql: SqlExecutor, repo: TeamRepository, userId:
   const link = z.object({ external_id: z.string(), login: z.string() }).safeParse((await sql.query('SELECT external_id,login FROM provider_user_links WHERE user_id = $1 AND provider = $2 AND host = $3', [userId,repo.provider,repo.host])).rows[0]);
   if (!link.success) return;
   const id = crypto.randomUUID();
-  const created = await sql.query("INSERT INTO grants(id,team_id,repo_id,user_id,provider,provider_user_id,provider_login,mechanism,permission,previous_permission,source,actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7,'collaborator','read','none',$8,$9) ON CONFLICT DO NOTHING RETURNING id", [id,repo.team_id,repo.id,userId,repo.provider,link.data.external_id,link.data.login,source,actorId]);
-  if (created.rows.length) await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES ($1,$2,'grant',$3,$4)", [crypto.randomUUID(),repo.team_id,id,`grant:${id}`]);
+  const created = await sql.query("INSERT INTO grants(id,team_id,repo_id,user_id,provider,provider_user_id,provider_login,mechanism,permission,previous_permission,source,actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7,'collaborator','read','none',$8,$9) ON CONFLICT(team_id,repo_id,user_id) WHERE state<>'revoked' DO UPDATE SET source=EXCLUDED.source,actor_id=EXCLUDED.actor_id WHERE grants.state='pending' AND grants.provider_grant_id IS NULL AND grants.source='sync' AND EXCLUDED.source IN('audit','request_access') RETURNING id", [id,repo.team_id,repo.id,userId,repo.provider,link.data.external_id,link.data.login,source,actorId]);
+  const queued=z.object({id:z.string()}).safeParse(created.rows[0]);
+  if (queued.success) await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES ($1,$2,'grant',$3,$4) ON CONFLICT DO NOTHING", [crypto.randomUUID(),repo.team_id,queued.data.id,`grant:${queued.data.id}:${source}`]);
 }
 const grantSchema = z.object({ id: z.string(), team_id: z.string(), repo_id: z.string(), user_id: z.string().nullable(), provider_login: z.string(), provider_user_id: z.string(), provider_grant_id: z.string().nullable(), provider_group_id: z.string().nullable(), mechanism: z.enum(['provider_team','collaborator']), source: z.enum(['sync','request_access','audit']), state: z.enum(['pending','active','revoking','revoked','drifted']), permission: z.enum(['read','triage','write','maintain','admin']), previous_permission: z.enum(['none','read','triage','write','maintain','admin']), actor_id: z.string().nullable(), baseline_captured: z.boolean(), mutation_started: z.boolean(), direct_intent: z.boolean() });
 export interface GrantDependencies {
@@ -40,23 +42,11 @@ export async function processGrant(id: string, actorId: string): Promise<boolean
   if (!db) return false;
   const scope = z.object({ team_id: z.string(), provider: z.string(), host: z.string(), owner: z.string(), provider_user_id: z.string() }).safeParse((await db.query('SELECT g.team_id,g.provider,r.host,r.owner,g.provider_user_id FROM grants g JOIN team_repos r ON r.id=g.repo_id WHERE g.id=$1', [id])).rows[0]);
   if (!scope.success) return false;
-  const locks = lockDatabase();
-  if (!locks) return false;
-  const client = await locks.connect();
   const keys = [`grant-team:${scope.data.team_id}`, `grant-user:${JSON.stringify([scope.data.provider,scope.data.host,scope.data.owner,scope.data.provider_user_id])}`];
-  const held: string[] = [];
-  try {
-    for (const key of keys) {
-      const lock = z.object({ locked: z.boolean() }).parse((await client.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked', [key])).rows[0]);
-      if (!lock.locked) return false;
-      held.push(key);
-    }
-    return await processGrantRecord(id, actorId, { sql: db, run: work => transaction(db, work), adapter: repo => accessAdapter(repo.provider, repo.team_id, repo.owner) });
-  } finally {
-    try { for (const key of held.reverse()) await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]); }
-    finally { client.release(); }
-  }
+  const result=await withGrantLocks(keys,()=>processGrantRecord(id,actorId,{sql:db,run:work=>transaction(db,work),adapter:repo=>accessAdapter(repo.provider,repo.team_id,repo.owner)}));
+  return result.acquired ? result.value : false;
 }
+
 export async function processGrantRecord(id: string, actorId: string, dependencies: GrantDependencies): Promise<boolean> {
   const db = dependencies.sql;
   const parsed = grantSchema.safeParse((await db.query('SELECT * FROM grants WHERE id = $1', [id])).rows[0]); if (!parsed.success) return false;
@@ -103,11 +93,22 @@ export async function processGrantRecord(id: string, actorId: string, dependenci
     await dependencies.run(async (sql) => { await sql.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]); await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.revoke',resourceType:'grant',resourceId:id,outcome:'success',before:{permission:g.permission},after:{permission:decision.action === 'restore' ? decision.permission : 'none'}}); }); return true;
   }
   if (g.state === 'pending' && g.provider_grant_id && !g.direct_intent && !g.provider_grant_id.startsWith('intent:')) {
-    if (user.value.permission === g.permission) { await db.query("UPDATE grants SET state='active' WHERE id=$1",[id]); return true; }
+    if (user.value.permission === g.permission) { await db.query("UPDATE grants SET state='active' WHERE id=$1 AND state='pending'",[id]); return true; }
     if (g.mechanism !== 'provider_team') return false;
   }
+  if (g.state==='pending' && !g.mutation_started) {
+    const allowed=await db.query("SELECT t.id FROM teams t JOIN team_members m ON m.team_id=t.id WHERE t.id=$1 AND m.user_id=$2 AND t.managed_access AND ($3::text IN('request_access','audit') OR t.sync_enabled)",[g.team_id,g.user_id,g.source]);
+    if(!allowed.rows.length){await db.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]);return true;}
+    if(g.source==='sync' && !user.value.organisationMember && user.value.permission==='none') {
+      await dependencies.run(async sql=>{
+        const request=z.object({id:z.string()}).safeParse((await sql.query("INSERT INTO access_requests(id,team_id,repo_id,requester_id,kind) VALUES($1,$2,$3,$4,'repository_access') ON CONFLICT DO NOTHING RETURNING id",[crypto.randomUUID(),g.team_id,g.repo_id,g.user_id])).rows[0]);
+        if(request.success)await sql.query("INSERT INTO notifications(id,user_id,team_id,kind,resource_id) SELECT gen_random_uuid()::text,user_id,$1,'access_request',$2 FROM team_members WHERE team_id=$1 AND role='admin'",[g.team_id,request.data.id]);
+      });
+      return true;
+    }
+  }
   if (g.state !== 'pending' || repo.removed_at || !repo.approved) return g.state === 'active';
-  if (!g.baseline_captured && user.value.permission !== 'none') { await db.query("UPDATE grants SET state='active',baseline_captured=true,previous_permission=$2,permission=$2 WHERE id=$1",[id,user.value.permission]); return true; }
+  if (!g.baseline_captured && user.value.permission !== 'none') { await db.query("UPDATE grants SET state='active',baseline_captured=true,previous_permission=$2,permission=$2 WHERE id=$1 AND state='pending'",[id,user.value.permission]); return true; }
   if (!g.baseline_captured) await db.query('UPDATE grants SET baseline_captured=true,previous_permission=$2 WHERE id=$1',[id,user.value.permission]);
   if (g.mutation_started && effectivePermission(g.permission,user.value.permission) === g.permission && user.value.permission !== g.permission && user.value.permission !== 'none') { await db.query("UPDATE grants SET state='drifted' WHERE id=$1",[id]); return false; }
   let group: string | null = null;
