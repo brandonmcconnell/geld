@@ -1055,7 +1055,7 @@ export class GeldController {
         if (!this.stopped) phase('diffstat', () => this.applyDiffstatSurfacesNow());
       });
     }
-    const trackerConfig=this.resolvedConfig(repo);
+    const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
     if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
 

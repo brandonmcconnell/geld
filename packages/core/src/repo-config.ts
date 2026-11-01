@@ -168,7 +168,9 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
       }),
     };
   }
-  const value: unknown = doc.toJS();
+  let value: unknown;
+  try { value = doc.toJS(); }
+  catch { return { ok: false, issues: [{ path: '$', message: 'Not valid YAML: aliases could not be resolved.' }] }; }
   const issues = collectRepoConfigIssues(value, catalog, '$', knownBots);
   if (issues.length > 0) return { ok: false, issues };
   if (value === null || value === undefined || !isRecord(value)) return { ok: true, config: EMPTY_REPO_CONFIG };

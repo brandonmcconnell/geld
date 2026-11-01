@@ -1,4 +1,4 @@
-import { connectDashboard,dashboardSessionItem,dashboardTeamItem,refreshDashboardSession,DASHBOARD_ORIGIN } from '../lib/dashboard-session';
+import { connectDashboard,selectDashboardTeam,dashboardSessionItem,dashboardTeamItem,refreshDashboardSession,DASHBOARD_ORIGIN } from '../lib/dashboard-session';
 import type { DashboardSession } from '../lib/dashboard-session';
 import { CORRUPTED_SETTINGS_COPY } from '@geld/core';
 import { RECONNECT_COPY } from '@geld/github';
@@ -96,7 +96,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
 
     renderDialog();
     const shared=el('div','geld-account__shared');
-    if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',()=>{void browser.tabs.create({url:`${DASHBOARD_ORIGIN}/settings/account`});}));if(options.variant==='full'){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void dashboardTeamItem.setValue(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
+    if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',()=>{void browser.tabs.create({url:`${DASHBOARD_ORIGIN}/settings/account`});}));if(options.variant==='full'){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void selectDashboardTeam(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
     else shared.append(button(['Sign in to Geld'],'geld-button--small geld-button--primary',()=>{void connectDashboard().catch(()=>{localError='The Geld connection could not be opened.';render();});}));
     host.append(shared);
 

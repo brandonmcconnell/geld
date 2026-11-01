@@ -20,14 +20,14 @@ export function withoutCode(text:string):string {
 }
 export function recognizeTickets(text:string,repository:TrackerRepository,config?:IssueTrackerConfig|null):readonly TrackerReference[]{
   const source=withoutCode(text).slice(0,200000);const found=new Map<string,TrackerReference>();const repo=`${repository.owner}/${repository.repo}`;
-  function add(provider:IssueTracker,id:string,url:string,scope?:string){if(found.size>=50)return;try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)return;const reference={provider,id,url:u.toString(),...(scope?{repository:scope}:{})};found.set(`${provider}:${id}:${scope??''}`,reference);}catch{}}
+  function add(provider:IssueTracker,id:string,url:string,scope?:string){if(found.size>=50)return;try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)return;const reference={provider,id,url:u.toString(),...(scope?{repository:scope}:{})};found.set(`${provider}:${u.origin}:${id}:${scope??''}`,reference);}catch{}}
   function allowedScope(scope:string){return scope.toLowerCase()===repo.toLowerCase()||!!config?.keys.some(key=>key.toLowerCase()===scope.toLowerCase());}
   const ownProvider:IssueTracker=repository.provider==='github'?'github_issues':repository.provider;
   for(const match of source.matchAll(/https:\/\/[^\s<>\[\]()`]+/g)){
     let u:URL;try{u=new URL(match[0].replace(/[.,;!?]+$/,''));}catch{continue;}if(u.username||u.password||u.port)continue;const path=u.pathname;
     let m:RegExpExecArray|null;
     if((u.hostname==='github.com'||u.hostname===repository.host&&repository.provider==='github')&&(m=/^\/([^/]+)\/([^/]+)\/issues\/([1-9]\d*)(?:\/|$)/.exec(path))){const scope=`${m[1]}/${m[2]}`;if(allowedScope(scope))add('github_issues',m[3]??'',`${u.origin}/${scope}/issues/${m[3]}`,scope);}
-    else if(config?.provider==='github_projects'&&u.hostname==='github.com'&&(m=/^\/(orgs|users)\/([^/]+)\/projects\/([1-9]\d*)/.exec(path))&&config.keys.includes(`${m[2]}/${m[3]}`))add('github_projects',m[3]??'',`${u.origin}/${m[1]}/${m[2]}/projects/${m[3]}`);
+    else if(config?.provider==='github_projects'&&u.hostname==='github.com'&&(m=/^\/(orgs|users)\/([^/]+)\/projects\/([1-9]\d*)/.exec(path))&&config.keys.includes(`${m[2]}/${m[3]}`))add('github_projects',m[3]??'',`${u.origin}/${m[1]}/${m[2]}/projects/${m[3]}`,`${m[1]}/${m[2]}/${m[3]}`);
     else if((u.hostname==='gitlab.com'||u.hostname===repository.host&&repository.provider==='gitlab')&&(m=/^\/(.+)\/-\/issues\/([1-9]\d*)/.exec(path))&&allowedScope(m[1]??''))add('gitlab',m[2]??'',`${u.origin}/${m[1]}/-/issues/${m[2]}`,m[1]);
     else if(u.hostname==='bitbucket.org'&&(m=/^\/([^/]+\/[^/]+)\/issues\/([1-9]\d*)/.exec(path))&&allowedScope(m[1]??''))add('bitbucket',m[2]??'',`${u.origin}/${m[1]}/issues/${m[2]}`,m[1]);
     else if(config?.provider==='linear'&&u.hostname==='linear.app'&&(m=/^\/([^/]+)\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)/.exec(path))&&m[1]===config.workspace&&config.keys.includes((m[2]??'').replace(/-\d+$/,'')))add('linear',m[2]??'',`${u.origin}/${m[1]}/issue/${m[2]}`);
@@ -35,7 +35,7 @@ export function recognizeTickets(text:string,repository:TrackerRepository,config
     else if(config?.provider==='youtrack'&&u.origin===config.baseUrl&&(m=/^\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)/.exec(path))&&config.keys.includes((m[1]??'').replace(/-\d+$/,'')))add('youtrack',m[1]??'',`${u.origin}/issue/${m[1]}`);
     else if(config?.provider==='asana'&&u.hostname==='app.asana.com'){
       m=/^\/0\/([0-9]+)\/([0-9]+)/.exec(path)??/^\/1\/([0-9]+)\/project\/([0-9]+)\/task\/([0-9]+)/.exec(path);
-      if(m&&config.keys.includes(m[1]??''))add('asana',m[3]??m[2]??'',u.toString());
+      if(m&&(config.keys.includes(m[1]??'')||(m[3]!==undefined&&config.keys.includes(m[2]??''))))add('asana',m[3]??m[2]??'',u.toString());
       const direct=/^\/1\/([0-9]+)\/task\/([0-9]+)/.exec(path);if(direct&&config.keys.includes(direct[1]??''))add('asana',direct[2]??'',u.toString());
     }
     else if(config?.provider==='monday'&&u.origin===config.baseUrl&&(m=/^\/boards\/([0-9]+)\/pulses\/([0-9]+)/.exec(path))&&config.keys.includes(m[1]??''))add('monday',m[2]??'',`${u.origin}/boards/${m[1]}/pulses/${m[2]}`);

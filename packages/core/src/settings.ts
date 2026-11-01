@@ -553,3 +553,7 @@ export function withCustomCategory(settings: GeldSettings, custom: CustomCategor
     index === -1 ? [...settings.customCategories, custom] : settings.customCategories.map((existing, position) => (position === index ? custom : existing));
   return { ...settings, customCategories };
 }
+
+export function withCategoryEnabled(settings: GeldSettings, id: AnyCategoryId, enabled: boolean): GeldSettings {
+  return id === 'large' ? {...settings,hideLargeDiffs:enabled} : {...settings,categories:{...settings.categories,[id]:enabled}};
+}

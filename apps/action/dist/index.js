@@ -1880,18 +1880,18 @@ var init_test_outline = __esm({
 });
 
 // ../../packages/core/src/diff-parse.ts
-function pathFromGitHeader(line) {
+function pathFromGitHeader(line, side = "new") {
   const rest = line.slice("diff --git ".length);
   if (rest.startsWith('"')) {
     const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" "b\/((?:\\.|[^"\\])*)"$/);
-    if (quoted) return unescapeGitPath(quoted[2] ?? quoted[1] ?? "");
+    if (quoted) return unescapeGitPath((side === "old" ? quoted[1] : quoted[2]) ?? "");
     return null;
   }
   const halfway = rest.indexOf(" b/");
   if (halfway === -1) return null;
   const aPath = rest.slice("a/".length, halfway);
   const bPath = rest.slice(halfway + " b/".length);
-  return bPath || aPath;
+  return side === "old" ? aPath : bPath || aPath;
 }
 function unescapeGitPath(text) {
   return text.replace(/\\(.)/g, (_match, char) => {
@@ -2141,7 +2141,7 @@ function recognizeTickets(text, repository, config2) {
       const u = new URL(url2);
       if (u.protocol !== "https:" || u.username || u.password) return;
       const reference = { provider, id, url: u.toString(), ...scope ? { repository: scope } : {} };
-      found.set(`${provider}:${id}:${scope ?? ""}`, reference);
+      found.set(`${provider}:${u.origin}:${id}:${scope ?? ""}`, reference);
     } catch {
     }
   }
@@ -2162,7 +2162,7 @@ function recognizeTickets(text, repository, config2) {
     if ((u.hostname === "github.com" || u.hostname === repository.host && repository.provider === "github") && (m = /^\/([^/]+)\/([^/]+)\/issues\/([1-9]\d*)(?:\/|$)/.exec(path))) {
       const scope = `${m[1]}/${m[2]}`;
       if (allowedScope(scope)) add("github_issues", m[3] ?? "", `${u.origin}/${scope}/issues/${m[3]}`, scope);
-    } else if (config2?.provider === "github_projects" && u.hostname === "github.com" && (m = /^\/(orgs|users)\/([^/]+)\/projects\/([1-9]\d*)/.exec(path)) && config2.keys.includes(`${m[2]}/${m[3]}`)) add("github_projects", m[3] ?? "", `${u.origin}/${m[1]}/${m[2]}/projects/${m[3]}`);
+    } else if (config2?.provider === "github_projects" && u.hostname === "github.com" && (m = /^\/(orgs|users)\/([^/]+)\/projects\/([1-9]\d*)/.exec(path)) && config2.keys.includes(`${m[2]}/${m[3]}`)) add("github_projects", m[3] ?? "", `${u.origin}/${m[1]}/${m[2]}/projects/${m[3]}`, `${m[1]}/${m[2]}/${m[3]}`);
     else if ((u.hostname === "gitlab.com" || u.hostname === repository.host && repository.provider === "gitlab") && (m = /^\/(.+)\/-\/issues\/([1-9]\d*)/.exec(path)) && allowedScope(m[1] ?? "")) add("gitlab", m[2] ?? "", `${u.origin}/${m[1]}/-/issues/${m[2]}`, m[1]);
     else if (u.hostname === "bitbucket.org" && (m = /^\/([^/]+\/[^/]+)\/issues\/([1-9]\d*)/.exec(path)) && allowedScope(m[1] ?? "")) add("bitbucket", m[2] ?? "", `${u.origin}/${m[1]}/issues/${m[2]}`, m[1]);
     else if (config2?.provider === "linear" && u.hostname === "linear.app" && (m = /^\/([^/]+)\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)/.exec(path)) && m[1] === config2.workspace && config2.keys.includes((m[2] ?? "").replace(/-\d+$/, ""))) add("linear", m[2] ?? "", `${u.origin}/${m[1]}/issue/${m[2]}`);
@@ -2170,7 +2170,7 @@ function recognizeTickets(text, repository, config2) {
     else if (config2?.provider === "youtrack" && u.origin === config2.baseUrl && (m = /^\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)/.exec(path)) && config2.keys.includes((m[1] ?? "").replace(/-\d+$/, ""))) add("youtrack", m[1] ?? "", `${u.origin}/issue/${m[1]}`);
     else if (config2?.provider === "asana" && u.hostname === "app.asana.com") {
       m = /^\/0\/([0-9]+)\/([0-9]+)/.exec(path) ?? /^\/1\/([0-9]+)\/project\/([0-9]+)\/task\/([0-9]+)/.exec(path);
-      if (m && config2.keys.includes(m[1] ?? "")) add("asana", m[3] ?? m[2] ?? "", u.toString());
+      if (m && (config2.keys.includes(m[1] ?? "") || m[3] !== void 0 && config2.keys.includes(m[2] ?? ""))) add("asana", m[3] ?? m[2] ?? "", u.toString());
       const direct = /^\/1\/([0-9]+)\/task\/([0-9]+)/.exec(path);
       if (direct && config2.keys.includes(direct[1] ?? "")) add("asana", direct[2] ?? "", u.toString());
     } else if (config2?.provider === "monday" && u.origin === config2.baseUrl && (m = /^\/boards\/([0-9]+)\/pulses\/([0-9]+)/.exec(path)) && config2.keys.includes(m[1] ?? "")) add("monday", m[2] ?? "", `${u.origin}/boards/${m[1]}/pulses/${m[2]}`);
@@ -2431,6 +2431,9 @@ function withCustomCategory(settings, custom2) {
   const index = settings.customCategories.findIndex((existing) => existing.id === custom2.id);
   const customCategories = index === -1 ? [...settings.customCategories, custom2] : settings.customCategories.map((existing, position) => position === index ? custom2 : existing);
   return { ...settings, customCategories };
+}
+function withCategoryEnabled(settings, id, enabled) {
+  return id === "large" ? { ...settings, hideLargeDiffs: enabled } : { ...settings, categories: { ...settings.categories, [id]: enabled } };
 }
 var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
 var init_settings = __esm({
@@ -10548,7 +10551,12 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
       })
     };
   }
-  const value = doc.toJS();
+  let value;
+  try {
+    value = doc.toJS();
+  } catch {
+    return { ok: false, issues: [{ path: "$", message: "Not valid YAML: aliases could not be resolved." }] };
+  }
   const issues = collectRepoConfigIssues(value, catalog, "$", knownBots);
   if (issues.length > 0) return { ok: false, issues };
   if (value === null || value === void 0 || !isRecord5(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
@@ -11060,6 +11068,21 @@ var init_settings_schema = __esm({
               { value: "ask", label: "Ask once per repository", description: "The popup asks the first time a repository provides one; the answer is remembered on this device." },
               { value: "never", label: "Never", description: "Only your own settings apply." }
             ]
+          },
+          {
+            kind: "issue-tracker",
+            key: "issueTracker",
+            popup: false,
+            label: "Personal issue tracker",
+            description: "Recognize links using your fallback tracker. Allowed repository configs and a selected Geld team can override it. This does not grant tracker access.",
+            providerLabel: "Tracker",
+            noneLabel: "No personal tracker",
+            keysLabel: "Allowed project keys, repositories or IDs",
+            keysDescription: "One scope per line. Use project keys for Linear, Jira or YouTrack, owner/repository for Git issues, owner/project-number for GitHub Projects, and workspace or project IDs for Asana or Monday.",
+            keysPlaceholder: "ENG\nacme/repository\n123456",
+            baseUrlLabel: "Tracker HTTPS origin",
+            workspaceLabel: "Linear workspace",
+            saveLabel: "Save personal tracker"
           }
         ]
       },
@@ -11320,7 +11343,7 @@ function parseUnifiedDiffHunks(text) {
         remainingNew -= 1;
       }
     }
-    files.push({ ...stats, binary: stats.kinds?.includes("binary") ?? false, hunks });
+    files.push({ ...stats, oldPath: pathFromGitHeader(block.split("\n")[0] ?? "", "old") ?? stats.path, binary: stats.kinds?.includes("binary") ?? false, hunks });
   }
   return files;
 }
@@ -11473,6 +11496,7 @@ __export(src_exports, {
   parseTestSyntax: () => parseTestSyntax,
   parseUnifiedDiff: () => parseUnifiedDiff,
   parseUnifiedDiffHunks: () => parseUnifiedDiffHunks,
+  pathFromGitHeader: () => pathFromGitHeader,
   plainText: () => plainText,
   pluralize: () => pluralize,
   readRemote: () => readRemote,
@@ -11495,6 +11519,7 @@ __export(src_exports, {
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
+  withCategoryEnabled: () => withCategoryEnabled,
   withCustomCategory: () => withCustomCategory,
   withRepoRule: () => withRepoRule,
   withoutCode: () => withoutCode,
@@ -11760,46 +11785,62 @@ function createApiTransport(options) {
       const url2 = new URL(path, base);
       if (url2.origin !== base.origin || !url2.pathname.startsWith(base.pathname)) return { ok: false, reason: "invalid_response" };
       const method = init.method ?? "GET";
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const access = await options.source.get({ force: attempt === 1 });
-        if (access.status === "unavailable") return { ok: false, reason: "unavailable" };
-        if (access.status === "signed-out" && !(options.anonymousReads === true && method === "GET") && !(options.anonymousWrites === true && method === "POST")) return { ok: false, reason: "signed_out" };
-        const headers2 = { Accept: init.accept ?? "application/json" };
-        if (access.status === "ok") headers2.Authorization = `Bearer ${access.token}`;
-        if (base.hostname === "api.github.com" || base.pathname.includes("/api/v3")) headers2["X-GitHub-Api-Version"] = "2022-11-28";
-        if (init.body !== void 0 && init.rawBody !== void 0) return { ok: false, reason: "invalid_response" };
-        if (init.body !== void 0 || init.rawBody !== void 0) headers2["Content-Type"] = init.contentType ?? "application/json";
-        let response;
-        try {
-          let target = url2;
-          for (let redirects = 0; ; redirects += 1) {
-            response = await fetchImpl(target.toString(), { method, headers: headers2, redirect: "manual", ...init.rawBody !== void 0 ? { body: init.rawBody } : init.body === void 0 ? {} : { body: JSON.stringify(init.body) } });
-            if (![301, 302, 303, 307, 308].includes(response.status)) break;
-            const location = response.headers.get("location");
-            if (method !== "GET" || !location || redirects >= 2) return { ok: false, reason: "unavailable" };
-            const next = new URL(location, target);
-            if (next.origin !== base.origin || !next.pathname.startsWith(base.pathname) || next.username || next.password) return { ok: false, reason: "permission", required: null, url: null };
-            target = next;
+      const sources = [options.source, ...options.source.alternatives ?? []];
+      candidates: for (let index = 0; index < sources.length; index += 1) {
+        const source = sources[index];
+        if (!source) continue;
+        const moreSources = index < sources.length - 1;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const access = await source.get({ force: attempt === 1 });
+          if (access.status !== "ok" && moreSources) continue candidates;
+          if (access.status === "unavailable") return { ok: false, reason: "unavailable" };
+          if (access.status === "signed-out" && !(options.anonymousReads === true && method === "GET") && !(options.anonymousWrites === true && method === "POST")) return { ok: false, reason: "signed_out" };
+          const headers2 = { Accept: init.accept ?? "application/json" };
+          if (access.status === "ok") headers2.Authorization = `Bearer ${access.token}`;
+          if (base.hostname === "api.github.com" || base.pathname.includes("/api/v3")) headers2["X-GitHub-Api-Version"] = "2022-11-28";
+          if (init.body !== void 0 && init.rawBody !== void 0) return { ok: false, reason: "invalid_response" };
+          if (init.body !== void 0 || init.rawBody !== void 0) headers2["Content-Type"] = init.contentType ?? "application/json";
+          let response;
+          try {
+            let target = url2;
+            for (let redirects = 0; ; redirects += 1) {
+              response = await fetchImpl(target.toString(), { method, headers: headers2, redirect: "manual", ...init.rawBody !== void 0 ? { body: init.rawBody } : init.body === void 0 ? {} : { body: JSON.stringify(init.body) } });
+              if (![301, 302, 303, 307, 308].includes(response.status)) break;
+              const location = response.headers.get("location");
+              if (method !== "GET" || !location || redirects >= 2) return { ok: false, reason: "unavailable" };
+              const next = new URL(location, target);
+              if (next.origin !== base.origin || !next.pathname.startsWith(base.pathname) || next.username || next.password) return { ok: false, reason: "permission", required: null, url: null };
+              target = next;
+            }
+          } catch {
+            return { ok: false, reason: "unavailable" };
           }
-        } catch {
-          return { ok: false, reason: "unavailable" };
-        }
-        if (response.status === 401 && attempt === 0 && access.status === "ok") continue;
-        if (response.status === 401) return { ok: false, reason: "signed_out" };
-        if (response.status === 429 || response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0") {
-          const retry = Number(response.headers.get("retry-after"));
-          const reset = Number(response.headers.get("x-ratelimit-reset"));
-          return { ok: false, reason: "rate_limit", retryAt: retry > 0 ? now() + retry * 1e3 : reset > 0 ? reset * 1e3 : null };
-        }
-        if (response.status === 403) return { ok: false, reason: "permission", required: response.headers.get("x-accepted-github-permissions"), url: null };
-        if (response.status === 404) return { ok: false, reason: "not_found" };
-        if (!response.ok) return { ok: false, reason: "unavailable" };
-        if (response.status === 204) return { ok: true, value: null };
-        try {
-          const value = init.text === true ? await response.text() : await response.json();
-          return { ok: true, value };
-        } catch {
-          return { ok: false, reason: "invalid_response" };
+          if (response.status === 401 && attempt === 0 && access.status === "ok") continue;
+          if (response.status === 401) {
+            if (moreSources) continue candidates;
+            return { ok: false, reason: "signed_out" };
+          }
+          if (response.status === 429 || response.status === 403 && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after"))) {
+            const retry = Number(response.headers.get("retry-after"));
+            const reset = Number(response.headers.get("x-ratelimit-reset"));
+            return { ok: false, reason: "rate_limit", retryAt: retry > 0 ? now() + retry * 1e3 : reset > 0 ? reset * 1e3 : null };
+          }
+          if (response.status === 403) {
+            if (moreSources) continue candidates;
+            return { ok: false, reason: "permission", required: response.headers.get("x-accepted-github-permissions"), url: null };
+          }
+          if (response.status === 404) {
+            if (moreSources) continue candidates;
+            return { ok: false, reason: "not_found" };
+          }
+          if (!response.ok) return { ok: false, reason: "unavailable" };
+          if (response.status === 204) return { ok: true, value: null };
+          try {
+            const value = init.text === true ? await response.text() : await response.json();
+            return { ok: true, value };
+          } catch {
+            return { ok: false, reason: "invalid_response" };
+          }
         }
       }
       return { ok: false, reason: "signed_out" };
@@ -11817,17 +11858,17 @@ function parseQuery(query) {
   const words = query.match(/(?:[^\s"\\]|\\.|"(?:\\.|[^"\\])*")+/g) ?? [];
   return words.map((word) => {
     const colon = word.indexOf(":");
-    const key = colon > 0 && /^[a-z][a-z-]*$/i.test(word.slice(0, colon)) ? word.slice(0, colon).toLowerCase() : null;
+    const key = colon > 0 && /^-?[a-z][a-z-]*$/i.test(word.slice(0, colon)) ? word.slice(0, colon).toLowerCase() : null;
     const raw = key === null ? word : word.slice(colon + 1);
     const value = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1).replace(/\\(["\\])/g, "$1") : raw;
-    return { key, value };
+    return { key, value, ...key === null && raw.startsWith('"') && raw.endsWith('"') ? { quoted: true } : {} };
   });
 }
-function quote(value) {
-  return /[\s"\\]/.test(value) ? `"${value.replace(/["\\]/g, "\\$&")}"` : value;
+function quote(value, force = false) {
+  return force || /[\s"\\]/.test(value) ? `"${value.replace(/["\\]/g, "\\$&")}"` : value;
 }
 function serializeQuery(tokens) {
-  return tokens.map((token) => `${token.key === null ? "" : `${token.key}:`}${quote(token.value)}`).join(" ");
+  return tokens.map((token) => `${token.key === null ? "" : `${token.key}:`}${quote(token.value, token.quoted === true)}`).join(" ");
 }
 function setQualifier(query, key, value) {
   const tokens = parseQuery(query).filter((token) => token.key !== key);
@@ -33632,7 +33673,7 @@ var CHECK_REPORTERS = [
 ];
 
 // ../../packages/review/src/plan.ts
-var hunkRefSchema = external_exports.object({ path: external_exports.string(), hunk: external_exports.number().int().nonnegative() });
+var hunkRefSchema = external_exports.object({ path: external_exports.string(), hunk: external_exports.number().int().min(-1) });
 var stepKindSchema = external_exports.enum(["feature", "fix", "refactor", "tests", "docs", "chore", "generated", "other"]);
 var reviewStepSchema = external_exports.object({
   id: external_exports.string(),

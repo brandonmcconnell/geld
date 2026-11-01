@@ -49,7 +49,7 @@ export async function reviewSettings(ref: RepositoryRef, background?: {readonly 
   const configs: RepoConfig[] = [];
   for (const text of [org, repo]) if (text) {
     const parsed = parseRepoConfig(text, undefined, REVIEW_BOTS.map((bot) => bot.id));
-    if (parsed.ok) { configs.push(parsed.config); if(parsed.config.issueTracker)issueTracker=parsed.config.issueTracker; if (parsed.config.review?.ai === false) aiAllowed = false; }
+    if (parsed.ok) { configs.push(parsed.config); if(settings.repoConfigs!=='never'&&parsed.config.issueTracker)issueTracker=parsed.config.issueTracker; if (parsed.config.review?.ai === false) aiAllowed = false; }
     else { warning = 'A repository configuration is invalid. AI processing is paused until it is fixed.'; aiAllowed = false; }
   }
   if (attributes) configs.push(generatedConfigFrom(attributes));

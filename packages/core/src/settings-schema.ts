@@ -147,7 +147,20 @@ export interface ActionsField extends FieldBase {
   readonly actions: readonly MaintenanceAction[];
 }
 
-export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
+export interface IssueTrackerField extends FieldBase {
+  readonly kind: 'issue-tracker';
+  readonly key: 'issueTracker';
+  readonly providerLabel: string;
+  readonly noneLabel: string;
+  readonly keysLabel: string;
+  readonly keysDescription: string;
+  readonly keysPlaceholder: string;
+  readonly baseUrlLabel: string;
+  readonly workspaceLabel: string;
+  readonly saveLabel: string;
+}
+
+export type SettingsField = IssueTrackerField | ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
 
 export type SettingsSectionId = 'general' | 'hide' | 'tests' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
@@ -400,6 +413,16 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'ask', label: 'Ask once per repository', description: 'The popup asks the first time a repository provides one; the answer is remembered on this device.' },
           { value: 'never', label: 'Never', description: 'Only your own settings apply.' },
         ],
+      },
+      {
+        kind: 'issue-tracker', key: 'issueTracker', popup: false,
+        label: 'Personal issue tracker',
+        description: 'Recognize links using your fallback tracker. Allowed repository configs and a selected Geld team can override it. This does not grant tracker access.',
+        providerLabel: 'Tracker', noneLabel: 'No personal tracker',
+        keysLabel: 'Allowed project keys, repositories or IDs',
+        keysDescription: 'One scope per line. Use project keys for Linear, Jira or YouTrack, owner/repository for Git issues, owner/project-number for GitHub Projects, and workspace or project IDs for Asana or Monday.',
+        keysPlaceholder: 'ENG\nacme/repository\n123456',
+        baseUrlLabel: 'Tracker HTTPS origin', workspaceLabel: 'Linear workspace', saveLabel: 'Save personal tracker',
       },
     ],
   },
