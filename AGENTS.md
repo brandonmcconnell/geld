@@ -1562,6 +1562,16 @@ Provider-specific surfaces translate settings and sources into shared review and
   Count-group hover retains native focus and ARIA ownership while positioning the popover at the visible hint, with a native-host fallback at responsive breakpoints.
   Moving across wrapped commit-link lines updates only popover geometry after genuine pointer intent, without another source fetch.
   GitLab's commit reference hook mounts its provider card only once, and Escape can leave that card mounted but hidden, so installed pointer and keyboard tests record separate native visits when the card cannot reopen instead of patching provider state or accepting a hidden chip.
+  The GitLab digest reference index reads only mounted native description links and matching server-system-note events, with full origin, namespace, project, resource ID and IID identity and no extra lookup.
+  GitLab validates its exact native reference routes and note IDs inside its adapter, while shared reference rendering validates review scope and URL safety without imposing one provider's path or fragment conventions.
+  Valid native trailing-slash target URLs retain their source identity and spelling through extraction, rendering and original-source reacquisition.
+  The same GitLab issue can appear as a native work_item/data-work-item description link and an issue/data-issue system-note link at the same work_items URL, so durable identity joins those aliases while the first actual native URL and label stay intact.
+  A GitLab system note repeats its incoming reference in the headline and collapsed body, so only its verified system-note-content headline is indexed and each note/target pair is counted once.
+  Reference labels and cached native titles do not establish target state, and native GFM initialization attributes and listeners are never copied into the digest.
+  A native title temporarily held in Geld's existing hover-title cache remains the same source title while its count popover owns the tooltip.
+  View in conversation reacquires the current exact native reference, reveals only Geld-owned compaction and rejects changed review, head, selection, source or framework-hidden content before focusing the original anchor.
+  Unknown, ambiguous, localized or unmounted reference shapes stay in ordinary activity rather than being guessed as complete incoming references, and Bitbucket reference acquisition remains unverified.
+
   Compacted original conversation entries use `hidden="until-found"` only when the browser supports beforematch and the exact native root can be folded without overriding native visibility or editing controls.
   Beforematch and exact fragment navigation reveal that original for the visit, while an explicit Hide remains effective until a later changed fragment requests it again.
   Unsupported or natively owned roots remain visible with their native behavior rather than receiving a misleading owned disclosure control.

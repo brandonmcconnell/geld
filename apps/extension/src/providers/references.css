@@ -1,0 +1,5 @@
+.geld-provider-review__reference { display: flex; flex-direction: column; gap: var(--geld-provider-space-2); margin-block: var(--geld-provider-space-3); }
+.geld-provider-review__reference-link { display: flex; align-items: baseline; gap: var(--geld-provider-space-3); min-inline-size: 0; color: var(--geld-provider-link); font: inherit; }
+.geld-provider-review__reference-label { flex: 0 0 auto; max-inline-size: 100%; overflow-wrap: anywhere; }
+.geld-provider-review__reference-title { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geld-provider-review__reference-link:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }

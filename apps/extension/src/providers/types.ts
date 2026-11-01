@@ -2,6 +2,7 @@ import type { FileStats, RepositoryIdentity } from '@geld/core';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
+import type { ProviderReviewReference } from './references';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
 
@@ -172,6 +173,8 @@ export interface ProviderAdapter {
   fetchDiff(page: ProviderPage, signal: AbortSignal): Promise<ProviderDiffResult>;
   readonly fetchConfig?: ProviderConfigFetcher;
   reviewHost?(doc: Document): HTMLElement | null;
+  readReferences?(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ProviderReviewReference[];
+  referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): HTMLAnchorElement | null;
   conversationRoots?(doc: Document): readonly ProviderConversationRoot[];
   descriptionHost?(doc: Document): HTMLElement | null;
   actionHost?(doc: Document): HTMLElement | null;
