@@ -82,3 +82,34 @@ it('keeps authentication failure distinct from empty commit data and prevents re
   await expect(client.comments(signal)).rejects.toMatchObject({ reason: 'invalid-response' });
   expect(requests).toHaveLength(1);
 });
+
+it('revalidates an abbreviated standalone commit before and after pinned acquisition', async () => {
+  const prefix = HEAD.slice(0, 12);
+  let origin = HEAD;
+  let cached: string | null = null;
+  const policies: Array<{ readonly identity: boolean; readonly cache: RequestCache | undefined }> = [];
+  const { client, requests, signal } = setup(prefix, (url, init) => {
+    const identity = url.pathname.includes('/commit/');
+    policies.push({ identity, cache: init?.cache });
+    if (identity) {
+      const hash = init?.cache === 'no-cache' || cached === null ? origin : cached;
+      cached = hash;
+      origin = prefix + 'a'.repeat(28);
+      return json({ hash });
+    }
+    return url.pathname.includes('/diffstat/') ? json({ size: 1, values: [FILE] }) : new Response(PATCH);
+  });
+  await expect(client.diff(signal)).rejects.toMatchObject({ reason: 'changed' });
+  expect(requests).toHaveLength(4);
+  expect(policies.filter(({ identity }) => identity).map(({ cache }) => cache)).toEqual(['no-cache', 'no-cache']);
+  expect(policies.filter(({ identity }) => !identity).every(({ cache }) => cache === undefined)).toBe(true);
+});
+
+it('retains the default HTTP cache policy for a full immutable commit and its payloads', async () => {
+  const { client, requests, signal } = setup(HEAD, (url, init) => {
+    expect(init?.cache).toBeUndefined();
+    return url.pathname.includes('/commit/') ? json({ hash: HEAD }) : url.pathname.includes('/diffstat/') ? json({ size: 1, values: [FILE] }) : new Response(PATCH);
+  });
+  expect((await client.diff(signal)).complete).toBe(true);
+  expect(requests).toHaveLength(3);
+});

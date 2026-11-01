@@ -246,9 +246,9 @@ function retryAfter(value: string | null): number | null {
   return Number.isFinite(deadline) ? Math.max(0, Math.min(deadline - Date.now(), 60 * 60 * 1000)) : null;
 }
 
-async function jsonResponse(url: string, origin: string, signal: AbortSignal): Promise<{ readonly value: unknown; readonly response: Response }> {
+async function jsonResponse(url: string, origin: string, signal: AbortSignal, cache?: RequestCache): Promise<{ readonly value: unknown; readonly response: Response }> {
   if (sameOriginUrl(url, origin) === null) throw new GitLabReviewError('Refused a review endpoint outside this GitLab host.');
-  const response = await fetch(url, { credentials: 'same-origin', redirect: 'error', headers: { Accept: 'application/json' }, signal });
+  const response = await fetch(url, { credentials: 'same-origin', redirect: 'error', headers: { Accept: 'application/json' }, signal, ...(cache === undefined ? {} : { cache }) });
   if (!response.ok) throw new GitLabReviewError(`GitLab review source returned ${response.status}.`, response.status, retryAfter(response.headers.get('retry-after')));
   if (response.url !== '' && sameOriginUrl(response.url, origin) === null) throw new GitLabReviewError('GitLab redirected a review source to another host.');
   const type = response.headers.get('content-type') ?? '';
@@ -357,7 +357,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const base = `${origin}/${page.repository.path}/-/merge_requests/${page.number}`;
   const project = encodeURIComponent(page.repository.path);
   const api = `${origin}/api/v4/projects/${project}/merge_requests/${page.number}`;
-  const mr = (await jsonResponse(api, origin, signal)).value;
+  const mr = (await jsonResponse(api, origin, signal, 'no-cache')).value;
   if (!record(mr) || nativeId(mr.iid) !== page.number || typeof mr.sha !== 'string' || !SHA.test(mr.sha)) throw new GitLabReviewError('GitLab returned invalid merge request metadata.');
   if (page.headSha !== null && page.headSha !== mr.sha) throw new GitLabReviewError('The merge request head changed. Refresh its review sources.');
   const subject: ProviderReviewSubject = { provider: 'gitlab', origin, repository: page.repository.path, id: page.number, headSha: mr.sha };
@@ -448,7 +448,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
     }
   }
   if (invalidPipelines) checksCoverage = checks.length > 0 ? 'partial' : 'unavailable';
-  const latest = (await jsonResponse(api, origin, signal)).value;
+  const latest = (await jsonResponse(api, origin, signal, 'no-cache')).value;
   if (!record(latest) || latest.sha !== mr.sha) throw new GitLabReviewError('The merge request changed while its review was loading.');
   const state = mergeRequestState(latest.state);
   const complete = unavailable.length === 0;

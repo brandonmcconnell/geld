@@ -5,8 +5,8 @@ import { record, selection, SHA } from './page';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 
-export async function readGitLabDiffResource(url: URL, signal: AbortSignal): Promise<string> {
-  const response = await fetch(url, { credentials: 'same-origin', signal, headers: { Accept: url.searchParams.get('format') === 'diff' || url.pathname.endsWith('.diff') ? 'text/plain' : 'application/json' } });
+export async function readGitLabDiffResource(url: URL, signal: AbortSignal, cache?: RequestCache): Promise<string> {
+  const response = await fetch(url, { credentials: 'same-origin', signal, ...(cache === undefined ? {} : { cache }), headers: { Accept: url.searchParams.get('format') === 'diff' || url.pathname.endsWith('.diff') ? 'text/plain' : 'application/json' } });
   if (!response.ok) {
     const error = new Error(response.status === 401 || response.status === 403 ? 'Sign in to GitLab to read these changes' : `GitLab answered HTTP ${response.status}`);
     throw Object.assign(error, { retryAfter: response.headers.get('retry-after') });
@@ -37,8 +37,8 @@ export async function readGitLabDiffResource(url: URL, signal: AbortSignal): Pro
   return text;
 }
 
-export async function readGitLabDiffJson(url: URL, signal: AbortSignal): Promise<unknown> {
-  const text = await readGitLabDiffResource(url, signal);
+export async function readGitLabDiffJson(url: URL, signal: AbortSignal, cache?: RequestCache): Promise<unknown> {
+  const text = await readGitLabDiffResource(url, signal, cache);
   try { return JSON.parse(text); } catch { throw new Error('GitLab returned invalid change metadata'); }
 }
 

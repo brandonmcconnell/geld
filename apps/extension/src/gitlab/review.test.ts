@@ -226,6 +226,28 @@ describe('GitLab review acquisition', () => {
     await expect(fetchGitLabReview(page, new AbortController().signal)).rejects.toThrow('changed while');
   });
 
+  it('revalidates mutable MR snapshots so a fresh HTTP cache cannot hide a moved head', async () => {
+    let origin = SHA;
+    let cached: string | null = null;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/discussions.json') || url.includes('/pipelines?') || url.includes('/reviewers?')) return json([]);
+      if (url.endsWith('/approvals')) return json({ approved_by: [] });
+      const sha = init?.cache === 'no-cache' || cached === null ? origin : cached;
+      cached = sha;
+      origin = 'b'.repeat(40);
+      return json({ iid: 7, sha, state: 'opened' });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    await expect(fetchGitLabReview(page, new AbortController().signal)).rejects.toThrow('changed while');
+    const metadata = fetcher.mock.calls.filter(([url]) => String(url).endsWith('/merge_requests/7'));
+    expect(metadata).toHaveLength(2);
+    expect(metadata.every(([, init]) => init?.cache === 'no-cache')).toBe(true);
+    const other = fetcher.mock.calls.filter(([url]) => !String(url).endsWith('/merge_requests/7'));
+    expect(other).toHaveLength(4);
+    expect(other.every(([, init]) => init?.cache === undefined)).toBe(true);
+  });
+
   it('preserves rate-limit retry timing and rejects looping discussion pagination', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       if (input.includes('/discussions.json')) return json({ error: 'Too many requests' }, 429, { 'retry-after': '12' });

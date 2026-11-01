@@ -172,6 +172,51 @@ describe('Bitbucket diff acquisition from documented API shapes', () => {
     await expect(client.diff(signal())).rejects.toMatchObject({ reason: 'changed' });
   });
 
+  it('revalidates PR identity around pinned payloads instead of accepting a fresh cached head', async () => {
+    let origin = PR;
+    let cached: typeof PR | null = null;
+    const policies: Array<{ readonly url: string; readonly cache: RequestCache | undefined }> = [];
+    const { client, requests } = setup((url, init) => {
+      policies.push({ url: url.pathname, cache: init?.cache });
+      if (url.pathname === ROOT) {
+        const value = init?.cache === 'no-cache' || cached === null ? origin : cached;
+        cached = value;
+        origin = { ...PR, source: { commit: { hash: 'c'.repeat(40) } } };
+        return json(value);
+      }
+      return url.pathname.includes('/diffstat/') ? json({ size: 2, values: [TEST, SOURCE] }) : new Response(PATCH);
+    });
+    await expect(client.diff(signal())).rejects.toMatchObject({ reason: 'changed' });
+    expect(requests).toHaveLength(4);
+    expect(policies.filter(({ url }) => url === ROOT).map(({ cache }) => cache)).toEqual(['no-cache', 'no-cache']);
+    expect(policies.filter(({ url }) => url !== ROOT).every(({ cache }) => cache === undefined)).toBe(true);
+  });
+
+  it('revalidates abbreviated PR commits separately for each snapshot without extra reads', async () => {
+    const prefix = 'abcdef012345';
+    let origin = prefix + 'a'.repeat(28);
+    let cached: string | null = null;
+    const policies: Array<{ readonly url: string; readonly cache: RequestCache | undefined }> = [];
+    const short = { ...PR, source: { repository: { full_name: 'acme/widgets' }, commit: { hash: prefix } } };
+    const { client, requests } = setup((url, init) => {
+      policies.push({ url: url.pathname, cache: init?.cache });
+      if (url.pathname === ROOT) return json(short);
+      if (url.pathname.includes('/commit/')) {
+        const hash = init?.cache === 'no-cache' || cached === null ? origin : cached;
+        cached = hash;
+        origin = prefix + 'b'.repeat(28);
+        return json({ hash });
+      }
+      return url.pathname.includes('/diffstat/') ? json({ size: 2, values: [TEST, SOURCE] }) : new Response(PATCH);
+    });
+    await expect(client.diff(signal())).rejects.toMatchObject({ reason: 'changed' });
+    expect(requests).toHaveLength(6);
+    const identities = policies.filter(({ url }) => url === ROOT || url.includes('/commit/'));
+    expect(identities).toHaveLength(4);
+    expect(identities.every(({ cache }) => cache === 'no-cache')).toBe(true);
+    expect(policies.filter(({ url }) => url !== ROOT && !url.includes('/commit/')).every(({ cache }) => cache === undefined)).toBe(true);
+  });
+
   it('rejects opaque browser redirects without following an unreadable destination', async () => {
     const opaque = new Response(null);
     Object.defineProperties(opaque, { type: { value: 'opaqueredirect' }, status: { value: 0 } });
