@@ -101,6 +101,7 @@ describe('GitLab review acquisition', () => {
     vi.stubGlobal('fetch', fetcher);
     const snapshot = await fetchGitLabReview(page, new AbortController().signal);
     expect(snapshot.input.threads).toHaveLength(2);
+    expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
     expect(snapshot.approvalsRequired).toBe(2);
     expect(snapshot.approvalsLeft).toBe(1);
     expect(snapshot.input.reviewers).toMatchObject([
@@ -129,6 +130,7 @@ describe('GitLab review acquisition', () => {
     expect(snapshot.unavailable).toMatchObject([{ area: 'reviews' }, { area: 'checks' }]);
     expect(snapshot.complete).toBe(false);
     expect(snapshot.input.complete).toBe(false);
+    expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
   });
 
   it('never assigns an unrelated older pipeline to the current merge request head', async () => {
@@ -254,4 +256,81 @@ describe('GitLab source state and completeness', () => {
     }));
     await expect(fetchGitLabReview(page, new AbortController().signal)).rejects.toThrow('invalid merge request state');
   });
+});
+
+
+it('keeps fully read GitLab comments separate from unknown native diff-thread state', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (input.includes('/discussions.json')) return json([discussion('a'.repeat(40), [note(11)], { diff_discussion: true, position: { new_path: 'src/a.ts', new_line: 5 } })]);
+    if (input.includes('/pipelines?') || input.includes('/reviewers?')) return json([]);
+    if (input.endsWith('/approvals')) return json({ approved_by: [] });
+    return json({ iid: 7, sha: SHA, state: 'opened' });
+  }));
+  const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+  expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'partial' });
+  expect(snapshot.input.threads[0]?.stateKnown).toBe(false);
+  expect(snapshot.unavailable).toContainEqual(expect.objectContaining({ area: 'thread state' }));
+  expect(snapshot.complete).toBe(false);
+});
+
+it('matches a real CI adapter publication against web-normalized GitLab discussion facts', async () => {
+  // Protocol fixtures only: REST body/resolvable-note states and web note/aggregate
+  // states model the documented API families, with no provider requests or writes.
+  const { readProviderCiConfig } = await import('../../../action/src/providers/config');
+  const { ProviderHttp } = await import('../../../action/src/providers/http');
+  const { GitLabCiAdapter } = await import('../../../action/src/providers/gitlab');
+  const { produceProviderSummary } = await import('../../../action/src/providers/summary');
+  const { parsePublishedSummaryBody, readProviderPublication } = await import('@geld/review');
+  const nativeNotes = [note(11, 'This crashes.', { resolvable: true, resolved: true, type: 'DiscussionNote' }), note(12, 'Still reproduces.', { resolvable: true, resolved: false, type: 'DiscussionNote' })];
+  const discussionId = 'a'.repeat(40);
+  let saved = '';
+  let discussionReads = 0;
+  const config = readProviderCiConfig({ GELD_PROVIDER: 'gitlab', GELD_REPOSITORY: subject.repository, GELD_REVIEW_NUMBER: subject.id, GELD_TOKEN: 'local-protocol-fixture' });
+  const ciFetch: typeof fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname.endsWith('/user')) return json({ id: 7 });
+    if (url.pathname.endsWith('/discussions')) {
+      discussionReads += 1;
+      return json([{ id: discussionId, notes: nativeNotes.map((entry) => ({ ...entry, body: entry.note })) }]);
+    }
+    if (url.pathname.endsWith('/notes')) {
+      if (init?.method === 'POST' && typeof init.body === 'string') {
+        const body: unknown = JSON.parse(init.body);
+        if (typeof body !== 'object' || body === null || !('body' in body) || typeof body.body !== 'string') throw new Error('Missing generated summary');
+        saved = body.body;
+        return json({ id: 901 });
+      }
+      return json([]);
+    }
+    if (url.pathname.endsWith('/approvals')) return json({ approved_by: [] });
+    if (url.pathname.endsWith('/reviewers') || url.pathname.endsWith('/pipelines')) return json([]);
+    return json({ iid: 7, sha: SHA, state: 'opened' });
+  };
+  expect(await produceProviderSummary(new GitLabCiAdapter(new ProviderHttp(config, ciFetch)))).toBe('created');
+  expect(discussionReads).toBe(1);
+  const publication = parsePublishedSummaryBody(saved);
+  if (!publication.ok) throw new Error('Invalid CI publication');
+  expect(publication.value.nativePublication?.items).toHaveLength(1);
+  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (input.includes('/discussions.json')) return json([
+      discussion(discussionId, nativeNotes, { resolved: false }),
+      discussion('b'.repeat(40), [note(901, saved, { author: { id: 7, username: 'geld-ci' } })], { resolvable: false }),
+    ]);
+    if (input.endsWith('/approvals')) return json({ error: 'Not available' }, 403);
+    if (input.includes('/reviewers?') || input.includes('/pipelines?')) return json([]);
+    return json({ iid: 7, sha: SHA, state: 'opened' });
+  }));
+  const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+  expect(snapshot.complete).toBe(false);
+  expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
+  expect(snapshot.input.threads[0]).toMatchObject({ id: discussionId, anchor: `discussion_${discussionId}`, resolved: false, stateKnown: true });
+  const { createNativePublication, buildProviderReviewItems } = await import('@geld/review');
+  const actualProof = await createNativePublication(snapshot.input, buildProviderReviewItems(snapshot.input));
+  expect(actualProof).toEqual(publication.value.nativePublication);
+  const read = await readProviderPublication({ input: snapshot.input, comments: snapshot.comments, sourceCoverage: snapshot.sourceCoverage, trustedPublisherIds: ['7'] });
+  expect(read.issues).toEqual([]);
+  expect(read.status).toBe('current');
+  expect(read.matchedItemIds.size).toBe(1);
+  expect(read.comments).toEqual([]);
+  expect(read.input.threads[0]?.comments).toHaveLength(2);
 });

@@ -1,8 +1,9 @@
 import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, sourceLink } from '@geld/review';
-import type { BotVerdictRecord, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
+import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
 import { renderReviewerIdentity } from './reviewer-identity';
+import { renderPublisherIdentity } from './publisher-identity';
 import type { ReviewerIdentityChoice, ReviewerIdentityControl } from './reviewer-identity';
 
 export interface ProviderReviewPanelEvent {
@@ -78,6 +79,11 @@ export interface ProviderReviewPanelOptions {
     readonly repository: RepositoryIdentity;
     readonly choices: readonly ReviewerIdentityChoice[];
     readonly save: (comment: ProviderReviewComment, botId: string) => Promise<void>;
+  };
+  readonly publication?: {
+    readonly result: ProviderPublicationRead;
+    readonly repository: RepositoryIdentity;
+    readonly save?: (comment: ProviderReviewComment) => Promise<void>;
   };
 }
 
@@ -614,9 +620,52 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
+  function publicationSection(): HTMLElement | null {
+    const publication = options.publication;
+    if (publication === undefined || publication.result.status === 'none') return null;
+    const { result } = publication;
+    const section = node('div', '', 'geld-provider-review__publication');
+    section.dataset.geldPublication = result.status;
+    const labels: Readonly<Record<ProviderPublicationRead['status'], string>> = {
+      none: '', untrusted: 'Published Geld summary', invalid: 'Published summary unavailable',
+      stale: 'Earlier published summary', partial: 'Published summary · partially verified', current: 'Published summary · current sources',
+    };
+    section.append(node('strong', labels[result.status]));
+    const candidate = result.candidate;
+    if (candidate !== null) {
+      const { comment } = candidate;
+      const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
+      if (url === null) return null;
+      const byline = node('p', `Published by ${comment.author.login} · `, 'geld-provider-review__muted');
+      const time = timestamp(candidate.generatedAt);
+      if (time !== null) byline.append(time, doc.createTextNode(' · '));
+      byline.append(link('View original summary', url, comment.anchor));
+      section.append(byline);
+      const save = publication.save;
+      if (result.status === 'untrusted' && save !== undefined) {
+        identities.push(renderPublisherIdentity(section, comment, publication.repository, () => save(comment)));
+      }
+    }
+    if (result.status === 'current' || result.status === 'partial') {
+      const count = result.matchedItemIds.size;
+      section.append(node('p', `${count} ${count === 1 ? 'item checked' : 'items checked'} against current sources.`, 'geld-provider-review__muted'));
+    }
+    for (const issue of result.issues) section.append(node('p', issue, 'geld-provider-review__muted'));
+    return section;
+  }
+
   function digestText(): string {
     const lines = ['# Geld review digest', providerReviewUrl(input.subject), ''];
     if ((options.complete ?? input.complete) === false || (options.unavailable?.length ?? 0) > 0) lines.push('Some review data is unavailable.', '');
+    const publication = options.publication?.result;
+    if (publication !== undefined && publication.status !== 'none') {
+      lines.push(`Published summary: ${publication.status}.`);
+      const comment = publication.candidate?.comment;
+      if (comment !== undefined) {
+        const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
+        if (url !== null) lines.push(`Publisher: ${comment.author.login} · ${url}`);
+      }
+    }
     for (const reviewer of input.reviewers ?? []) lines.push(`- ${reviewer.author.login}: ${STANDING[reviewer.state]}`);
     const summary = options.ai?.enabled === true && options.ai.state.key === identity ? options.ai.state.summary : undefined;
     if (summary !== undefined) lines.push('', `AI summary: ${summary.tldr}`, '');
@@ -667,7 +716,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         if (presentation !== null && presentation.authorId === comment.author.id && presentation.displayName.trim() !== '') authorPresentations.set(authorPresentationKey(comment), presentation);
       } catch { /* A replaced native header falls back to the normalized author. */ }
     }
-    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
+    const publication = options.publication?.result;
+    const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
+    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
@@ -739,6 +790,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       header.append(controls);
     }
     const children: HTMLElement[] = [header];
+    const published = publicationSection();
+    if (published !== null) children.push(published);
     if (options.localReviewed?.error !== undefined) {
       const error = node('p', `Local review marks: ${options.localReviewed.error}`, 'geld-provider-review__unavailable');
       error.setAttribute('role', 'alert');

@@ -19031,6 +19031,45 @@ var previewRecordSchema = external_exports.object({
   updatedAt: isoDate.optional(),
   reason: external_exports.string().min(1).max(200).optional()
 });
+var nativePublicationSchema = external_exports.object({
+  v: external_exports.literal(1),
+  subject: external_exports.object({
+    provider: external_exports.enum(["gitlab", "bitbucket"]),
+    origin: external_exports.string().max(500).refine((value) => httpOrigin(value) === value),
+    repository: external_exports.string().min(3).max(500).refine((value) => {
+      const parts = value.split("/");
+      return parts.length >= 2 && parts.every((part) => /^[\p{L}\p{N}_.-]+$/u.test(part) && part !== "." && part !== "..");
+    }),
+    id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+    headSha: external_exports.string().regex(/^[0-9a-f]{40}$/)
+  }),
+  items: external_exports.array(external_exports.object({
+    itemId: external_exports.string().min(1).max(100),
+    fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/),
+    sources: external_exports.array(external_exports.object({
+      id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+      anchor: sourceAnchorSchema,
+      authorId: external_exports.string().min(1).max(100),
+      fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/)
+    })).min(1).max(2e4)
+  })).max(5e3)
+}).superRefine((publication, context) => {
+  const items = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  const sourceIds = /* @__PURE__ */ new Set();
+  publication.items.forEach((item, index) => {
+    if (items.has(item.itemId)) context.addIssue({ code: "custom", path: ["items", index, "itemId"], message: "Duplicate publication item." });
+    items.add(item.itemId);
+    item.sources.forEach((source, position) => {
+      const native = publication.subject.provider === "gitlab" ? source.anchor === `note_${source.id}` : source.anchor === `comment-${source.id}` || source.anchor === `comment_${source.id}`;
+      const account = publication.subject.provider === "gitlab" ? /^[1-9]\d{0,19}$/.test(source.authorId) : /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(source.authorId) && source.authorId.startsWith("{") === source.authorId.endsWith("}");
+      if (!native || anchors.has(source.anchor) || sourceIds.has(source.id)) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "anchor"], message: "Expected a unique native comment anchor." });
+      if (!account) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "authorId"], message: "Expected a durable native account id." });
+      anchors.add(source.anchor);
+      sourceIds.add(source.id);
+    });
+  });
+});
 var geldPrMetaSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
   generatedAt: isoDate,
@@ -19042,7 +19081,29 @@ var geldPrMetaSchema = external_exports.object({
   fold: foldSchema,
   truncated: external_exports.boolean().optional(),
   summary: reviewSummarySchema.optional(),
-  previews: external_exports.array(previewRecordSchema).optional()
+  previews: external_exports.array(previewRecordSchema).optional(),
+  nativePublication: nativePublicationSchema.optional()
+}).superRefine((meta3, context) => {
+  const publication = meta3.nativePublication;
+  if (publication === void 0) return;
+  if (publication.subject.headSha !== meta3.headSha) context.addIssue({ code: "custom", path: ["nativePublication", "subject", "headSha"], message: "Publication and summary heads differ." });
+  const itemIds = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  for (const item of meta3.items) {
+    if (itemIds.has(item.id)) context.addIssue({ code: "custom", path: ["items"], message: "Native publication item ids must be unique." });
+    itemIds.add(item.id);
+    for (const source of item.sources) {
+      if (anchors.has(source.anchor) || source.provider !== publication.subject.provider || source.origin !== publication.subject.origin) context.addIssue({ code: "custom", path: ["items"], message: "Native publication sources must be unique and share its provider origin." });
+      anchors.add(source.anchor);
+    }
+  }
+  for (const entry2 of publication.items) {
+    const item = meta3.items.find((candidate) => candidate.id === entry2.itemId);
+    if (item === void 0 || item.sources.length !== entry2.sources.length || item.sources.some((source, index) => {
+      const published = entry2.sources[index];
+      return published === void 0 || published.id !== source.sourceId || published.anchor !== source.anchor || published.authorId !== source.authorId;
+    })) context.addIssue({ code: "custom", path: ["nativePublication", "items"], message: "Publication sources must match retained summary items." });
+  }
 });
 var deeplinkSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -19113,7 +19174,8 @@ function metaFrom(value) {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events }
   };
-  const flagged = value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
+  const published = value.nativePublication === void 0 ? meta3 : { ...meta3, nativePublication: value.nativePublication };
+  const flagged = value.truncated === void 0 ? published : { ...published, truncated: value.truncated };
   const summarised = value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
   return value.previews === void 0 ? summarised : {
     ...summarised,
@@ -19163,15 +19225,20 @@ function encodedPayloadLength(meta3) {
   return json2.length + extra;
 }
 function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
-  if (encodedPayloadLength(meta3) <= budget) return meta3;
+  const retained = (items2, truncated) => {
+    const ids = new Set(items2.map((item) => item.id));
+    return { ...meta3, items: items2, ...truncated ? { truncated: true } : {}, ...meta3.nativePublication === void 0 ? {} : { nativePublication: { ...meta3.nativePublication, items: meta3.nativePublication.items.filter((item) => ids.has(item.itemId)) } } };
+  };
+  const initial = meta3.nativePublication === void 0 ? meta3 : retained(meta3.items, false);
+  if (encodedPayloadLength(initial) <= budget) return initial;
   const ranked = [...meta3.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
-    const candidate = { ...meta3, items, truncated: true };
+    const candidate = retained(items, true);
     if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
-  return { ...meta3, items: [], truncated: true };
+  return retained([], true);
 }
 function deeplinkFrom(meta3) {
   return {
@@ -20707,7 +20774,7 @@ function hasPublishedSummaryPrefix(body) {
   const [marker, heading] = body.split(/\r?\n/, 3);
   return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
 }
-function publishedPayloadText(body) {
+function publishedFrame(body) {
   const lines2 = body.split(/\r?\n/);
   if (!hasPublishedSummaryPrefix(body)) return null;
   if (lines2.at(-1) === "") lines2.pop();
@@ -20735,9 +20802,12 @@ function publishedPayloadText(body) {
     if (href === void 0 || label === void 0 || carried === void 0 || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
     const json2 = payloadFromAttribute(decodeEntities(carried));
     if (json2 === null || line !== publishedSummaryFooter(json2, href, label)) return null;
-    payload = json2;
+    payload = { json: json2, href, label };
   }
   return fence === null ? payload : null;
+}
+function publishedPayloadText(body) {
+  return publishedFrame(body)?.json ?? null;
 }
 function parsePayload(text) {
   let parsed;

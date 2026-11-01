@@ -1,4 +1,4 @@
-import { buildProviderReviewItems, hasPublishedSummaryPrefix, META_VERSION, parseGeldPrMeta, parsePublishedSummaryBody, renderProviderSummary, truncateMeta } from '@geld/review';
+import { createNativePublication, buildProviderReviewItems, hasPublishedSummaryPrefix, META_VERSION, parseGeldPrMeta, parsePublishedSummaryBody, renderProviderSummary, truncateMeta } from '@geld/review';
 import type { GeldPrMeta } from '@geld/review';
 import { BitbucketCiAdapter } from './bitbucket';
 import { ProviderCiError } from './config';
@@ -47,6 +47,7 @@ export async function produceProviderSummary(adapter: ProviderCiAdapter, now = n
     producer: { kind: 'action', version: VERSION, ai: false }, items, bots: [],
     reviewers: (review.input.reviewers ?? []).map((reviewer) => ({ login: reviewer.author.login, state: reviewer.state })),
     fold: { comments: [], events: [] },
+    nativePublication: await createNativePublication(input, items),
   });
   meta = validatedMeta(truncateMeta(meta, 14_000));
   if (existing !== null) {

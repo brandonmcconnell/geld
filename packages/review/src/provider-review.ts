@@ -38,6 +38,8 @@ export interface ProviderReviewThread {
   readonly line?: number;
   readonly resolved: boolean;
   readonly outdated: boolean;
+  /** True only when the adapter established both native resolution and outdated state. */
+  readonly stateKnown?: boolean;
   readonly comments: readonly ProviderReviewComment[];
 }
 

@@ -1465,6 +1465,26 @@ Provider-specific surfaces translate settings and sources into shared review and
   A native discussion containing the owned machine note keeps its human replies and original location and resolution facts when that note is excluded from a summary.
   Format validation is separate from author, provider, repository, review and head trust.
   A native bot finding's source-link evidence uses its actual provider origin, full repository and review routes rather than GitHub-only URL patterns, so source-linked findings do not become false repository-access refusals.
+- **Native CI summaries require a separate publisher trust decision.**
+  `trustedSummaryPublishers` binds a durable native account ID to one exact cloud repository in personal settings and cannot be supplied by repository configuration.
+  The publisher may be a human token owner, and publisher trust never establishes a reviewer bot identity or grants AI access.
+  Trust saves re-find the original native comment, author, body and timestamps and recheck the review, head and source at the actual serialized settings write.
+  A leading marker only discovers a candidate.
+  Adoption requires its strict sole footer, exact provider, origin, full repository path, native review number and full head, including a matching native footer link.
+  The optional typed `nativePublication` block shares the existing payload and byte budget, and dropping an item also drops its publication proof.
+  Fingerprints cover original native source identities, words, timestamps and containing thread facts.
+  An empty, truncated, ambiguous or changed publication cannot remove unmatched native findings, replace native status or rewrite human wording.
+  Only a validated trusted machine note is excluded, preserving human replies and native source navigation.
+  Device triage and reviewed marks continue to fingerprint original native sources, and old asynchronous source or trust results are discarded after navigation or settings changes.
+  This read-only path consumes the native producer's deterministic items and provenance, without treating prose CI notes, login-only reviewer records or an AI flag as authoritative results.
+- **Comment coverage and known thread state are independent native facts.**
+  `sourceCoverage` records comments and threads independently of missing CI, activity or approval requirements.
+  Failed pagination, invalid source membership, missing parents and unknown thread state cannot establish complete thread coverage.
+  `ProviderReviewThread.stateKnown` permits publication proof only when native resolution and outdated state are both established.
+  GitLab REST resolution comes from the resolvable notes, and a diff position whose head matches the current head does not establish that its line is still active.
+  Bitbucket's explicit null resolution means unresolved, while absent resolution or unknown inline outdated state remains unknown.
+  Unknown state keeps deterministic native items visible and excludes their whole proof rather than manufacturing a current or resolved result.
+  Producer-to-reader protocol fixtures compare native CI and extension normalization over fake HTTP responses and do not prove a live authenticated publication or sanitizer behavior.
 - **Native navigation retains source and reader ownership.**
   Header hidden-count hints live outside native numeric ARIA wrappers and badges, and only the owned hint has a dotted underline.
   Count-group hover retains native focus and ARIA ownership while positioning the popover at the visible hint, with a native-host fallback at responsive breakpoints.

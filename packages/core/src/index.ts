@@ -20,6 +20,7 @@ export * from './list-surfaces';
 export * from './matcher';
 export * from './pr-authors';
 export * from './providers';
+export * from './publisher-accounts';
 export * from './repo-config';
 export * from './repo-rules';
 export * from './review-accounts';

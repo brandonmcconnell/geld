@@ -4,6 +4,7 @@ import { isCategoryIconName } from './category-icons';
 import type { TestPatternGroupId } from './test-patterns';
 import { isTestPatternGroupId } from './test-patterns';
 import { normalizeTrustedReviewAccounts } from './review-accounts';
+import { normalizeTrustedSummaryPublishers } from './publisher-accounts';
 
 /**
  * User settings. Everything here is persisted to `browser.storage.sync` so it
@@ -139,6 +140,8 @@ export interface GeldSettings {
   readonly reviewBots: readonly string[];
   /** Native provider account ids explicitly trusted as a review service in one exact repository. */
   readonly trustedReviewAccounts: readonly string[];
+  /** Native account ids personally authorized to publish Geld summaries in one exact cloud repository. */
+  readonly trustedSummaryPublishers: readonly string[];
   /**
    * The master switch for every AI feature. Off, the gateway settings below
    * stay as they are and nothing is ever requested; on, they take effect once
@@ -222,6 +225,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   quickReview: true,
   reviewBots: [],
   trustedReviewAccounts: [],
+  trustedSummaryPublishers: [],
   aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
@@ -464,6 +468,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     trustedReviewAccounts: normalizeTrustedReviewAccounts(record.trustedReviewAccounts),
+    trustedSummaryPublishers: normalizeTrustedSummaryPublishers(record.trustedSummaryPublishers),
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,

@@ -19054,6 +19054,45 @@ var previewRecordSchema = external_exports.object({
   updatedAt: isoDate.optional(),
   reason: external_exports.string().min(1).max(200).optional()
 });
+var nativePublicationSchema = external_exports.object({
+  v: external_exports.literal(1),
+  subject: external_exports.object({
+    provider: external_exports.enum(["gitlab", "bitbucket"]),
+    origin: external_exports.string().max(500).refine((value) => httpOrigin(value) === value),
+    repository: external_exports.string().min(3).max(500).refine((value) => {
+      const parts = value.split("/");
+      return parts.length >= 2 && parts.every((part) => /^[\p{L}\p{N}_.-]+$/u.test(part) && part !== "." && part !== "..");
+    }),
+    id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+    headSha: external_exports.string().regex(/^[0-9a-f]{40}$/)
+  }),
+  items: external_exports.array(external_exports.object({
+    itemId: external_exports.string().min(1).max(100),
+    fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/),
+    sources: external_exports.array(external_exports.object({
+      id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+      anchor: sourceAnchorSchema,
+      authorId: external_exports.string().min(1).max(100),
+      fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/)
+    })).min(1).max(2e4)
+  })).max(5e3)
+}).superRefine((publication, context) => {
+  const items = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  const sourceIds = /* @__PURE__ */ new Set();
+  publication.items.forEach((item, index) => {
+    if (items.has(item.itemId)) context.addIssue({ code: "custom", path: ["items", index, "itemId"], message: "Duplicate publication item." });
+    items.add(item.itemId);
+    item.sources.forEach((source, position) => {
+      const native = publication.subject.provider === "gitlab" ? source.anchor === `note_${source.id}` : source.anchor === `comment-${source.id}` || source.anchor === `comment_${source.id}`;
+      const account = publication.subject.provider === "gitlab" ? /^[1-9]\d{0,19}$/.test(source.authorId) : /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(source.authorId) && source.authorId.startsWith("{") === source.authorId.endsWith("}");
+      if (!native || anchors.has(source.anchor) || sourceIds.has(source.id)) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "anchor"], message: "Expected a unique native comment anchor." });
+      if (!account) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "authorId"], message: "Expected a durable native account id." });
+      anchors.add(source.anchor);
+      sourceIds.add(source.id);
+    });
+  });
+});
 var geldPrMetaSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
   generatedAt: isoDate,
@@ -19065,7 +19104,29 @@ var geldPrMetaSchema = external_exports.object({
   fold: foldSchema,
   truncated: external_exports.boolean().optional(),
   summary: reviewSummarySchema.optional(),
-  previews: external_exports.array(previewRecordSchema).optional()
+  previews: external_exports.array(previewRecordSchema).optional(),
+  nativePublication: nativePublicationSchema.optional()
+}).superRefine((meta3, context) => {
+  const publication = meta3.nativePublication;
+  if (publication === void 0) return;
+  if (publication.subject.headSha !== meta3.headSha) context.addIssue({ code: "custom", path: ["nativePublication", "subject", "headSha"], message: "Publication and summary heads differ." });
+  const itemIds = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  for (const item of meta3.items) {
+    if (itemIds.has(item.id)) context.addIssue({ code: "custom", path: ["items"], message: "Native publication item ids must be unique." });
+    itemIds.add(item.id);
+    for (const source of item.sources) {
+      if (anchors.has(source.anchor) || source.provider !== publication.subject.provider || source.origin !== publication.subject.origin) context.addIssue({ code: "custom", path: ["items"], message: "Native publication sources must be unique and share its provider origin." });
+      anchors.add(source.anchor);
+    }
+  }
+  for (const entry of publication.items) {
+    const item = meta3.items.find((candidate) => candidate.id === entry.itemId);
+    if (item === void 0 || item.sources.length !== entry.sources.length || item.sources.some((source, index) => {
+      const published = entry.sources[index];
+      return published === void 0 || published.id !== source.sourceId || published.anchor !== source.anchor || published.authorId !== source.authorId;
+    })) context.addIssue({ code: "custom", path: ["nativePublication", "items"], message: "Publication sources must match retained summary items." });
+  }
 });
 var deeplinkSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -19136,7 +19197,8 @@ function metaFrom(value) {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events }
   };
-  const flagged = value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
+  const published = value.nativePublication === void 0 ? meta3 : { ...meta3, nativePublication: value.nativePublication };
+  const flagged = value.truncated === void 0 ? published : { ...published, truncated: value.truncated };
   const summarised = value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
   return value.previews === void 0 ? summarised : {
     ...summarised,
@@ -19186,15 +19248,20 @@ function encodedPayloadLength(meta3) {
   return json2.length + extra;
 }
 function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
-  if (encodedPayloadLength(meta3) <= budget) return meta3;
+  const retained = (items2, truncated) => {
+    const ids = new Set(items2.map((item) => item.id));
+    return { ...meta3, items: items2, ...truncated ? { truncated: true } : {}, ...meta3.nativePublication === void 0 ? {} : { nativePublication: { ...meta3.nativePublication, items: meta3.nativePublication.items.filter((item) => ids.has(item.itemId)) } } };
+  };
+  const initial = meta3.nativePublication === void 0 ? meta3 : retained(meta3.items, false);
+  if (encodedPayloadLength(initial) <= budget) return initial;
   const ranked = [...meta3.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
-    const candidate = { ...meta3, items, truncated: true };
+    const candidate = retained(items, true);
     if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
-  return { ...meta3, items: [], truncated: true };
+  return retained([], true);
 }
 function howItWorksUrl() {
   return `${SITE_ORIGIN}/how-it-works#summary`;
@@ -19981,7 +20048,7 @@ function hasPublishedSummaryPrefix(body2) {
   const [marker, heading] = body2.split(/\r?\n/, 3);
   return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
 }
-function publishedPayloadText(body2) {
+function publishedFrame(body2) {
   const lines = body2.split(/\r?\n/);
   if (!hasPublishedSummaryPrefix(body2)) return null;
   if (lines.at(-1) === "") lines.pop();
@@ -20009,9 +20076,12 @@ function publishedPayloadText(body2) {
     if (href === void 0 || label === void 0 || carried === void 0 || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
     const json2 = payloadFromAttribute(decodeEntities(carried));
     if (json2 === null || line !== publishedSummaryFooter(json2, href, label)) return null;
-    payload = json2;
+    payload = { json: json2, href, label };
   }
   return fence === null ? payload : null;
+}
+function publishedPayloadText(body2) {
+  return publishedFrame(body2)?.json ?? null;
 }
 function parsePayload(text2) {
   let parsed;
@@ -20596,6 +20666,99 @@ var PROVIDER_BOT_CAPABILITIES = [
   ])
 ];
 
+// ../../packages/review/src/native-publication.ts
+var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function accountId(provider, value) {
+  if (provider === "gitlab") return /^[1-9]\d{0,19}$/.test(value) ? value : null;
+  if (provider !== "bitbucket") return null;
+  const uuid3 = value.startsWith("{") && value.endsWith("}") ? value.slice(1, -1) : value;
+  return UUID.test(uuid3) ? uuid3.toLowerCase() : null;
+}
+function nativeSubject(input2) {
+  const { subject } = input2;
+  if (subject.provider === "github") throw new TypeError("Expected a native provider publication.");
+  const parsed = nativePublicationSchema.shape.subject.safeParse({ ...subject, headSha: subject.headSha.toLowerCase() });
+  if (!parsed.success) throw new TypeError("Expected a full native publication subject and head.");
+  if (subject.provider === "bitbucket" && subject.repository.split("/").length !== 2) throw new TypeError("Expected a Bitbucket workspace and repository.");
+  providerReviewUrl(subject);
+  return parsed.data;
+}
+function sourceVector(item) {
+  return JSON.stringify(item.sources.map((source) => [source.anchor, source.kind, source.sourceId, source.authorId]));
+}
+function checkedComment(comment, input2) {
+  const id2 = accountId(input2.subject.provider, comment.author.id);
+  const native = input2.subject.provider === "gitlab" ? comment.anchor === `note_${comment.id}` : comment.anchor === `comment-${comment.id}` || comment.anchor === `comment_${comment.id}`;
+  const href = sourceLink({ anchor: comment.anchor, kind: "comment", author: comment.author.login, url: comment.url }, input2.subject);
+  const created = Date.parse(comment.createdAt);
+  const updated = comment.updatedAt === void 0 ? null : Date.parse(comment.updatedAt);
+  if (!/^[1-9]\d{0,19}$/.test(comment.id) || id2 === null || !native || href === null || comment.author.login.trim() === "" || !Number.isFinite(created) || updated !== null && !Number.isFinite(updated)) throw new TypeError("Expected an actual native comment identity and source link.");
+  return [comment.id, comment.anchor, id2, `${providerReviewUrl(input2.subject)}#${comment.anchor}`, comment.body, created, updated];
+}
+async function digest(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const hash2 = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash2)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function sourceIndex(input2) {
+  const index = /* @__PURE__ */ new Map();
+  const ids = /* @__PURE__ */ new Set();
+  const threads = /* @__PURE__ */ new Set();
+  for (const thread of input2.threads) {
+    if (threads.has(thread.id)) throw new TypeError("Native publication threads must be unique.");
+    threads.add(thread.id);
+    for (const comment of thread.comments) {
+      if (index.has(comment.anchor) || ids.has(comment.id)) throw new TypeError("Native publication sources must be unique.");
+      index.set(comment.anchor, { comment, thread });
+      ids.add(comment.id);
+    }
+  }
+  return index;
+}
+function availableComment(comment, input2) {
+  try {
+    return checkedComment(comment, input2);
+  } catch {
+    return null;
+  }
+}
+async function itemFingerprint(input2, item, index) {
+  const facts = [];
+  const sourceFacts = [];
+  const threads = /* @__PURE__ */ new Map();
+  const sources = [];
+  for (const source of item.sources) {
+    const found = index.get(source.anchor);
+    if (found === void 0 || found.thread.stateKnown !== true || typeof found.thread.resolved !== "boolean" || typeof found.thread.outdated !== "boolean" || source.sourceId !== found.comment.id || source.authorId !== found.comment.author.id || source.provider !== input2.subject.provider || source.origin !== input2.subject.origin || source.url === void 0 || sourceLink(source, input2.subject) === null) return null;
+    if (source.kind !== "thread") return null;
+    const fact = availableComment(found.comment, input2);
+    if (fact === null) return null;
+    sourceFacts.push([...fact]);
+    threads.set(found.thread.id, found.thread);
+    sources.push({ id: found.comment.id, anchor: found.comment.anchor, authorId: found.comment.author.id, fingerprint: await digest(fact) });
+  }
+  if (sources.length === 0) return null;
+  for (const thread of threads.values()) {
+    const comments = thread.comments.map((comment) => availableComment(comment, input2));
+    if (comments.some((comment) => comment === null)) return null;
+    facts.push([thread.id, thread.path ?? null, thread.line ?? null, thread.resolved, thread.outdated, comments]);
+  }
+  return { itemId: item.id, sources, fingerprint: await digest([nativeSubject(input2), item.path ?? null, item.line ?? null, sourceFacts, facts]) };
+}
+async function createNativePublication(input2, items) {
+  const subject = nativeSubject(input2);
+  const canonical = new Map(buildProviderReviewItems(input2).map((item) => [item.id, item]));
+  const index = sourceIndex(input2);
+  const entries = [];
+  for (const item of items) {
+    const original = canonical.get(item.id);
+    if (original === void 0 || sourceVector(original) !== sourceVector(item)) throw new TypeError("Publication items must have canonical native sources.");
+    const entry = await itemFingerprint(input2, original, index);
+    if (entry !== null) entries.push(entry);
+  }
+  return nativePublicationSchema.parse({ v: 1, subject, items: entries });
+}
+
 // src/providers/http.ts
 var MAX_BYTES = 12 * 1024 * 1024;
 var MAX_PAGES = 100;
@@ -20757,6 +20920,19 @@ function htmlLink(value) {
 function markdown(value) {
   return value.replace(/\s+/g, " ").trim().slice(0, 240).replace(/[\\`*_[\]<>]/g, "\\$&");
 }
+function commentState(raw) {
+  const inline = isRecord(raw.inline) ? raw.inline : null;
+  const line = inline?.to ?? inline?.from;
+  if (line !== void 0 && line !== null && (typeof line !== "number" || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError("Bitbucket returned an invalid comment line.");
+  const resolution = raw.resolution === void 0 || raw.resolution === null ? null : object2(raw.resolution);
+  return {
+    parent: raw.parent === void 0 || raw.parent === null ? null : id(object2(raw.parent).id),
+    resolved: typeof raw.resolved === "boolean" ? raw.resolved : resolution !== null ? true : raw.resolution === null ? false : null,
+    outdated: typeof inline?.outdated === "boolean" ? inline.outdated : typeof raw.outdated === "boolean" ? raw.outdated : null,
+    path: inline === null ? null : text(inline.path),
+    line: typeof line === "number" ? line : null
+  };
+}
 var BitbucketCiAdapter = class {
   constructor(http) {
     this.http = http;
@@ -20846,15 +21022,9 @@ var BitbucketCiAdapter = class {
     if (url2 === null) throw new ProviderCiError("Bitbucket omitted a canonical review comment link.");
     const anchor2 = new URL(url2).hash.slice(1);
     if (anchor2 !== `comment-${number4}` && anchor2 !== `comment_${number4}`) throw new ProviderCiError("Bitbucket returned a mismatched comment anchor.");
-    const inline = isRecord(raw.inline) ? raw.inline : null;
-    const line = inline?.to ?? inline?.from;
-    if (line !== void 0 && line !== null && (typeof line !== "number" || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError("Bitbucket returned an invalid comment line.");
     return {
       source: { id: number4, anchor: anchor2, url: url2, author: author(raw.user), body: body(raw.content), createdAt: time3(raw.created_on), updatedAt: time3(raw.updated_on) },
-      parent: raw.parent === void 0 || raw.parent === null ? null : id(object2(raw.parent).id),
-      resolved: raw.resolved === true || isRecord(raw.resolution),
-      path: inline === null ? null : text(inline.path),
-      line: typeof line === "number" ? line : null
+      ...commentState(raw)
     };
   }
   async load() {
@@ -20875,15 +21045,8 @@ var BitbucketCiAdapter = class {
       const raw = object2(value);
       const number4 = id(raw.id);
       if (states.has(number4)) throw new ProviderCiError("Bitbucket repeated a review comment.");
-      const inline = isRecord(raw.inline) ? raw.inline : null;
-      const line = inline?.to ?? inline?.from;
-      if (line !== void 0 && line !== null && (typeof line !== "number" || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError("Bitbucket returned an invalid comment line.");
-      states.set(number4, {
-        parent: raw.parent === void 0 || raw.parent === null ? null : id(object2(raw.parent).id),
-        resolved: raw.resolved === true || isRecord(raw.resolution),
-        path: inline === null ? null : text(inline.path),
-        line: typeof line === "number" ? line : null
-      });
+      if (typeof raw.deleted !== "boolean") throw new ProviderCiError("Bitbucket omitted comment visibility.");
+      states.set(number4, commentState(raw));
       if (raw.deleted === true) continue;
       const comment = this.comment(raw);
       indexed.set(comment.source.id, comment);
@@ -20908,20 +21071,23 @@ var BitbucketCiAdapter = class {
     }
     const threads = [];
     for (const [rootId, comments] of groups) {
-      comments.sort((a, b) => Date.parse(a.source.createdAt) - Date.parse(b.source.createdAt));
+      comments.sort((a, b) => Date.parse(a.source.createdAt) - Date.parse(b.source.createdAt) || (BigInt(a.source.id) < BigInt(b.source.id) ? -1 : BigInt(a.source.id) > BigInt(b.source.id) ? 1 : 0));
       const root = states.get(rootId);
       const first = comments[0];
-      if (root === void 0 || first === void 0 || root.path === null && comments.length === 1 && first.parent === null) continue;
+      if (root === void 0 || first === void 0) continue;
+      const location = root.path === null ? comments.find((comment) => comment.path !== null) : root;
+      if (location === void 0 && comments.length === 1 && first.parent === null && root.resolved === null) continue;
       const rootSource = indexed.get(rootId)?.source ?? first.source;
       threads.push({
         id: rootId,
         anchor: rootSource.anchor,
         url: rootSource.url,
         comments: comments.map((comment) => comment.source),
-        resolved: root.resolved,
-        outdated: false,
-        ...root.path === null ? {} : { path: root.path },
-        ...root.line === null ? {} : { line: root.line }
+        resolved: root.resolved === true,
+        outdated: root.outdated === true,
+        stateKnown: root.resolved !== null && root.outdated !== null,
+        ...location?.path === null || location?.path === void 0 ? {} : { path: location.path },
+        ...location?.line === null || location?.line === void 0 ? {} : { line: location.line }
       });
     }
     const reviewers = [];
@@ -20981,7 +21147,10 @@ var BitbucketCiAdapter = class {
       checks: [...latestChecks.values()].map((entry) => entry.check),
       bots: []
     };
-    return { input: input2, comments: owned, notes: notes.length === 0 ? [] : ["**Tasks**", ...notes] };
+    const unknownThreadState = threads.some((thread) => thread.stateKnown !== true);
+    const supplemental = notes.length === 0 ? [] : ["**Tasks**", ...notes];
+    if (unknownThreadState) supplemental.push("Native resolution or outdated state is unavailable for some review threads.");
+    return { input: input2, comments: owned, sourceCoverage: { comments: "complete", threads: unknownThreadState ? "partial" : "complete" }, notes: supplemental };
   }
   async upsert(commentId, summary) {
     if (commentId !== null) {
@@ -21054,10 +21223,13 @@ var GitLabCiAdapter = class {
     });
     const threads = [];
     const seen = /* @__PURE__ */ new Set();
+    const seenDiscussions = /* @__PURE__ */ new Set();
     for (const value of discussions) {
       const discussion = object2(value);
       const discussionId = text(discussion.id);
       if (!/^[a-f0-9]{8,64}$/i.test(discussionId) || !Array.isArray(discussion.notes)) throw new ProviderCiError("GitLab returned an invalid discussion.");
+      if (seenDiscussions.has(discussionId)) throw new ProviderCiError("GitLab repeated a discussion.");
+      seenDiscussions.add(discussionId);
       const rawThread = discussion.notes.map(object2).filter((entry) => entry.system !== true);
       if (rawThread.length === 0) continue;
       const comments = rawThread.map((entry) => note(entry, this.reviewUrl));
@@ -21067,19 +21239,27 @@ var GitLabCiAdapter = class {
       }
       const first = comments[0];
       const firstRaw = rawThread[0];
-      if (first === void 0 || firstRaw === void 0 || firstRaw.resolvable !== true) continue;
+      if (first === void 0 || firstRaw === void 0) continue;
+      const resolvable = rawThread.filter((entry) => entry.resolvable === true);
+      if (resolvable.length === 0) continue;
       const position = isRecord(firstRaw.position) ? firstRaw.position : null;
       const path = position?.new_path ?? position?.old_path;
       const line = position?.new_line ?? position?.old_line;
       if (path !== void 0 && typeof path !== "string") throw new ProviderCiError("GitLab returned an invalid discussion path.");
       if (line !== void 0 && line !== null && (typeof line !== "number" || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError("GitLab returned an invalid discussion line.");
+      const resolutionKnown = typeof discussion.resolved === "boolean" || resolvable.every((entry) => typeof entry.resolved === "boolean");
+      const resolved = typeof discussion.resolved === "boolean" ? discussion.resolved : resolvable.every((entry) => entry.resolved === true);
+      const active = typeof discussion.active === "boolean" ? discussion.active : typeof firstRaw.active === "boolean" ? firstRaw.active : null;
+      const outdated = active !== null ? !active : typeof firstRaw.outdated === "boolean" ? firstRaw.outdated : null;
+      const nonDiff = position === null && (discussion.diff_discussion === false || firstRaw.type === "DiscussionNote");
       threads.push({
         id: discussionId,
-        anchor: first.anchor,
+        anchor: `discussion_${discussionId}`,
         url: first.url,
         comments,
-        resolved: firstRaw.resolved === true,
-        outdated: firstRaw.outdated === true,
+        resolved,
+        outdated: outdated === true,
+        stateKnown: resolutionKnown && (outdated !== null || nonDiff),
         ...typeof path === "string" && path !== "" ? { path } : {},
         ...typeof line === "number" ? { line } : {}
       });
@@ -21137,7 +21317,9 @@ var GitLabCiAdapter = class {
     if (await this.head() !== headSha) throw new ProviderCiError("GitLab changed the merge request while the summary was loading.");
     const notes = [];
     if (typeof approvals.approvals_required === "number" && Number.isSafeInteger(approvals.approvals_required) && approvals.approvals_required >= 0) notes.push(`Required approvals: ${approvals.approvals_required}`);
-    return { input: input2, comments: owned, notes };
+    const unknownThreadState = threads.some((thread) => thread.stateKnown !== true);
+    if (unknownThreadState) notes.push("Native resolution or outdated state is unavailable for some review discussions.");
+    return { input: input2, comments: owned, sourceCoverage: { comments: "complete", threads: unknownThreadState ? "partial" : "complete" }, notes };
   }
   async upsert(commentId, body2) {
     if (commentId !== null) {
@@ -21189,7 +21371,8 @@ async function produceProviderSummary(adapter, now = (/* @__PURE__ */ new Date()
     items,
     bots: [],
     reviewers: (review.input.reviewers ?? []).map((reviewer) => ({ login: reviewer.author.login, state: reviewer.state })),
-    fold: { comments: [], events: [] }
+    fold: { comments: [], events: [] },
+    nativePublication: await createNativePublication(input2, items)
   });
   meta3 = validatedMeta(truncateMeta(meta3, 14e3));
   if (existing !== null) {

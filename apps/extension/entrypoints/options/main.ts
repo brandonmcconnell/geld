@@ -29,6 +29,8 @@ import {
   allHosts,
   authorRuleProblem,
   mergeTrustedReviewAccounts,
+  mergeTrustedSummaryPublishers,
+  trustedSummaryPublishersProblem,
   trustedReviewAccountsProblem,
   pluralize,
   sectionsFor,
@@ -779,7 +781,7 @@ async function main(): Promise<void> {
     reviewSwitches.push({ field, set: bound.set });
     return block([el('div', 'geld-row options__field-row', [head, button]), ...extra]);
   };
-  const reviewListEditors = new Map<'reviewBots' | 'trustedReviewAccounts', { readonly area: HTMLTextAreaElement; base: readonly string[] }>();
+  const reviewListEditors = new Map<'reviewBots' | 'trustedReviewAccounts' | 'trustedSummaryPublishers', { readonly area: HTMLTextAreaElement; base: readonly string[] }>();
   const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev']);
   let aiRendered = false;
   for (const field of reviewSection?.fields ?? []) {
@@ -824,11 +826,11 @@ async function main(): Promise<void> {
       show(settings);
       choiceSetters.push(show);
       block([el('div', 'geld-row options__field-row', [head, group]), note]);
-    } else if (field.kind === 'list' && (field.key === 'reviewBots' || field.key === 'trustedReviewAccounts')) {
+    } else if (field.kind === 'list' && (field.key === 'reviewBots' || field.key === 'trustedReviewAccounts' || field.key === 'trustedSummaryPublishers')) {
       const key = field.key;
       const { head } = fieldHead(field);
       const area = el('textarea', 'geld-textarea geld-code options__textarea');
-      area.id = key === 'reviewBots' ? 'review-bots' : 'trusted-review-accounts';
+      area.id = key === 'reviewBots' ? 'review-bots' : key === 'trustedReviewAccounts' ? 'trusted-review-accounts' : 'trusted-summary-publishers';
       area.rows = field.rows;
       area.spellcheck = false;
       area.placeholder = field.placeholder;
@@ -846,17 +848,19 @@ async function main(): Promise<void> {
       });
       save.addEventListener('click', async () => {
         const lines = parsePatternList(area.value);
-        const problem = key === 'trustedReviewAccounts' ? trustedReviewAccountsProblem(lines) : lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+        const problem = key === 'trustedReviewAccounts' ? trustedReviewAccountsProblem(lines) : key === 'trustedSummaryPublishers' ? trustedSummaryPublishersProblem(lines) : lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
         if (problem !== null) {
           status(problem, 'error');
           return;
         }
         settings = key === 'trustedReviewAccounts'
           ? await settingsItem.update((current) => ({ trustedReviewAccounts: mergeTrustedReviewAccounts(editor.base, lines, current.trustedReviewAccounts) }))
-          : await settingsItem.patch({ reviewBots: lines });
+          : key === 'trustedSummaryPublishers'
+            ? await settingsItem.update((current) => ({ trustedSummaryPublishers: mergeTrustedSummaryPublishers(editor.base, lines, current.trustedSummaryPublishers) }))
+            : await settingsItem.patch({ reviewBots: lines });
         editor.base = settings[key];
         area.value = editor.base.join('\n');
-        status(`Saved ${key === 'trustedReviewAccounts' ? pluralize(editor.base.length, 'account', 'accounts') : pluralize(editor.base.length, 'bot', 'bots')}`, 'success');
+        status(`Saved ${key === 'reviewBots' ? pluralize(editor.base.length, 'bot', 'bots') : key === 'trustedSummaryPublishers' ? pluralize(editor.base.length, 'publisher', 'publishers') : pluralize(editor.base.length, 'account', 'accounts')}`, 'success');
       });
       block([head, area, el('p', 'geld-help', richText(field.syntax.join(' '))), el('div', 'geld-row options__actions', [statusEl, save])]);
     }
