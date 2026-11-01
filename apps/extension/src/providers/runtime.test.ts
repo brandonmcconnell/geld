@@ -2,11 +2,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from 'wxt/browser';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { DEFAULT_SETTINGS, trustedReviewAccountsFor } from '@geld/core';
+import { DEFAULT_SETTINGS, trustedReviewAccountsFor, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings, RepositoryIdentity } from '@geld/core';
+import { buildProviderReviewItems } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import { settingsItem } from '../lib/storage';
-import { createProviderBotTrust, startProvider } from './runtime';
+import { providerReviewedItemsItem } from '../lib/local-state';
+import type { ProviderReviewedRecord, ProviderReviewedStorage } from '../lib/local-state';
+import { createProviderBotTrust, createProviderReviewedServices, startProvider } from './runtime';
+import { providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
 import { ProviderController } from './controller';
 import type { ProviderAdapter, ProviderPage, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 
@@ -56,7 +60,7 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
   return { promise, resolve: () => finish() };
 }
 
-beforeEach(async () => { await settingsItem.setValue(DEFAULT_SETTINGS); });
+beforeEach(async () => { await settingsItem.setValue(DEFAULT_SETTINGS); await providerReviewedItemsItem.setValue({}); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('explicit provider account trust', () => {
@@ -148,6 +152,94 @@ describe('explicit provider account trust', () => {
     await f.save(input, actual, 'coderabbit');
     expect(trustedReviewAccountsFor((await settingsItem.getValue()).trustedReviewAccounts, repository)[0]?.authorId).toBe('aabbccdd-1234-5678-abcd-aabbccddeeff');
     expect(actual.author.id).toBe(authorId);
+  });
+});
+
+function reviewedSource(): ProviderReviewSnapshot {
+  const first = comment();
+  const second = { ...comment('2', '99999'), body: 'Another independent finding.' };
+  return { ...source([]), input: { subject, complete: true, threads: [
+    { id: 'a'.repeat(40), anchor: `discussion_${'a'.repeat(40)}`, url: first.url, path: 'first.ts', line: 5, resolved: false, outdated: false, comments: [first] },
+    { id: 'b'.repeat(40), anchor: `discussion_${'b'.repeat(40)}`, url: second.url, path: 'second.ts', line: 50, resolved: false, outdated: false, comments: [second] },
+  ] } };
+}
+
+function reviewedFixture(initial = reviewedSource(), storage?: ProviderReviewedStorage) {
+  let active: ProviderPage | null = page;
+  let observed: ProviderReviewSnapshot | null = initial;
+  let retired = false;
+  const services = createProviderReviewedServices({ page: () => active, snapshot: () => observed, retired: () => retired, ...(storage === undefined ? {} : { storage }) });
+  const read = services.readReviewed;
+  const save = services.saveReviewed;
+  if (read === undefined || save === undefined) throw new Error('Reviewed services missing');
+  return { read, save, navigate: (next: ProviderPage | null) => { active = next; }, snapshot: (next: ProviderReviewSnapshot | null) => { observed = next; }, retire: () => { retired = true; } };
+}
+
+describe('local reviewed source and navigation guards', () => {
+  it('persists only fingerprints in actual local storage and keeps native unresolved state unchanged', async () => {
+    const snapshot = reviewedSource();
+    const before = JSON.stringify(snapshot.input);
+    const input = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, DEFAULT_SETTINGS, snapshot.complete);
+    const item = buildProviderReviewItems(input)[0];
+    if (item === undefined) throw new Error('Missing native item');
+    const fingerprint = await reviewedItemFingerprint(input, item, snapshot.comments);
+    const f = reviewedFixture(snapshot);
+    expect(await f.read(input)).toEqual({});
+    await f.save(input, item, fingerprint, true);
+    expect(await f.read(input)).toEqual({ [item.id]: fingerprint });
+    const persisted = JSON.stringify(await providerReviewedItemsItem.getValue());
+    expect(persisted).toContain(fingerprint);
+    expect(persisted).not.toContain(comment().body);
+    expect(JSON.stringify(snapshot.input)).toBe(before);
+    await f.save(input, item, fingerprint, false);
+    expect(await f.read(input)).toEqual({});
+  });
+
+  it('uses the latest trusted-input clustering and preserves simultaneous markers', async () => {
+    const snapshot = reviewedSource();
+    const trustedReviewAccounts = withTrustedReviewAccount([], repository, 'coderabbit', '12345');
+    await settingsItem.patch({ trustedReviewAccounts });
+    const input = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, await settingsItem.getValue(), snapshot.complete);
+    const items = buildProviderReviewItems(input);
+    expect(items).toHaveLength(2);
+    const f = reviewedFixture(snapshot);
+    await Promise.all(items.map(async (item) => f.save(input, item, await reviewedItemFingerprint(input, item, snapshot.comments), true)));
+    expect(Object.keys(await f.read(input)).sort()).toEqual(items.map((item) => item.id).sort());
+    expect(snapshot.input.bots).toBeUndefined();
+    expect(snapshot.input.threads.every((thread) => !thread.resolved)).toBe(true);
+  });
+
+  it('does not hydrate a marker after the native source body or thread state changes at the same head', async () => {
+    const snapshot = reviewedSource();
+    const item = buildProviderReviewItems(snapshot.input)[0];
+    if (item === undefined) throw new Error('Missing native item');
+    const fingerprint = await reviewedItemFingerprint(snapshot.input, item, snapshot.comments);
+    const f = reviewedFixture(snapshot);
+    await f.save(snapshot.input, item, fingerprint, true);
+    const changed = { ...snapshot, input: { ...snapshot.input, threads: snapshot.input.threads.map((thread, index) => index === 0 ? { ...thread, resolved: true, comments: thread.comments.map((comment) => ({ ...comment, body: 'Edited source at the same head.' })) } : thread) } };
+    f.snapshot(changed);
+    expect(await f.read(changed.input)).toEqual({});
+    await expect(f.save(snapshot.input, item, fingerprint, true)).rejects.toThrow('item changed');
+  });
+
+  it.each(['navigation', 'head', 'source', 'retirement'])('refuses %s changes while a local write is waiting for storage', async (change) => {
+    const snapshot = reviewedSource();
+    const item = buildProviderReviewItems(snapshot.input)[0];
+    if (item === undefined) throw new Error('Missing native item');
+    const fingerprint = await reviewedItemFingerprint(snapshot.input, item, snapshot.comments);
+    const gate = deferred();
+    const writing = vi.fn<(value: Readonly<Record<string, ProviderReviewedRecord>>) => Promise<void>>(async () => undefined);
+    const getValue = vi.fn(async () => { await gate.promise; return {}; });
+    const f = reviewedFixture(snapshot, { getValue, setValue: writing });
+    const saving = f.save(snapshot.input, item, fingerprint, true);
+    await vi.waitFor(() => expect(getValue).toHaveBeenCalled());
+    if (change === 'navigation') f.navigate({ ...page, number: '43' });
+    if (change === 'head') f.snapshot({ ...snapshot, input: { ...snapshot.input, subject: { ...subject, headSha: 'b'.repeat(40) } } });
+    if (change === 'source') f.snapshot({ ...snapshot, input: { ...snapshot.input, threads: snapshot.input.threads.map((thread) => ({ ...thread, outdated: true })) } });
+    if (change === 'retirement') f.retire();
+    gate.resolve();
+    await expect(saving).rejects.toThrow(/changed|sources/);
+    expect(writing).not.toHaveBeenCalled();
   });
 });
 

@@ -35,7 +35,9 @@ function adapter(): ProviderAdapter {
     describe: (url) => {
       const match = /\/-\/commit\/([a-f0-9]{40})$/.exec(url.pathname);
       if (match?.[1] !== undefined) return { ...commit(match[1]), repository: { ...commit().repository, origin: url.origin } };
-      return url.href === URL ? { ...commit(currentHead), kind: 'overview', number: '7', url: URL, diffPageUrl: `${URL}/diffs`, diffUrl: `${URL}.diff` } : null;
+      const review = /^\/group\/repo\/-\/merge_requests\/(7|8)(\/diffs)?$/.exec(url.pathname);
+      const base = `${ROOT}/-/merge_requests/${review?.[1] ?? '7'}`;
+      return review === null ? null : { ...commit(currentHead), kind: review[2] === undefined ? 'overview' : 'diff', number: review[1] ?? '7', url: base, diffPageUrl: `${base}/diffs`, diffUrl: `${base}.diff` };
     },
     readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], complete: true, revision: SHA }),
   };
@@ -83,6 +85,27 @@ afterEach(() => {
 });
 
 describe('provider commit hover intent', () => {
+  it('does not fetch delegated link counts when list statistics are off and closes them when disabled', async () => {
+    settings = { ...DEFAULT_SETTINGS, showListStats: false };
+    const get = vi.fn(() => ready());
+    const instance = create(get);
+    const host = link();
+    hover(host);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(get).not.toHaveBeenCalled();
+    expect(host.title).toBe('Native commit title');
+    settings = DEFAULT_SETTINGS;
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(get).toHaveBeenCalledOnce();
+    settings = { ...DEFAULT_SETTINGS, showListStats: false };
+    instance.refresh();
+    expect(tooltip()?.hidden).toBe(true);
+    expect(host.hasAttribute('aria-describedby')).toBe(false);
+    expect(host.title).toBe('Native commit title');
+    expect(get).toHaveBeenCalledOnce();
+  });
+
   it('does not fetch until a sustained intent, then requests page priority and replaces loading with complete counts', async () => {
     let state: ProviderDiffState = { status: 'loading' };
     const get = vi.fn(() => state);
@@ -147,9 +170,9 @@ describe('provider commit hover intent', () => {
     const outside = link();
     outside.href = `https://another.example/group/repo/-/commit/${SHA}`;
     hover(outside);
-    const review = link();
-    review.href = URL;
-    hover(review);
+    const unsupported = link();
+    unsupported.href = `${ROOT}/-/issues/7`;
+    hover(unsupported);
     settings = { ...DEFAULT_SETTINGS, repoRules: ['gitlab.com/group/repo'] };
     const excluded = link();
     hover(excluded);
@@ -157,6 +180,24 @@ describe('provider commit hover intent', () => {
     expect(get).not.toHaveBeenCalled();
     expect(outside.title).toBe('Native commit title');
     expect(excluded.title).toBe('Native commit title');
+  });
+
+  it.each(['overview', 'diff'] as const)('counts a %s link after pointer intent and restores its native title', async (kind) => {
+    const get = vi.fn(() => ready());
+    const instance = create(get);
+    const host = link();
+    const target = `${ROOT}/-/merge_requests/8`;
+    host.href = kind === 'diff' ? `${target}/diffs` : target;
+    host.textContent = '!8';
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({ number: '8', url: target }), true);
+    expect(tooltip()?.textContent).toContain('Tests 1 file +3 −0');
+    expect(tooltip()?.textContent).toContain('Essential 1 file +4 −1');
+    leave(host);
+    instance.refresh();
+    expect(host.title).toBe('Native commit title');
+    expect(host.hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('uses qualified settings scopes and waits for repository settings only after intent', async () => {

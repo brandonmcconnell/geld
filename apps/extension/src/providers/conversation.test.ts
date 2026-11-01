@@ -2,10 +2,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings, RepositoryIdentity } from '@geld/core';
+import { buildProviderReviewItems } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import type { AiRunRecord } from '../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
-import { ProviderConversation, providerReviewWithTrustedAccounts } from './conversation';
+import { ProviderConversation, providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
 import type { ProviderConversationServices } from './conversation';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 
@@ -43,7 +44,7 @@ function aiResponse(message: AiCompleteRequest | AiEvaluateRequest): unknown {
 const cleanup: (() => void)[] = [];
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); document.body.replaceChildren(); });
 
-function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}) {
+function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}) {
   const host = document.createElement('main');
   document.body.append(host);
   let currentPage: ProviderReviewPage | null = page;
@@ -52,7 +53,7 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
   let runs: Readonly<Record<string, AiRunRecord>> = {};
   const send = vi.fn(async (message: AiCompleteRequest | AiEvaluateRequest): Promise<unknown> => aiResponse(message));
   const fetchReview = vi.fn(async () => source);
-  const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview };
+  const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview, ...adapterOverrides };
   const changed = vi.fn(() => { queueMicrotask(() => { if (active) conversation.apply(currentPage, currentSettings); }); });
   const conversation = new ProviderConversation(adapter, changed, { ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, writeRuns: async (next) => { runs = next; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
   cleanup.push(() => { active = false; conversation.clear(); });
@@ -157,5 +158,225 @@ describe('provider conversation integrations', () => {
     const bb: ProviderReviewInput = { subject: { ...subject, provider: 'bitbucket', origin: 'https://bitbucket.org', repository: 'workspace/repo' }, threads: [], checks: [{ authorId: nativeId, name: 'Check', sha, status: 'completed', conclusion: 'success' }] };
     const bbSettings = { ...DEFAULT_SETTINGS, trustedReviewAccounts: withTrustedReviewAccount([], { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'workspace/repo' }, 'bugbot', nativeId.toLowerCase()) };
     expect(providerReviewWithTrustedAccounts(bb, [], bbSettings, true).bots?.[0]?.authorId).toBe(nativeId);
+  });
+
+  it('compacts only represented eligible native roots, preserves framework children, and restores settings and remounts', async () => {
+    let native = document.createElement('article');
+    native.id = 'note_1';
+    const originalButton = document.createElement('button');
+    const activated = vi.fn();
+    originalButton.addEventListener('click', activated);
+    native.append(originalButton);
+    const mixed = document.createElement('article');
+    mixed.id = 'note_9';
+    const composer = document.createElement('article');
+    composer.append(document.createElement('textarea'));
+    document.body.append(native, mixed, composer);
+    const f = fixture(snapshot(), {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }, { root: mixed, anchors: ['note_1', 'note_9'], kind: 'comment' }, { root: composer, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    expect(mixed.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(composer.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(native.firstElementChild).toBe(originalButton);
+    originalButton.click();
+    expect(activated).toHaveBeenCalledTimes(1);
+    document.querySelector<HTMLButtonElement>('.geld-provider-original button')?.click();
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    const replacement = document.createElement('article');
+    replacement.id = native.id;
+    native.replaceWith(replacement);
+    native = replacement;
+    f.apply();
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(document.querySelectorAll('.geld-provider-original')).toHaveLength(1);
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off' });
+    expect(document.querySelector('.geld-provider-original')).toBeNull();
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+  });
+
+  it('reveals the native source before activating its exposed thread controls', async () => {
+    const native = document.createElement('article'); native.id = 'note_1'; document.body.append(native);
+    const action = vi.fn(async () => { expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false); return true; });
+    const f = fixture({ ...snapshot(), sourceActions: () => [{ kind: 'resolve', label: 'Resolve natively', available: true, activate: action }] }, {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    [...f.host.querySelectorAll<HTMLButtonElement>('[data-geld-source="note_1"] button')].find((button) => button.textContent === 'Resolve natively')?.click();
+    await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+  });
+
+  it('keeps push/state activity visible and only folds explicitly low-signal represented activity', async () => {
+    const roots = ['99', '100', '101'].map((id) => { const root = document.createElement('article'); root.id = `note_${id}`; document.body.append(root); return root; });
+    const source: ProviderReviewSnapshot = { ...snapshot(), events: roots.map((root, index) => ({ id: root.id, url: `${url}#${root.id}`, author: comment().author, createdAt: comment().createdAt, body: 'Native activity', kind: index === 0 ? 'activity' : index === 1 ? 'push' : 'state', lowSignal: true })) };
+    fixture(source, {}, { aiEnabled: false }, { conversationRoots: () => roots.map((root) => ({ root, anchors: [root.id], kind: 'activity' })) });
+    await vi.waitFor(() => expect(roots[0]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    expect(roots[1]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(roots[2]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+  });
+
+  it('collapses the native description after its first paragraph only in minimal mode and restores every node', async () => {
+    const description = document.createElement('div');
+    description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><section><p>More native content.</p></section>';
+    document.body.append(description);
+    const heading = description.firstElementChild;
+    const first = description.querySelector('p');
+    const more = description.querySelector('section');
+    const f = fixture(snapshot(), {}, { aiEnabled: false, compactTimeline: 'compact', collapseDescription: true }, { descriptionHost: () => description });
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'minimal', collapseDescription: true });
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
+    expect(first?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    expect(description.firstElementChild).toBe(heading);
+    document.querySelector<HTMLButtonElement>('.geld-provider-description-toggle')?.click();
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    expect(document.querySelector('.geld-provider-description-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: true });
+    expect(document.querySelector('.geld-provider-description-toggle')).toBeNull();
+    expect(description.querySelector('[data-geld-provider-description-hidden]')).toBeNull();
+    expect(description.firstElementChild).toBe(heading);
+  });
+
+  it('persists an explicit local review mark and restores it on reload without changing native state', async () => {
+    let saved: Readonly<Record<string, string>> = {};
+    const source = snapshot();
+    const saveReviewed = vi.fn<NonNullable<ProviderConversationServices['saveReviewed']>>(async (_input, item, fingerprint, reviewed) => {
+      const next = { ...saved };
+      if (reviewed) next[item.id] = fingerprint; else delete next[item.id];
+      saved = next;
+    });
+    const services = { readReviewed: async () => saved, saveReviewed };
+    const f = fixture(source, services, { aiEnabled: false });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')).not.toBeNull());
+    expect(saveReviewed).not.toHaveBeenCalled();
+    f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-review-group="done"]')).not.toBeNull());
+    expect(saveReviewed).toHaveBeenCalledTimes(1);
+    expect(Object.values(saved)[0]).toMatch(/^[a-f0-9]{64}$/);
+    expect(f.host.querySelector('[data-geld-local-review-notice]')?.textContent).toContain('Native status: Open');
+    expect(source.input.threads[0]?.resolved).toBe(false);
+    expect(f.send).not.toHaveBeenCalled();
+    const reloaded = fixture(source, services, { aiEnabled: false });
+    await vi.waitFor(() => expect(reloaded.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('true'));
+    reloaded.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(reloaded.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('false'));
+    expect(saved).toEqual({});
+    expect(reloaded.host.querySelector('[data-geld-review-group="open"]')).not.toBeNull();
+  });
+
+  it('rejects stored marks for an edited source or new head even if the storage reader returns an old fingerprint', async () => {
+    const source = snapshot();
+    const [original] = buildProviderReviewItems(source.input);
+    if (original === undefined) throw new Error('Missing original item.');
+    const fingerprint = await reviewedItemFingerprint(source.input, original, []);
+    const services = { readReviewed: async () => ({ [original.id]: fingerprint }), saveReviewed: vi.fn(async () => undefined) };
+    const edited = { ...source, input: { ...source.input, threads: source.input.threads.map((thread) => ({ ...thread, comments: thread.comments.map((entry) => ({ ...entry, body: 'An edited finding at the same native anchor.', updatedAt: '2026-11-01T14:00:00Z' })) })) } };
+    const pushed = { ...source, input: { ...source.input, subject: { ...source.input.subject, headSha: 'b'.repeat(40) } } };
+    for (const changed of [edited, pushed]) {
+      const f = fixture(changed, services, { aiEnabled: false });
+      await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')).not.toBeNull());
+      expect(f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('false');
+      expect(f.host.querySelector('[data-geld-review-group="done"]')).toBeNull();
+    }
+    expect(services.saveReviewed).not.toHaveBeenCalled();
+  });
+
+  it('does not adopt a late local mark or load after navigation', async () => {
+    let finishSave: () => void = () => undefined;
+    const saveReviewed = vi.fn(async () => new Promise<void>((resolve) => { finishSave = resolve; }));
+    const f = fixture(snapshot(), { readReviewed: async () => ({}), saveReviewed }, { aiEnabled: false });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')).not.toBeNull());
+    f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(saveReviewed).toHaveBeenCalledTimes(1));
+    f.apply(null);
+    finishSave();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(f.host.querySelector('.geld-provider-review')).toBeNull();
+    let finishLoad: (value: Readonly<Record<string, string>>) => void = () => undefined;
+    const reader = vi.fn(() => new Promise<Readonly<Record<string, string>>>((resolve) => { finishLoad = resolve; }));
+    const pending = fixture(snapshot(), { readReviewed: reader, saveReviewed }, { aiEnabled: false });
+    await vi.waitFor(() => expect(reader).toHaveBeenCalledTimes(1));
+    pending.apply(null);
+    const changed = pending.changed.mock.calls.length;
+    finishLoad({});
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(pending.changed).toHaveBeenCalledTimes(changed);
+    expect(pending.host.querySelector('.geld-provider-review')).toBeNull();
+  });
+
+  it('retains a successful mark and shows the storage error when undo fails', async () => {
+    const source = snapshot();
+    const [item] = buildProviderReviewItems(source.input);
+    if (item === undefined) throw new Error('Missing original item.');
+    const fingerprint = await reviewedItemFingerprint(source.input, item, []);
+    const f = fixture(source, { readReviewed: async () => ({ [item.id]: fingerprint }), saveReviewed: async () => { throw new Error('Device storage is unavailable.'); } }, { aiEnabled: false });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('true'));
+    f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(f.host.querySelector('[role="alert"]')?.textContent).toContain('Device storage is unavailable.'));
+    expect(f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.disabled).toBe(false);
+  });
+
+  it('does not carry a pending local mark onto a newly pushed head with the same item id', async () => {
+    let latest = snapshot();
+    let finish: () => void = () => undefined;
+    const saveReviewed = vi.fn(async () => new Promise<void>((resolve) => { finish = resolve; }));
+    const f = fixture(latest, { readReviewed: async () => ({}), saveReviewed }, { aiEnabled: false }, { fetchReview: async () => latest });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')).not.toBeNull());
+    const itemId = f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('data-geld-local-reviewed');
+    f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(saveReviewed).toHaveBeenCalledTimes(1));
+    latest = { ...latest, input: { ...latest.input, subject: { ...latest.input.subject, headSha: 'c'.repeat(40) } } };
+    f.apply({ ...page, headSha: latest.input.subject.headSha, version: latest.input.subject.headSha });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('data-geld-local-reviewed')).toBe(itemId));
+    expect(f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('false');
+    finish();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(f.host.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-pressed')).toBe('false');
+    expect(f.host.querySelector('[data-geld-review-group="done"]')).toBeNull();
+  });
+});
+
+describe('local reviewed source fingerprints', () => {
+  it('ignores AI wording and state while binding head, edited bodies, ordered replies and native resolution', async () => {
+    const source = snapshot().input;
+    const [item] = buildProviderReviewItems(source);
+    if (item === undefined) throw new Error('Missing original item.');
+    const original = await reviewedItemFingerprint(source, item, []);
+    expect(await reviewedItemFingerprint(source, { ...item, title: 'AI wording', context: 'AI explanation', rewritten: true, status: 'done-manual' }, [])).toBe(original);
+    const reply = { ...comment('A later human reply.'), id: '2', anchor: 'note_2', url: `${url}#note_2`, author: { id: '67890', login: 'a-person', automated: false } };
+    const changed: ProviderReviewInput[] = [
+      { ...source, subject: { ...source.subject, headSha: 'b'.repeat(40) } },
+      { ...source, threads: source.threads.map((thread) => ({ ...thread, comments: thread.comments.map((entry) => ({ ...entry, body: 'Edited at the same anchor.' })) })) },
+      { ...source, threads: source.threads.map((thread) => ({ ...thread, resolved: true })) },
+      { ...source, threads: source.threads.map((thread) => ({ ...thread, outdated: true })) },
+      { ...source, threads: source.threads.map((thread) => ({ ...thread, comments: thread.comments.map((entry) => ({ ...entry, updatedAt: '2026-11-01T14:00:00Z' })) })) },
+      { ...source, threads: source.threads.map((thread) => ({ ...thread, comments: [...thread.comments, reply] })) },
+    ];
+    for (const input of changed) {
+      const [native] = buildProviderReviewItems(input);
+      if (native === undefined) throw new Error('Missing changed item.');
+      expect(await reviewedItemFingerprint(input, native, [])).not.toBe(original);
+    }
+    await expect(reviewedItemFingerprint(source, { ...item, sources: [...item.sources].map((entry) => ({ ...entry, url: 'https://evil.example/source' })) }, [])).rejects.toThrow('sources changed');
+  });
+
+  it('does not invalidate an item for an unrelated thread edit and retains source order in its hash', async () => {
+    const source = snapshot().input;
+    const other = { ...comment('Unrelated thread.'), id: '9', anchor: 'note_9', url: `${url}#note_9` };
+    const unrelated = { ...source.threads[0], id: 'b'.repeat(40), anchor: `discussion_${'b'.repeat(40)}`, url: other.url, path: 'other.ts', line: 99, resolved: false, outdated: false, comments: [other] };
+    const complete: ProviderReviewInput = { ...source, threads: [...source.threads, unrelated] };
+    const item = buildProviderReviewItems(complete).find((entry) => entry.path === 'cache.ts');
+    if (item === undefined) throw new Error('Missing original item.');
+    const before = await reviewedItemFingerprint(complete, item, []);
+    const edited: ProviderReviewInput = { ...complete, threads: complete.threads.map((thread) => thread.id === unrelated.id ? { ...thread, comments: [{ ...other, body: 'Unrelated edited body.' }] } : thread) };
+    const afterItem = buildProviderReviewItems(edited).find((entry) => entry.id === item.id);
+    if (afterItem === undefined) throw new Error('Missing original item after unrelated edit.');
+    expect(await reviewedItemFingerprint(edited, afterItem, [])).toBe(before);
+    const reply = { ...comment('Reply.'), id: '2', anchor: 'note_2', url: `${url}#note_2` };
+    const ordered = { ...source, threads: source.threads.map((thread) => ({ ...thread, comments: [...thread.comments, reply] })) };
+    const reversed = { ...source, threads: source.threads.map((thread) => ({ ...thread, comments: [reply, ...thread.comments] })) };
+    const [first] = buildProviderReviewItems(ordered);
+    const [second] = buildProviderReviewItems(reversed);
+    if (first === undefined || second === undefined) throw new Error('Missing ordered source items.');
+    expect(await reviewedItemFingerprint(ordered, first, [])).not.toBe(await reviewedItemFingerprint(reversed, second, []));
   });
 });

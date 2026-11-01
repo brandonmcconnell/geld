@@ -1,5 +1,5 @@
 import type { Catalog, ChangeTotals, FileStats, GeldSettings } from '@geld/core';
-import { allCategories, BUNDLED_CATALOG, compileAuthorRules, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, LARGE_CHANGE_LINES, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
+import { allCategories, BUNDLED_CATALOG, compileAuthorRules, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, LARGE_CHANGE_LINES, pluralize, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
 import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } from '../github/breakdown';
 import type { HiddenBreakdown, StatsBreakdown } from '../github/breakdown';
 import type { TabState } from '../lib/messages';
@@ -9,6 +9,7 @@ import { ProviderConversation } from './conversation';
 import type { ProviderConversationServices } from './conversation';
 import { ProviderHover } from './hover';
 import { ProviderReveal } from './reveal';
+import { ProviderCategoryTree } from './tree';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
 import { isProviderReviewPage } from './types';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
@@ -17,6 +18,7 @@ import type { RepoConfigChoices } from '../lib/local-state';
 
 const HIDDEN = 'data-geld-provider-hidden';
 const INLINE = 'data-geld-provider-inline';
+const AUTHOR_HIDDEN = 'data-geld-provider-author-hidden';
 
 interface HoverCounts {
   readonly stats: StatsBreakdown | null;
@@ -39,6 +41,7 @@ export class ProviderController {
   private catalog: Catalog;
   private readonly source: ProviderDiffSource;
   private readonly counts = new ProviderCounts();
+  private readonly categoryTree = new ProviderCategoryTree();
   private readonly conversation: ProviderConversation;
   private readonly hover: ProviderHover;
   private readonly reveal: ProviderReveal;
@@ -52,16 +55,16 @@ export class ProviderController {
   private expanded: boolean;
   private state: TabState = PROVIDER_IDLE_STATE;
   private section: HTMLElement | null = null;
-  private nav: HTMLElement | null = null;
+  private activeCategory: string | null = null;
   private layout: HTMLElement | null = null;
   private signature = '';
   private readonly touched = new Set<HTMLElement>();
   private readonly chips = new Set<HTMLElement>();
   private readonly collapsed = new Map<string, ProviderDiffEntry>();
-  private readonly viewed = new Map<string, { readonly attempts: number; readonly at: number }>();
+  private readonly viewed = new Map<string, { readonly attempts: number; readonly at: number; readonly confirmed: boolean }>();
   private shownInline = new WeakMap<HTMLElement, string>();
   private readonly expandedLarge = new WeakMap<HTMLElement, string>();
-  private readonly authors = new Map<HTMLElement, boolean>();
+  private readonly authors = new Set<HTMLElement>();
   private rowObserver: IntersectionObserver | null = null;
   private readonly observedRows = new WeakSet<HTMLElement>();
   private readonly visibleRows = new WeakSet<HTMLElement>();
@@ -115,6 +118,7 @@ export class ProviderController {
     });
     this.observer.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
     document.addEventListener('visibilitychange', this.visibility);
+    document.addEventListener('click', this.nativeTreeClick, true);
     document.addEventListener('DiffFileMounted', this.refreshEvent);
     document.addEventListener(PROVIDER_LINE_FOLDS_CHANGED, this.refreshEvent);
     this.pulse = setInterval(() => this.requestRefresh(), 15_000);
@@ -122,6 +126,18 @@ export class ProviderController {
   }
 
   private readonly refreshEvent = (): void => this.requestRefresh();
+  private readonly nativeTreeClick = (event: MouseEvent): void => {
+    if (!event.isTrusted || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || this.stopped) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const link = target?.closest<HTMLAnchorElement>('a[href]');
+    if (link === null || link === undefined || link.closest('[data-geld-ui]') !== null) return;
+    const row = this.adapter.readDiff(document)?.tree.find((item) => item.link === link);
+    if (row === undefined) return;
+    const page = this.adapter.describe(new URL(link.href, document.URL), document);
+    if (page === null || providerDiffKey(page) !== this.pageKey) return;
+    const key = this.pageKey;
+    queueMicrotask(() => { if (!this.stopped && this.pageKey === key && !document.hidden) this.revealPath(row.path); });
+  };
   private readonly visibility = (): void => {
     this.source.setActive(!document.hidden);
     this.configs?.setActive(!document.hidden);
@@ -157,9 +173,11 @@ export class ProviderController {
   }
 
   revealPath(path: string): void {
-    this.setExpanded(true);
+    const category = this.state.categories.find((item) => item.paths.includes(path));
+    this.activeCategory = category?.id ?? null;
+    this.setExpanded(category !== undefined);
     this.apply();
-    if (!this.expanded) { this.setExpanded(true); this.apply(); }
+    this.categoryTree.selectCategory(category?.id ?? 'essential');
     this.reveal.request(path);
   }
 
@@ -181,6 +199,7 @@ export class ProviderController {
     if (this.timer !== null) clearTimeout(this.timer);
     if (this.pulse !== null) clearInterval(this.pulse);
     document.removeEventListener('visibilitychange', this.visibility);
+    document.removeEventListener('click', this.nativeTreeClick, true);
     document.removeEventListener('DiffFileMounted', this.refreshEvent);
     document.removeEventListener(PROVIDER_LINE_FOLDS_CHANGED, this.refreshEvent);
     this.hover.stop();
@@ -209,13 +228,13 @@ export class ProviderController {
     this.collapsed.clear();
     this.shownInline = new WeakMap();
     this.section?.remove();
-    this.nav?.remove();
+    this.categoryTree.clear();
+    this.activeCategory = null;
     this.section = null;
-    this.nav = null;
     this.signature = '';
     for (const chip of this.chips) chip.remove();
     this.chips.clear();
-    for (const [row, hidden] of this.authors) row.hidden = hidden;
+    for (const row of this.authors) row.removeAttribute(AUTHOR_HIDDEN);
     this.authors.clear();
   }
 
@@ -306,9 +325,13 @@ export class ProviderController {
       this.counts.write(target.additions, visible.additions);
       this.counts.write(target.deletions, visible.deletions);
       this.counts.write(target.files, visible.files);
-      for (const label of target.labels ?? []) this.counts.writeAttribute(label.host, label.attribute, visible[label.count]);
+      if (target.accessibleSummaryHost !== undefined) this.counts.writeSummary(target.accessibleSummaryHost, visible);
+      for (const label of target.labels ?? []) {
+        if (label.count === 'lines') this.counts.writeLineAttribute(label.host, label.attribute, visible);
+        else this.counts.writeAttribute(label.host, label.attribute, visible[label.count]);
+      }
     }
-    if (view !== null) this.applyFiles(page, view, hidden, all, files);
+    if (view !== null) this.applyFiles(page, view, hidden, all, files, effective, result.result.revision);
     this.state = {
       repository: page.repository, repo: page.repository.path, repoConfig: config?.tab ?? null, allowed: true, rule: null,
       hasDiff: true, hiddenCount: hidden.totals.files, all, visible,
@@ -322,7 +345,11 @@ export class ProviderController {
     this.publish(this.state);
   }
 
-  private applyFiles(page: ProviderPage, view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[]): void {
+  private applyFiles(page: ProviderPage, view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], effective: GeldSettings, revision: string): void {
+    if (this.activeCategory !== null && !hidden.categories.some((group) => group.category.id === this.activeCategory)) {
+      this.activeCategory = null;
+      this.setExpanded(false);
+    }
     const hiddenPaths = new Set(hidden.categories.flatMap((group) => group.paths));
     const categories = new Map(hidden.categories.flatMap((group) => group.paths.map((path) => [path, group.category] as const)));
     const stats = new Map(files.map((file) => [file.path, file]));
@@ -333,16 +360,18 @@ export class ProviderController {
       this.layout?.classList.remove('geld-provider-diffs');
       this.layout = view.container;
     }
-    if (this.settings.groupHidden && !view.virtualized && !view.container.classList.contains('geld-provider-diffs')) view.container.classList.add('geld-provider-diffs');
+    const grouped = effective.groupHidden && !view.virtualized;
+    if (view.container.classList.contains('geld-provider-diffs') !== grouped) view.container.classList.toggle('geld-provider-diffs', grouped);
     for (const entry of view.entries) {
       this.touched.add(entry.root);
       const hiddenFile = hiddenPaths.has(entry.path);
-      attribute(entry.root, HIDDEN, hiddenFile && this.settings.groupHidden && !view.virtualized ? (this.expanded ? 'open' : 'closed') : null);
-      attribute(entry.root, INLINE, hiddenFile && (!this.settings.groupHidden || view.virtualized) ? '' : null);
-      if (hiddenFile && this.expanded && this.shownInline.get(entry.root) !== entry.path) {
+      const shown = this.expanded && (this.activeCategory === null || this.activeCategory === categories.get(entry.path)?.id);
+      attribute(entry.root, HIDDEN, hiddenFile && effective.groupHidden && !view.virtualized ? (shown ? 'open' : 'closed') : null);
+      attribute(entry.root, INLINE, hiddenFile && (!effective.groupHidden || view.virtualized) ? '' : null);
+      if (hiddenFile && shown && this.shownInline.get(entry.root) !== entry.path) {
         if (entry.expand()) { this.shownInline.set(entry.root, entry.path); this.collapsed.delete(entry.path); }
-      } else if (hiddenFile && (!this.settings.groupHidden || view.virtualized)) {
-        if (!this.expanded && this.collapsed.get(entry.path)?.root !== entry.root && entry.isExpanded?.() === true) {
+      } else if (hiddenFile && (!effective.groupHidden || view.virtualized)) {
+        if (!shown && this.collapsed.get(entry.path)?.root !== entry.root && entry.isExpanded?.() === true) {
           if (entry.collapse()) this.collapsed.set(entry.path, entry);
         }
       }
@@ -351,60 +380,53 @@ export class ProviderController {
         this.collapsed.delete(entry.path);
       }
       const category = categories.get(entry.path);
-      const viewedKey = JSON.stringify([repositoryKey(page.repository), resultRevision(page), entry.path]);
+      const viewedKey = JSON.stringify([repositoryKey(page.repository), this.pageKey, revision, entry.path]);
       const attempt = this.viewed.get(viewedKey);
-      if (category !== undefined && isAutoViewed(this.settings, category.id) && entry.isViewed?.() === false
-        && (attempt === undefined || (attempt.attempts < 8 && Date.now() - attempt.at >= Math.min(45_000, 1000 * 2 ** attempt.attempts)))
-        && entry.markViewed?.() === true) this.viewed.set(viewedKey, { attempts: (attempt?.attempts ?? 0) + 1, at: Date.now() });
+      if (category !== undefined && isAutoViewed(effective, category.id)) {
+        const checked = entry.isViewed?.();
+        if (checked === true && attempt?.confirmed !== true) this.viewed.set(viewedKey, { attempts: attempt?.attempts ?? 0, at: Date.now(), confirmed: true });
+        else if (checked === false && attempt?.confirmed !== true
+          && (attempt === undefined || (attempt.attempts < 8 && Date.now() - attempt.at >= Math.min(45_000, 1000 * 2 ** attempt.attempts)))
+          && entry.markViewed?.() === true) this.viewed.set(viewedKey, { attempts: (attempt?.attempts ?? 0) + 1, at: Date.now(), confirmed: false });
+      }
       const file = stats.get(entry.path);
-      if (!hiddenFile && this.settings.expandLargeDiffs && file !== undefined && file.additions + file.deletions >= LARGE_CHANGE_LINES
+      if (!hiddenFile && effective.expandLargeDiffs && file !== undefined && file.additions + file.deletions >= LARGE_CHANGE_LINES
         && this.expandedLarge.get(entry.root) !== entry.path) {
         if (entry.isExpanded?.() === true || (entry.isExpanded?.() === false && entry.expand())) this.expandedLarge.set(entry.root, entry.path);
       }
     }
     for (const row of view.tree) {
       this.touched.add(row.root);
-      attribute(row.root, INLINE, hiddenPaths.has(row.path) ? '' : null);
+      attribute(row.root, INLINE, !effective.groupHidden && hiddenPaths.has(row.path) ? '' : null);
     }
-    const signature = JSON.stringify([this.pageKey, hidden.categories.map((group) => [group.category.id, group.paths]), this.expanded, this.settings.groupHidden]);
-    if (signature === this.signature && this.section?.isConnected === true && (view.treeHost === null || this.nav?.isConnected === true)) return;
+    if (effective.groupHidden) this.categoryTree.update(view, hidden, all, files, {
+      subjectKey: JSON.stringify([this.pageKey, revision]),
+      revealPath: (path) => this.revealPath(path),
+      selectCategory: (id) => { this.activeCategory = id === 'essential' ? null : id; },
+      setExpanded: (expanded) => { this.setExpanded(expanded); this.apply(); },
+    });
+    else this.categoryTree.clear();
+    const signature = JSON.stringify([this.pageKey, revision, hidden.categories.map((group) => [group.category.id, group.category.title, group.category.shortNoun, group.category.shortNounPlural, group.paths, group.totals]), hidden.lines, all, this.expanded, effective.groupHidden]);
+    if (signature === this.signature && this.section?.isConnected === true) return;
     this.section?.remove();
-    this.nav?.remove();
     this.signature = signature;
     this.section = null;
-    this.nav = null;
     if (hidden.totals.files === 0) return;
     const section = element('section', '', 'geld-provider-hidden');
-    const toggle = element('button', `${formatCount(hidden.totals.files)} files hidden`, 'geld-provider-toggle');
+    const toggle = element('button', `${this.expanded ? 'Hide' : 'Show'} ${hiddenLabel(hidden, allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id)))}`, 'geld-provider-toggle');
     toggle.type = 'button';
     toggle.setAttribute('aria-expanded', String(this.expanded));
-    toggle.addEventListener('click', () => { this.setExpanded(!this.expanded); this.apply(); });
+    toggle.addEventListener('click', () => { this.activeCategory = null; this.setExpanded(!this.expanded); this.apply(); });
     section.append(toggle, this.breakdown(hidden, all));
     view.container.append(section);
     this.section = section;
-    if (view.treeHost !== null) {
-      this.nav = element('nav', '', 'geld-provider-categories');
-      this.nav.setAttribute('aria-label', 'Hidden files by category');
-      for (const group of hidden.categories) {
-        const details = element('details');
-        details.append(element('summary', `${group.category.title} (${group.paths.length})`));
-        for (const path of group.paths) {
-          const button = element('button', path, 'geld-provider-file');
-          button.type = 'button';
-          button.addEventListener('click', () => this.revealPath(path));
-          details.append(button);
-        }
-        this.nav.append(details);
-      }
-      view.treeHost.append(this.nav);
-    }
   }
 
   private breakdown(hidden: HiddenBreakdown, all: ChangeTotals | null): HTMLElement {
     const details = element('details', '', 'geld-provider-breakdown');
     details.append(element('summary', 'Line counts'));
-    if (all !== null) details.append(element('div', `Total ${all.files} files +${formatCount(all.additions)} −${formatCount(all.deletions)}`));
-    for (const group of hidden.categories) details.append(element('div', `${group.category.title}: ${group.totals.files} files +${formatCount(group.totals.additions)} −${formatCount(group.totals.deletions)}`));
+    if (all !== null) details.append(element('div', `Total ${pluralize(all.files, 'file', 'files')} +${formatCount(all.additions)} −${formatCount(all.deletions)}`));
+    for (const group of hidden.categories) details.append(element('div', `${group.category.title}: ${pluralize(group.totals.files, 'file', 'files')} +${formatCount(group.totals.additions)} −${formatCount(group.totals.deletions)}`));
     return details;
   }
 
@@ -422,14 +444,12 @@ export class ProviderController {
       const scope = providerRepositoryScope(page.repository);
       if (!decideRepo(repoRules, scope).allowed) {
         this.removeChip(row);
-        const original = this.authors.get(row.root);
-        if (original !== undefined) row.root.hidden = original;
+        row.root.removeAttribute(AUTHOR_HIDDEN);
         continue;
       }
       const shouldHide = row.author !== null && rules.hides(row.author);
-      if (!this.authors.has(row.root)) this.authors.set(row.root, row.root.hidden);
-      const original = this.authors.get(row.root) ?? false;
-      if (row.root.hidden !== (original || shouldHide)) row.root.hidden = original || shouldHide;
+      this.authors.add(row.root);
+      attribute(row.root, AUTHOR_HIDDEN, shouldHide ? '' : null);
       if (!this.settings.showListStats || shouldHide) { this.removeChip(row); continue; }
       if (this.rowObserver !== null) {
         if (!this.observedRows.has(row.root)) {
@@ -461,10 +481,14 @@ export class ProviderController {
         status: state.provisional === true ? 'provisional' : 'ready',
       });
       const visible = subtractTotals(all, hidden.totals);
-      const label = hiddenLabel(hidden, allCategories(this.settings, this.catalog).filter((category) => isCategoryEnabled(this.settings, category.id)));
-      const text = `${hidden.totals.files > 0 ? `${label} · ` : ''}+${formatCount(visible.additions)} −${formatCount(visible.deletions)}`;
-      if (chip.textContent !== text) chip.textContent = text;
-      chip.title = `${state.provisional === true ? 'Cached counts. Updating…\n' : ''}Essential: ${visible.files} files +${visible.additions} −${visible.deletions}\nTotal: ${all.files} files +${all.additions} −${all.deletions}`;
+      const label = activeCategories.length === 0 ? null : hiddenLabel(hidden, activeCategories);
+      const text = `${label === null ? '' : `${label} · `}+${formatCount(visible.additions)} −${formatCount(visible.deletions)}`;
+      if (chip.textContent !== text) chip.replaceChildren(
+        ...(label === null ? [] : [element('span', label, 'geld-provider-list-counts__hidden'), ' · ']),
+        element('span', `+${formatCount(visible.additions)}`, 'geld-provider-list-counts__add'), ' ',
+        element('span', `−${formatCount(visible.deletions)}`, 'geld-provider-list-counts__del'),
+      );
+      chip.title = `${state.provisional === true ? 'Cached counts. Updating…\n' : ''}Essential: ${pluralize(visible.files, 'file', 'files')} +${visible.additions} −${visible.deletions}\nTotal: ${pluralize(all.files, 'file', 'files')} +${all.additions} −${all.deletions}`;
     }
   }
 
@@ -483,11 +507,12 @@ export class ProviderController {
     if (chip !== null) { this.forgetHover(chip); this.chips.delete(chip); chip.remove(); }
   }
 
-  private bindHover(host: HTMLElement, counts: HoverCounts): void {
+  private bindHover(host: HTMLElement, counts: HoverCounts, keyboard?: boolean): void {
     const bound = this.hoverCounts.has(host);
     this.hoverCounts.set(host, counts);
     if (bound) return;
     this.hover.bindBreakdown(host, () => this.hoverCounts.get(host)?.stats ?? null, {
+      ...(keyboard === undefined ? {} : { keyboard }),
       status: () => {
         const current = this.hoverCounts.get(host);
         return current === undefined ? { status: 'unavailable' } : { status: current.status, ...(current.reason === undefined ? {} : { reason: current.reason }) };
@@ -496,7 +521,8 @@ export class ProviderController {
   }
 
   private bindHeaders(targets: readonly ProviderHeaderTarget[], counts: HoverCounts): void {
-    const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? [])]).filter((host): host is HTMLElement => host !== null));
+    const keyboard = new Set(targets.flatMap((target) => target.keyboardHoverHosts ?? []));
+    const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]).filter((host): host is HTMLElement => host !== null && host.closest('[aria-hidden="true"], [inert]') === null));
     for (const host of this.headerHosts) {
       if (current.has(host)) continue;
       this.forgetHover(host);
@@ -504,7 +530,7 @@ export class ProviderController {
     }
     for (const host of current) {
       this.headerHosts.add(host);
-      this.bindHover(host, counts);
+      this.bindHover(host, counts, keyboard.has(host) ? true : undefined);
     }
   }
 
@@ -520,5 +546,3 @@ export class ProviderController {
     this.shownInline = new WeakMap();
   }
 }
-
-function resultRevision(page: ProviderPage): string { return `${page.headSha ?? ''}:${page.version}`; }

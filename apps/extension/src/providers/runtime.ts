@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { normalizeReviewAccountId, repositoryKey, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings } from '@geld/core';
-import { providerBotSupport, providerReviewKey, sourceLink } from '@geld/review';
+import { buildProviderReviewItems, providerBotSupport, providerReviewKey, sourceLink } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import { loadCatalog, watchCatalog } from '../lib/catalog';
 import { settingsItem } from '../lib/storage';
@@ -14,8 +14,10 @@ import { PROVIDER_IDLE_STATE, ProviderController } from './controller';
 import { isProviderReviewPage } from './types';
 import type { ProviderAdapter, ProviderPage, ProviderReviewSnapshot } from './types';
 import type { ProviderConversationServices } from './conversation';
+import { providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
 import { ProviderRepoConfigSource } from './repo-config';
-import { repoConfigChoicesItem } from '../lib/local-state';
+import { readProviderReviewedItems, repoConfigChoicesItem, saveProviderReviewedItem } from '../lib/local-state';
+import type { ProviderReviewedStorage } from '../lib/local-state';
 import { whitespaceOptOutsItem } from '../lib/local-state';
 import { persist } from '../lib/context';
 import { mergeWhitespaceOptOuts, ProviderWhitespace } from './whitespace';
@@ -26,6 +28,65 @@ interface ProviderBotTrustEnvironment {
   readonly retired: () => boolean;
   readonly updated: (settings: GeldSettings) => void;
   readonly settings?: Pick<typeof settingsItem, 'update'>;
+}
+
+interface ProviderReviewedEnvironment {
+  readonly page: () => ProviderPage | null;
+  readonly snapshot: () => ProviderReviewSnapshot | null;
+  readonly retired: () => boolean;
+  readonly storage?: ProviderReviewedStorage;
+  readonly getSettings?: () => Promise<GeldSettings>;
+}
+
+export function createProviderReviewedServices(environment: ProviderReviewedEnvironment): Pick<ProviderConversationServices, 'readReviewed' | 'saveReviewed'> {
+  const currentReview = (input: ProviderReviewInput): ProviderReviewSnapshot => {
+    const page = environment.page();
+    const snapshot = environment.snapshot();
+    if (environment.retired() || page === null || !isProviderReviewPage(page) || snapshot === null
+      || providerReviewKey(input.subject) !== providerReviewKey(snapshot.input.subject)
+      || input.subject.headSha !== snapshot.input.subject.headSha
+      || page.provider !== input.subject.provider || page.number !== input.subject.id
+      || repositoryKey(page.repository) !== repositoryKey({ provider: input.subject.provider, origin: input.subject.origin, path: input.subject.repository })
+      || (page.headSha !== null && page.headSha !== input.subject.headSha)) throw new Error('This review changed. Reload its conversation before marking an item reviewed.');
+    return snapshot;
+  };
+  const latestReview = async (input: ProviderReviewInput): Promise<{ readonly input: ProviderReviewInput; readonly snapshot: ProviderReviewSnapshot; readonly signature: string }> => {
+    currentReview(input);
+    const settings = await (environment.getSettings?.() ?? settingsItem.getValue());
+    const snapshot = currentReview(input);
+    const native = snapshot.input;
+    return {
+      input: providerReviewWithTrustedAccounts(native, snapshot.comments, settings, snapshot.complete),
+      snapshot,
+      signature: JSON.stringify([native.threads, snapshot.comments]),
+    };
+  };
+  const unchanged = (input: ProviderReviewInput, snapshot: ProviderReviewSnapshot, signature: string): void => {
+    const current = currentReview(input);
+    if (current !== snapshot || JSON.stringify([current.input.threads, current.comments]) !== signature) throw new Error('The conversation changed. Reload it before marking an item reviewed.');
+  };
+  return {
+    readReviewed: async (input) => {
+      const latest = await latestReview(input);
+      const stored = await readProviderReviewedItems(providerReviewKey(input.subject), input.subject.headSha, environment.storage);
+      const result: Record<string, string> = {};
+      for (const item of buildProviderReviewItems(latest.input)) {
+        const fingerprint = stored[item.id];
+        if (fingerprint !== undefined && fingerprint === await reviewedItemFingerprint(latest.input, item, latest.snapshot.comments)) result[item.id] = fingerprint;
+      }
+      unchanged(input, latest.snapshot, latest.signature);
+      return result;
+    },
+    saveReviewed: async (input, item, fingerprint, reviewed) => {
+      const validate = async (): Promise<void> => {
+        const latest = await latestReview(input);
+        if (fingerprint !== await reviewedItemFingerprint(latest.input, item, latest.snapshot.comments)) throw new Error('The item changed. Reload it before marking it reviewed.');
+        unchanged(input, latest.snapshot, latest.signature);
+      };
+      await validate();
+      await saveProviderReviewedItem(providerReviewKey(input.subject), input.subject.headSha, item.id, fingerprint, reviewed, validate, environment.storage);
+    },
+  };
 }
 
 /** The picker identifies a source comment; only the fetched native account can establish trust. */
@@ -145,7 +206,12 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     retired: () => retired,
     updated: (value) => { badge = value.showBadge; whitespace.update(value); controller?.updateSettings(value); },
   });
-  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot });
+  const reviewed = createProviderReviewedServices({
+    page: () => sourceAdapter.describe(new URL(window.location.href), document),
+    snapshot: () => observedReview,
+    retired: () => retired,
+  });
+  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, ...reviewed });
   const started = controller;
   unwatchSettings = settingsItem.watch((value) => {
     badge = value.showBadge;
