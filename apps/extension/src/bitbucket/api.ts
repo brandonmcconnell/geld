@@ -1,7 +1,7 @@
 import type { FileStats } from '@geld/core';
 import { parseUnifiedDiff } from '@geld/core';
 import { looksLikeHtml } from '../lib/http';
-import type { ProviderDiffResult, ProviderReviewPage } from '../providers/types';
+import type { ProviderCommitPage, ProviderDiffResult, ProviderReviewPage } from '../providers/types';
 
 const API_ORIGIN = 'https://api.bitbucket.org';
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -287,10 +287,15 @@ export class BitbucketClient {
   private readonly repositoryPath: string;
   private readonly pullPath: string;
 
-  constructor(readonly page: ProviderReviewPage, private readonly fetcher: typeof fetch = fetch) {
-    if (page.provider !== 'bitbucket' || page.repository.provider !== 'bitbucket' || page.repository.origin !== 'https://bitbucket.org' || !/^[1-9]\d*$/.test(page.number)) throw new BitbucketApiError('invalid-response', 'Invalid Bitbucket review identity.');
+  constructor(readonly page: ProviderReviewPage | ProviderCommitPage, private readonly fetcher: typeof fetch = fetch) {
+    if (page.provider !== 'bitbucket' || page.repository.provider !== 'bitbucket' || page.repository.origin !== 'https://bitbucket.org'
+      || (page.kind === 'commit' ? !/^[a-f0-9]{7,40}$|^[a-f0-9]{64}$/i.test(page.ref) : !/^[1-9]\d*$/.test(page.number))) throw new BitbucketApiError('invalid-response', 'Invalid Bitbucket review identity.');
     this.repositoryPath = apiRepositoryPath(page.repository.path);
-    this.pullPath = `${this.repositoryPath}/pullrequests/${page.number}`;
+    this.pullPath = page.kind === 'commit' ? '' : `${this.repositoryPath}/pullrequests/${page.number}`;
+  }
+
+  private reviewPage(): ProviderReviewPage {
+    return this.page.kind === 'commit' ? invalid('A Bitbucket commit has no pull request review source.') : this.page;
   }
 
   private trustedUrl(value: string, initial: URL): URL {
@@ -336,6 +341,7 @@ export class BitbucketClient {
   }
 
   private async collection<T>(resource: string, parse: (value: unknown) => T, signal: AbortSignal, pinned?: URL): Promise<readonly T[]> {
+    if (pinned === undefined) this.reviewPage();
     const initial = pinned ?? new URL(`${API_ORIGIN}${this.pullPath}/${resource}?pagelen=100`);
     let current: URL | null = initial;
     const visited = new Set<string>();
@@ -347,7 +353,11 @@ export class BitbucketClient {
       const page = record(await this.json(current, signal));
       if (!Array.isArray(page.values)) return invalid('Bitbucket omitted collection values.');
       items.push(...page.values.map((value: unknown) => parse(value)));
-      if (page.size !== undefined) expected = integer(page.size);
+      if (page.size !== undefined) {
+        const size = integer(page.size);
+        if (expected !== null && expected !== size) throw new BitbucketApiError('incomplete', 'Bitbucket collection size changed during pagination.');
+        expected = size;
+      }
       current = page.next === undefined || page.next === null ? null : this.trustedUrl(string(page.next), initial);
     }
     if (expected !== null && items.length !== expected) throw new BitbucketApiError('incomplete', 'Bitbucket returned an incomplete review collection.');
@@ -355,8 +365,9 @@ export class BitbucketClient {
   }
 
   async pullRequest(signal: AbortSignal): Promise<BitbucketPullRequest> {
+    const page = this.reviewPage();
     const value = record(await this.json(new URL(`${API_ORIGIN}${this.pullPath}`), signal));
-    if (String(integer(value.id)) !== this.page.number) return invalid('Bitbucket returned a different pull request.');
+    if (String(integer(value.id)) !== page.number) return invalid('Bitbucket returned a different pull request.');
     const destination = record(value.destination);
     if (isRecord(destination.repository) && destination.repository.full_name !== this.page.repository.path) return invalid('Bitbucket returned a different destination repository.');
     const [source, base] = await Promise.all([this.resolveCommit(value.source, signal), this.resolveCommit(destination, signal)]);
@@ -400,18 +411,46 @@ export class BitbucketClient {
   }
 
   async diff(signal: AbortSignal): Promise<ProviderDiffResult> {
+    if (this.page.kind === 'commit') return this.commitDiff(this.page, signal);
+    const page = this.page;
     const before = await this.pullRequest(signal);
     const comparison = (resource: 'diff' | 'diffstat'): URL => {
       const source = before.sourceRepository.split('/').map(encodeURIComponent).join('/');
       const url = new URL(`${API_ORIGIN}${this.repositoryPath}/${resource}/${source}:${before.headSha}%0D${before.baseSha}`);
-      url.searchParams.set('from_pullrequest_id', this.page.number);
+      url.searchParams.set('from_pullrequest_id', page.number);
       url.searchParams.set('topic', 'true');
       if (resource === 'diffstat') url.searchParams.set('pagelen', '100');
       return url;
     };
+    const result = await this.diffFiles(comparison('diff'), comparison('diffstat'), signal);
+    const after = await this.pullRequest(signal);
+    if (before.headSha !== after.headSha || before.baseSha !== after.baseSha || before.sourceRepository !== after.sourceRepository) throw new BitbucketApiError('changed', 'Bitbucket changed the review while its diff was loading.');
+    if (page.headSha !== null && page.headSha !== before.headSha) throw new BitbucketApiError('changed', 'Bitbucket review head changed.');
+    return { ...result, revision: `${before.baseSha}..${before.headSha}` };
+  }
+
+  private async commitDiff(page: ProviderCommitPage, signal: AbortSignal): Promise<ProviderDiffResult> {
+    const resolve = async (): Promise<string> => {
+      const url = new URL(`${API_ORIGIN}${this.repositoryPath}/commit/${page.ref}`);
+      url.searchParams.set('fields', 'hash,repository.full_name');
+      const value = record(await this.json(url, signal));
+      const hash = string(value.hash).toLowerCase();
+      if (!FULL_COMMIT.test(hash) || !hash.startsWith(page.ref.toLowerCase()) || (value.repository !== undefined && apiRepositoryPath(string(record(value.repository).full_name)) !== this.repositoryPath)) return invalid('Bitbucket returned a different standalone commit.');
+      return hash;
+    };
+    const head = await resolve();
+    if (page.headSha !== null && head !== page.headSha.toLowerCase()) throw new BitbucketApiError('changed', 'Bitbucket selected commit changed.');
+    const stats = new URL(`${API_ORIGIN}${this.repositoryPath}/diffstat/${head}`);
+    stats.searchParams.set('pagelen', '100');
+    const result = await this.diffFiles(new URL(`${API_ORIGIN}${this.repositoryPath}/diff/${head}`), stats, signal);
+    if (!FULL_COMMIT.test(page.ref) && await resolve() !== head) throw new BitbucketApiError('changed', 'Bitbucket commit reference changed while its diff was loading.');
+    return { ...result, revision: `commit:${head}` };
+  }
+
+  private async diffFiles(diff: URL, diffstat: URL, signal: AbortSignal): Promise<Omit<ProviderDiffResult, 'revision'>> {
     const [stats, response] = await Promise.all([
-      this.collection('diffstat', parseDiffstat, signal, comparison('diffstat')),
-      this.response(comparison('diff'), signal, true),
+      this.collection('diffstat', parseDiffstat, signal, diffstat),
+      this.response(diff, signal, true),
     ]);
     const patch = await boundedText(response, MAX_DIFF_BYTES);
     if (looksLikeHtml(response.headers.get('content-type'), patch)) throw new BitbucketApiError('invalid-response', 'Bitbucket did not return a unified diff.');
@@ -424,9 +463,6 @@ export class BitbucketClient {
       const fact = facts.get(file.path);
       return fact !== undefined && fact.additions === file.additions && fact.deletions === file.deletions;
     });
-    const after = await this.pullRequest(signal);
-    if (before.headSha !== after.headSha || before.baseSha !== after.baseSha || before.sourceRepository !== after.sourceRepository) throw new BitbucketApiError('changed', 'Bitbucket changed the review while its diff was loading.');
-    if (this.page.headSha !== null && this.page.headSha !== before.headSha) throw new BitbucketApiError('changed', 'Bitbucket review head changed.');
     const files = stats.map((file): FileStats => {
       const fact = facts.get(file.path);
       return fact !== undefined && fact.additions === file.additions && fact.deletions === file.deletions ? { ...fact, status: file.status ?? 'modified' } : file;
@@ -436,6 +472,6 @@ export class BitbucketClient {
       const file = parseUnifiedDiff(part)[0];
       if (file !== undefined && paths.has(file.path)) patches.set(file.path, part);
     }
-    return { files, revision: `${before.baseSha}..${before.headSha}`, complete, patches };
+    return { files, complete, patches };
   }
 }

@@ -19,6 +19,7 @@ export interface GitLabReviewEvent {
   readonly body: string;
   readonly createdAt: string;
   readonly icon: string | null;
+  readonly kind: 'push' | 'activity';
 }
 
 export interface GitLabReviewCapabilities {
@@ -183,6 +184,7 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
           body: note.note,
           createdAt: time(note.created_at),
           icon: typeof note.system_note_icon_name === 'string' ? note.system_note_icon_name : null,
+          kind: note.system_note_icon_name === 'commit' ? 'push' : 'activity',
         });
         continue;
       }

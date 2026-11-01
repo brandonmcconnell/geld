@@ -1403,10 +1403,29 @@ Provider-specific surfaces translate settings and sources into shared review and
   Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.
   Current Atlaskit default buttons draw the border on `::after` so it does not add to the button's layout height.
   Token mappings documented from Atlassian's design system do not establish that Bitbucket has deployed the same component version or typography rollout.
-  The VM blocks Bitbucket API/static hosts, while the connected TinyFish browser can inspect public PR Overview and Diff pages and exercise their native controls.
-  TinyFish's current tools expose selected element context but cannot export full ancestor HTML, evaluate computed styles or load the supplied extension, so those acceptance checks remain separate.
+  The managed workspace VM blocks Bitbucket API/static hosts and unpacked extension installation, while the separate installed-browser GitHub Actions runner supplies hydrated public pages, computed styles and actual Geld extension storage and messaging.
+  TinyFish can inspect native pages separately but cannot load the supplied extension, so its observations remain distinct from installed-browser proof.
   Browser-agent element reference UUIDs are tool references rather than established native DOM IDs, and guessed font sizes or token meanings are not computed-style measurements.
   Do not replace those verification gaps with fabricated selectors or claim documented mappings and native browsing as a successful installed-extension test.
+
+- **Native file trees can recycle rows independently of diff mounting.**
+  GitLab's file tree uses absolute virtualizer offsets, so hiding individual rows would leave gaps even though category counts were correct.
+  The category accordion hides only the verified native file-list root and projects the complete validated file inventory into compact Essential and category panels using copies of available native row visuals.
+  Native rows, search controls, file comments and source controls stay in their original framework ownership, with IDs in visual copies remapped and original actions relayed to connected native controls.
+  A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
+  Bitbucket's normal-flow diff wrappers include unloaded placeholders, so a complete file inventory must include those wrappers rather than only mounted articles.
+  Explicit reveal brings a lazy placeholder into view once and waits for genuine native expansion instead of claiming that an unloaded file has expanded.
+- **Count text and accessibility can have different native owners.**
+  GitLab can put both Added and Removed totals in one native `aria-label`, which must be rewritten as a pair and restored to the latest native wording.
+  Bitbucket's visual Lines updated totals are `aria-hidden`, so an owned screen-reader summary supplies the adjusted totals and the surrounding native summary becomes the keyboard hover target without exposing duplicate visual labels.
+  Zero uses plural wording, one uses singular, and one active category keeps its own short noun even when its count is zero.
+  A link to another review must not inherit the current review's head, diff version or comparison selection merely because its target is described using the current document.
+- **Digest settings operate only on represented native sources.**
+  Compact and minimal modes fold native comment roots only when all their source anchors are represented in the digest and eligible for that mode.
+  Unknown activity, unrepresented comments, composers and pending native review controls stay visible.
+  Show original restores the native root, and source actions reveal it before relaying a native control.
+  Minimal description collapse preserves the first native paragraph and restores the original siblings without moving or cloning the editable source.
+  Review rounds require typed native push events, while generic source links never inherit a GitHub bot login or service identity.
 
 ## Code review bots
 

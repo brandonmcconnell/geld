@@ -43,7 +43,7 @@ function aiResponse(message: AiCompleteRequest | AiEvaluateRequest): unknown {
 const cleanup: (() => void)[] = [];
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); document.body.replaceChildren(); });
 
-function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}) {
+function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}) {
   const host = document.createElement('main');
   document.body.append(host);
   let currentPage: ProviderReviewPage | null = page;
@@ -52,7 +52,7 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
   let runs: Readonly<Record<string, AiRunRecord>> = {};
   const send = vi.fn(async (message: AiCompleteRequest | AiEvaluateRequest): Promise<unknown> => aiResponse(message));
   const fetchReview = vi.fn(async () => source);
-  const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview };
+  const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview, ...adapterOverrides };
   const changed = vi.fn(() => { queueMicrotask(() => { if (active) conversation.apply(currentPage, currentSettings); }); });
   const conversation = new ProviderConversation(adapter, changed, { ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, writeRuns: async (next) => { runs = next; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
   cleanup.push(() => { active = false; conversation.clear(); });
@@ -157,5 +157,80 @@ describe('provider conversation integrations', () => {
     const bb: ProviderReviewInput = { subject: { ...subject, provider: 'bitbucket', origin: 'https://bitbucket.org', repository: 'workspace/repo' }, threads: [], checks: [{ authorId: nativeId, name: 'Check', sha, status: 'completed', conclusion: 'success' }] };
     const bbSettings = { ...DEFAULT_SETTINGS, trustedReviewAccounts: withTrustedReviewAccount([], { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'workspace/repo' }, 'bugbot', nativeId.toLowerCase()) };
     expect(providerReviewWithTrustedAccounts(bb, [], bbSettings, true).bots?.[0]?.authorId).toBe(nativeId);
+  });
+
+  it('compacts only represented eligible native roots, preserves framework children, and restores settings and remounts', async () => {
+    let native = document.createElement('article');
+    native.id = 'note_1';
+    const originalButton = document.createElement('button');
+    const activated = vi.fn();
+    originalButton.addEventListener('click', activated);
+    native.append(originalButton);
+    const mixed = document.createElement('article');
+    mixed.id = 'note_9';
+    const composer = document.createElement('article');
+    composer.append(document.createElement('textarea'));
+    document.body.append(native, mixed, composer);
+    const f = fixture(snapshot(), {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }, { root: mixed, anchors: ['note_1', 'note_9'], kind: 'comment' }, { root: composer, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    expect(mixed.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(composer.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(native.firstElementChild).toBe(originalButton);
+    originalButton.click();
+    expect(activated).toHaveBeenCalledTimes(1);
+    document.querySelector<HTMLButtonElement>('.geld-provider-original button')?.click();
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    const replacement = document.createElement('article');
+    replacement.id = native.id;
+    native.replaceWith(replacement);
+    native = replacement;
+    f.apply();
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(document.querySelectorAll('.geld-provider-original')).toHaveLength(1);
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off' });
+    expect(document.querySelector('.geld-provider-original')).toBeNull();
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+  });
+
+  it('reveals the native source before activating its exposed thread controls', async () => {
+    const native = document.createElement('article'); native.id = 'note_1'; document.body.append(native);
+    const action = vi.fn(async () => { expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false); return true; });
+    const f = fixture({ ...snapshot(), sourceActions: () => [{ kind: 'resolve', label: 'Resolve natively', available: true, activate: action }] }, {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    [...f.host.querySelectorAll<HTMLButtonElement>('[data-geld-source="note_1"] button')].find((button) => button.textContent === 'Resolve natively')?.click();
+    await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+  });
+
+  it('keeps push/state activity visible and only folds explicitly low-signal represented activity', async () => {
+    const roots = ['99', '100', '101'].map((id) => { const root = document.createElement('article'); root.id = `note_${id}`; document.body.append(root); return root; });
+    const source: ProviderReviewSnapshot = { ...snapshot(), events: roots.map((root, index) => ({ id: root.id, url: `${url}#${root.id}`, author: comment().author, createdAt: comment().createdAt, body: 'Native activity', kind: index === 0 ? 'activity' : index === 1 ? 'push' : 'state', lowSignal: true })) };
+    fixture(source, {}, { aiEnabled: false }, { conversationRoots: () => roots.map((root) => ({ root, anchors: [root.id], kind: 'activity' })) });
+    await vi.waitFor(() => expect(roots[0]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    expect(roots[1]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(roots[2]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+  });
+
+  it('collapses the native description after its first paragraph only in minimal mode and restores every node', async () => {
+    const description = document.createElement('div');
+    description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><section><p>More native content.</p></section>';
+    document.body.append(description);
+    const heading = description.firstElementChild;
+    const first = description.querySelector('p');
+    const more = description.querySelector('section');
+    const f = fixture(snapshot(), {}, { aiEnabled: false, compactTimeline: 'compact', collapseDescription: true }, { descriptionHost: () => description });
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'minimal', collapseDescription: true });
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
+    expect(first?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    expect(description.firstElementChild).toBe(heading);
+    document.querySelector<HTMLButtonElement>('.geld-provider-description-toggle')?.click();
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    expect(document.querySelector('.geld-provider-description-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: true });
+    expect(document.querySelector('.geld-provider-description-toggle')).toBeNull();
+    expect(description.querySelector('[data-geld-provider-description-hidden]')).toBeNull();
+    expect(description.firstElementChild).toBe(heading);
   });
 });

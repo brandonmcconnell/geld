@@ -226,9 +226,9 @@ export class ProviderHover {
       const url = new URL(anchor.href, this.doc.URL);
       if (url.origin !== new URL(this.doc.URL).origin || url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
       const page = this.adapter.describe(url, this.doc);
-      if (page?.kind !== 'commit' || page.provider !== this.adapter.id) return null;
+      if (page === null || page.provider !== this.adapter.id || page.kind === 'other') return null;
       const settings = this.settings();
-      if (!settings.enabled || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(page.repository)).allowed) return null;
+      if (!settings.enabled || !settings.showListStats || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(page.repository)).allowed) return null;
       return { host: anchor, page };
     } catch { return null; }
   }
@@ -382,7 +382,7 @@ export class ProviderHover {
     }
     const settings = this.options.settingsForPage === undefined ? this.settings() : this.options.settingsForPage(active.page);
     if (settings === null) { this.show(null, 'Reading repository settings…'); return; }
-    if (!settings.enabled || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(active.page.repository)).allowed) { this.close(); return; }
+    if (!settings.enabled || !settings.showListStats || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(active.page.repository)).allowed) { this.close(); return; }
     const state: ProviderDiffState = this.source.get(active.page, true);
     if (state.status === 'loading') { this.show(null, 'Counting changes…'); return; }
     if (state.status === 'failed') { this.show(null, `Counts unavailable: ${state.reason.slice(0, 300)}`); return; }

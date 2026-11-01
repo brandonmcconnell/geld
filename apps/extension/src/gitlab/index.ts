@@ -1,6 +1,7 @@
 import { isProviderReviewPage } from '../providers/types';
 import type { ProviderAdapter } from '../providers/types';
-import { gitLabHeaderTargets, gitLabListRows, readGitLabDiff } from './diff';
+import { gitLabHeaderTargets, readGitLabDiff } from './diff';
+import { gitLabListRows } from './list-surfaces';
 import { describeGitLabPage } from './page';
 import { fetchGitLabDiff } from './source';
 import { fetchGitLabStandaloneDiff } from './standalone-source';
@@ -11,6 +12,7 @@ import type { ProviderReviewComment } from '@geld/review';
 import { readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-actions';
 import { fetchGitLabConfig } from './config';
 import { renderGitLabComment } from './comment-render';
+import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
@@ -18,6 +20,8 @@ export const gitlabAdapter: ProviderAdapter = {
   readDiff: readGitLabDiff,
   headerTargets: gitLabHeaderTargets,
   listRows: gitLabListRows,
+  conversationRoots: gitLabConversationRoots,
+  descriptionHost: gitLabDescriptionHost,
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
   fetchConfig: fetchGitLabConfig,
   reviewHost: (doc) => doc.querySelector<HTMLElement>('.issuable-discussion .detail-page-description'),
