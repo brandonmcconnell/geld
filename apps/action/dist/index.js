@@ -19559,7 +19559,7 @@ function refusalReason(body) {
   }
   const text = blocks.filter((block) => block !== "").map((block) => /[.!?;,]$/.test(block) ? block : `${block.replace(/:$/, "")}.`).join(" ").trim();
   if (text === "") return null;
-  const heading = untagged.split("\n").map((line) => line.replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim()).find((line) => line !== "");
+  const heading = untagged.split("\n").map((line) => line.replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim()).find((line) => line !== "" && !/^(?:\[!(?:note|tip|important|warning|caution)\]|note|tip|important|warning|caution)$/i.test(line));
   if (heading !== void 0 && /^[A-Z][\w.-]*(?:\[bot\])?\s+(?:skipped reviewing\b|encountered an error\b)/.test(heading)) {
     const lower = heading.toLowerCase();
     if (REVIEW_BOTS.some((bot) => lower.startsWith(bot.title.toLowerCase()) || bot.logins.some((login) => lower.startsWith(login.replace(/\[bot\]$/, "").toLowerCase())))) {
@@ -19567,7 +19567,7 @@ function refusalReason(body) {
       return first2.replace(/[.!?]\s*$/, "");
     }
   }
-  if (heading !== void 0 && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|usage limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
+  if (heading !== void 0 && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|(?:usage|review) limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
     const lower = heading.toLowerCase();
     const named = botNamedIn(lower);
     const runFailure = /\b(?:couldn.t run|could not run|cannot run|can.t run)\b/i.test(heading);

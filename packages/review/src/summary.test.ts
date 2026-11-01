@@ -1027,6 +1027,23 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], [{ author: 'coderabbitai[bot]', body: crSkipPage, anchor: 'issuecomment-1', createdAt: new Date(now - 3_600_000).toISOString() }], 'aaa', [], now)[0]).toMatchObject({ verdict: 'failed', reason: 'Auto reviews are disabled on base/target branches other than the default branch', sourceId: 'issuecomment-1' });
   });
 
+  it('reads CodeRabbit out of free reviews as skipped, not as findings (geld#140)', () => {
+    // Its summary comment, rate limited: a "Review limit reached" heading in a warning alert, then the run
+    // configuration. The alert's marker is not the heading, and the heading is the reason.
+    const limitRaw =
+      '<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n\n> [!WARNING]\n> ## Review limit reached\n> \n> You\'ve used all free OSS reviews for now. Wait for the free limit to reset to keep reviewing this public repository.\n> \n> **Next included review available in 45 minutes.**\n> \n> [Check out review usage here](https://app.coderabbit.ai/dashboard/review-capacity?orgId=b8d0).\n> \n> <details>\n> <summary><strong>View limit details</strong></summary>\n> <dl>\n> <dd>\n> \n> **Limit details:** You’ve used the included review currently available.\n> \n> [Learn how review limits work](https://docs.coderabbit.ai/management/rate-limits).\n> \n> **Review configuration:**\n> \n> - **Source mode**: Auto\n> - **Review profile**: CHILL\n> - **Plan**: Advanced\n> - **Run ID**: `6e544929-7a84-4359-b239-ca2a9d0d27e8`\n> \n> </dd>\n> </dl>\n> </details>\n\n<!-- end of auto-generated comment: rate limited by coderabbit.ai -->\n\n<!-- tips_start -->\n\nThanks for using [CodeRabbit](https://coderabbit.ai)! It\'s free for OSS, and your support helps us grow.\n\n<!-- tips_end -->';
+    const limitPage =
+      'Warning\nReview limit reached\nYou\'ve used all free OSS reviews for now. Wait for the free limit to reset to keep reviewing this public repository.\nNext included review available in 45 minutes.\nCheck out review usage here.\nView limit details\nLimit details: You’ve used the included review currently available.\nLearn how review limits work.\nReview configuration:\nSource mode: Auto\nReview profile: CHILL\nPlan: Advanced\nThanks for using CodeRabbit! It\'s free for OSS, and your support helps us grow.';
+    expect(refusalReason(limitRaw)).toBe('Review limit reached');
+    expect(refusalReason(limitPage)).toBe('Review limit reached');
+    // An alert headed by something else is not this notice, and a finding about a limit is not a refusal.
+    expect(refusalReason('> [!WARNING]\n> ## Review the retry limit\n> \n> The client retries forever once the limit is reached, so a dead server hangs every request.')).toBeNull();
+    const now = Date.parse('2026-11-01T14:10:00Z');
+    const neutral = { name: 'CodeRabbit', status: 'completed' as const, conclusion: 'neutral' as const, sha: 'head' };
+    const comment = { author: 'coderabbitai[bot]', body: limitPage, anchor: 'issuecomment-1', createdAt: '2026-11-01T13:40:22Z', editedAt: '2026-11-01T13:53:55Z' };
+    expect(verdictsFrom([neutral], [comment], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'failed', reason: 'Review limit reached', sourceId: 'issuecomment-1' });
+  });
+
   it('ends a run left under way by the bot giving up on it (geld#103)', () => {
     // A merge mid-run: CodeRabbit rewrote its summary into a failure notice over the last walkthrough, and its commit
     // status stayed "pending · Review in progress" for good.
