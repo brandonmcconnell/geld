@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseGeldPrMeta } from './model';
-import { buildProviderBotVerdicts, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from './provider-bots';
+import { buildProviderBotVerdicts, providerCodeSourceLink, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from './provider-bots';
+import { refusalReason } from './bots';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewSubject, ProviderReviewThread } from './provider-review';
 
 const SHA = 'a'.repeat(40);
@@ -22,6 +23,86 @@ function input(overrides: Partial<ProviderReviewInput> = {}): ProviderReviewInpu
 }
 
 afterEach(() => { vi.useRealTimers(); });
+
+describe('native source evidence in a bot refusal', () => {
+  const gitlab: ProviderReviewSubject = { ...subject, repository: 'group/sub/project', id: '17' };
+  const bitbucket: ProviderReviewSubject = { ...subject, provider: 'bitbucket', origin: 'https://bitbucket.org', repository: 'workspace/repo', id: '23' };
+  const nativeOptions = (value: ProviderReviewSubject): { isSourceLink: (href: string) => boolean } => ({ isSourceLink: (href) => providerCodeSourceLink(href, value) });
+
+  it.each([
+    '/group/sub/project/-/merge_requests/17/diffs#diff-content-abc',
+    '/group/sub/project/-/merge_requests/17/diffs?diff_id=12&start_sha=abc',
+    '/group/sub/project/-/blob/main/src/auth.ts#L42',
+    '/group/sub/project/-/tree/main/src',
+    '/group/sub/project/-/tree/main',
+    `/group/sub/project/-/commit/${SHA}`,
+    `/group/sub/project/-/commit/${SHA}.diff`,
+    `/group/sub/project/-/compare/${SHA}...${MERGE_SHA}`,
+  ])('treats GitLab code surface %s as evidence, including nested namespaces', (path) => {
+    const url = `https://gitlab.com${path}`;
+    expect(providerCodeSourceLink(url, gitlab)).toBe(true);
+    expect(refusalReason(`Cannot access repository. See ${url} for the broken check.`, nativeOptions(gitlab))).toBeNull();
+  });
+
+  it.each([
+    '/workspace/repo/pull-requests/23/diff#chg-src/auth.ts',
+    '/workspace/repo/pull-requests/23/_/diff#chg-src/auth.ts',
+    '/workspace/repo/src/main/src/auth.ts#lines-42',
+    '/workspace/repo/src/main/',
+    `/workspace/repo/commits/${SHA}`,
+  ])('treats Bitbucket code surface %s as evidence without assuming its bot summary format', (path) => {
+    const url = `https://bitbucket.org${path}`;
+    expect(providerCodeSourceLink(url, bitbucket)).toBe(true);
+    expect(refusalReason(`Cannot access repository. See ${url} for the broken check.`, nativeOptions(bitbucket))).toBeNull();
+  });
+
+  it('reads relative Markdown and HTML links through the same native evidence predicate', () => {
+    const path = '/group/sub/project/-/merge_requests/17/diffs#diff-content-abc';
+    expect(refusalReason(`Cannot access repository. See [the diff](${path}) for the broken check.`, nativeOptions(gitlab))).toBeNull();
+    expect(refusalReason(`Cannot access repository. See <a href="${path}">the diff</a> for the broken check.`, nativeOptions(gitlab))).toBeNull();
+    expect(refusalReason(`Cannot access repository. See [the diff](https://gitlab.com${path}) for the broken check.`, nativeOptions(gitlab))).toBeNull();
+  });
+
+  it.each([
+    'https://docs.example.com/changes/access',
+    'https://gitlab.com/users/sign_in',
+    'https://gitlab.com/group/sub/project/-/settings/access_tokens',
+    'https://gitlab.com/group/sub/project/-/merge_requests/17#note_123',
+    'https://gitlab.com/group/sub/project/-/merge_requests/18/diffs',
+    'https://gitlab.com/group/sub/project-other/-/merge_requests/17/diffs',
+    'https://gitlab.com/other/project/-/merge_requests/17/diffs',
+    'https://evil.example/group/sub/project/-/merge_requests/17/diffs',
+    'https://gitlab.com.evil.example/group/sub/project/-/merge_requests/17/diffs',
+    'https://name:secret@gitlab.com/group/sub/project/-/merge_requests/17/diffs',
+    'javascript:alert(1)',
+  ])('does not treat a setup or foreign link %s as native code evidence', (url) => {
+    expect(providerCodeSourceLink(url, gitlab)).toBe(false);
+  });
+
+  it('keeps real setup refusals and default GitHub behavior', () => {
+    const githubFinding = 'Cannot access repository. See https://github.com/acme/widgets/pull/1/files#diff-abc for the broken check.';
+    expect(refusalReason(githubFinding)).toBeNull();
+    expect(refusalReason('Cannot access repository. See https://docs.example.com/changes/access for help.')).toBe('Cannot access repository');
+    expect(refusalReason('Cannot access repository. See https://gitlab.com/group/sub/project/-/settings/access_tokens for help.', nativeOptions(gitlab))).toBe('Cannot access repository');
+    expect(refusalReason('Permission denied. Reconnect the integration.', nativeOptions(bitbucket))).toBe('Permission denied');
+  });
+
+  it('isolates self-managed origins and full repository paths', () => {
+    const hosted = { ...gitlab, origin: 'https://forge.example:8443' };
+    expect(providerCodeSourceLink('/group/sub/project/-/merge_requests/17/diffs', hosted)).toBe(true);
+    expect(providerCodeSourceLink('https://gitlab.com/group/sub/project/-/merge_requests/17/diffs', hosted)).toBe(false);
+    expect(providerCodeSourceLink('https://forge.example/group/sub/project/-/merge_requests/17/diffs', hosted)).toBe(false);
+    expect(providerCodeSourceLink('/workspace/repo/pull-requests/24/diff', bitbucket)).toBe(false);
+    expect(providerCodeSourceLink('/workspace/repo/settings', bitbucket)).toBe(false);
+  });
+
+  it('preserves the native finding through both the provider prefilter and shared verdict pass', () => {
+    const body = `Cannot access repository. See https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117/diffs#diff-content-abc for the broken check.\n\n**Actionable comments posted: 1**`;
+    const summary = note('123', body);
+    expect(buildProviderBotVerdicts(input(), [summary])[0]).toMatchObject({ id: 'coderabbit', verdict: 'findings', count: 1, sourceId: 'note_123' });
+    expect(buildProviderBotVerdicts(input(), [note('124', 'Cannot access repository. See https://gitlab.com/ark-bitcoin/bark/-/settings/access_tokens for help.')])[0]).toMatchObject({ id: 'coderabbit', verdict: 'failed', reason: 'Cannot access repository' });
+  });
+});
 
 describe('native bot account binding', () => {
   it('uses the real GitLab CodeRabbit summary and resolved inline findings as one resolved review', () => {
