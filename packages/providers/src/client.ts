@@ -1,3 +1,4 @@
+import {gitlabNoteUrl} from './comment-links';
 import { z } from 'zod';
 import type { Capability, LineComment, Provider, ProviderClient, ProviderComment, ProviderResult, PullDetail, PullRef, PullSummary, RepositoryRef, RepositorySummary, ReviewSubmission } from '@geld/domain';
 import { githubEndpoints, validEnterpriseHost } from '@geld/domain';
@@ -167,7 +168,7 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
         const author = z.object({ login: z.string().optional(), username: z.string().optional(), display_name: z.string().optional() }).safeParse(r.data.user ?? r.data.author);
         const content = z.object({ raw: z.string() }).safeParse(r.data.content);
         if (typeof r.data.id !== 'number' && typeof r.data.id !== 'string') continue;
-        items.push({ id: String(r.data.id), author: author.success ? author.data.login ?? author.data.username ?? author.data.display_name ?? 'unknown' : 'unknown', body: typeof r.data.body === 'string' ? r.data.body : content.success ? content.data.raw : '', path: null, line: null, url: typeof r.data.html_url === 'string' ? r.data.html_url : '',...(typeof r.data.id==='number'&&Number.isSafeInteger(r.data.id)?{databaseId:r.data.id}:{}),...(typeof r.data.created_at==='string'?{createdAt:r.data.created_at}:typeof r.data.created_on==='string'?{createdAt:r.data.created_on}:{}) });
+        items.push({ id: String(r.data.id), author: author.success ? author.data.login ?? author.data.username ?? author.data.display_name ?? 'unknown' : 'unknown', body: typeof r.data.body === 'string' ? r.data.body : content.success ? content.data.raw : '', path: null, line: null, url: provider==='gitlab'?gitlabNoteUrl(ref,r.data.id):typeof r.data.html_url === 'string' ? r.data.html_url : '',...(typeof r.data.id==='number'&&Number.isSafeInteger(r.data.id)?{databaseId:r.data.id}:{}),...(typeof r.data.created_at==='string'?{createdAt:r.data.created_at}:typeof r.data.created_on==='string'?{createdAt:r.data.created_on}:{}) });
       }
       return { ok: true, value: items };
     },

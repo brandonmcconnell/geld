@@ -1,3 +1,4 @@
+import {gitlabNoteUrl} from './comment-links';
 import { z } from 'zod';
 import type { ApiTransport } from '@geld/github';
 import type { Provider, ProviderClient, ProviderResult, ProviderThread, PullRef } from '@geld/domain';
@@ -42,7 +43,7 @@ export function threadOperations(api: ApiTransport, graphql: ApiTransport, provi
     if (provider === 'gitlab') {
       const parsed = z.array(z.object({ id: z.string(), notes: z.array(glNote) })).safeParse(entries);
       if (!parsed.success) return { ok: false, reason: 'invalid_response' };
-      return { ok: true, value: parsed.data.filter((thread) => thread.notes.some((note) => note.position)).map((thread) => ({ id: thread.id, path: thread.notes.find(note=>note.position)?.position?.new_path ?? null, line: thread.notes.find(note=>note.position)?.position?.new_line ?? thread.notes.find(note=>note.position)?.position?.old_line ?? null, resolved: thread.notes.filter(note=>note.position||note.resolvable).every((note) => note.resolved === true), outdated: false, comments: thread.notes.map((note) => ({ id: String(note.id), author: note.author.username, body: note.body, path: note.position?.new_path ?? null, line: note.position?.new_line ?? note.position?.old_line ?? null, url: '',databaseId:note.id,...(note.created_at?{createdAt:note.created_at}:{}) })) })) };
+      return { ok: true, value: parsed.data.filter((thread) => thread.notes.some((note) => note.position)).map((thread) => ({ id: thread.id, path: thread.notes.find(note=>note.position)?.position?.new_path ?? null, line: thread.notes.find(note=>note.position)?.position?.new_line ?? thread.notes.find(note=>note.position)?.position?.old_line ?? null, resolved: thread.notes.filter(note=>note.position||note.resolvable).every((note) => note.resolved === true), outdated: false, comments: thread.notes.map((note) => ({ id: String(note.id), author: note.author.username, body: note.body, path: note.position?.new_path ?? null, line: note.position?.new_line ?? note.position?.old_line ?? null, url: gitlabNoteUrl(ref,note.id),databaseId:note.id,...(note.created_at?{createdAt:note.created_at}:{}) })) })) };
     }
     const parsed = z.object({ values: z.array(bbComment) }).safeParse({values:entries});
     if (!parsed.success) return { ok: false, reason: 'invalid_response' };
