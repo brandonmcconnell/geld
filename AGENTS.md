@@ -1477,14 +1477,18 @@ Provider-specific surfaces translate settings and sources into shared review and
   Human comments stay in their original push round when edited, while an edited automated report can retain its run clock and still displays its actual edit time.
 - **Bitbucket review actions must preserve native selection semantics.**
   The observed native PR feature bundle (`page.da841cca.js`, modules `LhpXT`, `9nhc6`, `7DKLt`, `auwYK`, `6iVT3`, `7xffk`, `h8u0J` and `lIn13`) distinguishes immediate approval from its separate Finish review popup.
-  Approval calls the native handler immediately; never describe that button as merely opening a review dialog or replace it with a guessed API request.
+  Approval calls the native handler immediately;
+  never describe that button as merely opening a review dialog or replace it with a guessed API request.
   Relay only an explicitly authenticated, connected, unique, enabled native header control, bound to the current PR visit and the same node/state at activation.
   A selected Approve control becomes Unapprove, and selected Request changes becomes its undo action, so neither is eligible for the corresponding Geld make action.
-  Native request-changes English ARIA strings are reversed relative to their names: the unselected `Request changes` button has `aria-pressed="false"` and `aria-label="Remove changes requested state from this pull request"`; the selected `Changes requested` button has the other ARIA label.
+  Native request-changes English ARIA strings are reversed relative to their names: the unselected `Request changes` button has `aria-pressed="false"` and `aria-label="Remove changes requested state from this pull request"`;
+  the selected `Changes requested` button has the other ARIA label.
   Match the exact source-backed text, label and selected state together, and fail unavailable for unsupported localized controls rather than interpreting a partial label.
   Native eligibility remains authoritative: the source can show approval for an unapproved reviewer on a closed PR, so a generic OPEN-only override would discard actual provider behavior.
-  The digest reads actions live between API refreshes; a replaced native control requires a fresh descriptor rather than retargeting an already captured action.
-  Native collapsed comment composer activation preserves its draft and selection and requires actual focus; public signed-out composer markup alone never proves review permission.
+  The digest reads actions live between API refreshes;
+  a replaced native control requires a fresh descriptor rather than retargeting an already captured action.
+  Native collapsed comment composer activation preserves its draft and selection and requires actual focus;
+  public signed-out composer markup alone never proves review permission.
   The similarly named Code Reviewer status card is Rovo Dev automated review, not the human Approve/Request changes UI, and must never be relayed as a human review action.
   Public DOM captures plus source-derived unit fixtures establish these guarded bindings, but authenticated approval/request-change writes have not been executed or verified.
 - **Count text and accessibility can have different native owners.**
