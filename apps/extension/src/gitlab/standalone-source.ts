@@ -11,7 +11,7 @@ function whitespace(page: ProviderStandalonePage): string | null {
 async function resolveRef(page: ProviderStandalonePage, ref: string, signal: AbortSignal, project = encodeURIComponent(page.repository.path)): Promise<string> {
   if (SHA.test(ref)) return ref.toLowerCase();
   const url = new URL(`/api/v4/projects/${project}/repository/commits/${encodeURIComponent(ref)}`, page.repository.origin);
-  const value = await readGitLabDiffJson(url, signal);
+  const value = await readGitLabDiffJson(url, signal, 'no-cache');
   if (!record(value) || typeof value.id !== 'string' || !SHA.test(value.id) || (/^[0-9a-f]{7,64}$/i.test(ref) && !value.id.toLowerCase().startsWith(ref.toLowerCase()))) throw new Error('GitLab did not resolve the selected revision');
   return value.id.toLowerCase();
 }

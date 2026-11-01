@@ -1445,6 +1445,11 @@ Provider-specific surfaces translate settings and sources into shared review and
   A stored browser fetch function still requires its native Window receiver, so a client invokes it with the global receiver rather than as a method of the client instance.
   Node mocks can accept that incorrect receiver even when actual Chrome reports Illegal invocation, making installed provider transport checks necessary.
   Standalone Bitbucket commit cache identities use `/commits/{ref}` independently of PR identities and GitLab's `/-/commit/{ref}` path.
+- **Mutable provider identities require HTTP revalidation.**
+  GitLab MR before/after snapshots and symbolic or abbreviated commit resolution, and Bitbucket PR before/after snapshots and abbreviated commit resolution, use `cache: 'no-cache'` so browser freshness cannot bypass the source-change guard.
+  This permits conditional ETag revalidation and the browser's normal cached-body handling;
+  it does not require two wire-level HTTP 200 responses, bypass immutable pinned diff or configuration caches, or add requests.
+  This is guard hardening rather than evidence of an observed stale Bitbucket API response.
 - **Native branding belongs to each provider.**
   Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
