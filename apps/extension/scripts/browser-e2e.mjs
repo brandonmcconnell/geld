@@ -416,21 +416,47 @@ async function countA11y(page) {
     ownedDescriptions: document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]').length,
   }));
 }
-async function installedHover(page, selector, interaction, artifactName, anchorSelector) {
-  await page.keyboard.press('Escape');
-  await page.mouse.move(1, 1);
+async function installedHover(page, selector, interaction, artifactName, anchorSelector, { preserveNativeCard = false } = {}) {
+  if (!preserveNativeCard) {
+    await page.keyboard.press('Escape');
+    await page.mouse.move(1, 1);
+  }
+  let keyboardNavigation;
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
       const anchor = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const order = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter((node) => node.tabIndex >= 0 && !node.disabled && node.closest('[inert]') === null && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const at = order.indexOf(anchor);
-      const prior = at > 0 ? order[at - 1] : null;
-      prior?.focus();
-      return prior !== null && prior !== undefined;
+      const describe = (node) => node == null ? null : { tag: node.tagName, id: node.id, testid: node.getAttribute('data-testid'), href: node.getAttribute('href'), tabindex: node.getAttribute('tabindex'), label: node.getAttribute('aria-label'), text: node.textContent.trim().slice(0, 120) };
+      if (at < 0) return { started: false, reason: 'Requested count host is not sequentially keyboard focusable', target: describe(anchor) };
+      for (let index = at - 1; index >= Math.max(0, at - 12); index -= 1) {
+        const prior = order[index];
+        prior.focus();
+        if (document.activeElement === prior) return { started: true, target: describe(anchor), previous: describe(prior), direction: 'Tab' };
+      }
+      for (let index = at + 1; index < Math.min(order.length, at + 13); index += 1) {
+        const next = order[index];
+        next.focus();
+        if (document.activeElement === next) return { started: true, target: describe(anchor), previous: describe(next), direction: 'Shift+Tab' };
+      }
+      return { started: false, reason: 'No neighboring control accepted real browser focus', target: describe(anchor) };
     }, selector);
-    assert.equal(previous, true, 'Native previous control needed for real Tab-key traversal is missing');
-    await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate((target) => [...document.querySelectorAll(target)].some((node) => node === document.activeElement), selector), true, 'Real Tab did not focus the native count host');
+    assert.equal(previous.started, true, `A real neighboring keyboard control is required: ${JSON.stringify(previous)}`);
+    keyboardNavigation = { ...previous, stops: [] };
+    for (let index = 0; index < 12; index += 1) {
+      if (previous.direction === 'Shift+Tab') {
+        await page.keyboard.down('Shift');
+        try { await page.keyboard.press('Tab'); }
+        finally { await page.keyboard.up('Shift'); }
+      } else await page.keyboard.press('Tab');
+      const stop = await page.evaluate((target) => {
+        const node = document.activeElement;
+        return { target: [...document.querySelectorAll(target)].some((value) => value === node), tag: node?.tagName, id: node?.id, href: node?.getAttribute('href'), testid: node?.getAttribute('data-testid'), label: node?.getAttribute('aria-label'), text: node?.textContent.trim().slice(0, 120) };
+      }, selector);
+      keyboardNavigation.stops.push(stop);
+      if (stop.target) break;
+    }
+    assert.equal(keyboardNavigation.stops.at(-1)?.target, true, `Real Tab traversal did not reach the count owner: ${JSON.stringify(keyboardNavigation)}`);
   } else {
     const handle = await page.evaluateHandle((target) => [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
     const control = handle.asElement();
@@ -464,7 +490,7 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
   await page.screenshot({ path: resolve(artifacts, `${artifactName}.png`) });
   await page.keyboard.press('Escape');
   await poll(() => page.evaluate(() => { const tip = document.querySelector('#geld-provider-count-tooltip'); return tip === null || tip.hidden || getComputedStyle(tip).display === 'none'; }), (value) => value, 'Escape dismisses installed hover', 5000);
-  return { ...snapshot, interaction, screenshot: `${artifactName}.png`, escapeDismissed: true };
+  return { ...snapshot, interaction, ...(keyboardNavigation === undefined ? {} : { keyboardNavigation }), screenshot: `${artifactName}.png`, escapeDismissed: true };
 }
 
 async function headerHintsEvidence(page, expectedLabel, groupSelector, name, interactions = true) {
@@ -945,7 +971,7 @@ async function gitLabCommitCounts(page) {
     const filtered = await poll(() => gitLabCommitPresentation(page), (value) => value.sha === GL_COMMIT_SHA.slice(0, 8) && value.files.length === 2 && headerHas(value, visible) && value.files.some((file) => file.path === classifiedPath && file.display === 'none'), 'Native immutable commit header and actual test file are filtered');
     const headerHints = await headerHintsEvidence(page, '1 test', '[data-testid="js-file-addition-line"]', 'gitlab-commit-header');
     const pointer = await installedHover(page, '[data-testid="js-file-addition-line"]', 'pointer', 'gitlab-commit-pointer');
-    const keyboard = await installedHover(page, '[data-testid="js-file-addition-line"]', 'keyboard', 'gitlab-commit-keyboard');
+    const keyboard = headerHints.keyboard;
     for (const value of [pointer, keyboard]) assertGitLabCommitBreakdown(value);
     assert.equal(pointer.text, keyboard.text);
     const filteredArtifacts = await capture(page, 'gitlab-commit-filtered');
@@ -976,7 +1002,7 @@ async function gitLabBinaryPresentation(page) {
     const actions = document.querySelector('.merge-request-tabs-container > .merge-request-tabs-actions');
     const root = [...document.querySelectorAll('diff-file[data-file-data]')].find((node) => native(node) && JSON.parse(node.getAttribute('data-file-data')).new_path === path);
     return { badge: badge?.textContent.trim(), badgeGid: badge?.getAttribute('data-gid'), tabId: tab?.id, href: tab?.querySelector('a')?.getAttribute('href'),
-      stats: [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native).map((node) => ({ text: node.textContent.trim(), html: node.outerHTML.slice(0, 3000) })),
+      stats: [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native).map((node) => ({ text: node.textContent.trim(), lineCounters: [...node.querySelectorAll('[data-testid="js-file-addition-line"], [data-testid="js-file-deletion-line"]')].map((count) => count.textContent.trim()), html: node.outerHTML.slice(0, 3000) })),
       actions: actions === null ? null : { native: native(actions), bounds: bounds(actions), html: actions.outerHTML.slice(0, 7000), children: [...actions.children].filter(native).map((node) => ({ id: node.id, testid: node.getAttribute('data-testid') })) },
       file: root === undefined ? null : { id: root.id, path: JSON.parse(root.getAttribute('data-file-data')).new_path, data: root.getAttribute('data-file-data'), display: getComputedStyle(root).display, hidden: root.getAttribute('data-geld-provider-hidden'),
         images: [...root.querySelectorAll('img')].filter(native).map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt'), complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight })),
@@ -1004,16 +1030,18 @@ async function gitLabBinaryCounts(page, item) {
     await poll(() => tabState(page), (value) => value.hasDiff === false && value.allowed === false, 'Native binary-only page baseline before Geld classification');
     item.nativeBaseline = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.badgeGid === 'gid://gitlab/MergeRequest/321472212' && value.file !== null && value.file.hidden === null, 'Genuine eleven-file native Changes badge and observed PNG wrapper');
     item.nativeBaselineArtifacts = await capture(page, 'gitlab-binary-native-baseline');
-    assert.equal(item.nativeBaseline.stats.length, 0, 'Binary fixture now has a native line-summary surface; the intended fallback-header acceptance fixture changed');
-    assert.equal(item.nativeBaseline.actions?.native, true, 'Actual neutral native action-area fallback host is unavailable');
+    assert.ok(item.nativeBaseline.stats.every((stats) => stats.lineCounters.length === 0), 'The binary-only native header must have no changed text-line counters');
+    const hintHost = item.nativeBaseline.stats.length > 0 ? '.diff-stats.inline-parallel-buttons .diff-stats-contents' : '.merge-request-tabs-container > .merge-request-tabs-actions';
+    item.nativeHeaderVariant = item.nativeBaseline.stats.length > 0 ? 'Hydrated native file-only statistics, without line counters' : 'Native action-area fallback, without a statistics wrapper';
+    if (item.nativeBaseline.stats.length === 0) assert.equal(item.nativeBaseline.actions?.native, true, 'Actual neutral native action-area fallback host is unavailable');
     await patchSettings({ enabled: true });
     item.baselineState = await waitTotals(page, all, all, 0);
-    item.baselineHeaderHints = await headerHintsEvidence(page, '0 tests', '.merge-request-tabs-container > .merge-request-tabs-actions', 'gitlab-binary-baseline');
+    item.baselineHeaderHints = await headerHintsEvidence(page, '0 tests', hintHost, 'gitlab-binary-baseline');
     for (const value of [item.baselineHeaderHints.pointer, item.baselineHeaderHints.keyboard]) assertGitLabBinaryBreakdown(value, false);
     await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: [GL_BINARY_PATH] } });
     item.filteredState = await waitTotals(page, all, visible, 1);
     item.filtered = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '10' && value.file?.display === 'none' && value.file.hidden === 'closed', 'Exact observed PNG is categorized through real shared settings and native Changes badge reaches10');
-    item.filteredHeaderHints = await headerHintsEvidence(page, '1 test', '.merge-request-tabs-container > .merge-request-tabs-actions', 'gitlab-binary-filtered');
+    item.filteredHeaderHints = await headerHintsEvidence(page, '1 test', hintHost, 'gitlab-binary-filtered');
     for (const value of [item.filteredHeaderHints.pointer, item.filteredHeaderHints.keyboard]) assertGitLabBinaryBreakdown(value, true);
     item.categoryInteraction = await categoryInteraction(page, GL_BINARY_PATH, 'gitlab', 'gitlab-binary-category', false);
     await page.focus('.geld-provider-category-header');
@@ -1040,10 +1068,10 @@ async function gitLabBinaryCounts(page, item) {
     await patchSettings({ enabled: true, categoryPatterns: original.categoryPatterns ?? {} });
     item.restoredState = await waitTotals(page, all, all, 0);
     item.restored = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.file?.hidden === null && value.file?.display !== 'none', 'Removing the actual pattern restores the native eleven-file binary review');
-    item.restoredHeaderHints = await headerHintsEvidence(page, '0 tests', '.merge-request-tabs-container > .merge-request-tabs-actions', 'gitlab-binary-restored', false);
+    item.restoredHeaderHints = await headerHintsEvidence(page, '0 tests', hintHost, 'gitlab-binary-restored', false);
     for (const control of item.nativeBaseline.nativeControls) assert.ok(item.restored.nativeControls.some((value) => JSON.stringify(value) === JSON.stringify(control)), 'Pattern restoration lost a native header control');
     item.featureParity = 'partial';
-    return { status: 'passed', verified: 'Real eleven-file PNG-only source retains zero text-line totals while exact shared classification adjusts the native Changes badge11→10, fallback hint pointer/Tab/Escape breakdowns agree, native category image reveal retains source identity, and disable/pattern removal restore native controls/counts. No synthetic zero-line header widgets are inserted.' };
+    return { status: 'passed', verified: 'Real eleven-file PNG-only source retains zero text-line totals while exact shared classification adjusts the native Changes badge11→10, actual native file-only header hint pointer/Tab/Escape breakdowns agree, native category image reveal retains source identity, and disable/pattern removal restore native controls/counts. No synthetic zero-line header widgets are inserted.' };
   } finally { await patchSettings({ enabled: original.enabled ?? true, categoryPatterns: original.categoryPatterns ?? {} }); }
 }
 
@@ -1720,12 +1748,33 @@ try {
         return { status: cards.length === 0 ? 'not_observed' : 'discovery', cards, assertion: 'Native cards are recorded independently; their presence is not a Geld count-hover pass.' };
       }, selector);
       item.nativeReferenceArtifacts = await capture(page, 'gitlab-native-commit-reference-observation');
-      item.pointer = await installedHover(page, selector, 'pointer', 'gitlab-native-commit-reference-pointer');
-      item.keyboard = await installedHover(page, selector, 'keyboard', 'gitlab-native-commit-reference-keyboard');
+      const openCard = async () => {
+        await page.hover(selector);
+        return poll(() => page.evaluate((selector, commitUrl) => {
+          const link = document.querySelector(selector);
+          const owners = (link?.getAttribute('aria-describedby') ?? '').split(/\s+/);
+          const card = [...document.querySelectorAll('.gl-popover[role="tooltip"]')].find((node) => owners.includes(node.id) && node.getBoundingClientRect().height > 0 && node.querySelector('[data-testid="commit-title-link"]')?.href === commitUrl && node.querySelector('[data-testid="commit-sha-link"]')?.href === commitUrl);
+          const chip = card?.querySelector('.geld-provider-list-counts');
+          if (card === undefined || chip === null || chip === undefined || chip.getBoundingClientRect().height === 0) return null;
+          return { id: card.id, role: card.getAttribute('role'), describedBy: link.getAttribute('aria-describedby'), title: card.querySelector('[data-testid="commit-title-link"]').textContent.trim(), author: card.querySelector('[data-testid="commit-author-name"]')?.textContent.trim(),
+            links: [...card.querySelectorAll('[data-testid="commit-title-link"], [data-testid="commit-sha-link"]')].map((anchor) => ({ href: anchor.href, testid: anchor.getAttribute('data-testid') })),
+            chip: { text: chip.textContent.replace(/\s+/g, ' ').trim(), tabindex: chip.getAttribute('tabindex'), title: chip.getAttribute('title') } };
+        }, selector, GL_COMMIT), (value) => value !== null && /\b1 test\b/.test(value.chip.text) && value.chip.text.includes('+2') && value.chip.text.includes('−0'), 'Actual ARIA-associated native commit card contains its exact source-specific Geld chip', 12_000);
+      };
+      item.nativeCardPointer = await openCard();
+      const pointerChip = `[id=${JSON.stringify(item.nativeCardPointer.id)}] .geld-provider-list-counts`;
+      item.pointer = await installedHover(page, pointerChip, 'pointer', 'gitlab-native-commit-reference-pointer', undefined, { preserveNativeCard: true });
+      item.nativeCardKeyboard = await openCard();
+      assert.deepEqual(item.nativeCardKeyboard.links, item.nativeCardPointer.links, 'Count interaction changed native commit card source links');
+      assert.equal(item.nativeCardKeyboard.title, item.nativeCardPointer.title);
+      assert.equal(item.nativeCardKeyboard.author, item.nativeCardPointer.author);
+      assert.equal(item.nativeCardKeyboard.chip.tabindex, '0', 'Observed native-card count chip must remain keyboard accessible');
+      const keyboardChip = `[id=${JSON.stringify(item.nativeCardKeyboard.id)}] .geld-provider-list-counts`;
+      item.keyboard = await installedHover(page, keyboardChip, 'keyboard', 'gitlab-native-commit-reference-keyboard', undefined, { preserveNativeCard: true });
       for (const value of [item.pointer, item.keyboard]) assertGitLabCommitBreakdown(value);
       assert.equal(item.pointer.text, item.keyboard.text);
       item.featureParity = 'partial';
-      return { status: 'passed', verified: 'The actual native note link to the immutable standalone commit shows its source-specific Geld breakdown through pointer and real Tab, with accessible ownership, viewport and Escape assertions. Native reference cards remain separate observations.' };
+      return { status: 'passed', verified: 'Hovering the original native commit reference preserves its actual provider card. Its exact source-specific Geld chip supports pointer and real Tab breakdowns with viewport/accessible ownership and Escape checks, retaining the native card title, author and source links. No competing tooltip is required on the original link.' };
     } finally { await patchSettings({ compactTimeline: original.compactTimeline ?? 'compact' }); }
   });
   await runCase('gitlab-commit-counts', GL_COMMIT, async (page, item) => {
