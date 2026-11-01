@@ -541,6 +541,7 @@ export class ProviderController {
       this.inlineTree.clear();
       this.categoryTree.update(view, hidden, all, files, {
       subjectKey: JSON.stringify([this.pageKey, revision]),
+      selectedCategoryId: this.expanded ? this.activeCategory ?? 'essential' : 'essential',
       revealPath: (path) => this.revealPath(path),
       selectCategory: (id) => { this.activeCategory = id === 'essential' ? null : id; },
       setExpanded: (expanded) => { this.setExpanded(expanded); this.apply(); },
