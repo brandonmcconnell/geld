@@ -8,7 +8,7 @@ name: CLA
 # ruleset does not cover.
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, closed]
   issue_comment:
     types: [created, edited]
 

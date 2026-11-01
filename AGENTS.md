@@ -1355,6 +1355,7 @@ the agreement lets the owner offer contributors' work under other terms too (the
 `.github/workflows/cla.yml` runs `scripts/cla.mjs` (tests: `scripts/cla.test.mjs`, in `pnpm check`) from the default branch on `pull_request_target`, never the pull request's code, sets the `CLA` commit status and keeps one comment on the pull request up to date.
 Signatures live in `signatures.json` on the orphan `cla-signatures` branch (outside the main ruleset), each with the comment's words, its link and the agreement's blob SHA;
 a pull request's check also reads its own comments, so a past contributor can sign on their merged pull request.
+A merged pull request with outside authors is locked once all of them have signed, since a locked conversation takes comments, edits and deletions from collaborators only and the signatures then stay on the page as well as in the record.
 The owner, the Cursor agent and bots are exempt (`ALLOWED_LOGINS`, `ALLOWED_EMAILS`).
 `CLA.md` is the owner's: an agent proposes a change to it in a pull request and the owner decides, and a new version leaves earlier signatures on the version they signed.
 

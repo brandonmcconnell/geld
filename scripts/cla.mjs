@@ -203,6 +203,11 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
   } else if (!passed && pull.state === 'open') {
     await github.rest.issues.createComment({ ...repo, issue_number: pull.number, body });
   }
+
+  // A locked conversation takes comments, edits and deletions from collaborators only, so signatures stay on the page.
+  if (pull.merged_at && passed && accounts.length > 0 && !pull.locked) {
+    await github.rest.issues.lock({ ...repo, issue_number: pull.number, lock_reason: 'resolved' });
+  }
 }
 
 export async function run({ github, context, core }) {

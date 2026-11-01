@@ -26,6 +26,7 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}
   }
   const statuses = [];
   const reactions = [];
+  const locks = [];
   let nextId = 900;
   let writes = 0;
   const github = {
@@ -41,6 +42,10 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}
           const comment = { id: nextId++, user: actions, body };
           (comments[issue_number] ??= []).push(comment);
           return { data: comment };
+        },
+        lock: async ({ issue_number }) => {
+          locks.push(issue_number);
+          return { data: {} };
         },
         updateComment: async ({ comment_id, body }) => {
           for (const list of Object.values(comments)) for (const comment of list) if (comment.id === comment_id) comment.body = body;
@@ -91,11 +96,17 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}
     const file = files.get(`${SIGNATURES_BRANCH}:${SIGNATURES_PATH}`);
     return file ? JSON.parse(file.content).signatures : [];
   };
-  return { github, statuses, reactions, comments, recorded };
+  return { github, statuses, reactions, comments, locks, recorded };
 }
 
 const core = { info() {} };
-const pullRequest = (number, state = 'open') => ({ number, state, head: { sha: `head-${number}` } });
+const pullRequest = (number, state = 'open') => ({
+  number,
+  state,
+  merged_at: state === 'merged' ? '2026-10-30T12:00:00Z' : null,
+  locked: false,
+  head: { sha: `head-${number}` },
+});
 const prEvent = (pull) => ({ eventName: 'pull_request_target', repo, payload: { repository, pull_request: pull } });
 const commentEvent = (issue, comment) => ({ eventName: 'issue_comment', repo, payload: { repository, issue, comment } });
 const signing = (user, id = 500) => ({
@@ -182,7 +193,7 @@ describe('a pull request', () => {
   });
 
   it('records a past contributor signing on a merged pull request without commenting there', async () => {
-    const pull = pullRequest(128, 'closed');
+    const pull = pullRequest(128, 'merged');
     const comment = signing(hunter, 503);
     const fake = fakeGitHub({
       commits: { 128: [commitBy(hunter), commitBy({ login: 'cursoragent', id: 2, type: 'User' })] },
@@ -192,6 +203,22 @@ describe('a pull request', () => {
     await run({ github: fake.github, context: commentEvent({ number: 128, pull_request: {} }, comment), core });
     assert.deepEqual(fake.recorded().map((signature) => signature.login), ['hunterchen7']);
     assert.equal(fake.comments[128].length, 1);
+    assert.deepEqual(fake.locks, [128]);
+  });
+
+  it('leaves a merged pull request open while an author has yet to sign, and the owner\'s own alone', async () => {
+    const fake = fakeGitHub({ commits: { 96: [commitBy(batuhan)], 136: [commitBy(brandon)] }, signatures: [] });
+    await run({ github: fake.github, context: prEvent(pullRequest(96, 'merged')), core });
+    await run({ github: fake.github, context: prEvent(pullRequest(136, 'merged')), core });
+    assert.deepEqual(fake.locks, []);
+  });
+
+  it('locks a pull request when it merges with every author signed', async () => {
+    const fake = fakeGitHub({ commits: { 144: [commitBy(hunter)] }, signatures: [{ login: 'hunterchen7', id: 101 }] });
+    await run({ github: fake.github, context: prEvent(pullRequest(144)), core });
+    assert.deepEqual(fake.locks, []);
+    await run({ github: fake.github, context: prEvent(pullRequest(144, 'merged')), core });
+    assert.deepEqual(fake.locks, [144]);
   });
 
   it('tells an author whose email no account claims what to do', async () => {
