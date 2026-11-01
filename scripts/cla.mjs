@@ -2,12 +2,16 @@
  * The CLA check (`.github/workflows/cla.yml`), run by actions/github-script
  * from a checkout of the default branch, never the pull request's.
  *
- * A pull request passes when every author of its commits has signed `CLA.md`.
- * Signing is a comment holding `SIGN_PHRASE`, on a pull request or an issue;
- * each signature is kept on the unprotected `cla-signatures` branch with the
- * comment's words, its link and the agreement's blob SHA at the time. A pull
- * request's check also reads its own comments, so a signature whose run was
- * dropped is picked up on the next one.
+ * A pull request passes when the person who opened it and every author and
+ * co-author of its commits have signed `CLA.md`. Commit metadata is whatever
+ * the pusher wrote, so an exempt author on a commit never exempts the pull
+ * request: its opener, the one identity GitHub vouches for, signs unless they
+ * are exempt themselves. Signing is a comment holding `SIGN_PHRASE`, on a pull
+ * request or an issue; each signature is kept on the unprotected
+ * `cla-signatures` branch with the comment's words, its link and the blob SHA
+ * of the agreement as it stood when the comment was written. A pull request's
+ * check also reads its own comments, so a signature whose run was dropped is
+ * picked up on the next one.
  */
 
 export const SIGN_PHRASE = 'I have read the Geld CLA and I agree to it';
@@ -18,7 +22,20 @@ export const STATUS_CONTEXT = 'CLA';
 export const MARKER = '<!-- geld:cla -->';
 
 const ALLOWED_LOGINS = new Set(['brandonmcconnell', 'cursoragent']);
-const ALLOWED_EMAILS = new Set(['brandon@dreamthinkbuild.com', 'cursoragent@cursor.com']);
+// Agents that co-author commits under a shared address no account can sign for.
+const ALLOWED_EMAILS = new Set(['brandon@dreamthinkbuild.com', 'cursoragent@cursor.com', 'noreply@anthropic.com']);
+const NOREPLY = /^(?:(\d+)\+)?([^@]+)@users\.noreply\.github\.com$/i;
+
+const COMMIT_AUTHORS = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      commits(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { commit { authors(first: 20) { nodes { name email user { login databaseId } } } } }
+      }
+    }
+  }
+}`;
 
 const normalize = (text) => text.toLowerCase().replace(/[>*_`]/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -26,22 +43,34 @@ export function signs(body) {
   return typeof body === 'string' && normalize(body).includes(normalize(SIGN_PHRASE));
 }
 
-export function isAllowed(author) {
-  if (author.login && (ALLOWED_LOGINS.has(author.login) || author.login.endsWith('[bot]') || author.type === 'Bot')) return true;
-  return !author.login && ALLOWED_EMAILS.has((author.email ?? '').toLowerCase());
+export function isAllowed(person) {
+  if (person.login) return ALLOWED_LOGINS.has(person.login) || person.login.endsWith('[bot]') || person.type === 'Bot';
+  return ALLOWED_EMAILS.has((person.email ?? '').toLowerCase());
 }
 
-/** The people a pull request's commits need a signature from: GitHub accounts, and authors whose email no account claims. */
-export function authorsOf(commits) {
+/** A commit author or co-author as GitHub resolves them: an account, or a name and an email no account claims. */
+function personOf(actor) {
+  if (actor.user) return { login: actor.user.login, id: actor.user.databaseId };
+  const email = actor.email ?? '';
+  const noreply = NOREPLY.exec(email);
+  if (noreply?.[1]) return { login: noreply[2], id: Number(noreply[1]) };
+  return { name: actor.name ?? '', email };
+}
+
+/**
+ * Who a pull request needs a signature from: its opener, unless exempt, and every author and co-author of its
+ * commits (`actors`, GraphQL `Commit.authors`, which reads the `Co-authored-by` trailers), as accounts and as
+ * emails no account claims.
+ */
+export function signersOf(actors, opener) {
   const accounts = new Map();
   const unlinked = new Map();
-  for (const commit of commits) {
-    const author = commit.author
-      ? { login: commit.author.login, id: commit.author.id, type: commit.author.type }
-      : { name: commit.commit?.author?.name ?? '', email: commit.commit?.author?.email ?? '' };
-    if (isAllowed(author)) continue;
-    if (author.login) accounts.set(author.id, author);
-    else unlinked.set(author.email.toLowerCase(), author);
+  const people = actors.map(personOf);
+  if (opener) people.unshift({ login: opener.login, id: opener.id, type: opener.type });
+  for (const person of people) {
+    if (isAllowed(person)) continue;
+    if (person.login) accounts.set(person.id, person);
+    else unlinked.set(person.email.toLowerCase(), person);
   }
   return { accounts: [...accounts.values()], unlinked: [...unlinked.values()] };
 }
@@ -51,11 +80,16 @@ export function pendingAccounts(accounts, signatures) {
   return accounts.filter((account) => !signed.has(account.id));
 }
 
+/** When the comment held the sentence: an edit may have added it, so an edited comment counts from its edit. */
+export function signedAtOf(comment) {
+  return comment.updated_at && comment.updated_at !== comment.created_at ? comment.updated_at : comment.created_at;
+}
+
 export function signatureFrom(comment, agreementSha) {
   return {
     login: comment.user.login,
     id: comment.user.id,
-    signedAt: comment.created_at,
+    signedAt: signedAtOf(comment),
     comment: comment.html_url,
     body: comment.body,
     agreementSha,
@@ -64,11 +98,11 @@ export function signatureFrom(comment, agreementSha) {
 
 export function commentBody({ pending, unlinked, agreementUrl }) {
   if (pending.length === 0 && unlinked.length === 0) {
-    return `${MARKER}\nEveryone who authored commits in this pull request has signed the [Contributor License Agreement](${agreementUrl}). Thank you.`;
+    return `${MARKER}\nEveryone who wrote this pull request has signed the [Contributor License Agreement](${agreementUrl}). Thank you.`;
   }
   const lines = [
     MARKER,
-    `Thanks for the pull request. Before it can be merged, every author of its commits needs to sign Geld's [Contributor License Agreement](${agreementUrl}).`,
+    `Thanks for the pull request. Before it can be merged, the person who opened it and every author and co-author of its commits need to sign Geld's [Contributor License Agreement](${agreementUrl}).`,
     'You keep the copyright in your work. The agreement lets the maintainer also offer Geld under other terms, such as for distribution through app stores.',
   ];
   if (pending.length > 0) {
@@ -85,21 +119,41 @@ export function commentBody({ pending, unlinked, agreementUrl }) {
     const who = unlinked.map((author) => `${author.name} <${author.email}>`).join(', ');
     lines.push(
       '',
-      `Some commits are by ${who}, an email no GitHub account claims. Add it to your GitHub account, or amend those commits with an email your account uses, then push again.`,
+      `Some commits are by ${who}, an email no GitHub account claims. Add it to your GitHub account, or amend those commits (and any Co-authored-by line) with an email your account uses, then push again.`,
     );
   }
   return lines.join('\n');
 }
 
 export function statusDescription({ pending, unlinked }) {
-  if (pending.length === 0 && unlinked.length === 0) return 'Every author has signed the CLA';
+  if (pending.length === 0 && unlinked.length === 0) return 'Everyone who wrote this has signed the CLA';
   if (pending.length > 0) return `Waiting on ${pending.map((account) => `@${account.login}`).join(', ')} to sign the CLA`.slice(0, 140);
   return 'A commit author has no GitHub account to sign with';
 }
 
-async function agreementSha(github, repo, ref) {
-  const { data } = await github.rest.repos.getContent({ ...repo, path: AGREEMENT_PATH, ref });
-  return data.sha;
+async function commitActors(github, repo, number) {
+  const actors = [];
+  let cursor = null;
+  do {
+    const data = await github.graphql(COMMIT_AUTHORS, { owner: repo.owner, name: repo.repo, number, cursor });
+    const { commits } = data.repository.pullRequest;
+    for (const node of commits.nodes) actors.push(...node.commit.authors.nodes);
+    cursor = commits.pageInfo.hasNextPage ? commits.pageInfo.endCursor : null;
+  } while (cursor !== null);
+  return actors;
+}
+
+/** The blob SHA of `CLA.md` on the default branch as of `at`, or null when there was no agreement yet to sign. */
+async function agreementShaAt(github, repo, ref, at) {
+  const { data: commits } = await github.rest.repos.listCommits({ ...repo, sha: ref, path: AGREEMENT_PATH, until: at, per_page: 1 });
+  if (commits.length === 0) return null;
+  try {
+    const { data } = await github.rest.repos.getContent({ ...repo, path: AGREEMENT_PATH, ref: commits[0].sha });
+    return data.sha;
+  } catch (error) {
+    if (error.status === 404) return null;
+    throw error;
+  }
 }
 
 async function readSignatures(github, repo) {
@@ -162,22 +216,26 @@ async function recordSignatures(github, repo, additions) {
   }
 }
 
+/** The comment as a signature, against the agreement it was written under, or null when no agreement existed then. */
+async function signatureOf(github, repo, defaultBranch, comment) {
+  const sha = await agreementShaAt(github, repo, defaultBranch, signedAtOf(comment));
+  return sha === null ? null : signatureFrom(comment, sha);
+}
+
 async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures }) {
-  const commits = await github.paginate(github.rest.pulls.listCommits, { ...repo, pull_number: pull.number, per_page: 100 });
-  const { accounts, unlinked } = authorsOf(commits);
+  const { accounts, unlinked } = signersOf(await commitActors(github, repo, pull.number), pull.user);
   let { signatures } = await readSignatures(github, repo);
   const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: pull.number, per_page: 100 });
 
   const waiting = new Set(pendingAccounts(accounts, signatures).map((account) => account.id));
+  for (const signature of extraSignatures) waiting.delete(signature.id);
   const additions = [...extraSignatures];
-  if (waiting.size > 0) {
-    const sha = await agreementSha(github, repo, defaultBranch);
-    for (const comment of comments) {
-      if (waiting.has(comment.user?.id) && signs(comment.body)) {
-        additions.push(signatureFrom(comment, sha));
-        waiting.delete(comment.user.id);
-      }
-    }
+  for (const comment of comments) {
+    if (!waiting.has(comment.user?.id) || !signs(comment.body)) continue;
+    const signature = await signatureOf(github, repo, defaultBranch, comment);
+    if (signature === null) continue;
+    additions.push(signature);
+    waiting.delete(comment.user.id);
   }
   if (additions.length > 0) {
     await ensureSignaturesBranch(github, repo);
@@ -224,23 +282,21 @@ export async function run({ github, context, core }) {
 
   const { comment, issue } = payload;
   const commenter = { login: comment.user.login, id: comment.user.id, type: comment.user.type };
-  const signing = signs(comment.body) && !isAllowed(commenter);
-  const extraSignatures = [];
-  if (signing) {
+  let signature = null;
+  if (signs(comment.body) && !isAllowed(commenter)) {
     const { signatures } = await readSignatures(github, repo);
-    if (!signatures.some((signature) => signature.id === commenter.id)) {
-      extraSignatures.push(signatureFrom(comment, await agreementSha(github, repo, defaultBranch)));
-    }
+    if (!signatures.some((known) => known.id === commenter.id)) signature = await signatureOf(github, repo, defaultBranch, comment);
   }
+  const extraSignatures = signature === null ? [] : [signature];
 
   if (issue.pull_request) {
     const { data: pull } = await github.rest.pulls.get({ ...repo, pull_number: issue.number });
     await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures });
-  } else if (extraSignatures.length > 0) {
+  } else if (signature !== null) {
     await ensureSignaturesBranch(github, repo);
     await recordSignatures(github, repo, extraSignatures);
   }
-  if (signing) {
+  if (signature !== null) {
     await github.rest.reactions.createForIssueComment({ ...repo, comment_id: comment.id, content: 'rocket' });
     core.info(`Recorded the CLA signature of @${commenter.login}`);
   }

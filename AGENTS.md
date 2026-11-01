@@ -1350,13 +1350,16 @@ Keep `BUGBOT.md` in step with this file when an invariant changes.
 
 ## Contributor licence agreement
 
-Every author of a pull request's commits signs `CLA.md` once, by posting "I have read the Geld CLA and I agree to it." on a pull request or an issue;
+The person who opens a pull request and every author and co-author of its commits sign `CLA.md` once, by posting "I have read the Geld CLA and I agree to it." on a pull request or an issue;
 the agreement lets the owner offer contributors' work under other terms too (the planned AGPL §7 App Store permission).
 `.github/workflows/cla.yml` runs `scripts/cla.mjs` (tests: `scripts/cla.test.mjs`, in `pnpm check`) from the default branch on `pull_request_target`, never the pull request's code, sets the `CLA` commit status and keeps one comment on the pull request up to date.
-Signatures live in `signatures.json` on the orphan `cla-signatures` branch (outside the main ruleset), each with the comment's words, its link and the agreement's blob SHA;
-a pull request's check also reads its own comments, so a past contributor can sign on their merged pull request.
+Commit authors come from GraphQL's `Commit.authors`, which reads the `Co-authored-by` trailers and resolves each email to an account.
+**Commit metadata is whatever the pusher wrote, so an exempt author on a commit never exempts the pull request**: its opener, the identity GitHub authenticates, signs unless exempt themselves.
+The owner, the Cursor agent and bots are exempt (`ALLOWED_LOGINS`, `ALLOWED_EMAILS`, any `[bot]` login).
+Signatures live in `signatures.json` on the orphan `cla-signatures` branch (outside the main ruleset), each with the comment's words, its link, when it held the sentence (an edited comment counts from its edit) and the blob SHA of `CLA.md` on the default branch as of that time;
+a comment from before there was an agreement signs nothing.
+A pull request's check also reads its own comments, so a past contributor can sign on their merged pull request and a signature whose run was dropped is picked up on the next one.
 A merged pull request with outside authors is locked once all of them have signed, since a locked conversation takes comments, edits and deletions from collaborators only and the signatures then stay on the page as well as in the record.
-The owner, the Cursor agent and bots are exempt (`ALLOWED_LOGINS`, `ALLOWED_EMAILS`).
 `CLA.md` is the owner's: an agent proposes a change to it in a pull request and the owner decides, and a new version leaves earlier signatures on the version they signed.
 
 ## Verifying changes
