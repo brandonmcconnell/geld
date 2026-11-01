@@ -20726,6 +20726,7 @@ var BitbucketCiAdapter = class {
   repositoryPath;
   reviewPath;
   reviewUrl;
+  loadedRevision = null;
   async identity() {
     return author((await this.http.request("user")).value).id;
   }
@@ -20734,11 +20735,65 @@ var BitbucketCiAdapter = class {
     if (id(pr.id) !== this.http.config.number) throw new ProviderCiError("Bitbucket returned a different pull request.");
     return pr;
   }
-  commit(value) {
-    return sha2(object2(object2(value).commit).hash);
+  repository(value) {
+    const name = text(object2(value).full_name);
+    const parts = name.split("/");
+    if (parts.length !== 2 || parts.some((part) => part === "" || part === "." || part === ".." || /[\s\\?#%\u0000-\u001f]/.test(part))) throw new ProviderCiError("Bitbucket returned an invalid commit repository.");
+    return name;
+  }
+  commitPath(repository) {
+    return `repositories/${repository.split("/").map(encodeURIComponent).join("/")}/commit/`;
+  }
+  reference(value) {
+    const reference = text(value);
+    if (!/^[a-f0-9]{7,40}$/i.test(reference)) throw new ProviderCiError("Bitbucket returned an invalid commit reference.");
+    return reference.toLowerCase();
+  }
+  selfReference(value, repository) {
+    if (value === void 0 || value === null) return null;
+    const links = object2(value);
+    if (links.self === void 0) return null;
+    const url2 = new URL(text(object2(links.self).href));
+    const api = new URL(this.http.config.apiBase);
+    const prefix = `${api.pathname}/${this.commitPath(repository)}`;
+    if (url2.origin !== api.origin || url2.username !== "" || url2.password !== "" || url2.hash !== "" || url2.search !== "" || !url2.pathname.startsWith(prefix)) throw new ProviderCiError("Bitbucket returned an untrusted commit source.");
+    return this.reference(url2.pathname.slice(prefix.length));
+  }
+  async resolveReference(reference, repository, selfReference = null) {
+    let full = reference;
+    if (reference.length < 40) {
+      const response = object2((await this.http.request(`${this.commitPath(repository)}${reference}?fields=hash`)).value);
+      full = sha2(response.hash).toLowerCase();
+      if (response.repository !== void 0 && this.repository(response.repository) !== repository) throw new ProviderCiError("Bitbucket resolved the commit in a different repository.");
+      if (response.type !== void 0 && response.type !== "commit") throw new ProviderCiError("Bitbucket did not resolve a commit.");
+      const resolvedSelf = this.selfReference(response.links, repository);
+      if (resolvedSelf !== null && !full.startsWith(resolvedSelf)) throw new ProviderCiError("Bitbucket returned a mismatched resolved commit link.");
+    }
+    full = sha2(full).toLowerCase();
+    if (!full.startsWith(reference) || selfReference !== null && !full.startsWith(selfReference)) throw new ProviderCiError("Bitbucket resolved a different commit reference.");
+    return { hash: full, repository };
+  }
+  async commit(value, destination) {
+    const ref = object2(value);
+    const commit = object2(ref.commit);
+    const reference = this.reference(commit.hash);
+    const repository = ref.repository === void 0 && reference.length === 40 ? this.http.config.repository : this.repository(ref.repository);
+    if (destination && repository !== this.http.config.repository) throw new ProviderCiError("Bitbucket returned a different destination repository.");
+    if (commit.type !== void 0 && commit.type !== "commit") throw new ProviderCiError("Bitbucket returned a non-commit reference.");
+    const self = this.selfReference(commit.links, repository);
+    return this.resolveReference(reference, repository, self);
+  }
+  async revision(pr) {
+    const [source, destination] = await Promise.all([this.commit(pr.source, false), this.commit(pr.destination, true)]);
+    return { source, destination };
+  }
+  sameRevision(a, b) {
+    return a.source.hash === b.source.hash && a.source.repository === b.source.repository && a.destination.hash === b.destination.hash && a.destination.repository === b.destination.repository;
   }
   async head() {
-    return this.commit((await this.pullRequest()).source);
+    const current = await this.revision(await this.pullRequest());
+    if (this.loadedRevision !== null && !this.sameRevision(this.loadedRevision, current)) throw new ProviderCiError("Bitbucket changed the pull request before the summary could be written.");
+    return current.source.hash;
   }
   comment(value) {
     const raw = object2(value);
@@ -20759,9 +20814,10 @@ var BitbucketCiAdapter = class {
     };
   }
   async load() {
+    this.loadedRevision = null;
     const pr = await this.pullRequest();
-    const headSha = this.commit(pr.source);
-    const baseSha = this.commit(pr.destination);
+    const before = await this.revision(pr);
+    const headSha = before.source.hash;
     const [rawComments, tasks, activity, statuses] = await Promise.all([
       this.http.bitbucketValues(`${this.reviewPath}/comments`),
       this.http.bitbucketValues(`${this.reviewPath}/tasks`),
@@ -20837,18 +20893,21 @@ var BitbucketCiAdapter = class {
       const links = object2(status.links);
       const self = new URL(text(object2(links.self).href));
       const api = new URL(this.http.config.apiBase);
-      const prefix = `${api.pathname}/${this.repositoryPath}/commit/`;
-      if (self.origin !== api.origin || !self.pathname.startsWith(prefix) || self.username !== "" || self.password !== "") throw new ProviderCiError("Bitbucket returned an untrusted build status source.");
-      const commit = /^([a-f0-9]{40})\/statuses(?:\/|$)/i.exec(self.pathname.slice(prefix.length))?.[1];
-      if (commit === void 0) throw new ProviderCiError("Bitbucket did not identify a build status commit.");
-      if (commit !== headSha) continue;
+      const repositories = /* @__PURE__ */ new Set([before.source.repository, before.destination.repository]);
+      const repository = [...repositories].find((path) => self.pathname.startsWith(`${api.pathname}/${this.commitPath(path)}`));
+      if (self.origin !== api.origin || repository === void 0 || self.username !== "" || self.password !== "" || self.hash !== "" || self.search !== "") throw new ProviderCiError("Bitbucket returned an untrusted build status source.");
+      const prefix = `${api.pathname}/${this.commitPath(repository)}`;
+      const reference = /^([a-f0-9]{7,40})\/statuses(?:\/|$)/i.exec(self.pathname.slice(prefix.length))?.[1];
+      if (reference === void 0) throw new ProviderCiError("Bitbucket did not identify a build status commit.");
+      const commit = await this.resolveReference(reference.toLowerCase(), repository);
+      if (commit.hash !== headSha) continue;
       const state = text(status.state);
       if (!["SUCCESSFUL", "FAILED", "STOPPED", "INPROGRESS"].includes(state)) throw new ProviderCiError("Bitbucket returned an unknown build state.");
       const key = text(status.key);
       const updatedAt = time3(status.updated_on);
       const check2 = {
         name: text(status.name),
-        sha: commit,
+        sha: commit.hash,
         status: state === "INPROGRESS" ? "in_progress" : "completed",
         conclusion: state === "INPROGRESS" ? null : state === "SUCCESSFUL" ? "success" : state === "FAILED" ? "failure" : "cancelled",
         startedAt: time3(status.created_on),
@@ -20868,8 +20927,9 @@ var BitbucketCiAdapter = class {
       notes.push(`- [${task.state === "RESOLVED" ? "x" : " "}] Task: ${markdown(body(task.content))} ([source](${url2}))`);
     }
     for (const value of activity) object2(value);
-    const after = await this.pullRequest();
-    if (this.commit(after.source) !== headSha || this.commit(after.destination) !== baseSha) throw new ProviderCiError("Bitbucket changed the pull request while the summary was loading.");
+    const after = await this.revision(await this.pullRequest());
+    if (!this.sameRevision(before, after)) throw new ProviderCiError("Bitbucket changed the pull request while the summary was loading.");
+    this.loadedRevision = after;
     const input2 = {
       subject: { provider: "bitbucket", origin: this.http.config.origin, repository: this.http.config.repository, id: this.http.config.number, headSha },
       threads,
