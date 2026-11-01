@@ -6,6 +6,7 @@ import { fetchBitbucketConfig } from './config';
 import { bitbucketActionHost, bitbucketDescriptionHost, bitbucketHeaderTargets, bitbucketReviewHost, readBitbucketDiff } from './diff';
 import { bitbucketAuthenticated, readBitbucketActions } from './actions';
 import { bitbucketListRows } from './list-surfaces';
+import { fetchBitbucketListAuthors } from './list-authors';
 import { bitbucketConversationRoots, syncBitbucketNativeReviewState } from './conversation';
 import { renderBitbucketComment } from './comment-render';
 import { bitbucketThreadActions } from './thread-actions';
@@ -25,6 +26,7 @@ export const bitbucketAdapter: ProviderAdapter = {
   diffSyntax: { apply: (view) => applyBitbucketWorkflowSyntax(view.entries), clear: removeBitbucketWorkflowSyntax },
   headerTargets: bitbucketHeaderTargets,
   listRows: bitbucketListRows,
+  fetchListAuthors: fetchBitbucketListAuthors,
   eagerListDiffs: bitbucketAuthenticated,
   reviewRefreshMs: (doc) => bitbucketAuthenticated(doc) ? 60_000 : 30 * 60_000,
   fetchDiff: (page, signal) => page.kind === 'compare' ? Promise.reject(new Error('Bitbucket comparison diffs are unavailable')) : new BitbucketClient(page).diff(signal),

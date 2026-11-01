@@ -10,6 +10,7 @@ import puppeteer from 'puppeteer-core';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
+import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
@@ -2454,9 +2455,11 @@ try {
 
   await runCase('bitbucket-list-counts', BB_PR_LIST, async (page, item) => {
     item.listCounts = await bitbucketListCounts(page, item);
+    const authorSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+    item.authorFilters = await verifyBitbucketHiddenAuthors({ page, patchSettings, poll, pause, capture, original: authorSettings, extensionId, onProgress: (value) => { item.authorFilters = value; } });
     item.state = await tabState(page);
     item.featureParity = 'partial';
-    return { status: 'passed', verified: 'The actual visible native PR27 row settles at complete counts. Pointer and real Tab breakdowns plus shared custom-pattern filtering/restoration preserve native IDs and links.' };
+    return { status: 'passed', verified: 'The actual visible native PR27 row settles at complete counts. Pointer/Tab breakdowns and shared custom-pattern restoration preserve native IDs/links. One observed UUID/name projection supports personal author hiding with stats off, native-row preservation and real keyboard Show recovery.' };
   });
   await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);

@@ -1614,6 +1614,13 @@ Provider-specific surfaces translate settings and sources into shared review and
   A counted author-filter notice supplies a keyboard-accessible Show action for its native list, with recovery remembered only for the current visit and filter set.
   List and table recovery notices use appropriate native container tags without moving rows or taking their handlers, and rows with no reliable author identity stay untouched.
   Bitbucket list count chips mount beside the verified native title tooltip wrapper on the same title line, because placing them inside its span also triggers the provider's title tooltip over the breakdown.
+  Bitbucket list author filtering uses a separate one-page UUID/name projection only when valid personal author rules are active and the current repository is allowed, independently of list counts.
+  Match `bitbucket.org/uuid/<canonical-uuid>` through the existing author glob grammar and keep the readable API display name separate, without nickname, account-ID, avatar or reviewer inference.
+  Require an explicit documented native list state, decline unsupported query selections, map only exact returned current PR IDs, and leave omitted or unknown identities visible without pagination, diff/config fan-out or automatic retries.
+  Abort obsolete author visits on navigation or relevant settings changes, and a background pause must not turn later mutation refreshes into another metadata request.
+  A bare `@` normalizes to an empty identity in the older matcher, so exclude that normalized-empty line from metadata demand without changing existing login/glob semantics.
+  Native table author notices span only cells whose computed display participates in the table, excluding Bitbucket's hidden responsive title alternate.
+  Cache that small representative-cell calculation across ordinary refreshes and update it on native context or viewport changes, removing its resize listeners with the notice.
   When that verified title line contains an owned chip, shrink and ellipsize only its native text presentation wrapper and reserve the chip's intrinsic width, so long titles cannot push cold count instructions into the column's clipped area.
   Removing the owned chip restores the native layout through the conditional stylesheet, while native title links, tooltip anchors and popover accessibility relationships retain their nodes and attributes.
 - **Digest settings operate only on represented native sources.**
