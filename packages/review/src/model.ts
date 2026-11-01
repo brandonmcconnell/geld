@@ -184,6 +184,27 @@ export interface FoldRecord {
   readonly events: readonly string[];
 }
 
+export interface NativePublication {
+  readonly v: 1;
+  readonly subject: {
+    readonly provider: 'gitlab' | 'bitbucket';
+    readonly origin: string;
+    readonly repository: string;
+    readonly id: string;
+    readonly headSha: string;
+  };
+  readonly items: readonly {
+    readonly itemId: string;
+    readonly fingerprint: string;
+    readonly sources: readonly {
+      readonly id: string;
+      readonly anchor: string;
+      readonly authorId: string;
+      readonly fingerprint: string;
+    }[];
+  }[];
+}
+
 export interface GeldPrMeta {
   readonly v: typeof META_VERSION;
   readonly generatedAt: string;
@@ -197,6 +218,7 @@ export interface GeldPrMeta {
   readonly summary?: ReviewSummary;
   /** Preview deployments the hosting bots posted, every comment's, in timeline order (the reader keeps the latest per project). */
   readonly previews?: readonly PreviewRecord[];
+  readonly nativePublication?: NativePublication;
 }
 
 export const PREVIEW_STATUSES = ['ready', 'building', 'failed', 'skipped', 'unknown'] as const;
@@ -332,6 +354,46 @@ export const previewRecordSchema = z.object({
   reason: z.string().min(1).max(200).optional(),
 });
 
+export const nativePublicationSchema = z.object({
+  v: z.literal(1),
+  subject: z.object({
+    provider: z.enum(['gitlab', 'bitbucket']),
+    origin: z.string().max(500).refine((value) => httpOrigin(value) === value),
+    repository: z.string().min(3).max(500).refine((value) => {
+      const parts = value.split('/');
+      return parts.length >= 2 && parts.every((part) => /^[\p{L}\p{N}_.-]+$/u.test(part) && part !== '.' && part !== '..');
+    }),
+    id: z.string().regex(/^[1-9]\d{0,19}$/),
+    headSha: z.string().regex(/^[0-9a-f]{40}$/),
+  }),
+  items: z.array(z.object({
+    itemId: z.string().min(1).max(100),
+    fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    sources: z.array(z.object({
+      id: z.string().regex(/^[1-9]\d{0,19}$/),
+      anchor: sourceAnchorSchema,
+      authorId: z.string().min(1).max(100),
+      fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    })).min(1).max(20_000),
+  })).max(5000),
+}).superRefine((publication, context) => {
+  const items = new Set<string>();
+  const anchors = new Set<string>();
+  const sourceIds = new Set<string>();
+  publication.items.forEach((item, index) => {
+    if (items.has(item.itemId)) context.addIssue({ code: 'custom', path: ['items', index, 'itemId'], message: 'Duplicate publication item.' });
+    items.add(item.itemId);
+    item.sources.forEach((source, position) => {
+      const native = publication.subject.provider === 'gitlab' ? source.anchor === `note_${source.id}` : source.anchor === `comment-${source.id}` || source.anchor === `comment_${source.id}`;
+      const account = publication.subject.provider === 'gitlab' ? /^[1-9]\d{0,19}$/.test(source.authorId) : /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(source.authorId) && source.authorId.startsWith('{') === source.authorId.endsWith('}');
+      if (!native || anchors.has(source.anchor) || sourceIds.has(source.id)) context.addIssue({ code: 'custom', path: ['items', index, 'sources', position, 'anchor'], message: 'Expected a unique native comment anchor.' });
+      if (!account) context.addIssue({ code: 'custom', path: ['items', index, 'sources', position, 'authorId'], message: 'Expected a durable native account id.' });
+      anchors.add(source.anchor);
+      sourceIds.add(source.id);
+    });
+  });
+});
+
 export const geldPrMetaSchema = z.object({
   v: z.literal(META_VERSION),
   generatedAt: isoDate,
@@ -344,6 +406,28 @@ export const geldPrMetaSchema = z.object({
   truncated: z.boolean().optional(),
   summary: reviewSummarySchema.optional(),
   previews: z.array(previewRecordSchema).optional(),
+  nativePublication: nativePublicationSchema.optional(),
+}).superRefine((meta, context) => {
+  const publication = meta.nativePublication;
+  if (publication === undefined) return;
+  if (publication.subject.headSha !== meta.headSha) context.addIssue({ code: 'custom', path: ['nativePublication', 'subject', 'headSha'], message: 'Publication and summary heads differ.' });
+  const itemIds = new Set<string>();
+  const anchors = new Set<string>();
+  for (const item of meta.items) {
+    if (itemIds.has(item.id)) context.addIssue({ code: 'custom', path: ['items'], message: 'Native publication item ids must be unique.' });
+    itemIds.add(item.id);
+    for (const source of item.sources) {
+      if (anchors.has(source.anchor) || source.provider !== publication.subject.provider || source.origin !== publication.subject.origin) context.addIssue({ code: 'custom', path: ['items'], message: 'Native publication sources must be unique and share its provider origin.' });
+      anchors.add(source.anchor);
+    }
+  }
+  for (const entry of publication.items) {
+    const item = meta.items.find((candidate) => candidate.id === entry.itemId);
+    if (item === undefined || item.sources.length !== entry.sources.length || item.sources.some((source, index) => {
+      const published = entry.sources[index];
+      return published === undefined || published.id !== source.sourceId || published.anchor !== source.anchor || published.authorId !== source.authorId;
+    })) context.addIssue({ code: 'custom', path: ['nativePublication', 'items'], message: 'Publication sources must match retained summary items.' });
+  }
 });
 
 export const deeplinkSchema = z.object({
@@ -424,7 +508,8 @@ function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events },
   };
-  const flagged = value.truncated === undefined ? meta : { ...meta, truncated: value.truncated };
+  const published = value.nativePublication === undefined ? meta : { ...meta, nativePublication: value.nativePublication };
+  const flagged = value.truncated === undefined ? published : { ...published, truncated: value.truncated };
   const summarised =
     value.summary === undefined
       ? flagged
@@ -517,15 +602,20 @@ function encodedPayloadLength(meta: GeldPrMeta): number {
  * `truncated: true` whenever anything was dropped.
  */
 export function truncateMeta(meta: GeldPrMeta, budget: number = PAYLOAD_BUDGET): GeldPrMeta {
-  if (encodedPayloadLength(meta) <= budget) return meta;
+  const retained = (items: readonly ReviewItem[], truncated: boolean): GeldPrMeta => {
+    const ids = new Set(items.map((item) => item.id));
+    return { ...meta, items, ...(truncated ? { truncated: true } : {}), ...(meta.nativePublication === undefined ? {} : { nativePublication: { ...meta.nativePublication, items: meta.nativePublication.items.filter((item) => ids.has(item.itemId)) } }) };
+  };
+  const initial = meta.nativePublication === undefined ? meta : retained(meta.items, false);
+  if (encodedPayloadLength(initial) <= budget) return initial;
   const ranked = [...meta.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
-    const candidate: GeldPrMeta = { ...meta, items, truncated: true };
+    const candidate = retained(items, true);
     if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
-  return { ...meta, items: [], truncated: true };
+  return retained([], true);
 }
 
 export function deeplinkFrom(meta: GeldPrMeta): GeldDeeplink {

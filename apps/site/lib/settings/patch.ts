@@ -3,6 +3,8 @@ import {
   authorRuleProblem,
   testSyntaxProblem,
   trustedReviewAccountsProblem,
+  trustedSummaryPublishersProblem,
+  normalizeTrustedSummaryPublishers,
   normalizeTrustedReviewAccounts,
   compileGlobs,
   fieldsFor,
@@ -163,6 +165,10 @@ export function validateList(key: ListSettingKey, rawLines: readonly string[]): 
     case 'trustedReviewAccounts': {
       const problem = trustedReviewAccountsProblem(lines);
       return problem === null ? { ok: true, lines: normalizeTrustedReviewAccounts(lines) } : { ok: false, message: problem };
+    }
+    case 'trustedSummaryPublishers': {
+      const problem = trustedSummaryPublishersProblem(lines);
+      return problem === null ? { ok: true, lines: normalizeTrustedSummaryPublishers(lines) } : { ok: false, message: problem };
     }
     case 'testSyntaxes': {
       const problem = lines.map(testSyntaxProblem).find((entry): entry is string => entry !== null) ?? null;

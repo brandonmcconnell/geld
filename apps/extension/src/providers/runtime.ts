@@ -1,8 +1,8 @@
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { normalizeReviewAccountId, repositoryKey, withTrustedReviewAccount } from '@geld/core';
+import { normalizeReviewAccountId, repositoryKey, trustedSummaryPublisherIdsFor, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings } from '@geld/core';
-import { buildProviderReviewItems, providerBotSupport, providerReviewKey, sourceLink } from '@geld/review';
+import { buildProviderReviewItems, providerBotSupport, providerPublicationCandidate, providerReviewKey, readProviderPublication, sourceLink } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import { loadCatalog, watchCatalog } from '../lib/catalog';
 import { settingsItem } from '../lib/storage';
@@ -15,6 +15,7 @@ import { isProviderReviewPage } from './types';
 import type { ProviderAdapter, ProviderPage, ProviderReviewSnapshot } from './types';
 import type { ProviderConversationServices } from './conversation';
 import { providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
+import { createProviderPublisherTrust } from './publisher-trust';
 import { ProviderRepoConfigSource } from './repo-config';
 import { readProviderReviewedItems, repoConfigChoicesItem, saveProviderReviewedItem } from '../lib/local-state';
 import type { ProviderReviewedStorage } from '../lib/local-state';
@@ -55,11 +56,17 @@ export function createProviderReviewedServices(environment: ProviderReviewedEnvi
     const settings = await (environment.getSettings?.() ?? settingsItem.getValue());
     const snapshot = currentReview(input);
     const native = snapshot.input;
-    return {
-      input: providerReviewWithTrustedAccounts(native, snapshot.comments, settings, snapshot.complete),
-      snapshot,
-      signature: JSON.stringify([native.threads, snapshot.comments]),
-    };
+    const signature = JSON.stringify([native.threads, snapshot.comments]);
+    const inputWithBots = providerReviewWithTrustedAccounts(native, snapshot.comments, settings, snapshot.complete);
+    const repository = { provider: native.subject.provider, origin: native.subject.origin, path: native.subject.repository };
+    const publication = await readProviderPublication({
+      input: inputWithBots,
+      comments: snapshot.comments,
+      sourceCoverage: snapshot.sourceCoverage,
+      trustedPublisherIds: trustedSummaryPublisherIdsFor(settings.trustedSummaryPublishers, repository),
+    });
+    unchanged(input, snapshot, signature);
+    return { input: publication.input, snapshot, signature };
   };
   const unchanged = (input: ProviderReviewInput, snapshot: ProviderReviewSnapshot, signature: string): void => {
     const current = currentReview(input);
@@ -206,12 +213,20 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     retired: () => retired,
     updated: (value) => { badge = value.showBadge; whitespace.update(value); controller?.updateSettings(value); },
   });
+  const saveTrustedPublisher = createProviderPublisherTrust({
+    page: () => sourceAdapter.describe(new URL(window.location.href), document),
+    snapshot: () => observedReview,
+    retired: () => retired,
+    updated: (value) => { badge = value.showBadge; whitespace.update(value); controller?.updateSettings(value); },
+    settings: settingsItem,
+    eligible: (input, comment) => providerPublicationCandidate(input, comment) !== null,
+  });
   const reviewed = createProviderReviewedServices({
     page: () => sourceAdapter.describe(new URL(window.location.href), document),
     snapshot: () => observedReview,
     retired: () => retired,
   });
-  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, ...reviewed });
+  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed });
   const started = controller;
   unwatchSettings = settingsItem.watch((value) => {
     badge = value.showBadge;

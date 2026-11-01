@@ -1,4 +1,4 @@
-import type { ProviderReviewInput } from '@geld/review';
+import type { ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
 
 export interface OwnedComment {
   readonly id: string;
@@ -9,6 +9,7 @@ export interface OwnedComment {
 export interface ProviderCiReview {
   readonly input: ProviderReviewInput;
   readonly comments: readonly OwnedComment[];
+  readonly sourceCoverage?: ProviderSourceCoverage;
   readonly notes: readonly string[];
 }
 

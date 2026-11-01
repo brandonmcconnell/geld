@@ -27,16 +27,31 @@ function markdown(value: string): string {
 interface Comment {
   readonly source: ProviderReviewComment;
   readonly parent: string | null;
-  readonly resolved: boolean;
+  readonly resolved: boolean | null;
+  readonly outdated: boolean | null;
   readonly path: string | null;
   readonly line: number | null;
 }
 
 interface CommentState {
   readonly parent: string | null;
-  readonly resolved: boolean;
+  readonly resolved: boolean | null;
+  readonly outdated: boolean | null;
   readonly path: string | null;
   readonly line: number | null;
+}
+
+function commentState(raw: Record<string, unknown>): CommentState {
+  const inline = isRecord(raw.inline) ? raw.inline : null;
+  const line = inline?.to ?? inline?.from;
+  if (line !== undefined && line !== null && (typeof line !== 'number' || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError('Bitbucket returned an invalid comment line.');
+  const resolution = raw.resolution === undefined || raw.resolution === null ? null : object(raw.resolution);
+  return {
+    parent: raw.parent === undefined || raw.parent === null ? null : id(object(raw.parent).id),
+    resolved: typeof raw.resolved === 'boolean' ? raw.resolved : resolution !== null ? true : raw.resolution === null ? false : null,
+    outdated: typeof inline?.outdated === 'boolean' ? inline.outdated : typeof raw.outdated === 'boolean' ? raw.outdated : null,
+    path: inline === null ? null : text(inline.path), line: typeof line === 'number' ? line : null,
+  };
 }
 
 interface ResolvedCommit {
@@ -149,14 +164,9 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
     if (url === null) throw new ProviderCiError('Bitbucket omitted a canonical review comment link.');
     const anchor = new URL(url).hash.slice(1);
     if (anchor !== `comment-${number}` && anchor !== `comment_${number}`) throw new ProviderCiError('Bitbucket returned a mismatched comment anchor.');
-    const inline = isRecord(raw.inline) ? raw.inline : null;
-    const line = inline?.to ?? inline?.from;
-    if (line !== undefined && line !== null && (typeof line !== 'number' || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError('Bitbucket returned an invalid comment line.');
     return {
       source: { id: number, anchor, url, author: author(raw.user), body: body(raw.content), createdAt: time(raw.created_on), updatedAt: time(raw.updated_on) },
-      parent: raw.parent === undefined || raw.parent === null ? null : id(object(raw.parent).id),
-      resolved: raw.resolved === true || isRecord(raw.resolution),
-      path: inline === null ? null : text(inline.path), line: typeof line === 'number' ? line : null,
+      ...commentState(raw),
     };
   }
 
@@ -178,13 +188,8 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
       const raw = object(value);
       const number = id(raw.id);
       if (states.has(number)) throw new ProviderCiError('Bitbucket repeated a review comment.');
-      const inline = isRecord(raw.inline) ? raw.inline : null;
-      const line = inline?.to ?? inline?.from;
-      if (line !== undefined && line !== null && (typeof line !== 'number' || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError('Bitbucket returned an invalid comment line.');
-      states.set(number, {
-        parent: raw.parent === undefined || raw.parent === null ? null : id(object(raw.parent).id),
-        resolved: raw.resolved === true || isRecord(raw.resolution), path: inline === null ? null : text(inline.path), line: typeof line === 'number' ? line : null,
-      });
+      if (typeof raw.deleted !== 'boolean') throw new ProviderCiError('Bitbucket omitted comment visibility.');
+      states.set(number, commentState(raw));
       if (raw.deleted === true) continue;
       const comment = this.comment(raw);
       indexed.set(comment.source.id, comment);
@@ -209,15 +214,17 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
     }
     const threads: ProviderReviewThread[] = [];
     for (const [rootId, comments] of groups) {
-      comments.sort((a, b) => Date.parse(a.source.createdAt) - Date.parse(b.source.createdAt));
+      comments.sort((a, b) => Date.parse(a.source.createdAt) - Date.parse(b.source.createdAt) || (BigInt(a.source.id) < BigInt(b.source.id) ? -1 : BigInt(a.source.id) > BigInt(b.source.id) ? 1 : 0));
       const root = states.get(rootId);
       const first = comments[0];
-      if (root === undefined || first === undefined || root.path === null && comments.length === 1 && first.parent === null) continue;
+      if (root === undefined || first === undefined) continue;
+      const location = root.path === null ? comments.find((comment) => comment.path !== null) : root;
+      if (location === undefined && comments.length === 1 && first.parent === null && root.resolved === null) continue;
       const rootSource = indexed.get(rootId)?.source ?? first.source;
       threads.push({
         id: rootId, anchor: rootSource.anchor, url: rootSource.url, comments: comments.map((comment) => comment.source),
-        resolved: root.resolved, outdated: false,
-        ...(root.path === null ? {} : { path: root.path }), ...(root.line === null ? {} : { line: root.line }),
+        resolved: root.resolved === true, outdated: root.outdated === true, stateKnown: root.resolved !== null && root.outdated !== null,
+        ...(location?.path === null || location?.path === undefined ? {} : { path: location.path }), ...(location?.line === null || location?.line === undefined ? {} : { line: location.line }),
       });
     }
     const reviewers: ProviderReviewReviewer[] = [];
@@ -271,7 +278,10 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
       subject: { provider: 'bitbucket', origin: this.http.config.origin, repository: this.http.config.repository, id: this.http.config.number, headSha },
       threads, reviewers, checks: [...latestChecks.values()].map((entry) => entry.check), bots: [],
     };
-    return { input, comments: owned, notes: notes.length === 0 ? [] : ['**Tasks**', ...notes] };
+    const unknownThreadState = threads.some((thread) => thread.stateKnown !== true);
+    const supplemental = notes.length === 0 ? [] : ['**Tasks**', ...notes];
+    if (unknownThreadState) supplemental.push('Native resolution or outdated state is unavailable for some review threads.');
+    return { input, comments: owned, sourceCoverage: { comments: 'complete', threads: unknownThreadState ? 'partial' : 'complete' }, notes: supplemental };
   }
 
   async upsert(commentId: string | null, summary: string): Promise<void> {

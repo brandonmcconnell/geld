@@ -8,6 +8,7 @@ import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 import { parseTestSyntax } from './test-outline';
 import { trustedReviewAccountConflicts, trustedReviewAccountProblem } from './review-accounts';
+import { trustedSummaryPublisherProblem } from './publisher-accounts';
 
 /**
  * Strict validation of a settings document, used for anything a person may
@@ -285,6 +286,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
+  checkStringList(issues, `${path}.trustedSummaryPublishers`, value.trustedSummaryPublishers, trustedSummaryPublisherProblem);
   checkStringList(issues, `${path}.trustedReviewAccounts`, value.trustedReviewAccounts, trustedReviewAccountProblem);
   if (Array.isArray(value.trustedReviewAccounts)) {
     for (const conflict of trustedReviewAccountConflicts(value.trustedReviewAccounts)) issues.push({ path: `${path}.trustedReviewAccounts[${conflict.index}]`, message: conflict.message });

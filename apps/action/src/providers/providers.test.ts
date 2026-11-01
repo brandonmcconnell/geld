@@ -98,7 +98,7 @@ function input(): ProviderReviewInput {
   return {
     subject: { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: HEAD },
     threads: [{
-      id: '12345678', anchor: 'note_10', url: 'https://gitlab.com/group/subgroup/project/-/merge_requests/42#note_10', resolved: false, outdated: false,
+      id: '12345678', anchor: 'note_10', url: 'https://gitlab.com/group/subgroup/project/-/merge_requests/42#note_10', resolved: false, outdated: false, stateKnown: true,
       comments: [{ id: '10', anchor: 'note_10', url: 'https://gitlab.com/group/subgroup/project/-/merge_requests/42#note_10', author: { id: '8', login: 'reviewer' }, body: 'This crashes on empty input.', createdAt: DATE }],
     }],
   };
@@ -185,6 +185,8 @@ describe('provider summary ownership and determinism', () => {
     expect(meta.ok).toBe(true);
     if (!meta.ok) throw new Error('Invalid summary fixture');
     expect(meta.value.producer.ai).toBe(false);
+    expect(meta.value.nativePublication?.subject).toEqual(input().subject);
+    expect(meta.value.nativePublication?.items).toMatchObject([{ itemId: meta.value.items[0]?.id, fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/), sources: [{ id: '10', anchor: 'note_10', authorId: '8', fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/) }] }]);
     expect(meta.value.items[0]?.sources[0]).toMatchObject({ provider: 'gitlab', authorId: '8', anchor: 'note_10' });
     expect(saved).toContain('https://gitlab.com/group/subgroup/project/-/merge_requests/42#note_10');
     expect(await produceProviderSummary(adapter, '2026-11-02T10:00:00Z')).toBe('unchanged');
@@ -238,6 +240,46 @@ describe('provider summary ownership and determinism', () => {
     expect(parsed.value.items[0]?.sources.some((entry) => entry.authorId === '7')).toBe(false);
     expect(source.threads[0]?.comments).toEqual([human]);
     expect(mixed.comments).toEqual([summary, human]);
+  });
+
+
+  it('publishes scoped metadata while omitting fingerprints for unknown thread state', async () => {
+    const original = input();
+    let saved = '';
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: { ...original, threads: original.threads.map((thread) => ({ ...thread, stateKnown: false })) }, comments: [], notes: [] }),
+      upsert: async (_id, body) => { saved = body; },
+    };
+    await produceProviderSummary(adapter, DATE);
+    const parsed = parsePublishedSummaryBody(saved);
+    if (!parsed.ok) throw new Error('Invalid generated summary');
+    expect(parsed.value.items).toHaveLength(1);
+    expect(parsed.value.nativePublication).toEqual({ v: 1, subject: original.subject, items: [] });
+  });
+
+  it('budgets native source fingerprints together with retained summary items', async () => {
+    const original = input();
+    const first = original.threads[0];
+    const source = first?.comments[0];
+    if (first === undefined || source === undefined) throw new Error('Missing source fixture');
+    const threads = Array.from({ length: 100 }, (_, index) => {
+      const id = String(index + 100);
+      return { ...first, id: String(index + 10000000), path: `src/file-${index}.ts`, comments: [{ ...source, id, anchor: `note_${id}`, url: source.url.replace('#note_10', `#note_${id}`), body: `This crashes for input ${index}.` }] };
+    });
+    let saved = '';
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: { ...original, threads }, comments: [], notes: [] }),
+      upsert: async (_id, body) => { saved = body; },
+    };
+    await produceProviderSummary(adapter, DATE);
+    const parsed = parsePublishedSummaryBody(saved);
+    if (!parsed.ok) throw new Error('Invalid generated summary');
+    expect(parsed.value.truncated).toBe(true);
+    expect(parsed.value.items.length).toBeLessThan(100);
+    expect(parsed.value.nativePublication?.items.map((entry) => entry.itemId)).toEqual(parsed.value.items.map((item) => item.id));
+    expect(Buffer.byteLength(saved, 'utf8')).toBeLessThanOrEqual(30_000);
   });
 
   it('replaces a legacy or body-only cache with a correctly published footer', async () => {
@@ -478,5 +520,49 @@ describe('Bitbucket authoritative abbreviated commit resolution', () => {
       expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
       expect(prReads).toBe(3);
     }
+  });
+});
+
+describe('native publication normalization coverage', () => {
+  it('keeps REST GitLab diff state unknown when the API omits active/outdated facts', async () => {
+    const root = '/api/v4/projects/group%2Fsubgroup%2Fproject/merge_requests/42';
+    const t = transport((url) => {
+      if (url.pathname === root) return json({ iid: 42, sha: HEAD });
+      if (url.pathname === `${root}/discussions`) return json([{ id: '12345678', notes: [
+        { id: 10, author: { id: 8, username: 'reviewer' }, body: 'This crashes.', created_at: DATE, updated_at: DATE, type: 'DiffNote', resolvable: true, resolved: false, position: { new_path: 'src/a.ts', new_line: 5, head_sha: HEAD } },
+      ] }]);
+      if (url.pathname === `${root}/approvals`) return json({ approved_by: [] });
+      return json([]);
+    });
+    const review = await new GitLabCiAdapter(new ProviderHttp(config('gitlab'), t.fetcher)).load();
+    expect(review.input.threads[0]).toMatchObject({ id: '12345678', anchor: 'discussion_12345678', stateKnown: false });
+    expect(review.sourceCoverage).toEqual({ comments: 'complete', threads: 'partial' });
+    expect(review.notes).toContain('Native resolution or outdated state is unavailable for some review discussions.');
+    expect(t.requests.filter((request) => request.url.includes('/discussions'))).toHaveLength(1);
+    expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
+
+  it.each(['known', 'resolution', 'outdated'])('preserves Bitbucket %s thread-state evidence without assuming absent fields are false', async (missing) => {
+    const root = '/2.0/repositories/workspace/project/pullrequests/42';
+    const source = {
+      id: 10, deleted: false, parent: null,
+      user: { uuid: '{80000000-0000-4000-8000-000000000008}', nickname: 'reviewer' },
+      content: { raw: 'This crashes.' }, created_on: DATE, updated_on: DATE,
+      inline: missing === 'outdated' ? { path: 'src/a.ts', to: 5 } : { path: 'src/a.ts', to: 5, outdated: false },
+      ...(missing === 'resolution' ? {} : { resolution: null }),
+      links: { html: { href: 'https://bitbucket.org/workspace/project/pull-requests/42/_/diff#comment-10' } },
+    };
+    const t = transport((url) => {
+      if (url.pathname === root) return json({ id: 42, source: { commit: { hash: HEAD } }, destination: { commit: { hash: NEXT } }, participants: [] });
+      return json({ values: url.pathname === `${root}/comments` ? [source] : [] });
+    });
+    const review = await new BitbucketCiAdapter(new ProviderHttp(config('bitbucket'), t.fetcher)).load();
+    expect(review.input.threads[0]?.stateKnown).toBe(missing === 'known');
+    expect(review.sourceCoverage).toEqual({ comments: 'complete', threads: missing === 'known' ? 'complete' : 'partial' });
+    const { buildProviderReviewItems, createNativePublication } = await import('@geld/review');
+    const publication = await createNativePublication(review.input, buildProviderReviewItems(review.input));
+    expect(publication.items).toHaveLength(missing === 'known' ? 1 : 0);
+    expect(t.requests.filter((request) => request.url.includes('/comments'))).toHaveLength(1);
+    expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
   });
 });

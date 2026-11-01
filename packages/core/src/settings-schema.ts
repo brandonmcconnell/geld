@@ -508,6 +508,21 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         saveLabel: 'Save trusted accounts',
       },
       {
+        kind: 'list',
+        key: 'trustedSummaryPublishers',
+        label: 'Trusted summary publishers',
+        description: 'Trust an actual GitLab or Bitbucket account to publish Geld summaries in one exact repository. This is separate from review bot identity and does not attest that a CI job ran.',
+        popup: false,
+        rows: 4,
+        placeholder: 'gitlab.com/group/project 12345\nbitbucket.org/workspace/repo {12345678-1234-1234-1234-123456789abc}',
+        syntax: [
+          'One exact repository and native account id per line, separated by a space. No wildcards or credentials.',
+          'GitLab uses a numeric user id. Bitbucket uses an account UUID. A personal token account can publish summaries too.',
+          'Only your explicit choice grants trust. Remove a line to withdraw it. Repository configuration cannot grant trust.',
+        ],
+        saveLabel: 'Save trusted publishers',
+      },
+      {
         kind: 'choice',
         key: 'suggestedFixes',
         label: 'Suggested fixes',

@@ -2,10 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from 'wxt/browser';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { DEFAULT_SETTINGS, trustedReviewAccountsFor, withTrustedReviewAccount } from '@geld/core';
+import { DEFAULT_SETTINGS, trustedReviewAccountsFor, withTrustedReviewAccount, withTrustedSummaryPublisher } from '@geld/core';
 import type { GeldSettings, RepositoryIdentity } from '@geld/core';
-import { buildProviderReviewItems } from '@geld/review';
-import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
+import { buildProviderReviewItems, createNativePublication, META_VERSION, readProviderPublication, renderProviderSummary } from '@geld/review';
+import type { GeldPrMeta, ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import { settingsItem } from '../lib/storage';
 import { providerReviewedItemsItem } from '../lib/local-state';
 import type { ProviderReviewedRecord, ProviderReviewedStorage } from '../lib/local-state';
@@ -176,6 +176,32 @@ function reviewedFixture(initial = reviewedSource(), storage?: ProviderReviewedS
 }
 
 describe('local reviewed source and navigation guards', () => {
+  it('validates device reviewed marks against the same original sources after excluding a trusted machine note', async () => {
+    const native: ProviderReviewInput = { ...reviewedSource().input, threads: reviewedSource().input.threads.map((thread) => ({ ...thread, stateKnown: true })) };
+    const items = buildProviderReviewItems(native);
+    const meta: GeldPrMeta = { v: META_VERSION, generatedAt: '2026-11-01T12:01:00Z', headSha: sha, producer: { kind: 'action', version: '0.1.0', ai: false }, items, bots: [], reviewers: [], fold: { comments: [], events: [] }, nativePublication: await createNativePublication(native, items) };
+    const publisher: ProviderReviewComment = { ...comment('99', '77'), author: { id: '77', login: 'personal-ci-owner' }, body: renderProviderSummary(meta, native.subject) };
+    const snapshot: ProviderReviewSnapshot = { ...source([]), sourceCoverage: { comments: 'complete', threads: 'complete' }, input: { ...native, threads: native.threads.map((thread, index) => index === 0 ? { ...thread, url: publisher.url, comments: [publisher, ...thread.comments] } : thread) } };
+    const original = JSON.stringify(snapshot);
+    const trusted = { ...DEFAULT_SETTINGS, trustedSummaryPublishers: withTrustedSummaryPublisher([], repository, publisher.author.id) };
+    await settingsItem.setValue(trusted);
+    const result = await readProviderPublication({ input: snapshot.input, comments: snapshot.comments, sourceCoverage: snapshot.sourceCoverage, trustedPublisherIds: ['77'] });
+    expect(result.status).toBe('current');
+    const item = result.items[0];
+    if (item === undefined) throw new Error('Missing published native finding');
+    const fingerprint = await reviewedItemFingerprint(result.input, item, result.comments);
+    const f = reviewedFixture(snapshot);
+    await f.save(result.input, item, fingerprint, true);
+    expect(await f.read(result.input)).toEqual({ [item.id]: fingerprint });
+    expect(JSON.stringify(snapshot)).toBe(original);
+    const stored = JSON.stringify(await providerReviewedItemsItem.getValue());
+    expect(stored).not.toContain(publisher.body);
+    expect(stored).not.toContain(publisher.author.login);
+    await settingsItem.setValue(DEFAULT_SETTINGS);
+    expect(await f.read(result.input)).toEqual({});
+    await expect(f.save(result.input, item, fingerprint, true)).rejects.toThrow(/changed|sources/);
+  });
+
   it('persists only fingerprints in actual local storage and keeps native unresolved state unchanged', async () => {
     const snapshot = reviewedSource();
     const before = JSON.stringify(snapshot.input);

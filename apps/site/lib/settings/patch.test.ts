@@ -110,3 +110,21 @@ describe('trusted review account settings', () => {
     expect(validateList('trustedReviewAccounts', ['gitlab.com/acme/widgets coderabbit coderabbitai']).ok).toBe(false);
   });
 });
+
+
+describe('trusted summary publisher settings', () => {
+  it('preserves explicit exact-repository publisher trust in the shared site settings without granting bot trust', () => {
+    const line = 'gitlab.com/acme/platform/widgets 12345';
+    expect(SITE_LIST_KEYS).toContain('trustedSummaryPublishers');
+    expect(isSettingsPatch({ kind: 'list', key: 'trustedSummaryPublishers', lines: [line] })).toBe(true);
+    const result = applyPatch(DEFAULT_SETTINGS, { kind: 'list', key: 'trustedSummaryPublishers', lines: ['  ' + line + '  '] });
+    expect(result).toMatchObject({ ok: true, settings: { trustedSummaryPublishers: [line], trustedReviewAccounts: [] } });
+    expect(validateList('trustedSummaryPublishers', ['bitbucket.org/acme/widgets {AABBCCDD-1234-5678-ABCD-AABBCCDDEEFF}'])).toEqual({ ok: true, lines: ['bitbucket.org/acme/widgets aabbccdd-1234-5678-abcd-aabbccddeeff'] });
+  });
+  it('rejects nickname, wildcard, bot-service and malformed publisher inputs on the site', () => {
+    for (const line of ['gitlab.com/acme/** 12345', 'gitlab.com/acme/widgets publisher-name', 'gitlab.com/acme/widgets coderabbit 12345', 'bitbucket.org/acme/widgets token-value']) {
+      expect(validateList('trustedSummaryPublishers', [line]).ok, line).toBe(false);
+      expect(applyPatch(DEFAULT_SETTINGS, { kind: 'list', key: 'trustedSummaryPublishers', lines: [line] }).ok).toBe(false);
+    }
+  });
+});
