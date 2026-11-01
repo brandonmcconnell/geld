@@ -124,7 +124,17 @@ export interface ProviderListRow {
   readonly host: HTMLElement;
   readonly url: string;
   readonly author: string | null;
+  /** Readable native name only; filtering always uses author. */
+  readonly authorName?: string | null;
 }
+
+export interface ProviderListAuthor {
+  readonly url: string;
+  readonly author: string;
+  readonly authorName: string | null;
+}
+
+export type ProviderListAuthorFetcher = (listUrl: URL, visibleReviewUrls: readonly string[], signal: AbortSignal) => Promise<readonly ProviderListAuthor[]>;
 
 export interface ProviderReviewAction {
   readonly kind: 'approve' | 'request-changes' | 'comment';
@@ -168,6 +178,7 @@ export interface ProviderAdapter {
   readDiff(doc: Document): ProviderDiffView | null;
   headerTargets(doc: Document): readonly ProviderHeaderTarget[];
   listRows(doc: Document): readonly ProviderListRow[];
+  readonly fetchListAuthors?: ProviderListAuthorFetcher;
   eagerListDiffs?(doc: Document): boolean;
   reviewRefreshMs?(doc: Document): number;
   fetchDiff(page: ProviderPage, signal: AbortSignal): Promise<ProviderDiffResult>;
