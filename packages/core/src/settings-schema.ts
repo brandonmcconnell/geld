@@ -493,6 +493,21 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         saveLabel: 'Save bots',
       },
       {
+        kind: 'list',
+        key: 'trustedReviewAccounts',
+        label: 'Trusted review accounts',
+        description: 'GitLab and Bitbucket review services use different accounts in each installation. Trust a native account id as a service only in the repository you name. Names and comment markers never establish this trust.',
+        popup: false,
+        rows: 4,
+        placeholder: 'gitlab.com/group/project coderabbit 12345\nbitbucket.org/workspace/repo coderabbit {12345678-1234-1234-1234-123456789abc}',
+        syntax: [
+          'One exact repository, bot id and native account id per line, separated by spaces. No wildcards or credentials.',
+          'GitLab uses a numeric user id. Bitbucket uses an account UUID. Lines starting with `#` are comments.',
+          'A trust action on a review records this binding for you. Remove its line to withdraw trust.',
+        ],
+        saveLabel: 'Save trusted accounts',
+      },
+      {
         kind: 'choice',
         key: 'suggestedFixes',
         label: 'Suggested fixes',

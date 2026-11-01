@@ -86,6 +86,18 @@ describe('parseUnifiedDiff', () => {
     expect(files[4]).toEqual({ path: 'with space.ts', additions: 0, deletions: 2, status: 'deleted', kinds: ['deleted'] });
   });
 
+  it('decodes Git octal UTF-8 paths and mixed-quoted renames to their native filenames', () => {
+    const headers = [
+      String.raw`diff --git "a/src/caf\303\251.test.ts" "b/src/caf\303\251.test.ts"`,
+      String.raw`diff --git a/src/old.ts "b/src/\346\265\213\350\257\225.test.ts"`,
+      String.raw`diff --git "a/src/\346\265\213\350\257\225.ts" b/src/new.ts`,
+      String.raw`diff --git "a/with\tquote\"\\.ts" "b/with\tquote\"\\.ts"`,
+    ];
+    const parsed = parseUnifiedDiff(headers.map((header) => `${header}\n@@ -1 +1 @@\n-old\n+new`).join('\n'));
+    expect(parsed.map((file) => file.path)).toEqual(['src/café.test.ts', 'src/测试.test.ts', 'src/new.ts', 'with\tquote"\\.ts']);
+    expect(parsed.every((file) => file.additions === 1 && file.deletions === 1)).toBe(true);
+  });
+
   it('spots mode-only and whitespace-only changes', () => {
     expect(files[5]).toEqual({ path: 'scripts/run.sh', additions: 0, deletions: 0, status: 'modified', kinds: ['modes'] });
     expect(files[6]).toEqual({ path: 'src/indent.ts', additions: 2, deletions: 2, status: 'modified', kinds: ['whitespace'] });

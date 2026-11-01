@@ -8,7 +8,9 @@
  * `<details>` with a `geld` fence; the parser still reads those.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord } from './model';
+import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewSource } from './model';
+import type { ProviderReviewSubject } from './provider-review';
+import { providerReviewUrl, sourceLink } from './provider-review';
 import {
   SUMMARY_HEADING,
   SUMMARY_MARKER,
@@ -75,13 +77,23 @@ function authorsOf(item: ReviewItem): string {
   return names.join(', ');
 }
 
-function sourcesOf(item: ReviewItem): string {
-  return item.sources.map((source) => `[source](#${source.anchor})`).join(' · ');
+interface SummaryLinks {
+  readonly sourceHref: (source: ReviewSource) => string | null;
+  readonly openHref: string;
+  readonly openLabel: string;
+  readonly reviewNoun: 'pull request' | 'merge request';
 }
 
-function itemLine(item: ReviewItem, checked: boolean): string {
+function sourcesOf(item: ReviewItem, links: SummaryLinks): string {
+  return item.sources.map((source) => {
+    const href = links.sourceHref(source);
+    return href === null ? 'source unavailable' : `[source](${href.replace(/\(/g, '%28').replace(/\)/g, '%29')})`;
+  }).join(' · ');
+}
+
+function itemLine(item: ReviewItem, checked: boolean, links: SummaryLinks): string {
   const box = checked ? '- [x]' : '- [ ]';
-  const head = `${box} **${inlineMd(item.title, true)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item)}`;
+  const head = `${box} **${inlineMd(item.title, true)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item, links)}`;
   const extra: string[] = [];
   if (item.context !== undefined) extra.push(`  ${inlineMd(item.context)}`);
   if (item.fix !== undefined) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', '  ```suggestion', ...item.fix.text.split('\n').map((line) => `  ${line}`), '  ```', '', '  </details>');
@@ -152,6 +164,25 @@ export function renderSummary(
   meta: GeldPrMeta,
   subject?: { readonly owner: string; readonly repo: string; readonly number: number },
 ): string {
+  return renderSummaryBody(meta, {
+    sourceHref: (source) => `#${source.anchor}`,
+    openHref: subject === undefined ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta),
+    openLabel: 'Open in Geld',
+    reviewNoun: 'pull request',
+  });
+}
+
+export function renderProviderSummary(meta: GeldPrMeta, subject: ProviderReviewSubject): string {
+  const noun = subject.provider === 'gitlab' ? 'merge request' : 'pull request';
+  return renderSummaryBody(meta, {
+    sourceHref: (source) => sourceLink(source, subject),
+    openHref: providerReviewUrl(subject),
+    openLabel: `Open ${noun}`,
+    reviewNoun: noun,
+  });
+}
+
+function renderSummaryBody(meta: GeldPrMeta, links: SummaryLinks): string {
   const { open, done } = groupItems(meta.items);
   const lines: string[] = [
     SUMMARY_MARKER,
@@ -164,13 +195,13 @@ export function renderSummary(
   }
   if (open.length > 0) {
     lines.push(`**Open (${open.length})**`);
-    for (const item of open) lines.push(itemLine(item, false));
+    for (const item of open) lines.push(itemLine(item, false, links));
     lines.push('');
   }
   if (done.length > 0) {
     lines.push(`<details><summary>Done (${done.length})</summary>`);
     lines.push('');
-    for (const item of done) lines.push(itemLine(item, true));
+    for (const item of done) lines.push(itemLine(item, true, links));
     lines.push('');
     lines.push('</details>');
     lines.push('');
@@ -180,12 +211,11 @@ export function renderSummary(
     lines.push('');
   }
   if (meta.truncated === true) {
-    lines.push('_List truncated; open the pull request with Geld to see the rest._');
+    lines.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines.push('');
   }
-  const openHref = subject === undefined ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta);
   // The payload's carrier sits inside the footer's own line, so it adds no paragraph (an empty inline is sizeless).
-  lines.push(`<sub>Maintained by Geld · <a href="${openHref}">Open in Geld</a> · <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta))}'></span></sub>`);
+  lines.push(`<sub>Maintained by Geld · <a href="${links.openHref}">${links.openLabel}</a> · <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta))}'></span></sub>`);
   lines.push('');
   return lines.join('\n');
 }

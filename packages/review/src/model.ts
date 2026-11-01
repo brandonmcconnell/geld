@@ -76,13 +76,29 @@ export type ProducerKind = (typeof PRODUCER_KINDS)[number];
 export const FIX_SOURCES = ['bot', 'human', 'ai'] as const;
 export type FixSource = (typeof FIX_SOURCES)[number];
 
-/** GitHub permalink fragments the extension resolves with `getElementById`. */
-export const SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
+export const REVIEW_PROVIDERS = ['github', 'gitlab', 'bitbucket'] as const;
+export type ReviewProvider = (typeof REVIEW_PROVIDERS)[number];
 
-export const sourceAnchorSchema = z.string().regex(SOURCE_ANCHOR_PATTERN);
+/** Native fragments, or Geld's explicit anchor for a provider source with no native fragment. */
+export const SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+|note_\d+|discussion_[a-f0-9]{8,64}|comment[-_]\d+|geld-(?:github|gitlab|bitbucket)-(?:note|discussion|comment|thread|event|review)-[A-Za-z0-9_-]{1,180})$/;
+
+const GITHUB_ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
+const GITLAB_ANCHOR = /^(note_\d+|discussion_[a-f0-9]{8,64})$/;
+const BITBUCKET_ANCHOR = /^comment[-_]\d+$/;
+const QUALIFIED_ANCHOR = /^geld-(github|gitlab|bitbucket)-(?:note|discussion|comment|thread|event|review)-[A-Za-z0-9_-]{1,180}$/;
+
+export const sourceAnchorSchema = z.string().regex(SOURCE_ANCHOR_PATTERN).refine((value) => value.trim() === value);
 
 export function isSourceAnchor(value: string): boolean {
-  return SOURCE_ANCHOR_PATTERN.test(value);
+  return value.trim() === value && SOURCE_ANCHOR_PATTERN.test(value);
+}
+
+export function isProviderSourceAnchor(provider: ReviewProvider, anchor: string): boolean {
+  if (anchor.trim() !== anchor) return false;
+  const qualified = QUALIFIED_ANCHOR.exec(anchor);
+  if (qualified !== null) return qualified[1] === provider;
+  if (provider === 'github') return GITHUB_ANCHOR.test(anchor);
+  return provider === 'gitlab' ? GITLAB_ANCHOR.test(anchor) : BITBUCKET_ANCHOR.test(anchor);
 }
 
 export interface ReviewSource {
@@ -90,6 +106,12 @@ export interface ReviewSource {
   readonly kind: SourceKind;
   readonly author: string;
   readonly bot?: string;
+  readonly sourceId?: string;
+  readonly authorId?: string;
+  readonly automated?: boolean;
+  readonly provider?: ReviewProvider;
+  readonly origin?: string;
+  readonly url?: string;
 }
 
 export interface AddressedEvidence {
@@ -137,6 +159,8 @@ export interface BotVerdictRecord {
   readonly severity?: (typeof FINDING_SEVERITIES)[number];
   readonly reviewedSha: string;
   readonly checkName?: string;
+  /** Actual pipeline/status commit, when an authoritative association relates it to a different review head. */
+  readonly checkSha?: string;
   readonly sourceId?: string;
   /** For a `failed` verdict the bot explained: its own words for why it did not review ("Bugbot is disabled for this repository"). */
   readonly reason?: string;
@@ -201,11 +225,39 @@ export interface GeldDeeplink {
 const isoDate = z.string().refine((value) => !Number.isNaN(Date.parse(value)), { error: 'Expected an ISO date string.' });
 const sha = z.string().regex(/^[0-9a-f]{7,40}$/i, { error: 'Expected a git SHA.' });
 
+function httpOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.username === '' && url.password === '' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 export const reviewSourceSchema = z.object({
   anchor: sourceAnchorSchema,
   kind: z.enum(SOURCE_KINDS),
   author: z.string().min(1),
   bot: z.string().min(1).optional(),
+  sourceId: z.string().min(1).optional(),
+  authorId: z.string().min(1).optional(),
+  automated: z.boolean().optional(),
+  provider: z.enum(REVIEW_PROVIDERS).optional(),
+  origin: z.string().optional(),
+  url: z.string().optional(),
+}).superRefine((source, context) => {
+  if (source.provider !== undefined && (!isProviderSourceAnchor(source.provider, source.anchor) || source.origin === undefined)) {
+    context.addIssue({ code: 'custom', path: ['anchor'], message: 'Expected an anchor and origin for the declared provider.' });
+  }
+  if (!GITHUB_ANCHOR.test(source.anchor) && source.provider === undefined) {
+    context.addIssue({ code: 'custom', path: ['provider'], message: 'Native provider anchors require explicit provenance.' });
+  }
+  if (source.origin !== undefined && httpOrigin(source.origin) !== source.origin) {
+    context.addIssue({ code: 'custom', path: ['origin'], message: 'Expected an HTTP(S) origin without credentials or a path.' });
+  }
+  if (source.url !== undefined && (source.origin === undefined || httpOrigin(source.url) !== source.origin)) {
+    context.addIssue({ code: 'custom', path: ['url'], message: 'Expected an HTTP(S) URL on the source origin.' });
+  }
 });
 
 export const addressedSchema = z.object({
@@ -247,6 +299,7 @@ export const botVerdictSchema = z.object({
   severity: z.enum(FINDING_SEVERITIES).optional(),
   reviewedSha: sha,
   checkName: z.string().min(1).optional(),
+  checkSha: sha.optional(),
   sourceId: z.string().min(1).optional(),
   reason: z.string().min(1).optional(),
   runJudged: z.literal(true).optional(),
@@ -313,9 +366,18 @@ function issuesOf(error: z.ZodError): readonly string[] {
 }
 
 function reviewSourceFrom(value: z.infer<typeof reviewSourceSchema>): ReviewSource {
-  return value.bot === undefined
-    ? { anchor: value.anchor, kind: value.kind, author: value.author }
-    : { anchor: value.anchor, kind: value.kind, author: value.author, bot: value.bot };
+  return {
+    anchor: value.anchor,
+    kind: value.kind,
+    author: value.author,
+    ...(value.bot === undefined ? {} : { bot: value.bot }),
+    ...(value.sourceId === undefined ? {} : { sourceId: value.sourceId }),
+    ...(value.authorId === undefined ? {} : { authorId: value.authorId }),
+    ...(value.automated === undefined ? {} : { automated: value.automated }),
+    ...(value.provider === undefined ? {} : { provider: value.provider }),
+    ...(value.origin === undefined ? {} : { origin: value.origin }),
+    ...(value.url === undefined ? {} : { url: value.url }),
+  };
 }
 
 function reviewItemFrom(value: z.infer<typeof reviewItemSchema>): ReviewItem {
@@ -345,7 +407,8 @@ function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictReco
   const scored = value.score === undefined ? counted : { ...counted, score: value.score };
   const graded = value.severity === undefined ? scored : { ...scored, severity: value.severity };
   const named = value.checkName === undefined ? graded : { ...graded, checkName: value.checkName };
-  const sourced = value.sourceId === undefined ? named : { ...named, sourceId: value.sourceId };
+  const checked = value.checkSha === undefined ? named : { ...named, checkSha: value.checkSha };
+  const sourced = value.sourceId === undefined ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === undefined ? sourced : { ...sourced, reason: value.reason };
   return value.runJudged === undefined ? reasoned : { ...reasoned, runJudged: true };
 }

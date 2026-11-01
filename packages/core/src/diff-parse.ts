@@ -40,10 +40,11 @@ function pathFromGitHeader(line: string): string | null {
   // Quoted paths (contain spaces or special characters) look like:
   //   diff --git "a/with space.ts" "b/with space.ts"
   if (rest.startsWith('"')) {
-    const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" "b\/((?:\\.|[^"\\])*)"$/);
-    if (quoted) return unescapeGitPath(quoted[2] ?? quoted[1] ?? '');
-    return null;
+    const quoted = rest.match(/^"a\/(?:\\.|[^"\\])*" (.*)$/);
+    return quoted?.[1] === undefined ? null : destinationPath(quoted[1]);
   }
+  const quotedDestination = rest.indexOf(' "b/');
+  if (quotedDestination !== -1) return destinationPath(rest.slice(quotedDestination + 1));
   // Unquoted: paths cannot contain spaces here, but be defensive about the
   // "a/foo b/foo" split by finding the " b/" that mirrors the "a/" prefix.
   const halfway = rest.indexOf(' b/');
@@ -53,11 +54,21 @@ function pathFromGitHeader(line: string): string | null {
   return bPath || aPath;
 }
 
+function destinationPath(text: string): string | null {
+  if (text.startsWith('b/')) return text.slice(2);
+  const quoted = /^"b\/((?:\\.|[^"\\])*)"$/.exec(text);
+  return quoted?.[1] === undefined ? null : unescapeGitPath(quoted[1]);
+}
+
 function unescapeGitPath(text: string): string {
-  return text.replace(/\\(.)/g, (_match, char: string) => {
-    if (char === 'n') return '\n';
-    if (char === 't') return '\t';
-    return char;
+  // Git quotes UTF-8 bytes as octal, including when only one side of a rename needs quoting.
+  return text.replace(/(?:\\[0-7]{3})+|\\(.)/g, (match: string, char: string | undefined) => {
+    if (char !== undefined) {
+      const escapes: Readonly<Record<string, string>> = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+      return escapes[char] ?? char;
+    }
+    const bytes = match.split('\\').slice(1).map((octal) => Number.parseInt(octal, 8));
+    return new TextDecoder().decode(new Uint8Array(bytes));
   });
 }
 
