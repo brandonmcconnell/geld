@@ -29,3 +29,5 @@ CREATE TABLE team_operation_leases (
  holder text NOT NULL,
  expires_at timestamptz NOT NULL
 );
+
+ALTER TABLE app_user_tokens ADD COLUMN reader_authorized boolean NOT NULL DEFAULT false;

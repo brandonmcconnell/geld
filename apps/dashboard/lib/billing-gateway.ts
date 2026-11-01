@@ -1,14 +1,16 @@
 import 'server-only';
+import {assertTeamOperations} from './team-operation';
 import Stripe from 'stripe';
 import { configured, dashboardOrigin } from './env';
 import { planFor, type Tier } from '@geld/domain';
 export interface BillingSnapshot { readonly id: string; readonly customerId: string; readonly tier: Tier; readonly status: string; readonly seats: number; readonly itemId: string | null; readonly start: number; readonly end: number; readonly card: boolean }
 export interface CheckoutInput { readonly teamId: string; readonly tier: 'starter' | 'team' | 'business'; readonly seats: number; readonly customerId: string | null; readonly key: string;readonly actorId?:string;readonly email?:string }
-export interface CheckoutState { readonly status: 'open' | 'complete' | 'expired'; readonly teamId: string | null; readonly url: string | null }
+export interface CheckoutState { readonly status: 'open' | 'complete' | 'expired'; readonly teamId: string | null; readonly url: string | null;readonly subscriptionId?:string|null }
 export interface BillingGateway {
   checkout(input: CheckoutInput): Promise<{ readonly id: string; readonly url: string }>;
   checkoutState(id: string): Promise<CheckoutState>;
   expireCheckout(id: string): Promise<void>;
+  findCheckouts?(input:{readonly teamId:string;readonly requestKey:string;readonly createdAfter:number;readonly createdBefore:number;readonly customerId:string|null}):Promise<{readonly ids:readonly string[];readonly complete:boolean}>;
   portal(customerId: string): Promise<string>;
   subscription(id: string): Promise<BillingSnapshot>;
   cancelSubscription(id:string,key:string):Promise<void>;
@@ -26,7 +28,7 @@ export function billingGateway(): BillingGateway | null {
   const stripe = testStripe();
   if (!stripe) return null;
   return {
-    async checkout(input) {
+    async checkout(input) {await assertTeamOperations();
       const price = priceId(input.tier);
       if (!price) throw new Error('This test price is not configured');
       const verifiedPrice = await stripe.prices.retrieve(price);
@@ -38,9 +40,18 @@ export function billingGateway(): BillingGateway | null {
     async checkoutState(id) {
       const result = await stripe.checkout.sessions.retrieve(id);
       if (result.livemode || !result.status) throw new Error('The test checkout could not be verified');
-      return { status: result.status, teamId: result.metadata?.team_id ?? null, url: result.url };
+      return { status: result.status, teamId: result.metadata?.team_id ?? null, url: result.url,subscriptionId:typeof result.subscription==='string'?result.subscription:result.subscription?.id??null };
     },
-    async expireCheckout(id) {
+    async findCheckouts(input){
+      const ids:string[]=[];let cursor:string|undefined;
+      for(let page=0;page<100;page++){
+        const result=await stripe.checkout.sessions.list({limit:100,created:{gte:Math.floor(input.createdAfter/1000),lte:Math.floor(input.createdBefore/1000)},...(input.customerId?{customer:input.customerId}:{}),...(cursor?{starting_after:cursor}:{})});
+        for(const session of result.data){if(session.livemode)throw new Error('Live billing is disabled');if(session.metadata?.team_id===input.teamId&&session.metadata.checkout_key===input.requestKey)ids.push(session.id);}
+        if(!result.has_more)return{ids,complete:true};cursor=result.data.at(-1)?.id;if(!cursor)throw new Error('Checkout pagination changed');
+      }
+      return{ids,complete:false};
+    },
+    async expireCheckout(id) {await assertTeamOperations();
       const result = await stripe.checkout.sessions.expire(id, {}, { idempotencyKey: `expire:${id}` });
       if (result.livemode || result.status !== 'expired') throw new Error('The test checkout could not be closed');
     },
@@ -58,8 +69,8 @@ export function billingGateway(): BillingGateway | null {
       const card = !!subscription.default_payment_method || (!customer.deleted && !!customer.invoice_settings.default_payment_method);
       return { id, customerId, tier: subscription.status === 'canceled' || subscription.status === 'incomplete_expired' ? 'free' : tier, status: subscription.status, seats: item?.quantity ?? 1, itemId: item?.id ?? null, start: item?.current_period_start ?? subscription.billing_cycle_anchor, end: item?.current_period_end ?? subscription.billing_cycle_anchor, card };
     },
-    async cancelSubscription(id,key){const subscription=await stripe.subscriptions.retrieve(id);if(subscription.livemode)throw new Error('Live billing is disabled');if(subscription.status!=='canceled')await stripe.subscriptions.cancel(id,{invoice_now:false,prorate:false},{idempotencyKey:key});},
-    async updateSeats(itemId, seats, key) { await stripe.subscriptionItems.update(itemId, { quantity: seats, proration_behavior: 'create_prorations' }, { idempotencyKey: key }); },
-    async overage(customerId, subscriptionId, cents, reservationId) { await stripe.invoiceItems.create({ customer: customerId, subscription: subscriptionId, amount: cents, currency: 'usd', description: 'Geld AI credit overage', metadata: { reservation_id: reservationId } }, { idempotencyKey: `credit:${reservationId}` }); },
+    async cancelSubscription(id,key){await assertTeamOperations();const subscription=await stripe.subscriptions.retrieve(id);if(subscription.livemode)throw new Error('Live billing is disabled');if(subscription.status!=='canceled')await stripe.subscriptions.cancel(id,{invoice_now:false,prorate:false},{idempotencyKey:key});},
+    async updateSeats(itemId, seats, key) {await assertTeamOperations(); await stripe.subscriptionItems.update(itemId, { quantity: seats, proration_behavior: 'create_prorations' }, { idempotencyKey: key }); },
+    async overage(customerId, subscriptionId, cents, reservationId) {await assertTeamOperations(); await stripe.invoiceItems.create({ customer: customerId, subscription: subscriptionId, amount: cents, currency: 'usd', description: 'Geld AI credit overage', metadata: { reservation_id: reservationId } }, { idempotencyKey: `credit:${reservationId}` }); },
   };
 }

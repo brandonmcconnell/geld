@@ -1,6 +1,9 @@
 import 'server-only';
+import {queueTeamCheckoutCleanup} from './checkout-cleanup';
+import {transaction} from './transactions';
+import {appendAudit} from './audit';
 import {billingGateway} from './billing-gateway';
-import {operationSql,withTeamOperation} from './team-operation';
+import {assertTeamOperations,operationSql,withTeamOperation} from './team-operation';
 import {z} from 'zod';
 import {database} from './db';
 import {repoRowSchema,accessAdapter,refFor,processGrantUnlocked} from './team-access';
@@ -25,7 +28,27 @@ async function finishUnlocked(teamId:string,payload:unknown):Promise<boolean>{
  const groups=z.array(z.object({id:z.string(),external_id:z.string(),provider:z.enum(['github','gitlab','bitbucket']),slug:z.string(),host:z.string()})).parse((await db.query("SELECT pt.id,pt.external_id,pt.provider,o.slug,o.host FROM provider_teams pt JOIN provider_orgs o ON o.id=pt.org_id WHERE pt.team_id=$1 AND pt.state<>'deleted'",[teamId])).rows);
  for(const group of groups){const source=await backgroundUserTokenSource(actorId,group.provider,group.slug,group.host);const result=await(await accessAdapter(group.provider,teamId,group.slug,source,group.host)).deleteGroup(group.slug,group.external_id);if(!result.ok&&result.reason!=='not_found')return false;await db.query("UPDATE provider_teams SET state='deleted' WHERE id=$1",[group.id]);}
  const subscription=z.object({stripe_subscription_id:z.string().nullable()}).safeParse((await db.query('SELECT stripe_subscription_id FROM subscriptions WHERE team_id=$1',[teamId])).rows[0]);if(subscription.success&&subscription.data.stripe_subscription_id){const gateway=billingGateway();if(!gateway)return false;await gateway.cancelSubscription(subscription.data.stripe_subscription_id,`destroy:${teamId}`);}
- await contentStore().deleteTeam(teamId);await db.query('DELETE FROM "ssoProvider" WHERE "providerId" IN(SELECT provider_id FROM team_sso_providers WHERE team_id=$1)',[teamId]);await db.query('DELETE FROM teams WHERE id=$1',[teamId]);return true;
+ await contentStore().deleteTeam(teamId);if(!pool)return false;await transaction(pool,sql=>queueTeamCheckoutCleanup(sql,teamId));await db.query('DELETE FROM "ssoProvider" WHERE "providerId" IN(SELECT provider_id FROM team_sso_providers WHERE team_id=$1)',[teamId]);await db.query('DELETE FROM teams WHERE id=$1',[teamId]);return true;
 }
 
 export async function finishTeamDestruction(teamId:string,payload:unknown):Promise<boolean>{const pool=database();const db=pool?operationSql(pool):null;if(!db)return false;if(!(await db.query('SELECT id FROM teams WHERE id=$1',[teamId])).rows.length)return true;const result=await withTeamOperation(teamId,()=>finishUnlocked(teamId,payload));return result.ok&&result.value;}
+
+type PersonalGrant=Awaited<ReturnType<typeof destructionPreview>>['personal'][number];
+export type DestructionPreparation={readonly ok:true;readonly skipped:readonly PersonalGrant[]}|{readonly ok:false;readonly reason:'busy'|'changed'};
+export async function prepareTeamDestruction(input:{readonly teamId:string;readonly actorId:string;readonly confirmation:string;readonly personal:'skip'|'remove'}):Promise<DestructionPreparation>{
+  const db=database();if(!db)return{ok:false,reason:'busy'};
+  const operation=await withTeamOperation(input.teamId,async():Promise<DestructionPreparation>=>{
+    const preview=await destructionPreview(input.teamId,input.actorId);
+    if(preview.confirmation!==input.confirmation||preview.unavailable.length)return{ok:false,reason:'changed'};
+    const skip=input.personal==='skip'?preview.personal.map(row=>row.grantId):[];
+    await transaction(db,async sql=>{
+      await assertTeamOperations(sql);
+      const updated=await sql.query("UPDATE teams SET sync_enabled=false,deleting_at=now() WHERE id=$1 AND EXISTS(SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND role='admin') RETURNING id",[input.teamId,input.actorId]);
+      if(!updated.rows.length)throw new Error('Team admin permission changed');
+      await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key,payload) VALUES($1,$2,'destroy_team',$2,$3,$4) ON CONFLICT DO NOTHING",[crypto.randomUUID(),input.teamId,`destroy:${input.teamId}`,JSON.stringify({actorId:input.actorId,skip})]);
+      await appendAudit(sql,{teamId:input.teamId,actorId:input.actorId,action:'team.destroy',resourceType:'team',resourceId:input.teamId,outcome:'pending',after:{recordedGrants:preview.grants.length,providerGroups:preview.groups.length,personalSkipped:skip.length}});
+    });
+    return{ok:true,skipped:input.personal==='skip'?preview.personal:[]};
+  });
+  return operation.ok?operation.value:{ok:false,reason:'busy'};
+}

@@ -1,4 +1,5 @@
 import 'server-only';
+import {queueTeamCheckoutCleanup} from './checkout-cleanup';
 import {queueSubscriptionCancellation} from './subscription-cancellation';
 import {assertTeamOperations,operationSql,withTeamOperation} from './team-operation';
 import {z} from 'zod';
@@ -30,7 +31,8 @@ async function prepareUnlocked(userId:string):Promise<void>{
   try{if(await processGrantUnlocked(grant.id,userId,true))await db.query("UPDATE erasure_jobs SET state='completed',encrypted_payload=NULL,completed_at=now() WHERE id=$1",[cleanupId]);}catch{/* The bounded cleanup worker retries independently. */}
  }
  for(const team of personal){const id=crypto.randomUUID();await db.query("INSERT INTO erasure_jobs(id,kind,encrypted_payload) VALUES($1,'content',$2)",[id,await encryptCredential(JSON.stringify({teamId:team.id}))]);try{await contentStore().deleteTeam(team.id);await db.query("UPDATE erasure_jobs SET state='completed',encrypted_payload=NULL,completed_at=now() WHERE id=$1",[id]);}catch{/* Customer storage may be unavailable. Retry without retaining identity credentials. */}}
- await transaction(pool,async sql=>{await assertTeamOperations();
+ await transaction(pool,async sql=>{await assertTeamOperations(sql);
+  for(const team of personal)await queueTeamCheckoutCleanup(sql,team.id);
   const subscriptions=z.array(z.object({stripe_subscription_id:z.string()})).parse((await sql.query('SELECT s.stripe_subscription_id FROM subscriptions s JOIN teams t ON t.id=s.team_id WHERE t.personal_owner_id=$1 AND s.stripe_subscription_id IS NOT NULL',[userId])).rows);for(const sub of subscriptions)await queueSubscriptionCancellation(sql,sub.stripe_subscription_id);
   const teams=z.array(z.object({team_id:z.string()})).parse((await sql.query('SELECT team_id FROM team_members WHERE user_id=$1',[userId])).rows);
   for(const team of teams){await sql.query('UPDATE subscriptions SET seats=GREATEST(1,(SELECT count(*) FROM team_members WHERE team_id=$1 AND user_id<>$2)) WHERE team_id=$1',[team.team_id,userId]);await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES($1,$2,'sync_seats',$2,$3)",[crypto.randomUUID(),team.team_id,`erasure-seats:${crypto.randomUUID()}`]);}

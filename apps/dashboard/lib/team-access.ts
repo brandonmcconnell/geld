@@ -53,6 +53,7 @@ export async function processGrantUnlocked(id: string, actorId: string, backgrou
 
 export async function processGrantRecord(id: string, actorId: string, dependencies: GrantDependencies): Promise<boolean> {
   const db = operationSql(dependencies.sql);
+  const run=<T>(work:(sql:SqlExecutor)=>Promise<T>)=>dependencies.run(sql=>work(operationSql(sql)));
   const parsed = grantSchema.safeParse((await db.query('SELECT * FROM grants WHERE id = $1', [id])).rows[0]); if (!parsed.success) return false;
   const g = parsed.data;
   if(g.state==='revoked')return true;
@@ -95,7 +96,7 @@ export async function processGrantRecord(id: string, actorId: string, dependenci
       ? await adapter.groupMember(ref.owner,g.provider_group_id,user.value,true)
       : decision.action === 'remove' ? await adapter.revoke(ref,user.value,g.provider_grant_id ?? undefined) : await adapter.grant(ref,user.value,decision.permission);
     if (!result.ok) return false;
-    await dependencies.run(async (raw) => {const sql=operationSql(raw); await sql.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]); await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.revoke',resourceType:'grant',resourceId:id,outcome:'success',before:{permission:g.permission},after:{permission:decision.action === 'restore' ? decision.permission : 'none'}}); }); return true;
+    await run(async (sql) => { await sql.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]); await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.revoke',resourceType:'grant',resourceId:id,outcome:'success',before:{permission:g.permission},after:{permission:decision.action === 'restore' ? decision.permission : 'none'}}); }); return true;
   }
   if (g.state === 'pending' && g.provider_grant_id && !g.direct_intent && !g.provider_grant_id.startsWith('intent:')) {
     if (user.value.permission === g.permission) { await db.query("UPDATE grants SET state='active' WHERE id=$1 AND state='pending'",[id]); return true; }
@@ -105,7 +106,7 @@ export async function processGrantRecord(id: string, actorId: string, dependenci
     const allowed=await db.query("SELECT t.id FROM teams t WHERE t.id=$1 AND t.managed_access AND t.deleting_at IS NULL AND (($3::text='audit' AND EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=t.id AND m.user_id=$4 AND m.role='admin')) OR (EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=t.id AND m.user_id=$2) AND ($3::text='request_access' OR t.sync_enabled)))",[g.team_id,g.user_id,g.source,g.actor_id]);
     if(!allowed.rows.length){await db.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]);return true;}
     if(g.source==='sync' && !user.value.organisationMember && user.value.permission==='none') {
-      await dependencies.run(async sql=>{
+      await run(async sql=>{
         const request=z.object({id:z.string()}).safeParse((await sql.query("INSERT INTO access_requests(id,team_id,repo_id,requester_id,kind) VALUES($1,$2,$3,$4,'repository_access') ON CONFLICT DO NOTHING RETURNING id",[crypto.randomUUID(),g.team_id,g.repo_id,g.user_id])).rows[0]);
         if(request.success)await sql.query("INSERT INTO notifications(id,user_id,team_id,kind,resource_id) SELECT gen_random_uuid()::text,user_id,$1,'access_request',$2 FROM team_members WHERE team_id=$1 AND role='admin'",[g.team_id,request.data.id]);
       });
@@ -141,7 +142,7 @@ export async function processGrantRecord(id: string, actorId: string, dependenci
   // Verify actual permission, including invitation acceptance, before reporting active.
   const confirmed = await adapter.user(ref,g.provider_login);
   const active = confirmed.ok && confirmed.value.permission !== 'none';
-  await dependencies.run(async(sql)=>{await sql.query("UPDATE grants SET state=CASE WHEN state='revoking' THEN state ELSE $2 END,direct_intent=false,provider_grant_id=$3,provider_group_id=$4,mechanism=$5 WHERE id=$1",[id,active?'active':'pending',providerGrantId,group,group?'provider_team':'collaborator']);await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.grant',resourceType:'grant',resourceId:id,outcome:active?'success':'pending',before:{permission:user.value.permission},after:{permission:'read',mechanism:group?'provider_team':'collaborator'}});});
+  await run(async(sql)=>{await sql.query("UPDATE grants SET state=CASE WHEN state='revoking' THEN state ELSE $2 END,direct_intent=false,provider_grant_id=$3,provider_group_id=$4,mechanism=$5 WHERE id=$1",[id,active?'active':'pending',providerGrantId,group,group?'provider_team':'collaborator']);await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.grant',resourceType:'grant',resourceId:id,outcome:active?'success':'pending',before:{permission:user.value.permission},after:{permission:'read',mechanism:group?'provider_team':'collaborator'}});});
   return active;
 }
 

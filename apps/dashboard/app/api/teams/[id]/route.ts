@@ -1,6 +1,5 @@
-import {withTeamOperation} from '@/lib/team-operation';
 import {auditedRoute} from '@/lib/request-audit';
-import {destructionPreview,finishTeamDestruction} from '@/lib/team-destruction';
+import {destructionPreview,prepareTeamDestruction,finishTeamDestruction} from '@/lib/team-destruction';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { registeredEnterpriseHost } from '@/lib/enterprise';
@@ -102,17 +101,14 @@ async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:
     }
     if(input.action==='run_jobs'){
       const jobs=await claimAccessJobs(db,id);let completed=0;
-      for(const job of jobs){let ok=false;try{ok=job.kind==='destroy_team'?await finishTeamDestruction(id,job.payload):await processGrant(job.resource_id,actor.id);}catch{}const owned=await finishAccessJob(db,job,ok);if(owned&&ok)completed++;}return json({saved:true,completed,pending:jobs.length-completed});
+      for(const job of jobs){let ok=false;try{ok=job.kind==='destroy_team'?await finishTeamDestruction(id,job.payload):await processGrant(job.resource_id,actor.id);}catch{}const owned=await finishAccessJob(db,job,ok);if(ok&&(owned||job.kind==='destroy_team'))completed++;}return json({saved:true,completed,pending:jobs.length-completed});
     }
     if(input.action==='destroy'){
       if((await db.query('SELECT id FROM teams WHERE id=$1 AND deleting_at IS NOT NULL',[id])).rows.length)return json({error:'Deletion is already queued. Retry provider cleanup to continue.'},409);
       if(input.confirmation!==team.name)return json({error:'Type the team name to confirm'},400);
-      const preparation=await withTeamOperation(id,async()=>{
-      const preview=await destructionPreview(id,actor.id);if(preview.confirmation!==input.preview||preview.unavailable.length)return json({error:'Provider access changed or could not be verified. Refresh the deletion preview.'},409);
-      const skip=input.personal==='skip'?preview.personal.map(row=>row.grantId):[];
-      await transaction(db,async sql=>{await sql.query('UPDATE teams SET sync_enabled=false,deleting_at=now() WHERE id=$1',[id]);await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key,payload) VALUES($1,$2,'destroy_team',$2,$3,$4) ON CONFLICT DO NOTHING",[crypto.randomUUID(),id,`destroy:${id}`,JSON.stringify({actorId:actor.id,skip})]);await appendAudit(sql,{teamId:id,actorId:actor.id,action:'team.destroy',resourceType:'team',resourceId:id,outcome:'pending',after:{recordedGrants:preview.grants.length,providerGroups:preview.groups.length,personalSkipped:skip.length}});});
-      return json({saved:true,deleting:true,skipped:input.personal==='skip'?preview.personal:[]});
-      });return preparation.ok?preparation.value:json({error:'An access update is finishing. Refresh the deletion preview shortly.'},409);
+      const prepared=await prepareTeamDestruction({teamId:id,actorId:actor.id,confirmation:input.preview,personal:input.personal});
+      if(!prepared.ok)return json({error:prepared.reason==='busy'?'An access update is finishing. Refresh the deletion preview shortly.':'Provider access changed or could not be verified. Refresh the deletion preview.'},409);
+      return json({saved:true,deleting:true,skipped:prepared.skipped});
     }
     return json({error:'Unsupported team action'},400);
   }catch{return json({error:'This team action could not be completed. Check its current state before retrying.'},503);}
