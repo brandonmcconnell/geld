@@ -64,6 +64,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   let flow: AuthFlowState = { status: 'idle' };
   let sync: SyncState = EMPTY_SYNC_STATE;
   let localError: string | null = null;
+  let closed=false;
   let syncClock: ReturnType<typeof setInterval> | null = null;
 
   const stopSyncClock = (): void => {
@@ -90,6 +91,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   };
 
   function render(): void {
+    if(closed)return;
     stopSyncClock();
     host.replaceChildren();
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
@@ -298,6 +300,10 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     if (!node.open) node.showModal();
   }
 
+  const refreshOnFocus=()=>{if(!closed)void refreshDashboardSession().catch(()=>undefined);};
+  const refreshOnVisible=()=>{if(document.visibilityState==='visible')refreshOnFocus();};
+  window.addEventListener('focus',refreshOnFocus);
+  document.addEventListener('visibilitychange',refreshOnVisible);
   const unwatchers = [
     dashboardSessionItem.watch(value=>{dashboard=value;render();}),
     dashboardTeamItem.watch(value=>{teamId=value;render();}),
@@ -314,8 +320,9 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       render();
     }),
   ];
-  void Promise.all([dashboardSessionItem.getValue(),dashboardTeamItem.getValue()]).then(([value,selected])=>{dashboard=value;teamId=selected;render();void refreshDashboardSession();});
+  void Promise.all([dashboardSessionItem.getValue(),dashboardTeamItem.getValue()]).then(([value,selected])=>{if(closed)return;dashboard=value;teamId=selected;render();void refreshDashboardSession();});
   void Promise.all([accountItem.getValue(), authFlowItem.getValue(), syncStateItem.getValue()]).then(([a, f, s]) => {
+    if(closed)return;
     account = a;
     flow = f;
     // State saved by an older version may lack newer fields.
@@ -327,6 +334,10 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   });
 
   return () => {
+    closed=true;
+    window.removeEventListener('focus',refreshOnFocus);
+    document.removeEventListener('visibilitychange',refreshOnVisible);
+    dialog?.remove();
     stopSyncClock();
     unwatchers.forEach((unwatch) => unwatch());
   };
