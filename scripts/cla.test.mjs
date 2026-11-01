@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { commentBody, MARKER, run, SIGNATURES_BRANCH, SIGNATURES_PATH, signersOf, signs } from './cla.mjs';
+import { commentBody, MARKER, run, SIGNATURES_BRANCH, SIGNATURES_PATH, signersOf, signs, waitingOn } from './cla.mjs';
 
 const repo = { owner: 'brandonmcconnell', repo: 'geld' };
 const repository = { default_branch: 'main', html_url: 'https://github.com/brandonmcconnell/geld' };
@@ -39,7 +39,7 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}
   let writes = 0;
   const github = {
     paginate: async (method, params) => method(params).then((response) => response.data),
-    graphql: async (_query, { number }) => ({
+    graphql: async (query, { number }) => (query.includes('pullRequests(states: OPEN') ? openPulls() : {
       repository: {
         pullRequest: {
           commits: {
@@ -110,6 +110,21 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}
       },
     },
   };
+  /** The open pull requests with their head's latest CLA status, as GitHub's GraphQL would list them. */
+  const openPulls = () => ({
+    repository: {
+      pullRequests: {
+        pageInfo: { hasNextPage: false, endCursor: null },
+        nodes: Object.values(pulls)
+          .filter((pull) => pull.state === 'open')
+          .map((pull) => {
+            const status = statuses.filter((entry) => entry.sha === pull.head.sha).at(-1);
+            const context = status ? { state: status.state.toUpperCase(), description: status.description } : null;
+            return { number: pull.number, commits: { nodes: [{ commit: { status: context ? { context } : null } }] } };
+          }),
+      },
+    },
+  });
   const recorded = () => {
     const file = files.get(`${SIGNATURES_BRANCH}:${SIGNATURES_PATH}`);
     return file ? JSON.parse(file.content).signatures : [];
@@ -138,12 +153,19 @@ const signing = (user, id = 500, at = '2026-11-01T14:00:00Z', editedAt = at) => 
 });
 
 describe('signs', () => {
-  it('accepts the sentence however it is quoted or cased', () => {
+  it('accepts the sentence alone, however it was pasted', () => {
     assert.ok(signs('I have read the Geld CLA and I agree to it.'));
-    assert.ok(signs('> i have read the geld cla and I agree to it'));
-    assert.ok(signs('Sure!\n\n**I have read the Geld CLA and\nI agree to it.**'));
+    assert.ok(signs('i have read the geld cla and I agree to it'));
+    assert.ok(signs('  **I have read the Geld CLA and\nI agree to it.**  '));
+    assert.ok(signs('**I have read the Geld CLA and I agree to it**.'));
+    assert.ok(signs('`I have read the Geld CLA and I agree to it.`'));
+    assert.ok(signs('```\nI have read the Geld CLA and I agree to it.\n```'));
   });
-  it('rejects anything short of it', () => {
+  it('rejects a quotation, a refusal or anything around the sentence', () => {
+    assert.ok(!signs('> I have read the Geld CLA and I agree to it.'));
+    assert.ok(!signs('Why must I say "I have read the Geld CLA and I agree to it"? I do not agree.'));
+    assert.ok(!signs('I have read the Geld CLA and I agree to it. Not.'));
+    assert.ok(!signs('Sure!\n\nI have read the Geld CLA and I agree to it.'));
     assert.ok(!signs('I have read the Geld CLA'));
     assert.ok(!signs('I have not read the Geld CLA and I agree to it'));
     assert.ok(!signs(undefined));
@@ -254,6 +276,30 @@ describe('a pull request', () => {
     assert.deepEqual(fake.recorded(), []);
   });
 
+  it('does not record a refusal that quotes the sentence', async () => {
+    const refusal = { ...signing(hunter, 510), body: 'Why must I say "I have read the Geld CLA and I agree to it"? I do not agree.' };
+    const pull = pullRequest(151, { by: hunter });
+    const fake = fakeGitHub({ commits: { 151: [[actor(hunter)]] }, comments: { 151: [refusal] }, pulls: { 151: pull }, signatures: [] });
+    await run({ github: fake.github, context: commentEvent({ number: 151, pull_request: {} }, refusal), core });
+    assert.equal(fake.statuses.at(-1).state, 'failure');
+    assert.deepEqual(fake.recorded(), []);
+    assert.deepEqual(fake.reactions, []);
+  });
+
+  it('turns the signer\'s other waiting pull requests green, and leaves the rest alone', async () => {
+    const mine = pullRequest(152, { by: hunter });
+    const theirs = pullRequest(153, { by: batuhan });
+    const fake = fakeGitHub({ commits: { 152: [[actor(hunter)]], 153: [[actor(batuhan)]] }, pulls: { 152: mine, 153: theirs }, signatures: [] });
+    await run({ github: fake.github, context: prEvent(mine), core });
+    await run({ github: fake.github, context: prEvent(theirs), core });
+    const comment = { ...signing(hunter, 511), html_url: 'https://github.com/brandonmcconnell/geld/issues/150#issuecomment-511' };
+    await run({ github: fake.github, context: commentEvent({ number: 150 }, comment), core });
+    const latest = (sha) => fake.statuses.filter((status) => status.sha === sha).at(-1).state;
+    assert.equal(latest('head-152'), 'success');
+    assert.equal(latest('head-153'), 'failure');
+    assert.equal(fake.statuses.filter((status) => status.sha === 'head-153').length, 1);
+  });
+
   it('does not count someone else posting the sentence for an author', async () => {
     const fake = fakeGitHub({ commits: { 142: [[actor(hunter)]] }, comments: { 142: [signing(batuhan, 502)] }, signatures: [] });
     await run({ github: fake.github, context: prEvent(pullRequest(142, { by: hunter })), core });
@@ -314,7 +360,23 @@ describe('an issue', () => {
 describe('commentBody', () => {
   it('quotes the sentence to post and names who is left', () => {
     const body = commentBody({ pending: [hunter, batuhan], unlinked: [], agreementUrl: 'https://example.com/CLA.md' });
-    assert.match(body, /> I have read the Geld CLA and I agree to it\./);
+    assert.match(body, /```\nI have read the Geld CLA and I agree to it\.\n```/);
     assert.match(body, /Waiting on: @hunterchen7, @Batuhan1999/);
+  });
+});
+
+describe('waitingOn', () => {
+  const pull = (number, state, description) => ({ number, commits: { nodes: [{ commit: { status: state ? { context: { state, description } } : null } }] } });
+  it('finds the pull requests a signer was named in, and those whose list was cut off', () => {
+    const pulls = [
+      pull(1, 'FAILURE', 'Waiting on @hunterchen7, @Batuhan1999 to sign the CLA'),
+      pull(2, 'FAILURE', 'Waiting on @Batuhan1999 to sign the CLA'),
+      pull(3, 'FAILURE', 'Waiting on @someone, @someone-else, @a-third-person, @a-fourth-person, @a-fifth-person, @a-sixth-person, @a-seventh'),
+      pull(4, 'SUCCESS', 'Everyone who wrote this has signed the CLA'),
+      pull(5, 'FAILURE', 'A commit author has no GitHub account to sign with'),
+      pull(6, null),
+      pull(7, 'FAILURE', 'Waiting on @hunterchen7x to sign the CLA'),
+    ];
+    assert.deepEqual(waitingOn(pulls, ['HunterChen7']), [1, 3]);
   });
 });

@@ -6,12 +6,13 @@
  * co-author of its commits have signed `CLA.md`. Commit metadata is whatever
  * the pusher wrote, so an exempt author on a commit never exempts the pull
  * request: its opener, the one identity GitHub vouches for, signs unless they
- * are exempt themselves. Signing is a comment holding `SIGN_PHRASE`, on a pull
- * request or an issue; each signature is kept on the unprotected
+ * are exempt themselves. Signing is a comment that says `SIGN_PHRASE` and
+ * nothing else, on a pull request or an issue; each signature is kept on the unprotected
  * `cla-signatures` branch with the comment's words, its link and the blob SHA
  * of the agreement as it stood when the comment was written. A pull request's
  * check also reads its own comments, so a signature whose run was dropped is
- * picked up on the next one.
+ * picked up on the next one, and a new signature rechecks the open pull
+ * requests whose check was waiting on its signer.
  */
 
 export const SIGN_PHRASE = 'I have read the Geld CLA and I agree to it';
@@ -37,10 +38,34 @@ const COMMIT_AUTHORS = `query($owner: String!, $name: String!, $number: Int!, $c
   }
 }`;
 
-const normalize = (text) => text.toLowerCase().replace(/[>*_`]/g, ' ').replace(/\s+/g, ' ').trim();
+const WAITING_PULLS = `query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number commits(last: 1) { nodes { commit { status { context(name: "${STATUS_CONTEXT}") { state description } } } } } }
+    }
+  }
+}`;
 
+const PHRASE = SIGN_PHRASE.toLowerCase();
+
+/**
+ * Whether a comment signs: the sentence alone, however it was pasted (a code span or block, bold or italic, a closing
+ * full stop). Words around it may refuse it, and a quotation is someone else's words, so neither signs.
+ */
 export function signs(body) {
-  return typeof body === 'string' && normalize(body).includes(normalize(SIGN_PHRASE));
+  if (typeof body !== 'string') return false;
+  const text = body
+    .trim()
+    .replace(/^```[^\n]*\n([\s\S]*?)\n?```$/, '$1')
+    .trim()
+    .replace(/\.$/, '')
+    .replace(/^([`*_]+)([\s\S]*?)\1$/, '$2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.$/, '')
+    .toLowerCase();
+  return text === PHRASE;
 }
 
 export function isAllowed(person) {
@@ -108,9 +133,11 @@ export function commentBody({ pending, unlinked, agreementUrl }) {
   if (pending.length > 0) {
     lines.push(
       '',
-      'To sign, post a comment on this pull request with this sentence:',
+      'To sign, post a comment on this pull request that says only this sentence:',
       '',
-      `> ${SIGN_PHRASE}.`,
+      '```',
+      `${SIGN_PHRASE}.`,
+      '```',
       '',
       `Waiting on: ${pending.map((account) => `@${account.login}`).join(', ')}`,
     );
@@ -123,6 +150,23 @@ export function commentBody({ pending, unlinked, agreementUrl }) {
     );
   }
   return lines.join('\n');
+}
+
+/**
+ * The open pull requests (GraphQL `pullRequests` nodes) whose check failed waiting on one of `logins`. A description
+ * cut at GitHub's 140 characters may name anyone, so such a pull request is checked again too.
+ */
+export function waitingOn(pulls, logins) {
+  const names = logins.map((login) => login.toLowerCase());
+  return pulls
+    .filter((pull) => {
+      const status = pull.commits.nodes[0]?.commit.status?.context;
+      if (status?.state !== 'FAILURE' || !status.description.startsWith('Waiting on ')) return false;
+      if (!status.description.endsWith(' to sign the CLA')) return true;
+      const waiting = status.description.slice('Waiting on '.length, -' to sign the CLA'.length).split(', ');
+      return waiting.some((entry) => names.includes(entry.replace(/^@/, '').toLowerCase()));
+    })
+    .map((pull) => pull.number);
 }
 
 export function statusDescription({ pending, unlinked }) {
@@ -197,7 +241,7 @@ async function recordSignatures(github, repo, additions) {
       known.add(signature.id);
       fresh.push(signature);
     }
-    if (fresh.length === 0) return signatures;
+    if (fresh.length === 0) return { signatures, fresh };
     const next = [...signatures, ...fresh];
     const content = `${JSON.stringify({ agreement: AGREEMENT_PATH, signatures: next }, null, 2)}\n`;
     try {
@@ -209,7 +253,7 @@ async function recordSignatures(github, repo, additions) {
         content: Buffer.from(content, 'utf8').toString('base64'),
         sha,
       });
-      return next;
+      return { signatures: next, fresh };
     } catch (error) {
       if (attempt >= 3 || ![409, 422].includes(error.status)) throw error;
     }
@@ -237,9 +281,10 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
     additions.push(signature);
     waiting.delete(comment.user.id);
   }
+  let fresh = [];
   if (additions.length > 0) {
     await ensureSignaturesBranch(github, repo);
-    signatures = await recordSignatures(github, repo, additions);
+    ({ signatures, fresh } = await recordSignatures(github, repo, additions));
   }
 
   const pending = pendingAccounts(accounts, signatures);
@@ -266,6 +311,25 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
   if (pull.merged_at && passed && accounts.length > 0 && !pull.locked) {
     await github.rest.issues.lock({ ...repo, issue_number: pull.number, lock_reason: 'resolved' });
   }
+  return fresh;
+}
+
+/** Checks again every other open pull request that was waiting on someone who has just signed. */
+async function recheckWaiting({ github, repo, signers, skip, defaultBranch, agreementUrl }) {
+  if (signers.length === 0) return;
+  const pulls = [];
+  let cursor = null;
+  do {
+    const data = await github.graphql(WAITING_PULLS, { owner: repo.owner, name: repo.repo, cursor });
+    const page = data.repository.pullRequests;
+    pulls.push(...page.nodes);
+    cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (cursor !== null);
+  for (const number of waitingOn(pulls, signers.map((signature) => signature.login))) {
+    if (number === skip) continue;
+    const { data: pull } = await github.rest.pulls.get({ ...repo, pull_number: number });
+    await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures: [] });
+  }
 }
 
 export async function run({ github, context, core }) {
@@ -275,7 +339,9 @@ export async function run({ github, context, core }) {
   const agreementUrl = `${payload.repository.html_url}/blob/${defaultBranch}/${AGREEMENT_PATH}`;
 
   if (context.eventName === 'pull_request_target') {
-    await checkPullRequest({ github, repo, pull: payload.pull_request, defaultBranch, agreementUrl, extraSignatures: [] });
+    const pull = payload.pull_request;
+    const fresh = await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures: [] });
+    await recheckWaiting({ github, repo, signers: fresh, skip: pull.number, defaultBranch, agreementUrl });
     return;
   }
   if (context.eventName !== 'issue_comment') return;
@@ -289,13 +355,15 @@ export async function run({ github, context, core }) {
   }
   const extraSignatures = signature === null ? [] : [signature];
 
+  let fresh = [];
   if (issue.pull_request) {
     const { data: pull } = await github.rest.pulls.get({ ...repo, pull_number: issue.number });
-    await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures });
+    fresh = await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures });
   } else if (signature !== null) {
     await ensureSignaturesBranch(github, repo);
-    await recordSignatures(github, repo, extraSignatures);
+    ({ fresh } = await recordSignatures(github, repo, extraSignatures));
   }
+  await recheckWaiting({ github, repo, signers: fresh, skip: issue.pull_request ? issue.number : null, defaultBranch, agreementUrl });
   if (signature !== null) {
     await github.rest.reactions.createForIssueComment({ ...repo, comment_id: comment.id, content: 'rocket' });
     core.info(`Recorded the CLA signature of @${commenter.login}`);

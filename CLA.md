@@ -5,7 +5,7 @@ Version 1.0
 This agreement is between you and the Maintainer of Geld, the project at <https://github.com/brandonmcconnell/geld> (the "Project").
 It covers every Contribution you submit to the Project, including Contributions you submitted before you signed it.
 Read it before you sign.
-You sign it by posting the sentence in section 10 as a comment on the Project's GitHub repository.
+You sign it by posting the sentence in section 10, on its own, as a comment on the Project's GitHub repository.
 
 ## 1. Definitions
 
@@ -61,7 +61,7 @@ This agreement then binds you and benefits that person or entity as it did the M
 
 ## 10. Signing
 
-You sign this agreement by posting this sentence, while signed in to your GitHub account, as a comment on a pull request or an issue in the Project's repository:
+You sign this agreement by posting this sentence, on its own, while signed in to your GitHub account, as a comment on a pull request or an issue in the Project's repository:
 
 > I have read the Geld CLA and I agree to it.
 
