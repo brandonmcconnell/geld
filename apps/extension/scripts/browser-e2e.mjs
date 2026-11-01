@@ -1053,9 +1053,42 @@ async function gitLabBinaryPresentation(page) {
       const presentedNode = node.tagName === 'IMG' ? node.parentElement : node;
       return { bounds: rect, visibleBounds, painted: positive && hit !== null && presentedNode?.contains(hit) === true };
     };
+    const sidebarHost = document.querySelector('[data-testid="file-tree-container"]');
+    const sidebarElement = (node) => {
+      if (node === null) return null;
+      const rect = bounds(node); const style = getComputedStyle(node); const clipped = { ...viewport }; const ancestors = [];
+      for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+        const css = getComputedStyle(parent); const box = bounds(parent);
+        const clipsX = /^(auto|scroll|overlay|hidden|clip)$/.test(css.overflowX || css.overflow);
+        const clipsY = /^(auto|scroll|overlay|hidden|clip)$/.test(css.overflowY || css.overflow);
+        if (clipsX) { clipped.left = Math.max(clipped.left, box.left); clipped.right = Math.min(clipped.right, box.right); }
+        if (clipsY) { clipped.top = Math.max(clipped.top, box.top); clipped.bottom = Math.min(clipped.bottom, box.bottom); }
+        if (clipsX || clipsY || parent.scrollTop !== 0 || parent.scrollLeft !== 0) ancestors.push({ tag: parent.tagName, className: parent.className,
+          bounds: box, display: css.display, position: css.position, overflowX: css.overflowX, overflowY: css.overflowY,
+          scrollTop: parent.scrollTop, scrollLeft: parent.scrollLeft, clientHeight: parent.clientHeight, scrollHeight: parent.scrollHeight,
+          clientWidth: parent.clientWidth, scrollWidth: parent.scrollWidth, clipsX, clipsY });
+      }
+      const visibleBounds = { left: Math.max(clipped.left, rect.left), right: Math.min(clipped.right, rect.right), top: Math.max(clipped.top, rect.top), bottom: Math.min(clipped.bottom, rect.bottom) };
+      const positive = rect.width > 0 && rect.height > 0 && visibleBounds.right - visibleBounds.left > 1 && visibleBounds.bottom - visibleBounds.top > 1;
+      const hit = positive ? document.elementFromPoint((visibleBounds.left + visibleBounds.right) / 2, (visibleBounds.top + visibleBounds.bottom) / 2) : null;
+      return { tag: node.tagName, id: node.id, className: node.className, bounds: rect, clip: clipped, visibleBounds, ancestors,
+        style: { display: style.display, visibility: style.visibility, opacity: style.opacity, position: style.position, overflowX: style.overflowX,
+          overflowY: style.overflowY, maxBlockSize: style.maxBlockSize, fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight },
+        hit: hit === null ? null : { tag: hit.tagName, id: hit.id, className: hit.getAttribute('class'), owned: hit.closest('[data-geld-ui]') !== null },
+        painted: positive && style.visibility !== 'hidden' && style.visibility !== 'collapse' && Number(style.opacity) > 0 && hit !== null && node.contains(hit) };
+    };
+    const selectedSidebarItem = [...sidebarHost?.querySelectorAll('.geld-provider-category[data-active="true"] [data-geld-category-path]') ?? []].find((node) => node.getAttribute('data-geld-category-path') === path);
+    const selectedSidebarRow = selectedSidebarItem?.querySelector('.geld-provider-category-native-row') ?? null;
+    const selectedSidebarControl = selectedSidebarRow?.matches('a,button') ? selectedSidebarRow : selectedSidebarRow?.querySelector('a,button') ?? null;
+    const sidebar = sidebarHost === null ? null : {
+      host: { ...sidebarElement(sidebarHost), categoryMarker: sidebarHost.getAttribute('data-geld-provider-category-host'), sizedMarker: sidebarHost.getAttribute('data-geld-provider-tree-sized'), inlineStyle: sidebarHost.getAttribute('style') },
+      headers: [...sidebarHost.querySelectorAll('.geld-provider-category-header')].map((button) => ({ ...sidebarElement(button), text: button.textContent, expanded: button.getAttribute('aria-expanded') })),
+      selectedFile: selectedSidebarControl === null ? null : { ...sidebarElement(selectedSidebarControl), path: selectedSidebarItem.getAttribute('data-geld-category-path'), label: selectedSidebarControl.getAttribute('aria-label'), current: selectedSidebarControl.getAttribute('aria-current') },
+      nativeBodies: [...sidebarHost.querySelectorAll('nav.mr-tree-list')].filter(native).map((node) => ({ ...sidebarElement(node), marker: node.getAttribute('data-geld-provider-category-body') })),
+    };
     return { badge: badge?.textContent.trim(), badgeGid: badge?.getAttribute('data-gid'), tabId: tab?.id, href: tab?.querySelector('a')?.getAttribute('href'),
       categories: [...document.querySelectorAll('.geld-provider-category-header')].map((button) => ({ text: button.textContent, expanded: button.getAttribute('aria-expanded') })),
-      viewport, clip, scrollers,
+      viewport, clip, scrollers, sidebar,
       stats: [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native).map((node) => ({ text: node.textContent.trim(), lineCounters: [...node.querySelectorAll('[data-testid="js-file-addition-line"], [data-testid="js-file-deletion-line"]')].map((count) => count.textContent.trim()), html: node.outerHTML.slice(0, 3000) })),
       actions: actions === null ? null : { native: native(actions), bounds: bounds(actions), html: actions.outerHTML.slice(0, 7000), children: [...actions.children].filter(native).map((node) => ({ id: node.id, testid: node.getAttribute('data-testid') })) },
       file: root === undefined ? null : { id: root.id, path: JSON.parse(root.getAttribute('data-file-data')).new_path, data: root.getAttribute('data-file-data'), display: getComputedStyle(root).display, hidden: root.getAttribute('data-geld-provider-hidden'),
@@ -1114,15 +1147,42 @@ async function gitLabBinaryCounts(page, item) {
     await discardHandle(handle);
     const revealedVisible = (value) => value.categories.length === 2 && value.categories[0].expanded === 'false' && value.categories[1].expanded === 'true'
       && value.badge === '10' && value.file?.hidden === 'open' && value.file.display !== 'none' && value.file.bodyOpen === true
-      && value.file.header.painted && value.file.images.some((image) => image.src !== null && image.complete && image.naturalWidth > 0 && image.painted);
-    const revealPosition = (value) => JSON.stringify([value.categories, value.file?.id, value.file?.header.bounds, value.file?.images.map((image) => image.visibleBounds)]);
-    item.revealed = await pollStable(() => gitLabBinaryPresentation(page), revealedVisible, 'Selected PNG header and loaded image stay visibly painted below native obstructions with Tests selected', 25_000, revealPosition);
+      && value.file.header.painted && value.file.images.some((image) => image.src !== null && image.complete && image.naturalWidth > 0 && image.painted)
+      && value.sidebar?.headers.length === 2 && value.sidebar.headers.every((header) => header.painted)
+      && value.sidebar.headers[0].expanded === 'false' && value.sidebar.headers[1].expanded === 'true' && value.sidebar.selectedFile?.painted === true
+      && value.sidebar.nativeBodies.length > 0 && value.sidebar.nativeBodies.every((body) => body.marker === 'native' && body.style.display === 'none');
+    const revealPosition = (value) => JSON.stringify([value.categories, value.file?.id, value.file?.header.bounds, value.file?.images.map((image) => image.visibleBounds),
+      value.sidebar?.headers.map((header) => header.bounds), value.sidebar?.selectedFile?.bounds, value.sidebar?.nativeBodies.map((body) => [body.marker, body.style.display])]);
+    try {
+      item.revealed = await pollStable(async () => {
+        const value = await gitLabBinaryPresentation(page); item.revealVisibilityLastProbe = value; return value;
+      }, revealedVisible, 'Selected PNG plus owned Tests header/file row stay simultaneously painted while native tree body stays hidden', 25_000, revealPosition);
+    } catch (error) {
+      item.revealFailureViewportArtifacts = { screenshot: 'gitlab-binary-reveal-unsettled-viewport.png', fullPage: false, captureBeyondViewport: false, status: 'diagnostic_only_no_feature_pass' };
+      try {
+        await page.screenshot({ path: resolve(artifacts, item.revealFailureViewportArtifacts.screenshot), fullPage: false, captureBeyondViewport: false });
+        item.revealFailureAfterViewportProbe = await gitLabBinaryPresentation(page);
+      } catch (captureError) { item.revealFailureViewportArtifacts.captureError = errorText(captureError); }
+      throw error;
+    }
     assert.equal(item.revealed.file.id, item.nativeBaseline.file.id);
     assert.equal(item.revealed.file.data, item.nativeBaseline.file.data, 'Native binary source identity changed on category reveal');
     for (const image of item.nativeBaseline.file.images) assert.ok(item.revealed.file.images.some((value) => value.src === image.src && value.alt === image.alt), 'Category reveal lost an already mounted native source image');
-    item.revealedArtifacts = await capture(page, 'gitlab-binary-image-revealed');
+    item.revealCaptureStages = [{ stage: 'settled-before-viewport-capture', observedAt: new Date().toISOString(), value: item.revealed }];
+    item.revealedViewportArtifacts = { screenshot: 'gitlab-binary-image-revealed-viewport.png', fullPage: false, captureBeyondViewport: false };
+    await page.screenshot({ path: resolve(artifacts, item.revealedViewportArtifacts.screenshot), fullPage: false, captureBeyondViewport: false });
+    item.revealedAfterViewportCapture = await gitLabBinaryPresentation(page);
+    item.revealCaptureStages.push({ stage: 'immediately-after-viewport-capture', observedAt: new Date().toISOString(), value: item.revealedAfterViewportCapture });
+    assert.ok(revealedVisible(item.revealedAfterViewportCapture), 'Viewport capture changed simultaneous owned sidebar/selected-image painting or exposed the native tree');
+    assert.equal(item.revealedAfterViewportCapture.file.id, item.nativeBaseline.file.id);
+    assert.equal(item.revealedAfterViewportCapture.file.data, item.nativeBaseline.file.data);
+    item.revealedBeforeFullPageCapture = await gitLabBinaryPresentation(page);
+    item.revealCaptureStages.push({ stage: 'immediately-before-full-page-capture', observedAt: new Date().toISOString(), value: item.revealedBeforeFullPageCapture });
+    assert.ok(revealedVisible(item.revealedBeforeFullPageCapture), 'Owned sidebar or selected image lost painting before full-page capture');
+    item.revealedArtifacts = { ...await capture(page, 'gitlab-binary-image-revealed'), fullPage: true };
     item.revealedAfterCapture = await gitLabBinaryPresentation(page);
-    assert.ok(revealedVisible(item.revealedAfterCapture), 'Selected PNG header/image or Tests category is no longer visibly painted after capture');
+    item.revealCaptureStages.push({ stage: 'immediately-after-full-page-capture', observedAt: new Date().toISOString(), value: item.revealedAfterCapture });
+    assert.ok(revealedVisible(item.revealedAfterCapture), 'Full-page capture changed simultaneous owned sidebar/selected-image painting or exposed the native tree');
     assert.equal(item.revealedAfterCapture.file.id, item.nativeBaseline.file.id);
     assert.equal(item.revealedAfterCapture.file.data, item.nativeBaseline.file.data);
     assert.deepEqual(item.revealedAfterCapture.file.images.map(({ src, alt }) => ({ src, alt })), item.revealed.file.images.map(({ src, alt }) => ({ src, alt })), 'Capture changed native image source identities');
