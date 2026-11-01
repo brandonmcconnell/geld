@@ -1038,6 +1038,12 @@ describe('a bot that refuses to run', () => {
     expect(refusalReason(limitPage)).toBe('Review limit reached');
     // An alert headed by something else is not this notice, and a finding about a limit is not a refusal.
     expect(refusalReason('> [!WARNING]\n> ## Review the retry limit\n> \n> The client retries forever once the limit is reached, so a dead server hangs every request.')).toBeNull();
+    // The words alone are not the notice: a finding may be headed with them, outside an alert or under a longer heading.
+    expect(refusalReason('## Review limit reached\n\nThe new `maxReviews` guard never resets, so after five runs every pull request is skipped. See `src/limits.ts`.')).toBeNull();
+    expect(refusalReason('**Review limit reached**\n\nThis branch now throws when a reviewer exceeds `MAX_ASSIGNED`, but the catch in `assign.ts` swallows it.')).toBeNull();
+    expect(refusalReason('### Review limit reached counter never resets\n\nThe counter in `src/limits.ts` increments on every push and is never cleared.')).toBeNull();
+    expect(refusalReason('> [!WARNING]\n> ## Review limit reached counter never resets\n> \n> The counter in `src/limits.ts` increments on every push and is never cleared.')).toBeNull();
+    expect(refusalReason('> [!NOTE]\n> ## Review limit reached\n> \n> The counter in `src/limits.ts` increments on every push and is never cleared.')).toBeNull();
     const now = Date.parse('2026-11-01T14:10:00Z');
     const neutral = { name: 'CodeRabbit', status: 'completed' as const, conclusion: 'neutral' as const, sha: 'head' };
     const comment = { author: 'coderabbitai[bot]', body: limitPage, anchor: 'issuecomment-1', createdAt: '2026-11-01T13:40:22Z', editedAt: '2026-11-01T13:53:55Z' };

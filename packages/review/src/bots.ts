@@ -657,12 +657,19 @@ export function refusalReason(body: string): string | null {
   // usage limit reached" and "Bugbot needs on-demand usage enabled" (an <h3>, raw; the first line as the page reads
   // it). The heading is the reason — when it is about the bot or its usage, not about the code ("Cannot run
   // migrations on a fresh database" heads a finding).
-  // An alert's marker ("[!WARNING]" raw, its title "Warning" as the page reads it) is not the heading under it:
-  // CodeRabbit's "Review limit reached" stands in a warning alert.
-  const heading = untagged
+  // An alert's marker ("[!WARNING]" raw, its title "Warning" as the page reads it) is not the heading under it.
+  const lines = untagged
     .split('\n')
     .map((line) => line.replace(/[`*_>~#]/g, '').replace(/\s+/g, ' ').trim())
-    .find((line) => line !== '' && !/^(?:\[!(?:note|tip|important|warning|caution)\]|note|tip|important|warning|caution)$/i.test(line));
+    .filter((line) => line !== '');
+  const inAlert = /^(?:\[!(?:note|tip|important|warning|caution)\]|note|tip|important|warning|caution)$/i.test(lines[0] ?? '');
+  const heading = inAlert ? lines[1] : lines[0];
+  // CodeRabbit out of free reviews: a warning alert headed "Review limit reached" and nothing more, over the run
+  // configuration. A finding may be headed with the same words ("Review limit reached counter never resets"), so
+  // only the alert and the whole heading make it the notice.
+  if (/^(?:\[!warning\]|warning)$/i.test(lines[0] ?? '') && heading !== undefined && /^review limits? (?:(?:has|have|was|were) been )?reached[.!]?$/i.test(heading)) {
+    return heading.replace(/[.!]$/, '');
+  }
   // A bot naming itself in a heading that says it did not run — "**Macroscope skipped reviewing this pull request.**"
   // over the cost explanation, "**Claude encountered an error after 48s** —— [View job](…)" over what it was doing.
   // The heading is the reason, without the job link after the dash.
@@ -673,7 +680,7 @@ export function refusalReason(body: string): string | null {
       return first.replace(/[.!?]\s*$/, '');
     }
   }
-  if (heading !== undefined && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|(?:usage|review) limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
+  if (heading !== undefined && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|usage limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
     // A run-failure heading ("couldn't run …") must name the bot (a known title or login): "review" or "quota" in it
     // is not enough — "Cannot run review tests on a fresh checkout", "Cannot run quota migrations on a fresh
     // database" head findings. A heading that is itself about usage, credits or quota ("Usage limit reached") may
