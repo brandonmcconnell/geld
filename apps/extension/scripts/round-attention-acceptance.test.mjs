@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertGitLabRoundScope, assertRoundSingleHomes, assertRoundSources, gitLabRoundSnapshot } from './round-attention-acceptance.mjs';
+import { assertGitLabRoundScope, assertRoundSingleHomes, assertRoundSources, gitLabRoundSnapshot, isOwnedGitLabRoundEndpoint, observeGitLabRoundRequest } from './round-attention-acceptance.mjs';
 const headSha = 'd03aadd2c95a94ecbe229896b29c9dcda009a916';
 const scope = { headSha, diffPageUrl: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123' };
 const baseline = () => ({ url: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334', head: headSha, selected: { headSha, versionId: '2158520123' }, items: ['open', 'needs-reply', 'addressed', 'outdated', 'resolved', 'done-manual'].map((state, index) => ({ id: `ri_${index}`, state, attention: false, sources: [{ anchor: `note_${index + 1}`, id: String(index + 1), url: `https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334#note_${index + 1}`, body: 'Native words', native: { id: `note_${index + 1}`, sameNode: true } }] })) });
@@ -49,11 +49,11 @@ function protocol(options = {}) {
     evaluate: async (fn) => fn === gitLabRoundSnapshot ? read() : undefined,
     click: async (selector) => { if (selector.includes('review-attention')) attention = false;else opened = !opened; },
     $eval: async () => undefined, focus: async () => undefined,
-    keyboard: { press: async (key) => { assert.equal(key, 'Enter');attention = true;opened = true;focused = true;input = { trusted: options.untrusted !== true, detail: 0 };if (options.extraGet) listeners.get('request')({ method: () => 'GET', url: () => `${baseline().url}/discussions.json` }); } },
+    keyboard: { press: async (key) => { assert.equal(key, 'Enter');attention = true;opened = true;focused = true;input = { trusted: options.untrusted !== true, detail: 0 };if (options.extraGet || options.otherGet) listeners.get('request')({ method: () => 'GET', url: () => `${baseline().url}/${options.otherGet ? 'test_reports' : 'discussions'}.json`, ...(options.extensionFrame ? { initiator: () => ({ stack: { callFrames: [{ url: `chrome-extension://${'a'.repeat(32)}/content-scripts/gitlab.js` }] } }) } : options.firstParty ? { initiator: () => ({ stack: { callFrames: [{ url: 'https://gitlab.com/assets/webpack/native.js' }] } }) } : {}) }); } },
   };
   return { listeners, result: () => proof, cleanup: () => cleanup, run: async () => {
     const { verifyGitLabRoundAttention } = await import('./round-attention-acceptance.mjs');const item = {};
-    try { return await verifyGitLabRoundAttention(page, item, { ...scope, readSettings: async () => ({ reviewGrouping: 'type' }),
+    try { return await verifyGitLabRoundAttention(page, item, { ...scope, extensionId: 'a'.repeat(32), readSettings: async () => ({ reviewGrouping: 'type' }),
       patchSettings: async ({ reviewGrouping }) => { changes++;if (changes === 3) { cleanup = true;if (options.cleanupFailure) throw Error('Synthetic settings restore failure'); }grouping = reviewGrouping;attention = grouping === 'batch' ? true : null; },
       poll: async (read, accepts) => { for (let i = 0; i < 3; i++) { const value = await read();if (accepts(value)) return value; }throw Error('Synthetic state did not satisfy protocol'); },
       openReviewAncestors: async () => 1,capture: async () => ({ synthetic: true }),
@@ -63,7 +63,25 @@ function protocol(options = {}) {
 test('synthetic protocol checks typed history, trusted keyboard, single homes and successful settings cleanup', async () => {
   const fixture = protocol();const proof = await fixture.run();assert.equal(proof.status, 'passed');assert.equal(fixture.cleanup(), true);assert.equal(fixture.listeners.size, 0);
 });
-for (const [label, options] of [['untrusted keyboard click', { untrusted: true }], ['source/head drift', { headDrift: true }], ['changed source words', { changedSource: true }], ['new source acquisition', { extraGet: true }], ['settings cleanup failure', { cleanupFailure: true }]]) test(`synthetic protocol rejects ${label} and cleans up listeners/settings`, async () => {
+for (const [label, options] of [['untrusted keyboard click', { untrusted: true }], ['source/head drift', { headDrift: true }], ['changed source words', { changedSource: true }], ['new source acquisition', { extraGet: true }], ['extension-attributed unrelated report JSON', { otherGet: true, extensionFrame: true }], ['settings cleanup failure', { cleanupFailure: true }]]) test(`synthetic protocol rejects ${label} and cleans up listeners/settings`, async () => {
   const fixture = protocol(options);await assert.rejects(fixture.run());assert.equal(fixture.result().status, 'failed');assert.equal(fixture.cleanup(), true);assert.equal(fixture.listeners.size, 0);
   if (options.cleanupFailure) assert.match(fixture.result().cleanupError, /Synthetic settings restore failure/);
+});
+
+test('audited owned endpoint signatures stay scoped and catch source acquisition even without initiator frames', () => {
+  for (const path of ['/api/v4/projects/gitlab-org%2Fgitlab/merge_requests/266334', '/api/v4/projects/278964/merge_requests/266334/approvals', '/api/v4/projects/278964/merge_requests/266334/pipelines', '/api/v4/projects/278964/merge_requests/266334/reviewers', '/api/v4/projects/278964/pipelines/123/jobs', '/api/v4/projects/gitlab-org%2Fgitlab', '/api/v4/projects/gitlab-org%2Fgitlab/repository/branches/master', '/api/v4/projects/gitlab-org%2Fgitlab/repository/tree', '/api/v4/projects/gitlab-org%2Fgitlab/repository/files/.github%2Fgeld.yml/raw', '/gitlab-org/gitlab/-/merge_requests/266334/discussions.json', '/gitlab-org/gitlab/-/merge_requests/266334/diffs_metadata.json', `/gitlab-org/gitlab/-/commit/${headSha}.diff`, `/gitlab-org/gitlab/-/compare/${headSha}...${'f'.repeat(40)}`]) {
+    const url = new URL(path, 'https://gitlab.com');assert.equal(isOwnedGitLabRoundEndpoint(url), true, path);
+    const observed = observeGitLabRoundRequest({ url: () => url.href, method: () => 'GET' }, 'a'.repeat(32));assert.equal(observed.ownedEndpoint, true);assert.equal(observed.attribution, 'native_or_unattributed');
+  }
+  for (const url of [`${baseline().url}/test_reports.json`, 'https://gitlab.com/api/v4/projects/other/merge_requests/266334', 'https://gitlab.com/api/v4/projects/278964/merge_requests/7', 'https://foreign.example/api/v4/projects/278964/merge_requests/266334']) assert.equal(isOwnedGitLabRoundEndpoint(new URL(url)), false, url);
+});
+test('positive exact extension frames override an unrelated endpoint and nested first-party frames', () => {
+  const extensionId = 'a'.repeat(32);
+  const observed = observeGitLabRoundRequest({ url: () => `${baseline().url}/test_reports.json`, method: () => 'GET', initiator: () => ({ stack: { callFrames: [{ url: 'https://gitlab.com/assets/webpack/native.js' }], parent: { callFrames: [{ url: `chrome-extension://${extensionId}/content-scripts/gitlab.js` }] } } }) }, extensionId);
+  assert.equal(observed.attribution, 'extension_frame_observed');assert.equal(observed.ownedEndpoint, false);assert.ok(observed.frameSources.includes(`chrome-extension://${extensionId}/content-scripts/gitlab.js`));
+});
+for (const firstParty of [false, true]) test(`unrelated report JSON with ${firstParty ? 'positive first-party' : 'missing'} frames is retained separately without becoming an extension source or assumed native`, async () => {
+  const fixture = protocol({ otherGet: true, firstParty });const result = await fixture.run();
+  assert.equal(result.status, 'passed');assert.deepEqual(result.sourceGets, []);assert.equal(result.otherGets.length, 1);
+  assert.equal(result.otherGets[0].attribution, firstParty ? 'first_party_frame_observed' : 'native_or_unattributed');assert.match(result.otherGets[0].url, /\/test_reports\.json$/);assert.equal(result.requests.length, 1);
 });
