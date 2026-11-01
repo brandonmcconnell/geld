@@ -1369,6 +1369,13 @@ Provider-specific surfaces translate settings and sources into shared review and
   GitLab's native review summary starts as `input[data-testid="placeholder-input-field"]` and mounts its own `textarea[data-testid="comment-textarea"]` on focus, so select the outcome and writer within the same live `submit-gl-form` rather than focusing the unrelated main note writer.
   Native outcome disablement, removal and navigation invalidate a pending drawer action without submitting or replacing draft text.
   Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
+- **Reviewer standing and current requests are independent native facts.**
+  `ProviderReviewReviewer.reviewRequest` can retain a pending GitLab review beside an approval without lowering approval totals or replacing the verdict's source.
+  GitLab's `unreviewed` reviewer state establishes a pending current review, not a re-request, a request time or a review of the latest push.
+  Join `approved_by` and reviewer state by durable native account ID and preserve an approval over a comment-only state without inferring request history.
+  Bitbucket reviewer membership does not establish a separate pending request, so its request state remains explicitly unknown until a native source proves otherwise.
+  State-only legacy inputs retain their existing labels, while an explicitly unknown request never becomes Review requested or a pending count.
+  Login-only CI reviewer payloads remain non-authoritative and cannot supply these independent native facts to the extension.
 - **Review bot trust is scoped to native account identity.**
   A GitLab numeric account ID or Bitbucket account UUID is bound to a documented service only after explicit confirmation for that exact provider/origin/repository.
   User-selected PAT, group-token and service accounts have per-install identities, so GitHub logins, display names, comment markers and configuration files never establish account trust on another provider.

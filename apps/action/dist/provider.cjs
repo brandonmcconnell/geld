@@ -21095,7 +21095,7 @@ var BitbucketCiAdapter = class {
     for (const value of pr.participants) {
       const participant = object2(value);
       if (participant.role !== "REVIEWER" && participant.approved !== true && participant.state !== "changes_requested") continue;
-      reviewers.push({ author: author(participant.user), state: participant.state === "changes_requested" ? "changes_requested" : participant.approved === true ? "approved" : "pending" });
+      reviewers.push({ author: author(participant.user), state: participant.state === "changes_requested" ? "changes_requested" : participant.approved === true ? "approved" : "pending", reviewRequest: "unknown" });
     }
     const latestChecks = /* @__PURE__ */ new Map();
     for (const value of statuses) {
@@ -21269,13 +21269,14 @@ var GitLabCiAdapter = class {
       const reviewer = object2(value);
       const user = author2(reviewer.user ?? reviewer);
       const state = reviewer.state;
-      standings.set(user.id, { author: user, state: state === "requested_changes" ? "changes_requested" : state === "approved" ? "approved" : state === "reviewed" ? "commented" : "pending" });
+      standings.set(user.id, { author: user, state: state === "requested_changes" ? "changes_requested" : state === "approved" ? "approved" : state === "reviewed" ? "commented" : "pending", reviewRequest: state === "unreviewed" ? "pending" : state === "approved" || state === "requested_changes" || state === "reviewed" ? "not-pending" : "unknown" });
     }
     const approvals = object2(approvalResponse.value);
     if (!Array.isArray(approvals.approved_by)) throw new ProviderCiError("GitLab omitted approval data.");
     for (const value of approvals.approved_by) {
       const user = author2(object2(value).user);
-      standings.set(user.id, { author: user, state: "approved" });
+      const standing = standings.get(user.id);
+      standings.set(user.id, { author: user, state: "approved", reviewRequest: standing?.reviewRequest ?? "unknown" });
     }
     const latestChecks = /* @__PURE__ */ new Map();
     const pipelineIds = /* @__PURE__ */ new Set();
@@ -21370,7 +21371,7 @@ async function produceProviderSummary(adapter, now = (/* @__PURE__ */ new Date()
     producer: { kind: "action", version: VERSION, ai: false },
     items,
     bots: [],
-    reviewers: (review.input.reviewers ?? []).map((reviewer) => ({ login: reviewer.author.login, state: reviewer.state })),
+    reviewers: (review.input.reviewers ?? []).filter((reviewer) => reviewer.state !== "pending" || reviewer.reviewRequest === void 0 || reviewer.reviewRequest === "pending").map((reviewer) => ({ login: reviewer.author.login, state: reviewer.state })),
     fold: { comments: [], events: [] },
     nativePublication: await createNativePublication(input2, items)
   });

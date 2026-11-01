@@ -45,7 +45,7 @@ export async function produceProviderSummary(adapter: ProviderCiAdapter, now = n
   let meta = validatedMeta({
     v: META_VERSION, generatedAt: now, headSha: review.input.subject.headSha,
     producer: { kind: 'action', version: VERSION, ai: false }, items, bots: [],
-    reviewers: (review.input.reviewers ?? []).map((reviewer) => ({ login: reviewer.author.login, state: reviewer.state })),
+    reviewers: (review.input.reviewers ?? []).filter((reviewer) => reviewer.state !== 'pending' || reviewer.reviewRequest === undefined || reviewer.reviewRequest === 'pending').map((reviewer) => ({ login: reviewer.author.login, state: reviewer.state })),
     fold: { comments: [], events: [] },
     nativePublication: await createNativePublication(input, items),
   });

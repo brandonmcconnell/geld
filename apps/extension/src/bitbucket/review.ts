@@ -120,6 +120,7 @@ function normalizeReviewers(pr: BitbucketPullRequest): readonly ProviderReviewRe
     reviewers.set(participant.author.id, {
       author: reviewAuthor(participant.author),
       state: participant.changesRequested ? 'changes_requested' : participant.approved ? 'approved' : 'pending',
+      reviewRequest: 'unknown',
     });
   }
   return [...reviewers.values()];
