@@ -2,7 +2,7 @@
 
 GitHub Action that maintains **one** Geld review-summary comment on a pull request.
 
-It reads review threads, issue comments, reviews and checks through the GitHub API, clusters them with `@geld/review`, and upserts a markdown comment that also carries a fenced `geld` JSON payload the extension can read from the rendered page.
+It reads review threads, issue comments, reviews and checks through the GitHub API, clusters them with `@geld/review`, and upserts a markdown comment. The structured payload the extension reads rides in the `title` of an empty `<span title='geld:…'>` in the comment's footer: GitHub strips HTML comments from the rendered page but keeps that attribute, and an empty span shows nothing, so readers without the extension see only the summary. (Older summaries carried a fenced `geld` code block. The extension still reads those, and the Action no longer writes them.)
 
 ## Safety
 
@@ -22,6 +22,8 @@ Copy [`examples/geld.yml`](examples/geld.yml) to `.github/workflows/geld.yml` in
     # ai-key: ${{ secrets.GELD_AI_KEY }}
     # model: gpt-4.1-mini
 ```
+
+`@main` runs whatever is on `main` at the time. To change versions only when you choose, pin the `uses:` line to a commit SHA (`brandonmcconnell/geld/apps/action@<sha>`).
 
 ## Optional AI (bring your own key)
 
