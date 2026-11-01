@@ -79,6 +79,15 @@ html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-r
   border-color: var(--geld-provider-button-disabled-border);
 }
 
+/* The native renderer's typography carrier sits outside its sanitized document. */
+html[data-geld-provider="bitbucket"] .geld-provider-review__body[data-geld-bitbucket-typography] > .ak-renderer-document {
+  font-size: var(--ak-renderer-base-font-size, inherit);
+  line-height: var(--geld-bitbucket-body-line-height, inherit);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-review__body[data-geld-bitbucket-typography] > .ak-renderer-document > p {
+  font: var(--ak-renderer-editor-font-normal-text, inherit);
+}
+
 /* Embedded Pipelines shell: native ADS code tokens, no font/DOM overrides. */
 ::highlight(geld-bitbucket-shell-plain), ::highlight(geld-bitbucket-shell-subst) { color: var(--ds-text-code-default); }
 ::highlight(geld-bitbucket-shell-keyword) { color: var(--ds-text-code-keywords); }
