@@ -11773,18 +11773,68 @@ var init_auth = __esm({
   }
 });
 
+// ../../packages/github/src/bounded-body.ts
+async function boundedBody(response, limit, signal) {
+  const length = Number(response.headers.get("content-length"));
+  if (Number.isFinite(length) && length > limit) {
+    await response.body?.cancel().catch(() => void 0);
+    return null;
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  let size = 0;
+  let canceled = signal.aborted;
+  const decoder = new TextDecoder();
+  const parts = [];
+  const stop = () => {
+    canceled = true;
+    void reader.cancel().catch(() => void 0);
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  try {
+    if (canceled) {
+      stop();
+      return null;
+    }
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > limit) {
+        stop();
+        return null;
+      }
+      parts.push(decoder.decode(chunk.value, { stream: true }));
+    }
+    return canceled ? null : parts.join("") + decoder.decode();
+  } catch {
+    return null;
+  } finally {
+    signal.removeEventListener("abort", stop);
+    reader.releaseLock();
+  }
+}
+var init_bounded_body = __esm({
+  "../../packages/github/src/bounded-body.ts"() {
+    "use strict";
+  }
+});
+
 // ../../packages/github/src/client.ts
 function createApiTransport(options) {
   const base = new URL(options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`);
-  if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) throw new Error("Invalid provider API origin");
+  if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash)
+    throw new Error("Invalid provider API origin");
   const fetchImpl = options.fetch ?? fetch;
   const now = options.now ?? Date.now;
   return {
     async request(path, init = {}) {
       if (path.startsWith("/") || path.includes("\\")) return { ok: false, reason: "invalid_response" };
       const url2 = new URL(path, base);
-      if (url2.origin !== base.origin || !url2.pathname.startsWith(base.pathname)) return { ok: false, reason: "invalid_response" };
+      if (url2.origin !== base.origin || !url2.pathname.startsWith(base.pathname))
+        return { ok: false, reason: "invalid_response" };
       const method = init.method ?? "GET";
+      const signal = AbortSignal.timeout(3e4);
       const sources = [options.source, ...options.source.alternatives ?? []];
       candidates: for (let index = 0; index < sources.length; index += 1) {
         const source = sources[index];
@@ -11794,22 +11844,32 @@ function createApiTransport(options) {
           const access = await source.get({ force: attempt === 1 });
           if (access.status !== "ok" && moreSources) continue candidates;
           if (access.status === "unavailable") return { ok: false, reason: "unavailable" };
-          if (access.status === "signed-out" && !(options.anonymousReads === true && method === "GET") && !(options.anonymousWrites === true && method === "POST")) return { ok: false, reason: "signed_out" };
+          if (access.status === "signed-out" && !(options.anonymousReads === true && method === "GET") && !(options.anonymousWrites === true && method === "POST"))
+            return { ok: false, reason: "signed_out" };
           const headers2 = { Accept: init.accept ?? "application/json" };
           if (access.status === "ok") headers2.Authorization = `Bearer ${access.token}`;
-          if (base.hostname === "api.github.com" || base.pathname.includes("/api/v3")) headers2["X-GitHub-Api-Version"] = "2022-11-28";
+          if (base.hostname === "api.github.com" || base.pathname.includes("/api/v3"))
+            headers2["X-GitHub-Api-Version"] = "2022-11-28";
           if (init.body !== void 0 && init.rawBody !== void 0) return { ok: false, reason: "invalid_response" };
-          if (init.body !== void 0 || init.rawBody !== void 0) headers2["Content-Type"] = init.contentType ?? "application/json";
+          if (init.body !== void 0 || init.rawBody !== void 0)
+            headers2["Content-Type"] = init.contentType ?? "application/json";
           let response;
           try {
             let target = url2;
             for (let redirects = 0; ; redirects += 1) {
-              response = await fetchImpl(target.toString(), { method, headers: headers2, redirect: "manual", ...init.rawBody !== void 0 ? { body: init.rawBody } : init.body === void 0 ? {} : { body: JSON.stringify(init.body) } });
+              response = await fetchImpl(target.toString(), {
+                method,
+                headers: headers2,
+                redirect: "manual",
+                signal,
+                ...init.rawBody !== void 0 ? { body: init.rawBody } : init.body === void 0 ? {} : { body: JSON.stringify(init.body) }
+              });
               if (![301, 302, 303, 307, 308].includes(response.status)) break;
               const location = response.headers.get("location");
               if (method !== "GET" || !location || redirects >= 2) return { ok: false, reason: "unavailable" };
               const next = new URL(location, target);
-              if (next.origin !== base.origin || !next.pathname.startsWith(base.pathname) || next.username || next.password) return { ok: false, reason: "permission", required: null, url: null };
+              if (next.origin !== base.origin || !next.pathname.startsWith(base.pathname) || next.username || next.password)
+                return { ok: false, reason: "permission", required: null, url: null };
               target = next;
             }
           } catch {
@@ -11823,11 +11883,20 @@ function createApiTransport(options) {
           if (response.status === 429 || response.status === 403 && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after"))) {
             const retry = Number(response.headers.get("retry-after"));
             const reset = Number(response.headers.get("x-ratelimit-reset"));
-            return { ok: false, reason: "rate_limit", retryAt: retry > 0 ? now() + retry * 1e3 : reset > 0 ? reset * 1e3 : null };
+            return {
+              ok: false,
+              reason: "rate_limit",
+              retryAt: retry > 0 ? now() + retry * 1e3 : reset > 0 ? reset * 1e3 : null
+            };
           }
           if (response.status === 403) {
             if (moreSources) continue candidates;
-            return { ok: false, reason: "permission", required: response.headers.get("x-accepted-github-permissions"), url: null };
+            return {
+              ok: false,
+              reason: "permission",
+              required: response.headers.get("x-accepted-github-permissions"),
+              url: null
+            };
           }
           if (response.status === 404) {
             if (moreSources) continue candidates;
@@ -11836,7 +11905,9 @@ function createApiTransport(options) {
           if (!response.ok) return { ok: false, reason: "unavailable" };
           if (response.status === 204) return { ok: true, value: null };
           try {
-            const value = init.text === true ? await response.text() : await response.json();
+            const body = await boundedBody(response, init.text ? 8e6 : 12e6, signal);
+            if (body === null) return { ok: false, reason: "invalid_response" };
+            const value = init.text === true ? body : JSON.parse(body);
             return { ok: true, value };
           } catch {
             return { ok: false, reason: "invalid_response" };
@@ -11850,6 +11921,7 @@ function createApiTransport(options) {
 var init_client = __esm({
   "../../packages/github/src/client.ts"() {
     "use strict";
+    init_bounded_body();
   }
 });
 
@@ -32885,6 +32957,7 @@ async function completeChat(options) {
   }
   const controller = options.timeoutMs === void 0 ? null : new AbortController();
   const timer = controller === null || options.timeoutMs === void 0 ? null : setTimeout(() => controller.abort(), options.timeoutMs);
+  const signal = options.signal && controller ? AbortSignal.any([options.signal, controller.signal]) : options.signal ?? controller?.signal ?? null;
   try {
     const response = await options.fetch(joinUrl(options.baseUrl, "/v1/chat/completions"), {
       method: "POST",
@@ -32894,19 +32967,23 @@ async function completeChat(options) {
         accept: "application/json"
       },
       body: JSON.stringify(body),
-      ...controller === null ? {} : { signal: controller.signal }
+      ...signal ? { signal } : {}
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload = await response.json();
-    if (!isRecord7(payload) || !Array.isArray(payload.choices)) return { ok: false, reason: "Completion response was empty." };
+    if (!isRecord7(payload) || !Array.isArray(payload.choices))
+      return { ok: false, reason: "Completion response was empty." };
     const first = payload.choices[0];
     const message = isRecord7(first) && isRecord7(first.message) ? first.message : null;
     const text = message === null ? null : contentOf(message.content);
     if (text === null) return { ok: false, reason: "Completion response had no text." };
     const model = typeof payload.model === "string" ? payload.model : options.model;
     return { ok: true, text, model };
-  } catch (error61) {
-    return { ok: false, reason: error61 instanceof Error ? error61.message : "Completion failed." };
+  } catch {
+    return {
+      ok: false,
+      reason: "The AI provider could not complete the request."
+    };
   } finally {
     if (timer !== null) clearTimeout(timer);
   }

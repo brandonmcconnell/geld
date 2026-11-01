@@ -16,9 +16,10 @@ export interface GeneratedContentStore {
     readonly headSha: string;
     readonly plan: ReviewPlan;
     readonly reservationId?: string;
+    readonly authorize?: (sql: SqlExecutor) => Promise<void>;
   }): Promise<void>;
   get(teamId: string, repoId: string, number: number, headSha: string): Promise<ReviewPlan | null>;
-  hasPublication(reservationId: string): Promise<boolean>;
+  hasPublication(reservationId: string, primarySql?: SqlExecutor): Promise<boolean>;
   deleteTeam(teamId: string): Promise<void>;
   purgeExpired(): Promise<void>;
 }
@@ -84,18 +85,34 @@ export function createGeneratedContentStore(
       };
       await primary.run(async (sql) => {
         await sql.query("SET LOCAL statement_timeout='30s'");
-        const team = await sql.query('SELECT id FROM teams WHERE id=$1 AND content_erasing_at IS NULL FOR UPDATE', [
-          input.teamId,
-        ]);
+        const team = await sql.query(
+          'SELECT id FROM teams WHERE id=$1 AND deleting_at IS NULL AND content_erasing_at IS NULL FOR NO KEY UPDATE',
+          [input.teamId],
+        );
         if (!team.rows.length) throw new Error('Generated content is no longer accepted for this team');
+        if (input.authorize) await input.authorize(sql);
+        if (
+          input.reservationId &&
+          !(
+            await sql.query(
+              "SELECT id FROM credit_reservations WHERE id=$1 AND team_id=$2 AND state='reserved' FOR UPDATE",
+              [input.reservationId, input.teamId],
+            )
+          ).rows.length
+        )
+          throw new Error('The guide reservation changed');
         if (dependencies.customer) await dependencies.run(publish);
         else await publish(sql);
       });
     },
     async get(teamId, repoId, number, headSha) {
       if (
-        !(await primary.sql.query('SELECT id FROM teams WHERE id=$1 AND content_erasing_at IS NULL', [teamId])).rows
-          .length
+        !(
+          await primary.sql.query(
+            'SELECT id FROM teams WHERE id=$1 AND deleting_at IS NULL AND content_erasing_at IS NULL',
+            [teamId],
+          )
+        ).rows.length
       )
         return null;
       const row = z
@@ -118,12 +135,13 @@ export function createGeneratedContentStore(
         return null;
       }
     },
-    async hasPublication(reservationId) {
+    async hasPublication(reservationId, primarySql) {
       return (
         (
-          await db.query(`SELECT reservation_id FROM ${receipts} WHERE reservation_id=$1 AND expires_at>now()`, [
-            reservationId,
-          ])
+          await (dependencies.customer ? db : (primarySql ?? db)).query(
+            `SELECT reservation_id FROM ${receipts} WHERE reservation_id=$1 AND expires_at>now()`,
+            [reservationId],
+          )
         ).rows.length > 0
       );
     },

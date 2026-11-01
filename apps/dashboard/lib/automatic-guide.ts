@@ -16,7 +16,7 @@ import { reserveCredits, finishCredits } from './credits';
 import { transaction } from './transactions';
 import { resourceDigest } from './resource-digest';
 import { contentStore } from './content-store';
-import { recordGuidePublication } from './guide-publications';
+import { authorizeGuidePublication, recordGuidePublication } from './guide-publications';
 import { appendAudit } from './audit';
 export const automaticGuideSchema = z.object({
   repoId: z.string(),
@@ -163,6 +163,7 @@ export async function automaticGuide(
           fingerprint,
           headSha: c.pull.headSha,
           claim,
+          actorId: actor.data.user_id,
         });
         await sql.query('UPDATE credit_reservations SET fallback=$2 WHERE id=$1', [reservation.id, config.fallback]);
         await appendAudit(sql, {
@@ -183,6 +184,8 @@ export async function automaticGuide(
         headSha: c.pull.headSha,
         plan: plan.plan,
         reservationId: reservation.id,
+        authorize: (sql) =>
+          authorizeGuidePublication(sql, { teamId: r.team_id, repoId: r.id, actorId: actor.data.user_id }),
       });
       success = true;
       return true;

@@ -16,6 +16,8 @@ import { normalizeReviewPlan } from '@geld/review/plan';
 import { providerClient } from '@/lib/providers';
 import { contentStore } from '@/lib/content-store';
 import { resourceDigest } from '@/lib/resource-digest';
+import { authorizeGuidePublication, recordGuidePublication, recoverGuideCredits } from '@/lib/guide-publications';
+import { withTeamOperation } from '@/lib/team-operation';
 export const maxDuration = 300;
 const inputSchema = z.object({
   ref: pullRefSchema,
@@ -152,7 +154,7 @@ async function handlePOST(request: Request): Promise<Response> {
       );
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(240000)]);
     let succeeded = false;
-    let usedFallback = false;
+    let publishing = false;
     try {
       for (const config of configurations) {
         if (signal.aborted) break;
@@ -170,32 +172,39 @@ async function handlePOST(request: Request): Promise<Response> {
           complete: (options) => completeConfigured(config, { ...options, signal }),
         });
         if (plan.ok) {
-          usedFallback = config.fallback;
-          const fresh = await (
-            await providerClient(input.data.ref.provider, input.data.ref.host, input.data.ref.owner)
-          ).pull(input.data.ref);
-          if (!fresh.ok || fresh.value.headSha !== context.pull.headSha)
-            return json(
-              {
-                error: 'The pull request changed while the guide was planned. Reload it before continuing.',
-              },
-              409,
-            );
-          if (signal.aborted) return json({ error: 'The guide request was canceled.' }, 409);
           const repository = z.object({ id: z.string() }).parse(entitlement.rows[0]);
-          await contentStore().put({
-            teamId: team,
-            repoId: repository.id,
-            number: input.data.ref.number,
-            headSha: context.pull.headSha,
-            plan: plan.plan,
+          const authority = { teamId: team, repoId: repository.id, actorId: actor.id };
+          const published = await withTeamOperation(team, async () => {
+            const fresh = await (
+              await providerClient(input.data.ref.provider, input.data.ref.host, input.data.ref.owner)
+            ).pull(input.data.ref);
+            if (!fresh.ok || fresh.value.headSha !== context.pull.headSha || fresh.value.state !== 'open')
+              throw new Error('The pull request changed while the guide was planned');
+            if (signal.aborted) throw new Error('The guide request was canceled');
+            await transaction(db, async (sql) => {
+              await recordGuidePublication(sql, {
+                ...authority,
+                reservationId: reservation.id,
+                fingerprint,
+                headSha: context.pull.headSha,
+              });
+              await sql.query('UPDATE credit_reservations SET fallback=$2 WHERE id=$1', [
+                reservation.id,
+                config.fallback,
+              ]);
+            });
+            publishing = true;
+            await contentStore().put({
+              ...authority,
+              number: input.data.ref.number,
+              headSha: context.pull.headSha,
+              plan: plan.plan,
+              reservationId: reservation.id,
+              authorize: (sql) => authorizeGuidePublication(sql, authority),
+            });
+            succeeded = true;
           });
-          await db.query('UPDATE credit_reservations SET resource_fingerprint = $2,head_sha = $3 WHERE id = $1', [
-            reservation.id,
-            fingerprint,
-            context.pull.headSha,
-          ]);
-          succeeded = true;
+          if (!published.ok) return json({ error: 'This team is busy. Try creating the guide again.' }, 409);
           return json({ plan: plan.plan, credits });
         }
       }
@@ -206,7 +215,14 @@ async function handlePOST(request: Request): Promise<Response> {
         503,
       );
     } finally {
-      await transaction(db, (sql) => finishCredits(sql, reservation.id, succeeded, usedFallback));
+      if (succeeded || !publishing) await transaction(db, (sql) => finishCredits(sql, reservation.id, succeeded));
+      else
+        await recoverGuideCredits({
+          sql: db,
+          run: (work) => transaction(db, work),
+          store: contentStore,
+          reservationId: reservation.id,
+        });
     }
   } catch {
     return json({ error: 'The guide could not be created. Try again.' }, 503);
@@ -233,7 +249,7 @@ async function readGET(request: Request): Promise<Response> {
     .safeParse(
       (
         await db.query(
-          'SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id=r.team_id WHERE r.team_id=$1 AND m.user_id=$2 AND r.provider=$3 AND r.host=$4 AND r.owner=$5 AND r.name=$6 AND r.approved AND r.removed_at IS NULL',
+          'SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id=r.team_id WHERE r.team_id=$1 AND m.user_id=$2 AND r.provider=$3 AND r.host=$4 AND r.owner=$5 AND r.name=$6 AND r.approved AND r.removed_at IS NULL AND EXISTS(SELECT 1 FROM teams t WHERE t.id=r.team_id AND t.deleting_at IS NULL AND t.content_erasing_at IS NULL)',
           [team, actor.id, ref.data.provider, ref.data.host, ref.data.owner, ref.data.repo],
         )
       ).rows[0],

@@ -34,31 +34,6 @@ export function DiffView({
     </div>
   );
 }
-export function DiffView({
-  files,
-  refs,
-  onComment,
-  supporting = false,
-}: {
-  readonly files: readonly PlanFile[];
-  readonly refs?: readonly HunkRef[];
-  readonly onComment?: (line: LineSelection) => void;
-  readonly supporting?: boolean;
-}) {
-  const selected = refs ? files.filter((file) => refs.some((ref) => ref.path === file.path)) : files;
-  return (
-    <div className={supporting ? 'supporting-diffs' : 'diff-files'}>
-      {selected.map((file) => (
-        <FileDiff
-          key={file.path}
-          file={file}
-          hunks={refs?.filter((ref) => ref.path === file.path).map((ref) => ref.hunk)}
-          {...(onComment ? { onComment } : {})}
-        />
-      ))}
-    </div>
-  );
-}
 function FileDiff({
   file,
   hunks,

@@ -172,32 +172,6 @@ export function billingGateway(): BillingGateway | null {
       };
     },
     async cancelSubscription(id, key) {
-      const subscription = await stripe.subscriptions.retrieve(id);
-      if (subscription.livemode) throw new Error('Live billing is disabled');
-      if (subscription.status !== 'canceled')
-        await stripe.subscriptions.cancel(id, { invoice_now: false, prorate: false }, { idempotencyKey: key });
-    },
-    async updateSeats(itemId, seats, key) {
-      await stripe.subscriptionItems.update(
-        itemId,
-        { quantity: seats, proration_behavior: 'create_prorations' },
-        { idempotencyKey: key },
-      );
-    },
-    async overage(customerId, subscriptionId, cents, reservationId) {
-      await stripe.invoiceItems.create(
-        {
-          customer: customerId,
-          subscription: subscriptionId,
-          amount: cents,
-          currency: 'usd',
-          description: 'Geld AI credit overage',
-          metadata: { reservation_id: reservationId },
-        },
-        { idempotencyKey: `credit:${reservationId}` },
-      );
-    },
-    async cancelSubscription(id, key) {
       await assertTeamOperations();
       const subscription = await stripe.subscriptions.retrieve(id);
       if (subscription.livemode) throw new Error('Live billing is disabled');

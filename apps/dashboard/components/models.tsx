@@ -6,6 +6,7 @@ import { BookOpen } from 'lucide-react';
 import { Button, buttonVariants } from '@geld/ui';
 import { EmptyState } from './app-shell';
 const modelsSchema = z.object({
+  someUnavailable: z.boolean().default(false),
   models: z.array(
     z.object({
       id: z.string(),
@@ -20,6 +21,8 @@ export function Models() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState('');
+  const [someUnavailable, setSomeUnavailable] = useState(false);
+  const [revision, setRevision] = useState(0);
   async function choose(instance: string, model: string) {
     try {
       const response = await fetch('/api/ai/providers');
@@ -72,14 +75,21 @@ export function Models() {
       .then(async (response) => {
         const value: unknown = await response.json();
         const parsed = modelsSchema.safeParse(value);
-        if (parsed.success) setModels(parsed.data.models);
+        if (abort.signal.aborted) return;
+        if (response.ok && parsed.success) {
+          setModels(parsed.data.models);
+          setSomeUnavailable(parsed.data.someUnavailable);
+        } else setSomeUnavailable(true);
         setLoading(false);
       })
       .catch(() => {
-        if (!abort.signal.aborted) setLoading(false);
+        if (!abort.signal.aborted) {
+          setSomeUnavailable(true);
+          setLoading(false);
+        }
       });
     return () => abort.abort();
-  }, []);
+  }, [revision]);
   return (
     <div className="page">
       <p className="eyebrow">MODELS</p>
@@ -87,6 +97,22 @@ export function Models() {
       <p className="muted mt-3">
         Models come from your connected providers. The automatic ladder tries them in the order you choose.
       </p>
+      {someUnavailable && (
+        <div className="status-message" role="status">
+          <p>Some provider catalogs could not be loaded. Check your connections or try again.</p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setLoading(true);
+              setRevision((value) => value + 1);
+            }}
+            disabled={loading}
+          >
+            Retry loading models
+          </Button>{' '}
+          <Link href="/settings/providers">Check connections</Link>
+        </div>
+      )}
       {message && (
         <p className="status-message" role="status">
           {message}
@@ -125,7 +151,13 @@ export function Models() {
       ) : (
         <EmptyState
           icon={BookOpen}
-          title={loading ? 'Loading available models...' : 'No models connected yet'}
+          title={
+            loading
+              ? 'Loading available models...'
+              : someUnavailable
+                ? 'Models could not be loaded'
+                : 'No models connected yet'
+          }
           action={
             <div className="flex gap-3">
               <Link href="/settings/providers?enable=geld" className={buttonVariants()}>
