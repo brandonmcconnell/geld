@@ -18,7 +18,7 @@ export interface ManagedAccessAdapter {
   share(ref: RepositoryRef, group: string, permission: Permission, remove?: boolean): Promise<ProviderResult<void>>;
 }
 export interface AccessOptions { readonly provider: Provider; readonly source: TokenSource; readonly fetch?: FetchLike; readonly bitbucket?: { readonly path: 'legacy_groups' | 'atlassian_groups' | 'direct_users'; readonly organisationId?: string; readonly directoryId?: string; readonly adminSource?: TokenSource } }
-function level(p: Permission): number { return p === 'admin' ? 50 : p === 'maintain' ? 40 : p === 'write' ? 30 : p === 'triage' ? 20 : 10; }
+function level(p: Permission): number { return p === 'admin' ? 50 : p === 'maintain' ? 40 : p === 'write' ? 30 : 20; }
 function glPermission(n: number): Permission { return n >= 50 ? 'admin' : n >= 40 ? 'maintain' : n >= 30 ? 'write' : n >= 20 ? 'read' : 'none'; }
 function simple(p: Permission): 'read' | 'write' | 'admin' { return p === 'admin' ? 'admin' : p === 'write' || p === 'maintain' ? 'write' : 'read'; }
 function ghPermission(p: Permission): string { return p === 'read' ? 'pull' : p === 'write' ? 'push' : p; }
@@ -89,7 +89,22 @@ export function managedAccessAdapter(options: AccessOptions): ManagedAccessAdapt
       const r = await api.request(path, { method: p === 'gitlab' && u.permission === 'none' ? 'POST' : 'PUT', body: p === 'gitlab' ? { user_id: u.id, access_level: level(permission) } : { permission: p === 'github' ? ghPermission(permission) : simple(permission) } });
       return r.ok ? { ok: true, value: identifier(r.value) ?? `${u.id}:${ref.owner}/${ref.repo}` } : r;
     },
-    revoke: (ref,u,grantId) => write(api, p === 'github' && grantId && /^\d+$/.test(grantId) && u.permission === 'none' ? `${repo(ref)}/invitations/${e(grantId)}` : p === 'github' ? `${repo(ref)}/collaborators/${e(u.login)}` : p === 'gitlab' ? `${repo(ref)}/members/${e(u.id)}` : `${repo(ref)}/permissions-config/users/${e(u.id)}`, 'DELETE'),
+    async revoke(ref,u,grantId) {
+      if (p === 'github' && grantId?.startsWith('intent:') && u.permission === 'none') {
+        for (let page=1; page<=100; page+=1) {
+          const pending = await api.request(`${repo(ref)}/invitations?per_page=100&page=${page}`);
+          if (!pending.ok) return pending;
+          const list = z.array(z.object({ id: z.number(), invitee: z.object({ id: z.number() }).nullable() })).safeParse(pending.value);
+          if (!list.success) return bad();
+          const match = list.data.find(invitation => String(invitation.invitee?.id) === u.id);
+          if (match) return write(api, `${repo(ref)}/invitations/${match.id}`, 'DELETE');
+          if (list.data.length<100) return { ok: true, value: undefined };
+        }
+        return { ok: false, reason: 'unavailable' };
+      }
+      const result = await write(api, p === 'github' && grantId && /^\d+$/.test(grantId) && u.permission === 'none' ? `${repo(ref)}/invitations/${e(grantId)}` : p === 'github' ? `${repo(ref)}/collaborators/${e(u.login)}` : p === 'gitlab' ? `${repo(ref)}/members/${e(u.id)}` : `${repo(ref)}/permissions-config/users/${e(u.id)}`, 'DELETE');
+      return !result.ok && result.reason==='not_found' ? { ok: true, value: undefined } : result;
+    },
     async createGroup(org,name) {
       if (p === 'bitbucket' && options.bitbucket?.path === 'direct_users') return { ok: false, reason: 'unsupported' };
       let parentId: number | null = null;
@@ -107,12 +122,25 @@ export function managedAccessAdapter(options: AccessOptions): ManagedAccessAdapt
     },
     async groupMember(org,group,u,remove = false) {
       if (!u.organisationMember) return { ok: false, reason: 'permission', required: 'Existing organisation membership', url: null };
+      if (p === 'gitlab' && !remove) {
+        const current = await api.request(`${orgGroup(org,group)}/members/${e(u.id)}`);
+        if (current.ok) { const member = z.object({ access_level: z.number() }).safeParse(current.value); return member.success && member.data.access_level>=30 ? { ok: true, value: undefined } : bad(); }
+        if (current.reason !== 'not_found') return current;
+      }
       if (p === 'bitbucket' && options.bitbucket?.path === 'atlassian_groups') return admin && options.bitbucket.organisationId ? write(admin, `v1/orgs/${e(options.bitbucket.organisationId)}/directory/groups/${e(group)}/memberships${remove ? `/${e(u.id)}` : ''}`, remove ? 'DELETE' : 'POST', remove ? undefined : { account_id: u.id }) : { ok: false, reason: 'unsupported' };
       return write(p === 'bitbucket' ? legacy : api, `${orgGroup(org,group)}/${p === 'github' ? `memberships/${e(u.login)}` : p === 'gitlab' ? `members${remove ? `/${e(u.id)}` : ''}` : `members/${e(u.id)}`}`, remove ? 'DELETE' : p === 'gitlab' ? 'POST' : 'PUT', remove ? undefined : p === 'github' ? { role: 'member' } : p === 'gitlab' ? { user_id: u.id, access_level: 30 } : undefined);
     },
     async share(ref,group,permission,remove = false) {
+      if (permission === 'none' && !remove) return bad();
       if (p === 'bitbucket' && options.bitbucket?.path === 'legacy_groups') {
         const r = await legacy.request(`group-privileges/${e(ref.owner)}/${e(ref.repo)}/${e(ref.owner)}/${e(group)}`, { method: remove ? 'DELETE' : 'PUT', ...(remove ? {} : { rawBody: simple(permission), contentType: 'text/plain' }) }); return r.ok ? { ok: true, value: undefined } : r;
+      }
+      if (p === 'gitlab' && !remove) {
+        const current = await api.request(repo(ref));
+        if (!current.ok) return current;
+        const project = z.object({ shared_with_groups: z.array(z.object({ group_id: z.number(), group_access_level: z.number() })).optional() }).safeParse(current.value);
+        if (!project.success) return bad();
+        if (project.data.shared_with_groups?.some(shared => String(shared.group_id)===group && shared.group_access_level>=level(permission))) return { ok: true, value: undefined };
       }
       return write(api, p === 'github' ? `orgs/${e(ref.owner)}/teams/${e(group)}/repos/${e(ref.owner)}/${e(ref.repo)}` : p === 'gitlab' ? `${repo(ref)}/share${remove ? `/${e(group)}` : ''}` : `${repo(ref)}/permissions-config/groups/${e(group)}`, remove ? 'DELETE' : p === 'gitlab' ? 'POST' : 'PUT', remove ? undefined : p === 'gitlab' ? { group_id: group, group_access: level(permission) } : { permission: p === 'github' ? ghPermission(permission) : simple(permission) });
     },

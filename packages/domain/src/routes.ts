@@ -53,3 +53,8 @@ export function parseDashboardRoute(parts: readonly string[]): DashboardRoute | 
 export function resourceKey(ref: RepositoryRef): string {
   return [ref.provider, ref.host.toLowerCase(), ref.owner, ref.repo].map(segment).join(':');
 }
+
+export function parseDashboardPathname(pathname: string): DashboardRoute | null {
+  try { return parseDashboardRoute(pathname.split('/').filter(Boolean).map(decodeURIComponent)); }
+  catch { return null; }
+}

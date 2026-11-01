@@ -29,3 +29,16 @@ CREATE TABLE provider_connections (
   encrypted_credential text,
   PRIMARY KEY(team_id,provider,host)
 );
+ALTER TABLE grants ADD COLUMN baseline_captured boolean NOT NULL DEFAULT false;
+ALTER TABLE grants ADD COLUMN mutation_started boolean NOT NULL DEFAULT false;
+ALTER TABLE grants ADD COLUMN direct_intent boolean NOT NULL DEFAULT false;
+UPDATE grants SET baseline_captured=true,mutation_started=(provider_grant_id IS NOT NULL) WHERE state<>'pending' OR provider_grant_id IS NOT NULL;
+CREATE TABLE provider_group_exclusions (
+  team_id text NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  provider text NOT NULL,
+  host text NOT NULL,
+  owner text NOT NULL,
+  provider_user_id text NOT NULL,
+  provider_group_id text NOT NULL,
+  PRIMARY KEY(team_id,provider,host,owner,provider_user_id,provider_group_id)
+);

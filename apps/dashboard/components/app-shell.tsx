@@ -8,7 +8,7 @@ import { cn } from 'cn';
 import { BookOpen, ChevronDown, ChevronLeft, CircleHelp, GitPullRequest, Layers, Menu, PanelLeftClose, Plus, Search, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { z } from 'zod';
-import { parseDashboardRoute, repositoryPath } from '@geld/domain';
+import { parseDashboardPathname, repositoryPath } from '@geld/domain';
 import { queueSchema, sessionSchema } from '@/lib/contracts';
 import type { QueueData, SessionData } from '@/lib/contracts';
 import { Brand } from './brand';
@@ -22,7 +22,7 @@ export function useDashboard() { return useContext(context); }
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const pathname = usePathname();
   const queueOwner = useRef<string | null>(null);
-  const route = parseDashboardRoute(pathname.split('/').filter(Boolean));
+  const route = parseDashboardPathname(pathname);
   const repository = route?.kind === 'repository' ? route.ref : null;
   const repositoryKey = repository ? JSON.stringify(repository) : '';
   const [teams,setTeams]=useState<{id:string;name:string}[]>([]);

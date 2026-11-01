@@ -2,6 +2,7 @@ import 'server-only';
 import { headers } from 'next/headers';
 import { z } from 'zod';
 import type { Provider } from '@geld/domain';
+import { providerProfileIdentity } from '@geld/domain/identities';
 import type { TokenSource } from '@geld/github';
 import { getAuth } from './auth';
 import { demoEnabled } from './env';
@@ -29,12 +30,12 @@ export async function providerTokenSource(provider: Provider, owner?: string): P
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) return { get: async () => ({ status: 'signed-out', reason: 'Sign in' }) };
-  if (provider === 'github') { const { storedAppUserSource } = await import('./repository-apps'); const source = await storedAppUserSource(session.user.id,owner); if (source) return source; }
+  const repositorySource = provider === 'github' ? await (await import('./repository-apps')).storedAppUserSource(session.user.id,owner) : null;
   const accounts = await auth.api.listUserAccounts({ headers: requestHeaders });
   const account = provider === 'github'
     ? accounts.find((a) => a.providerId === 'github-repository') ?? accounts.find((a) => a.providerId === 'github-oauth') ?? accounts.find((a) => a.providerId === 'github')
     : accounts.find((a) => a.providerId === provider);
-  return {
+  const identitySource: TokenSource = {
     async get(options = {}) {
       if (!account) return { status: 'signed-out', reason: 'Connect a provider' };
       try {
@@ -46,6 +47,7 @@ export async function providerTokenSource(provider: Provider, owner?: string): P
       }
     },
   };
+  return repositorySource ? { get: options => repositorySource.get(options), alternatives: [...(repositorySource.alternatives ?? []), identitySource] } : identitySource;
 }
 
 export async function providerViewer(provider: Provider): Promise<string | null> {
@@ -54,19 +56,20 @@ export async function providerViewer(provider: Provider): Promise<string | null>
   const api = createApiTransport({ baseUrl, source: await providerTokenSource(provider) });
   const result = await api.request('user');
   if (!result.ok) return null;
-  const parsed = z.object({ login: z.string().optional(), username: z.string().optional(), nickname: z.string().optional(), display_name: z.string().optional() }).safeParse(result.value);
-  return parsed.success ? parsed.data.login ?? parsed.data.username ?? parsed.data.nickname ?? parsed.data.display_name ?? null : null;
+  return providerProfileIdentity(provider, result.value)?.username ?? null;
 }
 
 export async function syncProviderProfiles(userId: string): Promise<Record<string,string>> {
   const { createApiTransport } = await import('@geld/github'); const { database } = await import('./db');
   const viewers: Record<string,string> = {}; const db = database();
-  await Promise.all((['github','gitlab','bitbucket'] satisfies Provider[]).map(async provider => {
-    const api = createApiTransport({ baseUrl: provider === 'github' ? 'https://api.github.com/' : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: await providerTokenSource(provider) });
+  await Promise.allSettled((['github','gitlab','bitbucket'] satisfies Provider[]).map(async provider => {
+    const api = createApiTransport({ baseUrl: provider === 'github' ? 'https://api.github.com/' : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: await providerTokenSource(provider), fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(5000) }) });
     const result = await api.request('user'); if (!result.ok) return;
-    const p = z.object({ id:z.union([z.number(),z.string()]).optional(),account_id:z.string().optional(),login:z.string().optional(),username:z.string().optional(),nickname:z.string().optional() }).safeParse(result.value);
-    if (!p.success) return; const login = p.data.login ?? p.data.username ?? p.data.nickname; const id = p.data.account_id ?? p.data.id;
-    if (!login || id === undefined) return; viewers[provider] = login;
-    if (db) await db.query('INSERT INTO provider_user_links(user_id,provider,host,external_id,login) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,provider,host) DO UPDATE SET external_id=EXCLUDED.external_id,login=EXCLUDED.login',[userId,provider,provider === 'github' ? 'github.com' : provider === 'gitlab' ? 'gitlab.com' : 'bitbucket.org',String(id),login]);
+    const identity = providerProfileIdentity(provider, result.value);
+    if (!identity) return;
+    const host = provider === 'github' ? 'github.com' : provider === 'gitlab' ? 'gitlab.com' : 'bitbucket.org';
+    viewers[provider] = identity.username;
+    viewers[`${provider}@${host}`] = identity.username;
+    if (db) await db.query('INSERT INTO provider_user_links(user_id,provider,host,external_id,login) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,provider,host) DO UPDATE SET external_id=EXCLUDED.external_id,login=EXCLUDED.login',[userId,provider,host,identity.externalId,identity.username]);
   })); return viewers;
 }
