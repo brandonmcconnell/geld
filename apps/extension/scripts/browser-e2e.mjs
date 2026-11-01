@@ -12,6 +12,7 @@ import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-li
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture } from './bitbucket-commit-oracle.mjs';
+import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -1426,6 +1427,7 @@ function observeGitLabBotFixture(page, item) {
           return { id: String(note.id), discussionId: thread.id, system: note.system, author: { id: String(note.author?.id), username: note.author?.username, bot: note.author?.bot, userType: note.author?.user_type }, url: note.noteable_note_url,
             resolved: thread.resolved, active: thread.active, path: thread.position?.new_path ?? thread.position?.old_path ?? thread.diff_file?.new_path ?? thread.diff_file?.old_path, line: thread.position?.new_line ?? thread.position?.old_line,
             createdAt: note.created_at, updatedAt: note.updated_at, bodySha256: createHash('sha256').update(body).digest('hex'),
+            suggestedFix: String(note.id) === '3381334872' ? gitLabCopyFixOf(body) : null,
             summaryHeading: body.includes('<h3>Greptile Summary</h3>'), confidenceFive: body.includes('<h3>Confidence Score: 5/5</h3>'), safeToMerge: body.includes('Safe to merge'),
             reviewedCommit: /Last reviewed commit:[\s\S]*?\]\(https:\/\/gitlab\.com\/whitebox-aero\/whitebox\/-\/commit\/([a-f0-9]{40})\)/.exec(body)?.[1] ?? null };
         }));
@@ -1620,6 +1622,7 @@ async function verifyGitLabBot(page, item) {
   for (const finding of findings) { assert.equal(finding.state, 'resolved');assert.ok(finding.metadata?.includes(finding.sources.includes('note_3384406925') ? 'backend/poetry.lock:3739' : 'backend/pyproject.toml:56')); }
   item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };
   await gitLabBotBodyEvidence(page, item);item.trustedArtifacts = item.richBody.artifacts;
+  await verifyGitLabItemCopies(page, item, { context: browser.defaultBrowserContext(), expectedFix: discussionPage.selected.find((source) => source.id === '3381334872')?.suggestedFix, expectedAuthor: discussionPage.selected.find((source) => source.id === '3381334872')?.author.username, openReviewAncestors, poll, safeUrl });
   await options.bringToFront();
   await poll(() => options.$eval('#trusted-review-accounts', (area) => area.value), (value) => value.trim() === binding, 'Actual options editor observes the new explicit binding');
   await options.click('#trusted-review-accounts');await options.keyboard.down('Control');await options.keyboard.press('KeyA');await options.keyboard.up('Control');await options.keyboard.press('Backspace');
