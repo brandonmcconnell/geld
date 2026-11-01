@@ -27,6 +27,7 @@ services:
       CRON_SECRET: ${CRON_SECRET:?Set a private worker secret}
       RELAY_BROKER_URL: http://relay-broker:8080
       RELAY_ALLOW_HTTP: "true"
+      RELAY_PUBLIC_BROKER_URL: ${RELAY_PUBLIC_BROKER_URL:-}
     depends_on:
       database:
         condition: service_healthy
@@ -50,6 +51,11 @@ services:
     profiles: [relay]
     environment:
       RELAY_CHANNELS: ${RELAY_CHANNELS:-[]}
+      RELAY_DATABASE_URL: postgresql://geld:${POSTGRES_PASSWORD}@database:5432/geld
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+    depends_on:
+      database:
+        condition: service_healthy
     read_only: true
     tmpfs: [/tmp]
   worker:
