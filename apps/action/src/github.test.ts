@@ -173,6 +173,8 @@ describe('loadPullRequest', () => {
                         { __typename: 'StatusContext', context: 'codecov/patch', state: 'PENDING', createdAt: '2026-10-18T10:43:31Z' },
                         { __typename: 'StatusContext', context: 'Devin Review', state: 'SUCCESS', createdAt: '2026-10-18T10:44:32Z' },
                         { __typename: 'StatusContext', context: 'legacy/status', state: 'FAILURE', createdAt: null },
+                        { __typename: 'CheckRun', name: 'CodeRabbit', status: 'COMPLETED', conclusion: 'NEUTRAL', title: 'Review rate limited' },
+                        { __typename: 'StatusContext', context: 'ci/deploy', state: 'SUCCESS', createdAt: null, description: 'Deployment skipped' },
                       ],
                     },
                   },
@@ -200,11 +202,14 @@ describe('loadPullRequest', () => {
       );
     };
     const pr = await loadPullRequest({ token: 't', fetch: fetchImpl }, 'acme', 'widgets', 7);
-    expect(pr.checks.map((check) => check.name)).toEqual(['build', 'Cursor Bugbot', 'codecov/patch', 'Devin Review', 'legacy/status']);
+    expect(pr.checks.map((check) => check.name)).toEqual(['build', 'Cursor Bugbot', 'codecov/patch', 'Devin Review', 'legacy/status', 'CodeRabbit', 'ci/deploy']);
     // A commit status is set in one moment: pending, that moment is the run's start; done, its finish. A status
     // with no `createdAt` carries neither.
     expect(pr.checks[2]).toEqual({ name: 'codecov/patch', status: 'in_progress', conclusion: null, sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', startedAt: '2026-10-18T10:43:31Z' });
     expect(pr.checks[3]).toEqual({ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', completedAt: '2026-10-18T10:44:32Z' });
     expect(pr.checks[4]).toEqual({ name: 'legacy/status', status: 'completed', conclusion: 'failure', sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+    // The check's own words, so the Action reads a run the bot did not make ("Review rate limited") as the page does.
+    expect(pr.checks[5]).toEqual({ name: 'CodeRabbit', status: 'completed', conclusion: 'neutral', sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', description: 'Review rate limited' });
+    expect(pr.checks[6]).toMatchObject({ name: 'ci/deploy', description: 'Deployment skipped' });
   });
 });

@@ -19559,7 +19559,12 @@ function refusalReason(body) {
   }
   const text = blocks.filter((block) => block !== "").map((block) => /[.!?;,]$/.test(block) ? block : `${block.replace(/:$/, "")}.`).join(" ").trim();
   if (text === "") return null;
-  const heading = untagged.split("\n").map((line) => line.replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim()).find((line) => line !== "");
+  const lines2 = untagged.split("\n").map((line) => line.replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim()).filter((line) => line !== "");
+  const inAlert = /^(?:\[!(?:note|tip|important|warning|caution)\]|note|tip|important|warning|caution)$/i.test(lines2[0] ?? "");
+  const heading = inAlert ? lines2[1] : lines2[0];
+  if (/^(?:\[!warning\]|warning)$/i.test(lines2[0] ?? "") && heading !== void 0 && /^review limits? (?:(?:has|have|was|were) been )?reached[.!]?$/i.test(heading)) {
+    return heading.replace(/[.!]$/, "");
+  }
   if (heading !== void 0 && /^[A-Z][\w.-]*(?:\[bot\])?\s+(?:skipped reviewing\b|encountered an error\b)/.test(heading)) {
     const lower = heading.toLowerCase();
     if (REVIEW_BOTS.some((bot) => lower.startsWith(bot.title.toLowerCase()) || bot.logins.some((login) => lower.startsWith(login.replace(/\[bot\]$/, "").toLowerCase())))) {
@@ -19839,25 +19844,35 @@ function isStatusLineComment(body) {
 }
 var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
 var RERUN_EDIT_GAP_MS = 5 * 60 * 1e3;
+function checkRefusal(check2) {
+  if (check2.status !== "completed") return null;
+  if (check2.conclusion === "skipped") return "Check skipped";
+  if (check2.conclusion !== "neutral" && check2.conclusion !== "success") return null;
+  const words = (check2.description ?? "").replace(/^.*?\s[\u2014\u2013-]\s+/, "").trim();
+  if (words === "") return null;
+  if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, "");
+  return refusalReason(words);
+}
 function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now(), options = {}) {
   const byId = /* @__PURE__ */ new Map();
   const checkVerdict = /* @__PURE__ */ new Map();
   const checkStartedAt = /* @__PURE__ */ new Map();
   const checkFinishedAt = /* @__PURE__ */ new Map();
   const postedThreads = /* @__PURE__ */ new Set();
-  const checkSkipped = /* @__PURE__ */ new Set();
-  const shaOver = (existing) => checkSkipped.has(existing.id) && existing.verdict === "failed" && existing.reason === "Check skipped" ? UNKNOWN_SHA : existing.reviewedSha;
+  const checkSkipped = /* @__PURE__ */ new Map();
+  const shaOver = (existing) => existing.verdict === "failed" && existing.reason !== void 0 && checkSkipped.get(existing.id) === existing.reason ? UNKNOWN_SHA : existing.reviewedSha;
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check2.status !== "completed";
     const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale";
-    const skipped = check2.conclusion === "skipped";
+    const refused = running ? null : checkRefusal(check2);
+    const skipped = refused !== null;
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
     const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
     checkVerdict.set(bot.id, verdict);
-    if (skipped) checkSkipped.add(bot.id);
+    if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
     const started = check2.startedAt === void 0 ? NaN : Date.parse(check2.startedAt);
     if (Number.isNaN(started)) checkStartedAt.delete(bot.id);
@@ -19871,7 +19886,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       verdict,
       reviewedSha: check2.sha || headSha,
       checkName: check2.name,
-      ...skipped ? { reason: "Check skipped" } : {}
+      ...refused === null ? {} : { reason: refused }
     };
     byId.set(bot.id, record3);
   }
@@ -20040,6 +20055,16 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         continue;
       }
     }
+    const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : void 0;
+    if (existing !== void 0 && skippedThisRun !== void 0) {
+      const prior = runsBeforeAsk.get(id);
+      if (prior !== void 0 && !threadRuns.has(id)) threadRuns.set(id, prior);
+      const reviewed = threadRuns.has(id) || existing.sourceId !== void 0 && (existing.verdict === "clean" || existing.verdict === "findings");
+      if (!reviewed && !(existing.verdict === "failed" && existing.reason !== void 0)) {
+        byId.set(id, { id, login, verdict: "failed", reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName }, sourceId: anchor2, reason: skippedThisRun });
+      }
+      continue;
+    }
     if (existing === void 0) {
       const silence = options.partial === true ? "loading" : options.closed !== true && !own2 && acknowledged ? "failed" : "unknown";
       byId.set(id, { id, login, verdict: stale ? silence : "running", reviewedSha: headSha, sourceId: anchor2 });
@@ -20102,7 +20127,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
       continue;
     }
-    if (check2.conclusion === "skipped") {
+    if (checkRefusal(check2) !== null) {
       const pending = statusOnly.get(bot.id);
       const askedAt = pending === void 0 ? void 0 : pending.askedAt ?? pending.at;
       const thisRun = askedAt === void 0 || askedAt === null || started >= askedAt;
@@ -21822,8 +21847,8 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion startedAt completedAt }
-                  ... on StatusContext { context state createdAt }
+                  ... on CheckRun { name status conclusion startedAt completedAt title }
+                  ... on StatusContext { context state createdAt description }
                 }
               }
             }
@@ -21873,8 +21898,8 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
             pageInfo { hasNextPage endCursor }
             nodes {
               __typename
-              ... on CheckRun { name status conclusion startedAt completedAt }
-              ... on StatusContext { context state createdAt }
+              ... on CheckRun { name status conclusion startedAt completedAt title }
+              ... on StatusContext { context state createdAt description }
             }
           }
         }
@@ -21909,7 +21934,8 @@ function checkRunOf(node2, sha2) {
       conclusion: node2.conclusion?.toLowerCase() ?? null,
       sha: sha2,
       ...typeof node2.startedAt === "string" ? { startedAt: node2.startedAt } : {},
-      ...typeof node2.completedAt === "string" ? { completedAt: node2.completedAt } : {}
+      ...typeof node2.completedAt === "string" ? { completedAt: node2.completedAt } : {},
+      ...typeof node2.title === "string" && node2.title !== "" ? { description: node2.title } : {}
     };
   }
   if (node2.__typename === "StatusContext" && node2.context !== void 0 && node2.state !== void 0) {
@@ -21917,7 +21943,8 @@ function checkRunOf(node2, sha2) {
     const conclusion = state === "success" ? "success" : state === "pending" ? null : "failure";
     const at = typeof node2.createdAt === "string" ? node2.createdAt : void 0;
     const when = at === void 0 ? {} : state === "pending" ? { startedAt: at } : { completedAt: at };
-    return { name: node2.context, status: state === "pending" ? "in_progress" : "completed", conclusion, sha: sha2, ...when };
+    const description = typeof node2.description === "string" && node2.description !== "" ? { description: node2.description } : {};
+    return { name: node2.context, status: state === "pending" ? "in_progress" : "completed", conclusion, sha: sha2, ...when, ...description };
   }
   return null;
 }
