@@ -99,8 +99,13 @@ export function readBitbucketDiff(doc: Document): ProviderDiffView | null {
     if (root.hidden || root.closest('[hidden]:not([data-geld-ui])') !== null) filteredPaths.add(path);
   }
   if (entries.length === 0) return null;
-  const treeHost = native(doc.querySelectorAll<HTMLElement>('#file-tree'))[0] ?? null;
-  return { kind: 'bitbucket-cloud', container, entries, tree, treeHost, treeContainer: treeHost?.querySelector<HTMLElement>('ul[role="list"]') ?? null, filteredPaths, virtualized: false };
+  const treeRoot = native(doc.querySelectorAll<HTMLElement>('#file-tree'))[0] ?? null;
+  const treeContainer = native(treeRoot?.querySelectorAll<HTMLElement>('ul[role="list"]') ?? [])[0] ?? null;
+  const inner = treeContainer?.parentElement;
+  const ownsStats = inner !== null && inner !== undefined && native(inner.querySelectorAll('h5')).some((heading) => heading.textContent?.trim() === 'Lines updated' && heading.closest('ul') === null);
+  const ownsToolbar = inner !== null && inner !== undefined && native(inner.querySelectorAll('button')).some((button) => ['Filter files', 'Search changes'].includes(button.textContent?.trim() ?? '') && button.closest('ul') === null);
+  const treeHost = inner?.parentElement === treeRoot && ownsStats && ownsToolbar ? inner : treeRoot;
+  return { kind: 'bitbucket-cloud', container, entries, tree, treeHost: treeHost ?? null, treeContainer, filteredPaths, virtualized: false };
 }
 
 export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTarget[] {
@@ -113,6 +118,14 @@ export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTa
   if (stats !== null && stats !== undefined) {
     const { additions, deletions } = signedLeaves(stats);
     if (additions !== null || deletions !== null) targets.push({ files: null, additions, deletions, keyboardHoverHosts: [stats], accessibleSummaryHost: stats });
+  }
+  if (doc.querySelector('h1[data-qa="page-header"]') !== null && doc.querySelector('button[data-testid="commit-more-button--trigger"]') !== null) {
+    for (const files of native(doc.querySelectorAll<HTMLElement>('[role="region"][aria-label="Diff"] > div > div > h2'))) {
+      if (/^[\d,]+ files?$/.test(files.textContent?.trim() ?? '')) targets.push({ files, additions: null, deletions: null, keyboardHoverHosts: [files] });
+    }
+    const fileTab = native(doc.querySelectorAll<HTMLElement>('[data-testid="sidebar-tab-files"][role="tab"]'))[0];
+    const badge = fileTab?.querySelector<HTMLElement>(':scope > span > div > span > span');
+    if (badge !== undefined && badge !== null && count(badge.textContent) !== null) targets.push({ files: badge, additions: null, deletions: null, hoverHosts: fileTab === undefined ? [] : [fileTab] });
   }
   return targets;
 }

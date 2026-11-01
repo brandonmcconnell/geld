@@ -60,6 +60,26 @@ it('prepares lazy reveal through viewport hydration without claiming native expa
   expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
 });
 
+it('mounts the accordion beside the native toolbar and statistics inside the actual nested tree wrapper', () => {
+  // Reduced from anonymous PR27's full-height native file tree in the installed Chrome capture.
+  const tree = required(document.querySelector<HTMLElement>('#file-tree'));
+  tree.innerHTML = '<div><div><button type="button"><span>Filter files</span></button><button type="button"><span>Search changes</span></button></div><div><div><span><h5>Lines updated</h5></span><div><span aria-hidden="true"><span>+46</span></span><span aria-hidden="true"><span>-29</span></span></div></div></div><ul role="list"><li><a href="#chg-bitbucket-pipelines.yml"><span>bitbucket-pipelines.yml</span></a></li></ul></div>';
+  const view = required(readBitbucketDiff(document));
+  const list = required(tree.querySelector<HTMLElement>('ul[role="list"]'));
+  const toolbar = required(tree.querySelector('button'));
+  expect(view.treeHost).toBe(tree.firstElementChild);
+  expect(view.treeHost).not.toBe(tree);
+  expect(view.treeContainer).toBe(list);
+  expect(view.treeContainer?.parentElement).toBe(view.treeHost);
+  const owned = document.createElement('nav');
+  owned.setAttribute('data-geld-ui', '');
+  view.treeHost?.append(owned);
+  expect(owned.parentElement).toBe(list.parentElement);
+  expect(tree.querySelector('button')).toBe(toolbar);
+  expect(bitbucketHeaderTargets(document)[1]?.additions?.textContent).toBe('+46');
+  expect(bitbucketHeaderTargets(document)[1]?.deletions?.textContent).toBe('-29');
+});
+
 it('uses native collapse and viewed controls without moving or replacing native nodes', () => {
   const view = required(readBitbucketDiff(document));
   const file = required(view.entries[0]);
@@ -148,4 +168,21 @@ it('leaves unsupported shells and unrelated file regions untouched', () => {
   expect(bitbucketReviewHost(document)).toBeNull();
   expect(bitbucketActionHost(document)).toBeNull();
   expect(bitbucketDescriptionHost(document)).toBeNull();
+});
+
+it('reads the actual standalone commit diff and both native file-count surfaces', () => {
+  // Reduced from anonymous commit 9777bca47119 in the installed Chrome capture.
+  document.body.innerHTML = '<h1 data-qa="page-header">9777bca</h1><button data-testid="commit-more-button--trigger">more</button><div role="region" aria-label="Diff"><div></div><div><div><h2>1 file</h2></div><div></div></div><div><div id="chg-pipe/pipe.py"></div><div><article data-qa="branch-diff-file"><div data-qa="bk-file__header" data-testid="file-header"><span aria-label="Expand/collapse file"></span><h2 data-qa="bk-filepath">pipe/pipe.py</h2></div><div aria-hidden="false"><div data-qa="bk-file__content" data-testid="file-content"><div data-qa="code-line"><div data-key="code-line-number" data-new-line-number="18"></div><span data-line-type="+"># These are the variables that are used in the pipe code.</span></div><div data-qa="code-line"><div data-key="code-line-number" data-new-line-number="19"></div><span data-line-type="+"># The variables are listed in README.md.</span></div></div></div></article></div></div><div data-qa="diff-end-of-list"></div></div><div data-testid="sidebar-tab-files" role="tab"><span><div><span>Files</span><span><span>1</span></span></div></span></div>';
+  const view = required(readBitbucketDiff(document));
+  expect(view.entries.map((file) => file.path)).toEqual(['pipe/pipe.py']);
+  expect(view.entries[0]?.readLines?.().filter((line) => line.kind === 'added')).toHaveLength(2);
+  const targets = bitbucketHeaderTargets(document);
+  expect(targets.map((target) => target.files?.textContent)).toEqual(['1 file', '1']);
+  expect(targets[0]?.keyboardHoverHosts).toEqual([targets[0]?.files]);
+  expect(targets[1]?.hoverHosts).toEqual([document.querySelector('[data-testid="sidebar-tab-files"]')]);
+  const counts = new ProviderCounts();
+  for (const target of targets) counts.write(target.files, 0);
+  expect(targets.map((target) => target.files?.textContent)).toEqual(['0 files', '0']);
+  counts.restore();
+  expect(targets.map((target) => target.files?.textContent)).toEqual(['1 file', '1']);
 });

@@ -63,9 +63,42 @@ function retryAfter(value) {
 }
 async function saveReport() {
   report.finishedAt = new Date().toISOString();
+  report.cooldowns = Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()]));
   const failed = report.infrastructureErrors.length > 0 || report.cases.some((item) => item.status === 'failed');
   report.status = failed ? 'failed' : 'completed_with_unsupported_features';
   await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
+}
+async function inheritCooldowns() {
+  const path = process.env.GELD_BROWSER_PREVIOUS_REPORT;
+  if (path === undefined || path === '') return;
+  let raw;
+  try { raw = await readFile(path, 'utf8'); }
+  catch (error) {
+    if (error?.code === 'ENOENT') { report.previousEvidence = { path, status: 'absent_first_run' }; return; }
+    throw error;
+  }
+  const previous = JSON.parse(raw);
+  assert.ok(previous?.schema === 1 && Array.isArray(previous.cases), 'Previous trusted browser report has an invalid schema');
+  const inherit = (provider, value) => {
+    assert.ok(['github', 'gitlab', 'bitbucket'].includes(provider), 'Previous cooldown has an unknown provider');
+    assert.equal(typeof value, 'string', 'Previous cooldown deadline must be an ISO timestamp');
+    const until = Date.parse(value);
+    assert.ok(Number.isFinite(until) && new Date(until).toISOString() === value, 'Previous cooldown deadline is malformed');
+    // Reject implausible metadata without shortening a server deadline or navigating around it.
+    assert.ok(until <= Date.now() + 366 * 24 * 60 * 60 * 1000, 'Previous cooldown exceeds one year; verification must stop for investigation');
+    if (until > Date.now()) cooldowns.set(provider, Math.max(cooldowns.get(provider) ?? 0, until));
+  };
+  if (previous.cooldowns !== undefined) {
+    assert.ok(previous.cooldowns !== null && typeof previous.cooldowns === 'object' && !Array.isArray(previous.cooldowns), 'Previous cooldown map is malformed');
+    for (const [provider, until] of Object.entries(previous.cooldowns)) inherit(provider, until);
+  }
+  for (const item of previous.cases) if (item.rateLimitedUntil !== undefined) inherit(providerOf(item.url), item.rateLimitedUntil);
+  report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
+}
+function closedTarget(error) { return /Target closed|Target\.closeTarget|Session closed|Connection closed|targetgone|No target with given id/i.test(errorText(error)); }
+async function discardHandle(handle) {
+  try { await handle.dispose(); }
+  catch (error) { if (!closedTarget(error)) throw error; }
 }
 async function pause(ms) { await new Promise((done) => setTimeout(done, ms)); }
 async function poll(read, accepts, label, ms = WAIT_MS) {
@@ -187,7 +220,10 @@ async function runCase(name, url, body, discovery = false) {
     }
   } finally {
     item.finishedAt = new Date().toISOString();
-    if (page !== undefined && !page.isClosed()) await page.close();
+    if (page !== undefined && !page.isClosed()) {
+      try { await page.close(); }
+      catch (error) { if (!closedTarget(error)) throw error; }
+    }
     await saveReport();
     console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
   }
@@ -569,7 +605,7 @@ async function nativeLinkHover(page, kind, artifactName) {
     return { status: 'unavailable', trigger, reason: errorText(error), artifacts: page.isClosed() ? null : await capture(page, `${artifactName}-unavailable`) };
   } finally {
     if (!page.isClosed()) { await page.keyboard.press('Escape'); await page.mouse.move(1, 1); }
-    for (const handle of handles) await handle.dispose();
+    for (const handle of handles) await discardHandle(handle);
   }
 }
 
@@ -649,6 +685,7 @@ async function gitLabListCounts(page, name) {
 
 await mkdir(artifacts, { recursive: true });
 try {
+  await inheritCooldowns();
   const manifestText = await readFile(resolve(extensionPath, 'manifest.json'), 'utf8');
   const manifest = JSON.parse(manifestText);
   try { report.gitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: extensionRoot, encoding: 'utf8' }).trim(); } catch { report.gitHead = null; }
