@@ -78,3 +78,13 @@ html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-r
 html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button):disabled::after {
   border-color: var(--geld-provider-button-disabled-border);
 }
+
+/* Embedded Pipelines shell: native ADS code tokens, no font/DOM overrides. */
+::highlight(geld-bitbucket-shell-plain), ::highlight(geld-bitbucket-shell-subst) { color: var(--ds-text-code-default); }
+::highlight(geld-bitbucket-shell-keyword) { color: var(--ds-text-code-keywords); }
+::highlight(geld-bitbucket-shell-built_in), ::highlight(geld-bitbucket-shell-title) { color: var(--ds-text-code-functions); }
+::highlight(geld-bitbucket-shell-number), ::highlight(geld-bitbucket-shell-literal) { color: var(--ds-text-code-numbers); }
+::highlight(geld-bitbucket-shell-string) { color: var(--ds-text-code-strings); }
+::highlight(geld-bitbucket-shell-comment), ::highlight(geld-bitbucket-shell-meta) { color: var(--ds-text-code-comments); }
+::highlight(geld-bitbucket-shell-variable) { color: var(--ds-text-code-accent-1); }
+::highlight(geld-bitbucket-shell-attr) { color: var(--ds-text-code-tags); }

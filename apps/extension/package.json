@@ -46,6 +46,7 @@
     "@geld/github": "workspace:*",
     "@geld/review": "workspace:*",
     "highlight.js": "^11.12.0",
-    "hyperellipse": "^1.0.5"
+    "hyperellipse": "^1.0.5",
+    "yaml": "^2.9.0"
   }
 }
