@@ -25,7 +25,9 @@
     "docs:lines:check": "tsx scripts/doc-lines.ts --check",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
-    "lint": "pnpm -r run lint"
+    "lint": "pnpm -r run lint",
+    "dev:dashboard": "pnpm --filter @geld/dashboard dev",
+    "build:dashboard": "pnpm --filter @geld/dashboard build"
   },
   "devDependencies": {
     "@geld/core": "workspace:*",

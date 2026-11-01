@@ -29,7 +29,6 @@ export default function HomePage() {
             exclude them, and nothing is ever deleted from the page.
           </p>
           <InstallButtons className="mt-8" size="lg" />
-          <p className="mt-6 text-sm text-muted-foreground">Free and open source. No account, no data collection, no GitHub API calls.</p>
         </div>
       </section>
 
