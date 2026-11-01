@@ -12,7 +12,7 @@ import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-li
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
-import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture } from './bitbucket-commit-oracle.mjs';
+import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -2232,17 +2232,18 @@ async function bitbucketParentCommitHover(page, oracle) {
   let keyboard;
   let observed;
   let native;
+  let preparation;
   try {
-    if (!initial.links[0].visible) await page.click('[data-testid="sidebar-tab-details"][role="tab"]');
-    native = await poll(() => page.evaluate(bitbucketParentCommitSnapshot), (value) => value?.links.length === 1 && value.links[0].visible, 'Actual visible native parent link after its existing Details tab opens', 5000);
+    preparation = await prepareBitbucketParentCommit(page, initial, poll);
+    native = preparation.native;
     assert.equal(native.links[0].href, initial.links[0].href, 'Native parent identity changed during discovery');
     const selector = `[data-testid="expanded-CommitCard"] a[href="${native.links[0].raw}"]`;
-    pointer = await installedHover(page, selector, 'pointer', 'bitbucket-parent-commit-pointer', undefined, true);
+    pointer = await installedHover(page, selector, 'pointer', 'bitbucket-parent-commit-pointer', undefined, { verifyUnobscured: true });
     observed = await poll(() => oracle.snapshot(native.links[0].sha), (value) => value.status === 'ready', 'Already-issued metadata and complete diffstat for the hovered native parent', 3000);
-    keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-parent-commit-keyboard', undefined, true);
+    keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-parent-commit-keyboard', undefined, { verifyUnobscured: true });
   } catch (error) {
     if (page.isClosed() || currentCaseAbort?.signal.aborted || (cooldowns.get('bitbucket') ?? 0) > Date.now()) throw error;
-    return { status: 'unverified', reason: errorText(error), native: native ?? initial, pointer, oracle: oracle.snapshot(initial.links[0].sha), remaining };
+    return { status: 'unverified', reason: errorText(error), native: native ?? initial, preparation, pointer, oracle: oracle.snapshot(initial.links[0].sha), remaining };
   }
   assert.deepEqual(commitHoverTotal(pointer.rows), observed.totals, 'Parent hover does not describe its own observed immutable diffstat');
   assert.deepEqual(commitHoverTotal(keyboard.rows), observed.totals);
@@ -2250,7 +2251,7 @@ async function bitbucketParentCommitHover(page, oracle) {
   const after = await page.evaluate(bitbucketParentCommitSnapshot);
   assert.equal(after?.links[0]?.href, native.links[0].href);
   assert.equal(after?.links[0]?.text, native.links[0].text);
-  return { status: 'passed', native, pointer, keyboard, oracle: observed, remainingBeforeDiscovery: remaining, basis: 'A genuine native parent link, real pointer and Tab input, and its own already-issued full metadata/diffstat responses. No parent count is assumed.' };
+  return { status: 'passed', native, preparation, pointer, keyboard, oracle: observed, remainingBeforeDiscovery: remaining, basis: 'A genuine native parent link, real pointer and Tab input, and its own already-issued full metadata/diffstat responses. No parent count is assumed.' };
 }
 
 async function bitbucketCommitCounts(page) {
