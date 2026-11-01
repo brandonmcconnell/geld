@@ -24,7 +24,7 @@
     "docs:lines": "tsx scripts/doc-lines.ts",
     "docs:lines:check": "tsx scripts/doc-lines.ts --check",
     "test": "pnpm -r run test && pnpm test:scripts",
-    "test:scripts": "node --test scripts/cla.test.mjs scripts/browser-e2e-selection.test.mjs apps/extension/scripts/comment-body-branding.test.mjs apps/extension/scripts/reference-index.test.mjs apps/extension/scripts/native-list-row.test.mjs apps/extension/scripts/bitbucket-cold-chip.test.mjs apps/extension/scripts/bitbucket-shell-acceptance.test.mjs",
+    "test:scripts": "node --test scripts/cla.test.mjs scripts/browser-e2e-selection.test.mjs apps/extension/scripts/comment-body-branding.test.mjs apps/extension/scripts/reference-index.test.mjs apps/extension/scripts/native-list-row.test.mjs apps/extension/scripts/bitbucket-cold-chip.test.mjs apps/extension/scripts/bitbucket-shell-acceptance.test.mjs apps/extension/scripts/bitbucket-commit-oracle.test.mjs",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint"
   },

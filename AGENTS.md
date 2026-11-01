@@ -1650,6 +1650,8 @@ A merged pull request with outside authors is locked once all of them have signe
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.
 The harness requires the installed service worker, real extension storage and tab messaging, and records browser/manifest identity with screenshots, DOM and a JSON report.
+Standalone Bitbucket commit counts use already-issued exact-revision metadata and complete diffstat responses as their independent oracle, retaining only Cache-Control, ETag, Age, Date and Vary response headers.
+An optional parent-link hover requires the real native Details and parent-commit structure, its own complete count oracle and a conservative request reserve, with missing proof reported unverified rather than a pass.
 An inactive provider adapter is an explicit unsupported result rather than a provider-parity pass, and an inaccessible live page must not be substituted with an injected controller or fixture.
 Managed browser installation policies remain in force, so run these tests in an environment configured to permit extension development instead of altering its policies.
 
