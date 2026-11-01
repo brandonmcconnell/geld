@@ -34,7 +34,8 @@ const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
 const GL_LIST_QUERY = new URLSearchParams({ state: 'all', search: 'issueMoveList' });
 const GL_PROJECT_LIST = `https://gitlab.com/gitlab-org/gitlab/-/merge_requests?${GL_LIST_QUERY}`;
-const GL_GROUP_LIST = `https://gitlab.com/groups/gitlab-org/-/merge_requests?${GL_LIST_QUERY}`;
+// The native Open tab uses STATUS_OPEN='opened'; the all-state group search times out upstream.
+const GL_GROUP_LIST = `https://gitlab.com/groups/gitlab-org/-/merge_requests?${new URLSearchParams({ state: 'opened', search: 'issueMoveList' })}`;
 const BB_PR_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/?state=MERGED';
 const BB_COMMENT_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22';
 const BB_COMMIT = 'https://bitbucket.org/atlassian/bitbucket-upload-file/commits/9777bca47119';
@@ -170,7 +171,7 @@ async function poll(read, accepts, label, ms = WAIT_MS) {
   while (Date.now() < expires) {
     signal?.throwIfAborted();
     try { last = await caseOperation(Promise.resolve().then(read), signal); if (accepts(last)) return last; }
-    catch (error) { signal?.throwIfAborted();if (closedTarget(error)) throw error;lastError = errorText(error); }
+    catch (error) { signal?.throwIfAborted();if (closedTarget(error) || errorText(error).includes('Native GitLab list unavailable:')) throw error;lastError = errorText(error); }
     await pause(1000, signal);
   }
   throw new Error(`${label} timed out. Last value: ${JSON.stringify(last)}${lastError === undefined ? '' : `; ${lastError}`}`);
@@ -855,7 +856,11 @@ async function gitLabListCounts(page, name) {
   const read = () => page.evaluate(() => {
     const title = [...document.querySelectorAll('a[data-testid="issuable-title-link"][href]')].find((link) => new URL(link.href).pathname.replace(/\/$/, '') === '/gitlab-org/gitlab/-/merge_requests/266334');
     const row = title?.closest('li.merge-request[data-testid="issuable-container"], li.merge-request[data-testid="issuable-item-wrapper"]');
-    if (row == null) return null;
+    if (row == null) {
+      const emptyState = document.querySelector('[data-testid="issuable-empty-state"]');
+      if (emptyState?.textContent.includes('Too many results to display')) throw new Error('Native GitLab list unavailable: Too many results to display. Required MR266334 row/counts remain unverified.');
+      return null;
+    }
     const chip = row.querySelector('.geld-provider-list-counts');
     return { id: row.id, author: row.querySelector('[data-testid="issuable-author"]')?.getAttribute('data-username'), hidden: row.hidden, authorHidden: row.hasAttribute('data-geld-provider-author-hidden'), display: getComputedStyle(row).display,
       chip: chip === null ? null : { text: chip.textContent.replace(/\s+/g, ' ').trim(), title: chip.getAttribute('title'), tabindex: chip.getAttribute('tabindex') },
