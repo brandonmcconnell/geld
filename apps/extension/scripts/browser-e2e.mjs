@@ -194,6 +194,17 @@ async function poll(read, accepts, label, ms = WAIT_MS) {
   }
   throw new Error(`${label} timed out. Last value: ${JSON.stringify(last)}${lastError === undefined ? '' : `; ${lastError}`}`);
 }
+async function pollStable(read, accepts, label, ms = WAIT_MS, signature = () => null) {
+  let since = null; let previous; let samples = 0;
+  const result = await poll(async () => {
+    const value = await read(); const key = signature(value); const valid = accepts(value);
+    if (!valid || key !== previous) { since = null; samples = 0; }
+    previous = key;
+    if (valid) { since ??= Date.now(); samples += 1; }
+    return { value, valid, samples, stableMs: since === null ? 0 : Date.now() - since };
+  }, (sample) => sample.valid && sample.samples >= 2 && sample.stableMs >= 200, label, ms);
+  return { ...result.value, stability: { samples: result.samples, stableMs: result.stableMs, minimumMs: 200 } };
+}
 async function patchSettings(patch) {
   return options.evaluate(async (key, changes) => {
     const previous = (await chrome.storage.sync.get(key))[key] ?? {};
@@ -757,7 +768,7 @@ async function categoryInteraction(page, path, provider, name, reveal) {
       focusedHeader: document.activeElement?.classList.contains('geld-provider-category-header') ? document.activeElement.textContent : null,
       clone: copy == null ? null : { ariaLabel: copiedControl?.getAttribute('aria-label'), hasNativePresentation: !copy.classList.contains('geld-provider-file'), style: styles(copiedControl), marks: marks(copy) },
       source: source === undefined ? null : { style: styles(source), marks: marks(nativeRow) },
-      root: root == null ? null : { display: getComputedStyle(root).display, hiddenMode: root.getAttribute('data-geld-provider-hidden'), rendered: root.querySelector('article[data-qa="branch-diff-file"]') !== null,
+      root: root == null ? null : { id: root.id, data: root.getAttribute('data-file-data'), display: getComputedStyle(root).display, hiddenMode: root.getAttribute('data-geld-provider-hidden'), rendered: root.querySelector('article[data-qa="branch-diff-file"]') !== null,
         expanded: content != null && content.closest('[aria-hidden="true"]') === null && getComputedStyle(content).display !== 'none', codeLines: root.querySelectorAll('[data-qa="code-line"]').length } };
   }, path, provider);
   const initial = await poll(read, (value) => value.headers.length >= 2 && /^Essential/.test(value.headers[0].text) && value.headers[0].expanded === 'true' && value.headers.at(-1).expanded === 'false' && value.root?.display === 'none', 'Essential starts expanded and Tests starts collapsed');
@@ -766,7 +777,8 @@ async function categoryInteraction(page, path, provider, name, reveal) {
   const endFocused = await read();
   assert.match(endFocused.focusedHeader ?? '', /^Tests/, 'Real End key did not focus the Tests category');
   await page.keyboard.press('Enter');
-  const opened = await poll(read, (value) => value.headers.filter((header) => header.expanded === 'true').length === 1 && value.headers.at(-1).expanded === 'true' && value.root !== null && value.root.display !== 'none' && value.clone !== null, 'Real Enter opens only Tests and shows its native file wrapper');
+  const testsOpen = (value) => value.headers.length >= 2 && value.headers.filter((header) => header.expanded === 'true').length === 1 && value.headers[0].expanded === 'false' && value.headers.at(-1).expanded === 'true' && value.root !== null && value.root.display !== 'none' && value.clone !== null;
+  const opened = await pollStable(read, testsOpen, 'Real Enter keeps only Tests open across multiple controller refresh cycles');
   assert.ok(opened.clone.ariaLabel?.includes(path), 'Cloned category file lost its full-path accessible label');
   assert.equal(opened.clone.hasNativePresentation, true, 'Category row fell back instead of cloning an available native presentation');
   const { firstFile, panel, content, viewport } = opened.layout;
@@ -782,6 +794,10 @@ async function categoryInteraction(page, path, provider, name, reveal) {
   }
   assert.ok(opened.clone.marks.length >= opened.source.marks.length, 'Cloned native row lost status or annotation visuals');
   const result = { path, interaction: 'Real Puppeteer End then Enter keyboard events', initial, endFocused, opened, openedArtifacts: await capture(page, `${name}-open`) };
+  result.openedAfterCapture = await read();
+  assert.ok(testsOpen(result.openedAfterCapture), 'Tests category/body choice changed during actual screenshot/DOM capture');
+  assert.equal(result.openedAfterCapture.root.id, opened.root.id, 'Category capture replaced the native file identity');
+  assert.equal(result.openedAfterCapture.root.data, opened.root.data, 'Category capture changed the native file source');
   if (reveal) {
     result.beforeReveal = await read();
     const controlHandle = await page.evaluateHandle((path) => {
@@ -802,6 +818,10 @@ async function categoryInteraction(page, path, provider, name, reveal) {
   await page.keyboard.press('Enter');
   result.closed = await poll(read, (value) => value.headers.filter((header) => header.expanded === 'true').length === 1 && value.headers[0].expanded === 'true' && value.root?.display === 'none', 'Returning to Essential hides the categorized native file again');
   result.closedArtifacts = await capture(page, `${name}-essential`);
+  result.closedAfterCapture = await read();
+  assert.equal(result.closedAfterCapture.headers[0]?.expanded, 'true', 'Essential choice changed during capture');
+  assert.equal(result.closedAfterCapture.headers.at(-1)?.expanded, 'false', 'Tests reopened during Essential capture');
+  assert.equal(result.closedAfterCapture.root?.display, 'none', 'Categorized native file became visible during Essential capture');
   return result;
 }
 
@@ -1013,11 +1033,35 @@ async function gitLabBinaryPresentation(page) {
     const badge = tab?.querySelector('.js-changes-tab-count');
     const actions = document.querySelector('.merge-request-tabs-container > .merge-request-tabs-actions');
     const root = [...document.querySelectorAll('diff-file[data-file-data]')].find((node) => native(node) && JSON.parse(node.getAttribute('data-file-data')).new_path === path);
+    const viewport = { left: 0, right: innerWidth, top: 0, bottom: innerHeight };
+    const clip = { ...viewport };
+    const scrollers = [];
+    for (let parent = root?.parentElement; parent !== null && parent !== undefined; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (!/^(auto|scroll|overlay)$/.test(style.overflowY || style.overflow) || parent.scrollHeight <= parent.clientHeight + 1) continue;
+      const rect = parent.getBoundingClientRect();
+      clip.left = Math.max(clip.left, rect.left); clip.right = Math.min(clip.right, rect.right);
+      clip.top = Math.max(clip.top, rect.top); clip.bottom = Math.min(clip.bottom, rect.bottom);
+      scrollers.push({ tag: parent.tagName, className: parent.className, bounds: bounds(parent), scrollTop: parent.scrollTop });
+    }
+    const painted = (node) => {
+      const rect = bounds(node);
+      if (rect === null) return { bounds: null, visibleBounds: null, painted: false };
+      const visibleBounds = { left: Math.max(clip.left, rect.left), right: Math.min(clip.right, rect.right), top: Math.max(clip.top, rect.top), bottom: Math.min(clip.bottom, rect.bottom) };
+      const positive = visibleBounds.right - visibleBounds.left > 1 && visibleBounds.bottom - visibleBounds.top > 1;
+      const hit = positive ? document.elementFromPoint((visibleBounds.left + visibleBounds.right) / 2, (visibleBounds.top + visibleBounds.bottom) / 2) : null;
+      const presentedNode = node.tagName === 'IMG' ? node.parentElement : node;
+      return { bounds: rect, visibleBounds, painted: positive && hit !== null && presentedNode?.contains(hit) === true };
+    };
     return { badge: badge?.textContent.trim(), badgeGid: badge?.getAttribute('data-gid'), tabId: tab?.id, href: tab?.querySelector('a')?.getAttribute('href'),
+      categories: [...document.querySelectorAll('.geld-provider-category-header')].map((button) => ({ text: button.textContent, expanded: button.getAttribute('aria-expanded') })),
+      viewport, clip, scrollers,
       stats: [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native).map((node) => ({ text: node.textContent.trim(), lineCounters: [...node.querySelectorAll('[data-testid="js-file-addition-line"], [data-testid="js-file-deletion-line"]')].map((count) => count.textContent.trim()), html: node.outerHTML.slice(0, 3000) })),
       actions: actions === null ? null : { native: native(actions), bounds: bounds(actions), html: actions.outerHTML.slice(0, 7000), children: [...actions.children].filter(native).map((node) => ({ id: node.id, testid: node.getAttribute('data-testid') })) },
       file: root === undefined ? null : { id: root.id, path: JSON.parse(root.getAttribute('data-file-data')).new_path, data: root.getAttribute('data-file-data'), display: getComputedStyle(root).display, hidden: root.getAttribute('data-geld-provider-hidden'),
-        images: [...root.querySelectorAll('img')].filter(native).map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt'), complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight })),
+        bounds: bounds(root), bodyOpen: root.querySelector('details[data-file-body]')?.open === true,
+        header: painted(root.querySelector('[data-testid="rd-diff-file-header"]')),
+        images: [...root.querySelectorAll('img')].filter(native).map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt'), complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, ...painted(image) })),
         text: root.textContent.replace(/\s+/g, ' ').trim().slice(-800) },
       nativeControls: [...document.querySelectorAll('.merge-request-tabs-container a[href], .merge-request-tabs-actions button')].filter(native).map((node) => ({ id: node.id, href: node.getAttribute('href'), testid: node.getAttribute('data-testid'), label: node.getAttribute('aria-label') })),
     };
@@ -1068,11 +1112,21 @@ async function gitLabBinaryCounts(page, item) {
     assert.ok(clone !== null, 'Actual binary file category control is unavailable');
     await clone.click();
     await discardHandle(handle);
-    item.revealed = await poll(() => gitLabBinaryPresentation(page), (value) => value.file?.display !== 'none' && value.file?.images.some((image) => image.src !== null), 'Actual category reveal retains native binary image presentation', 25_000);
+    const revealedVisible = (value) => value.categories.length === 2 && value.categories[0].expanded === 'false' && value.categories[1].expanded === 'true'
+      && value.badge === '10' && value.file?.hidden === 'open' && value.file.display !== 'none' && value.file.bodyOpen === true
+      && value.file.header.painted && value.file.images.some((image) => image.src !== null && image.complete && image.naturalWidth > 0 && image.painted);
+    const revealPosition = (value) => JSON.stringify([value.categories, value.file?.id, value.file?.header.bounds, value.file?.images.map((image) => image.visibleBounds)]);
+    item.revealed = await pollStable(() => gitLabBinaryPresentation(page), revealedVisible, 'Selected PNG header and loaded image stay visibly painted below native obstructions with Tests selected', 25_000, revealPosition);
     assert.equal(item.revealed.file.id, item.nativeBaseline.file.id);
     assert.equal(item.revealed.file.data, item.nativeBaseline.file.data, 'Native binary source identity changed on category reveal');
     for (const image of item.nativeBaseline.file.images) assert.ok(item.revealed.file.images.some((value) => value.src === image.src && value.alt === image.alt), 'Category reveal lost an already mounted native source image');
     item.revealedArtifacts = await capture(page, 'gitlab-binary-image-revealed');
+    item.revealedAfterCapture = await gitLabBinaryPresentation(page);
+    assert.ok(revealedVisible(item.revealedAfterCapture), 'Selected PNG header/image or Tests category is no longer visibly painted after capture');
+    assert.equal(item.revealedAfterCapture.file.id, item.nativeBaseline.file.id);
+    assert.equal(item.revealedAfterCapture.file.data, item.nativeBaseline.file.data);
+    assert.deepEqual(item.revealedAfterCapture.file.images.map(({ src, alt }) => ({ src, alt })), item.revealed.file.images.map(({ src, alt }) => ({ src, alt })), 'Capture changed native image source identities');
+    for (const key of ['left', 'right', 'top', 'bottom']) assert.ok(Math.abs(item.revealedAfterCapture.file.header.bounds[key] - item.revealed.file.header.bounds[key]) <= 2, `Selected PNG header moved during capture: ${key}`);
     await patchSettings({ enabled: false });
     await poll(() => tabState(page), (value) => value.hasDiff === false && value.allowed === false, 'Master disable releases binary-only source ownership');
     item.disabled = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.file?.hidden === null && value.file?.display !== 'none', 'Master disable restores actual binary Changes badge and source wrapper');
