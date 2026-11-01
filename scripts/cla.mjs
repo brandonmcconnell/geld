@@ -266,6 +266,23 @@ async function signatureOf(github, repo, defaultBranch, comment) {
   return sha === null ? null : signatureFrom(comment, sha);
 }
 
+/**
+ * Reacts 🚀 on each newly recorded signature's comment, so the signer sees it took. Before a merged pull request is
+ * locked, since a locked conversation refuses the reaction; and never failing the run, since the signature is
+ * already on record.
+ */
+async function acknowledge(github, repo, signatures) {
+  for (const signature of signatures) {
+    const id = /#issuecomment-(\d+)$/.exec(signature.comment ?? '')?.[1];
+    if (id === undefined) continue;
+    try {
+      await github.rest.reactions.createForIssueComment({ ...repo, comment_id: Number(id), content: 'rocket' });
+    } catch (error) {
+      console.warn(`Recorded @${signature.login}'s signature but could not react to its comment: ${error.message}`);
+    }
+  }
+}
+
 async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures }) {
   const { accounts, unlinked } = signersOf(await commitActors(github, repo, pull.number), pull.user);
   let { signatures } = await readSignatures(github, repo);
@@ -285,6 +302,7 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
   if (additions.length > 0) {
     await ensureSignaturesBranch(github, repo);
     ({ signatures, fresh } = await recordSignatures(github, repo, additions));
+    await acknowledge(github, repo, fresh);
   }
 
   // Runs for other pull requests and issues write this status too. Reading the record again after each write and
@@ -371,10 +389,8 @@ export async function run({ github, context, core }) {
   } else if (signature !== null) {
     await ensureSignaturesBranch(github, repo);
     ({ fresh } = await recordSignatures(github, repo, extraSignatures));
+    await acknowledge(github, repo, fresh);
   }
   await recheckWaiting({ github, repo, signers: fresh, skip: issue.pull_request ? issue.number : null, defaultBranch, agreementUrl });
-  if (signature !== null) {
-    await github.rest.reactions.createForIssueComment({ ...repo, comment_id: comment.id, content: 'rocket' });
-    core.info(`Recorded the CLA signature of @${commenter.login}`);
-  }
+  for (const recorded of fresh) core.info(`Recorded the CLA signature of @${recorded.login}`);
 }
