@@ -33,6 +33,6 @@ export function canSpend(input: { readonly tier: Tier; readonly seats: number; r
   const newOverage = Math.max(0, input.used + input.requested - included) - Math.max(0, input.used - included);
   const cost = newOverage * (plan.overageCents ?? 0);
   if (cost > 0 && !input.card) return { allowed: false, reason: 'card' };
-  if (input.spentCents + cost > input.capCents) return { allowed: false, reason: 'cap' };
+  if (cost > 0 && input.spentCents + cost > input.capCents) return { allowed: false, reason: 'cap' };
   return { allowed: true, overageCents: cost };
 }

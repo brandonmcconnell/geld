@@ -10,6 +10,7 @@ export function effectiveGuidePolicy(levels: readonly GuidePolicy[]): GuidePolic
   for (const policy of levels) {
     if (current.locked) break;
     if (policy.override) current = policy;
+    else if (policy.locked) current = { ...current, locked: true };
   }
   return current;
 }
