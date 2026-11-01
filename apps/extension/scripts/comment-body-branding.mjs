@@ -3,13 +3,13 @@ export function commentBodyPresentationProbe(provider, anchor) {
   const maxSamples = 24;
   const maxText = 20_000;
   const typography = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'color'];
-  const decoration = ['backgroundColor', 'borderRadius', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', ...['Top', 'Right', 'Bottom', 'Left'].flatMap((side) => [`border${side}Width`, `border${side}Style`, `border${side}Color`])];
+  const decoration = ['backgroundColor', 'boxShadow', 'borderRadius', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', ...['Top', 'Right', 'Bottom', 'Left'].flatMap((side) => [`border${side}Width`, `border${side}Style`, `border${side}Color`])];
   const categories = ['root', 'heading', 'paragraph', 'link', 'inline code', 'block code', 'preformatted', 'list', 'list item', 'table', 'table section', 'table row', 'table cell', 'table header label'];
   const selector = 'h1,h2,h3,h4,h5,h6,p,a,code,pre,ul,ol,li,table,thead,tbody,tfoot,tr,th,td,thead > tr > th[scope="col"][aria-sort][class~="gl-group/markdown-table-header"] > div > button[type="button"][id^="markdown-table-"][id$="-sort"] > span:not([aria-hidden]),span[data-geld-native-table-header-label]';
   const uncovered = [];
   const samples = [];
   const contentMismatches = [];
-  const result = { provider, anchor, evidenceKind: 'Presented DOM and computed styles, including offscreen nodes. No simultaneous viewport painting assertion.', samples, uncovered, contentMismatches, nativeRootPresent: false, ownedRootPresent: false, rootAligned: false, nativeNodes: 0, ownedNodes: 0, truncated: false };
+  const result = { provider, anchor, evidenceKind: 'Presented DOM and computed styles, including offscreen nodes. No simultaneous viewport painting assertion.', theme: { native: document.documentElement.getAttribute('data-theme'), colorMode: document.documentElement.getAttribute('data-color-mode'), darkPreference: typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)').matches : null }, samples, uncovered, contentMismatches, nativeRootPresent: false, ownedRootPresent: false, rootAligned: false, nativeNodes: 0, ownedNodes: 0, truncated: false };
   const unavailable = (reason) => { uncovered.push(`comment body: ${reason}`);return result; };
   if (!(provider === 'gitlab' ? /^note_[1-9]\d*$/.test(anchor) : provider === 'bitbucket' && /^comment-[1-9]\d*$/.test(anchor))) return unavailable('unsupported source identity');
   const originals = [...document.querySelectorAll(`[id="${anchor}"]`)].filter((node) => node.closest('[data-geld-ui]') === null);
@@ -38,6 +38,10 @@ export function commentBodyPresentationProbe(provider, anchor) {
   const visible = (node) => {
     if (node === null || node.closest('[hidden],[inert],[aria-hidden="true"]') !== null) return false;
     for (let ancestor = node; ancestor !== null; ancestor = ancestor.parentElement) {
+      if (ancestor.localName === 'details' && !ancestor.hasAttribute('open')) {
+        const summary = [...ancestor.children].find((child) => child.localName === 'summary');
+        if (summary === undefined || !summary.contains(node)) return false;
+      }
       const style = styleOf(ancestor);
       if (style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility) || style.opacity !== '' && Number(style.opacity) === 0 || style.getPropertyValue('content-visibility') === 'hidden') return false;
     }
@@ -96,7 +100,7 @@ export function compareCommentBodyPresentation(value) {
     covered.push(pair.label);
     for (const key of typography) equal(`${pair.label}.${key}`, pair.owned.style[key], pair.native.style[key]);
     if (!pair.decoration) continue;
-    for (const key of ['backgroundColor', 'borderRadius', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) equal(`${pair.label}.${key}`, pair.owned.style[key], pair.native.style[key]);
+    for (const key of ['backgroundColor', 'boxShadow', 'borderRadius', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) equal(`${pair.label}.${key}`, pair.owned.style[key], pair.native.style[key]);
     for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
       for (const property of ['Width', 'Style']) equal(`${pair.label}.border${side}${property}`, pair.owned.style[`border${side}${property}`], pair.native.style[`border${side}${property}`]);
       if (pair.native.style[`border${side}Width`] !== '0px' && pair.native.style[`border${side}Style`] !== 'none') equal(`${pair.label}.border${side}Color`, pair.owned.style[`border${side}Color`], pair.native.style[`border${side}Color`]);

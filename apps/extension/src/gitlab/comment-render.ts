@@ -142,6 +142,9 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       const cloned = copy(child, depth + 1);
       if (cloned !== null) element.append(cloned);
     }
+    if (tag === 'th' && node.matches('.md [data-sticky-header] > table:not(.code) > thead:first-of-type > tr:first-child > th')
+      && source.contains(node.closest('[data-sticky-header]'))
+      && element.querySelector(':scope > div > span[data-geld-native-table-header-label]') !== null) element.dataset.geldNativeStickyHeaderCell = '';
     return element;
   };
   const rendered = copy(source, 0);

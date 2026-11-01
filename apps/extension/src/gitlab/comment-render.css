@@ -1,0 +1,5 @@
+/* Keep the verified native sticky header's paint without its positioning or live sort controls. */
+html[data-geld-provider="gitlab"] .geld-provider-review__body .note-text.md th[data-geld-native-sticky-header-cell] {
+  background-color: var(--gl-background-color-default);
+  box-shadow: inset 0 -1px 0 var(--gl-border-color-default);
+}

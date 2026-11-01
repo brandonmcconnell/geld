@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import type { ProviderReviewComment } from '@geld/review';
+import { readFileSync } from 'node:fs';
+import { URL as NodeURL } from 'node:url';
 import { renderGitLabComment } from './comment-render';
 
 const comment: ProviderReviewComment = {
@@ -15,7 +17,11 @@ function fixture(body: string): HTMLElement {
   return host;
 }
 
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => {
+  document.body.innerHTML = '';document.head.innerHTML = '';
+  document.documentElement.removeAttribute('data-geld-provider');
+  for (const token of ['--gl-background-color-default', '--gl-border-color-default']) document.documentElement.style.removeProperty(token);
+});
 
 describe('GitLab native Markdown cloning', () => {
   it('preserves actual rendered Markdown and code classes without moving or changing the source', () => {
@@ -65,6 +71,46 @@ describe('GitLab native Markdown cloning', () => {
     expect(renderGitLabComment(comment, host)).toBe(true);
     expect([...host.querySelectorAll('th')].map((cell) => cell.getAttribute('scope'))).toEqual(['col', 'row', 'colgroup', 'rowgroup', null]);
     expect(host.querySelector('[aria-sort]')).toBeNull();
+  });
+
+  it('retains verified native sticky-header paint through live tokens without copying sticky behavior', () => {
+    document.documentElement.dataset.geldProvider = 'gitlab';
+    document.documentElement.style.setProperty('--gl-background-color-default', 'rgb(248, 247, 246)');
+    document.documentElement.style.setProperty('--gl-border-color-default', 'rgb(123, 124, 125)');
+    const paint = readFileSync(new NodeURL('./comment-render.css', import.meta.url), 'utf8');
+    // Exact current application stylesheet rule retained in run41334314934 and referenced by run41351669256.
+    const native = '.md [data-sticky-header]>table:not(.code)>thead:first-of-type>tr:first-child>th{position:sticky;top:var(--gl-spacing-scale-0);background-color:var(--gl-background-color-default);z-index:var(--gl-zindex-1);border-top:0;border-bottom:0;box-shadow:inset 0 -1px 0 var(--gl-border-color-default)}';
+    document.head.innerHTML = `<style>${native}${paint}</style>`;
+    const host = fixture('<div data-sticky-header><table><thead><tr><th scope="col" aria-sort="none" class="gl-group/markdown-table-header"><div class="gl-flex"><button id="markdown-table-62-col_0-sort" type="button" class="gl-text-inherit gl-font-bold"><span>Filename</span><svg data-sort-icon="" aria-hidden="true"></svg></button></div></th></tr></thead></table></div>');
+    host.classList.add('geld-provider-review__body');
+    const source = document.querySelector('#note_11 th');
+    if (!(source instanceof HTMLElement)) throw new Error('Missing native sticky header');
+    const original = document.getElementById('note_11')?.outerHTML;
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    const cell = host.querySelector('th[data-geld-native-sticky-header-cell]');
+    if (!(cell instanceof HTMLElement)) throw new Error('Missing inert native-paint header');
+    const properties: readonly ('backgroundColor' | 'boxShadow')[] = ['backgroundColor', 'boxShadow'];
+    for (const property of properties) expect(getComputedStyle(cell)[property]).toBe(getComputedStyle(source)[property]);
+    const before = getComputedStyle(cell).backgroundColor;
+    expect(getComputedStyle(source).position).toBe('sticky');
+    expect(getComputedStyle(cell).position).not.toBe('sticky');
+    expect(host.querySelector('[data-sticky-header],[aria-sort],button,[style]')).toBeNull();
+    document.documentElement.style.setProperty('--gl-background-color-default', 'rgb(31, 32, 33)');
+    document.documentElement.style.setProperty('--gl-border-color-default', 'rgb(91, 92, 93)');
+    expect(getComputedStyle(cell).backgroundColor).not.toBe(before);
+    for (const property of properties) expect(getComputedStyle(cell)[property]).toBe(getComputedStyle(source)[property]);
+    expect(document.getElementById('note_11')?.outerHTML).toBe(original);
+    expect(cell.textContent).toBe('Filename');
+  });
+
+  it.each(['no sticky source', 'code table', 'unknown sort control'])('does not add native sticky paint for %s', (variant) => {
+    const body = '<table><thead><tr><th scope="col" aria-sort="none" class="gl-group/markdown-table-header"><div class="gl-flex"><button id="markdown-table-62-col_0-sort" type="button" class="gl-text-inherit gl-font-bold"><span>Filename</span><svg data-sort-icon="" aria-hidden="true"></svg></button></div></th></tr></thead></table>';
+    const host = fixture(variant === 'no sticky source' ? body : `<div data-sticky-header>${body}</div>`);
+    if (variant === 'code table') document.querySelector('#note_11 table')?.classList.add('code');
+    if (variant === 'unknown sort control') document.querySelector('#note_11 button')?.setAttribute('data-method', 'delete');
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.querySelector('[data-geld-native-sticky-header-cell]')).toBeNull();
+    expect(host.querySelector('[data-sticky-header],[aria-sort],button,[style]')).toBeNull();
   });
 
   it('preserves the observed sort button label weight when the table header itself has normal weight', () => {
