@@ -801,3 +801,53 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-key="requirements"]')).toBeNull();
   });
 });
+
+describe('review standing availability', () => {
+  it('copies partial observed facts and their source reason without claiming an aggregate zero', async () => {
+    let copied = '';
+    const native: ProviderReviewInput = { ...input(), reviewers: [{ author: { id: '1', login: 'known-approver' }, state: 'approved', reviewRequest: 'unknown' }] };
+    const panel = renderProviderReviewPanel(host(), native, { unavailable: [{ area: 'reviews', reason: 'The reviewer endpoint returned403.' }], copyText: (text) => { copied = text; } });
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · Partial · 1 observed approval');
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain('Reviews · Partial · 1 observed approval'));
+    expect(copied).toContain('Reviews source unavailable: The reviewer endpoint returned403.');
+    expect(copied).toContain('- known-approver: Approved · Request state unavailable');
+    expect(native.reviewers?.[0]?.state).toBe('approved');
+    panel.destroy();
+  });
+
+  it('keeps unavailable distinct from known empty in the panel and copied digest', async () => {
+    let copied = '';
+    const unread: ProviderReviewInput = { subject, threads: [], checks: [] };
+    const panel = renderProviderReviewPanel(host(), unread, { copyText: (text) => { copied = text; } });
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).toBe('Reviews · UnavailableReview standings could not be read.');
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain('Reviews · Unavailable'));
+    expect(copied).not.toContain('0 approvals');
+    panel.update(input(), { unavailable: [{ area: 'checks', reason: 'CI unread' }] });
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).toBe('Reviews · 0 approvalsNo reviewer standings.');
+    panel.destroy();
+  });
+
+  it.each([
+    { required: 2, left: 1, tally: '1/2 required approvals' },
+    { required: 2, left: 0, tally: '2/2 required approvals' },
+    { required: 2, left: 3, tally: null },
+    { required: 0, left: 0, tally: null },
+    { required: 2.5, left: 1, tally: null },
+    { required: 2, left: -1, tally: null },
+    { required: Number.NaN, left: 0, tally: null },
+  ])('retains guarded required/left facts in partial sources: $required/$left', ({ required, left, tally }) => {
+    const panel = renderProviderReviewPanel(host(), input(), { unavailable: [{ area: 'reviews', reason: 'Reviewers unread' }], approvalsRequired: required, approvalsLeft: left });
+    const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
+    expect(section?.querySelector('summary')?.textContent).toBe(`Reviews · Partial${tally === null ? '' : ` · ${tally}`}`);
+    expect(section?.textContent).not.toContain('0 approvals'); expect(section?.textContent).not.toContain('No reviewer standings.');
+    panel.destroy();
+  });
+
+  it('retains an independently known required-approval fraction even when no author list is readable', () => {
+    const panel = renderProviderReviewPanel(host(), { subject, threads: [] }, { approvalsRequired: 2, approvalsLeft: 1, unavailable: [{ area: 'reviews', reason: 'Author lists unavailable' }] });
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · Partial · 1/2 required approvals');
+    panel.destroy();
+  });
+});
