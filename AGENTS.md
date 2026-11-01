@@ -1490,6 +1490,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   Unknown-head Bitbucket reviews and moving comparisons stay on the normal validation path rather than borrowing settled counts from another revision.
 - **Local reviewed marks are personal triage.**
   `local:providerReviewedItems` binds exact provider, origin, repository, review and head to SHA-256 fingerprints of ordered native source identities, words, times and thread state.
+  Provider by-push grouping keeps every currently open item in one Needs attention home, using the existing visible-item status semantics, with historical pointers that open and focus that same conversation instead of copying bodies or actions.
+  Pushes display newest first but retain chronological ordinals and typed native boundaries, including an empty latest push, while original item creation clocks, selected head, resolved/outdated state and source links stay unchanged.
   Deterministic review titles retain same-line concern text after the exact observed inert Greptile P1/P2 badge anchor/image, while unknown HTML lines and markup-only badges remain excluded.
   This analysis-only prefix handling never rewrites native bodies, source IDs, publication fingerprints, fix text or status, and a badge supplies no bot identity, severity or verdict trust.
   Provider item clipboard exports keep that personal reviewed flag separate from the canonical source status and any explicitly labeled AI wording or assessment.

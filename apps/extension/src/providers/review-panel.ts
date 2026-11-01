@@ -170,8 +170,11 @@ function authorPresentationKey(comment: ProviderReviewComment): string {
   return JSON.stringify([comment.id, comment.anchor, comment.author.id, comment.url]);
 }
 
+let nextPanelId = 0;
+
 export function renderProviderReviewPanel(host: HTMLElement, initialInput: ProviderReviewInput, initialOptions: ProviderReviewPanelOptions = {}): ProviderReviewPanel {
   const doc = host.ownerDocument;
+  const panelId = `geld-provider-review-${++nextPanelId}`;
   const expanded = new Map<string, boolean>();
   const sourceDetails = new Map<string, boolean>();
   let input = initialInput;
@@ -534,7 +537,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
-  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): HTMLElement {
+  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): HTMLDetailsElement {
     const anchors = new Set(item.sources.map((source) => source.anchor));
     const threads = input.threads.filter((thread) => thread.comments.some((comment) => anchors.has(comment.anchor))).map((thread) => thread.id).sort();
     const details = disclosure(`item:${threads.join(':') || item.id}`, '', false);
@@ -678,11 +681,49 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   function historySections(comments: ReadonlyMap<string, ProviderReviewComment>, ordinary: readonly ProviderReviewComment[]): readonly HTMLElement[] {
+    const sections: HTMLElement[] = [];
+    const homes = new Map<string, HTMLDetailsElement>();
+    const openItems = items.filter((item) => isOpenStatus(item.status));
+    const attention = openItems.length === 0 ? null : disclosure('history:attention', `Needs attention · ${countLabel(openItems.length, 'open thread')}`, true);
+    if (attention !== null) {
+      attention.dataset.geldReviewAttention = '';
+      for (const item of openItems) {
+        const home = itemSection(item, comments);
+        home.id = `${panelId}-item-${item.id}`;
+        homes.set(item.id, home);attention.append(home);
+      }
+      sections.push(attention);
+    }
+    const subject = JSON.stringify(input.subject);
+    const route = new URL(doc.URL);route.hash = '';
+    const itemEntry = (item: ReviewItem): HTMLElement => {
+      const home = homes.get(item.id);
+      if (home === undefined || attention === null) return itemSection(item, comments);
+      const pointer = node('div', '', 'geld-provider-review__source-actions');
+      pointer.dataset.geldReviewPointer = item.id;
+      const title = node('span');inline(title, item.title);pointer.append(title);
+      if (item.path !== undefined) pointer.append(node('span', `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, 'geld-provider-review__muted'));
+      pointer.append(node('span', STATUS[item.status], 'geld-provider-review__item-state'));
+      const open = node('button', 'Open thread');open.type = 'button';
+      open.setAttribute('aria-controls', home.id);
+      open.setAttribute('aria-label', `Open thread: ${parseInlineMarkdown(item.title).map((run) => run.text).join('')}`);
+      open.addEventListener('click', () => {
+        const current = new URL(doc.URL);current.hash = '';
+        if (destroyed || !pointer.isConnected || !home.isConnected || subject !== JSON.stringify(input.subject) || current.href !== route.href) return;
+        attention.open = true;expanded.set('history:attention', true);
+        home.open = true;
+        const key = home.dataset.geldReviewKey;
+        if (key !== undefined) expanded.set(key, true);
+        const summary = home.querySelector('summary');
+        if (summary !== null) { summary.focus();summary.scrollIntoView?.({ block: 'center', behavior: 'auto' }); }
+      });
+      pointer.append(open);return pointer;
+    };
     const events = activityEvents();
     const pushes = events.filter((event) => event.kind === 'push' && Number.isFinite(Date.parse(event.createdAt)) && safeUrl(event.url, input.subject.origin) !== null).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
     interface HistoryEntry { readonly at: number; readonly key: string; readonly render: () => HTMLElement }
     const entries: HistoryEntry[] = [
-      ...items.map((item) => ({ at: Math.min(...item.sources.map((source) => Date.parse(comments.get(source.anchor)?.createdAt ?? '')).filter(Number.isFinite)), key: `item:${item.id}`, render: () => itemSection(item, comments) })),
+      ...items.map((item) => ({ at: Math.min(...item.sources.map((source) => Date.parse(comments.get(source.anchor)?.createdAt ?? '')).filter(Number.isFinite)), key: `item:${item.id}`, render: () => itemEntry(item) })),
       ...ordinary.map((comment) => ({ at: Date.parse(comment.author.automated === true ? comment.updatedAt ?? comment.createdAt : comment.createdAt), key: `comment:${comment.id}`, render: () => sourceComment(comment) })),
       ...events.filter((event) => !pushes.includes(event)).map((event) => ({ at: Date.parse(event.createdAt), key: `event:${event.id}`, render: () => eventRow(event) })),
     ];
@@ -692,7 +733,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const section = disclosure('history:unpartitioned', 'Conversation history · push boundaries unavailable', true);
       section.dataset.geldReviewHistory = '';
       for (const entry of entries) section.append(entry.render());
-      return [section];
+      return [...sections, section];
     }
     const boundaries: Array<{ readonly at: number; readonly pushes: ProviderReviewPanelEvent[] }> = [];
     for (const push of pushes) {
@@ -701,13 +742,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (last?.at === at) last.pushes.push(push);
       else boundaries.push({ at, pushes: [push] });
     }
-    const sections: HTMLElement[] = [];
     const before = entries.filter((entry) => Number.isFinite(entry.at) && entry.at < (boundaries[0]?.at ?? Infinity));
-    if (before.length > 0) {
-      const section = disclosure('history:before', 'Before the first recorded push', false);
-      for (const entry of before) section.append(entry.render());
-      sections.push(section);
-    }
+    const rounds: HTMLElement[] = [];
     for (const [index, boundary] of boundaries.entries()) {
       const next = boundaries[index + 1]?.at ?? Infinity;
       const section = disclosure(`history:push:${boundary.pushes.map((push) => push.id).join(':')}`, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
@@ -716,6 +752,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const members = entries.filter((entry) => Number.isFinite(entry.at) && entry.at >= boundary.at && entry.at < next);
       for (const entry of members) section.append(entry.render());
       if (members.length === 0) section.append(node('p', 'No conversation recorded after this push.', 'geld-provider-review__muted'));
+      rounds.push(section);
+    }
+    sections.push(...rounds.reverse());
+    if (before.length > 0) {
+      const section = disclosure('history:before', 'Before the first recorded push', false);
+      for (const entry of before) section.append(entry.render());
       sections.push(section);
     }
     const unknown = entries.filter((entry) => !Number.isFinite(entry.at));
@@ -932,6 +974,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     identity = key;
     const activeAi = ai?.state.key === key ? ai : undefined;
     panel.dataset.provider = input.subject.provider;
+    panel.dataset.geldReviewHead = input.subject.headSha;
     panel.dataset.state = (options.complete ?? input.complete) === false || (options.unavailable?.length ?? 0) > 0 ? 'partial' : 'ready';
     const header = node('div', '', 'geld-provider-review__header');
     header.append(node('h2', 'Geld review'));
