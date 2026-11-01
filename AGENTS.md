@@ -1490,6 +1490,12 @@ Provider-specific surfaces translate settings and sources into shared review and
   Unknown-head Bitbucket reviews and moving comparisons stay on the normal validation path rather than borrowing settled counts from another revision.
 - **Local reviewed marks are personal triage.**
   `local:providerReviewedItems` binds exact provider, origin, repository, review and head to SHA-256 fingerprints of ordered native source identities, words, times and thread state.
+  Provider item clipboard exports keep that personal reviewed flag separate from the canonical source status and any explicitly labeled AI wording or assessment.
+  Copy as Markdown retains every validated native source permalink and actual account spelling, while Copy suggested fix writes exactly the displayed eligible fix text under the unchanged `fixVisible` setting.
+  A queued clipboard action requires the same connected control, review subject and document route before launch, allowing a source-fragment change but refusing a debounced SPA navigation race.
+  Already-issued clipboard writes cannot be revoked, so a stale completion never patches a replacement review or shows a success on another visit.
+  Native provider button tokens and accessible pending, failure and retry feedback apply to both actions.
+  The existing GitLab bot acceptance requires genuine pointer and keyboard clipboard readback from already fetched source facts with temporary browser permissions, preserving original bodies and restoring permission overrides without another source GET, provider mutation or AI call.
   Fresh queued reads preserve unrelated review records within a runtime, without claiming cross-tab compare-and-swap.
   Reviewed on this device never resolves the native thread, changes bot findings or CI standing, edits source text or triggers AI.
   AI wording is excluded from local mark fingerprints so an explicit triage rewrite cannot invalidate unchanged original evidence.

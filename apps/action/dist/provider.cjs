@@ -20109,7 +20109,7 @@ function escapeMd(text2) {
 function inlineMd(text2, inBold = false) {
   return parseInlineMarkdown(text2).map((run) => {
     if (run.marks.includes("code")) {
-      const fence = run.text.includes("`") ? "``" : "`";
+      const fence = fenceFor(run.text, 1);
       return run.text.includes("`") ? `${fence} ${run.text} ${fence}` : `${fence}${run.text}${fence}`;
     }
     let out = escapeMd(run.text);
@@ -20136,6 +20136,10 @@ function authorsOf(item) {
   }
   return names.join(", ");
 }
+function fenceFor(text2, minimum) {
+  const longest = (text2.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
+  return "`".repeat(Math.max(minimum, longest + 1));
+}
 function sourcesOf(item, links) {
   return item.sources.map((source) => {
     const href = links.sourceHref(source);
@@ -20148,8 +20152,7 @@ function itemLine(item, checked, links) {
   const extra = [];
   if (item.context !== void 0) extra.push(`  ${inlineMd(item.context)}`);
   if (item.fix !== void 0) {
-    const longest = (item.fix.text.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
-    const fence = "`".repeat(Math.max(3, longest + 1));
+    const fence = fenceFor(item.fix.text, 3);
     extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", `  ${fence}suggestion`, ...item.fix.text.split("\n").map((line) => `  ${line}`), `  ${fence}`, "", "  </details>");
   }
   return [head2, ...extra].join("\n");

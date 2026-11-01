@@ -46,7 +46,7 @@ function inlineMd(text: string, inBold = false): string {
   return parseInlineMarkdown(text)
     .map((run) => {
       if (run.marks.includes('code')) {
-        const fence = run.text.includes('`') ? '``' : '`';
+        const fence = fenceFor(run.text, 1);
         return run.text.includes('`') ? `${fence} ${run.text} ${fence}` : `${fence}${run.text}${fence}`;
       }
       let out = escapeMd(run.text);
@@ -84,6 +84,11 @@ interface SummaryLinks {
   readonly reviewNoun: 'pull request' | 'merge request';
 }
 
+function fenceFor(text: string, minimum: number): string {
+  const longest = (text.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
+  return '`'.repeat(Math.max(minimum, longest + 1));
+}
+
 function sourcesOf(item: ReviewItem, links: SummaryLinks): string {
   return item.sources.map((source) => {
     const href = links.sourceHref(source);
@@ -97,11 +102,39 @@ function itemLine(item: ReviewItem, checked: boolean, links: SummaryLinks): stri
   const extra: string[] = [];
   if (item.context !== undefined) extra.push(`  ${inlineMd(item.context)}`);
   if (item.fix !== undefined) {
-    const longest = (item.fix.text.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
-    const fence = '`'.repeat(Math.max(3, longest + 1));
+    const fence = fenceFor(item.fix.text, 3);
     extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', `  ${fence}suggestion`, ...item.fix.text.split('\n').map((line) => `  ${line}`), `  ${fence}`, '', '  </details>');
   }
   return [head, ...extra].join('\n');
+}
+
+/** One native concern for a clipboard handoff, without a published-summary frame or payload. */
+export function renderProviderItemMarkdown(item: ReviewItem, subject: ProviderReviewSubject, options: {
+  readonly showFix: boolean;
+  readonly sourceStatus?: ReviewItem['status'];
+  readonly reviewedOnDevice?: boolean;
+}): string {
+  providerReviewUrl(subject);
+  const status = options.sourceStatus ?? item.status;
+  const location = item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`;
+  const displayedLocation = /[\r\n]|^\s|\s$/.test(location) ? JSON.stringify(location) : location;
+  const ticks = fenceFor(displayedLocation, 1);
+  const padding = displayedLocation.includes('`') ? ' ' : '';
+  const path = location === '' ? '' : ` ${ticks}${padding}${displayedLocation}${padding}${ticks}`;
+  const sources = sourcesOf(item, { sourceHref: (source) => sourceLink(source, subject), openHref: providerReviewUrl(subject), openLabel: '', reviewNoun: subject.provider === 'gitlab' ? 'merge request' : 'pull request' });
+  const authors = [...new Set(item.sources.map((source) => source.author))].map((author) => `@${author}`).join(', ');
+  const lines = [`- [${isOpenStatus(status) ? ' ' : 'x'}] **${inlineMd(item.title, true)}**${path} · ${escapeMd(authors)}`, `  Source status: ${status}.`];
+  if (item.rewritten) lines.push('  AI triage wording. Original sources linked below.');
+  if (item.status !== status) lines.push(`  Geld triage status: ${item.status}.`);
+  if (options.reviewedOnDevice) lines.push('  Reviewed on this device.');
+  if (item.context !== undefined) lines.push(`  ${inlineMd(item.context)}`);
+  if (item.addressed !== undefined) lines.push(`  AI assessment: ${item.addressed.verdict}. ${item.addressed.evidence.map((evidence) => inlineMd(evidence)).join(' ')}`);
+  if (options.showFix && item.fix !== undefined) {
+    const fence = fenceFor(item.fix.text, 3);
+    lines.push(`  Suggested fix (${item.fix.source}):`, `  ${fence}suggestion`, ...item.fix.text.split('\n').map((line) => `  ${line}`), `  ${fence}`);
+  }
+  lines.push(`  Sources: ${sources}`);
+  return lines.join('\n');
 }
 
 function groupItems(items: readonly ReviewItem[]): { open: ReviewItem[]; done: ReviewItem[] } {

@@ -27,7 +27,7 @@ function host(): HTMLElement {
   return value;
 }
 
-beforeEach(() => document.body.replaceChildren());
+beforeEach(() => { document.body.replaceChildren();window.location.href = reviewUrl; });
 
 describe('provider conversation digest', () => {
   it('captures a quote excerpt before pointer focus clears selection and invalidates it after remount', async () => {
@@ -107,6 +107,150 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(false);
   });
 
+  it('copies one clustered concern with every actual native source rather than the whole digest', async () => {
+    const write = vi.fn(async (_text: string) => {});
+    const source = input([thread('a', { path: 'shared.ts', line: 5 }), thread('b', { path: 'shared.ts', line: 6 })]);
+    const panel = renderProviderReviewPanel(host(), source, { copyText: write });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
+    if (button === null) throw new Error('Missing item copy control');
+    button.closest('details')?.setAttribute('open', '');
+    button.focus();button.dispatchEvent(new MouseEvent('click', { detail: 0, bubbles: true }));
+    expect(button.disabled).toBe(true);expect(button.getAttribute('aria-busy')).toBe('true');
+    button.click();
+    await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    const text = write.mock.calls[0]?.[0];
+    expect(text).toContain(`${reviewUrl}#note_1`);expect(text).toContain(`${reviewUrl}#note_2`);
+    expect(text).toContain('`shared.ts:5`');expect(text).not.toContain('CI checks:');
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    expect(button.parentElement?.querySelector('[role="status"]')?.textContent).toBe('Item copied as Markdown.');
+    expect(document.activeElement).toBe(button);
+    expect(panel.element.querySelector('[data-geld-item]')?.getAttribute('data-state')).toBe('open');
+  });
+
+  const copyFixModes: readonly { mode: 'all' | 'bots' | 'ai' | 'off'; source: 'human' | 'bot' | 'ai'; visible: boolean }[] = [
+    { mode: 'all', source: 'human', visible: true }, { mode: 'all', source: 'bot', visible: true }, { mode: 'all', source: 'ai', visible: true },
+    { mode: 'bots', source: 'human', visible: true }, { mode: 'bots', source: 'bot', visible: true }, { mode: 'bots', source: 'ai', visible: false },
+    { mode: 'ai', source: 'human', visible: false }, { mode: 'ai', source: 'bot', visible: false }, { mode: 'ai', source: 'ai', visible: true },
+    { mode: 'off', source: 'human', visible: false }, { mode: 'off', source: 'bot', visible: false }, { mode: 'off', source: 'ai', visible: false },
+  ];
+  it.each(copyFixModes)('preserves fixVisible eligibility for $mode/$source in visible and copied notes', async ({ mode, source, visible }) => {
+    const write = vi.fn(async (_text: string) => {});
+    const value = 'line1();\n  line2();\n';
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { suggestedFixes: mode, copyText: write,
+      transformItems: (items) => items.map((item) => ({ ...item, fix: { source, text: value } })),
+    });
+    const fix = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="fix"]');
+    expect(fix !== null).toBe(visible);
+    if (fix !== null) {
+      fix.click();await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+      expect(write.mock.calls[0]?.[0]).toBe(value);
+    }
+    write.mockClear();
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]')?.click();
+    await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    expect(write.mock.calls[0]?.[0]?.includes('line1();')).toBe(visible);
+  });
+
+  it('keeps clipboard errors retryable and reports success without changing the source or its state', async () => {
+    const write = vi.fn<(text: string) => Promise<void>>().mockRejectedValueOnce(new DOMException('Clipboard denied', 'NotAllowedError')).mockResolvedValue(undefined);
+    const native = document.createElement('p');native.id = 'note_1';native.textContent = 'Original native source';document.body.append(native);
+    const nativeBefore = native.outerHTML;
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { copyText: write });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
+    if (button === null) throw new Error('Missing item copy control');
+    const original = panel.element.querySelector('.geld-provider-review__body')?.textContent;
+    button.click();
+    await vi.waitFor(() => expect(button.parentElement?.querySelector('[role="status"]')?.textContent).toBe('Could not copy. Try again.'));
+    expect(button.disabled).toBe(false);expect(button.textContent).toBe('Copy as Markdown');
+    button.click();await vi.waitFor(() => expect(button.textContent).toBe('Copied'));
+    expect(write).toHaveBeenCalledTimes(2);expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(original);
+    expect(panel.element.querySelector('[data-geld-item]')?.getAttribute('data-state')).toBe('open');
+    expect(document.getElementById('note_1')).toBe(native);expect(native.outerHTML).toBe(nativeBefore);
+  });
+
+  it.each(['update', 'destroy'])('does not launch a queued clipboard action after panel %s', async (action) => {
+    const write = vi.fn(async (_text: string) => {});
+    const source = input([thread('a')]);
+    const panel = renderProviderReviewPanel(host(), source, { copyText: write });
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]')?.click();
+    if (action === 'destroy') panel.destroy();
+    else panel.update({ ...source, subject: { ...subject, headSha: 'b'.repeat(40) } });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(write).not.toHaveBeenCalled();
+    if (action === 'update') expect(panel.element.querySelector('[data-geld-copy-kind="markdown"]')?.textContent).toBe('Copy as Markdown');
+  });
+
+  it('does not patch a replacement review when an already-issued clipboard write finishes', async () => {
+    let finish: (() => void) | undefined;
+    const write = vi.fn((_text: string) => new Promise<void>((resolve) => { finish = resolve; }));
+    const source = input([thread('a')]);
+    const panel = renderProviderReviewPanel(host(), source, { copyText: write });
+    const old = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
+    old?.click();await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    panel.update({ ...source, subject: { ...subject, headSha: 'b'.repeat(40) } });
+    finish?.();await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(old?.isConnected).toBe(false);
+    expect(panel.element.querySelector('[data-geld-copy-kind="markdown"]')?.textContent).toBe('Copy as Markdown');
+    expect(panel.element.querySelector('[data-geld-copy-kind="markdown"]')?.parentElement?.querySelector('[role="status"]')?.textContent).toBe('');
+  });
+
+  it.each(['path', 'query', 'fragment'])('checks the actual document visit before clipboard launch after a %s change', async (change) => {
+    const write = vi.fn(async (_text: string) => {});
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { copyText: write });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
+    button?.click();
+    window.history.replaceState({}, '', change === 'path' ? reviewUrl.replace('/42', '/43') : change === 'query' ? `${reviewUrl}?version=changed` : `${reviewUrl}#note_1`);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(button?.isConnected).toBe(true);
+    expect(write).toHaveBeenCalledTimes(change === 'fragment' ? 1 : 0);
+    if (change !== 'fragment') expect(button?.textContent).toBe('Copy as Markdown');
+  });
+
+  it('ignores a clipboard completion after URL-only navigation while the old panel is still mounted', async () => {
+    let finish: (() => void) | undefined;
+    const write = vi.fn((_text: string) => new Promise<void>((resolve) => { finish = resolve; }));
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { copyText: write });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
+    button?.click();await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    window.history.replaceState({}, '', reviewUrl.replace('/42', '/43'));finish?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(button?.isConnected).toBe(true);expect(button?.textContent).toBe('Copy as Markdown');
+    expect(button?.parentElement?.querySelector('[role="status"]')?.textContent).toBe('');
+  });
+
+  it('labels AI and personal triage separately from the canonical source status in item copies', async () => {
+    const source = input([thread('a')]);
+    const original = buildProviderReviewItems(source)[0];
+    if (original === undefined) throw new Error('Missing native item');
+    const write = vi.fn(async (_text: string) => {});
+    const panel = renderProviderReviewPanel(host(), source, { copyText: write,
+      transformItems: (items) => items.map((item) => ({ ...item, title: 'AI wording', rewritten: true, status: 'addressed' })),
+      localReviewed: { ids: new Set([original.id]), pending: new Set(), set: () => undefined },
+    });
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]')?.click();
+    await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    const copied = write.mock.calls[0]?.[0];
+    expect(copied).toContain('Source status: open.');expect(copied).toContain('AI triage wording.');
+    expect(copied).toContain('Geld triage status: done-manual.');expect(copied).toContain('Reviewed on this device.');
+    expect(copied).not.toContain('Source status: resolved');
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
+  });
+
+  it('removes fix copy and cancels a queued write when the current shared fix setting turns off', async () => {
+    const source = input([thread('a', { comments: [comment('1', 'Guard the value.\n```suggestion\nfixed();\n```')] })]);
+    const write = vi.fn(async (_text: string) => {});
+    const panel = renderProviderReviewPanel(host(), source, { copyText: write, suggestedFixes: 'bots' });
+    const old = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="fix"]');
+    expect(old).not.toBeNull();old?.click();
+    panel.update(source, { copyText: write, suggestedFixes: 'off' });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(write).not.toHaveBeenCalled();expect(panel.element.querySelector('[data-geld-copy-kind="fix"]')).toBeNull();
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]')?.click();
+    await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+    expect(write.mock.calls[0]?.[0]).not.toContain('fixed();');
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toContain('fixed();');
+  });
+
   it('keeps outdated and resolved separate and reads no verdict into an unknown bot login', () => {
     const outdated = thread('a', { outdated: true, comments: [{ ...comment('1'), author: { id: 'unknown', login: 'cursor[bot]', automated: true } }] });
     const resolved = thread('b', { resolved: true, outdated: true });
@@ -116,7 +260,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-group="open"]')).toBeNull();
     expect(panel.element.textContent).toContain('Automated account');
     expect(panel.element.textContent).not.toMatch(/Bugbot|Clean|Findings|running review/i);
-    expect([...panel.element.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Copy digest']);
+    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy')).map((button) => button.textContent)).toEqual(['Copy digest']);
   });
 
   it('distinguishes a known empty review, an unavailable source and malformed data', () => {
