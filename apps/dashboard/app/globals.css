@@ -512,3 +512,28 @@ textarea.field { min-height: 100px; }
 .review-thread form { padding-top: 15px; }
 .review-thread form > div { display: flex; gap: 8px; justify-content: space-between; margin-top: 10px; }
 .diff-table { font-size: 11px; }
+.team-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 15px; margin-bottom: 30px; }
+.team-card { display: block; border: 1px solid var(--border); padding: 25px; }
+.team-card:hover { background: var(--sidebar-bg); }
+.team-card > svg { color: var(--muted-foreground); margin-bottom: 22px; }
+.team-card h2 { font-size: 17px; font-weight: 500; }
+.team-card p { font-size: 11px; color: var(--muted-foreground); margin-top: 7px; }
+.team-card > span { display: block; font-size: 10px; color: var(--muted-foreground); margin-top: 20px; text-transform: capitalize; }
+.billing-summary { display: grid; grid-template-columns: repeat(3,1fr); border: 1px solid var(--border); margin: 25px 0; }
+.billing-summary > div { padding: 22px; }
+.billing-summary > div + div { border-left: 1px solid var(--border); }
+.billing-summary small { font-size: 9px; color: var(--muted-foreground); letter-spacing: 1.3px; }
+.billing-summary strong { display: block; font-size: 26px; font-weight: 500; margin: 9px 0; text-transform: capitalize; }
+.billing-summary strong span { color: var(--muted-foreground); font-size: 15px; }
+.billing-summary p { font-size: 10px; color: var(--muted-foreground); }
+.pricing-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin: 30px 0; }
+.pricing-card { border: 1px solid var(--border); padding: 22px 18px; display: flex; flex-direction: column; align-items: stretch; }
+.pricing-card h2 { font-size: 27px; font-weight: 500; margin-top: 12px; }
+.pricing-card h2 small { font-size: 9px; color: var(--muted-foreground); font-weight: 400; }
+.pricing-card > p { color: var(--muted-foreground); font-size: 10px; margin: 10px 0 18px; min-height: 30px; }
+.pricing-card ul { list-style: none; padding: 0; margin: 0 0 25px; font-size: 10px; }
+.pricing-card li { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 10px; }
+.pricing-card li svg { flex-shrink: 0; margin-top: 2px; color: var(--muted-foreground); }
+.pricing-card > button { margin-top: auto; font-size: 11px; }
+@media(max-width:1100px) { .pricing-grid { grid-template-columns: repeat(2,1fr); } }
+@media(max-width:760px) { .billing-summary { grid-template-columns: 1fr; } .billing-summary > div + div { border-left: none; border-top: 1px solid var(--border); } .pricing-grid { grid-template-columns: 1fr; } }

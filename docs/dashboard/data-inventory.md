@@ -21,6 +21,8 @@ Data subjects are account holders, team members and provider collaborators refer
 | audit_events | Actor reference, action, scoped resource reference, safe before/after and chain digest | Legitimate interests in security | 365 days, erase identifying references on erasure |
 | app_installations | Host, App permission fingerprint, installation ID and migration state | Contract | Installation lifetime, never private keys |
 | ai_providers | Owner, provider instance, encrypted key and model preferences | Contract | Until removal or erasure |
+| billing_events, billing_checkouts | Verified event and checkout references for idempotency and plan changes | Contract | Billing dispute window, no payment details |
+| team_invites | Existing Geld user, inviting actor and expiry | Contract | Expiry after 14 days or account erasure |
 | subscriptions | Stripe customer/subscription references, tier, seats and spend cap | Contract | Active contract plus statutory billing obligations |
 | review_receipts | Actor, keyed resource fingerprint, review action and outcome, no review body | Legitimate interests in security | 365 days, erase identifying references on erasure |
 | credit_reservations | Idempotency key, credit amount, state and settlement | Contract | Billing period plus dispute window, no PR content |
