@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowDownWideNarrow, ArrowUpRight, Check, ChevronDown, Filter, GitPullRequest, RefreshCw, Search, Star } from 'lucide-react';
 import { cn } from 'cn';
 import { pullPath } from '@geld/domain';
+import { providerViewer } from '@geld/domain/identities';
 import type { RepositoryRef } from '@geld/domain';
 import { parseQuery } from '@geld/github/query';
 import { Button, buttonVariants } from '@geld/ui';
@@ -25,8 +26,9 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
     const key = pullPath(pull.ref);
     if (provider !== 'all' && pull.ref.provider !== provider) return false;
     if (tab === 'starred' && !stars.includes(key)) return false;
-    if (tab === 'requested' && !pull.reviewers.includes(session.user?.name ?? '')) return false;
-    if (tab === 'mine' && pull.author !== session.user?.name) return false;
+    const viewer = providerViewer(session.viewers, pull.ref);
+    if (tab === 'requested' && (!viewer || !pull.reviewers.includes(viewer))) return false;
+    if (tab === 'mine' && (!viewer || pull.author !== viewer)) return false;
     return parseQuery(query).every((token) => {
       if (token.key === 'repo') return `${pull.ref.owner}/${pull.ref.repo}`.toLowerCase() === token.value.toLowerCase();
       if (token.key === 'author') return pull.author.toLowerCase() === token.value.toLowerCase();
