@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   installed-extension:
@@ -20,6 +21,7 @@ jobs:
     timeout-minutes: 15
     env:
       GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
+      GELD_BROWSER_PREVIOUS_REPORT: ${{ github.workspace }}/.browser-previous-evidence/report.json
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,6 +31,30 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Find prior provider cooldown evidence
+        id: cooldowns
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const repository = context.repo;
+            const current = await github.rest.actions.getWorkflowRun({ ...repository, run_id: context.runId });
+            const runs = await github.rest.actions.listWorkflowRuns({ ...repository, workflow_id: current.data.workflow_id, status: 'completed', per_page: 30 });
+            for (const run of runs.data.workflow_runs) {
+              if (run.id === context.runId || run.head_repository?.full_name !== `${repository.owner}/${repository.repo}`) continue;
+              const result = await github.rest.actions.listWorkflowRunArtifacts({ ...repository, run_id: run.id, per_page: 20 });
+              if (!result.data.artifacts.some((artifact) => artifact.name === 'geld-installed-browser-e2e' && !artifact.expired)) continue;
+              core.setOutput('run-id', String(run.id));
+              core.info(`Loading provider cooldown evidence from installed run ${run.id}.`);
+              break;
+            }
+      - name: Restore prior provider cooldown evidence
+        if: steps.cooldowns.outputs.run-id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: geld-installed-browser-e2e
+          run-id: ${{ steps.cooldowns.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: .browser-previous-evidence
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @geld/extension build:chrome
       - name: Locate the runner's Chrome

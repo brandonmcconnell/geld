@@ -342,7 +342,7 @@ export class BitbucketClient {
 
   private async collection<T>(resource: string, parse: (value: unknown) => T, signal: AbortSignal, pinned?: URL): Promise<readonly T[]> {
     if (pinned === undefined) this.reviewPage();
-    const initial = pinned ?? new URL(`${API_ORIGIN}${this.pullPath}/${resource}?pagelen=100`);
+    const initial = pinned ?? new URL(`${API_ORIGIN}${this.pullPath}/${resource}?pagelen=${resource === 'activity' ? 50 : 100}`);
     let current: URL | null = initial;
     const visited = new Set<string>();
     const items: T[] = [];
