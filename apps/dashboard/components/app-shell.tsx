@@ -31,8 +31,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [pageState,setPageState]=useState({key:'',page:1});
   if(pageState.key!==queueKey)setPageState({key:queueKey,page:1});
   const queuePage=pageState.key===queueKey?pageState.page:1;
-  const loadedQueueKey=useRef('');
-  const [queue, setQueue] = useState<QueueData>(emptyQueue);
+  const [queueState,setQueueState]=useState<{key:string;data:QueueData}>({key:'',data:emptyQueue});
+  const queue=queueState.key===queueKey?queueState.data:emptyQueue;
   const [session, setSession] = useState<SessionData>({ user: null, configured: false, demo: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
       const data = queueSchema.safeParse(result.data);
       if (!account.success || (!account.data.user && !account.data.demo)) {
         queueOwner.current = null;
-        setQueue(emptyQueue);
+        setQueueState({key:queueKey,data:emptyQueue});
         setSession(account.success ? account.data : { user: null, configured: false, demo: false });
         setError(account.success ? null : 'The account could not be verified. Try again.');
         setLoading(false);
@@ -55,17 +55,17 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
       }
       const owner = account.data.demo ? 'demo' : account.data.user?.id ?? null;
       const ownerChanged=owner !== queueOwner.current;
-      if (ownerChanged) setQueue(emptyQueue);
+      if (ownerChanged) setQueueState({key:queueKey,data:emptyQueue});
       queueOwner.current = owner;
       setSession(account.data);
-      if (result.status === 401 || result.status === 403) setQueue(emptyQueue);
-      if (result.ok && data.success) { setQueue(previous=>queuePage===1||ownerChanged||loadedQueueKey.current!==queueKey?data.data:{...data.data,pulls:[...new Map([...previous.pulls,...data.data.pulls].map(pull=>[JSON.stringify(pull.ref),pull])).values()],repositories:[...new Map([...previous.repositories,...data.data.repositories].map(repo=>[JSON.stringify(repo.ref),repo])).values()]}); loadedQueueKey.current=queueKey;setError(null); }
+      if (result.status === 401 || result.status === 403) setQueueState({key:queueKey,data:emptyQueue});
+      if (result.ok && data.success) { setQueueState(previous=>({key:queueKey,data:queuePage===1||ownerChanged||previous.key!==queueKey?data.data:{...data.data,pulls:[...new Map([...previous.data.pulls,...data.data.pulls].map(pull=>[JSON.stringify(pull.ref),pull])).values()],repositories:[...new Map([...previous.data.repositories,...data.data.repositories].map(repo=>[JSON.stringify(repo.ref),repo])).values()]}}));setError(null); }
       else if (!account.success || account.data.user) setError('The review queue could not be loaded. Try again.');
       setLoading(false);
-    }).catch(() => { if (!abort.signal.aborted) { queueOwner.current = null; setQueue(emptyQueue); setSession({ user: null, configured: false, demo: false }); setError('The dashboard could not connect. Try again.'); setLoading(false); } });
+    }).catch(() => { if (!abort.signal.aborted) { queueOwner.current = null; setQueueState({key:queueKey,data:emptyQueue}); setSession({ user: null, configured: false, demo: false }); setError('The dashboard could not connect. Try again.'); setLoading(false); } });
     return () => abort.abort();
   }, [revision,activeTeam,repositoryKey,queuePage,queueKey]);
-  const data = { queue:loadedQueueKey.current===queueKey?queue:emptyQueue, session, loading, error, teams, activeTeam, setActiveTeam, loadMore:()=>{setLoading(true);setPageState({key:queueKey,page:queuePage+1});},refresh: () => { setPageState({key:queueKey,page:1});setQueue(emptyQueue); setLoading(true); setRevision((value) => value + 1); } };
+  const data = { queue, session, loading, error, teams, activeTeam, setActiveTeam, loadMore:()=>{setLoading(true);setPageState({key:queueKey,page:queuePage+1});},refresh: () => { setPageState({key:queueKey,page:1});setQueueState({key:queueKey,data:emptyQueue}); setLoading(true); setRevision((value) => value + 1); } };
   return <context.Provider value={data}><div className="app-shell" data-collapsed={collapsed}>
     <a href="#main" className="skip-link">Skip to content</a>
     <aside className="desktop-sidebar"><Sidebar collapsed={collapsed} onCollapse={() => setCollapsed((value) => !value)} /></aside>
