@@ -1,4 +1,5 @@
 import 'server-only';
+import {enterpriseFetch} from './enterprise';
 import { z } from 'zod';
 import { transaction } from './transactions';
 import { database } from './db';
@@ -26,7 +27,7 @@ async function handle(job:z.infer<typeof jobSchema>):Promise<boolean>{const db=d
     const input=z.object({repoId:z.string(),number:z.number(),userId:z.string()}).parse(job.payload);const repo=repoRowSchema.safeParse((await db.query('SELECT * FROM team_repos WHERE id=$1 AND approved AND removed_at IS NULL',[input.repoId])).rows[0]);if(!repo.success)return true;
     const actor=z.object({user_id:z.string()}).safeParse((await db.query("SELECT user_id FROM team_members WHERE team_id=$1 AND role='admin' ORDER BY created_at LIMIT 1",[repo.data.team_id])).rows[0]);if(!actor.success)return false;
     const reviewer=z.object({login:z.string()}).safeParse((await db.query('SELECT l.login FROM provider_user_links l JOIN team_members m ON m.user_id=l.user_id WHERE m.team_id=$1 AND l.user_id=$2 AND l.provider=$3 AND l.host=$4',[repo.data.team_id,input.userId,repo.data.provider,repo.data.host])).rows[0]);if(!reviewer.success)return false;
-    const client=createProviderClient({provider:repo.data.provider,source:await backgroundUserTokenSource(actor.data.user_id,repo.data.provider,repo.data.owner),host:repo.data.host});const ref={...refFor(repo.data),number:input.number};const pull=await client.pull(ref);if(!pull.ok)return false;if(pull.value.state!=='open')return true;
+    const client=createProviderClient({provider:repo.data.provider,source:await backgroundUserTokenSource(actor.data.user_id,repo.data.provider,repo.data.owner,repo.data.host),host:repo.data.host,...(repo.data.provider==='github'&&repo.data.host!=='github.com'?{fetch:await enterpriseFetch(repo.data.host)}:{})});const ref={...refFor(repo.data),number:input.number};const pull=await client.pull(ref);if(!pull.ok)return false;if(pull.value.state!=='open')return true;
     if(!pull.value.reviewers.includes(reviewer.data.login)){const requested=await client.requestReviewers(ref,[reviewer.data.login]);if(!requested.ok)return false;}
     await db.query("INSERT INTO assignments(id,team_id,repo_id,pull_number,reviewer_id,provider_request_id,state) VALUES($1,$2,$3,$4,$5,$6,'requested') ON CONFLICT(repo_id,pull_number,reviewer_id) DO UPDATE SET state='requested'",[crypto.randomUUID(),repo.data.team_id,repo.data.id,input.number,input.userId,reviewer.data.login]);return true;
   }

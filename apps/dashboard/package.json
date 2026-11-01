@@ -36,7 +36,8 @@
     "zod": "^4.1.12",
     "stripe": "^20.0.0",
     "posthog-js": "^1.300.0",
-    "@c15t/react": "^1.8.0"
+    "@c15t/react": "^1.8.0",
+    "@geld/relay": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

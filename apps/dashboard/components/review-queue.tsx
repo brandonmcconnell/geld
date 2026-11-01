@@ -12,7 +12,7 @@ import { Button, buttonVariants } from '@geld/ui';
 import { EmptyState, useDashboard } from './app-shell';
 
 export function ReviewQueue({ repository }: { readonly repository?: RepositoryRef }) {
-  const { queue, session, loading, error, refresh } = useDashboard();
+  const { queue, session, loading, error, refresh,loadMore } = useDashboard();
   const [tab, setTab] = useState('all');
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('all');
@@ -49,7 +49,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
         return <article className="pull-row" key={path}><GitPullRequest size={19} className={pull.draft ? 'draft-icon' : 'open-icon'}/><div className="pull-row-content"><div className="pull-row-meta"><span className="provider-tag">{pull.ref.provider === 'github' ? 'GH' : pull.ref.provider === 'gitlab' ? 'GL' : 'BB'}</span><span>{pull.ref.owner} <span className="muted-slash">/</span> <strong>{pull.ref.repo}</strong></span><span>#{pull.ref.number}</span>{pull.draft && <span className="draft-badge">Draft</span>}</div><Link href={path} className="pull-title">{pull.title}</Link><div className="pull-row-detail"><span className="mini-avatar">{pull.author.slice(0, 1).toUpperCase()}</span><span>{pull.author}</span><span className="meta-dot">·</span><span>{pull.reviewers.length ? `${pull.reviewers.length} reviewer${pull.reviewers.length === 1 ? '' : 's'} requested` : 'No review requested'}</span>{pull.labels.slice(0,2).map((label) => <span className="label-badge" key={label}>{label}</span>)}</div></div><div className="pull-row-trailing"><div className="diffstat"><span>+{pull.additions}</span><span>−{pull.deletions}</span></div><button className="icon-button star-button" aria-label={starred ? 'Unstar pull request' : 'Star pull request'} aria-pressed={starred} onClick={() => setStars(starred ? stars.filter((item) => item !== path) : [...stars, path])}><Star size={16} fill={starred ? 'currentColor' : 'none'}/></button></div></article>;
       })}
     </section><div className="queue-footer"><span>{filtered.length ? `Showing ${Math.min(limit, filtered.length)} of ${filtered.length} loaded pull requests` : 'Everything in its place.'}</span>{filtered.length > limit && <Button variant="ghost" size="sm" onClick={() => setLimit((value) => value + 20)}>Show more</Button>}<span className="queue-footer-hint"><kbd>↵</kbd> Open a review</span></div>
-    {queue.sources?.some((source) => source.more) && <p className="inline-note">This queue shows a bounded selection of recently updated repositories. Open a repository to load its next page.</p>}
+    {queue.sources?.some(source=>source.more)&&<Button variant="outline" size="sm" disabled={loading} onClick={loadMore}>Load more from providers</Button>}
     {queue.sources?.some((source) => source.error) && <div className="source-notices">{queue.sources.filter((source) => source.error).map((source) => <Link href="/connect" key={source.provider}>{source.provider}: {source.error === 'signed_out' ? 'Connect or reconnect this provider' : source.error}</Link>)}</div>}
   </div>;
 }

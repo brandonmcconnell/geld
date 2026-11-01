@@ -1,5 +1,6 @@
 import { connection } from 'next/server';
 import { z } from 'zod';
+import { registeredEnterpriseHost } from '@/lib/enterprise';
 import { repositoryPath, resourceSchema } from '@geld/domain';
 import { currentActor } from '@/lib/session';
 import { database } from '@/lib/db';
@@ -25,7 +26,7 @@ async function preview(teamId:string) {
   const repos=z.array(repoRowSchema).parse((await db.query('SELECT * FROM team_repos WHERE team_id=$1 AND removed_at IS NULL AND approved',[teamId])).rows);
   const links=z.array(z.object({user_id:z.string(),provider:z.enum(['github','gitlab','bitbucket']),host:z.string(),login:z.string()})).parse((await db.query('SELECT l.* FROM provider_user_links l JOIN team_members m ON m.user_id=l.user_id WHERE m.team_id=$1',[teamId])).rows);
   const missing:{userId:string;repoId:string;login:string;outside:boolean}[]=[];const unavailable:string[]=[];
-  for(const repo of repos) {const adapter=await accessAdapter(repo.provider,teamId,repo.owner); if(!await providerAdmin(repo)){unavailable.push(repo.id);continue;}for(const link of links.filter(l=>l.provider===repo.provider&&l.host===repo.host)){const u=await adapter.user(refFor(repo),link.login);if(!u.ok){unavailable.push(`${repo.id}:${link.user_id}`);continue;}if(u.value.permission==='none')missing.push({userId:link.user_id,repoId:repo.id,login:link.login,outside:!u.value.organisationMember});}}
+  for(const repo of repos) {const adapter=await accessAdapter(repo.provider,teamId,repo.owner,undefined,repo.host); if(!await providerAdmin(repo)){unavailable.push(repo.id);continue;}for(const link of links.filter(l=>l.provider===repo.provider&&l.host===repo.host)){const u=await adapter.user(refFor(repo),link.login);if(!u.ok){unavailable.push(`${repo.id}:${link.user_id}`);continue;}if(u.value.permission==='none')missing.push({userId:link.user_id,repoId:repo.id,login:link.login,outside:!u.value.organisationMember});}}
   const confirmation=resourceDigest({teamId,missing,unavailable});return{missing,unavailable,confirmation,repositoryCount:repos.length};
 }
 export async function GET(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response>{
@@ -37,7 +38,7 @@ export async function GET(request:Request,{params}:{readonly params:Promise<{id:
     await db.query("UPDATE access_requests SET state='expired' WHERE team_id=$1 AND state='pending' AND expires_at<=now()",[id]);
     const repos=z.array(repoRowSchema).parse((await db.query('SELECT * FROM team_repos WHERE team_id=$1 AND removed_at IS NULL ORDER BY owner,name',[id])).rows);
     const visible=[];let hiddenCount=0;
-    for(const repo of repos){const r=await(await accessAdapter(repo.provider,id,repo.owner)).repository(refFor(repo));if(r.ok&&r.value.permission!=='none')visible.push({...repo,accessible:true,url:repositoryPath(refFor(repo)),permission:r.value.permission});else{hiddenCount++;if(team.visibility==='names'||team.visibility==='request')visible.push({id:repo.id,owner:repo.owner,name:repo.name,provider:repo.provider,accessible:false,canRequest:team.managed_access&&team.visibility==='request',url:`https://${repo.host}/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`});}}
+    for(const repo of repos){const r=await(await accessAdapter(repo.provider,id,repo.owner,undefined,repo.host)).repository(refFor(repo));if(r.ok&&r.value.permission!=='none')visible.push({...repo,accessible:true,url:repositoryPath(refFor(repo)),permission:r.value.permission});else{hiddenCount++;if(team.visibility==='names'||team.visibility==='request')visible.push({id:repo.id,owner:repo.owner,name:repo.name,provider:repo.provider,accessible:false,canRequest:team.managed_access&&team.visibility==='request',url:`https://${repo.host}/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`});}}
     const members=z.array(memberSchema).parse((await db.query('SELECT u.id,u.name,m.role FROM team_members m JOIN users u ON u.id=m.user_id WHERE m.team_id=$1 ORDER BY u.name',[id])).rows);
     const requests=team.role==='admin'?(await db.query('SELECT id,repo_id,requester_id,kind,state,expires_at FROM access_requests WHERE team_id=$1 ORDER BY created_at DESC LIMIT 100',[id])).rows:(await db.query('SELECT id,repo_id,requester_id,kind,state,expires_at FROM access_requests WHERE team_id=$1 AND requester_id=$2 ORDER BY created_at DESC LIMIT 100',[id,actor.id])).rows;
     const grants=team.role==='admin'?(await db.query('SELECT id,user_id,repo_id,mechanism,permission,previous_permission,source,state,created_at FROM grants WHERE team_id=$1 ORDER BY created_at DESC LIMIT 100',[id])).rows:[];
@@ -57,8 +58,8 @@ export async function POST(request:Request,{params}:{readonly params:Promise<{id
     if(['settings','invite','remove_member','remove_repository','destroy'].includes(input.action)&&!admin)return json({error:'Only team admins can change team membership or settings'},403);
     const audit=async(action:string,resourceId:string,outcome:'success'|'pending'='success')=>transaction(db,sql=>appendAudit(sql,{teamId:id,actorId:actor.id,action,resourceType:'team',resourceId,outcome}));
     if(input.action==='add'){
-      if(input.ref.host!==({github:'github.com',gitlab:'gitlab.com',bitbucket:'bitbucket.org'})[input.ref.provider])return json({error:'Register this Enterprise host first'},400);
-      const r=await(await accessAdapter(input.ref.provider,id,input.ref.owner)).repository(input.ref);if(!r.ok||r.value.permission==='none')return json({error:'Your own provider account must have repository access'},403);
+      if(input.ref.host!==({github:'github.com',gitlab:'gitlab.com',bitbucket:'bitbucket.org'})[input.ref.provider]&&!(input.ref.provider==='github'&&await registeredEnterpriseHost(input.ref.host,actor.id)))return json({error:'Register this Enterprise host first'},400);
+      const r=await(await accessAdapter(input.ref.provider,id,input.ref.owner,undefined,input.ref.host)).repository(input.ref);if(!r.ok||r.value.permission==='none')return json({error:'Your own provider account must have repository access'},403);
       const result=await transaction(db,sql=>addTeamRepository(sql,{teamId:id,actorId:actor.id,ref:input.ref,externalId:r.value.id,private:r.value.private,permission:r.value.permission}));
       if(!result.ok)return json({error:result.reason==='limit'?'This team has reached its repository limit':result.reason==='free'?'Free supports public repositories and your own repositories':'Team membership or provider access changed'},result.reason==='forbidden'?403:402);
       return json({saved:true,pending:!result.repository.approved});
