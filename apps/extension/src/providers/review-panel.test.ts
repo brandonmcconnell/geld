@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
-import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewThread } from '@geld/review';
+import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread } from '@geld/review';
 import type { ProviderAiState } from './ai';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent } from './review-panel';
@@ -112,6 +112,48 @@ describe('provider conversation digest', () => {
     expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · 1 passed · 1 running · 1 unknown');
     expect(checks?.textContent).toContain('Earlier commit · Failed');
     expect(checks?.querySelector('a')?.rel).toBe('noopener noreferrer');
+  });
+
+  it('counts independent pending requests beside standing approvals and change requests in UI and Markdown', async () => {
+    let copied = '';
+    const native: ProviderReviewInput = { ...input(), reviewers: [
+      { author: { id: '1', login: 'alice' }, state: 'approved', reviewRequest: 'pending', anchor: 'note_1', url: `${reviewUrl}#note_1` },
+      { author: { id: '2', login: 'bob' }, state: 'changes_requested', reviewRequest: 'pending' },
+      { author: { id: '3', login: 'carol' }, state: 'pending', reviewRequest: 'unknown' },
+    ] };
+    const panel = renderProviderReviewPanel(host(), native, { copyText: (text) => { copied = text; } });
+    const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
+    expect(section?.querySelector('summary')?.textContent).toBe('Reviews · 1 approval · 1 change request · 2 pending reviews');
+    expect(section?.querySelector('[data-state="approved"]')?.textContent).toBe('aliceApproved · Review requested');
+    expect(section?.querySelector('[data-state="approved"]')?.lastElementChild?.classList.contains('geld-provider-review__muted')).toBe(true);
+    expect(section?.querySelector('[data-state="changes_requested"]')?.textContent).toBe('bobChanges requested · Review requested');
+    expect(section?.querySelector('[data-state="pending"]')?.textContent).toBe('carolReviewer · Request state unavailable');
+    expect(section?.querySelector('a')?.href).toBe(`${reviewUrl}#note_1`);
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain('- alice: Approved · Review requested'));
+    expect(copied).toContain('- bob: Changes requested · Review requested');
+    expect(copied).toContain('- carol: Reviewer · Request state unavailable');
+    expect(copied).not.toMatch(/asked again|latest push/i);
+    expect(native.reviewers?.[0]?.state).toBe('approved');
+    panel.update(native, { approvalsRequired: 2, approvalsLeft: 0 });
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · 2/2 required approvals · 1 change request · 2 pending reviews');
+    panel.update({ ...native, reviewers: (native.reviewers ?? []).map((reviewer): ProviderReviewReviewer => ({ ...reviewer, reviewRequest: 'not-pending' })) }, {});
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · 1 approval · 1 change request');
+    expect(panel.element.querySelector('[data-state="approved"]')?.textContent).toBe('aliceApproved');
+  });
+
+  it('retains state-only legacy presentation while explicit unknown never invents a request', () => {
+    const native: ProviderReviewInput = { ...input(), reviewers: [
+      { author: { id: '1', login: 'legacy' }, state: 'pending' },
+      { author: { id: '2', login: 'assigned' }, state: 'pending', reviewRequest: 'unknown' },
+      { author: { id: '3', login: 'approver' }, state: 'approved', reviewRequest: 'unknown' },
+    ] };
+    const panel = renderProviderReviewPanel(host(), native, {});
+    const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
+    expect(section?.querySelector('summary')?.textContent).toBe('Reviews · 1 approval · 1 pending review');
+    expect(section?.querySelectorAll('li')[0]?.textContent).toBe('legacyReview requested');
+    expect(section?.querySelectorAll('li')[1]?.textContent).toBe('assignedReviewer · Request state unavailable');
+    expect(section?.querySelectorAll('li')[2]?.textContent).toBe('approverApproved · Request state unavailable');
   });
 
   it('copies native source links and leaves navigation to the provider callback', async () => {

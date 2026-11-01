@@ -62,6 +62,7 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     expect(snapshot.input.threads[0]?.comments.map((source) => source.id)).toEqual(['10', '11']);
     expect(snapshot.input.threads[0]?.comments[0]).toMatchObject({ url: 'https://bitbucket.org/acme/widgets/pull-requests/42/_/diff#comment-10', author: { id: USER.uuid, login: USER.nickname } });
     expect(snapshot.input.reviewers?.map((reviewer) => reviewer.state)).toEqual(['approved', 'changes_requested']);
+    expect(snapshot.input.reviewers?.map((reviewer) => reviewer.reviewRequest)).toEqual(['unknown', 'unknown']);
     expect(snapshot.input.bots).toEqual([]);
     expect(buildProviderReviewItems(snapshot.input)[0]?.sources[0]?.bot).toBeUndefined();
     expect(snapshot.actions).toEqual([]);
@@ -71,6 +72,18 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     expect(snapshot.complete).toBe(false);
     expect(snapshot.input.complete).toBe(false);
     expect(snapshot.unavailable).toContainEqual(expect.objectContaining({ area: 'approval requirements' }));
+  });
+
+  it('does not infer a pending request from assigned reviewer membership or an existing approval', async () => {
+    const { page, client } = setup({ pr: { ...PR, participants: [
+      { user: USER, role: 'REVIEWER', approved: true, state: 'approved' },
+      { user: REPLY, role: 'REVIEWER', approved: false },
+    ] } });
+    const snapshot = await fetchBitbucketReview(page, new AbortController().signal, client);
+    expect(snapshot.input.reviewers).toMatchObject([
+      { author: { id: USER.uuid }, state: 'approved', reviewRequest: 'unknown' },
+      { author: { id: REPLY.uuid }, state: 'pending', reviewRequest: 'unknown' },
+    ]);
   });
 
   it('keeps resolved threads distinct from open tasks and regular standalone comments', async () => {

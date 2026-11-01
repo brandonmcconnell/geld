@@ -46,6 +46,8 @@ export interface ProviderReviewThread {
 export interface ProviderReviewReviewer {
   readonly author: ProviderReviewAuthor;
   readonly state: ReviewerState;
+  /** Independent current request fact; absence retains legacy state-only behavior. */
+  readonly reviewRequest?: 'pending' | 'not-pending' | 'unknown';
   readonly anchor?: string;
   readonly url?: string;
 }
