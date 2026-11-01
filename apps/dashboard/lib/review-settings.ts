@@ -29,8 +29,9 @@ export async function reviewSettings(ref: RepositoryRef): Promise<{ readonly set
   const readFile = async (owner: string, repo: string, path: string): Promise<string | null> => {
     const endpoint = ref.provider === 'github' ? `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}` : ref.provider === 'gitlab' ? `projects/${encodeURIComponent(`${owner}/${repo}`)}/repository/files/${encodeURIComponent(path)}/raw?ref=HEAD` : `repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/src/HEAD/${path}`;
     const result = await api.request(endpoint, { text: true, ...(ref.provider === 'github' ? { accept: 'application/vnd.github.raw+json' } : {}) });
-    if (!result.ok) { if (result.reason !== 'not_found' && result.reason !== 'signed_out') { warning = 'Some repository rules could not be loaded. AI processing is paused until their policy can be read.'; aiAllowed = false; } return null; }
-    return typeof result.value === 'string' && result.value.length < 100000 ? result.value : null;
+    if (!result.ok) { if (result.reason !== 'not_found') { warning = 'Some repository rules could not be loaded. AI processing is paused until their policy can be read.'; aiAllowed = false; } return null; }
+    if (typeof result.value !== 'string' || Buffer.byteLength(result.value, 'utf8') >= 100000) { warning = 'Some repository rules could not be loaded. AI processing is paused until their policy can be read.'; aiAllowed = false; return null; }
+    return result.value;
   };
   const [org, repo, attributes] = await Promise.all([readFile(ref.owner, '.github', 'geld.yml'), readFile(ref.owner, ref.repo, '.github/geld.yml'), readFile(ref.owner, ref.repo, '.gitattributes')]);
   const configs: RepoConfig[] = [];

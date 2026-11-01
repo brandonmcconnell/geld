@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { DiffFile, DiffHunk } from '@geld/core';
 
-export const hunkRefSchema = z.object({ path: z.string(), hunk: z.number().int().nonnegative() });
+// A -1 reference reviews the file's binary or metadata change when it has no text hunks.
+export const hunkRefSchema = z.object({ path: z.string(), hunk: z.number().int().min(-1) });
 export type HunkRef = z.infer<typeof hunkRefSchema>;
 export const stepKindSchema = z.enum(['feature','fix','refactor','tests','docs','chore','generated','other']);
 export const reviewStepSchema = z.object({
@@ -32,27 +33,47 @@ const refKey = (ref: HunkRef): string => JSON.stringify([ref.path, ref.hunk]);
 function hunkText(hunk: DiffHunk): string {
   return hunk.lines.map((line) => `${line.kind}:${line.text}`).join('\n');
 }
+function fileRefs(file: PlanFile): HunkRef[] {
+  return file.hunks.length ? file.hunks.map((_hunk, hunk) => ({ path: file.path, hunk })) : [{ path: file.path, hunk: -1 }];
+}
 export function seedReview(files: readonly PlanFile[]): readonly { readonly title: string; readonly touches: readonly HunkRef[]; readonly supporting: readonly HunkRef[] }[] {
   const visible = files.filter((file) => !file.hidden);
   const groups = new Map<string, { title: string; touches: HunkRef[]; supporting: HunkRef[] }>();
   for (const file of visible) {
     const directory = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : 'Changes';
     const group = groups.get(directory) ?? { title: directory, touches: [], supporting: [] };
-    group.touches.push(...file.hunks.map((_hunk, hunk) => ({ path: file.path, hunk })));
+    group.touches.push(...fileRefs(file));
     groups.set(directory, group);
   }
   const seeds = [...groups.values()];
   for (const file of files.filter((file) => file.hidden)) {
     const stem = file.path.replace(/(?:\.test|\.spec)?\.[^.]+$/, '').split('/').pop() ?? '';
     const target = seeds.find((group) => group.touches.some((ref) => ref.path.includes(stem))) ?? seeds[0];
-    if (target) target.supporting.push(...file.hunks.map((_hunk, hunk) => ({ path: file.path, hunk })));
+    if (target) target.supporting.push(...fileRefs(file));
   }
   return seeds;
 }
 
 export function normalizeReviewPlan(output: PlannerOutput, files: readonly PlanFile[], context: { readonly headSha: string; readonly model: string; readonly madeAt: string; readonly excerpted?: boolean }): ReviewPlan {
-  const refs = new Map<string, { ref: HunkRef; hunk: DiffHunk; hidden: boolean }>();
-  for (const file of files) file.hunks.forEach((hunk, index) => { const ref = { path: file.path, hunk: index }; refs.set(refKey(ref), { ref, hunk, hidden: file.hidden }); });
+  const refs = new Map<string, { ref: HunkRef; hunk: DiffHunk | null; hidden: boolean; identity: string; fingerprint: string }>();
+  for (const file of files) {
+    if (!file.hunks.length) {
+      const ref = { path: file.path, hunk: -1 };
+      refs.set(refKey(ref), { ref, hunk: null, hidden: file.hidden, identity: JSON.stringify([file.path, 'file']), fingerprint: reviewFingerprint(JSON.stringify([context.headSha, file.status, file.kinds, file.binary])) });
+      continue;
+    }
+    const identities = file.hunks.map((hunk) => reviewFingerprint(hunkText(hunk)));
+    const counts = new Map<string, number>();
+    for (const identity of identities) counts.set(identity, (counts.get(identity) ?? 0) + 1);
+    file.hunks.forEach((hunk, index) => {
+      const ref = { path: file.path, hunk: index };
+      const fingerprint = identities[index] ?? '';
+      const ambiguous = (counts.get(fingerprint) ?? 0) > 1;
+      refs.set(refKey(ref), { ref, hunk, hidden: file.hidden, identity: JSON.stringify([file.path, fingerprint, ambiguous ? hunk.header : null]), fingerprint });
+    });
+  }
+  const stableKey = (ref: HunkRef): string => refs.get(refKey(ref))?.identity ?? refKey(ref);
+  const fingerprintFor = (items: readonly HunkRef[]): string => reviewFingerprint(items.map((ref) => `${stableKey(ref)}:${refs.get(refKey(ref))?.fingerprint ?? ''}`).sort().join('\n'));
   const used = new Set<string>();
   const steps: ReviewStep[] = [];
   const sourceToIds = new Map<number, string[]>();
@@ -69,7 +90,7 @@ export function normalizeReviewPlan(output: PlannerOutput, files: readonly PlanF
     const chunks: HunkRef[][] = [];
     let chunk: HunkRef[] = []; let size = 0;
     for (const ref of touches) {
-      const count = refs.get(refKey(ref))?.hunk.lines.filter((line) => line.kind === 'added' || line.kind === 'removed').length ?? 0;
+      const count = refs.get(refKey(ref))?.hunk?.lines.filter((line) => line.kind === 'added' || line.kind === 'removed').length ?? 0;
       if (chunk.length && size + count > 400) { chunks.push(chunk); chunk = []; size = 0; }
       chunk.push(ref); size += count;
     }
@@ -79,9 +100,9 @@ export function normalizeReviewPlan(output: PlannerOutput, files: readonly PlanF
     chunks.forEach((part, split) => {
       const support = split === 0 ? supporting : [];
       const identity = part[0] ?? support[0];
-      const id = `step-${reviewFingerprint(identity ? refKey(identity) : String(index))}`;
+      const id = `step-${reviewFingerprint(identity ? stableKey(identity) : String(index))}`;
       ids.push(id);
-      const fingerprint = reviewFingerprint([...part, ...support].map((ref) => `${refKey(ref)}:${hunkText(refs.get(refKey(ref))?.hunk ?? { header: '', oldStart: 0, oldLines: 0, newStart: 0, newLines: 0, lines: [] })}`).join('\n'));
+      const fingerprint = fingerprintFor([...part, ...support]);
       steps.push({ id, title: chunks.length > 1 ? `${proposed.title} (${split + 1})` : proposed.title, kind: proposed.kind, story: proposed.story, why: proposed.why, touches: part, supporting: support, dependsOn: [], watch: proposed.watch, findings: [], fingerprint });
     });
     sourceToIds.set(index, ids);
@@ -91,7 +112,7 @@ export function normalizeReviewPlan(output: PlannerOutput, files: readonly PlanF
   for (const [key, entry] of refs) if (!used.has(key)) (entry.hidden ? remainingHidden : unassigned).push(entry.ref);
   if (unassigned.length || remainingHidden.length) {
     const all = [...unassigned, ...remainingHidden];
-    steps.push({ id: `step-${reviewFingerprint(all.map(refKey).join(':'))}`, title: unassigned.length ? 'Review the remaining changes' : 'Review supporting changes', kind: unassigned.length ? 'other' : 'tests', story: null, why: null, touches: [...unassigned], supporting: remainingHidden, dependsOn: [], watch: [], findings: [], fingerprint: reviewFingerprint(all.map((ref) => hunkText(refs.get(refKey(ref))?.hunk ?? { header: '', oldStart: 0, oldLines: 0, newStart: 0, newLines: 0, lines: [] })).join('\n')) });
+    steps.push({ id: `step-${reviewFingerprint(all.map(stableKey).sort().join(':'))}`, title: unassigned.length ? 'Review the remaining changes' : 'Review supporting changes', kind: unassigned.length ? 'other' : 'tests', story: null, why: null, touches: [...unassigned], supporting: remainingHidden, dependsOn: [], watch: [], findings: [], fingerprint: fingerprintFor(all) });
   }
   const withDependencies = steps.map((step) => {
     const source = [...sourceToIds].find(([_index, ids]) => ids.includes(step.id));
