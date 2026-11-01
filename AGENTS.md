@@ -1467,6 +1467,7 @@ Provider-specific surfaces translate settings and sources into shared review and
   Inline mode keeps native file headers and has no grouped bottom section.
   GitLab can stream normal-flow files through `[data-stream-remaining-diffs] > streaming-element`, so flatten only those verified wrappers after mounted paths match the complete source inventory and restore their owned layout markers on teardown.
   Native sidebar remounts can retire Geld's category nodes while the diff remains open, so reapply the controller's current category choice when rebuilding the projection instead of resetting the sidebar to Essential independently.
+  Rebuilding a known unchanged review/revision also retains its selected file and folder choices, while a different subject, explicit teardown or a path leaving the complete source inventory clears the corresponding selection.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
 - **Digest bylines and native merge rules remain source facts.**
   Native author names, aliases, avatars and role badges are read only from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
@@ -1508,6 +1509,7 @@ Provider-specific surfaces translate settings and sources into shared review and
   Header hidden-count hints live outside native numeric ARIA wrappers and badges, and only the owned hint has a dotted underline.
   Count-group hover retains native focus and ARIA ownership while positioning the popover at the visible hint, with a native-host fallback at responsive breakpoints.
   Moving across wrapped commit-link lines updates only popover geometry after genuine pointer intent, without another source fetch.
+  GitLab's commit reference hook mounts its provider card only once, and Escape can leave that card mounted but hidden, so installed pointer and keyboard tests record separate native visits when the card cannot reopen instead of patching provider state or accepting a hidden chip.
   Compacted original conversation entries use `hidden="until-found"` only when the browser supports beforematch and the exact native root can be folded without overriding native visibility or editing controls.
   Beforematch and exact fragment navigation reveal that original for the visit, while an explicit Hide remains effective until a later changed fragment requests it again.
   Unsupported or natively owned roots remain visible with their native behavior rather than receiving a misleading owned disclosure control.
