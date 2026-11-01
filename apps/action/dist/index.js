@@ -20343,9 +20343,16 @@ function ruleIdOf(body) {
   const match = RULE_ID.exec(body);
   return match?.[1]?.toLowerCase() ?? null;
 }
+var LEADING_REVIEW_BADGE = /^<a href="#"><img alt="P([12])" src="https:\/\/greptile-static-assets\.s3\.amazonaws\.com\/badges\/p\1\.svg\?v=9" height="20" align="top"><\/a>[ \t]+/;
+function titleLine(line) {
+  const badge = LEADING_REVIEW_BADGE.exec(line);
+  if (badge === null) return line;
+  const text = line.slice(badge[0].length).trimStart();
+  return text !== "" && !text.startsWith("<") && /[\p{L}\p{N}]/u.test(text) ? text : line;
+}
 function firstSentence(body) {
   const withoutCode = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode.split("\n").map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode.split("\n").map((entry2) => titleLine(entry2.trim())).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
