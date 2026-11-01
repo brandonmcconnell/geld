@@ -13,7 +13,7 @@ beforeEach(() => {
 function rapid(): void {
   // Reduced from anonymous gitlab-org/gitlab!266882 Rapid Diffs, November 1, 2026.
   document.body.innerHTML = `<article data-rapid-diffs data-app-data='${JSON.stringify({ versions: { source_versions: [{ id: 2158495265, selected: true, head_sha: HEAD, base_sha: BASE }] } })}'>
-    <div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div class="diff-stats-group"><span>1 file</span></div><div><span data-testid="js-file-addition-line">4</span><span data-testid="js-file-deletion-line">1</span></div></div></div>
+    <div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div class="diff-stats-group"><span>1 file</span></div><div aria-label="Added 4 lines."><span data-testid="js-file-addition-line">4</span></div><div aria-label="Removed 1 line."><span data-testid="js-file-deletion-line">1</span></div></div></div>
     <div data-diffs-list><diff-file id="bab0cb834" data-file-data='{"new_path":"spec/requests/api/graphql/project/work_items_spec.rb"}'>
       <header><button aria-label="Hide file contents" data-opened></button><button aria-label="Show file contents" data-closed></button><span class="rd-stats-added">+4</span><span class="rd-stats-removed">−1</span><input type="checkbox" data-viewed-checkbox disabled></header>
       <details data-file-body open><table><tbody><tr class="rd-hunk-lines rd-hunk-lines-inline"><td class="rd-line-number" data-position="old"></td><td class="rd-line-number" data-position="new"><a data-line-number="5"></a></td><td class="rd-line-content" data-change="added"><pre class="rd-line-text"># Clearing shared state\n</pre></td></tr></tbody></table></details>
@@ -35,6 +35,19 @@ it('does not run on sign-in interstitials or invalid review paths', () => {
   expect(describeGitLabPage(new URL(window.location.href), document)).toBeNull();
   document.body.innerHTML = '';
   expect(describeGitLabPage(new URL('https://gitlab.com/a/b/-/merge_requests/1/diffs/surprise'), document)).toBeNull();
+});
+
+it('declares native count labels and the interactive Changes link separately from its pointer-transparent badge', () => {
+  rapid();
+  document.body.insertAdjacentHTML('afterbegin', '<li data-testid="diffs-tab"><a data-action="diffs" data-toggle="tabvue" href="/gitlab-org/gitlab/-/merge_requests/266882/diffs">Changes <span class="js-changes-tab-count" style="pointer-events:none">1</span></a></li>');
+  const additions = document.querySelector('[data-testid="js-file-addition-line"]');
+  const wrapper = additions?.parentElement;
+  if (wrapper === null || wrapper === undefined) throw new Error('Missing additions wrapper');
+  wrapper.setAttribute('aria-label', 'Added 4 lines.');
+  const targets = gitLabHeaderTargets(document);
+  expect(targets[0]?.labels).toContainEqual({ host: wrapper, attribute: 'aria-label', count: 'additions' });
+  expect(targets[1]?.hoverHosts).toEqual([document.querySelector('[data-testid="diffs-tab"] a')]);
+  expect(targets[1]?.files).toBe(document.querySelector('.js-changes-tab-count'));
 });
 
 it('collapses with native controls, keeps nodes in place and respects disabled Viewed', () => {

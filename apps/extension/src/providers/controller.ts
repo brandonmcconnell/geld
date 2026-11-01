@@ -306,6 +306,7 @@ export class ProviderController {
       this.counts.write(target.additions, visible.additions);
       this.counts.write(target.deletions, visible.deletions);
       this.counts.write(target.files, visible.files);
+      for (const label of target.labels ?? []) this.counts.writeAttribute(label.host, label.attribute, visible[label.count]);
     }
     if (view !== null) this.applyFiles(page, view, hidden, all, files);
     this.state = {
@@ -495,7 +496,7 @@ export class ProviderController {
   }
 
   private bindHeaders(targets: readonly ProviderHeaderTarget[], counts: HoverCounts): void {
-    const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files]).filter((host): host is HTMLElement => host !== null));
+    const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? [])]).filter((host): host is HTMLElement => host !== null));
     for (const host of this.headerHosts) {
       if (current.has(host)) continue;
       this.forgetHover(host);

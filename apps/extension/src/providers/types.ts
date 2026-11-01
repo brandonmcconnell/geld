@@ -95,6 +95,12 @@ export interface ProviderHeaderTarget {
   readonly additions: HTMLElement | null;
   readonly deletions: HTMLElement | null;
   readonly files: HTMLElement | null;
+  readonly hoverHosts?: readonly HTMLElement[];
+  readonly labels?: readonly {
+    readonly host: HTMLElement;
+    readonly attribute: 'aria-label' | 'title';
+    readonly count: 'files' | 'additions' | 'deletions';
+  }[];
 }
 
 export interface ProviderListRow {
