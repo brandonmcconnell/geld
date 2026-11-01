@@ -2579,7 +2579,7 @@ try {
     item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
     assertAuthorThemeEvidence(item.authorPresentation);
     item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
-    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: item.localReviewed.sourceHead, diffPageUrl: item.state.diffPageUrl });
+    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: item.localReviewed.sourceHead, diffPageUrl: item.state.diffPageUrl, extensionId });
     return {};
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
