@@ -1522,6 +1522,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   Inline mode keeps native file headers and has no grouped bottom section.
   GitLab can stream normal-flow files through `[data-stream-remaining-diffs] > streaming-element`, so flatten only those verified wrappers after mounted paths match the complete source inventory and restore their owned layout markers on teardown.
   Native sidebar remounts can retire Geld's category nodes while the diff remains open, so reapply the controller's current category choice when rebuilding the projection instead of resetting the sidebar to Essential independently.
+  Bitbucket can retain selected Details and expanded Parent commits markup behind its native collapsed 64-pixel icon rail, so installed parent-hover verification opens the observed native sidebar expansion button before considering an offscreen Details tab or parent link.
+  Selected and expanded ARIA states alone do not establish that those controls are presented, and verification never forces native sidebar CSS or moves its framework nodes.
   Rebuilding a known unchanged review/revision also retains its selected file and folder choices, while a different subject, explicit teardown or a path leaving the complete source inventory clears the corresponding selection.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
 - **CI presentation preserves provider source facts.**
