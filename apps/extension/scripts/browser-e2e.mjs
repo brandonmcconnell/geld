@@ -1031,7 +1031,7 @@ async function gitLabBinaryCounts(page, item) {
     item.nativeBaseline = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.badgeGid === 'gid://gitlab/MergeRequest/321472212' && value.file !== null && value.file.hidden === null, 'Genuine eleven-file native Changes badge and observed PNG wrapper');
     item.nativeBaselineArtifacts = await capture(page, 'gitlab-binary-native-baseline');
     assert.ok(item.nativeBaseline.stats.every((stats) => stats.lineCounters.length === 0), 'The binary-only native header must have no changed text-line counters');
-    const hintHost = item.nativeBaseline.stats.length > 0 ? '.diff-stats.inline-parallel-buttons .diff-stats-contents' : '.merge-request-tabs-container > .merge-request-tabs-actions';
+    const hintHost = item.nativeBaseline.stats.length > 0 ? '.diff-stats.inline-parallel-buttons .diff-stats-contents > .diff-stats-group > span' : '.geld-provider-header-hidden-count';
     item.nativeHeaderVariant = item.nativeBaseline.stats.length > 0 ? 'Hydrated native file-only statistics, without line counters' : 'Native action-area fallback, without a statistics wrapper';
     if (item.nativeBaseline.stats.length === 0) assert.equal(item.nativeBaseline.actions?.native, true, 'Actual neutral native action-area fallback host is unavailable');
     await patchSettings({ enabled: true });
