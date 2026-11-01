@@ -1603,6 +1603,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   A counted author-filter notice supplies a keyboard-accessible Show action for its native list, with recovery remembered only for the current visit and filter set.
   List and table recovery notices use appropriate native container tags without moving rows or taking their handlers, and rows with no reliable author identity stay untouched.
   Bitbucket list count chips mount beside the verified native title tooltip wrapper on the same title line, because placing them inside its span also triggers the provider's title tooltip over the breakdown.
+  When that verified title line contains an owned chip, shrink and ellipsize only its native text presentation wrapper and reserve the chip's intrinsic width, so long titles cannot push cold count instructions into the column's clipped area.
+  Removing the owned chip restores the native layout through the conditional stylesheet, while native title links, tooltip anchors and popover accessibility relationships retain their nodes and attributes.
 - **Digest settings operate only on represented native sources.**
   Compact and minimal modes fold native comment roots only when all their source anchors are represented in the digest and eligible for that mode.
   Unknown activity, unrepresented comments, composers and pending native review controls stay visible.
