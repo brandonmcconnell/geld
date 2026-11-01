@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -18,6 +18,8 @@ const context = createContext<DashboardContext>({ queue: emptyQueue, session: { 
 export function useDashboard() { return useContext(context); }
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
+  const pathname = usePathname();
+  const queueOwner = useRef<string | null>(null);
   const [queue, setQueue] = useState<QueueData>(emptyQueue);
   const [session, setSession] = useState<SessionData>({ user: null, configured: false, demo: false });
   const [loading, setLoading] = useState(true);
@@ -26,21 +28,34 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     const abort = new AbortController();
-    Promise.all([fetch('/api/session', { signal: abort.signal }).then(async (r): Promise<unknown> => r.json()), fetch('/api/queue', { signal: abort.signal }).then(async (r) => ({ ok: r.ok, data: await r.json() }))]).then(([sessionValue, result]) => {
+    Promise.all([fetch('/api/session', { signal: abort.signal }).then(async (r): Promise<unknown> => r.json()), fetch('/api/queue', { signal: abort.signal }).then(async (r) => ({ ok: r.ok, status: r.status, data: await r.json() }))]).then(([sessionValue, result]) => {
+      if (abort.signal.aborted) return;
       const account = sessionSchema.safeParse(sessionValue);
       const data = queueSchema.safeParse(result.data);
-      if (account.success) setSession(account.data);
+      if (!account.success || (!account.data.user && !account.data.demo)) {
+        queueOwner.current = null;
+        setQueue(emptyQueue);
+        setSession(account.success ? account.data : { user: null, configured: false, demo: false });
+        setError(account.success ? null : 'The account could not be verified. Try again.');
+        setLoading(false);
+        return;
+      }
+      const owner = account.data.demo ? 'demo' : account.data.user?.id ?? null;
+      if (owner !== queueOwner.current) setQueue(emptyQueue);
+      queueOwner.current = owner;
+      setSession(account.data);
+      if (result.status === 401 || result.status === 403) setQueue(emptyQueue);
       if (result.ok && data.success) { setQueue(data.data); setError(null); }
       else if (!account.success || account.data.user) setError('The review queue could not be loaded. Try again.');
       setLoading(false);
-    }).catch(() => { if (!abort.signal.aborted) { setError('The dashboard could not connect. Try again.'); setLoading(false); } });
+    }).catch(() => { if (!abort.signal.aborted) { queueOwner.current = null; setQueue(emptyQueue); setSession({ user: null, configured: false, demo: false }); setError('The dashboard could not connect. Try again.'); setLoading(false); } });
     return () => abort.abort();
   }, [revision]);
-  const data = { queue, session, loading, error, refresh: () => { setLoading(true); setRevision((value) => value + 1); } };
+  const data = { queue, session, loading, error, refresh: () => { setQueue(emptyQueue); setLoading(true); setRevision((value) => value + 1); } };
   return <context.Provider value={data}><div className="app-shell" data-collapsed={collapsed}>
     <a href="#main" className="skip-link">Skip to content</a>
     <aside className="desktop-sidebar"><Sidebar collapsed={collapsed} onCollapse={() => setCollapsed((value) => !value)} /></aside>
-    <div className="mobile-navigation"><Dialog.Root><Dialog.Trigger className="icon-button" aria-label="Open navigation"><Menu size={20}/></Dialog.Trigger><Link href="/" aria-label="Geld home"><Brand compact/></Link><Dialog.Portal><Dialog.Backdrop className="dialog-backdrop"/><Dialog.Popup className="mobile-sidebar"><Dialog.Title className="sr-only">Navigation</Dialog.Title><Dialog.Close className="icon-button mobile-close" aria-label="Close navigation"><X size={18}/></Dialog.Close><Sidebar collapsed={false}/></Dialog.Popup></Dialog.Portal></Dialog.Root></div>
+    <div className="mobile-navigation"><Dialog.Root key={pathname}><Dialog.Trigger className="icon-button" aria-label="Open navigation"><Menu size={20}/></Dialog.Trigger><Link href="/" aria-label="Geld home"><Brand compact/></Link><Dialog.Portal><Dialog.Backdrop className="dialog-backdrop"/><Dialog.Popup className="mobile-sidebar"><Dialog.Title className="sr-only">Navigation</Dialog.Title><Dialog.Close className="icon-button mobile-close" aria-label="Close navigation"><X size={18}/></Dialog.Close><Sidebar collapsed={false}/></Dialog.Popup></Dialog.Portal></Dialog.Root></div>
     <main id="main" className="main-content">{children}</main>
   </div></context.Provider>;
 }
