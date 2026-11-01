@@ -11407,7 +11407,7 @@ var init_settings_schema = __esm({
       {
         id: "lists",
         title: "Pull request lists",
-        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
+        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login or provider-qualified identity per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
         fields: [
           {
             kind: "list",
@@ -11419,6 +11419,7 @@ var init_settings_schema = __esm({
             placeholder: "*[bot]\nrenovate*",
             syntax: [
               "A login as GitHub shows it: `dependabot[bot]`, `octocat`; a leading `@` is fine.",
+              "GitLab uses its native username. Bitbucket Cloud uses `bitbucket.org/uuid/<UUID>` with the canonical account UUID without braces. Names and nicknames are not logins. Authors that cannot be resolved remain visible.",
               "`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.",
               "Matching ignores case. Lines starting with `#` are comments."
             ],
@@ -32745,9 +32746,16 @@ function ruleIdOf(body) {
   const match = RULE_ID.exec(body);
   return match?.[1]?.toLowerCase() ?? null;
 }
+var LEADING_REVIEW_BADGE = /^<a href="#"><img alt="P([12])" src="https:\/\/greptile-static-assets\.s3\.amazonaws\.com\/badges\/p\1\.svg\?v=9" height="20" align="top"><\/a>[ \t]+/;
+function titleLine(line) {
+  const badge = LEADING_REVIEW_BADGE.exec(line);
+  if (badge === null) return line;
+  const text = line.slice(badge[0].length).trimStart();
+  return text !== "" && !text.startsWith("<") && /[\p{L}\p{N}]/u.test(text) ? text : line;
+}
 function firstSentence(body) {
   const withoutCode2 = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode2.split("\n").map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode2.split("\n").map((entry2) => titleLine(entry2.trim())).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
