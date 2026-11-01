@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Check, MessageSquare, Send } from 'lucide-react';
 import { z } from 'zod';
 import type { ProviderThread, PullRef } from '@geld/domain';
@@ -10,13 +10,15 @@ export function ReviewThreads({ threads, reference, headSha, onChange }: { reado
 }
 function Thread({ thread, reference, headSha, onChange }: { readonly thread: ProviderThread; readonly reference: PullRef; readonly headSha: string; readonly onChange: () => void }) {
   const { session } = useDashboard();
+  const mutationKey=useRef({content:'',key:''});
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   async function write(kind: 'reply' | 'resolve') {
+    const content=JSON.stringify({reference,headSha,kind,threadId:thread.id,reply,resolved:!thread.resolved});if(mutationKey.current.content!==content)mutationKey.current={content,key:crypto.randomUUID()};
     setBusy(true); setMessage('');
     try {
-      const response = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: reference, headSha, kind, threadId: thread.id, body: kind === 'reply' ? reply : '', resolved: !thread.resolved }) });
+      const response = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: reference, key:mutationKey.current.key, headSha, kind, threadId: thread.id, body: kind === 'reply' ? reply : '', resolved: !thread.resolved }) });
       const value: unknown = await response.json();
       if (response.ok) { setReply(''); onChange(); }
       else { const parsed = z.object({ error: z.string() }).safeParse(value); setMessage(parsed.success ? parsed.data.error : 'The thread could not be updated.'); }

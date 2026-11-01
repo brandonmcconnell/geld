@@ -2,17 +2,18 @@ import 'server-only';
 import { z } from 'zod';
 import { applyRepoConfigs, DEFAULT_SETTINGS, generatedConfigFrom, parseRepoConfig, validateSettingsDocument } from '@geld/core';
 import type { GeldSettings, RepoConfig } from '@geld/core';
+import type { TokenSource } from '@geld/github';
 import { createApiTransport } from '@geld/github';
 import { REVIEW_BOTS } from '@geld/review/bots';
 import type { RepositoryRef } from '@geld/domain';
 import { currentActor, providerTokenSource } from './session';
 import { database } from './db';
 import { demoEnabled } from './env';
-export async function reviewSettings(ref: RepositoryRef): Promise<{ readonly settings: GeldSettings; readonly warning: string | null; readonly aiAllowed: boolean }> {
+export async function reviewSettings(ref: RepositoryRef, background?: {readonly source:TokenSource;readonly userId:string}): Promise<{ readonly settings: GeldSettings; readonly warning: string | null; readonly aiAllowed: boolean }> {
   if (demoEnabled()) return { settings: DEFAULT_SETTINGS, warning: null, aiAllowed: true };
   let settings = DEFAULT_SETTINGS;
   let warning: string | null = null;
-  const actor = await currentActor();
+  const actor = background ? {id:background.userId} : await currentActor();
   const db = database();
   if (actor && db) {
     const row = await db.query('SELECT settings FROM users WHERE id = $1', [actor.id]);
@@ -24,7 +25,7 @@ export async function reviewSettings(ref: RepositoryRef): Promise<{ readonly set
     }
   }
   let aiAllowed = true;
-  const source = await providerTokenSource(ref.provider,ref.owner);
+  const source = background?.source ?? await providerTokenSource(ref.provider,ref.owner);
   const api = createApiTransport({ baseUrl: ref.provider === 'github' ? 'https://api.github.com/' : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source, anonymousReads: true });
   const readFile = async (owner: string, repo: string, path: string): Promise<string | null> => {
     const endpoint = ref.provider === 'github' ? `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}` : ref.provider === 'gitlab' ? `projects/${encodeURIComponent(`${owner}/${repo}`)}/repository/files/${encodeURIComponent(path)}/raw?ref=HEAD` : `repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/src/HEAD/${path}`;

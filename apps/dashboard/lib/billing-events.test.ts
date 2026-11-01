@@ -8,7 +8,7 @@ import { finishCredits, reserveCredits } from './credits';
 import type { BillingSnapshot } from './billing-gateway';
 async function fixture() {
   const db = new PGlite();
-  for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
+  for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
   await db.exec("INSERT INTO users(id,name,email) VALUES ('u','Reviewer','reviewer@example.test'),('v','Reviewer 2','second@example.test'); INSERT INTO teams(id,name) VALUES ('t','Team'); INSERT INTO team_members(team_id,user_id,role) VALUES ('t','u','admin'),('t','v','member'); INSERT INTO subscriptions(team_id,tier,seats,used_credits,cap_cents,card_on_file,stripe_customer_id,stripe_subscription_id,period_start) VALUES ('t','starter',1,39,100,true,'cus_test','sub_test','2026-10-01')");
   return { db, sql: { query: async (text: string, values?: unknown[]) => db.query(text, values) } };
 }

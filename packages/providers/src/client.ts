@@ -199,10 +199,10 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
       const decision = await write(`${pullBase(ref)}/${review.event === 'approve' ? 'approve' : 'request-changes'}`, 'POST');
       return decision.ok && review.body.trim() ? write(`${pullBase(ref)}/comments`, 'POST', { content: { raw: review.body } }) : decision;
     },
-    async requestReviewers(ref, reviewers) {
+    async requestReviewers(ref, reviewers, remove = false) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };
       if (provider !== 'github') return { ok: false, reason: 'unsupported' };
-      const result = await api.request(`${pullBase(ref)}/requested_reviewers`, { method: 'POST', body: { reviewers } });
+      const result = await api.request(`${pullBase(ref)}/requested_reviewers`, { method: remove ? 'DELETE' : 'POST', body: { reviewers } });
       return result.ok ? { ok: true, value: undefined } : result;
     },
   };

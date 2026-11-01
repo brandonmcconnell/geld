@@ -108,5 +108,5 @@ export interface ProviderClient {
   threads(ref: PullRef): Promise<ProviderResult<readonly ProviderThread[]>>;
   reply(ref: PullRef, threadId: string, body: string): Promise<ProviderResult<void>>;
   resolve(ref: PullRef, threadId: string, resolved: boolean): Promise<ProviderResult<void>>;
-  requestReviewers(ref: PullRef, reviewers: readonly string[]): Promise<ProviderResult<void>>;
+  requestReviewers(ref: PullRef, reviewers: readonly string[], remove?: boolean): Promise<ProviderResult<void>>;
 }
