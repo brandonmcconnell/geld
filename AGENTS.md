@@ -1370,6 +1370,11 @@ Coloring is independent of comment/test folding and pending count fetches;
 master disable, no diff view, navigation and controller stop clear only its owned ranges.
 The existing GitHub18 regressions plus native-fixture unit checks do not prove installed Bitbucket highlighting, exact native Bash-scope palette mapping or actual Bitbucket dark-theme selection.
 Keep D25 partial until those are verified publicly.
+The dedicated bitbucket-native-bash browser focus is native discovery only and is excluded from regression and all.
+It saves the real shared master setting disabled before creating its guarded native page, uses only bounded original-file reveal, and closes that page before restoring master so unrelated count sources cannot start afterward.
+Native Bash style probes match original Git-proven new-side text and record both DOM span styles and intersecting CSS Custom Highlight ranges, priorities and pseudo-colors, since plain-looking source DOM can still be colored by native highlights.
+Missing styles, unsupported or truncated range coverage and offscreen measurements remain explicit unknowns rather than guessed token mappings or a feature pass.
+A failed discovery master restoration records its failed readback/error and per-case unavailable state before saving the report, while native parent references retain their actual full/prefix precision against Git provenance without claiming native resolution or relaxing the exact main commit hash.
 
 ## GitLab and Bitbucket provider adapters
 
