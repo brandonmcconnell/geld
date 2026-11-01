@@ -9,10 +9,29 @@ export async function reserveCredits(sql: SqlExecutor, input: { readonly teamId:
   const parsed = subscriptionSchema.safeParse(subscription.rows[0]);
   if (!parsed.success) return { ok: false, reason: 'unavailable' };
   const s = parsed.data;
-  if (!['active','trialing'].includes(s.status)) return { ok: false, reason: 'upgrade' };
-  const prior = await sql.query('SELECT id FROM credit_reservations WHERE team_id = $1 AND idempotency_key = $2', [input.teamId, input.key]);
+  if (!['active', 'trialing'].includes(s.status)) return { ok: false, reason: 'upgrade' };
+  const prior = await sql.query('SELECT id FROM credit_reservations WHERE team_id = $1 AND idempotency_key = $2', [
+    input.teamId,
+    input.key,
+  ]);
   if (prior.rows.length) return { ok: false, reason: 'duplicate' };
-  const decision = canSpend({ tier: s.tier, seats: s.seats, used: s.used_credits, requested: input.credits, capCents: s.cap_cents, spentCents: s.spent_cents, card: s.card_on_file,...(s.tier==='enterprise'&&s.contract_verified&&s.negotiated_overage_cents!==null?{negotiated:{included:s.included_credits,overageCents:s.negotiated_overage_cents}}:{}) });
+  const decision = canSpend({
+    tier: s.tier,
+    seats: s.seats,
+    used: s.used_credits,
+    requested: input.credits,
+    capCents: s.cap_cents,
+    spentCents: s.spent_cents,
+    card: s.card_on_file,
+    ...(s.tier === 'enterprise' && s.contract_verified && s.negotiated_overage_cents !== null
+      ? {
+          negotiated: {
+            included: s.included_credits,
+            overageCents: s.negotiated_overage_cents,
+          },
+        }
+      : {}),
+  });
   if (!decision.allowed) return { ok: false, reason: decision.reason };
   const id = crypto.randomUUID();
   await sql.query('INSERT INTO credit_reservations(id,team_id,actor_id,idempotency_key,credits,overage_cents,period_start,billing_subscription_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [id, input.teamId, input.actorId, input.key, input.credits, decision.overageCents, s.period_start, s.stripe_subscription_id]);
@@ -31,7 +50,23 @@ export async function finishCredits(sql: SqlExecutor, id: string, success: boole
     const end=new Date(reservation.data.settled_at);end.setUTCHours(0,0,0,0);end.setUTCDate(end.getUTCDate()+7-(end.getUTCDay()+6)%7);const start=new Date(end.getTime()-7*86400000);
     await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key,payload,run_after) VALUES($1,$2,'fallback_summary_email',$3,$4,$5,$6) ON CONFLICT DO NOTHING",[crypto.randomUUID(),team,id,`fallback-summary:${team}:${start.toISOString()}`,JSON.stringify({start:start.toISOString(),end:end.toISOString()}),end]);
   }
-
 }
 
-export function creditError(reason:Extract<CreditReservation,{ok:false}>['reason']):string{switch(reason){case'upgrade':return'Choose a paid plan to use AI guides and the assistant.';case'cap':return'This team has reached its spending cap. Ask an admin to increase it.';case'card':return'Included credits are used up. Add a payment method before using overage.';case'quote':return'Contact Geld to configure this Enterprise credit agreement.';case'forbidden':return'You are not a member of the selected billable team.';case'duplicate':return'This request was already attempted. Refresh its result before trying again.';case'unavailable':return'Billing is temporarily unavailable.';}}
+export function creditError(reason: Extract<CreditReservation, { ok: false }>['reason']): string {
+  switch (reason) {
+    case 'upgrade':
+      return 'Choose a paid plan to use AI guides and the assistant.';
+    case 'cap':
+      return 'This team has reached its spending cap. Ask an admin to increase it.';
+    case 'card':
+      return 'Included credits are used up. Add a payment method before using overage.';
+    case 'quote':
+      return 'Contact Geld to configure this Enterprise credit agreement.';
+    case 'forbidden':
+      return 'You are not a member of the selected billable team.';
+    case 'duplicate':
+      return 'This request was already attempted. Refresh its result before trying again.';
+    case 'unavailable':
+      return 'Billing is temporarily unavailable.';
+  }
+}

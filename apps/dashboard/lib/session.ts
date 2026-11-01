@@ -8,11 +8,23 @@ import { getAuth } from './auth';
 import { demoEnabled } from './env';
 import { ensurePersonalWorkspace } from './workspaces';
 
-const userSchema = z.object({ id: z.string(), name: z.string(), email: z.string(), image: z.string().nullable().optional() });
+const userSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  image: z.string().nullable().optional(),
+});
 export type Actor = z.infer<typeof userSchema>;
 export async function currentActor(): Promise<Actor | null> {
   const auth = getAuth();
-  if (!auth) return demoEnabled() ? { id: 'demo-user', name: 'Demo reviewer', email: 'reviewer@example.test' } : null;
+  if (!auth)
+    return demoEnabled()
+      ? {
+          id: 'demo-user',
+          name: 'Demo reviewer',
+          email: 'reviewer@example.test',
+        }
+      : null;
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     const parsed = userSchema.safeParse(session?.user);
@@ -24,9 +36,18 @@ export async function currentActor(): Promise<Actor | null> {
   }
 }
 
-export async function providerTokenSource(provider: Provider, owner?: string, identity=false,host='github.com', broad=false): Promise<TokenSource> {
+export async function providerTokenSource(
+  provider: Provider,
+  owner?: string,
+  identity = false,
+  host = 'github.com',
+  broad = false,
+): Promise<TokenSource> {
   const auth = getAuth();
-  if (!auth) return { get: async () => ({ status: 'signed-out', reason: 'Connect a provider' }) };
+  if (!auth)
+    return {
+      get: async () => ({ status: 'signed-out', reason: 'Connect a provider' }),
+    };
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) return { get: async () => ({ status: 'signed-out', reason: 'Sign in' }) };
@@ -39,22 +60,48 @@ export async function providerTokenSource(provider: Provider, owner?: string, id
     async get(options = {}) {
       if (!account) return { status: 'signed-out', reason: 'Connect a provider' };
       try {
-        if (options.force) await auth.api.refreshToken({ headers: requestHeaders, body: { accountId: account.id } });
-        const result = await auth.api.getAccessToken({ headers: requestHeaders, body: { accountId: account.id } });
-        return typeof result.accessToken === 'string' ? { status: 'ok', token: result.accessToken, refreshed: options.force === true } : { status: 'signed-out', reason: 'Reconnect the provider' };
+        if (options.force)
+          await auth.api.refreshToken({
+            headers: requestHeaders,
+            body: { accountId: account.id },
+          });
+        const result = await auth.api.getAccessToken({
+          headers: requestHeaders,
+          body: { accountId: account.id },
+        });
+        return typeof result.accessToken === 'string'
+          ? {
+              status: 'ok',
+              token: result.accessToken,
+              refreshed: options.force === true,
+            }
+          : { status: 'signed-out', reason: 'Reconnect the provider' };
       } catch {
-        return { status: 'unavailable', message: 'Reconnect the provider or try again later' };
+        return {
+          status: 'unavailable',
+          message: 'Reconnect the provider or try again later',
+        };
       }
     },
   };
   return repositorySource ? { get: options => repositorySource.get(options), alternatives: [...(repositorySource.alternatives ?? []), identitySource] } : identitySource;
 }
 
-export async function providerViewer(provider: Provider,host='github.com',owner?:string): Promise<string | null> {
+export async function providerViewer(provider: Provider, host = 'github.com', owner?: string): Promise<string | null> {
   const { createApiTransport } = await import('@geld/github');
-  const {githubEndpoints}=await import('@geld/domain');const {enterpriseFetch}=await import('./enterprise');
-  const baseUrl = provider === 'github' ? githubEndpoints(host).api : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
-  const api = createApiTransport({ baseUrl, source: await providerTokenSource(provider,owner,false,host),...(provider==='github'&&host!=='github.com'?{fetch:await enterpriseFetch(host)}:{}) });
+  const { githubEndpoints } = await import('@geld/domain');
+  const { enterpriseFetch } = await import('./enterprise');
+  const baseUrl =
+    provider === 'github'
+      ? githubEndpoints(host).api
+      : provider === 'gitlab'
+        ? 'https://gitlab.com/api/v4/'
+        : 'https://api.bitbucket.org/2.0/';
+  const api = createApiTransport({
+    baseUrl,
+    source: await providerTokenSource(provider, owner, false, host),
+    ...(provider === 'github' && host !== 'github.com' ? { fetch: await enterpriseFetch(host) } : {}),
+  });
   const result = await api.request('user');
   if (!result.ok) return null;
   return providerProfileIdentity(provider, result.value)?.username ?? null;

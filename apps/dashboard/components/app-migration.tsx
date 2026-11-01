@@ -1,5 +1,5 @@
 'use client';
-import { useEffect,useState } from 'react';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { Button } from '@geld/ui';
 const schema=z.object({installations:z.array(z.object({id:z.string(),account_slug:z.string(),slug:z.string(),state:z.string()}))});

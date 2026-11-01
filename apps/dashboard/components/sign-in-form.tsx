@@ -1,12 +1,12 @@
 'use client';
-import {z} from 'zod';
+import { z } from 'zod';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, Mail } from 'lucide-react';
 import { Button } from '@geld/ui';
-import {measure} from '@/lib/measurement';
+import { measure } from '@/lib/measurement';
 import { authClient } from '@/lib/auth-client';
 import { Brand } from './brand';
 import { useDashboard } from './app-shell';
@@ -24,10 +24,23 @@ export function SignInForm() {
     setMethod(next); setSent(false); setPassword(''); setOtp(''); setMessage('');
   }
   async function social(provider: string) {
-    const source=provider==='github'||provider==='gitlab'||provider==='bitbucket'?provider:undefined;
-    measure('provider_setup',{feature:'connections',stage:'started',...(source?{provider:source}:{})});
-    setBusy(true); setMessage('');
-    try { const result = await authClient.signIn.social({ provider, callbackURL: provider==='github'?'/api/apps/connect':'/connect' }); if (result.error) setMessage('This provider is not configured or could not connect.'); } catch { setMessage('Sign-in could not connect. Try again.'); }
+    const source = provider === 'github' || provider === 'gitlab' || provider === 'bitbucket' ? provider : undefined;
+    measure('provider_setup', {
+      feature: 'connections',
+      stage: 'started',
+      ...(source ? { provider: source } : {}),
+    });
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await authClient.signIn.social({
+        provider,
+        callbackURL: provider === 'github' ? '/api/apps/connect' : '/connect',
+      });
+      if (result.error) setMessage('This provider is not configured or could not connect.');
+    } catch {
+      setMessage('Sign-in could not connect. Try again.');
+    }
     setBusy(false);
   }
   async function sendReset() {
@@ -50,13 +63,26 @@ export function SignInForm() {
         const result = await authClient.signIn.magicLink({ email, callbackURL: '/connect' });
         setMessage(result.error ? 'The sign-in link could not be sent. Try again.' : 'Check your email for a sign-in link.');
       } else if (!sent) {
-        const result = await authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in' });
-        if (result.error) setMessage('The sign-in code could not be sent. Try again.'); else { setSent(true); setMessage('A sign-in code is on its way to your email.'); }
+        const result = await authClient.emailOtp.sendVerificationOtp({
+          email,
+          type: 'sign-in',
+        });
+        if (result.error) setMessage('The sign-in code could not be sent. Try again.');
+        else {
+          setSent(true);
+          setMessage('A sign-in code is on its way to your email.');
+        }
       } else {
         const result = await authClient.signIn.emailOtp({ email, otp });
-        if (result.error) setMessage('This code is invalid or has expired.'); else { refresh(); router.push('/connect'); }
+        if (result.error) setMessage('This code is invalid or has expired.');
+        else {
+          refresh();
+          router.push('/connect');
+        }
       }
-    } catch { setMessage('Sign-in is temporarily unavailable. Try again.'); }
+    } catch {
+      setMessage('Sign-in is temporarily unavailable. Try again.');
+    }
     setBusy(false);
   }
   return <div className="page"><div className="form-card"><Brand/><h1>Your next review starts here.</h1><p>Bring your repositories together. Keep the change in focus.</p>

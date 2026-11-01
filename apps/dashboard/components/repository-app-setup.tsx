@@ -2,7 +2,106 @@
 import { useState } from 'react';
 import { z } from 'zod';
 import { Button } from '@geld/ui';
-const schema=z.object({url:z.url().optional(),manifest:z.record(z.string(),z.unknown()).optional(),manifestUrl:z.url().optional(),fingerprint:z.string().optional(),error:z.string().optional()});
-export function RepositoryAppSetup({teamId,host,managedAccess}:{readonly teamId:string;readonly host?:string;readonly managedAccess?:boolean}){const[managed,setManaged]=useState(false);const[merge,setMerge]=useState(false);const[settings,setSettings]=useState(false);const[deletion,setDeletion]=useState(false);const[result,setResult]=useState<z.infer<typeof schema>|null>(null);const[busy,setBusy]=useState(false);
-  return <section className="settings-card"><h2>Repository App permissions</h2><p>Identity and repository Apps are always separate. Choose the repository permissions this team needs. Matching Apps are reused.</p>{[{label:'Manage access',value:managedAccess??managed,set:setManaged},{label:'Merge pull requests',value:merge,set:setMerge},{label:'Change repository settings',value:settings,set:setSettings},{label:'Delete repositories',value:deletion,set:setDeletion}].map(option=><label className="settings-row" key={option.label}><span>{option.label}</span><input type="checkbox" checked={option.value} disabled={option.label==='Manage access'&&managedAccess!==undefined} onChange={e=>{option.set(e.target.checked);setResult(null);}}/></label>)}<Button disabled={busy} variant="outline" onClick={async()=>{setBusy(true);try{const r=await fetch('/api/apps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({teamId,...(host?{host}:{}),managedAccess:managedAccess??managed,merge,settings,deletion})});const parsed=schema.safeParse(await r.json());if(parsed.success)setResult(parsed.data);}catch{setResult({error:'App setup could not connect.'});}setBusy(false);}}>Find matching App</Button>{result?.error&&<p role="status">{result.error}</p>}{result?.url&&<a href={result.url} className="underline">Confirm repository installation on GitHub ↗</a>}{result?.manifest&&result.manifestUrl&&<form method="post" action={result.manifestUrl}><input type="hidden" name="manifest" value={JSON.stringify(result.manifest)}/><p>This permission set needs one browser confirmation by Geld&apos;s owner. GitHub will show the requested permissions.</p><Button type="submit">Confirm App manifest on GitHub</Button></form>}</section>;
+const schema = z.object({
+  url: z.url().optional(),
+  manifest: z.record(z.string(), z.unknown()).optional(),
+  manifestUrl: z.url().optional(),
+  fingerprint: z.string().optional(),
+  error: z.string().optional(),
+});
+export function RepositoryAppSetup({
+  teamId,
+  host,
+  managedAccess,
+}: {
+  readonly teamId: string;
+  readonly host?: string;
+  readonly managedAccess?: boolean;
+}) {
+  const [managed, setManaged] = useState(false);
+  const [merge, setMerge] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [deletion, setDeletion] = useState(false);
+  const [result, setResult] = useState<z.infer<typeof schema> | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <section className="settings-card">
+      <h2>Repository App permissions</h2>
+      <p>
+        Identity and repository Apps are always separate. Choose the repository permissions this team needs. Matching
+        Apps are reused.
+      </p>
+      {[
+        {
+          label: 'Manage access',
+          value: managedAccess ?? managed,
+          set: setManaged,
+        },
+        { label: 'Merge pull requests', value: merge, set: setMerge },
+        {
+          label: 'Change repository settings',
+          value: settings,
+          set: setSettings,
+        },
+        { label: 'Delete repositories', value: deletion, set: setDeletion },
+      ].map((option) => (
+        <label className="settings-row" key={option.label}>
+          <span>{option.label}</span>
+          <input
+            type="checkbox"
+            checked={option.value}
+            disabled={option.label === 'Manage access' && managedAccess !== undefined}
+            onChange={(e) => {
+              option.set(e.target.checked);
+              setResult(null);
+            }}
+          />
+        </label>
+      ))}
+      <Button
+        disabled={busy}
+        variant="outline"
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await fetch('/api/apps', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                teamId,
+                ...(host ? { host } : {}),
+                managedAccess: managedAccess ?? managed,
+                merge,
+                settings,
+                deletion,
+              }),
+            });
+            const parsed = schema.safeParse(await r.json());
+            if (parsed.success) setResult(parsed.data);
+          } catch {
+            setResult({ error: 'App setup could not connect.' });
+          }
+          setBusy(false);
+        }}
+      >
+        Find matching App
+      </Button>
+      {result?.error && <p role="status">{result.error}</p>}
+      {result?.url && (
+        <a href={result.url} className="underline">
+          Confirm repository installation on GitHub ↗
+        </a>
+      )}
+      {result?.manifest && result.manifestUrl && (
+        <form method="post" action={result.manifestUrl}>
+          <input type="hidden" name="manifest" value={JSON.stringify(result.manifest)} />
+          <p>
+            This permission set needs one browser confirmation by Geld&apos;s owner. GitHub will show the requested
+            permissions.
+          </p>
+          <Button type="submit">Confirm App manifest on GitHub</Button>
+        </form>
+      )}
+    </section>
+  );
 }

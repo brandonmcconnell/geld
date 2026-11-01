@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { createApiTransport } from '@geld/github';
-import { configured,dashboardOrigin } from './env';
+import { configured, dashboardOrigin } from './env';
 import { database } from './db';
 import { transaction, type SqlExecutor } from './transactions';
 import { encryptCredential,decryptCredential } from './crypto';

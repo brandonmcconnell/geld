@@ -1,8 +1,137 @@
-import {z} from 'zod';
-import {ReplayGuard,signRelay,relayRequestSchema,relayResultSchema,allowedRelayUrl} from './protocol';
-import type {RelayRequest} from './protocol';
-export interface RelayEndpoint{readonly url:string;readonly channel:string;readonly secret:string;readonly allowHttp?:boolean}
-export function relayEndpoint(endpoint:RelayEndpoint,path:string):string{const base=new URL(endpoint.url);if(base.protocol!=='https:'&&!(endpoint.allowHttp&&base.protocol==='http:'))throw new Error('The relay requires TLS');if(base.username||base.password||base.search||base.hash)throw new Error('Invalid relay endpoint');return new URL(`v1/channels/${encodeURIComponent(endpoint.channel)}/${path}`,base.href.endsWith('/')?base.href:`${base.href}/`).toString();}
-export async function relayCall(endpoint:RelayEndpoint,path:string,value:unknown,signal?:AbortSignal):Promise<unknown>{const url=new URL(relayEndpoint(endpoint,path));const body=JSON.stringify(value);const signed=signRelay(endpoint.secret,'POST',url.pathname,body);const response=await fetch(url,{method:'POST',redirect:'error',headers:signed,body,signal:signal??AbortSignal.timeout(125000)});const text=await response.text();if(!new ReplayGuard().verify(endpoint.secret,'RESPONSE',`${url.pathname}#${signed['x-geld-nonce']}`,text,response.headers))throw new Error('The relay response could not be authenticated');if(!response.ok)throw new Error('The relay is unavailable');return JSON.parse(text);}
-export function relayFetch(endpoint:RelayEndpoint,host:string,kind:'github'|'claude'='github'):(url:string,init?:RequestInit)=>Promise<Response>{return async(url,init={})=>{if(!allowedRelayUrl(url,host,kind))throw new Error('Relay destination rejected');const method=init.method??'GET';const headers:Record<string,string>={};for(const[key,value]of new Headers(init.headers))if(['authorization','accept','content-type','x-github-api-version'].includes(key.toLowerCase()))headers[key]=value;const input=relayRequestSchema.parse({id:crypto.randomUUID(),url,method,headers,...(typeof init.body==='string'?{body:init.body}:{})});const result=relayResultSchema.parse(await relayCall(endpoint,'request',input,init.signal??undefined));if(result.id!==input.id)throw new Error('Relay response ID mismatch');return new Response([204,304].includes(result.status)?null:result.body,{status:result.status,headers:result.headers});};}
-export async function pollConnector(endpoint:RelayEndpoint,host:string,execute:(request:RelayRequest)=>Promise<Response>,signal:AbortSignal,kind:'github'|'claude'='github'):Promise<void>{while(!signal.aborted){try{const page=z.object({requests:z.array(relayRequestSchema).max(5)}).parse(await relayCall(endpoint,'poll',{},signal));await Promise.all(page.requests.map(async request=>{if(signal.aborted)return;let result;try{if(!allowedRelayUrl(request.url,host,kind))throw new Error('Rejected');const response=await execute(request);const headers:Record<string,string>={};for(const[key,value]of response.headers)if(['content-type','x-accepted-github-permissions','x-ratelimit-remaining','retry-after','x-ratelimit-reset','location'].includes(key.toLowerCase()))headers[key]=value;const body=await response.text();result={id:request.id,status:response.status,headers,body:body.length<=12000000?body:''};}catch{result={id:request.id,status:503,headers:{},body:''};}await relayCall(endpoint,'result',result,signal);}));}catch{if(!signal.aborted)await new Promise<void>(resolve=>{const timer=setTimeout(resolve,2000);signal.addEventListener('abort',()=>{clearTimeout(timer);resolve();},{once:true});});}}}
+import { z } from 'zod';
+import { ReplayGuard, signRelay, relayRequestSchema, relayResultSchema, allowedRelayUrl } from './protocol';
+import type { RelayRequest } from './protocol';
+export interface RelayEndpoint {
+  readonly url: string;
+  readonly channel: string;
+  readonly secret: string;
+  readonly allowHttp?: boolean;
+}
+export function relayEndpoint(endpoint: RelayEndpoint, path: string): string {
+  const base = new URL(endpoint.url);
+  if (base.protocol !== 'https:' && !(endpoint.allowHttp && base.protocol === 'http:'))
+    throw new Error('The relay requires TLS');
+  if (base.username || base.password || base.search || base.hash) throw new Error('Invalid relay endpoint');
+  return new URL(
+    `v1/channels/${encodeURIComponent(endpoint.channel)}/${path}`,
+    base.href.endsWith('/') ? base.href : `${base.href}/`,
+  ).toString();
+}
+export async function relayCall(
+  endpoint: RelayEndpoint,
+  path: string,
+  value: unknown,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const url = new URL(relayEndpoint(endpoint, path));
+  const body = JSON.stringify(value);
+  const signed = signRelay(endpoint.secret, 'POST', url.pathname, body);
+  const response = await fetch(url, {
+    method: 'POST',
+    redirect: 'error',
+    headers: signed,
+    body,
+    signal: signal ?? AbortSignal.timeout(125000),
+  });
+  const text = await response.text();
+  if (
+    !new ReplayGuard().verify(
+      endpoint.secret,
+      'RESPONSE',
+      `${url.pathname}#${signed['x-geld-nonce']}`,
+      text,
+      response.headers,
+    )
+  )
+    throw new Error('The relay response could not be authenticated');
+  if (!response.ok) throw new Error('The relay is unavailable');
+  return JSON.parse(text);
+}
+export function relayFetch(
+  endpoint: RelayEndpoint,
+  host: string,
+  kind: 'github' | 'claude' = 'github',
+): (url: string, init?: RequestInit) => Promise<Response> {
+  return async (url, init = {}) => {
+    if (!allowedRelayUrl(url, host, kind)) throw new Error('Relay destination rejected');
+    const method = init.method ?? 'GET';
+    const headers: Record<string, string> = {};
+    for (const [key, value] of new Headers(init.headers))
+      if (['authorization', 'accept', 'content-type', 'x-github-api-version'].includes(key.toLowerCase()))
+        headers[key] = value;
+    const input = relayRequestSchema.parse({
+      id: crypto.randomUUID(),
+      url,
+      method,
+      headers,
+      ...(typeof init.body === 'string' ? { body: init.body } : {}),
+    });
+    const result = relayResultSchema.parse(await relayCall(endpoint, 'request', input, init.signal ?? undefined));
+    if (result.id !== input.id) throw new Error('Relay response ID mismatch');
+    return new Response([204, 304].includes(result.status) ? null : result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
+  };
+}
+export async function pollConnector(
+  endpoint: RelayEndpoint,
+  host: string,
+  execute: (request: RelayRequest) => Promise<Response>,
+  signal: AbortSignal,
+  kind: 'github' | 'claude' = 'github',
+): Promise<void> {
+  while (!signal.aborted) {
+    try {
+      const page = z
+        .object({ requests: z.array(relayRequestSchema).max(5) })
+        .parse(await relayCall(endpoint, 'poll', {}, signal));
+      await Promise.all(
+        page.requests.map(async (request) => {
+          if (signal.aborted) return;
+          let result;
+          try {
+            if (!allowedRelayUrl(request.url, host, kind)) throw new Error('Rejected');
+            const response = await execute(request);
+            const headers: Record<string, string> = {};
+            for (const [key, value] of response.headers)
+              if (
+                [
+                  'content-type',
+                  'x-accepted-github-permissions',
+                  'x-ratelimit-remaining',
+                  'retry-after',
+                  'x-ratelimit-reset',
+                  'location',
+                ].includes(key.toLowerCase())
+              )
+                headers[key] = value;
+            const body = await response.text();
+            result = {
+              id: request.id,
+              status: response.status,
+              headers,
+              body: body.length <= 12000000 ? body : '',
+            };
+          } catch {
+            result = { id: request.id, status: 503, headers: {}, body: '' };
+          }
+          await relayCall(endpoint, 'result', result, signal);
+        }),
+      );
+    } catch {
+      if (!signal.aborted)
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 2000);
+          signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+    }
+  }
+}

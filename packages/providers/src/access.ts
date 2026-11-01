@@ -5,12 +5,26 @@ import type { ApiTransport, FetchLike, TokenSource } from '@geld/github';
 import type { Permission, Provider, ProviderResult, RepositoryRef, RepositorySummary } from '@geld/domain';
 import { githubRepo } from './parse';
 const e = encodeURIComponent;
-const permissionSchema = z.enum(['none','read','triage','write','maintain','admin']);
-export interface AccessUser { readonly avatar?:string; readonly id: string; readonly login: string; readonly permission: Permission; readonly organisationMember: boolean }
+const permissionSchema = z.enum(['none', 'read', 'triage', 'write', 'maintain', 'admin']);
+export interface AccessUser {
+  readonly avatar?: string;
+  readonly id: string;
+  readonly login: string;
+  readonly permission: Permission;
+  readonly organisationMember: boolean;
+}
 export interface ManagedAccessAdapter {
   repository(ref: RepositoryRef): Promise<ProviderResult<RepositorySummary>>;
   user(ref: RepositoryRef, login: string): Promise<ProviderResult<AccessUser>>;
-  collaborators(ref: RepositoryRef, page?: number): Promise<ProviderResult<{ readonly users: readonly AccessUser[]; readonly more: boolean }>>;
+  collaborators(
+    ref: RepositoryRef,
+    page?: number,
+  ): Promise<
+    ProviderResult<{
+      readonly users: readonly AccessUser[];
+      readonly more: boolean;
+    }>
+  >;
   grant(ref: RepositoryRef, user: AccessUser, permission: Permission): Promise<ProviderResult<string>>;
   revoke(ref: RepositoryRef, user: AccessUser, grantId?: string): Promise<ProviderResult<void>>;
   createGroup(organisation: string, name: string): Promise<ProviderResult<string>>;
@@ -27,68 +41,301 @@ function bad<T>(): ProviderResult<T> { return { ok: false, reason: 'invalid_resp
 function identifier(data: unknown): string | null { const p = z.object({ id: z.union([z.string(),z.number()]).optional(), slug: z.string().optional(), uuid: z.string().optional(), groupId: z.string().optional(), data: z.object({ id: z.string() }).optional() }).safeParse(data); return p.success ? String(p.data.slug ?? p.data.id ?? p.data.uuid ?? p.data.groupId ?? p.data.data?.id ?? '') || null : null; }
 export function managedAccessAdapter(options: AccessOptions): ManagedAccessAdapter {
   const p = options.provider;
-  const api = createApiTransport({ baseUrl: p === 'github' ? githubEndpoints(options.host).api : p === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) });
-  const legacy = createApiTransport({ baseUrl: 'https://api.bitbucket.org/1.0/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) });
-  const admin = options.bitbucket?.adminSource ? createApiTransport({ baseUrl: 'https://api.atlassian.com/admin/', source: options.bitbucket.adminSource, ...(options.fetch ? { fetch: options.fetch } : {}) }) : null;
-  const repo = (r: RepositoryRef) => p === 'github' ? `repos/${e(r.owner)}/${e(r.repo)}` : p === 'gitlab' ? `projects/${e(`${r.owner}/${r.repo}`)}` : `repositories/${e(r.owner)}/${e(r.repo)}`;
-  const orgGroup = (org: string, group: string) => p === 'github' ? `orgs/${e(org)}/teams/${e(group)}` : p === 'gitlab' ? `groups/${e(group)}` : `groups/${e(org)}/${e(group)}`;
-  async function write(transport: ApiTransport, path: string, method: 'POST'|'PUT'|'DELETE', body?: unknown): Promise<ProviderResult<void>> { const r = await transport.request(path, { method, ...(body === undefined ? {} : { body }) }); return r.ok ? { ok: true, value: undefined } : r; }
+  const api = createApiTransport({
+    baseUrl:
+      p === 'github'
+        ? githubEndpoints(options.host).api
+        : p === 'gitlab'
+          ? 'https://gitlab.com/api/v4/'
+          : 'https://api.bitbucket.org/2.0/',
+    source: options.source,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+  const legacy = createApiTransport({
+    baseUrl: 'https://api.bitbucket.org/1.0/',
+    source: options.source,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+  const admin = options.bitbucket?.adminSource
+    ? createApiTransport({
+        baseUrl: 'https://api.atlassian.com/admin/',
+        source: options.bitbucket.adminSource,
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+      })
+    : null;
+  const repo = (r: RepositoryRef) =>
+    p === 'github'
+      ? `repos/${e(r.owner)}/${e(r.repo)}`
+      : p === 'gitlab'
+        ? `projects/${e(`${r.owner}/${r.repo}`)}`
+        : `repositories/${e(r.owner)}/${e(r.repo)}`;
+  const orgGroup = (org: string, group: string) =>
+    p === 'github'
+      ? `orgs/${e(org)}/teams/${e(group)}`
+      : p === 'gitlab'
+        ? `groups/${e(group)}`
+        : `groups/${e(org)}/${e(group)}`;
+  async function write(
+    transport: ApiTransport,
+    path: string,
+    method: 'POST' | 'PUT' | 'DELETE',
+    body?: unknown,
+  ): Promise<ProviderResult<void>> {
+    const r = await transport.request(path, {
+      method,
+      ...(body === undefined ? {} : { body }),
+    });
+    return r.ok ? { ok: true, value: undefined } : r;
+  }
   async function user(ref: RepositoryRef, login: string): Promise<ProviderResult<AccessUser>> {
     if (p === 'github') {
-      const profile = await api.request(`users/${e(login)}`); if (!profile.ok) return profile;
-      const u = z.object({ id: z.number(), login: z.string(),avatar_url:z.string().optional() }).safeParse(profile.value); if (!u.success) return bad();
+      const profile = await api.request(`users/${e(login)}`);
+      if (!profile.ok) return profile;
+      const u = z
+        .object({
+          id: z.number(),
+          login: z.string(),
+          avatar_url: z.string().optional(),
+        })
+        .safeParse(profile.value);
+      if (!u.success) return bad();
       const membership = await api.request(`orgs/${e(ref.owner)}/members/${e(u.data.login)}`);
       if (!membership.ok && membership.reason !== 'not_found') return membership;
       const permission = await api.request(`${repo(ref)}/collaborators/${e(u.data.login)}/permission`);
       if (!permission.ok && permission.reason !== 'not_found') return permission;
       const role = permission.ok ? z.object({ permission: permissionSchema }).safeParse(permission.value) : null;
       if (permission.ok && !role?.success) return bad();
-      return { ok: true, value: { id: String(u.data.id), login: u.data.login,...(u.data.avatar_url?{avatar:u.data.avatar_url}:{}), permission: role?.success ? role.data.permission : 'none', organisationMember: membership.ok } };
+      return {
+        ok: true,
+        value: {
+          id: String(u.data.id),
+          login: u.data.login,
+          ...(u.data.avatar_url ? { avatar: u.data.avatar_url } : {}),
+          permission: role?.success ? role.data.permission : 'none',
+          organisationMember: membership.ok,
+        },
+      };
     }
     if (p === 'gitlab') {
-      const profile = await api.request(`users?username=${e(login)}`); if (!profile.ok) return profile;
-      const u = z.array(z.object({ id: z.number(), username: z.string(),avatar_url:z.string().optional() })).safeParse(profile.value); const first = u.success ? u.data[0] : null; if (!first) return bad();
+      const profile = await api.request(`users?username=${e(login)}`);
+      if (!profile.ok) return profile;
+      const u = z
+        .array(
+          z.object({
+            id: z.number(),
+            username: z.string(),
+            avatar_url: z.string().optional(),
+          }),
+        )
+        .safeParse(profile.value);
+      const first = u.success ? u.data[0] : null;
+      if (!first) return bad();
       const membership = await api.request(`groups/${e(ref.owner)}/members/all/${first.id}`);
       if (!membership.ok && membership.reason !== 'not_found') return membership;
-      const permission = await api.request(`${repo(ref)}/members/all/${first.id}`); if (!permission.ok && permission.reason !== 'not_found') return permission;
+      const permission = await api.request(`${repo(ref)}/members/all/${first.id}`);
+      if (!permission.ok && permission.reason !== 'not_found') return permission;
       const access = permission.ok ? z.object({ access_level: z.number() }).safeParse(permission.value) : null;
       if (permission.ok && !access?.success) return bad();
-      return { ok: true, value: { id: String(first.id), login: first.username,...(first.avatar_url?{avatar:first.avatar_url}:{}), permission: access?.success ? glPermission(access.data.access_level) : 'none', organisationMember: membership.ok } };
+      return {
+        ok: true,
+        value: {
+          id: String(first.id),
+          login: first.username,
+          ...(first.avatar_url ? { avatar: first.avatar_url } : {}),
+          permission: access?.success ? glPermission(access.data.access_level) : 'none',
+          organisationMember: membership.ok,
+        },
+      };
     }
-    const profile = await api.request(`users/${e(login)}`); if (!profile.ok) return profile;
-    const u = z.object({ account_id: z.string(), nickname: z.string().optional() }).safeParse(profile.value); if (!u.success) return bad();
-    const permission = await api.request(`${repo(ref)}/permissions-config/users/${e(u.data.account_id)}`); if (!permission.ok && permission.reason !== 'not_found') return permission;
+    const profile = await api.request(`users/${e(login)}`);
+    if (!profile.ok) return profile;
+    const u = z.object({ account_id: z.string(), nickname: z.string().optional() }).safeParse(profile.value);
+    if (!u.success) return bad();
+    const permission = await api.request(`${repo(ref)}/permissions-config/users/${e(u.data.account_id)}`);
+    if (!permission.ok && permission.reason !== 'not_found') return permission;
     const access = permission.ok ? z.object({ permission: permissionSchema }).safeParse(permission.value) : null;
     if (permission.ok && !access?.success) return bad();
-    const member = await api.request(`workspaces/${e(ref.owner)}/members/${e(u.data.account_id)}`); if (!member.ok && member.reason !== 'not_found') return member;
-    return { ok: true, value: { id: u.data.account_id, login: u.data.nickname ?? login, permission: access?.success ? access.data.permission : 'none', organisationMember: member.ok } };
+    const member = await api.request(`workspaces/${e(ref.owner)}/members/${e(u.data.account_id)}`);
+    if (!member.ok && member.reason !== 'not_found') return member;
+    return {
+      ok: true,
+      value: {
+        id: u.data.account_id,
+        login: u.data.nickname ?? login,
+        permission: access?.success ? access.data.permission : 'none',
+        organisationMember: member.ok,
+      },
+    };
   }
   return {
     user,
     async repository(ref) {
-      const result = await api.request(repo(ref)); if (!result.ok) return result;
-      if (p === 'github') { const value = githubRepo(result.value, ref.host); return value ? { ok: true, value } : bad(); }
-      if (p === 'gitlab') {
-        const r = z.object({ id: z.number(),namespace:z.object({kind:z.string()}).optional(), visibility: z.string(), web_url: z.string(), permissions: z.object({ project_access: z.object({ access_level: z.number() }).nullable().optional(), group_access: z.object({ access_level: z.number() }).nullable().optional() }).optional() }).safeParse(result.value);
-        return r.success ? { ok: true, value: { id: String(r.data.id), ref, ownerKind:r.data.namespace?.kind==='user'?'person':r.data.namespace?.kind==='group'?'organisation':'unknown', private: r.data.visibility !== 'public', permission: glPermission(Math.max(r.data.permissions?.project_access?.access_level ?? 0,r.data.permissions?.group_access?.access_level ?? 0)), url: r.data.web_url } } : bad();
+      const result = await api.request(repo(ref));
+      if (!result.ok) return result;
+      if (p === 'github') {
+        const value = githubRepo(result.value, ref.host);
+        return value ? { ok: true, value } : bad();
       }
-      const r = z.object({ uuid: z.string(),owner:z.object({type:z.string()}).optional(), is_private: z.boolean(), links: z.object({ html: z.object({ href: z.string() }) }) }).safeParse(result.value); if (!r.success) return bad();
-      const mine = await api.request(`user/permissions/repositories?q=${e(`repository.uuid="${r.data.uuid}"`)}`); if (!mine.ok) return mine;
-      const permission = z.object({ values: z.array(z.object({ permission: permissionSchema })) }).safeParse(mine.value);
-      return permission.success ? { ok: true, value: { id: r.data.uuid, ref,ownerKind:r.data.owner?.type==='user'?'person':r.data.owner?.type==='team'?'organisation':'unknown', private: r.data.is_private, url: r.data.links.html.href, permission: permission.data.values[0]?.permission ?? 'none' } } : bad();
+      if (p === 'gitlab') {
+        const r = z
+          .object({
+            id: z.number(),
+            namespace: z.object({ kind: z.string() }).optional(),
+            visibility: z.string(),
+            web_url: z.string(),
+            permissions: z
+              .object({
+                project_access: z.object({ access_level: z.number() }).nullable().optional(),
+                group_access: z.object({ access_level: z.number() }).nullable().optional(),
+              })
+              .optional(),
+          })
+          .safeParse(result.value);
+        return r.success
+          ? {
+              ok: true,
+              value: {
+                id: String(r.data.id),
+                ref,
+                ownerKind:
+                  r.data.namespace?.kind === 'user'
+                    ? 'person'
+                    : r.data.namespace?.kind === 'group'
+                      ? 'organisation'
+                      : 'unknown',
+                private: r.data.visibility !== 'public',
+                permission: glPermission(
+                  Math.max(
+                    r.data.permissions?.project_access?.access_level ?? 0,
+                    r.data.permissions?.group_access?.access_level ?? 0,
+                  ),
+                ),
+                url: r.data.web_url,
+              },
+            }
+          : bad();
+      }
+      const r = z
+        .object({
+          uuid: z.string(),
+          owner: z.object({ type: z.string() }).optional(),
+          is_private: z.boolean(),
+          links: z.object({ html: z.object({ href: z.string() }) }),
+        })
+        .safeParse(result.value);
+      if (!r.success) return bad();
+      const mine = await api.request(`user/permissions/repositories?q=${e(`repository.uuid="${r.data.uuid}"`)}`);
+      if (!mine.ok) return mine;
+      const permission = z
+        .object({ values: z.array(z.object({ permission: permissionSchema })) })
+        .safeParse(mine.value);
+      return permission.success
+        ? {
+            ok: true,
+            value: {
+              id: r.data.uuid,
+              ref,
+              ownerKind:
+                r.data.owner?.type === 'user' ? 'person' : r.data.owner?.type === 'team' ? 'organisation' : 'unknown',
+              private: r.data.is_private,
+              url: r.data.links.html.href,
+              permission: permission.data.values[0]?.permission ?? 'none',
+            },
+          }
+        : bad();
     },
     async collaborators(ref, page = 1) {
-      const r = await api.request(p === 'github' ? `${repo(ref)}/collaborators?affiliation=outside&per_page=30&page=${page}` : p === 'gitlab' ? `${repo(ref)}/members?per_page=30&page=${page}` : `${repo(ref)}/permissions-config/users?pagelen=30&page=${page}`); if (!r.ok) return r;
-      const list = p === 'bitbucket' ? z.object({ values: z.array(z.object({ user: z.object({ account_id: z.string(), nickname: z.string().optional() }), permission: permissionSchema })), next: z.string().optional() }).safeParse(r.value) : null;
-      if (p === 'bitbucket') return list?.success ? { ok: true, value: { users: list.data.values.map((v) => ({ id: v.user.account_id, login: v.user.nickname ?? v.user.account_id, permission: v.permission, organisationMember: false })), more: !!list.data.next } } : bad();
-      const entries = z.array(z.object({ id: z.number(), login: z.string().optional(), username: z.string().optional(),avatar_url:z.string().optional(), role_name: permissionSchema.optional(), access_level: z.number().optional() })).safeParse(r.value);
-      return entries.success ? { ok: true, value: { users: entries.data.map((u) => ({ id: String(u.id), login: u.login ?? u.username ?? '',...(u.avatar_url?{avatar:u.avatar_url}:{}), permission: u.role_name ?? glPermission(u.access_level ?? 10), organisationMember: false })), more: entries.data.length === 30 } } : bad();
+      const r = await api.request(
+        p === 'github'
+          ? `${repo(ref)}/collaborators?affiliation=outside&per_page=30&page=${page}`
+          : p === 'gitlab'
+            ? `${repo(ref)}/members?per_page=30&page=${page}`
+            : `${repo(ref)}/permissions-config/users?pagelen=30&page=${page}`,
+      );
+      if (!r.ok) return r;
+      const list =
+        p === 'bitbucket'
+          ? z
+              .object({
+                values: z.array(
+                  z.object({
+                    user: z.object({
+                      account_id: z.string(),
+                      nickname: z.string().optional(),
+                    }),
+                    permission: permissionSchema,
+                  }),
+                ),
+                next: z.string().optional(),
+              })
+              .safeParse(r.value)
+          : null;
+      if (p === 'bitbucket')
+        return list?.success
+          ? {
+              ok: true,
+              value: {
+                users: list.data.values.map((v) => ({
+                  id: v.user.account_id,
+                  login: v.user.nickname ?? v.user.account_id,
+                  permission: v.permission,
+                  organisationMember: false,
+                })),
+                more: !!list.data.next,
+              },
+            }
+          : bad();
+      const entries = z
+        .array(
+          z.object({
+            id: z.number(),
+            login: z.string().optional(),
+            username: z.string().optional(),
+            avatar_url: z.string().optional(),
+            role_name: permissionSchema.optional(),
+            access_level: z.number().optional(),
+          }),
+        )
+        .safeParse(r.value);
+      return entries.success
+        ? {
+            ok: true,
+            value: {
+              users: entries.data.map((u) => ({
+                id: String(u.id),
+                login: u.login ?? u.username ?? '',
+                ...(u.avatar_url ? { avatar: u.avatar_url } : {}),
+                permission: u.role_name ?? glPermission(u.access_level ?? 10),
+                organisationMember: false,
+              })),
+              more: entries.data.length === 30,
+            },
+          }
+        : bad();
     },
     async grant(ref, u, permission) {
       if (permission === 'none') return bad();
-      const path = p === 'github' ? `${repo(ref)}/collaborators/${e(u.login)}` : p === 'gitlab' ? `${repo(ref)}/members${u.permission === 'none' ? '' : `/${e(u.id)}`}` : `${repo(ref)}/permissions-config/users/${e(u.id)}`;
-      const r = await api.request(path, { method: p === 'gitlab' && u.permission === 'none' ? 'POST' : 'PUT', body: p === 'gitlab' ? { user_id: u.id, access_level: level(permission) } : { permission: p === 'github' ? ghPermission(permission) : simple(permission) } });
-      return r.ok ? { ok: true, value: identifier(r.value) ?? `${u.id}:${ref.owner}/${ref.repo}` } : r;
+      const path =
+        p === 'github'
+          ? `${repo(ref)}/collaborators/${e(u.login)}`
+          : p === 'gitlab'
+            ? `${repo(ref)}/members${u.permission === 'none' ? '' : `/${e(u.id)}`}`
+            : `${repo(ref)}/permissions-config/users/${e(u.id)}`;
+      const r = await api.request(path, {
+        method: p === 'gitlab' && u.permission === 'none' ? 'POST' : 'PUT',
+        body:
+          p === 'gitlab'
+            ? { user_id: u.id, access_level: level(permission) }
+            : {
+                permission: p === 'github' ? ghPermission(permission) : simple(permission),
+              },
+      });
+      return r.ok
+        ? {
+            ok: true,
+            value: identifier(r.value) ?? `${u.id}:${ref.owner}/${ref.repo}`,
+          }
+        : r;
     },
     async revoke(ref,u,grantId) {
       if (p === 'github' && grantId?.startsWith('intent:') && u.permission === 'none') {

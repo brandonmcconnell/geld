@@ -4,7 +4,7 @@ import { githubEndpoints } from '@geld/domain';
 import { enterpriseFetch } from './enterprise';
 import { z } from 'zod';
 import { parseIssueTracker } from '@geld/core';
-import type { IssueTrackerConfig,TrackerReference } from '@geld/core';
+import type { IssueTrackerConfig, TrackerReference } from '@geld/core';
 import { createApiTransport } from '@geld/github';
 import type { TokenSource } from '@geld/github';
 import { database } from './db';

@@ -1,6 +1,12 @@
 import 'server-only';
 import { z } from 'zod';
-import { applyRepoConfigs, DEFAULT_SETTINGS, generatedConfigFrom, parseRepoConfig, validateSettingsDocument } from '@geld/core';
+import {
+  applyRepoConfigs,
+  DEFAULT_SETTINGS,
+  generatedConfigFrom,
+  parseRepoConfig,
+  validateSettingsDocument,
+} from '@geld/core';
 import type { IssueTrackerConfig, GeldSettings, RepoConfig } from '@geld/core';
 import type { TokenSource } from '@geld/github';
 import { createApiTransport } from '@geld/github';
@@ -15,18 +21,23 @@ export async function reviewSettings(ref: RepositoryRef, background?: {readonly 
   if (demoEnabled()) return { settings: DEFAULT_SETTINGS, warning: null, aiAllowed: true,issueTracker:null };
   let settings = DEFAULT_SETTINGS;
   let warning: string | null = null;
-  const actor = background ? {id:background.userId} : await currentActor();
+  const actor = background ? { id: background.userId } : await currentActor();
   const db = database();
   if (actor && db) {
     const row = await db.query('SELECT settings FROM users WHERE id = $1', [actor.id]);
     const parsed = z.object({ settings: z.unknown() }).safeParse(row.rows[0]);
-    if (parsed.success && parsed.data.settings && typeof parsed.data.settings === 'object' && Object.keys(parsed.data.settings).length) {
+    if (
+      parsed.success &&
+      parsed.data.settings &&
+      typeof parsed.data.settings === 'object' &&
+      Object.keys(parsed.data.settings).length
+    ) {
       const validated = validateSettingsDocument(JSON.stringify(parsed.data.settings));
       if (validated.ok) settings = validated.settings;
       else warning = 'Your saved review settings contain invalid values. Default rules are in use.';
     }
   }
-  let issueTracker=settings.issueTracker;
+  let issueTracker = settings.issueTracker;
   let aiAllowed = true;
   const source = background?.source ?? await providerTokenSource(ref.provider,ref.owner,false,ref.host);
   const api = createApiTransport({ baseUrl: ref.provider === 'github' ? githubEndpoints(ref.host).api : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source, anonymousReads: true,...(ref.provider==='github'&&ref.host!=='github.com'?{fetch:await enterpriseFetch(ref.host)}:{}) });
@@ -55,5 +66,10 @@ export async function reviewSettings(ref: RepositoryRef, background?: {readonly 
     else { warning = 'A repository configuration is invalid. AI processing is paused until it is fixed.'; aiAllowed = false; }
   }
   if (attributes) configs.push(generatedConfigFrom(attributes));
-  return { settings: settings.repoConfigs === 'never' ? settings : applyRepoConfigs(settings, configs), warning, aiAllowed,issueTracker };
+  return {
+    settings: settings.repoConfigs === 'never' ? settings : applyRepoConfigs(settings, configs),
+    warning,
+    aiAllowed,
+    issueTracker,
+  };
 }

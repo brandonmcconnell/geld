@@ -1,6 +1,13 @@
 import 'server-only';
 import { createMatcher, parseUnifiedDiffHunks } from '@geld/core';
-import type { ProviderClient, ProviderComment, ProviderThread, ProviderResult, PullDetail, PullRef } from '@geld/domain';
+import type {
+  ProviderClient,
+  ProviderComment,
+  ProviderThread,
+  ProviderResult,
+  PullDetail,
+  PullRef,
+} from '@geld/domain';
 import type { PlanFile } from '@geld/review/plan';
 import type { TokenSource } from '@geld/github';
 import { providerClient } from './providers';
@@ -15,8 +22,23 @@ export async function reviewContext(ref: PullRef, background?: {readonly client:
   const current = await client.pull(ref);
   if (!current.ok) return current;
   if (current.value.headSha !== pull.value.headSha) return { ok: false, reason: 'stale' };
-  const settings = await reviewSettings(ref,background);
+  const settings = await reviewSettings(ref, background);
   const matcher = createMatcher(settings.settings, `${ref.owner}/${ref.repo}`);
-  const files = parseUnifiedDiffHunks(diff.value).map((file) => ({ ...file, hidden: matcher.categorizeFile(file) !== null }));
-  return { ok: true, value: { pull: pull.value, files, comments: comments.ok ? comments.value : [], commentsUnavailable: !comments.ok, settingsWarning: settings.warning, aiAllowed: settings.aiAllowed, threads: threads.ok ? threads.value : [], threadsUnavailable: !threads.ok } };
+  const files = parseUnifiedDiffHunks(diff.value).map((file) => ({
+    ...file,
+    hidden: matcher.categorizeFile(file) !== null,
+  }));
+  return {
+    ok: true,
+    value: {
+      pull: pull.value,
+      files,
+      comments: comments.ok ? comments.value : [],
+      commentsUnavailable: !comments.ok,
+      settingsWarning: settings.warning,
+      aiAllowed: settings.aiAllowed,
+      threads: threads.ok ? threads.value : [],
+      threadsUnavailable: !threads.ok,
+    },
+  };
 }

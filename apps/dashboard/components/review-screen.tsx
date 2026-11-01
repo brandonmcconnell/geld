@@ -1,17 +1,31 @@
 'use client';
-import {measure} from '@/lib/measurement';
+import { measure } from '@/lib/measurement';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCheck, ChevronDown, Flag, GitPullRequest, ListTree, MessageSquare, RefreshCw, Sparkles, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  Flag,
+  GitPullRequest,
+  ListTree,
+  MessageSquare,
+  RefreshCw,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { cn } from 'cn';
 import { z } from 'zod';
 import type { PullRef } from '@geld/domain';
-import { organisationPath,pullPath, repositoryPath } from '@geld/domain';
+import { organisationPath, pullPath, repositoryPath } from '@geld/domain';
 import { reconcileProgress, reviewPlanSchema } from '@geld/review/plan';
 import type { ReviewPlan, StepProgress } from '@geld/review/plan';
 import { Button, buttonVariants } from '@geld/ui';
-import {readEnterpriseInBrowser} from '@/lib/enterprise-reader';
+import { readEnterpriseInBrowser } from '@/lib/enterprise-reader';
 import { reviewContextSchema, progressSchema } from '@/lib/review-contracts';
 import type { ReviewData } from '@/lib/review-contracts';
 import { useDashboard, EmptyState } from './app-shell';
@@ -24,9 +38,15 @@ import { TrackerLinks } from './tracker-links';
 import { ProviderActions } from './provider-actions';
 import { Assignments } from './assignments';
 import { AssistantPanel } from './review-assistant';
-const guideResponse = z.object({ plan: reviewPlanSchema, sample: z.boolean().optional() });
+const guideResponse = z.object({
+  plan: reviewPlanSchema,
+  sample: z.boolean().optional(),
+});
 const failureSchema = z.object({ error: z.string() });
-const storedSchema = z.object({ plan: reviewPlanSchema.nullable(), progress: progressSchema });
+const storedSchema = z.object({
+  plan: reviewPlanSchema.nullable(),
+  progress: progressSchema,
+});
 
 export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
   const { session, loading, activeTeam } = useDashboard();
@@ -63,10 +83,18 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const key = owner ? `geld.review.v2:${encodeURIComponent(owner)}:${pullPath(reference)}${teamId ? `:team:${encodeURIComponent(teamId)}` : ''}` : null;
   const loadedKey = useRef('');
   const current = plan?.steps[stepIndex];
-  const completed = plan?.steps.filter((step) => progress[step.id]?.state === 'accepted' || progress[step.id]?.state === 'flagged').length ?? 0;
+  const completed =
+    plan?.steps.filter((step) => progress[step.id]?.state === 'accepted' || progress[step.id]?.state === 'flagged')
+      .length ?? 0;
   const finished = !!plan?.steps.length && completed === plan.steps.length;
   const stale = !!data && !!plan && data.pull.headSha !== plan.headSha;
-  const params = new URLSearchParams({ provider: reference.provider, host: reference.host, owner: reference.owner, repo: reference.repo, number: String(reference.number) }).toString();
+  const params = new URLSearchParams({
+    provider: reference.provider,
+    host: reference.host,
+    owner: reference.owner,
+    repo: reference.repo,
+    number: String(reference.number),
+  }).toString();
   useEffect(() => {
     const abort = new AbortController();
     const read=async()=>{const direct=await readEnterpriseInBrowser(reference,abort.signal);return direct?Response.json(direct):fetch(`/api/pull?${params}`,{signal:abort.signal});};
@@ -108,18 +136,45 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
     if (plan) setStepIndex((value) => Math.min(value + 1, plan.steps.length - 1));
   }
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,[contenteditable=true]')) return; if (e.key === '[') setStepIndex((value) => Math.max(0, value - 1)); if (e.key === ']' && plan) setStepIndex((value) => Math.min(value + 1, plan.steps.length - 1)); };
-    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,[contenteditable=true]')) return;
+      if (e.key === '[') setStepIndex((value) => Math.max(0, value - 1));
+      if (e.key === ']' && plan) setStepIndex((value) => Math.min(value + 1, plan.steps.length - 1));
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [plan]);
   async function generate() {
     if (!data || error) return;
     measure('feature_usage',{feature:'guide',stage:'started'});setPlanning(true); setNotice('');
     try {
-      const response = await fetch('/api/guides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: reference, headSha: data.pull.headSha, ...(plan ? { previousHeadSha: plan.headSha } : {}), ...(teamId ? { teamId } : {}), key: crypto.randomUUID(), sample: session.demo }) });
-      const value: unknown = await response.json(); const parsed = guideResponse.safeParse(value);
-      if (!response.ok || !parsed.success) { const error = failureSchema.safeParse(value); setNotice(error.success ? error.data.error : 'The guide could not be created.'); }
-      else { const nextProgress = reconcileProgress(parsed.data.plan, progress); setPlan(parsed.data.plan); setProgress(nextProgress); setStepIndex(0); persist(parsed.data.plan, nextProgress); }
-    } catch { setNotice('The guide could not connect. Try again.'); }
+      const response = await fetch('/api/guides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ref: reference,
+          headSha: data.pull.headSha,
+          ...(plan ? { previousHeadSha: plan.headSha } : {}),
+          ...(teamId ? { teamId } : {}),
+          key: crypto.randomUUID(),
+          sample: session.demo,
+        }),
+      });
+      const value: unknown = await response.json();
+      const parsed = guideResponse.safeParse(value);
+      if (!response.ok || !parsed.success) {
+        const error = failureSchema.safeParse(value);
+        setNotice(error.success ? error.data.error : 'The guide could not be created.');
+      } else {
+        const nextProgress = reconcileProgress(parsed.data.plan, progress);
+        setPlan(parsed.data.plan);
+        setProgress(nextProgress);
+        setStepIndex(0);
+        persist(parsed.data.plan, nextProgress);
+      }
+    } catch {
+      setNotice('The guide could not connect. Try again.');
+    }
     setPlanning(false);
   }
   function openReview() {
@@ -154,5 +209,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   </div>;
 }
 
-function subscribeWide(callback:()=>void){const media=window.matchMedia('(min-width: 1440px)');media.addEventListener('change',callback);return()=>media.removeEventListener('change',callback);}
-function wideSnapshot(){return window.matchMedia('(min-width: 1440px)').matches;}
+function subscribeWide(callback: () => void) {
+  const media = window.matchMedia('(min-width: 1440px)');
+  media.addEventListener('change', callback);
+  return () => media.removeEventListener('change', callback);
+}
+function wideSnapshot() {
+  return window.matchMedia('(min-width: 1440px)').matches;
+}

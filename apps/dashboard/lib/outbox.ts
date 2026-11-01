@@ -31,16 +31,76 @@ async function handle(job:z.infer<typeof jobSchema>):Promise<boolean>{const db=d
     if(Date.now()-job.created_at.getTime()>23*60*60*1000){await db.query('UPDATE outbox_jobs SET attempts=8 WHERE id=$1',[job.id]);return false;}
     const credit=z.object({overage_cents:z.number(),state:z.string(),billing_subscription_id:z.string().nullable()}).safeParse((await db.query('SELECT overage_cents,state,billing_subscription_id FROM credit_reservations WHERE id=$1',[job.resource_id])).rows[0]);if(!credit.success||credit.data.state!=='settled')return true;if(!credit.data.billing_subscription_id)return false;await gateway.overage(s.data.stripe_customer_id,credit.data.billing_subscription_id,credit.data.overage_cents,job.resource_id);return true;
   }
-  if(job.kind==='default_assignment'){
-    const input=z.object({repoId:z.string(),number:z.number(),userId:z.string()}).parse(job.payload);const repo=repoRowSchema.safeParse((await db.query('SELECT * FROM team_repos WHERE id=$1 AND approved AND removed_at IS NULL',[input.repoId])).rows[0]);if(!repo.success)return true;
-    const actor=z.object({user_id:z.string()}).safeParse((await db.query("SELECT user_id FROM team_members WHERE team_id=$1 AND role='admin' ORDER BY created_at LIMIT 1",[repo.data.team_id])).rows[0]);if(!actor.success)return false;
-    const reviewer=z.object({login:z.string()}).safeParse((await db.query('SELECT l.login FROM provider_user_links l JOIN team_members m ON m.user_id=l.user_id WHERE m.team_id=$1 AND l.user_id=$2 AND l.provider=$3 AND l.host=$4',[repo.data.team_id,input.userId,repo.data.provider,repo.data.host])).rows[0]);if(!reviewer.success)return false;
-    const client=createProviderClient({provider:repo.data.provider,source:await backgroundUserTokenSource(actor.data.user_id,repo.data.provider,repo.data.owner,repo.data.host),host:repo.data.host,...(repo.data.provider==='github'&&repo.data.host!=='github.com'?{fetch:await enterpriseFetch(repo.data.host)}:{})});const ref={...refFor(repo.data),number:input.number};const pull=await client.pull(ref);if(!pull.ok)return false;if(pull.value.state!=='open')return true;
-    if(!pull.value.reviewers.includes(reviewer.data.login)){const requested=await client.requestReviewers(ref,[reviewer.data.login]);if(!requested.ok)return false;}
-    await db.query("INSERT INTO assignments(id,team_id,repo_id,pull_number,reviewer_id,provider_request_id,state) VALUES($1,$2,$3,$4,$5,$6,'requested') ON CONFLICT(repo_id,pull_number,reviewer_id) DO UPDATE SET state='requested'",[crypto.randomUUID(),repo.data.team_id,repo.data.id,input.number,input.userId,reviewer.data.login]);return true;
+  if (job.kind === 'default_assignment') {
+    const input = z.object({ repoId: z.string(), number: z.number(), userId: z.string() }).parse(job.payload);
+    const repo = repoRowSchema.safeParse(
+      (await db.query('SELECT * FROM team_repos WHERE id=$1 AND approved AND removed_at IS NULL', [input.repoId]))
+        .rows[0],
+    );
+    if (!repo.success) return true;
+    const actor = z
+      .object({ user_id: z.string() })
+      .safeParse(
+        (
+          await db.query(
+            "SELECT user_id FROM team_members WHERE team_id=$1 AND role='admin' ORDER BY created_at LIMIT 1",
+            [repo.data.team_id],
+          )
+        ).rows[0],
+      );
+    if (!actor.success) return false;
+    const reviewer = z
+      .object({ login: z.string() })
+      .safeParse(
+        (
+          await db.query(
+            'SELECT l.login FROM provider_user_links l JOIN team_members m ON m.user_id=l.user_id WHERE m.team_id=$1 AND l.user_id=$2 AND l.provider=$3 AND l.host=$4',
+            [repo.data.team_id, input.userId, repo.data.provider, repo.data.host],
+          )
+        ).rows[0],
+      );
+    if (!reviewer.success) return false;
+    const client = createProviderClient({
+      provider: repo.data.provider,
+      source: await backgroundUserTokenSource(actor.data.user_id, repo.data.provider, repo.data.owner, repo.data.host),
+      host: repo.data.host,
+      ...(repo.data.provider === 'github' && repo.data.host !== 'github.com'
+        ? { fetch: await enterpriseFetch(repo.data.host) }
+        : {}),
+    });
+    const ref = { ...refFor(repo.data), number: input.number };
+    const pull = await client.pull(ref);
+    if (!pull.ok) return false;
+    if (pull.value.state !== 'open') return true;
+    if (!pull.value.reviewers.includes(reviewer.data.login)) {
+      const requested = await client.requestReviewers(ref, [reviewer.data.login]);
+      if (!requested.ok) return false;
+    }
+    await db.query(
+      "INSERT INTO assignments(id,team_id,repo_id,pull_number,reviewer_id,provider_request_id,state) VALUES($1,$2,$3,$4,$5,$6,'requested') ON CONFLICT(repo_id,pull_number,reviewer_id) DO UPDATE SET state='requested'",
+      [crypto.randomUUID(), repo.data.team_id, repo.data.id, input.number, input.userId, reviewer.data.login],
+    );
+    return true;
   }
-  if(job.kind==='email_invite'){
-    const user=z.object({email:z.string()}).safeParse((await db.query("SELECT u.email FROM users u JOIN team_invites i ON i.invited_user_id=u.id WHERE i.team_id=$1 AND u.id=$2 AND i.state='pending' AND i.expires_at>now()",[job.team_id,job.resource_id])).rows[0]);if(!user.success)return true;await sendEmail(user.data.email,'You have a Geld team invitation',`Review and accept your invitation: ${dashboardOrigin()}/inbox`,job.idempotency_key);return true;
+  if (job.kind === 'email_invite') {
+    const user = z
+      .object({ email: z.string() })
+      .safeParse(
+        (
+          await db.query(
+            "SELECT u.email FROM users u JOIN team_invites i ON i.invited_user_id=u.id WHERE i.team_id=$1 AND u.id=$2 AND i.state='pending' AND i.expires_at>now()",
+            [job.team_id, job.resource_id],
+          )
+        ).rows[0],
+      );
+    if (!user.success) return true;
+    await sendEmail(
+      user.data.email,
+      'You have a Geld team invitation',
+      `Review and accept your invitation: ${dashboardOrigin()}/inbox`,
+      job.idempotency_key,
+    );
+    return true;
   }
   if(job.kind==='fallback_summary_email'){const period=z.object({start:z.iso.datetime(),end:z.iso.datetime()}).parse(job.payload);const usage=await fallbackSummaryUsage(db,job.team_id??'',period);const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND m.role='admin'",[job.team_id])).rows);for(const user of users)await sendEmail(user.email,'Your weekly Geld safety-net usage',`The safety net used ${usage.credits} credits with $${(usage.cents/100).toFixed(2)} in overage this week. Review usage and your cap: ${dashboardOrigin()}/settings/billing`,`${job.idempotency_key}:${user.email}`);return true;}
   if(job.kind==='fallback_email'||job.kind==='email_access'){

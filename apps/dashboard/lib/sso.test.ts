@@ -1,8 +1,63 @@
-import {describe,expect,it,vi} from 'vitest';
-vi.mock('server-only',()=>({}));
-const state=vi.hoisted(()=>({paid:false}));vi.mock('./db',()=>({database:()=>({query:async()=>({rows:state.paid?[{provider_id:'geld-test'}]:[]})})}));
-import {geldSso,encryptedAuthField} from './sso';
-describe('SSO trust and storage',()=>{
- it('encrypts the entire provider configuration and fails closed when decryption fails',async()=>{vi.stubEnv('TOKEN_ENCRYPTION_KEY','synthetic-sso-encryption-key-at-least-32-characters');const raw=JSON.stringify({issuer:'https://identity.example',clientSecret:'synthetic-secret'});const encrypted=await encryptedAuthField.input(raw);expect(encrypted).toMatch(/^v1\./);expect(encrypted).not.toContain('synthetic-secret');expect(await encryptedAuthField.output(encrypted)).toBe(raw);expect(await encryptedAuthField.output('invalid')).toBeNull();vi.unstubAllEnvs();});
- it('requires a paid connection and a verified OIDC identity',async()=>{const plugin=geldSso();const input={protocol:'oidc',providerId:'geld-test',accountKey:{issuer:'https://identity.example',accountId:'subject'},providerUser:{email:'user@example.test',emailVerified:true,name:'Reviewer'},providerClaims:{},verifiedIdTokenClaims:{},providerReference:{providerId:'geld-test',source:{type:'persisted',recordId:'provider'},authenticationConfigurationFingerprint:'snapshot'}} satisfies Parameters<NonNullable<typeof plugin.options.resolveUser>>[0];state.paid=false;expect(await plugin.options.resolveUser(input)).toMatchObject({action:'reject'});state.paid=true;expect(await plugin.options.resolveUser(input)).toEqual({action:'continue'});expect(await plugin.options.resolveUser({...input,providerUser:{...input.providerUser,emailVerified:false}})).toMatchObject({action:'reject'});state.paid=false;expect(Object.hasOwn(plugin.schema.ssoProvider.fields,'issuer')).toBe(true);expect(plugin.schema.ssoProvider.fields.oidcConfig.transform).toBe(encryptedAuthField);});
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('server-only', () => ({}));
+const state = vi.hoisted(() => ({ paid: false }));
+vi.mock('./db', () => ({
+  database: () => ({
+    query: async () => ({
+      rows: state.paid ? [{ provider_id: 'geld-test' }] : [],
+    }),
+  }),
+}));
+import { geldSso, encryptedAuthField } from './sso';
+describe('SSO trust and storage', () => {
+  it('encrypts the entire provider configuration and fails closed when decryption fails', async () => {
+    vi.stubEnv('TOKEN_ENCRYPTION_KEY', 'synthetic-sso-encryption-key-at-least-32-characters');
+    const raw = JSON.stringify({
+      issuer: 'https://identity.example',
+      clientSecret: 'synthetic-secret',
+    });
+    const encrypted = await encryptedAuthField.input(raw);
+    expect(encrypted).toMatch(/^v1\./);
+    expect(encrypted).not.toContain('synthetic-secret');
+    expect(await encryptedAuthField.output(encrypted)).toBe(raw);
+    expect(await encryptedAuthField.output('invalid')).toBeNull();
+    vi.unstubAllEnvs();
+  });
+  it('requires a paid connection and a verified OIDC identity', async () => {
+    const plugin = geldSso();
+    const input = {
+      protocol: 'oidc',
+      providerId: 'geld-test',
+      accountKey: { issuer: 'https://identity.example', accountId: 'subject' },
+      providerUser: {
+        email: 'user@example.test',
+        emailVerified: true,
+        name: 'Reviewer',
+      },
+      providerClaims: {},
+      verifiedIdTokenClaims: {},
+      providerReference: {
+        providerId: 'geld-test',
+        source: { type: 'persisted', recordId: 'provider' },
+        authenticationConfigurationFingerprint: 'snapshot',
+      },
+    } satisfies Parameters<NonNullable<typeof plugin.options.resolveUser>>[0];
+    state.paid = false;
+    expect(await plugin.options.resolveUser(input)).toMatchObject({
+      action: 'reject',
+    });
+    state.paid = true;
+    expect(await plugin.options.resolveUser(input)).toEqual({
+      action: 'continue',
+    });
+    expect(
+      await plugin.options.resolveUser({
+        ...input,
+        providerUser: { ...input.providerUser, emailVerified: false },
+      }),
+    ).toMatchObject({ action: 'reject' });
+    state.paid = false;
+    expect(Object.hasOwn(plugin.schema.ssoProvider.fields, 'issuer')).toBe(true);
+    expect(plugin.schema.ssoProvider.fields.oidcConfig.transform).toBe(encryptedAuthField);
+  });
 });
