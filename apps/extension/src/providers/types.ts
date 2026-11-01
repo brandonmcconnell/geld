@@ -98,6 +98,8 @@ export interface ProviderDiffView {
 }
 
 export interface ProviderHeaderTarget {
+  readonly hintHost?: HTMLElement;
+  readonly hintBefore?: HTMLElement | null;
   readonly additions: HTMLElement | null;
   readonly deletions: HTMLElement | null;
   readonly files: HTMLElement | null;

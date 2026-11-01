@@ -147,3 +147,6 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-hidden-authors__show { flex: 0 0 auto; padding: 0; border: 0; border-radius: var(--geld-provider-button-radius); color: var(--geld-provider-link); background: none; font: inherit; cursor: pointer; }
 .geld-provider-hidden-authors__show:hover { text-decoration: underline; }
 .geld-provider-hidden-authors__show:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
+
+.geld-provider-header-hidden-count { display: inline-flex; align-items: baseline; color: var(--geld-provider-text-subtle); font: inherit; white-space: nowrap; cursor: help; text-decoration: underline dotted; text-underline-offset: 0.15em; }
+.geld-provider-header-hidden-count:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }

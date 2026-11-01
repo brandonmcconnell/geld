@@ -12,6 +12,7 @@ import { ProviderReveal } from './reveal';
 import { ProviderCategoryTree } from './tree';
 import { ProviderInlineTree } from './inline-tree';
 import { ProviderHiddenAuthors } from './hidden-authors';
+import { ProviderHeaderHints } from './header-hints';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
 import { immutableProviderPage, isProviderReviewPage } from './types';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
@@ -31,6 +32,7 @@ interface SettledHeader {
   readonly visible: ChangeTotals;
   readonly filtered: string | null;
   readonly headers: readonly HeaderSnapshot[];
+  readonly hintLabel: string | null;
 }
 
 interface HeaderSnapshot { readonly nodes: readonly (HTMLElement | null | undefined)[]; readonly values: string }
@@ -40,6 +42,7 @@ interface HoverCounts {
   readonly status: 'loading' | 'unavailable' | 'provisional' | 'ready';
   readonly reason?: string;
   readonly onIntent?: () => void;
+  readonly anchor?: () => HTMLElement | null;
 }
 
 export const PROVIDER_IDLE_STATE: TabState = {
@@ -60,6 +63,7 @@ export class ProviderController {
   private readonly categoryTree = new ProviderCategoryTree();
   private readonly inlineTree = new ProviderInlineTree();
   private readonly hiddenAuthors: ProviderHiddenAuthors;
+  private readonly headerHints = new ProviderHeaderHints();
   private readonly conversation: ProviderConversation;
   private readonly hover: ProviderHover;
   private readonly reveal: ProviderReveal;
@@ -132,7 +136,7 @@ export class ProviderController {
       }, { rootMargin: '200px' });
     }
     this.observer = new MutationObserver((records) => {
-      if (records.every((record) => {
+      if (!this.headerHints.needsRepair() && records.every((record) => {
         const target = record.target instanceof Element ? record.target : record.target.parentElement;
         if (target?.closest('[data-geld-ui]')) return true;
         if (record.type === 'attributes' && record.attributeName?.startsWith('data-geld') === true) return true;
@@ -292,6 +296,7 @@ export class ProviderController {
     this.section?.remove();
     this.categoryTree.clear();
     this.inlineTree.clear();
+    this.headerHints.clear();
     this.activeCategory = null;
     this.section = null;
     this.signature = '';
@@ -387,6 +392,8 @@ export class ProviderController {
     this.expansionKey = expansionKey;
     this.setExpanded(this.expansionChoices.get(expansionKey) ?? (effective.groupHidden && hidden.totals.files > 0 && visible.files === 0 || effective.expandedByDefault), false);
     const activeCategories = allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id));
+    const hintLabel = activeCategories.length === 0 ? null : hiddenLabel(hidden, activeCategories);
+    this.headerHints.update(targets, hintLabel);
     this.bindHeaders(targets, {
       stats: statsBreakdown(all, hidden, hiddenNounPlural(activeCategories, hidden), activeCategories),
       status: result.provisional === true ? 'provisional' : 'ready',
@@ -406,6 +413,7 @@ export class ProviderController {
       key, settings: this.settings, effective, catalog: this.catalog, choices: this.choices,
       config: this.state.repoConfig, visible, filtered: view === null ? null : JSON.stringify([...view.filteredPaths].sort()),
       headers: this.snapshotHeaders(targets),
+      hintLabel,
     } : null;
     this.applyLists();
     this.publish(this.state);
@@ -421,7 +429,7 @@ export class ProviderController {
     try {
       const targets = this.adapter.headerTargets(document);
       const headers = this.snapshotHeaders(targets);
-      if (headers.length === settled.headers.length && headers.every((header, index) => {
+      if (!this.headerHints.needsRepair() && headers.length === settled.headers.length && headers.every((header, index) => {
         const previous = settled.headers[index];
         return previous !== undefined && previous.values === header.values && previous.nodes.length === header.nodes.length
           && header.nodes.every((node, position) => node === previous.nodes[position]);
@@ -432,6 +440,7 @@ export class ProviderController {
       const view = this.adapter.readDiff(document);
       const filtered = view === null ? null : JSON.stringify([...view.filteredPaths].sort());
       if (filtered !== settled.filtered) return;
+      this.headerHints.update(targets, settled.hintLabel);
       this.writeHeaderCounts(targets, settled.visible);
       this.settledHeader = { ...settled, headers: this.snapshotHeaders(targets) };
     } catch { /* Native SPA markup may be between subjects; wait for the normal validated pass. */ }
@@ -655,6 +664,7 @@ export class ProviderController {
     if (bound) return;
     this.hover.bindBreakdown(host, () => this.hoverCounts.get(host)?.stats ?? null, {
       onIntent: () => this.hoverCounts.get(host)?.onIntent?.(),
+      anchor: () => this.hoverCounts.get(host)?.anchor?.() ?? null,
       ...(keyboard === undefined ? {} : { keyboard }),
       status: () => {
         const current = this.hoverCounts.get(host);
@@ -665,7 +675,16 @@ export class ProviderController {
 
   private bindHeaders(targets: readonly ProviderHeaderTarget[], counts: HoverCounts): void {
     const keyboard = new Set(targets.flatMap((target) => target.keyboardHoverHosts ?? []));
+    const anchors = new Map<HTMLElement, HTMLElement>();
+    for (const target of targets) {
+      const hint = this.headerHints.forTarget(target);
+      if (hint === null) continue;
+      anchors.set(hint, hint);
+      if (!(target.keyboardHoverHosts ?? []).some((host) => host.contains(hint))) keyboard.add(hint);
+      for (const host of [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]) if (host !== null) anchors.set(host, hint);
+    }
     const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]).filter((host): host is HTMLElement => host !== null && host.closest('[aria-hidden="true"], [inert]') === null));
+    for (const host of anchors.values()) current.add(host);
     for (const host of this.headerHosts) {
       if (current.has(host)) continue;
       this.forgetHover(host);
@@ -673,7 +692,8 @@ export class ProviderController {
     }
     for (const host of current) {
       this.headerHosts.add(host);
-      this.bindHover(host, counts, keyboard.has(host) ? true : undefined);
+      const anchor = anchors.get(host);
+      this.bindHover(host, anchor === undefined ? counts : { ...counts, anchor: () => anchor }, keyboard.has(host) ? true : undefined);
     }
   }
 

@@ -61,6 +61,19 @@ function hover(host: HTMLElement): void { host.dispatchEvent(new MouseEvent('mou
 function leave(host: HTMLElement): void { host.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })); }
 function tooltip(): HTMLElement | null { return document.getElementById('geld-provider-count-tooltip'); }
 
+function wrapped(host: HTMLElement): void {
+  const rects = [new DOMRect(100, 50, 80, 20), new DOMRect(20, 80, 100, 20)];
+  const list: DOMRectList = Object.assign({ length: rects.length, item: (index: number) => rects[index] ?? null, [Symbol.iterator]: () => rects.values() }, rects);
+  vi.spyOn(host, 'getClientRects').mockReturnValue(list);
+}
+
+function move(host: HTMLElement, clientY: number, trusted = true): void {
+  const event = new MouseEvent('mousemove', { bubbles: true, clientY });
+  // HappyDOM omits the browser's read-only trust flag.
+  Object.defineProperty(event, 'isTrusted', { value: trusted });
+  host.dispatchEvent(event);
+}
+
 function create(get: (page: ProviderPage, priority?: boolean) => ProviderDiffState, options: ConstructorParameters<typeof ProviderHover>[4] = {}): ProviderHover {
   const instance = new ProviderHover(adapter(), { get }, () => settings, () => BUNDLED_CATALOG, options);
   instances.push(instance);
@@ -411,6 +424,145 @@ describe('count tooltip ownership and lifecycle', () => {
     host.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientY: 85 }));
     expect(tooltip()?.style.top).toBe('108px');
     expect(get).toHaveBeenCalledOnce();
+  });
+
+  it('tracks trusted pointer movement before intent without restarting its timer or fetching early', async () => {
+    const get = vi.fn(() => ready());
+    create(get);
+    const host = link();
+    wrapped(host);
+    host.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientY: 55 }));
+    await vi.advanceTimersByTimeAsync(100);
+    move(host, 85);
+    expect(get).not.toHaveBeenCalled();
+    expect(tooltip()).toBeNull();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(tooltip()?.style.top).toBe('108px');
+    expect(get).toHaveBeenCalledOnce();
+  });
+
+  it('repositions an open wrapped link only across lines, never refetching or following same-line movement', async () => {
+    const get = vi.fn(() => ready());
+    create(get);
+    const host = link();
+    wrapped(host);
+    host.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientY: 55 }));
+    await vi.advanceTimersByTimeAsync(150);
+    const box = tooltip();
+    if (box === null) throw new Error('Missing count tooltip');
+    const measure = vi.spyOn(box, 'getBoundingClientRect');
+    move(host, 85);
+    expect(box.style.top).toBe('108px');
+    expect(measure).toHaveBeenCalledOnce();
+    move(host, 89);
+    expect(measure).toHaveBeenCalledOnce();
+    expect(box.style.top).toBe('108px');
+    move(host, 55);
+    expect(box.style.top).toBe('78px');
+    expect(measure).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledOnce();
+    leave(host);
+    move(host, 85);
+    expect(box.hidden).toBe(true);
+    expect(measure).toHaveBeenCalledTimes(2);
+  });
+
+  it('moves from keyboard-first placement to the hovered line without a second intent or fetch', async () => {
+    const get = vi.fn(() => ready());
+    create(get);
+    const host = link();
+    wrapped(host);
+    host.focus();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.style.top).toBe('78px');
+    host.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientY: 85 }));
+    expect(tooltip()?.style.top).toBe('108px');
+    move(host, 55);
+    expect(tooltip()?.style.top).toBe('78px');
+    expect(get).toHaveBeenCalledOnce();
+  });
+
+  it('ignores synthetic mouse moves while retaining the last trusted pointer line', async () => {
+    const get = vi.fn(() => ready());
+    create(get);
+    const host = link();
+    wrapped(host);
+    host.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientY: 55 }));
+    move(host, 85, false);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.style.top).toBe('78px');
+    move(host, 85);
+    expect(tooltip()?.style.top).toBe('108px');
+    move(host, 55, false);
+    expect(tooltip()?.style.top).toBe('108px');
+    expect(get).toHaveBeenCalledOnce();
+  });
+
+  it('positions a bound header at its label while focus, descriptions and cleanup belong to the native host', async () => {
+    const get = vi.fn(() => ready());
+    const instance = create(get);
+    const host = document.createElement('span');
+    const label = document.createElement('span');
+    const native = document.createElement('span');
+    host.title = 'Native header counts';
+    label.textContent = '1 test';
+    native.textContent = '+4 −1';
+    host.append(label, native);
+    document.body.append(host);
+    geometry(host, new DOMRect(100, 50, 250, 20));
+    geometry(label, new DOMRect(100, 50, 40, 20));
+    const { all, hidden } = breakdownFromFiles([], createMatcher(DEFAULT_SETTINGS));
+    instance.bindBreakdown(host, () => statsBreakdown(all, hidden, 'test files'), { keyboard: true, anchor: () => label });
+    host.focus();
+    await vi.advanceTimersByTimeAsync(150);
+    const box = tooltip();
+    expect(box?.style.getPropertyValue('--geld-provider-hover-caret')).toBe('112px');
+    expect(box?.style.top).toBe('78px');
+    expect(document.activeElement).toBe(host);
+    expect(host.getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    expect(label.hasAttribute('aria-describedby')).toBe(false);
+    expect(label.hasAttribute('tabindex')).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    instance.stop();
+    expect(host.title).toBe('Native header counts');
+    expect(host.hasAttribute('tabindex')).toBe(false);
+    expect(host.hasAttribute('aria-describedby')).toBe(false);
+    expect(label.isConnected).toBe(true);
+  });
+
+  it.each(['null', 'disconnected', 'foreign document'] as const)('falls back to its native host for a %s label anchor', async (kind) => {
+    const instance = create(() => ready());
+    const host = link();
+    const otherDocument = document.implementation.createHTMLDocument();
+    const label = kind === 'foreign document' ? otherDocument.createElement('span') : document.createElement('span');
+    if (kind === 'foreign document') otherDocument.body.append(label);
+    geometry(label, new DOMRect(400, 250, 40, 20));
+    const { all, hidden } = breakdownFromFiles([], createMatcher(DEFAULT_SETTINGS));
+    instance.bindBreakdown(host, () => statsBreakdown(all, hidden, 'test files'), { anchor: () => kind === 'null' ? null : label });
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.style.top).toBe('88px');
+    expect(host.getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    expect(label.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('falls back to the visible native host when its connected label is hidden at a breakpoint', async () => {
+    const get = vi.fn(() => ready());
+    const instance = create(get);
+    const host = link();
+    const label = document.createElement('span');
+    host.append(label);
+    geometry(label, new DOMRect(0, 0, 0, 0));
+    const { all, hidden } = breakdownFromFiles([], createMatcher(DEFAULT_SETTINGS));
+    instance.bindBreakdown(host, () => statsBreakdown(all, hidden, 'test files'), { anchor: () => label });
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(label.isConnected).toBe(true);
+    expect(tooltip()?.style.top).toBe('88px');
+    expect(tooltip()?.style.getPropertyValue('--geld-provider-hover-caret')).toBe('122px');
+    expect(host.getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    expect(label.hasAttribute('aria-describedby')).toBe(false);
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('dismisses for navigation without showing a later source update on the new page', async () => {

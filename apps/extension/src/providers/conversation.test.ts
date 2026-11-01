@@ -41,6 +41,9 @@ function aiResponse(message: AiCompleteRequest | AiEvaluateRequest): unknown {
   return { ok: true, model: 'writer', text: JSON.stringify({ items }) };
 }
 
+// Explicit measured-box protocol for Happy DOM, never browser find verification.
+const unitNativeFind = { supported: true, display: (root: HTMLElement): string => root.style.display || (root.tagName === 'TR' ? 'table-row' : 'block') };
+
 const cleanup: (() => void)[] = [];
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); document.body.replaceChildren(); });
 
@@ -55,7 +58,7 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
   const fetchReview = vi.fn(async () => source);
   const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview, ...adapterOverrides };
   const changed = vi.fn(() => { queueMicrotask(() => { if (active) conversation.apply(currentPage, currentSettings); }); });
-  const conversation = new ProviderConversation(adapter, changed, { ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, writeRuns: async (next) => { runs = next; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
+  const conversation = new ProviderConversation(adapter, changed, { nativeFindEnvironment: unitNativeFind, ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, writeRuns: async (next) => { runs = next; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
   cleanup.push(() => { active = false; conversation.clear(); });
   conversation.apply(currentPage, currentSettings);
   return { host, conversation, send, changed, fetchReview, runs: () => runs,
@@ -64,6 +67,32 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
 }
 
 describe('provider conversation integrations', () => {
+  it('rechecks live native actions after remounts and rejects stale availability or detached controls', async () => {
+    const first = vi.fn(async () => true);
+    const replacement = vi.fn(async () => true);
+    let activate = first;
+    let available = true;
+    const source: ProviderReviewSnapshot = { ...snapshot(), get actions(): ProviderReviewSnapshot['actions'] { return [{ kind: 'approve', available, activate }]; } };
+    const native = document.createElement('header'); document.body.append(native);
+    const f = fixture(source, {}, { aiEnabled: false, quickReview: true }, { actionHost: () => native });
+    await vi.waitFor(() => expect(native.querySelector('.geld-provider-actions button')).not.toBeNull());
+    const button = native.querySelector<HTMLButtonElement>('.geld-provider-actions button');
+    if (button === null) throw new Error('Missing review action fixture');
+    activate = replacement;
+    f.apply();
+    expect(native.querySelector('button')).toBe(button);
+    button.click();
+    await vi.waitFor(() => expect(replacement).toHaveBeenCalledOnce());
+    expect(first).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    available = false;
+    button.click();
+    expect(replacement).toHaveBeenCalledOnce();
+    f.apply(null);
+    button.click();
+    expect(replacement).toHaveBeenCalledOnce();
+  });
+
   it('refreshes live native requirement facts without another review request or inferred approval totals', async () => {
     let passed = true;
     const source: ProviderReviewSnapshot = { ...snapshot(), get requirements(): NonNullable<ProviderReviewSnapshot['requirements']> { return [{ id: 'native-minimum-approvals', label: 'Minimum approvals', state: passed ? 'passed' : 'unknown' }]; } };
@@ -231,34 +260,34 @@ describe('provider conversation integrations', () => {
     composer.append(document.createElement('textarea'));
     document.body.append(native, mixed, composer);
     const f = fixture(snapshot(), {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }, { root: mixed, anchors: ['note_1', 'note_9'], kind: 'comment' }, { root: composer, anchors: ['note_1'], kind: 'comment' }] });
-    await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
-    expect(mixed.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
-    expect(composer.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    await vi.waitFor(() => expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true));
+    expect(mixed.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
+    expect(composer.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
     expect(native.firstElementChild).toBe(originalButton);
     originalButton.click();
     expect(activated).toHaveBeenCalledTimes(1);
     document.querySelector<HTMLButtonElement>('.geld-provider-original button')?.click();
-    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
     const replacement = document.createElement('article');
     replacement.id = native.id;
     native.replaceWith(replacement);
     native = replacement;
     f.apply();
-    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
     expect(document.querySelectorAll('.geld-provider-original')).toHaveLength(1);
     f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off' });
     expect(document.querySelector('.geld-provider-original')).toBeNull();
-    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
   });
 
   it('reveals the native source before activating its exposed thread controls', async () => {
     const native = document.createElement('article'); native.id = 'note_1'; document.body.append(native);
-    const action = vi.fn(async () => { expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false); return true; });
+    const action = vi.fn(async () => { expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false); expect(native.hasAttribute('hidden')).toBe(false); return true; });
     const f = fixture({ ...snapshot(), sourceActions: () => [{ kind: 'resolve', label: 'Resolve natively', available: true, activate: action }] }, {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
-    await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+    await vi.waitFor(() => expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true));
     [...f.host.querySelectorAll<HTMLButtonElement>('[data-geld-source="note_1"] button')].find((button) => button.textContent === 'Resolve natively')?.click();
     await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
-    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
   });
 
   it('reveals an existing native source across review tabs while preserving modified link navigation', async () => {
@@ -269,12 +298,15 @@ describe('provider conversation integrations', () => {
       native.id = 'note_1';
       document.body.append(native);
       const bounds = [new DOMRect(0, 10, 100, 20)];
-      vi.spyOn(native, 'getClientRects').mockReturnValue(Object.assign(bounds, { item: (index: number) => bounds[index] ?? null }));
+      vi.spyOn(native, 'getClientRects').mockImplementation(() => {
+        expect(native.hasAttribute('hidden')).toBe(false);
+        return Object.assign(bounds, { item: (index: number) => bounds[index] ?? null });
+      });
       const scroll = vi.spyOn(native, 'scrollIntoView').mockImplementation(() => undefined);
       const original = snapshot();
       const source = { ...original, input: { ...original.input, threads: original.input.threads.map((thread) => ({ ...thread, comments: thread.comments.map((entry) => ({ ...entry, url: `${url}/diffs#note_1` })) })) } };
       const f = fixture(source, {}, { aiEnabled: false }, { describe: (target) => target.origin === repository.origin && [new URL(url).pathname, new URL(`${url}/diffs`).pathname].includes(target.pathname) ? { ...page, kind: target.pathname.endsWith('/diffs') ? 'diff' : 'overview' } : null, conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
-      await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+      await vi.waitFor(() => expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true));
       const anchor = f.host.querySelector<HTMLAnchorElement>('[data-geld-source="note_1"] a[href$="/diffs#note_1"]');
       if (anchor === null) throw new Error('Missing native source link.');
       const modified = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
@@ -285,7 +317,7 @@ describe('provider conversation integrations', () => {
       const click = new MouseEvent('click', { bubbles: true, cancelable: true });
       anchor.dispatchEvent(click);
       expect(click.defaultPrevented).toBe(true);
-      expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+      expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
       expect(scroll).toHaveBeenCalledTimes(1);
     } finally { window.location.href = previous; }
   });
@@ -294,9 +326,106 @@ describe('provider conversation integrations', () => {
     const roots = ['99', '100', '101'].map((id) => { const root = document.createElement('article'); root.id = `note_${id}`; document.body.append(root); return root; });
     const source: ProviderReviewSnapshot = { ...snapshot(), events: roots.map((root, index) => ({ id: root.id, url: `${url}#${root.id}`, author: comment().author, createdAt: comment().createdAt, body: 'Native activity', kind: index === 0 ? 'activity' : index === 1 ? 'push' : 'state', lowSignal: true })) };
     fixture(source, {}, { aiEnabled: false }, { conversationRoots: () => roots.map((root) => ({ root, anchors: [root.id], kind: 'activity' })) });
-    await vi.waitFor(() => expect(roots[0]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
-    expect(roots[1]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
-    expect(roots[2]?.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    await vi.waitFor(() => expect(roots[0]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true));
+    expect(roots[1]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
+    expect(roots[2]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
+  });
+
+  it('honors synthetic beforematch protocol through repeated reapplies, remounts and explicit Hide', async () => {
+    let native = document.createElement('article');
+    native.id = 'note_1';
+    const child = document.createElement('strong'); child.textContent = 'Native words'; native.append(child);
+    document.body.append(native);
+    const f = fixture(snapshot(), {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    native.dispatchEvent(new Event('beforematch', { bubbles: true }));
+    expect(native.hasAttribute('hidden')).toBe(false);
+    expect(native.firstElementChild).toBe(child);
+    expect(document.querySelector('.geld-provider-original button')?.textContent).toBe('Hide original conversation entry');
+    for (let index = 0; index < 100; index += 1) f.apply();
+    expect(native.hasAttribute('hidden')).toBe(false);
+    const replacement = document.createElement('article'); replacement.id = native.id;
+    native.replaceWith(replacement); native = replacement;
+    f.apply();
+    expect(native.hasAttribute('hidden')).toBe(false);
+    expect(document.querySelector('.geld-provider-original button')?.getAttribute('aria-expanded')).toBe('true');
+    document.querySelector<HTMLButtonElement>('.geld-provider-original button')?.click();
+    expect(native.getAttribute('hidden')).toBe('until-found');
+    expect(document.querySelector('.geld-provider-original button')?.textContent).toBe('Show original conversation entry');
+    f.apply();
+    expect(native.getAttribute('hidden')).toBe('until-found');
+    f.apply(null);
+    expect(native.hasAttribute('hidden')).toBe(false);
+    const calls = f.changed.mock.calls.length;
+    native.dispatchEvent(new Event('beforematch', { bubbles: true }));
+    expect(f.changed).toHaveBeenCalledTimes(calls);
+  });
+
+  it('reveals an initial native fragment, lets explicit Hide stand, and honors later external fragment navigation', async () => {
+    const previous = window.location.href;
+    window.location.href = `${url}#note_1`;
+    const native = document.createElement('article'); native.id = 'note_1'; document.body.append(native);
+    try {
+      const f = fixture(snapshot(), {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+      await vi.waitFor(() => expect(document.querySelector('.geld-provider-original button')?.getAttribute('aria-expanded')).toBe('true'));
+      expect(native.hasAttribute('hidden')).toBe(false);
+      document.querySelector<HTMLButtonElement>('.geld-provider-original button')?.click();
+      expect(native.getAttribute('hidden')).toBe('until-found');
+      for (let index = 0; index < 20; index += 1) f.apply();
+      expect(native.getAttribute('hidden')).toBe('until-found');
+      window.history.replaceState({}, '', `${url}#elsewhere`); window.dispatchEvent(new Event('hashchange'));
+      expect(native.getAttribute('hidden')).toBe('until-found');
+      window.history.replaceState({}, '', `${url}#note_%31`); window.dispatchEvent(new Event('hashchange'));
+      expect(native.hasAttribute('hidden')).toBe(false);
+      expect(document.querySelector('.geld-provider-original button')?.textContent).toBe('Hide original conversation entry');
+      f.apply();
+      expect(native.hasAttribute('hidden')).toBe(false);
+    } finally { window.location.href = previous; }
+  });
+
+  it.each(['unsupported', 'native-owned', 'editing', 'unmeasured'])('leaves %s native roots uncovered without a misleading Hide control', async (kind) => {
+    const native = document.createElement('article'); native.id = 'note_1'; document.body.append(native);
+    if (kind === 'native-owned') native.setAttribute('hidden', '');
+    if (kind === 'editing') native.append(document.createElement('textarea'));
+    const f = fixture(snapshot(), { nativeFindEnvironment: { supported: kind !== 'unsupported', display: () => kind === 'unmeasured' ? 'contents' : 'block' } }, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+    expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+    expect(document.querySelector('.geld-provider-original')).toBeNull();
+    expect(native.getAttribute('hidden')).toBe(kind === 'native-owned' ? '' : null);
+    f.apply(null);
+    expect(native.getAttribute('hidden')).toBe(kind === 'native-owned' ? '' : null);
+  });
+
+  it('preserves native replacement hidden/style ownership and never applies a block protocol to table rows', async () => {
+    let native = document.createElement('article'); native.id = 'note_1'; document.body.append(native);
+    native.style.setProperty('--geld-provider-native-find-display', 'grid', 'important');
+    const f = fixture(snapshot(), {}, { aiEnabled: false }, { conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+    await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+    native.dispatchEvent(new Event('beforematch', { bubbles: true }));
+    expect(native.style.getPropertyValue('--geld-provider-native-find-display')).toBe('grid');
+    expect(native.style.getPropertyPriority('--geld-provider-native-find-display')).toBe('important');
+    const table = document.createElement('table'); const body = document.createElement('tbody'); const replacement = document.createElement('tr');
+    replacement.id = 'note_1'; replacement.append(document.createElement('td')); body.append(replacement); table.append(body);
+    native.replaceWith(table); native = replacement;
+    f.apply();
+    expect(native.parentElement).toBe(body);
+    expect(native.hasAttribute('hidden')).toBe(false);
+    expect(document.querySelector('.geld-provider-original')).toBeNull();
+    expect(body.children).toHaveLength(1);
+    f.apply(null);
+    const second = document.createElement('article'); second.id = 'note_1'; table.replaceWith(second); native = second;
+    f.apply(page);
+    await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+    native.setAttribute('hidden', '');
+    native.style.setProperty('--geld-provider-native-find-display', 'flex', 'important');
+    f.apply();
+    expect(document.querySelector('.geld-provider-original')).toBeNull();
+    f.apply(null);
+    expect(native.getAttribute('hidden')).toBe('');
+    expect(native.style.getPropertyValue('--geld-provider-native-find-display')).toBe('flex');
+    expect(native.style.getPropertyPriority('--geld-provider-native-find-display')).toBe('important');
   });
 
   it('collapses the native description after its first paragraph only in minimal mode and restores every node', async () => {

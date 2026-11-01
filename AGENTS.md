@@ -1465,6 +1465,16 @@ Provider-specific surfaces translate settings and sources into shared review and
   A native discussion containing the owned machine note keeps its human replies and original location and resolution facts when that note is excluded from a summary.
   Format validation is separate from author, provider, repository, review and head trust.
   A native bot finding's source-link evidence uses its actual provider origin, full repository and review routes rather than GitHub-only URL patterns, so source-linked findings do not become false repository-access refusals.
+- **Native navigation retains source and reader ownership.**
+  Header hidden-count hints live outside native numeric ARIA wrappers and badges, and only the owned hint has a dotted underline.
+  Count-group hover retains native focus and ARIA ownership while positioning the popover at the visible hint, with a native-host fallback at responsive breakpoints.
+  Moving across wrapped commit-link lines updates only popover geometry after genuine pointer intent, without another source fetch.
+  Compacted original conversation entries use `hidden="until-found"` only when the browser supports beforematch and the exact native root can be folded without overriding native visibility or editing controls.
+  Beforematch and exact fragment navigation reveal that original for the visit, while an explicit Hide remains effective until a later changed fragment requests it again.
+  Unsupported or natively owned roots remain visible with their native behavior rather than receiving a misleading owned disclosure control.
+  Unanchored description-tail compaction is a separate path and does not claim browser-find equivalence.
+  Linked code-fold navigation schedules one guarded native scroll after unhide, and a changed selection, removed row, manual refold or teardown cancels it.
+  Human comments stay in their original push round when edited, while an edited automated report can retain its run clock and still displays its actual edit time.
 - **Count text and accessibility can have different native owners.**
   GitLab can put both Added and Removed totals in one native `aria-label`, which must be rewritten as a pair and restored to the latest native wording.
   Bitbucket's visual Lines updated totals are `aria-hidden`, so an owned screen-reader summary supplies the adjusted totals and the surrounding native summary becomes the keyboard hover target without exposing duplicate visual labels.
