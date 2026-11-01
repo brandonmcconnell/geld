@@ -7,6 +7,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -1876,7 +1877,11 @@ async function authorPresentationProbe(page, provider, anchor) {
       uncoveredNative: provider === 'bitbucket' ? ['No native profile URL, alias or role badge is presented by this captured public Bitbucket author header.'] : [],
     };
   }, provider, anchor);
-  return { ...measurement, openedSummaries, ...compareAuthorPresentation(measurement) };
+  const body = await page.evaluate(commentBodyPresentationProbe, provider, anchor);
+  const authorComparison = compareAuthorPresentation(measurement);
+  const bodyComparison = compareCommentBodyPresentation(body);
+  return { ...measurement, body: { ...body, ...bodyComparison }, openedSummaries,
+    covered: [...authorComparison.covered, ...bodyComparison.covered], uncovered: [...authorComparison.uncovered, ...bodyComparison.uncovered], mismatches: [...authorComparison.mismatches, ...bodyComparison.mismatches] };
 }
 
 function compareAuthorPresentation(value) {
@@ -1921,16 +1926,20 @@ async function authorThemeEvidence(page, provider, anchor) {
     const dark = await authorPresentationProbe(page, provider, anchor);
     const colors = (sample) => sample == null ? null : ['color', 'backgroundColor', 'borderTopColor', 'boxShadow'].map((key) => sample.style[key]);
     const nativeSignature = (value) => JSON.stringify([colors(value.name.native), colors(value.aliasPair.native), colors(value.avatar.native), value.badges.map((badge) => [colors(badge.native), colors(badge.nativeText)])]);
-    const changed = nativeSignature(baseline) !== nativeSignature(dark);
-    evidence.darkPreferenceProbe = { mechanism: 'OS prefers-color-scheme emulation on the same loaded page only; no manual theme class, CSS injection or extra API request', nativeThemeChanged: changed, status: changed ? 'native_scheme_observed' : 'site_did_not_select_dark_theme', measurement: dark };
+    const bodyNativeThemeChanged = baseline.body.samples.some((before) => {
+      const after = dark.body.samples.find((candidate) => candidate.category === before.category && candidate.sourceOrder === before.sourceOrder && candidate.native.tag === before.native.tag && candidate.native.text === before.native.text && candidate.native.textLength === before.native.textLength);
+      return after !== undefined && JSON.stringify(colors(before.native)) !== JSON.stringify(colors(after.native));
+    });
+    const changed = nativeSignature(baseline) !== nativeSignature(dark) || bodyNativeThemeChanged;
+    evidence.darkPreferenceProbe = { mechanism: 'OS prefers-color-scheme emulation on the same loaded page only; no manual theme class, CSS injection or extra API request', nativeThemeChanged: changed, bodyNativeThemeChanged, status: changed ? 'native_scheme_observed' : 'site_did_not_select_dark_theme', measurement: dark };
     if (changed) evidence.darkPreferenceProbe.artifacts = await capture(page, `${provider}-author-os-dark`);
   } finally { await page.emulateMediaFeatures([]); }
   return evidence;
 }
 
 function assertAuthorThemeEvidence(evidence) {
-  assert.deepEqual(evidence.baseline.mismatches, [], 'Captured native/owned author presentation differs');
-  if (evidence.darkPreferenceProbe.nativeThemeChanged) assert.deepEqual(evidence.darkPreferenceProbe.measurement.mismatches, [], 'Captured native/owned author presentation differs under the actual native dark preference');
+  assert.deepEqual(evidence.baseline.mismatches, [], 'Captured native/owned author or comment body presentation differs');
+  if (evidence.darkPreferenceProbe !== null) assert.deepEqual(evidence.darkPreferenceProbe.measurement.mismatches, [], evidence.darkPreferenceProbe.nativeThemeChanged ? 'Captured native/owned author or comment body presentation differs under the observed native scheme' : 'Captured native/owned author or comment body presentation differs after OS preference changed while the provider preserved its selected theme');
 }
 
 async function bitbucketCommentDigest(page) {
