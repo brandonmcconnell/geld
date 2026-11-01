@@ -1,4 +1,13 @@
 {
   "agreement": "CLA.md",
-  "signatures": []
+  "signatures": [
+    {
+      "login": "hunterchen7",
+      "id": 34012681,
+      "signedAt": "2026-11-01T16:09:44Z",
+      "comment": "https://github.com/brandonmcconnell/geld/pull/128#issuecomment-6560455835",
+      "body": "I have read the Geld CLA and I agree to it.",
+      "agreementSha": "9383448bfb5307bc98bda5fd16f11b661574683f"
+    }
+  ]
 }
