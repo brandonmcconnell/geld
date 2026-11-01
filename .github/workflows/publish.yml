@@ -28,7 +28,8 @@ name: Publish to stores
 #   Safari  : APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_ASC_PRIVATE_KEY (base64 .p8),
 #             APPLE_CERTIFICATE_P12 (base64), APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID
 #             plus repository variables SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and
-#             SAFARI_REVIEW_TEST_DEVICE
+#             SAFARI_REVIEW_TEST_DEVICE, and SAFARI_AUTO_PUBLISH=true to submit on the schedule
+#             (unset: Safari is submitted only from a manual run)
 # See apps/extension/store/PUBLISHING.md for where each comes from.
 
 on:
@@ -45,9 +46,9 @@ on:
         required: false
         default: ''
       channels:
-        description: 'Comma-separated stores: chrome, edge, firefox, safari'
+        description: 'Comma-separated stores: chrome, edge, firefox, safari (add safari to submit it; it is paused otherwise)'
         required: false
-        default: 'chrome,edge,firefox,safari'
+        default: 'chrome,edge,firefox'
       notes:
         description: 'Reviewer notes (Edge / Firefox)'
         required: false
@@ -213,10 +214,13 @@ jobs:
           [ "$code" = "0" ] || exit "$code"
           echo "::notice title=Firefox::Version uploaded; AMO signs and lists it after its automated review."
 
+  # Paused on the schedule and after CI: every run withdrew the submission Apple was about to review
+  # (--reject_if_possible) for the newest build, so no review ever finished. A run from the Actions tab with safari
+  # typed into its channels (it is not in the default) still submits; set the repository variable SAFARI_AUTO_PUBLISH to true to resume the automatic path.
   safari:
     name: Safari (App Store Connect)
     needs: assets
-    if: contains(needs.assets.outputs.channels, 'safari')
+    if: contains(needs.assets.outputs.channels, 'safari') && (github.event_name == 'workflow_dispatch' || vars.SAFARI_AUTO_PUBLISH == 'true')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7

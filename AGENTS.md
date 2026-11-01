@@ -39,6 +39,7 @@ scripts/             catalog-build.ts (generate/check), catalog-sign.mjs, catalo
 
 Store publishing (`.github/workflows/publish.yml`) runs after every CI release on `main`, every six hours and on demand: it submits the latest release to Chrome, Edge, Firefox and Safari, skipping a store that already has that version or has a submission under review (Chrome/Edge cannot cancel reviews via API;
 Apple can and the Safari job withdraws a waiting submission).
+**Safari is paused on the schedule and after CI** (the job's `if`: a manual run with `safari` typed into its channels, which the default leaves out, or the repository variable `SAFARI_AUTO_PUBLISH=true`): withdrawing the waiting submission twice a day meant Apple never finished reviewing one build, so builds are submitted by hand until reviews go through.
 The pattern catalog is signed and committed by CI on push (`GELD_CATALOG_PRIVATE_KEY` to sign, `CATALOG_DEPLOY_KEY` — a write deploy key — to push, with "Deploy keys" on the ruleset bypass list).
 Zips built by CI carry a four-part version (`package.json` version + run number, via `GELD_BUILD_NUMBER` in `wxt.config.ts`), so no bump commit is needed between store releases.
 Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.

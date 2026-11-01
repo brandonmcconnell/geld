@@ -12,7 +12,7 @@ Two things reach users, through two separate, fully automated paths. Nothing is 
 
 - **submits** the latest release when the store has an older version and nothing under review;
 - **skips** when the store already has this version (repeated runs are idempotent). Firefox and Safari check this with a read-only API call *before* uploading anything, so a re-run costs no AMO quota and no macOS runner time;
-- **skips with a warning** when a submission is under review, or when Firefox's daily quota is used up (the warning says roughly when it frees up). Chrome and Edge have no API to cancel a review, so the newest release is picked up by the next scheduled run once the review clears. Apple can withdraw a submission that is still *waiting* for review, and the Safari job does, so there the newest build replaces the pending one.
+- **skips with a warning** when a submission is under review, or when Firefox's daily quota is used up (the warning says roughly when it frees up). Chrome and Edge have no API to cancel a review, so the newest release is picked up by the next scheduled run once the review clears. Apple can withdraw a submission that is still *waiting* for review, and the Safari job does, so there the newest build replaces the pending one. **Safari is therefore paused on the schedule and after CI** (see below).
 
 Nothing fails silently: a skipped store is a warning annotation on the run, and the next scheduled run retries it with the newest release. The only recurring task is glancing at the "Publish to stores" run summary now and then: it names any store that skipped or failed, and a bad credential shows up there.
 
@@ -77,6 +77,8 @@ Read only by the publish workflow.
 [addons.mozilla.org → Tools → Manage API Keys](https://addons.mozilla.org/developers/addon/api/key/) → generate credentials. The **JWT issuer** (`user:…:…`) is `AMO_JWT_ISSUER`, the **JWT secret** is `AMO_JWT_SECRET`. The add-on id is fixed in the manifest (`geld@brandonmcconnell.com`) and must match the listing.
 
 ### Safari — signing secrets plus physical-device review evidence
+
+**Automatic Safari submissions are paused.** Each run withdrew the build Apple was about to review and submitted the newest one in its place, twice a day, so no review ever finished. Until the first approval, the scheduled and post-CI runs skip Safari. To submit a build, run the workflow from the Actions tab and add `safari` to its channels (the default leaves it out, so a manual run for the other stores cannot withdraw a Safari review). That one stays in review until Apple decides, because nothing replaces it. Once Safari reviews go through in reasonable time, set the repository variable `SAFARI_AUTO_PUBLISH` to `true` to put it back on the schedule.
 
 Secrets: `APPLE_TEAM_ID`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`, `APPLE_ASC_PRIVATE_KEY`, `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`.
 
