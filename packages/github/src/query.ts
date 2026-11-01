@@ -1,6 +1,7 @@
 export interface QueryToken {
   readonly key: string | null;
   readonly value: string;
+  readonly quoted?: boolean;
 }
 export function parseQuery(query: string): readonly QueryToken[] {
   const words = query.match(/(?:[^\s"\\]|\\.|"(?:\\.|[^"\\])*")+/g) ?? [];
@@ -9,14 +10,14 @@ export function parseQuery(query: string): readonly QueryToken[] {
     const key = colon > 0 && /^-?[a-z][a-z-]*$/i.test(word.slice(0, colon)) ? word.slice(0, colon).toLowerCase() : null;
     const raw = key === null ? word : word.slice(colon + 1);
     const value = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1).replace(/\\(["\\])/g, '$1') : raw;
-    return { key, value };
+    return { key, value, ...(key === null && raw.startsWith('"') && raw.endsWith('"') ? { quoted: true } : {}) };
   });
 }
-function quote(value: string): string {
-  return /[\s"\\]/.test(value) ? `"${value.replace(/["\\]/g, '\\$&')}"` : value;
+function quote(value: string, force = false): string {
+  return force || /[\s"\\]/.test(value) ? `"${value.replace(/["\\]/g, '\\$&')}"` : value;
 }
 export function serializeQuery(tokens: readonly QueryToken[]): string {
-  return tokens.map((token) => `${token.key === null ? '' : `${token.key}:`}${quote(token.value)}`).join(' ');
+  return tokens.map((token) => `${token.key === null ? '' : `${token.key}:`}${quote(token.value, token.quoted === true)}`).join(' ');
 }
 export function setQualifier(query: string, key: string, value: string | null): string {
   const tokens = parseQuery(query).filter((token) => token.key !== key);
