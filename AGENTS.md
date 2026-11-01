@@ -1507,6 +1507,9 @@ Provider-specific surfaces translate settings and sources into shared review and
   Bitbucket author names use the native body font, medium weight and default text token independently of its smaller subdued timestamps.
   Copied Atlassian avatar classes can fill the containing box through logical sizing even when the image has measured physical dimensions, so each verified avatar lives in its own measured, non-growing relative slot rather than directly in the full-width byline.
   Preserve native avatar classes and theme tokens, and constrain both logical and physical slot dimensions without freezing computed colors.
+  Bitbucket's rendered comment document inherits font settings from a native parent outside the sanitized body, so bind only that verified parent's base-font and normal-text font custom properties to the owned body host.
+  The native root line-height can differ from the paragraph font shorthand, so retain its measured font metric without guessing a constant, rounding the paragraph ratio or copying parent layout styles.
+  Cache that metric for unchanged native source and typography context, invalidate it for source, context, theme and viewport changes, and leave invalid or missing native typography at the existing fallback.
   Bitbucket's native merge-check list supplies individual rule labels and observed states, including separate minimum approval and default-reviewer approval rules.
   Those sidebar rules do not establish a numeric approval threshold, complete API availability, review permission or permission to merge.
 - **Published summary caches need an unambiguous machine frame.**
