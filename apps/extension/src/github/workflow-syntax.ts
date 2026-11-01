@@ -1,25 +1,9 @@
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
+import { SHELL_SCOPES as SCOPES, textNodes, sameLines, paintBlock } from '../lib/shell-highlight';
+import type { ShellLine as Line, ShellRanges as SyntaxRanges } from '../lib/shell-highlight';
 import type { DiffEntry } from './model';
 
-hljs.registerLanguage('bash', bash);
-
-const SCOPES = ['plain', 'keyword', 'built_in', 'literal', 'number', 'string', 'comment', 'variable', 'subst', 'title', 'meta', 'attr'] as const;
-type Scope = (typeof SCOPES)[number];
-type SyntaxRanges = Map<Scope, StaticRange[]>;
-interface SourceText { readonly node: Text; readonly text: string }
-interface Line { readonly number: number; readonly nodes: readonly SourceText[]; readonly text: string }
 interface PaintedFile { readonly lines: readonly Line[]; readonly beforeCount: number; readonly ranges: SyntaxRanges }
 const painted = new Map<HTMLElement, PaintedFile>();
-
-function textNodes(root: Node): SourceText[] {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: SourceText[] = [];
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    if (node instanceof Text) nodes.push({ node, text: node.data });
-  }
-  return nodes;
-}
 
 function linesOf(root: HTMLElement, side: 'L' | 'R'): Line[] {
   const lines: Line[] = [];
@@ -49,61 +33,6 @@ function linesOf(root: HTMLElement, side: 'L' | 'R'): Line[] {
   return lines;
 }
 
-function sameLines(before: readonly Line[], after: readonly Line[]): boolean {
-  return before.length === after.length && before.every((line, i) => {
-    const next = after[i];
-    return next !== undefined && line.number === next.number && line.nodes.length === next.nodes.length &&
-      line.nodes.every((part, j) => part.node === next.nodes[j]?.node && part.text === next.nodes[j]?.text);
-  });
-}
-
-function scopeOf(node: Node): Scope {
-  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
-    for (const scope of SCOPES) if (parent.classList.contains(`hljs-${scope}`)) return scope;
-  }
-  return 'plain';
-}
-
-function paintBlock(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
-  const source = lines.map((line) => line.text).join('\n');
-  if (source.length > 100_000) return;
-  // Only highlight.js's escaped output is parsed, in a detached template. GitHub's nodes stay untouched.
-  const template = document.createElement('template');
-  template.innerHTML = hljs.highlight(source, { language: 'bash', ignoreIllegals: true }).value;
-  const sourceNodes: { readonly node: Text; readonly start: number; readonly end: number }[] = [];
-  let offset = 0;
-  for (const line of lines) {
-    for (const part of line.nodes) {
-      sourceNodes.push({ node: part.node, start: offset, end: offset + part.text.length });
-      offset += part.text.length;
-    }
-    offset += 1;
-  }
-  let index = 0;
-  offset = 0;
-  for (const part of textNodes(template.content)) {
-    const end = offset + part.text.length;
-    const scope = scopeOf(part.node);
-    while (index < sourceNodes.length) {
-      const original = sourceNodes[index];
-      if (original === undefined || original.start >= end) break;
-      const start = Math.max(offset, original.start);
-      const stop = Math.min(end, original.end);
-      if (start < stop && !skipNodes.has(original.node)) {
-        const range = new StaticRange({
-          startContainer: original.node, startOffset: start - original.start,
-          endContainer: original.node, endOffset: stop - original.start,
-        });
-        const group = ranges.get(scope) ?? [];
-        group.push(range);
-        ranges.set(scope, group);
-      }
-      if (original.end > end) break;
-      index += 1;
-    }
-    offset = end;
-  }
-}
 
 /**
  * Every multiline `run` block on one side, painted with the shell GitHub would run it with: the step's own

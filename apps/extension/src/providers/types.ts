@@ -154,8 +154,15 @@ export interface ProviderConversationRoot {
   readonly kind: 'comment' | 'activity';
 }
 
+/** Optional provider-native syntax overlay. Never replaces source nodes or requests data. */
+export interface ProviderDiffSyntax {
+  apply(view: ProviderDiffView): void;
+  clear(): void;
+}
+
 export interface ProviderAdapter {
   readonly id: ReviewProvider;
+  readonly diffSyntax?: ProviderDiffSyntax;
   describe(url: URL, doc: Document): ProviderPage | null;
   readDiff(doc: Document): ProviderDiffView | null;
   headerTargets(doc: Document): readonly ProviderHeaderTarget[];

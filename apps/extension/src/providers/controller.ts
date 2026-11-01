@@ -280,7 +280,7 @@ export class ProviderController {
     this.state = PROVIDER_IDLE_STATE;
   }
 
-  private restorePage(preserveHeaderHover = false): void {
+  private restorePage(preserveHeaderHover = false, preserveDiffSyntax = false): void {
     this.settledHeader = null;
     this.effectiveSettings = null;
     for (const host of [...this.hoverCounts.keys()]) {
@@ -288,6 +288,7 @@ export class ProviderController {
     }
     if (!preserveHeaderHover) this.headerHosts.clear();
     clearProviderLineFolds();
+    if (!preserveDiffSyntax) this.adapter.diffSyntax?.clear();
     this.counts.restore();
     for (const node of this.touched) { node.removeAttribute(HIDDEN); node.removeAttribute(INLINE); }
     this.touched.clear();
@@ -348,6 +349,8 @@ export class ProviderController {
     this.source.setActive(true);
     this.configs?.setActive(true);
     const view = page === null ? null : this.adapter.readDiff(document);
+    if (view === null) this.adapter.diffSyntax?.clear();
+    else this.adapter.diffSyntax?.apply(view);
     const targets = page === null ? [] : this.adapter.headerTargets(document);
     const hasPageSurface = page !== null && (view !== null || targets.length > 0 || this.adapter.reviewHost?.(document) != null || this.adapter.actionHost?.(document) != null);
     const config = page === null || !hasPageSurface ? null : this.configs?.get(page, this.settings, this.choices) ?? null;
@@ -371,7 +374,7 @@ export class ProviderController {
     }
     const result = this.source.get(page, true, true, true);
     if (result.status !== 'ready' || config?.status === 'loading') {
-      this.restorePage(true);
+      this.restorePage(true, true);
       this.bindHeaders(targets, {
         stats: null,
         status: result.status === 'loading' || config?.status === 'loading' ? 'loading' : 'unavailable',
