@@ -62,6 +62,8 @@ export interface ProviderDiffEntry {
   isExpanded?(): boolean;
   isViewed?(): boolean | null;
   readLines?(): readonly ProviderDiffLine[];
+  /** Revalidate the native size-only reason and enabled loader before pressing, never the generic file toggle. */
+  expandLargeDiff?(): boolean;
   expand(): boolean;
   collapse(): boolean;
   markViewed?(): boolean;
