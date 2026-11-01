@@ -9,7 +9,7 @@ import { json, sameOrigin } from '@/lib/http';
 import { resourceDigest } from '@/lib/resource-digest';
 import { submitProviderReview } from '@/lib/review-write';
 import { demoEnabled } from '@/lib/env';
-const requestSchema = z.object({ ref: pullRefSchema, kind: z.enum(['review','comment','line_comment','reply','resolve']), event: z.enum(['comment','approve','request_changes']).optional(), body: z.string().max(60000), headSha: z.string().min(1).max(100), path: z.string().max(1000).optional(), line: z.number().int().positive().optional(), side: z.enum(['old','new']).optional(), threadId: z.string().max(200).optional(), resolved: z.boolean().optional() });
+const requestSchema = z.object({ ref: pullRefSchema, kind: z.enum(['review','comment','line_comment','reply','resolve']), event: z.enum(['comment','approve','request_changes']).optional(), body: z.string().max(60000), headSha: z.string().min(1).max(100), path: z.string().max(1000).optional(), oldPath: z.string().max(1000).optional(), line: z.number().int().positive().optional(), side: z.enum(['old','new']).optional(), threadId: z.string().max(200).optional(), resolved: z.boolean().optional() });
 export async function POST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
@@ -38,7 +38,7 @@ export async function POST(request: Request): Promise<Response> {
       : input.kind === 'comment'
         ? await client.comment(input.ref, input.body)
         : input.kind === 'line_comment' && input.path && input.line && input.side
-          ? await client.lineComment(input.ref, { body: input.body, path: input.path, line: input.line, side: input.side, headSha: input.headSha })
+          ? await client.lineComment(input.ref, { body: input.body, path: input.path, ...(input.oldPath ? { oldPath: input.oldPath } : {}), line: input.line, side: input.side, headSha: input.headSha })
           : { ok: false, reason: 'invalid_response' };
     await db.query('UPDATE review_receipts SET outcome = $2 WHERE id = $1', [id, result.ok ? 'success' : 'failure']);
     return result.ok ? json({ posted: true, reference: result.value }) : json({ error: result.reason === 'permission' ? 'The provider or repository App does not grant this permission. Open the pull request on the provider or update the installation.' : result.reason === 'unsupported' ? 'This provider does not support this action through Geld yet. Open the pull request on the provider.' : result.reason === 'own_review' ? 'You cannot approve or request changes on your own pull request.' : 'The provider could not confirm this review. Check its current state before trying again.', ...(result.reason === 'permission' ? { required: result.required } : {}) }, result.reason === 'permission' ? 403 : result.reason === 'unsupported' ? 501 : 409);

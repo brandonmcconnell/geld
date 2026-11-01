@@ -453,9 +453,9 @@ textarea.field { min-height: 100px; }
 .diff-line-removed .diff-sign { color: var(--destructive); }
 .hunk-header { background: var(--sidebar-bg); color: var(--muted-foreground); font-size: 9px; }
 .hunk-header td { padding: 8px 12px; }
-.line-comment-button { position: absolute; right: 5px; top: 0; display: none; border: 1px solid var(--border); background: var(--card); padding: 2px; color: var(--foreground); }
-.diff-line:hover .line-comment-button, .line-comment-button:focus-visible { display: block; }
-.line-comment-button:focus-visible { position: static; }
+.line-comment-button { position: absolute; right: 5px; top: 0; opacity: 0; border: 1px solid var(--border); background: var(--card); padding: 2px; color: var(--foreground); }
+.diff-line:hover .line-comment-button, .line-comment-button:focus-visible { opacity: 1; }
+
 .diff-notice { font-size: 11px; padding: 20px; color: var(--muted-foreground); }
 .supporting-section { margin: 23px 0; }
 .supporting-section > summary { font-size: 11px; font-weight: 500; cursor: pointer; padding: 12px 0; border-top: 1px solid var(--border); }

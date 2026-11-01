@@ -18,3 +18,10 @@ describe('hunks and line anchors', () => {
     expect(files[0]?.hunks[0]?.lines[0]?.text).toBe('-- comment');
   });
 });
+
+describe('renamed diff paths', () => {
+  it('keeps the preimage path beside the current path and text anchors', () => {
+    const files = parseUnifiedDiffHunks('diff --git a/old name.ts b/new name.ts\nsimilarity index 80%\nrename from old name.ts\nrename to new name.ts\n--- a/old name.ts\n+++ b/new name.ts\n@@ -1 +1 @@\n-before\n+after\n');
+    expect(files[0]).toMatchObject({ path: 'new name.ts', oldPath: 'old name.ts', hunks: [{ lines: [{ kind: 'removed', oldLine: 1 }, { kind: 'added', newLine: 1 }] }] });
+  });
+});

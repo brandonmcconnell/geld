@@ -1,5 +1,5 @@
 import type { FileStats } from './diff-parse';
-import { parseUnifiedDiff } from './diff-parse';
+import { parseUnifiedDiff, pathFromGitHeader } from './diff-parse';
 
 export interface DiffLine {
   readonly kind: 'context' | 'added' | 'removed' | 'notice';
@@ -16,6 +16,7 @@ export interface DiffHunk {
   readonly lines: readonly DiffLine[];
 }
 export interface DiffFile extends FileStats {
+  readonly oldPath?: string | undefined;
   readonly hunks: readonly DiffHunk[];
   readonly binary: boolean;
 }
@@ -47,7 +48,7 @@ export function parseUnifiedDiffHunks(text: string): readonly DiffFile[] {
       else if (line.startsWith('-') && remainingOld > 0) { current.lines.push({ kind: 'removed', text: line.slice(1), oldLine: oldLine++, newLine: null }); remainingOld -= 1; }
       else if (line.startsWith(' ') && remainingOld > 0 && remainingNew > 0) { current.lines.push({ kind: 'context', text: line.slice(1), oldLine: oldLine++, newLine: newLine++ }); remainingOld -= 1; remainingNew -= 1; }
     }
-    files.push({ ...stats, binary: stats.kinds?.includes('binary') ?? false, hunks });
+    files.push({ ...stats, oldPath: pathFromGitHeader(block.split('\n')[0] ?? '', 'old') ?? stats.path, binary: stats.kinds?.includes('binary') ?? false, hunks });
   }
   return files;
 }

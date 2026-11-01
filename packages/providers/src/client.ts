@@ -181,7 +181,7 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
       if (!detail.ok) return detail;
       const pull = gitlabPull(detail.value, ref);
       if (!pull?.startSha || pull.headSha !== comment.headSha) return { ok: false, reason: 'invalid_response' };
-      return write(`${pullBase(ref)}/discussions`, 'POST', { body: comment.body, position: { position_type: 'text', base_sha: pull.baseSha, start_sha: pull.startSha, head_sha: pull.headSha, old_path: comment.path, new_path: comment.path, ...(comment.side === 'new' ? { new_line: comment.line } : { old_line: comment.line }) } });
+      return write(`${pullBase(ref)}/discussions`, 'POST', { body: comment.body, position: { position_type: 'text', base_sha: pull.baseSha, start_sha: pull.startSha, head_sha: pull.headSha, old_path: comment.oldPath ?? comment.path, new_path: comment.path, ...(comment.side === 'new' ? { new_line: comment.line } : { old_line: comment.line }) } });
     },
     async review(ref: PullRef, review: ReviewSubmission) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };

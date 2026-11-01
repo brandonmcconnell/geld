@@ -79,3 +79,16 @@ describe('same-provider redirects', () => {
     expect(requests).toBe(1);
   });
 });
+
+describe('GitLab renamed-file line comments', () => {
+  it.each(['old', 'new'])('keeps both revision paths for a comment on the %s side', async side => {
+    if (side !== 'old' && side !== 'new') throw new Error('Invalid fixture side');
+    const requests: unknown[] = [];
+    const client = createProviderClient({ provider: 'gitlab', source, fetch: async (_url, init) => {
+      if (init?.method === 'POST') { requests.push(JSON.parse(String(init.body))); return Response.json({ id: 'discussion' }); }
+      return Response.json({ ...gitlab, diff_refs: { base_sha: 'base', start_sha: 'start', head_sha: 'head' } });
+    } });
+    expect(await client.lineComment({ provider: 'gitlab', host: 'gitlab.com', owner: 'org', repo: 'repo', number: 1 }, { body: 'Check this', path: 'new name.ts', oldPath: 'old name.ts', line: 7, side, headSha: 'head' })).toEqual({ ok: true, value: 'discussion' });
+    expect(requests).toEqual([{ body: 'Check this', position: { position_type: 'text', base_sha: 'base', start_sha: 'start', head_sha: 'head', old_path: 'old name.ts', new_path: 'new name.ts', ...(side === 'old' ? { old_line: 7 } : { new_line: 7 }) } }]);
+  });
+});

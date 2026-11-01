@@ -87,6 +87,7 @@ export interface ReviewSubmission {
 }
 
 export interface LineComment {
+  readonly oldPath?: string;
   readonly body: string;
   readonly path: string;
   readonly line: number;
