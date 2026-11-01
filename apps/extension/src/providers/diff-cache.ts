@@ -70,8 +70,10 @@ function canonicalSubject(page: ProviderPage): string {
     path = page.provider === 'gitlab' ? `/${page.repository.path}/-/merge_requests/${page.number}` : `/${page.repository.path}/pull-requests/${page.number}`;
     if (!/^[1-9]\d*$/.test(page.number)) throw new Error('Invalid provider review identity');
   } else {
-    if (page.provider !== 'gitlab') throw new Error('Unsupported standalone diff identity');
-    path = page.kind === 'commit' ? `/${page.repository.path}/-/commit/${encodeURIComponent(page.ref)}` : `/${page.repository.path}/-/compare/${encodeURIComponent(page.from)}...${encodeURIComponent(page.to)}`;
+    if (page.provider === 'bitbucket') {
+      if (page.kind !== 'commit' || !/^(?:[0-9a-f]{7,40}|[0-9a-f]{64})$/i.test(page.ref)) throw new Error('Unsupported standalone diff identity');
+      path = `/${page.repository.path}/commits/${encodeURIComponent(page.ref)}`;
+    } else path = page.kind === 'commit' ? `/${page.repository.path}/-/commit/${encodeURIComponent(page.ref)}` : `/${page.repository.path}/-/compare/${encodeURIComponent(page.from)}...${encodeURIComponent(page.to)}`;
   }
   if (repository === null || repositoryKey(repository) !== repositoryKey(page.repository) || url.pathname.replace(/\/$/, '') !== path) throw new Error('Invalid provider diff identity');
   return `${url.origin}${path}`;
@@ -99,9 +101,9 @@ function keyHead(key: string): string | null | false {
     if (repository === null || repositoryKey(repository) !== parts[0]) return false;
     const path = provider === 'gitlab' ? `/${repository.path}/-/merge_requests/` : `/${repository.path}/pull-requests/`;
     const review = url.pathname.startsWith(path) && /^[1-9]\d*$/.test(url.pathname.slice(path.length));
-    const commitPrefix = `/${repository.path}/-/commit/`;
+    const commitPrefix = provider === 'gitlab' ? `/${repository.path}/-/commit/` : `/${repository.path}/commits/`;
     const comparePrefix = `/${repository.path}/-/compare/`;
-    const standalone = provider === 'gitlab' && ((url.pathname.startsWith(commitPrefix) && /^[0-9a-f]{7,64}$/i.test(url.pathname.slice(commitPrefix.length))) || (url.pathname.startsWith(comparePrefix) && /^.+\.\.\..+$/.test(url.pathname.slice(comparePrefix.length))));
+    const standalone = (url.pathname.startsWith(commitPrefix) && /^(?:[0-9a-f]{7,40}|[0-9a-f]{64})$/i.test(url.pathname.slice(commitPrefix.length))) || (provider === 'gitlab' && url.pathname.startsWith(comparePrefix) && /^.+\.\.\..+$/.test(url.pathname.slice(comparePrefix.length)));
     if ((!review && !standalone) || `${url.origin}${url.pathname}` !== parts[1]) return false;
     return parts[3];
   } catch { return false; }

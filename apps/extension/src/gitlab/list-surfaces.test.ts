@@ -15,6 +15,21 @@ it('uses actual MR title identity and login on project and cross-project group l
   ]);
 });
 
+it('matches the installed public group capture across projects and nested subgroups without parsing display references', () => {
+  // Reduced from installed-browser-run-41327802465/gitlab-group-mr-list-discovery.html.
+  const captured = [
+    { id: '559693780', path: 'gitlab-org/gitlab', number: '266890', author: 'mrincon', title: 'Draft: [skip ci] TODO: Pass a real commit SHA in the commit pipelines spec' },
+    { id: '559681270', path: 'gitlab-org/gitlab-runner', number: '7745', author: 'jmrp', title: 'Fix FF_KUBERNETES_HONOR_ENTRYPOINT duplicating job logs on non-UTC nodes' },
+    { id: '559681177', path: 'gitlab-org/cli', number: '4272', author: 'jmrp', title: 'docs(artifact-registry): correct the token exchange prerequisite' },
+    { id: '559680899', path: 'gitlab-org/editor-extensions/gitlab-lsp', number: '4630', author: 'stealth-donut', title: 'fix(cli): show the real failure reason on resumed sessions' },
+  ];
+  document.body.innerHTML = '<ul>' + captured.map((item) => `<li class="issue merge-request" id="issuable_${item.id}" data-qa-issue-id="${item.id}" data-testid="issuable-container"><div class="issuable-main-info"><div data-testid="issuable-title"><a class="gl-link issue-title-text" href="/${item.path}/-/merge_requests/${item.number}" id="listItem-${item.path}/${item.id}" data-testid="issuable-title-link"><span>${item.title}</span></a></div><div class="issuable-info"><span data-testid="issuable-reference">${item.path}!${item.number}</span><span aria-hidden="true">·</span><span class="issuable-authored">created <button data-testid="issuable-created-at"><time>1 hour ago</time></button> by <a href="/${item.author}" data-username="${item.author}" data-testid="issuable-author"><span class="author">Display name</span></a></span><span data-geld-ui class="geld-provider-list-counts" role="status">Counting changes…</span></div></div><div class="issuable-meta"><ul><li data-testid="issuable-status">Open</li></ul></div></li>`).join('') + '</ul>';
+  const rows = gitLabListRows(document);
+  expect(rows.map(({ root, url, author }) => ({ id: root.id, url, author }))).toEqual(captured.map((item) => ({ id: `issuable_${item.id}`, url: `https://gitlab.com/${item.path}/-/merge_requests/${item.number}`, author: item.author })));
+  expect(rows.every(({ host }) => host.classList.contains('issuable-info'))).toBe(true);
+  expect(rows.every(({ root, host }) => root.contains(host) && host.querySelectorAll('.geld-provider-list-counts').length === 1)).toBe(true);
+});
+
 it('supports the source-declared standalone IssuableItem wrapper without matching issue cards', () => {
   // Official issuable_item.vue, not a live authenticated dashboard capture.
   document.body.innerHTML = '<li class="merge-request" data-testid="issuable-item-wrapper"><a data-testid="issuable-title-link" href="/acme/sub/widgets/-/merge_requests/42/diffs?diff_id=123">MR</a><div class="issuable-info"></div></li><li data-testid="issuable-item-wrapper"><a data-testid="issuable-title-link" href="/acme/sub/widgets/-/issues/42">Issue</a><div class="issuable-info"></div></li>';

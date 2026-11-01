@@ -35,7 +35,9 @@ function adapter(): ProviderAdapter {
     describe: (url) => {
       const match = /\/-\/commit\/([a-f0-9]{40})$/.exec(url.pathname);
       if (match?.[1] !== undefined) return { ...commit(match[1]), repository: { ...commit().repository, origin: url.origin } };
-      return url.href === URL || url.href === `${URL}/diffs` ? { ...commit(currentHead), kind: url.pathname.endsWith('/diffs') ? 'diff' : 'overview', number: '7', url: URL, diffPageUrl: `${URL}/diffs`, diffUrl: `${URL}.diff` } : null;
+      const review = /^\/group\/repo\/-\/merge_requests\/(7|8)(\/diffs)?$/.exec(url.pathname);
+      const base = `${ROOT}/-/merge_requests/${review?.[1] ?? '7'}`;
+      return review === null ? null : { ...commit(currentHead), kind: review[2] === undefined ? 'overview' : 'diff', number: review[1] ?? '7', url: base, diffPageUrl: `${base}/diffs`, diffUrl: `${base}.diff` };
     },
     readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], complete: true, revision: SHA }),
   };
@@ -184,11 +186,12 @@ describe('provider commit hover intent', () => {
     const get = vi.fn(() => ready());
     const instance = create(get);
     const host = link();
-    host.href = kind === 'diff' ? `${URL}/diffs` : URL;
-    host.textContent = '!7';
+    const target = `${ROOT}/-/merge_requests/8`;
+    host.href = kind === 'diff' ? `${target}/diffs` : target;
+    host.textContent = '!8';
     hover(host);
     await vi.advanceTimersByTimeAsync(150);
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ number: '7', url: URL }), true);
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({ number: '8', url: target }), true);
     expect(tooltip()?.textContent).toContain('Tests 1 file +3 −0');
     expect(tooltip()?.textContent).toContain('Essential 1 file +4 −1');
     leave(host);

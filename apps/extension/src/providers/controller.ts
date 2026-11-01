@@ -18,6 +18,7 @@ import type { RepoConfigChoices } from '../lib/local-state';
 
 const HIDDEN = 'data-geld-provider-hidden';
 const INLINE = 'data-geld-provider-inline';
+const AUTHOR_HIDDEN = 'data-geld-provider-author-hidden';
 
 interface HoverCounts {
   readonly stats: StatsBreakdown | null;
@@ -60,10 +61,10 @@ export class ProviderController {
   private readonly touched = new Set<HTMLElement>();
   private readonly chips = new Set<HTMLElement>();
   private readonly collapsed = new Map<string, ProviderDiffEntry>();
-  private readonly viewed = new Map<string, { readonly attempts: number; readonly at: number }>();
+  private readonly viewed = new Map<string, { readonly attempts: number; readonly at: number; readonly confirmed: boolean }>();
   private shownInline = new WeakMap<HTMLElement, string>();
   private readonly expandedLarge = new WeakMap<HTMLElement, string>();
-  private readonly authors = new Map<HTMLElement, boolean>();
+  private readonly authors = new Set<HTMLElement>();
   private rowObserver: IntersectionObserver | null = null;
   private readonly observedRows = new WeakSet<HTMLElement>();
   private readonly visibleRows = new WeakSet<HTMLElement>();
@@ -233,7 +234,7 @@ export class ProviderController {
     this.signature = '';
     for (const chip of this.chips) chip.remove();
     this.chips.clear();
-    for (const [row, hidden] of this.authors) row.hidden = hidden;
+    for (const row of this.authors) row.removeAttribute(AUTHOR_HIDDEN);
     this.authors.clear();
   }
 
@@ -330,7 +331,7 @@ export class ProviderController {
         else this.counts.writeAttribute(label.host, label.attribute, visible[label.count]);
       }
     }
-    if (view !== null) this.applyFiles(page, view, hidden, all, files, effective);
+    if (view !== null) this.applyFiles(page, view, hidden, all, files, effective, result.result.revision);
     this.state = {
       repository: page.repository, repo: page.repository.path, repoConfig: config?.tab ?? null, allowed: true, rule: null,
       hasDiff: true, hiddenCount: hidden.totals.files, all, visible,
@@ -344,7 +345,11 @@ export class ProviderController {
     this.publish(this.state);
   }
 
-  private applyFiles(page: ProviderPage, view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], effective: GeldSettings): void {
+  private applyFiles(page: ProviderPage, view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], effective: GeldSettings, revision: string): void {
+    if (this.activeCategory !== null && !hidden.categories.some((group) => group.category.id === this.activeCategory)) {
+      this.activeCategory = null;
+      this.setExpanded(false);
+    }
     const hiddenPaths = new Set(hidden.categories.flatMap((group) => group.paths));
     const categories = new Map(hidden.categories.flatMap((group) => group.paths.map((path) => [path, group.category] as const)));
     const stats = new Map(files.map((file) => [file.path, file]));
@@ -375,11 +380,15 @@ export class ProviderController {
         this.collapsed.delete(entry.path);
       }
       const category = categories.get(entry.path);
-      const viewedKey = JSON.stringify([repositoryKey(page.repository), resultRevision(page), entry.path]);
+      const viewedKey = JSON.stringify([repositoryKey(page.repository), this.pageKey, revision, entry.path]);
       const attempt = this.viewed.get(viewedKey);
-      if (category !== undefined && isAutoViewed(effective, category.id) && entry.isViewed?.() === false
-        && (attempt === undefined || (attempt.attempts < 8 && Date.now() - attempt.at >= Math.min(45_000, 1000 * 2 ** attempt.attempts)))
-        && entry.markViewed?.() === true) this.viewed.set(viewedKey, { attempts: (attempt?.attempts ?? 0) + 1, at: Date.now() });
+      if (category !== undefined && isAutoViewed(effective, category.id)) {
+        const checked = entry.isViewed?.();
+        if (checked === true && attempt?.confirmed !== true) this.viewed.set(viewedKey, { attempts: attempt?.attempts ?? 0, at: Date.now(), confirmed: true });
+        else if (checked === false && attempt?.confirmed !== true
+          && (attempt === undefined || (attempt.attempts < 8 && Date.now() - attempt.at >= Math.min(45_000, 1000 * 2 ** attempt.attempts)))
+          && entry.markViewed?.() === true) this.viewed.set(viewedKey, { attempts: (attempt?.attempts ?? 0) + 1, at: Date.now(), confirmed: false });
+      }
       const file = stats.get(entry.path);
       if (!hiddenFile && effective.expandLargeDiffs && file !== undefined && file.additions + file.deletions >= LARGE_CHANGE_LINES
         && this.expandedLarge.get(entry.root) !== entry.path) {
@@ -391,12 +400,13 @@ export class ProviderController {
       attribute(row.root, INLINE, !effective.groupHidden && hiddenPaths.has(row.path) ? '' : null);
     }
     if (effective.groupHidden) this.categoryTree.update(view, hidden, all, files, {
+      subjectKey: JSON.stringify([this.pageKey, revision]),
       revealPath: (path) => this.revealPath(path),
       selectCategory: (id) => { this.activeCategory = id === 'essential' ? null : id; },
       setExpanded: (expanded) => { this.setExpanded(expanded); this.apply(); },
     });
     else this.categoryTree.clear();
-    const signature = JSON.stringify([this.pageKey, hidden.categories.map((group) => [group.category.id, group.paths]), this.expanded, effective.groupHidden]);
+    const signature = JSON.stringify([this.pageKey, revision, hidden.categories.map((group) => [group.category.id, group.category.title, group.category.shortNoun, group.category.shortNounPlural, group.paths, group.totals]), hidden.lines, all, this.expanded, effective.groupHidden]);
     if (signature === this.signature && this.section?.isConnected === true) return;
     this.section?.remove();
     this.signature = signature;
@@ -434,14 +444,12 @@ export class ProviderController {
       const scope = providerRepositoryScope(page.repository);
       if (!decideRepo(repoRules, scope).allowed) {
         this.removeChip(row);
-        const original = this.authors.get(row.root);
-        if (original !== undefined) row.root.hidden = original;
+        row.root.removeAttribute(AUTHOR_HIDDEN);
         continue;
       }
       const shouldHide = row.author !== null && rules.hides(row.author);
-      if (!this.authors.has(row.root)) this.authors.set(row.root, row.root.hidden);
-      const original = this.authors.get(row.root) ?? false;
-      if (row.root.hidden !== (original || shouldHide)) row.root.hidden = original || shouldHide;
+      this.authors.add(row.root);
+      attribute(row.root, AUTHOR_HIDDEN, shouldHide ? '' : null);
       if (!this.settings.showListStats || shouldHide) { this.removeChip(row); continue; }
       if (this.rowObserver !== null) {
         if (!this.observedRows.has(row.root)) {
@@ -538,5 +546,3 @@ export class ProviderController {
     this.shownInline = new WeakMap();
   }
 }
-
-function resultRevision(page: ProviderPage): string { return `${page.headSha ?? ''}:${page.version}`; }

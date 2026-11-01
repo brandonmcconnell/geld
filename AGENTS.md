@@ -1387,6 +1387,9 @@ Provider-specific surfaces translate settings and sources into shared review and
   After resolving the PR snapshot, request the native comparison endpoint directly with `{sourceRepository}:{fullHead}%0D{fullBase}`, `from_pullrequest_id` and `topic=true` instead of trying to follow an unreadable redirect.
   Keep the exact comparison path and non-pagination query parameters on every diffstat page, so a next link cannot switch refs or merge-base mode within the same repository.
   The CI runner also pins the source repository and both full commits before acquisition and again before writing a summary.
+  A stored browser fetch function still requires its native Window receiver, so a client invokes it with the global receiver rather than as a method of the client instance.
+  Node mocks can accept that incorrect receiver even when actual Chrome reports Illegal invocation, making installed provider transport checks necessary.
+  Standalone Bitbucket commit cache identities use `/commits/{ref}` independently of PR identities and GitLab's `/-/commit/{ref}` path.
 - **Native branding belongs to each provider.**
   Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
@@ -1420,6 +1423,7 @@ Provider-specific surfaces translate settings and sources into shared review and
   Bitbucket's visual Lines updated totals are `aria-hidden`, so an owned screen-reader summary supplies the adjusted totals and the surrounding native summary becomes the keyboard hover target without exposing duplicate visual labels.
   Zero uses plural wording, one uses singular, and one active category keeps its own short noun even when its count is zero.
   A link to another review must not inherit the current review's head, diff version or comparison selection merely because its target is described using the current document.
+  GitLab list rows can use important flex utilities that override the user-agent rule for the native `hidden` attribute, so author filtering uses a scoped owned display rule and leaves native hidden state untouched.
 - **Digest settings operate only on represented native sources.**
   Compact and minimal modes fold native comment roots only when all their source anchors are represented in the digest and eligible for that mode.
   Unknown activity, unrepresented comments, composers and pending native review controls stay visible.

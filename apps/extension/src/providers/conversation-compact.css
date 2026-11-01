@@ -1,2 +1,2 @@
-[data-geld-provider-compact-hidden], [data-geld-provider-description-hidden] { display: none !important; }
+html[data-geld-provider] [data-geld-provider-compact-hidden], html[data-geld-provider] [data-geld-provider-description-hidden] { display: none !important; }
 .geld-provider-original, .geld-provider-description-toggle { margin-block: var(--geld-provider-space-3); }
