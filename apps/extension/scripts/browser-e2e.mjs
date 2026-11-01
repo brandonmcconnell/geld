@@ -14,6 +14,18 @@ const artifacts = resolve(process.env.GELD_BROWSER_ARTIFACTS ?? 'artifacts/brows
 const executablePath = process.env.GELD_BROWSER_EXECUTABLE ?? '/usr/bin/google-chrome-stable';
 const SETTINGS_KEY = 'settings'; // @geld/core SETTINGS_STORAGE_KEY = sync:settings; Chrome area's key omits sync:.
 const WAIT_MS = 90_000;
+const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-hour quota, plus a conservative two-minute margin.
+const FOCUSED_CASES = {
+  regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
+  'bitbucket-diff': ['bitbucket-diff'],
+  'bitbucket-list': ['bitbucket-diff', 'bitbucket-list-counts'],
+  'bitbucket-comment': ['bitbucket-comment-digest'],
+  'bitbucket-commit': ['bitbucket-commit-counts'],
+  'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
+  'gitlab-review': ['gitlab-overview-digest'],
+  github: ['github-regression'],
+};
+const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
@@ -31,12 +43,16 @@ const report = {
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
   limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
   installation: null, cases: [], infrastructureErrors: [],
+  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false },
 };
 const cooldowns = new Map();
 const capturedNativeResources = new Set();
 let browser;
 let options;
 let extensionId;
+let currentCaseAbort;
+let bitbucketApiRequests = 0;
+const bitbucketRequestTimes = [];
 
 function safeUrl(value) {
   try {
@@ -56,16 +72,27 @@ function providerOf(value) {
   } catch { /* A non-network URL. */ }
   return null;
 }
-function retryAfter(value) {
-  if (value === undefined) return 60_000;
+function retryAfter(value, provider) {
+  const fallback = provider === 'bitbucket' ? BITBUCKET_ANONYMOUS_COOLDOWN_MS : 60_000;
+  if (value === undefined || value === null || value.trim() === '') return fallback;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
   const at = Date.parse(value);
-  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 60_000;
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : fallback;
+}
+function quotaHeaders(headers) {
+  const allowed = ['retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset', 'x-ratelimit-resource', 'x-ratelimit-nearlimit', 'x-rate-limit-limit', 'x-rate-limit-remaining', 'x-rate-limit-reset', 'x-rate-limit-resource', 'x-rate-limit-nearlimit'];
+  return Object.fromEntries(allowed.filter((key) => typeof headers[key] === 'string').map((key) => [key, headers[key].slice(0, 200)]));
+}
+function bitbucketApi(value) {
+  try { const url = new URL(value);return (url.hostname === 'api.bitbucket.org' && url.pathname.startsWith('/2.0/')) || (url.hostname === 'bitbucket.org' && url.pathname.startsWith('/!api/2.0/')); }
+  catch { return false; }
 }
 async function saveReport() {
   report.finishedAt = new Date().toISOString();
   report.cooldowns = Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()]));
+  report.bitbucketAnonymousRequestTimes = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).map((at) => new Date(at).toISOString());
+  report.coverage = { focus, completeParity: false, passed: report.cases.filter((item) => item.status === 'passed').map((item) => item.name), notSelected: report.cases.filter((item) => item.status === 'not_selected').map((item) => item.name), failed: report.cases.filter((item) => item.status === 'failed').map((item) => item.name) };
   const failed = report.infrastructureErrors.length > 0 || report.cases.some((item) => item.status === 'failed');
   report.status = failed ? 'failed' : 'completed_with_unsupported_features';
   await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -81,6 +108,15 @@ async function inheritCooldowns() {
   }
   const previous = JSON.parse(raw);
   assert.ok(previous?.schema === 1 && Array.isArray(previous.cases), 'Previous trusted browser report has an invalid schema');
+  if (previous.bitbucketAnonymousRequestTimes !== undefined) {
+    assert.ok(Array.isArray(previous.bitbucketAnonymousRequestTimes) && previous.bitbucketAnonymousRequestTimes.length <= 1000, 'Previous anonymous request budget metadata is malformed');
+    for (const value of previous.bitbucketAnonymousRequestTimes) {
+      const at = typeof value === 'string' ? Date.parse(value) : NaN;
+      assert.ok(Number.isFinite(at) && new Date(at).toISOString() === value && at <= Date.now() + 60_000, 'Previous anonymous request time is malformed');
+      if (at > Date.now() - 60 * 60 * 1000) bitbucketRequestTimes.push(at);
+    }
+    bitbucketRequestTimes.sort((left, right) => left - right);
+  }
   const inherit = (provider, value) => {
     assert.ok(['github', 'gitlab', 'bitbucket'].includes(provider), 'Previous cooldown has an unknown provider');
     assert.equal(typeof value, 'string', 'Previous cooldown deadline must be an ISO timestamp');
@@ -94,23 +130,47 @@ async function inheritCooldowns() {
     assert.ok(previous.cooldowns !== null && typeof previous.cooldowns === 'object' && !Array.isArray(previous.cooldowns), 'Previous cooldown map is malformed');
     for (const [provider, until] of Object.entries(previous.cooldowns)) inherit(provider, until);
   }
-  for (const item of previous.cases) if (item.rateLimitedUntil !== undefined) inherit(providerOf(item.url), item.rateLimitedUntil);
-  report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
+  for (const item of previous.cases) {
+    if (item.rateLimitedUntil !== undefined) inherit(providerOf(item.url), item.rateLimitedUntil);
+    // Earlier harness versions used a one-minute fallback. Carry the real anonymous quota window forward instead.
+    if (providerOf(item.url) === 'bitbucket' && item.sourceFailures?.some((failure) => failure.status === 429 && (failure.retryAfter === null || failure.retryAfter === undefined))) {
+      const at = Date.parse(item.finishedAt ?? item.startedAt);
+      assert.ok(Number.isFinite(at), 'Previous anonymous Bitbucket429 has no valid observation time');
+      inherit('bitbucket', new Date(at + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
+    }
+  }
+  if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget) inherit('bitbucket', new Date(bitbucketRequestTimes.at(-1) + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
+  report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedAnonymousRequestsWithinRollingHour: bitbucketRequestTimes.length, inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
 }
 function closedTarget(error) { return /Target closed|Target\.closeTarget|Session closed|Connection closed|targetgone|No target with given id/i.test(errorText(error)); }
 async function discardHandle(handle) {
   try { await handle.dispose(); }
   catch (error) { if (!closedTarget(error)) throw error; }
 }
-async function pause(ms) { await new Promise((done) => setTimeout(done, ms)); }
+async function caseOperation(operation, signal = currentCaseAbort?.signal) {
+  if (signal === undefined) return operation;
+  signal.throwIfAborted();
+  let interrupted;
+  const stopped = new Promise((_, reject) => { interrupted = () => reject(signal.reason);signal.addEventListener('abort', interrupted, { once: true }); });
+  try { return await Promise.race([operation, stopped]); }
+  finally { signal.removeEventListener('abort', interrupted); }
+}
+async function pause(ms, signal = currentCaseAbort?.signal) {
+  signal?.throwIfAborted();
+  let timer;
+  try { await caseOperation(new Promise((done) => { timer = setTimeout(done, ms); }), signal); }
+  finally { clearTimeout(timer); }
+}
 async function poll(read, accepts, label, ms = WAIT_MS) {
   const expires = Date.now() + ms;
   let last;
   let lastError;
+  const signal = currentCaseAbort?.signal;
   while (Date.now() < expires) {
-    try { last = await read(); if (accepts(last)) return last; }
-    catch (error) { lastError = errorText(error); }
-    await pause(1000);
+    signal?.throwIfAborted();
+    try { last = await caseOperation(Promise.resolve().then(read), signal); if (accepts(last)) return last; }
+    catch (error) { signal?.throwIfAborted();if (closedTarget(error)) throw error;lastError = errorText(error); }
+    await pause(1000, signal);
   }
   throw new Error(`${label} timed out. Last value: ${JSON.stringify(last)}${lastError === undefined ? '' : `; ${lastError}`}`);
 }
@@ -174,36 +234,77 @@ async function runCase(name, url, body, discovery = false) {
   const item = { name, url, startedAt: new Date().toISOString(), status: 'running', ...(discovery ? { purpose: 'Read-only native surface discovery. No feature parity assertion.' } : {}), console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
   report.cases.push(item);
   let page;
+  let listSettings;
+  const abort = new AbortController();
   try {
+    if (focus !== 'all' && !(FOCUSED_CASES[focus] ?? []).includes(name)) {
+      item.status = 'not_selected';
+      item.reason = `Budget-aware ${focus} slice does not select this case. No navigation or feature pass.`;
+      return;
+    }
     const provider = providerOf(url);
     const cooldown = cooldowns.get(provider);
     if (cooldown !== undefined && cooldown > Date.now()) {
       item.rateLimitedUntil = new Date(cooldown).toISOString();
-      item.rateLimitInherited = true;
+      item.navigationSuppressedByCooldown = true;
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
+    }
+    currentCaseAbort = abort;
+    if (name === 'bitbucket-list-counts') {
+      listSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+      await patchSettings({ showListStats: false });
+      item.listSourcePreparation = 'List stats disabled through real shared settings before native navigation; enable only after native list search returns the single fixture.';
     }
     page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
     await page.bringToFront();
+    page.on('close', () => { if (!abort.signal.aborted) abort.abort(new Error('Browser case page closed; polling stopped immediately')); });
+    page.on('request', (request) => {
+      if (!bitbucketApi(request.url())) return;
+      bitbucketApiRequests += 1;
+      const now = Date.now();
+      while (bitbucketRequestTimes[0] <= now - 60 * 60 * 1000) bitbucketRequestTimes.shift();
+      bitbucketRequestTimes.push(now);
+      item.observedBitbucketApiRequests = (item.observedBitbucketApiRequests ?? 0) + 1;
+      report.observedBitbucketApiRequests = bitbucketApiRequests;
+      report.observedAnonymousRequestsWithinRollingHour = bitbucketRequestTimes.length;
+      if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget && !abort.signal.aborted) {
+        const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
+        cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));
+        item.rateLimitedUntil = new Date(cooldowns.get('bitbucket')).toISOString();
+        item.holdReason = 'conservative_anonymous_api_budget';
+        abort.abort(new Error('Conservative anonymous Bitbucket API request budget reached; demand stopped before continuing the verification slice'));
+        void page.close().catch(() => undefined);
+      }
+    });
     page.on('console', (message) => { if (item.console.length < 100) item.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
     page.on('pageerror', (error) => { if (item.pageErrors.length < 100) item.pageErrors.push(errorText(error)); });
     page.on('requestfailed', (request) => {
       if (item.requestFailures.length < 100) item.requestFailures.push({ url: safeUrl(request.url()), method: request.method(), error: request.failure()?.errorText });
     });
     page.on('response', (response) => {
+      const headers = response.headers();
+      const quota = quotaHeaders(headers);
+      if (providerOf(response.url()) !== null && Object.keys(quota).length > 0) {
+        item.quotaObservations ??= [];
+        if (item.quotaObservations.length < 60) item.quotaObservations.push({ url: safeUrl(response.url()), status: response.status(), observedAt: new Date().toISOString(), headers: quota });
+      }
       if (response.status() < 400) return;
       const resourceProvider = providerOf(response.url());
-      const failure = { url: safeUrl(response.url()), status: response.status(), retryAfter: response.headers()['retry-after'] ?? null, expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 };
+      const failure = { url: safeUrl(response.url()), status: response.status(), retryAfter: headers['retry-after'] ?? null, quotaHeaders: quota, observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 };
       if (item.sourceFailures.length < 100) item.sourceFailures.push(failure);
       if (response.status() === 429 && resourceProvider !== null) {
-        const until = Date.now() + retryAfter(response.headers()['retry-after']);
+        const until = Date.now() + retryAfter(headers['retry-after'], resourceProvider);
         cooldowns.set(resourceProvider, Math.max(cooldowns.get(resourceProvider) ?? 0, until));
-        item.rateLimitedUntil = new Date(until).toISOString();
+        item.rateLimitedUntil = new Date(cooldowns.get(resourceProvider)).toISOString();
+        item.holdReason = 'provider_http429';
+        if (!abort.signal.aborted) abort.abort(new Error(`Provider HTTP429 cooldown until ${item.rateLimitedUntil}; polling stopped immediately`));
         // Stop this tab's demand immediately; later scenarios honor the provider cooldown.
         void page.close().catch(() => undefined);
       }
     });
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    abort.signal.throwIfAborted();
     item.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) };
     assert.equal(response?.status(), 200, 'Public fixture navigation did not return HTTP200');
     const result = await body(page, item);
@@ -216,12 +317,14 @@ async function runCase(name, url, body, discovery = false) {
     item.error = errorText(error);
     if (item.rateLimitedUntil !== undefined) {
       item.interruptedError = item.error;
-      item.error = `Provider HTTP429 cooldown until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
+      item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
     if (page !== undefined && !page.isClosed()) {
       try { item.artifacts = await capture(page, `${name}-failed`); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
+    currentCaseAbort = undefined;
+    if (listSettings !== undefined) await patchSettings({ showListStats: listSettings.showListStats ?? true });
     item.finishedAt = new Date().toISOString();
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
@@ -249,6 +352,22 @@ async function gitLabDom(page) {
 async function waitTotals(page, all, visible, hiddenCount) {
   const equal = (actual, expected) => actual != null && ['files', 'additions', 'deletions'].every((key) => actual[key] === expected[key]);
   return poll(() => tabState(page), (state) => state.hasDiff === true && equal(state.all, all) && equal(state.visible, visible) && state.hiddenCount === hiddenCount, 'Installed extension exact complete tab-state totals');
+}
+async function trustedHiddenToggle(page, expectedLabel) {
+  const selector = '.geld-provider-toggle';
+  const before = await page.$eval(selector, (node) => ({ label: node.textContent.trim(), expanded: node.getAttribute('aria-expanded') }));
+  assert.match(before.label, expectedLabel);
+  const [event] = await Promise.all([
+    page.evaluate((selector) => new Promise((resolve, reject) => {
+      const button = document.querySelector(selector);
+      if (button === null) { reject(new Error('Owned hidden-file toggle missing'));return; }
+      const timeout = setTimeout(() => reject(new Error('Trusted hidden-file toggle click was not observed')), 5000);
+      button.addEventListener('click', (event) => { clearTimeout(timeout);resolve({ trusted: event.isTrusted, label: button.textContent.trim(), expanded: button.getAttribute('aria-expanded') }); }, { once: true });
+    }), selector),
+    page.click(selector),
+  ]);
+  assert.equal(event.trusted, true, 'Hidden-file toggle must receive a real trusted browser click');
+  return { before, event };
 }
 async function themeProbe(page) {
   return page.evaluate(() => {
@@ -663,7 +782,7 @@ function bitbucketReviewUrl(value) {
 }
 
 async function unavailableDiscovery(name, reason, extra = {}) {
-  report.cases.push({ name, purpose: 'Read-only native surface discovery. No feature parity assertion.', status: 'unavailable', reason, ...extra, finishedAt: new Date().toISOString() });
+  report.cases.push({ name, purpose: 'Read-only native surface discovery. No feature parity assertion.', status: focus === 'all' ? 'unavailable' : 'not_selected', reason: focus === 'all' ? reason : `Broad discovery excluded from budget-aware ${focus} slice. No request or feature pass.`, ...extra, finishedAt: new Date().toISOString() });
   await saveReport();
 }
 
@@ -829,6 +948,21 @@ async function localReviewedFlag(page) {
 
 async function bitbucketListCounts(page) {
   const selector = 'tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) .geld-provider-list-counts';
+  await page.waitForSelector('#search-pull-requests-input', { visible: true, timeout: WAIT_MS });
+  await page.type('#search-pull-requests-input', 'BCAT-6005', { delay: 10 });
+  const nativeFilter = await poll(() => page.evaluate(() => ({
+    value: document.querySelector('#search-pull-requests-input')?.value ?? null,
+    reviewPaths: [...new Set([...document.querySelectorAll('tr[data-qa="pull-request-row"] a[data-qa="pull-request-row-link"]')].map((link) => new URL(link.href).pathname))],
+    url: location.href,
+    chips: document.querySelectorAll('.geld-provider-list-counts').length,
+  })), (value) => value.value === 'BCAT-6005' && value.reviewPaths.length === 1 && value.reviewPaths[0] === '/atlassian/bitbucket-upload-file/pull-requests/27' && value.chips === 0, 'Actual native Bitbucket search narrows to PR27 before any extension list counts are enabled');
+  await patchSettings({ showListStats: true });
+  const coldLabel = await poll(() => page.evaluate((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0)?.textContent ?? null, selector), (value) => value !== null, 'Visible native-row chip is available for actual anonymous pointer intent');
+  // Real pointer intent is required for a cold anonymous list row; native list search alone does not request source diffs.
+  const intent = await page.evaluateHandle((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0), selector);
+  assert.ok(intent.asElement() !== null);
+  await intent.asElement().hover();
+  await discardHandle(intent);
   const read = () => page.evaluate(() => {
     const title = [...document.querySelectorAll('a[data-qa="pull-request-row-link"]')].find((node) => new URL(node.href).pathname === '/atlassian/bitbucket-upload-file/pull-requests/27' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
     const row = title?.closest('tr[data-qa="pull-request-row"]');
@@ -865,8 +999,99 @@ async function bitbucketListCounts(page) {
   } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
   const restored = await poll(read, (value) => value !== null && value.text === initial.text, 'Removing the shared custom pattern restores native Bitbucket list counts');
   assert.deepEqual(restored.nativeIds, initial.nativeIds);assert.deepEqual(restored.nativeLinks, initial.nativeLinks);
-  return { selection: 'Only the first visible native PR27 row is inspected. No unverified native filter or other-row DOM hiding.', initial, pointer, keyboard, runtimeDiffProof: proof, visible, filtered, filteredHover, restored,
+  return { selection: 'Real native #search-pull-requests-input search narrows to PR27 while shared list stats are disabled; only then are counts enabled and actual pointer intent applied. No invented query parameter or other-row DOM hiding.', nativeFilter, coldLabel, initial, pointer, keyboard, runtimeDiffProof: proof, visible, filtered, filteredHover, restored,
     nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
+}
+
+async function authorPresentationProbe(page, provider, anchor) {
+  const selector = `.geld-provider-review [data-geld-source="${anchor}"]`;
+  const openedSummaries = await openReviewAncestors(page, selector);
+  const measurement = await page.evaluate((provider, anchor) => {
+    const native = document.getElementById(anchor);
+    const source = [...document.querySelectorAll('.geld-provider-review [data-geld-source]')].find((node) => node.getAttribute('data-geld-source') === anchor);
+    const byline = source?.querySelector(':scope > .geld-provider-review__byline');
+    const nativeHeader = provider === 'gitlab' ? native?.querySelector(':scope > .timeline-entry-inner > .timeline-content > .note-header') : native?.querySelector('[data-testid="comment-header"]');
+    const nativeNameRoot = provider === 'gitlab' ? nativeHeader?.querySelector('[data-testid="author-name"]') : nativeHeader?.querySelector(':scope > span:first-child');
+    const displayName = nativeNameRoot?.textContent.trim() ?? null;
+    const nativeName = provider === 'bitbucket' && nativeNameRoot != null ? [...nativeNameRoot.querySelectorAll('span')].find((node) => node.children.length === 0 && node.textContent.trim() === displayName) ?? nativeNameRoot : nativeNameRoot;
+    const nativeAlias = provider === 'gitlab' ? nativeHeader?.querySelector('.author-username-link .note-headline-light') : null;
+    const alias = nativeAlias?.textContent.trim() ?? null;
+    const nativeProfile = provider === 'gitlab' ? nativeHeader?.querySelector('a.author-name-link[data-user-id][data-username]') : null;
+    const nativeAvatar = provider === 'gitlab' ? native?.querySelector(':scope > .timeline-entry-inner > .timeline-avatar > a.gl-avatar-link[data-user-id] > img.gl-avatar') : native?.querySelector(':scope > div:first-child img[data-vc="avatar-image"]');
+    const nativeBadges = provider === 'gitlab' ? [...nativeHeader?.querySelectorAll(':scope > .note-actions > .gl-badge') ?? []] : [];
+    const sample = (node) => {
+      if (node == null) return null;
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      const keys = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color', 'width', 'height', 'borderRadius', 'backgroundColor', 'borderTopWidth', 'borderTopStyle', 'borderTopColor', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'boxShadow'];
+      return { tag: node.tagName, text: node.textContent.trim(), presented: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden', style: Object.fromEntries(keys.map((key) => [key, style[key]])), rect: { width: rect.width, height: rect.height }, src: node instanceof HTMLImageElement ? node.src : null };
+    };
+    const ownBadges = [...byline?.querySelectorAll(':scope > [data-geld-author-badge]') ?? []];
+    return { provider, anchor, nativeExists: native !== null, sourceExists: source !== undefined, displayName, alias,
+      theme: { native: document.documentElement.getAttribute('data-theme'), colorMode: document.documentElement.getAttribute('data-color-mode'), darkPreference: matchMedia('(prefers-color-scheme: dark)').matches },
+      name: { native: sample(nativeName), owned: sample(byline?.querySelector(':scope > [data-geld-author-profile] > strong, :scope > strong')) },
+      aliasPair: { native: sample(nativeAlias), owned: sample([...byline?.querySelectorAll(':scope > .geld-provider-review__muted') ?? []].find((node) => node.textContent.trim() === alias)) },
+      profile: { native: nativeProfile?.href ?? null, owned: byline?.querySelector(':scope > [data-geld-author-profile]')?.href ?? null },
+      avatar: { native: sample(nativeAvatar), owned: sample(byline?.querySelector(':scope > [data-geld-author-avatar]')) },
+      badges: nativeBadges.map((badge) => { const label = badge.querySelector(':scope > .gl-badge-content')?.textContent.trim() ?? badge.textContent.trim();const own = ownBadges.find((node) => node.textContent.trim() === label);return { label, native: sample(badge), nativeText: sample(badge.querySelector(':scope > .gl-badge-content') ?? badge), owned: sample(own) }; }),
+      uncoveredNative: provider === 'bitbucket' ? ['No native profile URL, alias or role badge is presented by this captured public Bitbucket author header.'] : [],
+    };
+  }, provider, anchor);
+  return { ...measurement, openedSummaries, ...compareAuthorPresentation(measurement) };
+}
+
+function compareAuthorPresentation(value) {
+  const mismatches = [];
+  const uncovered = [...value.uncoveredNative];
+  const covered = [];
+  const equal = (label, actual, expected) => { if (actual !== expected) mismatches.push({ label, native: expected, owned: actual }); };
+  const typography = ['fontFamily', 'fontSize', 'lineHeight', 'fontWeight', 'color'];
+  const pair = (label, native, owned, keys, text = true) => {
+    if (native === null || !native.presented) { uncovered.push(`${label}: native element absent or not presented at this viewport`);return false; }
+    covered.push(label);
+    if (owned === null || !owned.presented) { mismatches.push({ label, native: 'presented', owned: 'absent or not presented' });return false; }
+    if (text) equal(`${label}.text`, owned.text, native.text);
+    for (const key of keys) equal(`${label}.${key}`, owned.style[key], native.style[key]);
+    return true;
+  };
+  pair('author name', value.name.native, value.name.owned, typography);
+  pair('author alias', value.aliasPair.native, value.aliasPair.owned, typography);
+  if (value.profile.native !== null) { covered.push('author profile permalink');equal('author profile permalink', value.profile.owned, value.profile.native); }
+  else uncovered.push('author profile permalink: native URL unavailable');
+  if (pair('author avatar', value.avatar.native, value.avatar.owned, ['width', 'height', 'borderRadius'], false)) {
+    equal('author avatar.rect.width', value.avatar.owned.rect.width, value.avatar.native.rect.width);
+    equal('author avatar.rect.height', value.avatar.owned.rect.height, value.avatar.native.rect.height);
+    equal('author avatar.src', value.avatar.owned.src, value.avatar.native.src);
+  }
+  for (const badge of value.badges) {
+    if (!pair(`author badge ${badge.label}`, badge.native, badge.owned, ['backgroundColor', 'borderRadius', 'borderTopWidth', 'borderTopStyle', 'borderTopColor', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'boxShadow'])) continue;
+    pair(`author badge ${badge.label} text`, badge.nativeText, badge.owned, typography);
+    equal(`author badge ${badge.label}.rect.width`, badge.owned.rect.width, badge.native.rect.width);
+    equal(`author badge ${badge.label}.rect.height`, badge.owned.rect.height, badge.native.rect.height);
+  }
+  if (value.badges.length === 0) uncovered.push('author role badges: no native badges observed');
+  return { covered, uncovered, mismatches };
+}
+
+async function authorThemeEvidence(page, provider, anchor) {
+  const baseline = await authorPresentationProbe(page, provider, anchor);
+  const evidence = { baseline, darkPreferenceProbe: null };
+  try {
+    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+    await pause(300);
+    const dark = await authorPresentationProbe(page, provider, anchor);
+    const colors = (sample) => sample == null ? null : ['color', 'backgroundColor', 'borderTopColor', 'boxShadow'].map((key) => sample.style[key]);
+    const nativeSignature = (value) => JSON.stringify([colors(value.name.native), colors(value.aliasPair.native), colors(value.avatar.native), value.badges.map((badge) => [colors(badge.native), colors(badge.nativeText)])]);
+    const changed = nativeSignature(baseline) !== nativeSignature(dark);
+    evidence.darkPreferenceProbe = { mechanism: 'OS prefers-color-scheme emulation on the same loaded page only; no manual theme class, CSS injection or extra API request', nativeThemeChanged: changed, status: changed ? 'native_scheme_observed' : 'site_did_not_select_dark_theme', measurement: dark };
+    if (changed) evidence.darkPreferenceProbe.artifacts = await capture(page, `${provider}-author-os-dark`);
+  } finally { await page.emulateMediaFeatures([]); }
+  return evidence;
+}
+
+function assertAuthorThemeEvidence(evidence) {
+  assert.deepEqual(evidence.baseline.mismatches, [], 'Captured native/owned author presentation differs');
+  if (evidence.darkPreferenceProbe.nativeThemeChanged) assert.deepEqual(evidence.darkPreferenceProbe.measurement.mismatches, [], 'Captured native/owned author presentation differs under the actual native dark preference');
 }
 
 async function bitbucketCommentDigest(page) {
@@ -920,21 +1145,32 @@ async function bitbucketCommitCounts(page) {
   let filtered;
   let hidden;
   let hiddenArtifacts;
+  let autoOpened;
+  let hideClick;
+  let showClick;
   try {
     await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
     filtered = await waitTotals(page, all, { files: 0, additions: 0, deletions: 0 }, 1);
-    hidden = await poll(read, (value) => value.heading === '0 files' && value.badge === '0' && value.file?.display === 'none' && value.file.hidden === 'closed', 'Actual standalone commit reaches zero native file counts and hides its sole file');
+    assert.equal(filtered.expanded, true, 'A commit categorized entirely as hidden must auto-expand its real source file');
+    autoOpened = await poll(read, (value) => value.heading === '0 files' && value.badge === '0' && value.file?.display !== 'none' && value.file?.hidden === 'open', 'Actual all-categorized commit keeps zero essential counts while opening its sole file');
+    hideClick = await trustedHiddenToggle(page, /^Hide/);
+    await poll(() => tabState(page), (value) => value.expanded === false && value.visible?.files === 0 && value.hiddenCount === 1, 'Trusted Hide collapses the all-categorized commit with matching real tab state');
+    hidden = await poll(read, (value) => value.heading === '0 files' && value.badge === '0' && value.file?.display === 'none' && value.file.hidden === 'closed', 'Real Hide closes the sole commit file without changing zero essential counts');
     assert.equal(hidden.file.id, native.file.id);assert.deepEqual(hidden.nativeLinks, native.nativeLinks);
     hiddenArtifacts = await capture(page, 'bitbucket-commit-filtered');
+    showClick = await trustedHiddenToggle(page, /^Show/);
+    await poll(() => tabState(page), (value) => value.expanded === true && value.visible?.files === 0 && value.hiddenCount === 1, 'Trusted Show reopens the all-categorized commit with matching tab state');
+    await poll(read, (value) => value.file?.display !== 'none' && value.file?.hidden === 'open' && value.heading === '0 files' && value.badge === '0', 'Real Show reopens the actual commit file while essential counts remain zero');
   } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
   const restoredState = await waitTotals(page, all, all, 0);
   const restored = await poll(read, (value) => value.heading === '1 file' && value.badge === '1' && value.file?.display !== 'none' && value.file?.hidden === null, 'Actual commit file counts and sole-file visibility restore');
   assert.equal(restored.file.id, native.file.id);assert.deepEqual(restored.nativeLinks, native.nativeLinks);
-  return { baseline, native, filtered, hidden, hiddenArtifacts, restoredState, restored, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Only actual runtime totals and native file-count surfaces are asserted.' };
+  return { baseline, native, filtered, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Only actual runtime totals and native file-count surfaces are asserted.' };
 }
 
 await mkdir(artifacts, { recursive: true });
 try {
+  assert.ok(focus === 'all' || Object.hasOwn(FOCUSED_CASES, focus), `Unknown browser verification focus: ${focus}`);
   await inheritCooldowns();
   const manifestText = await readFile(resolve(extensionPath, 'manifest.json'), 'utf8');
   const manifest = JSON.parse(manifestText);
@@ -1000,7 +1236,22 @@ try {
   await patchSettings({ enabled: true });
   await runCase('gitlab-all-tests', GL_TESTS, async (page, item) => {
     item.state = await waitTotals(page, { files: 1, additions: 4, deletions: 1 }, { files: 0, additions: 0, deletions: 0 }, 1);
-    item.dom = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 0 && row.additions === 0 && row.deletions === 0) && value.hidden.some((row) => row.display === 'none'), 'All-test native zero essential counts and hidden DOM');
+    assert.equal(item.state.expanded, true, 'All-test source must auto-expand with zero essential counts');
+    const zero = (value) => value.headers.some((row) => row.files === 0 && row.additions === 0 && row.deletions === 0);
+    item.dom = await poll(() => gitLabDom(page), (value) => zero(value) && value.hidden.some((row) => row.value === 'open' && row.display !== 'none'), 'All-test native file starts visible/open while essential counts stay zero');
+    item.hideClick = await trustedHiddenToggle(page, /^Hide/);
+    item.collapsedState = await poll(() => tabState(page), (value) => value.expanded === false && value.visible?.files === 0 && value.visible.additions === 0 && value.visible.deletions === 0 && value.hiddenCount === 1, 'Trusted Hide produces matching collapsed real tab state');
+    item.collapsedDom = await poll(() => gitLabDom(page), (value) => zero(value) && value.hidden.some((row) => row.value === 'closed' && row.display === 'none'), 'Trusted Hide closes the actual all-test diff');
+    await options.bringToFront();
+    await poll(() => page.evaluate(() => document.hidden), Boolean, 'Actual Chrome tab becomes hidden before its visibility reapply');
+    await page.bringToFront();
+    await poll(() => page.evaluate(() => document.hidden), (value) => value === false, 'Actual Chrome tab becomes visible and triggers the controller reapply');
+    item.reappliedState = await poll(() => tabState(page), (value) => value.expanded === false && value.visible?.files === 0 && value.hiddenCount === 1, 'Manual all-test collapse survives actual visibility-triggered reapply');
+    item.reappliedDom = await poll(() => gitLabDom(page), (value) => zero(value) && value.hidden.some((row) => row.value === 'closed' && row.display === 'none'), 'Actual all-test file stays closed after reapply');
+    item.reapplyMechanism = 'Real options-tab activation followed by real review-tab activation; native document visibilitychange re-applies the controller without changing settings or synthesizing a provider event.';
+    item.showClick = await trustedHiddenToggle(page, /^Show/);
+    item.reopenedState = await poll(() => tabState(page), (value) => value.expanded === true && value.visible?.files === 0 && value.hiddenCount === 1, 'Trusted Show produces matching reopened real tab state');
+    item.reopenedDom = await poll(() => gitLabDom(page), (value) => zero(value) && value.hidden.some((row) => row.value === 'open' && row.display !== 'none'), 'Trusted Show reopens the actual all-test file with zero essential counts');
     return {};
   });
   await runCase('gitlab-overview-digest', GL_OVERVIEW, async (page, item) => {
@@ -1018,6 +1269,8 @@ try {
     item.state = await tabState(page);
     assert.equal(item.state.repository?.provider, 'gitlab');
     assert.equal(item.state.onDiffPage, false);
+    item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
+    assertAuthorThemeEvidence(item.authorPresentation);
     item.localReviewed = await localReviewedFlag(page);
     return {};
   });
@@ -1071,6 +1324,8 @@ try {
   });
   await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);
+    item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
+    assertAuthorThemeEvidence(item.authorPresentation);
     item.state = await tabState(page);
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. Anonymous write controls remain unavailable; no provider write is attempted.' };

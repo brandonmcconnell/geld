@@ -21,7 +21,7 @@ function commit(sha = SHA): ProviderCommitPage {
   };
 }
 
-function ready(extra: { readonly provisional?: true } = {}): ProviderDiffState {
+function ready(extra: { readonly provisional?: true; readonly refreshing?: true; readonly refreshError?: string } = {}): ProviderDiffState {
   return {
     status: 'ready',
     result: { complete: true, revision: SHA, files: [{ path: 'src/fix.ts', additions: 4, deletions: 1 }, { path: 'src/fix.test.ts', additions: 3, deletions: 0 }] },
@@ -159,9 +159,41 @@ describe('provider commit hover intent', () => {
     first = { status: 'failed', reason: 'Only the earlier commit failed' };
     instance.refresh();
     expect(get.mock.calls.at(-1)?.[0].headSha).toBe(OTHER_SHA);
-    expect(tooltip()?.textContent).toContain('Cached counts. Updating…');
+    expect(tooltip()?.textContent).toContain('Cached counts. Refresh pending.');
     expect(tooltip()?.textContent).not.toContain('earlier commit failed');
     expect(a.title).toBe('Native commit title');
+  });
+
+  it('keeps cached totals explicit after a failed refresh instead of reporting an active update', async () => {
+    let state = ready({ provisional: true, refreshing: true });
+    const instance = create(() => state);
+    const host = link();
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.textContent).toContain('Cached counts. Updating…');
+    state = ready({ provisional: true, refreshError: 'Rate limit resets in one hour' });
+    instance.refresh();
+    expect(tooltip()?.textContent).toContain('Counts may be out of date: Rate limit resets in one hour');
+    expect(tooltip()?.textContent).not.toContain('Updating');
+    expect(tooltip()?.textContent).toContain('Total 2 files +7 −1');
+  });
+
+  it('restores the current title after an owned count enters a loading or deferred state during hover', async () => {
+    const instance = create(() => ready());
+    const host = document.createElement('span');
+    host.dataset.geldUi = '';
+    host.title = 'Essential 1 file +4 −1';
+    document.body.append(host);
+    geometry(host);
+    instance.bindBreakdown(host, () => null, { status: () => ({ status: 'loading' }) });
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(host.hasAttribute('title')).toBe(false);
+    instance.setTitle(host, 'Focus or hover to count changes.');
+    expect(host.hasAttribute('title')).toBe(false);
+    leave(host);
+    expect(host.title).toBe('Focus or hover to count changes.');
+    expect(host.title).not.toContain('Essential');
   });
 
   it('ignores external, unsupported and repository-excluded links without disturbing titles', async () => {

@@ -181,7 +181,7 @@ export class ProviderRepoConfigSource {
     this.lookups.clear(); this.queue.length = 0;
   }
 
-  get(page: ProviderPage, settings: GeldSettings, choices: RepoConfigChoices = {}): ProviderConfigResolution {
+  get(page: ProviderPage, settings: GeldSettings, choices: RepoConfigChoices = {}, allowFetch = true): ProviderConfigResolution {
     if (settings.repoConfigs === 'never') return { settings, tab: null, status: 'ready', error: null, reviewBots: [] };
     const key = repositoryKey(page.repository);
     let lookup = this.lookups.get(key);
@@ -193,7 +193,7 @@ export class ProviderRepoConfigSource {
         if (candidate !== key && entry.abort === null && !entry.queued) this.lookups.delete(candidate);
       }
     }
-    if (!this.stopped && !lookup.queued && lookup.abort === null && Date.now() >= lookup.retryAt && (lookup.status !== 'ready' || Date.now() - lookup.at >= TTL_MS)) {
+    if (allowFetch && !this.stopped && !lookup.queued && lookup.abort === null && Date.now() >= lookup.retryAt && (lookup.status !== 'ready' || Date.now() - lookup.at >= TTL_MS)) {
       lookup.queued = true; this.queue.push(lookup); this.pump();
     }
     const choice = choices[repositoryConfigChoiceKey(page.repository)];
@@ -234,7 +234,7 @@ export class ProviderRepoConfigSource {
         if (this.stopped) return;
         lookup.snapshot = null; lookup.status = 'failed'; lookup.error = error instanceof Error ? error.message : 'Repository configuration unavailable';
         const retry = configRecord(error) ? error.retryAfterMs : undefined;
-        lookup.retryAt = Date.now() + (typeof retry === 'number' && Number.isFinite(retry) && retry > 0 ? Math.min(retry, 15 * 60_000) : RETRY_MS);
+        lookup.retryAt = Date.now() + (typeof retry === 'number' && Number.isFinite(retry) && retry > 0 ? retry : RETRY_MS);
       }).finally(() => {
         lookup.abort = null; this.running -= 1;
         if (!this.stopped) { this.changed(); this.pump(); }
