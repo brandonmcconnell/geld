@@ -1,0 +1,91 @@
+@import './hover.css';
+
+.geld-provider-diffs { display: flex; flex-direction: column; }
+.geld-provider-diffs > [data-geld-provider-hidden] { order: 2; }
+.geld-provider-diffs > [data-geld-provider-hidden="closed"] { display: none; }
+[data-geld-provider-inline] { color: var(--geld-provider-text-subtle); }
+.geld-provider-hidden, .geld-provider-review {
+  font: var(--geld-provider-font);
+  color: var(--geld-provider-text);
+  background: var(--geld-provider-bg);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  box-shadow: var(--geld-provider-shadow);
+}
+.geld-provider-hidden {
+  order: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--geld-provider-space-4);
+  margin-block: var(--geld-provider-space-4);
+  padding: var(--geld-provider-space-4);
+}
+.geld-provider-review { margin-block: var(--geld-provider-space-5); padding: var(--geld-provider-space-4); }
+.geld-provider-review__header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--geld-provider-space-4); }
+.geld-provider-review__header strong, .geld-provider-review__section > summary { font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__header h2 { margin: 0; font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__section { margin-block: var(--geld-provider-space-4); }
+.geld-provider-review__section > summary, .geld-provider-review__item > summary { cursor: pointer; }
+.geld-provider-review__item { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); padding-block: var(--geld-provider-space-3); }
+.geld-provider-review__item-state { font: var(--geld-provider-font); margin-inline: var(--geld-provider-space-3); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__source { margin-block: var(--geld-provider-space-4); }
+.geld-provider-review__byline, .geld-provider-review__muted { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__byline { display: flex; flex-wrap: wrap; gap: var(--geld-provider-space-3); align-items: baseline; }
+.geld-provider-review__byline strong { font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__body { padding: var(--geld-provider-space-3); border-inline-start: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review__standing, .geld-provider-review__check, .geld-provider-review__event { padding-block: var(--geld-provider-space-2); }
+.geld-provider-review__unavailable, .geld-provider-review [data-state="failed"] { color: var(--geld-provider-danger); }
+.geld-provider-review [data-state="passed"], .geld-provider-review [data-state="approved"] { color: var(--geld-provider-success); }
+.geld-provider-review [data-state="changes_requested"] { color: var(--geld-provider-warning); }
+.geld-provider-review a { color: var(--geld-provider-link); }
+.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button {
+  box-sizing: border-box;
+  min-height: var(--geld-provider-button-min-height);
+  padding: var(--geld-provider-button-padding);
+  font: var(--geld-provider-button-font);
+  font-weight: var(--geld-provider-button-weight);
+  color: var(--geld-provider-button-text);
+  background: var(--geld-provider-button-bg);
+  border: var(--geld-provider-button-border-width) solid var(--geld-provider-button-border);
+  border-radius: var(--geld-provider-button-radius);
+  cursor: pointer;
+  transition: var(--geld-provider-button-transition);
+}
+.geld-provider-toggle:hover, .geld-provider-review__copy:hover, .geld-provider-actions button:hover, .geld-provider-review__source-actions button:hover {
+  color: var(--geld-provider-button-hover-text);
+  background: var(--geld-provider-button-hover-bg);
+  border-color: var(--geld-provider-button-hover-border);
+}
+.geld-provider-toggle:active, .geld-provider-review__copy:active, .geld-provider-actions button:active, .geld-provider-review__source-actions button:active {
+  color: var(--geld-provider-button-active-text);
+  background: var(--geld-provider-button-active-bg);
+  border-color: var(--geld-provider-button-active-border);
+}
+.geld-provider-toggle:disabled, .geld-provider-review__copy:disabled, .geld-provider-actions button:disabled, .geld-provider-review__source-actions button:disabled {
+  color: var(--geld-provider-button-disabled-text);
+  background: var(--geld-provider-button-disabled-bg);
+  border-color: var(--geld-provider-button-disabled-border);
+  cursor: default;
+}
+.geld-provider-toggle:focus, .geld-provider-review__copy:focus, .geld-provider-actions button:focus, .geld-provider-review__source-actions button:focus {
+  color: var(--geld-provider-button-focus-text);
+  background: var(--geld-provider-button-focus-bg);
+  border-color: var(--geld-provider-button-focus-border);
+}
+.geld-provider-toggle:focus-visible, .geld-provider-file:focus-visible, .geld-provider-review__copy:focus-visible,
+.geld-provider-actions button:focus-visible, .geld-provider-review__source-actions button:focus-visible, .geld-provider-review summary:focus-visible,
+.geld-provider-review a:focus-visible, .geld-provider-categories summary:focus-visible, .geld-provider-breakdown summary:focus-visible {
+  box-shadow: var(--geld-provider-focus-ring);
+  outline: var(--geld-provider-focus-outline);
+  outline-offset: var(--geld-provider-focus-offset);
+}
+.geld-provider-file { display: block; max-width: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font: inherit; text-align: start; background: none; border: 0; cursor: pointer; }
+.geld-provider-file:hover { color: var(--geld-provider-link); text-decoration: underline; }
+.geld-provider-categories { padding-block: var(--geld-provider-space-3); border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-categories details { padding-block: var(--geld-provider-space-2); }
+.geld-provider-categories summary { padding: var(--geld-provider-space-2) var(--geld-provider-space-3); cursor: pointer; font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-list-counts { display: inline-block; margin-inline: var(--geld-provider-space-3); font: inherit; font-weight: var(--geld-provider-heading-weight); color: var(--geld-provider-text-subtle); white-space: nowrap; }
+.geld-provider-breakdown { font: var(--geld-provider-font); }
+.geld-provider-breakdown summary { cursor: pointer; }
+.geld-provider-actions, .geld-provider-review__source-actions { display: inline-flex; flex-wrap: wrap; gap: var(--geld-provider-space-2); margin-inline: var(--geld-provider-space-3); }
