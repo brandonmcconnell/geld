@@ -52,6 +52,17 @@ export function ruleIdOf(body: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
+// The observed Greptile inline badge is decoration, not the concern that follows it.
+// Keep this exact inert shape narrow. It grants no identity, severity or verdict trust.
+const LEADING_REVIEW_BADGE = /^<a href="#"><img alt="P([12])" src="https:\/\/greptile-static-assets\.s3\.amazonaws\.com\/badges\/p\1\.svg\?v=9" height="20" align="top"><\/a>[ \t]+/;
+
+function titleLine(line: string): string {
+  const badge = LEADING_REVIEW_BADGE.exec(line);
+  if (badge === null) return line;
+  const text = line.slice(badge[0].length).trimStart();
+  return text !== '' && !text.startsWith('<') && /[\p{L}\p{N}]/u.test(text) ? text : line;
+}
+
 /**
  * The first line worth showing, kept to one sentence. Fenced blocks go;
  * inline marks (`code`, **bold**, *italic*, ~~struck~~) stay, so a title
@@ -61,7 +72,7 @@ export function firstSentence(body: string): string {
   const withoutCode = body.replace(/```[\s\S]*?```/g, ' ');
   const line = withoutCode
     .split('\n')
-    .map((entry) => entry.trim())
+    .map((entry) => titleLine(entry.trim()))
     .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';
