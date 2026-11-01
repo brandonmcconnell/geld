@@ -1,16 +1,17 @@
 'use client';
 import {measure} from '@/lib/measurement';
-import { useEffect, useState } from 'react';
+import { useEffect, useState,useRef } from 'react';
 import { z } from 'zod';
 import { ArrowUpRight, Check, CreditCard } from 'lucide-react';
 import { PLANS, planFor } from '@geld/domain';
 import { Button } from '@geld/ui';
 const teamSchema = z.object({ id: z.string(), name: z.string(), role: z.string(), tier: z.enum(['free','starter','team','business','enterprise']), seats: z.number(), used_credits: z.number(), cap_cents: z.number(), spent_cents: z.number(), card_on_file: z.boolean() });
-const billingSchema = z.object({ teams: z.array(teamSchema), configured: z.boolean(), testMode: z.boolean() });
+const billingSchema = z.object({ teams: z.array(teamSchema), configured: z.boolean(), testMode: z.boolean(),converted:z.boolean().optional() });
 export function Billing() {
+  const reportedConversion=useRef(false);
   const [teams,setTeams] = useState<z.infer<typeof teamSchema>[]>([]); const [teamId,setTeamId] = useState(''); const [configured,setConfigured] = useState(false); const [cap,setCap] = useState('0'); const [message,setMessage] = useState(''); const [busy,setBusy] = useState(false);
   const team = teams.find((team) => team.id === teamId) ?? teams[0];
-  useEffect(() => { const abort = new AbortController(); fetch('/api/billing', { signal: abort.signal }).then(async (response) => { const value: unknown = await response.json(); const parsed = billingSchema.safeParse(value); if (parsed.success) { setTeams(parsed.data.teams); setConfigured(parsed.data.configured); setCap(String((parsed.data.teams[0]?.cap_cents ?? 0) / 100)); } }).catch(() => undefined); return () => abort.abort(); }, []);
+  useEffect(() => { const abort = new AbortController(); fetch(`/api/billing?${new URLSearchParams({session_id:new URLSearchParams(window.location.search).get('session_id')??''})}`, { signal: abort.signal }).then(async (response) => { const value: unknown = await response.json(); const parsed = billingSchema.safeParse(value); if (parsed.success) { if(parsed.data.converted&&!reportedConversion.current&&!abort.signal.aborted){reportedConversion.current=true;measure('billing_conversion',{feature:'billing',stage:'completed'});}setTeams(parsed.data.teams); setConfigured(parsed.data.configured); setCap(String((parsed.data.teams[0]?.cap_cents ?? 0) / 100)); } }).catch(() => undefined); return () => abort.abort(); }, []);
   async function action(kind: 'checkout' | 'portal' | 'cap', tier?: string) {
     if (!team) { setMessage('Sign in and choose a team first.'); return; }
     const capCents = Math.round(Number(cap) * 100);

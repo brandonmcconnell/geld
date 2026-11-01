@@ -1,4 +1,6 @@
 import 'server-only';
+import {decryptCredential} from './crypto';
+import {finishTeamDestruction} from './team-destruction';
 import {enterpriseFetch} from './enterprise';
 import { z } from 'zod';
 import { transaction } from './transactions';
@@ -16,11 +18,13 @@ import { backgroundUserTokenSource } from './background-tokens';
 import { createProviderClient } from '@geld/providers';
 const jobSchema=z.object({id:z.string(),team_id:z.string().nullable(),kind:z.string(),resource_id:z.string(),idempotency_key:z.string(),attempts:z.number(),lock_token:z.string(),created_at:z.date(),payload:z.unknown()});
 async function handle(job:z.infer<typeof jobSchema>):Promise<boolean>{const db=database();if(!db)return false;
+  if(job.kind==='subscription_cancel'){const data=z.object({encryptedSubscription:z.string()}).parse(job.payload);const id=await decryptCredential(data.encryptedSubscription);const gateway=billingGateway();if(!id||!gateway)return false;await gateway.cancelSubscription(id,job.idempotency_key);return true;}
+  if(job.kind==='destroy_team')return !!job.team_id&&finishTeamDestruction(job.team_id,job.payload);
   if(job.kind==='automatic_guide')return automaticGuide(job.payload,`${job.idempotency_key}:${job.attempts}`,{id:job.id,token:job.lock_token});
   if(job.kind==='grant'||job.kind==='revoke'){const actor=z.object({actor_id:z.string()}).safeParse((await db.query('SELECT actor_id FROM grants WHERE id=$1',[job.resource_id])).rows[0]);return actor.success?processGrant(job.resource_id,actor.data.actor_id,true):false;}
   if(job.kind==='sync_seats'||job.kind==='bill_overage'){
-    const gateway=billingGateway();if(!gateway||!job.team_id)return false;const s=z.object({stripe_customer_id:z.string(),stripe_subscription_id:z.string(),stripe_item_id:z.string(),seats:z.number()}).safeParse((await db.query('SELECT * FROM subscriptions WHERE team_id=$1',[job.team_id])).rows[0]);if(!s.success)return false;
-    if(job.kind==='sync_seats'){await gateway.updateSeats(s.data.stripe_item_id,s.data.seats,job.idempotency_key);return true;}
+    const gateway=billingGateway();if(!gateway||!job.team_id)return false;const s=z.object({stripe_customer_id:z.string(),stripe_subscription_id:z.string(),stripe_item_id:z.string(),seats:z.number()}).safeParse((await db.query('SELECT s.*,GREATEST(1,(SELECT count(*)::integer FROM team_members m WHERE m.team_id=s.team_id)) AS seats FROM subscriptions s WHERE team_id=$1',[job.team_id])).rows[0]);if(!s.success)return false;
+    if(job.kind==='sync_seats'){await db.query('UPDATE subscriptions SET seats=$2 WHERE team_id=$1',[job.team_id,s.data.seats]);await gateway.updateSeats(s.data.stripe_item_id,s.data.seats,job.idempotency_key);return true;}
     // Stripe retains idempotency keys for at least 24 hours. Older uncertain charges need reconciliation, never a blind retry.
     if(Date.now()-job.created_at.getTime()>23*60*60*1000){await db.query('UPDATE outbox_jobs SET attempts=8 WHERE id=$1',[job.id]);return false;}
     const credit=z.object({overage_cents:z.number(),state:z.string(),billing_subscription_id:z.string().nullable()}).safeParse((await db.query('SELECT overage_cents,state,billing_subscription_id FROM credit_reservations WHERE id=$1',[job.resource_id])).rows[0]);if(!credit.success||credit.data.state!=='settled')return true;if(!credit.data.billing_subscription_id)return false;await gateway.overage(s.data.stripe_customer_id,credit.data.billing_subscription_id,credit.data.overage_cents,job.resource_id);return true;
@@ -38,7 +42,7 @@ async function handle(job:z.infer<typeof jobSchema>):Promise<boolean>{const db=d
   }
   if(job.kind==='fallback_summary_email'){const period=z.object({start:z.iso.datetime(),end:z.iso.datetime()}).parse(job.payload);const usage=await fallbackSummaryUsage(db,job.team_id??'',period);const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND m.role='admin'",[job.team_id])).rows);for(const user of users)await sendEmail(user.email,'Your weekly Geld safety-net usage',`The safety net used ${usage.credits} credits with $${(usage.cents/100).toFixed(2)} in overage this week. Review usage and your cap: ${dashboardOrigin()}/settings/billing`,`${job.idempotency_key}:${user.email}`);return true;}
   if(job.kind==='fallback_email'||job.kind==='email_access'){
-    const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND m.role='admin'",[job.team_id])).rows);for(const user of users)await sendEmail(user.email,job.kind==='fallback_email'?'Geld safety net was used':'A repository access request is waiting',job.kind==='fallback_email'?`The first safety-net overage has been recorded. Review usage and the cap: ${dashboardOrigin()}/settings/billing`:`Review this request and confirm your provider permissions: ${dashboardOrigin()}/teams/${job.team_id}`,`${job.idempotency_key}:${user.email}`);return true;
+    const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT DISTINCT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND(m.role='admin' OR EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=u.id AND n.team_id=$1 AND n.resource_id=$2 AND n.kind='access_request'))",[job.team_id,job.resource_id])).rows);for(const user of users)await sendEmail(user.email,job.kind==='fallback_email'?'Geld safety net was used':'A repository access request is waiting',job.kind==='fallback_email'?`The first safety-net overage has been recorded. Review usage and the cap: ${dashboardOrigin()}/settings/billing`:`Review this request and confirm your provider permissions: ${dashboardOrigin()}/teams/${job.team_id}`,`${job.idempotency_key}:${user.email}`);return true;
   }
   return false;
 }

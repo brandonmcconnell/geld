@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { configured, dashboardOrigin } from './env';
 import { planFor, type Tier } from '@geld/domain';
 export interface BillingSnapshot { readonly id: string; readonly customerId: string; readonly tier: Tier; readonly status: string; readonly seats: number; readonly itemId: string | null; readonly start: number; readonly end: number; readonly card: boolean }
-export interface CheckoutInput { readonly teamId: string; readonly tier: 'starter' | 'team' | 'business'; readonly seats: number; readonly customerId: string | null; readonly key: string }
+export interface CheckoutInput { readonly teamId: string; readonly tier: 'starter' | 'team' | 'business'; readonly seats: number; readonly customerId: string | null; readonly key: string;readonly actorId?:string;readonly email?:string }
 export interface CheckoutState { readonly status: 'open' | 'complete' | 'expired'; readonly teamId: string | null; readonly url: string | null }
 export interface BillingGateway {
   checkout(input: CheckoutInput): Promise<{ readonly id: string; readonly url: string }>;
@@ -11,6 +11,7 @@ export interface BillingGateway {
   expireCheckout(id: string): Promise<void>;
   portal(customerId: string): Promise<string>;
   subscription(id: string): Promise<BillingSnapshot>;
+  cancelSubscription(id:string,key:string):Promise<void>;
   updateSeats(itemId: string, seats: number, key: string): Promise<void>;
   overage(customerId: string, subscriptionId: string, cents: number, reservationId: string): Promise<void>;
 }
@@ -30,7 +31,7 @@ export function billingGateway(): BillingGateway | null {
       if (!price) throw new Error('This test price is not configured');
       const verifiedPrice = await stripe.prices.retrieve(price);
       if (verifiedPrice.livemode || !verifiedPrice.active || verifiedPrice.currency !== 'usd' || verifiedPrice.unit_amount !== planFor(input.tier).centsPerSeat || verifiedPrice.recurring?.interval !== 'month' || verifiedPrice.recurring.interval_count !== 1) throw new Error('The test price must match this monthly plan');
-      const result = await stripe.checkout.sessions.create({ mode: 'subscription', line_items: [{ price, quantity: input.seats }], ...(input.customerId ? { customer: input.customerId } : {}), client_reference_id: input.teamId, metadata: { team_id: input.teamId, checkout_key: input.key }, subscription_data: { metadata: { team_id: input.teamId } }, payment_method_collection: 'always', success_url: `${dashboardOrigin()}/settings/billing?checkout=complete`, cancel_url: `${dashboardOrigin()}/settings/billing?checkout=cancelled` }, { idempotencyKey: input.key });
+      const result = await stripe.checkout.sessions.create({ mode: 'subscription', line_items: [{ price, quantity: input.seats }], ...(input.customerId ? { customer: input.customerId } : input.email?{customer_email:input.email}:{}), client_reference_id: input.teamId, metadata: { team_id: input.teamId, checkout_key: input.key,...(input.actorId?{actor_id:input.actorId}:{}) }, subscription_data: { metadata: { team_id: input.teamId } }, payment_method_collection: 'always', success_url: `${dashboardOrigin()}/settings/billing?checkout=complete&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${dashboardOrigin()}/settings/billing?checkout=cancelled` }, { idempotencyKey: input.key });
       if (!result.url || result.livemode) throw new Error('A test checkout could not be created');
       return { id: result.id, url: result.url };
     },
@@ -57,6 +58,7 @@ export function billingGateway(): BillingGateway | null {
       const card = !!subscription.default_payment_method || (!customer.deleted && !!customer.invoice_settings.default_payment_method);
       return { id, customerId, tier: subscription.status === 'canceled' || subscription.status === 'incomplete_expired' ? 'free' : tier, status: subscription.status, seats: item?.quantity ?? 1, itemId: item?.id ?? null, start: item?.current_period_start ?? subscription.billing_cycle_anchor, end: item?.current_period_end ?? subscription.billing_cycle_anchor, card };
     },
+    async cancelSubscription(id,key){const subscription=await stripe.subscriptions.retrieve(id);if(subscription.livemode)throw new Error('Live billing is disabled');if(subscription.status!=='canceled')await stripe.subscriptions.cancel(id,{invoice_now:false,prorate:false},{idempotencyKey:key});},
     async updateSeats(itemId, seats, key) { await stripe.subscriptionItems.update(itemId, { quantity: seats, proration_behavior: 'create_prorations' }, { idempotencyKey: key }); },
     async overage(customerId, subscriptionId, cents, reservationId) { await stripe.invoiceItems.create({ customer: customerId, subscription: subscriptionId, amount: cents, currency: 'usd', description: 'Geld AI credit overage', metadata: { reservation_id: reservationId } }, { idempotencyKey: `credit:${reservationId}` }); },
   };

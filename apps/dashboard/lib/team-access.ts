@@ -1,4 +1,5 @@
 import 'server-only';
+import {operationFetch,operationSql,withTeamOperation} from './team-operation';
 import { z } from 'zod';
 import { effectivePermission, revocationFor } from '@geld/domain';
 import type { Permission, Provider, RepositoryRef } from '@geld/domain';
@@ -20,7 +21,7 @@ export async function accessAdapter(provider: Provider, teamId: string, owner?: 
   const db = database();
   const config = db ? z.object({ settings: z.object({ path: z.enum(['legacy_groups','atlassian_groups','direct_users']).default('direct_users'), organisationId: z.string().optional(), directoryId: z.string().optional() }), encrypted_credential: z.string().nullable() }).safeParse((await db.query('SELECT settings,encrypted_credential FROM provider_connections WHERE team_id = $1 AND provider = $2', [teamId,provider])).rows[0]) : null;
   const key = config?.success && config.data.encrypted_credential ? await decryptCredential(config.data.encrypted_credential) : null;
-  return managedAccessAdapter({ provider,...(provider==='github'?{host,...(host!=='github.com'?{fetch:await enterpriseFetch(host)}:{})}:{}), source: overrideSource ?? await providerTokenSource(provider,owner,false,host), ...(provider === 'bitbucket' ? { bitbucket: { path: config?.success ? config.data.settings.path : 'direct_users', ...(config?.success && config.data.settings.organisationId ? { organisationId: config.data.settings.organisationId } : {}), ...(config?.success && config.data.settings.directoryId ? { directoryId: config.data.settings.directoryId } : {}), ...(key ? { adminSource: { get: async () => ({ status: 'ok', token: key, refreshed: false }) } } : {}) } } : {}) });
+  return managedAccessAdapter({ provider,fetch:operationFetch(provider==='github'&&host!=='github.com'?await enterpriseFetch(host):fetch),...(provider==='github'?{host,}:{}), source: overrideSource ?? await providerTokenSource(provider,owner,false,host), ...(provider === 'bitbucket' ? { bitbucket: { path: config?.success ? config.data.settings.path : 'direct_users', ...(config?.success && config.data.settings.organisationId ? { organisationId: config.data.settings.organisationId } : {}), ...(config?.success && config.data.settings.directoryId ? { directoryId: config.data.settings.directoryId } : {}), ...(key ? { adminSource: { get: async () => ({ status: 'ok', token: key, refreshed: false }) } } : {}) } } : {}) });
 }
 export async function providerAdmin(repo: TeamRepository): Promise<boolean> {
   const current = await (await accessAdapter(repo.provider, repo.team_id,repo.owner,undefined,repo.host)).repository(refFor(repo));
@@ -40,7 +41,7 @@ export interface GrantDependencies {
   readonly run: <T>(work: (sql: SqlExecutor) => Promise<T>) => Promise<T>;
   readonly adapter: (repo: TeamRepository) => Promise<ManagedAccessAdapter>;
 }
-export async function processGrant(id: string, actorId: string, background = false): Promise<boolean> {
+export async function processGrantUnlocked(id: string, actorId: string, background = false): Promise<boolean> {
   const db = database();
   if (!db) return false;
   const scope = z.object({ team_id: z.string(), provider: z.string(), host: z.string(), owner: z.string(), provider_user_id: z.string() }).safeParse((await db.query('SELECT g.team_id,g.provider,r.host,r.owner,g.provider_user_id FROM grants g JOIN team_repos r ON r.id=g.repo_id WHERE g.id=$1', [id])).rows[0]);
@@ -51,9 +52,10 @@ export async function processGrant(id: string, actorId: string, background = fal
 }
 
 export async function processGrantRecord(id: string, actorId: string, dependencies: GrantDependencies): Promise<boolean> {
-  const db = dependencies.sql;
+  const db = operationSql(dependencies.sql);
   const parsed = grantSchema.safeParse((await db.query('SELECT * FROM grants WHERE id = $1', [id])).rows[0]); if (!parsed.success) return false;
   const g = parsed.data;
+  if(g.state==='revoked')return true;
   const repo = repoRowSchema.parse((await db.query('SELECT * FROM team_repos WHERE id = $1', [g.repo_id])).rows[0]);
   const adapter = await dependencies.adapter(repo); const ref = refFor(repo);
   const authority = await adapter.repository(ref);
@@ -93,14 +95,14 @@ export async function processGrantRecord(id: string, actorId: string, dependenci
       ? await adapter.groupMember(ref.owner,g.provider_group_id,user.value,true)
       : decision.action === 'remove' ? await adapter.revoke(ref,user.value,g.provider_grant_id ?? undefined) : await adapter.grant(ref,user.value,decision.permission);
     if (!result.ok) return false;
-    await dependencies.run(async (sql) => { await sql.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]); await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.revoke',resourceType:'grant',resourceId:id,outcome:'success',before:{permission:g.permission},after:{permission:decision.action === 'restore' ? decision.permission : 'none'}}); }); return true;
+    await dependencies.run(async (raw) => {const sql=operationSql(raw); await sql.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]); await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.revoke',resourceType:'grant',resourceId:id,outcome:'success',before:{permission:g.permission},after:{permission:decision.action === 'restore' ? decision.permission : 'none'}}); }); return true;
   }
   if (g.state === 'pending' && g.provider_grant_id && !g.direct_intent && !g.provider_grant_id.startsWith('intent:')) {
     if (user.value.permission === g.permission) { await db.query("UPDATE grants SET state='active' WHERE id=$1 AND state='pending'",[id]); return true; }
     if (g.mechanism !== 'provider_team') return false;
   }
   if (g.state==='pending' && !g.mutation_started) {
-    const allowed=await db.query("SELECT t.id FROM teams t JOIN team_members m ON m.team_id=t.id WHERE t.id=$1 AND m.user_id=$2 AND t.managed_access AND ($3::text IN('request_access','audit') OR t.sync_enabled)",[g.team_id,g.user_id,g.source]);
+    const allowed=await db.query("SELECT t.id FROM teams t WHERE t.id=$1 AND t.managed_access AND t.deleting_at IS NULL AND (($3::text='audit' AND EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=t.id AND m.user_id=$4 AND m.role='admin')) OR (EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=t.id AND m.user_id=$2) AND ($3::text='request_access' OR t.sync_enabled)))",[g.team_id,g.user_id,g.source,g.actor_id]);
     if(!allowed.rows.length){await db.query("UPDATE grants SET state='revoked',revoked_at=now() WHERE id=$1",[id]);return true;}
     if(g.source==='sync' && !user.value.organisationMember && user.value.permission==='none') {
       await dependencies.run(async sql=>{
@@ -142,3 +144,11 @@ export async function processGrantRecord(id: string, actorId: string, dependenci
   await dependencies.run(async(sql)=>{await sql.query("UPDATE grants SET state=CASE WHEN state='revoking' THEN state ELSE $2 END,direct_intent=false,provider_grant_id=$3,provider_group_id=$4,mechanism=$5 WHERE id=$1",[id,active?'active':'pending',providerGrantId,group,group?'provider_team':'collaborator']);await appendAudit(sql,{teamId:g.team_id,actorId,action:'access.grant',resourceType:'grant',resourceId:id,outcome:active?'success':'pending',before:{permission:user.value.permission},after:{permission:'read',mechanism:group?'provider_team':'collaborator'}});});
   return active;
 }
+
+export async function providerApprovers(repo:TeamRepository):Promise<readonly string[]>{
+ const db=database();if(!db)return[];const candidates=z.array(z.object({user_id:z.string()})).parse((await db.query('SELECT m.user_id FROM team_members m JOIN provider_user_links l ON l.user_id=m.user_id WHERE m.team_id=$1 AND l.provider=$2 AND l.host=$3',[repo.team_id,repo.provider,repo.host])).rows);const result:string[]=[];
+ for(const candidate of candidates){try{const source=await backgroundUserTokenSource(candidate.user_id,repo.provider,repo.owner,repo.host);const current=await(await accessAdapter(repo.provider,repo.team_id,repo.owner,source,repo.host)).repository(refFor(repo));if(current.ok&&current.value.permission==='admin')result.push(candidate.user_id);}catch{/* A disconnected provider account cannot approve. */}}
+ return result;
+}
+
+export async function processGrant(id:string,actorId:string,background=false):Promise<boolean>{const db=database();if(!db)return false;const row=z.object({team_id:z.string(),state:z.string()}).safeParse((await db.query('SELECT team_id,state FROM grants WHERE id=$1',[id])).rows[0]);if(!row.success)return true;if(row.data.state==='revoked')return true;const result=await withTeamOperation(row.data.team_id,()=>processGrantUnlocked(id,actorId,background));return result.ok&&result.value;}

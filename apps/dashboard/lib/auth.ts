@@ -1,4 +1,5 @@
 import 'server-only';
+import {geldSso,encryptedAuthField} from './sso';
 import { betterAuth } from 'better-auth';
 import { nextCookies } from 'better-auth/next-js';
 import { emailOTP } from 'better-auth/plugins/email-otp';
@@ -66,6 +67,8 @@ function createAuth() {
     databaseHooks: { session: { create: { before: async (session) => ({ data: { ...session, ipAddress: null, userAgent: null } }) } } },
     logger: { disabled: true },
     plugins: [
+      geldSso(),
+      {id:'geld-id-token-encryption',schema:{account:{fields:{idToken:{type:'string',required:false,transform:encryptedAuthField}}}}},
       emailOTP({ storeOTP: 'hashed', allowedAttempts: 3, changeEmail: { enabled: true, verifyCurrentEmail: true }, sendVerificationOTP: async ({ email, otp }) => sendEmail(email, 'Your Geld sign-in code', `Your one-time code is ${otp}. It expires in five minutes.`) }),
       magicLink({ storeToken: 'hashed', sendMagicLink: async ({ email, url }) => sendEmail(email, 'Sign in to Geld', `Sign in using this link: ${url}`) }),
       genericOAuth({ config: [
