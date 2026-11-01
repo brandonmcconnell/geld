@@ -59,7 +59,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   That is the goal;
   the license text, not this line, defines the triggers.
   Known wart: Apple's App Store terms and the GPL family sit uneasily (Safari ships through the App Store);
-  as sole copyright holder the owner can distribute that build regardless, and an explicit App Store exception is a possible follow-up.
+  decided, Geld stays AGPL-3.0-only and does both: as copyright holder the owner ships the Safari build, and an explicit additional permission under AGPL §7 is to be added allowing app-store distribution as long as the source stays available under the AGPL through a channel without those terms.
+  Before adding that permission, the owner must secure contributor agreements for past contributors and new PRs that preserve the ability to grant it.
+  Licence changes are the owner's: an agent prepares them, never commits them.
   Do not add a non-OSI license or a Commons-Clause-style rider.
 - TypeScript strict everywhere.
   **Never use `any`**, explicitly or implicitly, and never `ZodTypeAny`.
