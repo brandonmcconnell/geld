@@ -54,6 +54,9 @@ importers:
       hyperellipse:
         specifier: ^1.0.5
         version: 1.0.5
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^26.4.1
