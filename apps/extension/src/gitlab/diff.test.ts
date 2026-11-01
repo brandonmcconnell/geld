@@ -217,6 +217,48 @@ it('reads classic file headers from the source-derived Vue structure', () => {
   expect(view?.entries[0]?.isExpanded?.()).toBe(true);
 });
 
+it('recognizes the observed normal-flow stream parents without promoting an unknown wrapper to a container', () => {
+  rapid();
+  const container = document.querySelector<HTMLElement>('[data-diffs-list]');
+  const first = container?.querySelector('diff-file');
+  if (container === null || first === null || first === undefined) throw new Error('Missing rapid fixture');
+  const holder = document.createElement('div');
+  holder.setAttribute('data-stream-remaining-diffs', '');
+  const stream = document.createElement('streaming-element');
+  const next = document.createElement('diff-file');
+  next.setAttribute('data-file-data', '{"new_path":"doc/example.png","viewer":"image"}');
+  stream.append(next, document.createElement('server-timings'));
+  holder.append(stream);
+  container.append(holder);
+  const view = readGitLabDiff(document);
+  expect(view?.container).toBe(container);
+  expect(view?.entries).toHaveLength(2);
+  expect(view?.virtualized).toBe(false);
+  expect(view?.groupingWrappers).toEqual([holder, stream]);
+  first.remove();
+  expect(readGitLabDiff(document)?.container).toBe(container);
+  expect(readGitLabDiff(document)?.groupingWrappers).toEqual([holder, stream]);
+  holder.removeAttribute('data-stream-remaining-diffs');
+  expect(readGitLabDiff(document)?.virtualized).toBe(true);
+  expect(readGitLabDiff(document)?.groupingWrappers).toBeUndefined();
+});
+
+it.each(['position', 'transform', 'hidden', 'unknown child', 'file by file'] as const)('keeps %s streaming layouts conservative', (kind) => {
+  rapid();
+  const root = document.querySelector<HTMLElement>('[data-diffs-list]');
+  if (root === null) throw new Error('Missing rapid fixture');
+  root.insertAdjacentHTML('beforeend', '<div data-stream-remaining-diffs><streaming-element><diff-file data-file-data=\'{"new_path":"doc/example.png","viewer":"image"}\'></diff-file></streaming-element></div>');
+  const holder = root.querySelector<HTMLElement>('[data-stream-remaining-diffs]');
+  const stream = holder?.querySelector<HTMLElement>('streaming-element');
+  if (holder === null || stream === null || stream === undefined) throw new Error('Missing native stream fixture');
+  if (kind === 'position') holder.style.position = 'relative';
+  if (kind === 'transform') stream.style.transform = 'translateY(10px)';
+  if (kind === 'hidden') holder.hidden = true;
+  if (kind === 'unknown child') stream.append(document.createElement('section'));
+  if (kind === 'file by file') document.querySelector('[data-rapid-diffs]')?.setAttribute('data-app-data', '{"file_by_file_mode":true}');
+  expect(readGitLabDiff(document)?.virtualized).toBe(true);
+});
+
 it('exposes the entire observed native file row and ignores Geld category clones', () => {
   rapid();
   document.body.insertAdjacentHTML('beforeend', '<section data-testid="file-tree-container"><input aria-label="Search files"><nav class="mr-tree-list" aria-label="File tree"><div data-testid="file-row-container" data-file-row="bab0cb834"><a data-testid="file-row" data-file-row="bab0cb834" href="?file_path=src%2Fone.rb">one.rb</a><button data-testid="file-unresolved-threads-count">1</button><span data-testid="file-added-lines">+2</span></div></nav><div data-geld-ui><div data-testid="file-row-container"><a data-testid="file-row" data-file-row="clone" href="?file_path=spec%2Fclone_spec.rb">clone</a></div></div></section>');

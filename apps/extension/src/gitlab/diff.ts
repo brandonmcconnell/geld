@@ -74,6 +74,27 @@ function entry(root: HTMLElement, rapid: boolean): ProviderDiffEntry | null {
   };
 }
 
+function streamWrappers(container: HTMLElement, entries: readonly ProviderDiffEntry[]): readonly HTMLElement[] | null {
+  const holders = [...container.querySelectorAll<HTMLElement>(':scope > div[data-stream-remaining-diffs]')];
+  const wrappers: HTMLElement[] = [];
+  for (const holder of holders) {
+    const stream = holder.querySelector<HTMLElement>(':scope > streaming-element');
+    if (stream === null || holder.children.length !== 1) return null;
+    if ([holder, stream].some((wrapper) => [...wrapper.childNodes].some((node) => node.nodeType === 3 && (node.textContent?.trim() ?? '') !== ''))) return null;
+    if ([...stream.children].some((child) => !child.matches('diff-file[data-file-data], server-timings'))) return null;
+    wrappers.push(holder, stream);
+  }
+  for (const file of entries) {
+    if (file.root.parentElement === container) continue;
+    const stream = file.root.parentElement;
+    if (stream === null || !wrappers.includes(stream) || stream.tagName !== 'STREAMING-ELEMENT') return null;
+  }
+  if (wrappers.some((wrapper) => wrapper.closest('[hidden], [aria-hidden="true"], [inert]') !== null
+    || wrapper.style.position !== '' && wrapper.style.position !== 'static'
+    || wrapper.style.transform !== '' && wrapper.style.transform !== 'none')) return null;
+  return wrappers;
+}
+
 export function readGitLabDiff(doc: Document): ProviderDiffView | null {
   const rapid = doc.querySelector<HTMLElement>('[data-rapid-diffs]');
   let container = rapid?.querySelector<HTMLElement>('[data-diffs-list]') ?? doc.querySelector<HTMLElement>('#diffs');
@@ -90,7 +111,7 @@ export function readGitLabDiff(doc: Document): ProviderDiffView | null {
   }
   if (entries.length === 0) return null;
   const parent = entries[0]?.root.parentElement;
-  if (parent !== null && parent !== undefined && parent !== container && container.contains(parent) && entries.every((file) => file.root.parentElement === parent)) container = parent;
+  if (rapid === null && parent !== null && parent !== undefined && parent !== container && container.contains(parent) && entries.every((file) => file.root.parentElement === parent)) container = parent;
   const treeHost = doc.querySelector<HTMLElement>('[data-testid="file-tree-container"]');
   const tree: ProviderTreeEntry[] = [];
   for (const link of treeHost?.querySelectorAll<HTMLAnchorElement>('a[data-testid="file-row"][data-file-row]') ?? []) {
@@ -102,16 +123,24 @@ export function readGitLabDiff(doc: Document): ProviderDiffView | null {
     } catch { continue; }
   }
   const navigateToPath = gitLabPathNavigator(doc, treeHost);
+  const wrappers = rapid === null ? null : streamWrappers(container, entries);
   return {
     kind: rapid !== null ? 'gitlab-rapid' : 'gitlab-classic',
     container,
+    ...(wrappers === null || wrappers.length === 0 ? {} : {
+      groupingWrappers: wrappers,
+      groupingReady: entries.every((file) => file.root.lastElementChild?.tagName === 'DIFF-FILE-MOUNTED')
+        && wrappers.every((wrapper) => wrapper.tagName !== 'STREAMING-ELEMENT' || wrapper.querySelector(':scope > diff-file[data-file-data]') !== null),
+    }),
     entries,
     tree,
     treeHost,
     treeContainer: treeHost?.querySelector<HTMLElement>('nav.mr-tree-list[aria-label="File tree"]') ?? null,
     ...(navigateToPath === null ? {} : { navigateToPath }),
     filteredPaths,
-    virtualized: entries.some((file) => file.root.parentElement !== container) || jsonAttribute(rapid, 'data-app-data')?.file_by_file_mode === true || doc.querySelector<HTMLInputElement>('[data-testid="file-by-file"]')?.checked === true || entries.some((file) => file.root.classList.contains('is-virtual-scrolling') || file.root.style.position === 'absolute'),
+    virtualized: (rapid === null ? entries.some((file) => file.root.parentElement !== container) : wrappers === null)
+      || jsonAttribute(rapid, 'data-app-data')?.file_by_file_mode === true || doc.querySelector<HTMLInputElement>('[data-testid="file-by-file"]')?.checked === true
+      || entries.some((file) => file.root.classList.contains('is-virtual-scrolling') || file.root.style.position !== '' && file.root.style.position !== 'static'),
   };
 }
 

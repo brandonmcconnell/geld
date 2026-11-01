@@ -44,13 +44,14 @@ it('decodes compare refs and keeps moving named refs out of immutable cache elig
   expect(describeGitLabPage(new URL('https://gitlab.com/acme/widgets/-/compare?from=main&to=topic'), document)).toBeNull();
 });
 
-it('reads streamed compare siblings from their actual shared parent without moving them', () => {
+it('keeps streamed compare parents separate from their stable file-list container without moving nodes', () => {
   // Reduced from anonymous /-/compare/34ef0d2e...13215ca4, November 1, 2026.
   document.body.innerHTML = '<article data-rapid-diffs><div data-diffs-list><div data-stream-remaining-diffs><streaming-element><diff-file id="one" data-file-data=\'{"new_path":"src/one.rb"}\'></diff-file><diff-file id="two" data-file-data=\'{"new_path":"spec/two_spec.rb"}\'></diff-file></streaming-element></div></div></article>';
   const parent = document.querySelector('diff-file')?.parentElement;
   const view = readGitLabDiff(document);
-  expect(view?.container).toBe(parent);
-  expect(view?.container.tagName).toBe('STREAMING-ELEMENT');
+  expect(view?.container).toBe(document.querySelector('[data-diffs-list]'));
+  expect(view?.groupingWrappers).toEqual([document.querySelector('[data-stream-remaining-diffs]'), parent]);
+  expect(view?.groupingReady).toBe(false);
   expect(view?.virtualized).toBe(false);
   expect(view?.entries.map((file) => file.path)).toEqual(['src/one.rb', 'spec/two_spec.rb']);
   expect(document.querySelector('diff-file')?.parentElement).toBe(parent);
