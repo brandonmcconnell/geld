@@ -64,6 +64,64 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
 }
 
 describe('provider conversation integrations', () => {
+  it('refreshes live native requirement facts without another review request or inferred approval totals', async () => {
+    let passed = true;
+    const source: ProviderReviewSnapshot = { ...snapshot(), get requirements(): NonNullable<ProviderReviewSnapshot['requirements']> { return [{ id: 'native-minimum-approvals', label: 'Minimum approvals', state: passed ? 'passed' : 'unknown' }]; } };
+    const f = fixture(source, {}, { aiEnabled: false });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-review-key="requirements"]')?.textContent).toContain('Passed'));
+    expect(f.fetchReview).toHaveBeenCalledOnce();
+    passed = false;
+    f.apply();
+    expect(f.host.querySelector('[data-geld-review-key="requirements"]')?.textContent).toContain('Unknown');
+    expect(f.fetchReview).toHaveBeenCalledOnce();
+    expect(f.host.textContent).not.toMatch(/\d+\/\d+ approvals/);
+  });
+
+  it('uses a provider refresh cadence without polling anonymous review sources every minute', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = fixture(snapshot(), {}, { aiEnabled: false }, { reviewRefreshMs: () => 30 * 60_000 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.fetchReview).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(60_000);
+      f.apply();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.fetchReview).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(29 * 60_000);
+      f.apply();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.fetchReview).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps a long provider cooldown after a review fetch fails', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchReview = vi.fn<NonNullable<ProviderAdapter['fetchReview']>>()
+        .mockRejectedValueOnce(Object.assign(new Error('Rate limited'), { retryAfterMs: 60 * 60_000 }))
+        .mockResolvedValue(snapshot());
+      const f = fixture(snapshot(), {}, { aiEnabled: false }, { fetchReview });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      f.apply();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchReview).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(30 * 60_000 + 2000);
+      f.apply();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchReview).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('passes verified native author presentation through without replacing original source links', async () => {
+    const source = { ...snapshot(), authorPresentation: () => ({ authorId: comment().author.id, displayName: 'Native reviewer', profileUrl: 'https://gitlab.com/native-reviewer', avatar: { src: 'https://gitlab.com/uploads/avatar.png', width: 24, height: 24, borderRadius: '50%' }, badges: [{ label: 'Maintainer', className: 'gl-badge' }] }) };
+    const f = fixture(source, {}, { aiEnabled: false });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-source="note_1"] .geld-provider-review__byline')?.textContent).toContain('Native reviewer'));
+    expect(f.host.querySelector('[data-geld-source="note_1"] .geld-provider-review__byline')?.textContent).toContain('Maintainer');
+    expect(f.host.querySelector<HTMLImageElement>('[data-geld-source="note_1"] img')?.style.width).toBe('24px');
+    expect(f.host.querySelector('[data-geld-source="note_1"] a[href$="#note_1"]')).not.toBeNull();
+  });
+
   it('loads without spending and runs AI only after the triage button is clicked', async () => {
     const trustedReviewAccounts = withTrustedReviewAccount([], repository, 'greptile', '12345');
     const f = fixture(snapshot(), {}, { trustedReviewAccounts });

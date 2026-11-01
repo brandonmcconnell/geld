@@ -116,7 +116,7 @@ export class ProviderConversation {
       const abort = new AbortController();
       this.abort = abort;
       const generation = this.generation;
-      this.nextRefresh = Date.now() + 60_000;
+      this.nextRefresh = Date.now() + Math.max(60_000, this.adapter.reviewRefreshMs?.(document) ?? 60_000);
       void this.adapter.fetchReview(page, abort.signal, document).then((snapshot) => {
         if (generation !== this.generation || abort.signal.aborted) return;
         this.snapshot = snapshot;
@@ -126,7 +126,7 @@ export class ProviderConversation {
         if (generation !== this.generation || abort.signal.aborted) return;
         this.error = error instanceof Error ? error.message : 'Review unavailable';
         const retry = typeof error === 'object' && error !== null ? Reflect.get(error, 'retryAfterMs') : undefined;
-        if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) this.nextRefresh = Date.now() + Math.min(Math.max(60_000, retry + 2000), 15 * 60_000);
+        if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) this.nextRefresh = Date.now() + Math.max(60_000, retry + 2000);
       }).finally(() => {
         if (generation !== this.generation || abort.signal.aborted) return;
         this.abort = null;
@@ -147,6 +147,7 @@ export class ProviderConversation {
         version: this.snapshotVersion,
         ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: (): Promise<boolean> => { this.revealOriginal(comment.anchor); return action.activate(); } })) ?? [] }),
         ...(snapshot.renderComment === undefined ? {} : { renderComment: snapshot.renderComment }),
+        ...(snapshot.authorPresentation === undefined ? {} : { authorPresentation: snapshot.authorPresentation }),
         onActionComplete: (): void => {
           this.nextRefresh = Date.now() + 700;
           if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
@@ -159,6 +160,7 @@ export class ProviderConversation {
         comments: snapshot.comments, events: snapshot.events, complete: snapshot.complete,
         unavailable: this.error === '' ? snapshot.unavailable : [...snapshot.unavailable, { area: 'Refresh', reason: this.error }],
         approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft,
+        ...(snapshot.requirements === undefined ? {} : { requirements: snapshot.requirements }),
         transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(items),
         ai: {
           enabled: settings.aiEnabled,

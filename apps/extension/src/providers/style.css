@@ -96,7 +96,7 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 [data-geld-provider-category-row] { display: none !important; }
 [data-geld-provider-category-body] { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }
 [data-geld-provider-category-body="native"] { display: none !important; }
-.geld-provider-category-header { display: block; flex: 0 0 auto; inline-size: 100%; border: 0; border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); padding: var(--geld-provider-space-3) var(--geld-provider-space-2); text-align: start; color: var(--geld-provider-text); background: var(--geld-provider-bg); font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); cursor: pointer; }
+.geld-provider-category-header { display: flex; align-items: center; gap: var(--geld-provider-space-2); flex: 0 0 auto; inline-size: 100%; border: 0; border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); padding: var(--geld-provider-space-3) var(--geld-provider-space-2); text-align: start; color: var(--geld-provider-text); background: var(--geld-provider-bg); font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); cursor: pointer; }
 .geld-provider-category-header:hover, .geld-provider-category-folder:hover { background: var(--geld-provider-bg-subtle); }
 .geld-provider-category-header:focus-visible, .geld-provider-category-folder:focus-visible { outline: var(--geld-provider-focus-outline); box-shadow: var(--geld-provider-focus-ring); outline-offset: var(--geld-provider-focus-offset); }
 .geld-provider-category-header[aria-expanded="true"] { color: var(--geld-provider-link); }
@@ -123,3 +123,27 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-category[data-active="true"] > .geld-provider-category-content { flex: 1 1 auto; }
 
 .geld-provider-accessible-counts { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Category glyphs use the provider's own 16px geometry; Bitbucket directories
+ * use its native chevrons while GitLab switches its native folder silhouettes. */
+.geld-provider-category-icon { display: inline-block; inline-size: 16px; block-size: 16px; flex: 0 0 16px; vertical-align: middle; }
+.geld-provider-category-label, .geld-provider-category-folder-label { min-inline-size: 0; }
+.geld-provider-category-folder-visual { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.geld-provider-category-folder[data-geld-folder-glyph]::before { display: none; }
+.geld-provider-category-folder[data-geld-native-folder] { font: inherit; }
+.geld-provider-category-folder[data-geld-native-folder="gitlab"] { padding-inline-start: var(--geld-provider-space-2); }
+
+/* Inline mode fades only individual native rows, never a nested directory's
+ * descendants; annotations and native handlers remain in their own nodes. */
+[data-geld-provider-inline-tree-row] { opacity: 0.5; }
+[data-geld-provider-inline-tree-row]:hover, [data-geld-provider-inline-tree-row]:focus-within { opacity: 0.85; }
+[data-geld-provider-inline-tree-glyph] { display: none !important; }
+.geld-provider-inline-category-icon { vertical-align: middle; color: var(--geld-provider-text-subtle); }
+
+.geld-provider-hidden-authors { display: flex; flex-wrap: wrap; align-items: center; gap: var(--geld-provider-space-3); padding: var(--geld-provider-space-3) var(--geld-provider-space-4); border-block-end: var(--geld-provider-border-width) solid var(--geld-provider-border); color: var(--geld-provider-text-subtle); background: var(--geld-provider-bg-subtle); font: var(--geld-provider-font-small); }
+.geld-provider-hidden-authors__item { list-style: none; }
+.geld-provider-hidden-authors__cell { padding: 0; }
+.geld-provider-hidden-authors__text { min-inline-size: 0; overflow-wrap: anywhere; }
+.geld-provider-hidden-authors__show { flex: 0 0 auto; padding: 0; border: 0; border-radius: var(--geld-provider-button-radius); color: var(--geld-provider-link); background: none; font: inherit; cursor: pointer; }
+.geld-provider-hidden-authors__show:hover { text-decoration: underline; }
+.geld-provider-hidden-authors__show:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }

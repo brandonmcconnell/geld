@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProviderDiffSource, providerRetryAfter } from './diff-source';
+import { BITBUCKET_ANONYMOUS_DIFF_FRESH_MS, ProviderDiffSource, providerRetryAfter } from './diff-source';
+import type { ProviderDiffSourceOptions } from './diff-source';
 import { ProviderDiffCache, providerCacheSlot, providerDiffKey, PROVIDER_CACHE_FRESH_MS } from './diff-cache';
 import type { ProviderCacheStorage } from './diff-cache';
 import type { ProviderAdapter, ProviderDiffResult, ProviderReviewPage } from './types';
@@ -24,11 +25,11 @@ function complete(revision: string): ProviderDiffResult {
 }
 
 const sources: ProviderDiffSource[] = [];
-function sourceFor(fetchDiff: ProviderAdapter['fetchDiff'], changed = vi.fn(), cache?: ProviderDiffCache): ProviderDiffSource {
+function sourceFor(fetchDiff: ProviderAdapter['fetchDiff'], changed = vi.fn(), cache?: ProviderDiffCache, options?: ProviderDiffSourceOptions, provider: ProviderAdapter['id'] = 'gitlab'): ProviderDiffSource {
   const adapter: ProviderAdapter = {
-    id: 'gitlab', describe: () => null, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff,
+    id: provider, describe: () => null, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff,
   };
-  const source = new ProviderDiffSource(adapter, changed, cache);
+  const source = new ProviderDiffSource(adapter, changed, cache, options);
   sources.push(source);
   return source;
 }
@@ -36,6 +37,168 @@ function sourceFor(fetchDiff: ProviderAdapter['fetchDiff'], changed = vi.fn(), c
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-11-01T12:00:00Z'));
+});
+
+function bitbucketPage(number: string): ProviderReviewPage {
+  const url = `https://bitbucket.org/acme/widgets/pull-requests/${number}`;
+  return { provider: 'bitbucket', repository: { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'acme/widgets' }, number, url, diffPageUrl: `${url}/diff`, diffUrl: `${url}/diff`, kind: 'overview', headSha: null, version: 'current' };
+}
+
+describe('anonymous Bitbucket passive demand protection', () => {
+  it('hydrates 25 passive rows without starting any API snapshots or timer-driven refreshes', async () => {
+    const store = cacheStore();
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('unexpected'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(store.backend), undefined, 'bitbucket');
+    const rows = Array.from({ length: 25 }, (_, index) => bitbucketPage(String(index + 1)));
+    for (const row of rows) expect(source.get(row, false, false)).toMatchObject({ status: 'deferred', reason: 'Hover to count changes' });
+    await vi.advanceTimersByTimeAsync(0);
+    for (let minute = 0; minute < 65; minute += 1) {
+      for (const row of rows) source.get(row, false, false);
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    expect(fetchDiff).not.toHaveBeenCalled();
+    expect(rows.every((row) => source.get(row, false, false).status === 'deferred')).toBe(true);
+  });
+
+  it('shows complete stale cache provisionally without revalidation until actual intent promotes it', async () => {
+    const store = cacheStore();
+    const page = bitbucketPage('1');
+    const seeded = new ProviderDiffCache(store.backend);
+    seeded.set(page, complete('old'));
+    await vi.advanceTimersByTimeAsync(0);
+    seeded.stop();
+    await vi.advanceTimersByTimeAsync(PROVIDER_CACHE_FRESH_MS + 1);
+    const pending = deferred<ProviderDiffResult>();
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockReturnValue(pending.promise);
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(store.backend), undefined, 'bitbucket');
+    source.get(page, false, false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(source.get(page, false, false)).toMatchObject({ status: 'ready', cached: true, provisional: true, result: { revision: 'old', complete: true } });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchDiff).not.toHaveBeenCalled();
+    expect(source.get(page, true)).toMatchObject({ status: 'ready', cached: true, provisional: true, refreshing: true, result: { revision: 'old' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    pending.resolve(complete('verified'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(source.get(page, true)).toMatchObject({ status: 'ready', result: { revision: 'verified', complete: true } });
+  });
+
+  it('preserves explicit intent through a passive read while disk hydration is still pending', async () => {
+    const hydration = deferred<unknown>();
+    const backend: ProviderCacheStorage = { read: () => hydration.promise, write: async () => undefined, watch: () => () => undefined };
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('intent'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(backend), undefined, 'bitbucket');
+    const page = bitbucketPage('1');
+    source.get(page, false, false);
+    source.get(page, true);
+    expect(source.get(page, false, false)).toEqual({ status: 'loading' });
+    hydration.resolve(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledExactlyOnceWith(page, expect.any(AbortSignal));
+    expect(source.get(page, false, false)).toMatchObject({ status: 'ready', result: { revision: 'intent' } });
+  });
+
+  it('does not cancel an explicit queued hover when a passive list refresh reads it', async () => {
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('intent'));
+    const store = cacheStore();
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(store.backend), undefined, 'bitbucket');
+    source.get(bitbucketPage('1'), true);
+    await vi.advanceTimersByTimeAsync(0);
+    const intended = bitbucketPage('2');
+    source.get(intended, true);
+    await vi.advanceTimersByTimeAsync(0);
+    source.get(intended, false, false);
+    await vi.advanceTimersByTimeAsync(749);
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchDiff).toHaveBeenCalledTimes(2);
+    expect(fetchDiff.mock.calls[1]?.[0]).toEqual(intended);
+  });
+
+  it('reuses a current-visit verified unknown head for 30 minutes instead of refetching every minute', async () => {
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('verified'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(cacheStore().backend), undefined, 'bitbucket');
+    const page = bitbucketPage('1');
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let minute = 0; minute < 29; minute += 1) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(source.get(page, true)).toMatchObject({ status: 'ready', result: { revision: 'verified' } });
+    }
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(BITBUCKET_ANONYMOUS_DIFF_FRESH_MS - 29 * 60_000);
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the existing 60-second refresh for reliable authenticated capability, including a session change', async () => {
+    let anonymous = true;
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('verified'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(cacheStore().backend), { anonymous: () => anonymous }, 'bitbucket');
+    const page = bitbucketPage('1');
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    anonymous = false;
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(3);
+  });
+
+  it('revokes authenticated eager list work on logout while preserving later explicit intent', async () => {
+    let anonymous = false;
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('verified'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(cacheStore().backend), { anonymous: () => anonymous }, 'bitbucket');
+    source.get(bitbucketPage('1'));
+    source.get(bitbucketPage('2'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    anonymous = true;
+    expect(source.get(bitbucketPage('2'), false, false)).toMatchObject({ status: 'deferred' });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    source.get(bitbucketPage('2'), true);
+    source.get(bitbucketPage('2'), false, false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not renew failed explicit retry demand from passive list reads', async () => {
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockRejectedValue(new Error('Temporary outage'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(cacheStore().backend), undefined, 'bitbucket');
+    const page = bitbucketPage('1');
+    source.get(page, true);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let second = 0; second < 180; second += 1) {
+      source.get(page, false, false);
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(fetchDiff).toHaveBeenCalledTimes(3);
+  });
+
+  it('shares a missing-header anonymous 429 pause with other queued reviews without fabricated empty counts', async () => {
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>()
+      .mockRejectedValueOnce(Object.assign(new Error('HTTP 429'), { reason: 'rate-limited' }))
+      .mockResolvedValue(complete('after-pause'));
+    const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(cacheStore().backend), undefined, 'bitbucket');
+    source.get(bitbucketPage('1'), true);
+    source.get(bitbucketPage('2'), true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(source.get(bitbucketPage('1'), false, false)).toMatchObject({ status: 'failed', reason: 'HTTP 429' });
+    await vi.advanceTimersByTimeAsync(60 * 60_000 - 1);
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchDiff).toHaveBeenCalledTimes(2);
+    expect(source.get(bitbucketPage('2'), false, false)).toMatchObject({ status: 'ready', result: { revision: 'after-pause' } });
+  });
 });
 afterEach(() => {
   for (const source of sources) source.stop();
@@ -193,13 +356,66 @@ it('forces a current-page fetch when disk only knows an unknown-head list revisi
   const waiting = deferred<ProviderDiffResult>();
   const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockReturnValue(waiting.promise);
   const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(store.backend));
-  source.get(unknown, true);
+  source.get(unknown, true, true, true);
   await vi.advanceTimersByTimeAsync(0);
   expect(fetchDiff).toHaveBeenCalledTimes(1);
-  expect(source.get(unknown, true)).toEqual({ status: 'loading' });
+  expect(source.get(unknown, true, true, true)).toEqual({ status: 'loading' });
+  expect(source.get(unknown, true)).toMatchObject({ status: 'ready', cached: true, provisional: true, refreshing: true, result: { revision: 'old' } });
   waiting.resolve(complete('new'));
   await vi.advanceTimersByTimeAsync(0);
-  expect(source.get(unknown, true)).toMatchObject({ status: 'ready', result: { revision: 'new' } });
+  expect(source.get(unknown, true, true, true)).toMatchObject({ status: 'ready', result: { revision: 'new' } });
+});
+
+it('retains cached counts and definitive refresh errors for hover while strict headers report failure', async () => {
+  const store = cacheStore();
+  const unknown = { ...page('1'), headSha: null, version: 'latest' };
+  const seeded = new ProviderDiffCache(store.backend);
+  seeded.set(unknown, complete('old'));
+  await vi.advanceTimersByTimeAsync(0);
+  seeded.stop();
+  const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockRejectedValue(Object.assign(new Error('Sign in to GitLab to read this diff.'), { reason: 'authentication' }));
+  const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(store.backend));
+  source.get(unknown, false, false);
+  await vi.advanceTimersByTimeAsync(0);
+  // Actual hover intent revalidates even a fresh latest cache, but never
+  // replaces its complete counts with a loading placeholder.
+  expect(source.get(unknown, true)).toMatchObject({ status: 'ready', cached: true, provisional: true, refreshing: true, result: { revision: 'old' } });
+  await vi.advanceTimersByTimeAsync(0);
+  for (let pass = 0; pass < 3; pass += 1) {
+    expect(source.get(unknown, true, true, true)).toEqual({ status: 'failed', reason: 'Sign in to GitLab to read this diff.' });
+    expect(source.get(unknown, true)).toMatchObject({ status: 'ready', cached: true, provisional: true, refreshError: 'Sign in to GitLab to read this diff.', result: { revision: 'old' } });
+    await vi.advanceTimersByTimeAsync(60_000);
+  }
+  expect(fetchDiff).toHaveBeenCalledTimes(1);
+});
+
+it('preserves a provisional snapshot through strict async hydration and a rate-limit cooldown', async () => {
+  const store = cacheStore();
+  const unknown = { ...page('1'), headSha: null, version: 'latest' };
+  const seeded = new ProviderDiffCache(store.backend);
+  seeded.set(unknown, complete('old'));
+  await vi.advanceTimersByTimeAsync(0);
+  seeded.stop();
+  const disk = deferred<unknown>();
+  const slot = providerCacheSlot(providerDiffKey(unknown));
+  const backend: ProviderCacheStorage = { ...store.backend, read: (id) => id === slot ? disk.promise : store.backend.read(id) };
+  const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>()
+    .mockRejectedValueOnce(Object.assign(new Error('Rate limited'), { retryAfterMs: 20_000 }))
+    .mockResolvedValue(complete('new'));
+  const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(backend));
+  source.get(unknown, true, true, true);
+  source.get(unknown, false, false);
+  disk.resolve(store.values.get(slot));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchDiff).toHaveBeenCalledTimes(1);
+  expect(source.get(unknown, true, true, true)).toEqual({ status: 'failed', reason: 'Rate limited' });
+  expect(source.get(unknown, true)).toMatchObject({ status: 'ready', cached: true, provisional: true, refreshError: 'Rate limited', result: { revision: 'old' } });
+  await vi.advanceTimersByTimeAsync(21_999);
+  expect(fetchDiff).toHaveBeenCalledTimes(1);
+  expect(source.get(unknown, false, false)).toMatchObject({ status: 'ready', result: { revision: 'old' } });
+  await vi.advanceTimersByTimeAsync(1);
+  expect(fetchDiff).toHaveBeenCalledTimes(2);
+  expect(source.get(unknown, true, true, true)).toMatchObject({ status: 'ready', result: { revision: 'new' } });
 });
 
 it('keeps stale list counts explicitly provisional during a failed revalidation', async () => {

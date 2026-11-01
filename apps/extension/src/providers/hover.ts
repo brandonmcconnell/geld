@@ -13,6 +13,7 @@ export interface ProviderHoverOptions {
 
 export interface ProviderHoverBindingOptions {
   readonly keyboard?: boolean;
+  readonly onIntent?: () => void;
   readonly status?: () => { readonly status: 'loading' | 'unavailable' | 'provisional' | 'ready'; readonly reason?: string };
 }
 
@@ -180,6 +181,15 @@ export class ProviderHover {
 
   update(): void { this.refresh(); }
 
+  setTitle(host: HTMLElement, title: string): void {
+    const held = this.titles.get(host);
+    if (held !== undefined) {
+      held.original = title;
+      if (host.getAttribute(HELD_TITLE) !== title) host.setAttribute(HELD_TITLE, title);
+      host.removeAttribute('title');
+    } else if (host.getAttribute('title') !== title) host.setAttribute('title', title);
+  }
+
   refresh(): void {
     for (const host of this.bindings.keys()) if (!host.isConnected) this.unbindBreakdown(host);
     const active = this.active;
@@ -249,6 +259,7 @@ export class ProviderHover {
       this.timer = null;
       if (this.active !== active || !this.valid(active) || this.nativeOverlay(host)) { this.close(); return; }
       active.ready = true;
+      if (active.page === null) this.bindings.get(host)?.options.onIntent?.();
       this.watch();
       this.render();
     }, INTENT_MS);
@@ -377,7 +388,7 @@ export class ProviderHover {
       if (binding === undefined) { this.close(); return; }
       const status = binding.options.status?.();
       const stats = binding.get();
-      const message = status?.status === 'loading' ? 'Counting changes…' : status?.status === 'provisional' ? 'Cached counts. Updating…' : status?.status === 'unavailable' ? status.reason ?? 'Counts unavailable' : stats === null ? 'Counts unavailable' : null;
+      const message = status?.status === 'loading' ? 'Counting changes…' : status?.status === 'provisional' ? status.reason ?? 'Cached counts. Updating…' : status?.status === 'unavailable' ? status.reason ?? 'Counts unavailable' : stats === null ? 'Counts unavailable' : null;
       this.show(stats, message);
       return;
     }
@@ -385,14 +396,14 @@ export class ProviderHover {
     if (settings === null) { this.show(null, 'Reading repository settings…'); return; }
     if (!settings.enabled || !settings.showListStats || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(active.page.repository)).allowed) { this.close(); return; }
     const state: ProviderDiffState = this.source.get(active.page, true);
-    if (state.status === 'loading') { this.show(null, 'Counting changes…'); return; }
+    if (state.status === 'loading' || state.status === 'deferred') { this.show(null, 'Counting changes…'); return; }
     if (state.status === 'failed') { this.show(null, `Counts unavailable: ${state.reason.slice(0, 300)}`); return; }
     if (!state.result.complete) { this.show(null, 'Counts unavailable: the diff is incomplete'); return; }
     const matcher = createMatcher(settings, providerRepositoryScope(active.page.repository), this.catalog());
     const { all, hidden } = breakdownFromFiles(state.result.files, matcher, settings.hideCommentLines);
     const categories = allCategories(settings, this.catalog()).filter((category) => isCategoryEnabled(settings, category.id));
     const breakdown = statsBreakdown(all, hidden, hiddenNounPlural(categories, hidden), categories);
-    this.show(breakdown, state.provisional ? 'Cached counts. Updating…' : state.refreshError === undefined ? null : `Counts may be out of date: ${state.refreshError.slice(0, 300)}`);
+    this.show(breakdown, state.refreshError !== undefined ? `Counts may be out of date: ${state.refreshError.slice(0, 300)}` : state.provisional ? state.refreshing === true ? 'Cached counts. Updating…' : 'Cached counts. Refresh pending.' : null);
   }
 
   private watch(): void {

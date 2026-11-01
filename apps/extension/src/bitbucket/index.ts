@@ -4,11 +4,13 @@ import { describeBitbucketProviderPage } from './page';
 import { fetchBitbucketReview } from './review';
 import { fetchBitbucketConfig } from './config';
 import { bitbucketActionHost, bitbucketDescriptionHost, bitbucketHeaderTargets, bitbucketReviewHost, readBitbucketDiff } from './diff';
-import { readBitbucketActions } from './actions';
+import { bitbucketAuthenticated, readBitbucketActions } from './actions';
 import { bitbucketListRows } from './list-surfaces';
 import { bitbucketConversationRoots, syncBitbucketNativeReviewState } from './conversation';
 import { renderBitbucketComment } from './comment-render';
 import { bitbucketThreadActions } from './thread-actions';
+import { bitbucketAuthorPresentation } from './author-presentation';
+import { readBitbucketRequirements } from './requirements';
 
 export { BitbucketClient, BitbucketApiError, bitbucketCapabilities } from './api';
 export type { BitbucketPullRequest, BitbucketAuthor, BitbucketParticipant, BitbucketComment, BitbucketTask, BitbucketStatus, BitbucketActivity, BitbucketCapabilities } from './api';
@@ -21,6 +23,8 @@ export const bitbucketAdapter: ProviderAdapter = {
   readDiff: readBitbucketDiff,
   headerTargets: bitbucketHeaderTargets,
   listRows: bitbucketListRows,
+  eagerListDiffs: bitbucketAuthenticated,
+  reviewRefreshMs: (doc) => bitbucketAuthenticated(doc) ? 60_000 : 30 * 60_000,
   fetchDiff: (page, signal) => page.kind === 'compare' ? Promise.reject(new Error('Bitbucket comparison diffs are unavailable')) : new BitbucketClient(page).diff(signal),
   reviewHost: bitbucketReviewHost,
   descriptionHost: bitbucketDescriptionHost,
@@ -29,8 +33,10 @@ export const bitbucketAdapter: ProviderAdapter = {
   fetchReview: async (page, signal, doc) => {
     const snapshot = await fetchBitbucketReview(page, signal);
     return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, actions: readBitbucketActions(doc),
+      get requirements() { return readBitbucketRequirements(page, doc); },
       renderComment: (comment, host) => renderBitbucketComment(comment, host, doc),
       sourceActions: (comment) => bitbucketThreadActions(comment, doc),
+      authorPresentation: (comment) => bitbucketAuthorPresentation(comment, doc),
     };
   },
   fetchConfig: fetchBitbucketConfig,
