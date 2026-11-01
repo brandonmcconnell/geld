@@ -20055,6 +20055,16 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         continue;
       }
     }
+    const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : void 0;
+    if (existing !== void 0 && skippedThisRun !== void 0) {
+      const prior = runsBeforeAsk.get(id);
+      if (prior !== void 0 && !threadRuns.has(id)) threadRuns.set(id, prior);
+      const reviewed = threadRuns.has(id) || existing.sourceId !== void 0 && (existing.verdict === "clean" || existing.verdict === "findings");
+      if (!reviewed && !(existing.verdict === "failed" && existing.reason !== void 0)) {
+        byId.set(id, { id, login, verdict: "failed", reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName }, sourceId: anchor2, reason: skippedThisRun });
+      }
+      continue;
+    }
     if (existing === void 0) {
       const silence = options.partial === true ? "loading" : options.closed !== true && !own2 && acknowledged ? "failed" : "unknown";
       byId.set(id, { id, login, verdict: stale ? silence : "running", reviewedSha: headSha, sourceId: anchor2 });
@@ -21837,8 +21847,8 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion startedAt completedAt }
-                  ... on StatusContext { context state createdAt }
+                  ... on CheckRun { name status conclusion startedAt completedAt title }
+                  ... on StatusContext { context state createdAt description }
                 }
               }
             }
@@ -21888,8 +21898,8 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
             pageInfo { hasNextPage endCursor }
             nodes {
               __typename
-              ... on CheckRun { name status conclusion startedAt completedAt }
-              ... on StatusContext { context state createdAt }
+              ... on CheckRun { name status conclusion startedAt completedAt title }
+              ... on StatusContext { context state createdAt description }
             }
           }
         }
@@ -21924,7 +21934,8 @@ function checkRunOf(node2, sha2) {
       conclusion: node2.conclusion?.toLowerCase() ?? null,
       sha: sha2,
       ...typeof node2.startedAt === "string" ? { startedAt: node2.startedAt } : {},
-      ...typeof node2.completedAt === "string" ? { completedAt: node2.completedAt } : {}
+      ...typeof node2.completedAt === "string" ? { completedAt: node2.completedAt } : {},
+      ...typeof node2.title === "string" && node2.title !== "" ? { description: node2.title } : {}
     };
   }
   if (node2.__typename === "StatusContext" && node2.context !== void 0 && node2.state !== void 0) {
@@ -21932,7 +21943,8 @@ function checkRunOf(node2, sha2) {
     const conclusion = state === "success" ? "success" : state === "pending" ? null : "failure";
     const at = typeof node2.createdAt === "string" ? node2.createdAt : void 0;
     const when = at === void 0 ? {} : state === "pending" ? { startedAt: at } : { completedAt: at };
-    return { name: node2.context, status: state === "pending" ? "in_progress" : "completed", conclusion, sha: sha2, ...when };
+    const description = typeof node2.description === "string" && node2.description !== "" ? { description: node2.description } : {};
+    return { name: node2.context, status: state === "pending" ? "in_progress" : "completed", conclusion, sha: sha2, ...when, ...description };
   }
   return null;
 }

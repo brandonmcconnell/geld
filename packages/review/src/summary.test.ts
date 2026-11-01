@@ -1064,6 +1064,28 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([{ ...limited, description: 'Review completed' }], [], 'head', [], now)[0]?.verdict).toBe('clean');
   });
 
+  it('settles a request its own check refused as a refusal does, never a bare red failure', () => {
+    // "@coderabbitai review" while out of free reviews: the check that ran for it ends neutral, "Review rate limited",
+    // and CodeRabbit says nothing more. The request is answered with no run made.
+    const now = Date.parse('2026-11-01T14:50:00Z');
+    const limited = { name: 'CodeRabbit', status: 'completed' as const, conclusion: 'neutral' as const, sha: 'head', description: 'Review rate limited', startedAt: '2026-11-01T14:43:58Z', completedAt: '2026-11-01T14:44:04Z' };
+    const ask = { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-9', createdAt: '2026-11-01T14:43:53Z' };
+    const earlier = { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-1', createdAt: '2026-11-01T12:00:00Z' };
+    // An earlier review stands, behind the head the refused run was for.
+    for (const at of [now, Date.parse('2026-11-01T15:40:00Z')]) {
+      const [verdict] = verdictsFrom([limited], [earlier, ask], 'head', [], at);
+      expect(verdict).toMatchObject({ verdict: 'clean', sourceId: 'pullrequestreview-1' });
+      expect(verdict?.reviewedSha).not.toBe('head');
+    }
+    // So do the threads the request set aside: one resolved thread reads "resolved", not failed.
+    const thread = { author: 'coderabbitai[bot]', body: 'Unused import.', anchor: 'discussion_r1', createdAt: '2026-11-01T12:00:00Z', resolved: true };
+    expect(verdictsFrom([limited], [thread, ask], 'head', [], now)[0]).toMatchObject({ verdict: 'findings', count: 0, sourceId: 'discussion_r1' });
+    // A bot that never reviewed here is skipped with the check's reason (the amber triangle), not a bare failure.
+    expect(verdictsFrom([limited], [ask], 'head', [], now)[0]).toMatchObject({ verdict: 'failed', reason: 'Review rate limited' });
+    // A check from before the request is the run before's, and the request is still under way.
+    expect(verdictsFrom([{ ...limited, startedAt: '2026-11-01T14:40:00Z', completedAt: '2026-11-01T14:40:05Z' }], [earlier, ask], 'head', [], now)[0]?.verdict).toBe('running');
+  });
+
   it('ends a run left under way by the bot giving up on it (geld#103)', () => {
     // A merge mid-run: CodeRabbit rewrote its summary into a failure notice over the last walkthrough, and its commit
     // status stayed "pending · Review in progress" for good.

@@ -1424,6 +1424,19 @@ export function verdictsFrom(
         continue;
       }
     }
+    // The run asked for was not made: its own check skipped it ("Review rate limited"). As with a refusal in so many
+    // words, a review the bot made earlier stands, the threads the request set aside included, and a bot that never
+    // reviewed here keeps the skip and its reason, never a bare red "failed" from the check's verdict.
+    const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : undefined;
+    if (existing !== undefined && skippedThisRun !== undefined) {
+      const prior = runsBeforeAsk.get(id);
+      if (prior !== undefined && !threadRuns.has(id)) threadRuns.set(id, prior);
+      const reviewed = threadRuns.has(id) || (existing.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings'));
+      if (!reviewed && !(existing.verdict === 'failed' && existing.reason !== undefined)) {
+        byId.set(id, { id, login, verdict: 'failed', reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }), sourceId: anchor, reason: skippedThisRun });
+      }
+      continue;
+    }
     if (existing === undefined) {
       // With the timeline still loading, an old request and silence is not yet a verdict on the bot. Otherwise the
       // silence is no word at all — `unknown`, grey — unless the bot acknowledged the request (Greptile's 👀) and
