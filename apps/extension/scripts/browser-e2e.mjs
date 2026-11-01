@@ -24,11 +24,18 @@ const FOCUSED_CASES = {
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-review': ['gitlab-overview-digest'],
+  'gitlab-binary': ['gitlab-binary-counts'],
+  'gitlab-references': ['gitlab-commit-link-counts', 'gitlab-native-commit-reference', 'gitlab-commit-counts'],
   github: ['github-regression'],
 };
 const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
+const GL_COMMIT_SHA = 'db314bf4bb01ddcca61c32bc212e86bb82287f33';
+const GL_COMMIT = `https://gitlab.com/gitlab-org/gitlab/-/commit/${GL_COMMIT_SHA}`;
+const GL_COMMITS = `${GL_OVERVIEW}/commits`;
+const GL_BINARY = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/162842/diffs?diff_id=1093051604';
+const GL_BINARY_PATH = 'doc/tutorials/observability/img/django_metrics.png';
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
 const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
@@ -904,6 +911,142 @@ async function gitLabListCounts(page, name) {
   } finally { await patchSettings({ showListStats: original.showListStats ?? true, hiddenAuthors: original.hiddenAuthors ?? [] }); }
 }
 
+function assertGitLabCommitBreakdown(value) {
+  const expected = [
+    { label: 'Essential', files: '1 file', additions: '+2', deletions: '−0' },
+    { label: 'Tests', files: '1 file', additions: '+10', deletions: '−0' },
+    { label: 'Total', files: '2 files', additions: '+12', deletions: '−0' },
+  ];
+  for (const row of expected) assert.deepEqual(value.rows.find((item) => item.label === row.label), row, 'Immutable commit breakdown must describe its own two-file diff, not the full MR');
+}
+
+async function gitLabCommitPresentation(page) {
+  const dom = await gitLabDom(page);
+  const source = await page.evaluate(() => ({
+    sha: document.querySelector('[data-testid="commit-sha-content"]')?.textContent.trim(),
+    files: [...document.querySelectorAll('diff-file[data-file-data]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => {
+      const data = JSON.parse(node.getAttribute('data-file-data'));
+      return { id: node.id, path: data.new_path, display: getComputedStyle(node).display, hidden: node.getAttribute('data-geld-provider-hidden'), links: [...node.querySelectorAll('a[href]')].filter((link) => link.closest('[data-geld-ui]') === null).map((link) => link.getAttribute('href')) };
+    }),
+  }));
+  return { ...dom, ...source };
+}
+
+async function gitLabCommitCounts(page) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const all = { files: 2, additions: 12, deletions: 0 };
+  const visible = { files: 1, additions: 2, deletions: 0 };
+  const classifiedPath = 'spec/graphql/mutations/boards/issues/issue_move_list_spec.rb';
+  const headerHas = (value, totals) => value.headers.some((header) => Object.keys(totals).every((key) => header[key] === totals[key]));
+  const fingerprint = (value) => value.files.map(({ id, path, links }) => ({ id, path, links }));
+  try {
+    const state = await waitTotals(page, all, visible, 1);
+    assert.equal(state.onDiffPage, true);
+    const filtered = await poll(() => gitLabCommitPresentation(page), (value) => value.sha === GL_COMMIT_SHA.slice(0, 8) && value.files.length === 2 && headerHas(value, visible) && value.files.some((file) => file.path === classifiedPath && file.display === 'none'), 'Native immutable commit header and actual test file are filtered');
+    const headerHints = await headerHintsEvidence(page, '1 test', '[data-testid="js-file-addition-line"]', 'gitlab-commit-header');
+    const pointer = await installedHover(page, '[data-testid="js-file-addition-line"]', 'pointer', 'gitlab-commit-pointer');
+    const keyboard = await installedHover(page, '[data-testid="js-file-addition-line"]', 'keyboard', 'gitlab-commit-keyboard');
+    for (const value of [pointer, keyboard]) assertGitLabCommitBreakdown(value);
+    assert.equal(pointer.text, keyboard.text);
+    const filteredArtifacts = await capture(page, 'gitlab-commit-filtered');
+    await patchSettings({ categories: { ...original.categories, tests: false } });
+    const categoryOff = await waitTotals(page, all, all, 0);
+    const categoryOffDom = await poll(() => gitLabCommitPresentation(page), (value) => headerHas(value, all) && value.files.every((file) => file.hidden === null && file.display !== 'none'), 'Actual tests setting restores the complete native commit');
+    assert.deepEqual(fingerprint(categoryOffDom), fingerprint(filtered), 'Category setting changed native commit file IDs or source links');
+    await patchSettings({ categories: { ...original.categories, tests: true } });
+    const categoryRestored = await waitTotals(page, all, visible, 1);
+    await poll(() => gitLabCommitPresentation(page), (value) => headerHas(value, visible) && value.files.some((file) => file.path === classifiedPath && file.display === 'none'), 'Reenabling the shared test category filters the actual commit again');
+    await patchSettings({ enabled: false });
+    await poll(() => tabState(page), (value) => value.hasDiff === false && value.allowed === false, 'Master disable releases the immutable commit');
+    const disabled = await poll(() => gitLabCommitPresentation(page), (value) => headerHas(value, all) && value.hidden.length === 0 && value.files.every((file) => file.display !== 'none'), 'Master disable restores original native commit counts and file visibility');
+    assert.deepEqual(fingerprint(disabled), fingerprint(filtered), 'Master disable changed native commit file IDs or source links');
+    const disabledArtifacts = await capture(page, 'gitlab-commit-disabled');
+    await patchSettings({ enabled: true });
+    const reenabled = await waitTotals(page, all, visible, 1);
+    return { state, filtered, headerHints, pointer, keyboard, filteredArtifacts, categoryOff, categoryOffDom, categoryRestored, disabled, disabledArtifacts, reenabled, nativeReferenceCards: { status: 'not_evaluated', reason: 'Commit-row link and native count-host popovers are Geld breakdowns. Provider reference cards are separate discovery.' } };
+  } finally { await patchSettings({ enabled: original.enabled ?? true, categories: original.categories }); }
+}
+
+async function gitLabBinaryPresentation(page) {
+  return page.evaluate((path) => {
+    const native = (node) => node !== null && node.closest('[data-geld-ui]') === null;
+    const bounds = (node) => { if (node === null) return null;const rect = node.getBoundingClientRect();return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }; };
+    const tab = document.querySelector('[data-testid="diffs-tab"]');
+    const badge = tab?.querySelector('.js-changes-tab-count');
+    const actions = document.querySelector('.merge-request-tabs-container > .merge-request-tabs-actions');
+    const root = [...document.querySelectorAll('diff-file[data-file-data]')].find((node) => native(node) && JSON.parse(node.getAttribute('data-file-data')).new_path === path);
+    return { badge: badge?.textContent.trim(), badgeGid: badge?.getAttribute('data-gid'), tabId: tab?.id, href: tab?.querySelector('a')?.getAttribute('href'),
+      stats: [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native).map((node) => ({ text: node.textContent.trim(), html: node.outerHTML.slice(0, 3000) })),
+      actions: actions === null ? null : { native: native(actions), bounds: bounds(actions), html: actions.outerHTML.slice(0, 7000), children: [...actions.children].filter(native).map((node) => ({ id: node.id, testid: node.getAttribute('data-testid') })) },
+      file: root === undefined ? null : { id: root.id, path: JSON.parse(root.getAttribute('data-file-data')).new_path, data: root.getAttribute('data-file-data'), display: getComputedStyle(root).display, hidden: root.getAttribute('data-geld-provider-hidden'),
+        images: [...root.querySelectorAll('img')].filter(native).map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt'), complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight })),
+        text: root.textContent.replace(/\s+/g, ' ').trim().slice(-800) },
+      nativeControls: [...document.querySelectorAll('.merge-request-tabs-container a[href], .merge-request-tabs-actions button')].filter(native).map((node) => ({ id: node.id, href: node.getAttribute('href'), testid: node.getAttribute('data-testid'), label: node.getAttribute('aria-label') })),
+    };
+  }, GL_BINARY_PATH);
+}
+
+function assertGitLabBinaryBreakdown(value, filtered) {
+  const expected = [
+    { label: 'Essential', files: filtered ? '10 files' : '11 files', additions: '+0', deletions: '−0' },
+    { label: 'Tests', files: filtered ? '1 file' : '0 files', additions: '+0', deletions: '−0' },
+    { label: 'Total', files: '11 files', additions: '+0', deletions: '−0' },
+  ];
+  for (const row of expected) assert.deepEqual(value.rows.find((item) => item.label === row.label), row, 'Binary-only breakdown must retain real file counts with zero changed text lines');
+}
+
+async function gitLabBinaryCounts(page, item) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const all = { files: 11, additions: 0, deletions: 0 };
+  const visible = { files: 10, additions: 0, deletions: 0 };
+  try {
+    await patchSettings({ enabled: false });
+    await poll(() => tabState(page), (value) => value.hasDiff === false && value.allowed === false, 'Native binary-only page baseline before Geld classification');
+    item.nativeBaseline = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.badgeGid === 'gid://gitlab/MergeRequest/321472212' && value.file !== null && value.file.hidden === null, 'Genuine eleven-file native Changes badge and observed PNG wrapper');
+    item.nativeBaselineArtifacts = await capture(page, 'gitlab-binary-native-baseline');
+    assert.equal(item.nativeBaseline.stats.length, 0, 'Binary fixture now has a native line-summary surface; the intended fallback-header acceptance fixture changed');
+    assert.equal(item.nativeBaseline.actions?.native, true, 'Actual neutral native action-area fallback host is unavailable');
+    await patchSettings({ enabled: true });
+    item.baselineState = await waitTotals(page, all, all, 0);
+    item.baselineHeaderHints = await headerHintsEvidence(page, '0 tests', '.merge-request-tabs-container > .merge-request-tabs-actions', 'gitlab-binary-baseline');
+    for (const value of [item.baselineHeaderHints.pointer, item.baselineHeaderHints.keyboard]) assertGitLabBinaryBreakdown(value, false);
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: [GL_BINARY_PATH] } });
+    item.filteredState = await waitTotals(page, all, visible, 1);
+    item.filtered = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '10' && value.file?.display === 'none' && value.file.hidden === 'closed', 'Exact observed PNG is categorized through real shared settings and native Changes badge reaches10');
+    item.filteredHeaderHints = await headerHintsEvidence(page, '1 test', '.merge-request-tabs-container > .merge-request-tabs-actions', 'gitlab-binary-filtered');
+    for (const value of [item.filteredHeaderHints.pointer, item.filteredHeaderHints.keyboard]) assertGitLabBinaryBreakdown(value, true);
+    item.categoryInteraction = await categoryInteraction(page, GL_BINARY_PATH, 'gitlab', 'gitlab-binary-category', false);
+    await page.focus('.geld-provider-category-header');
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    const fileSelector = `[data-geld-category-path=${JSON.stringify(GL_BINARY_PATH)}] .geld-provider-category-native-row`;
+    const handle = await page.evaluateHandle((selector) => {
+      const row = document.querySelector(selector);
+      return row?.matches('a,button') ? row : row?.querySelector('a,button') ?? null;
+    }, fileSelector);
+    const clone = handle.asElement();
+    assert.ok(clone !== null, 'Actual binary file category control is unavailable');
+    await clone.click();
+    await discardHandle(handle);
+    item.revealed = await poll(() => gitLabBinaryPresentation(page), (value) => value.file?.display !== 'none' && value.file?.images.some((image) => image.src !== null), 'Actual category reveal retains native binary image presentation', 25_000);
+    assert.equal(item.revealed.file.id, item.nativeBaseline.file.id);
+    assert.equal(item.revealed.file.data, item.nativeBaseline.file.data, 'Native binary source identity changed on category reveal');
+    for (const image of item.nativeBaseline.file.images) assert.ok(item.revealed.file.images.some((value) => value.src === image.src && value.alt === image.alt), 'Category reveal lost an already mounted native source image');
+    item.revealedArtifacts = await capture(page, 'gitlab-binary-image-revealed');
+    await patchSettings({ enabled: false });
+    await poll(() => tabState(page), (value) => value.hasDiff === false && value.allowed === false, 'Master disable releases binary-only source ownership');
+    item.disabled = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.file?.hidden === null && value.file?.display !== 'none', 'Master disable restores actual binary Changes badge and source wrapper');
+    for (const control of item.nativeBaseline.nativeControls) assert.ok(item.disabled.nativeControls.some((value) => JSON.stringify(value) === JSON.stringify(control)), 'Binary header processing lost a native ID, link or review control');
+    await patchSettings({ enabled: true, categoryPatterns: original.categoryPatterns ?? {} });
+    item.restoredState = await waitTotals(page, all, all, 0);
+    item.restored = await poll(() => gitLabBinaryPresentation(page), (value) => value.badge === '11' && value.file?.hidden === null && value.file?.display !== 'none', 'Removing the actual pattern restores the native eleven-file binary review');
+    item.restoredHeaderHints = await headerHintsEvidence(page, '0 tests', '.merge-request-tabs-container > .merge-request-tabs-actions', 'gitlab-binary-restored', false);
+    for (const control of item.nativeBaseline.nativeControls) assert.ok(item.restored.nativeControls.some((value) => JSON.stringify(value) === JSON.stringify(control)), 'Pattern restoration lost a native header control');
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'Real eleven-file PNG-only source retains zero text-line totals while exact shared classification adjusts the native Changes badge11→10, fallback hint pointer/Tab/Escape breakdowns agree, native category image reveal retains source identity, and disable/pattern removal restore native controls/counts. No synthetic zero-line header widgets are inserted.' };
+  } finally { await patchSettings({ enabled: original.enabled ?? true, categoryPatterns: original.categoryPatterns ?? {} }); }
+}
+
 async function openReviewAncestors(page, selector) {
   let clicks = 0;
   for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -1529,6 +1672,66 @@ try {
     item.state = await tabState(page);
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'The actual standalone commit has one file and two added lines in runtime state. Its native file heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved.' };
+  });
+
+  await runCase('gitlab-binary-counts', GL_BINARY, async (page, item) => gitLabBinaryCounts(page, item));
+
+  await runCase('gitlab-commit-link-counts', GL_COMMITS, async (page, item) => {
+    const selector = `#commits #commit-db314bf4 a.commit-row-message[href="/gitlab-org/gitlab/-/merge_requests/266334/diffs?commit_id=${GL_COMMIT_SHA}"]`;
+    item.nativeLink = await poll(() => page.evaluate((selector) => {
+      const link = document.querySelector(selector);
+      if (link === null || link.closest('[data-geld-ui]') !== null || link.getBoundingClientRect().height === 0) return null;
+      link.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+      return { href: link.href, text: link.textContent.trim(), rowId: link.closest('li.commit')?.id, classes: link.className, owned: link.closest('[data-geld-ui]') !== null, tab: document.querySelector('[data-testid="commits-tab"] > a')?.getAttribute('aria-current') };
+    }, selector), (value) => value !== null, 'Genuine visible native Commits-tab link for the immutable selected commit');
+    assert.equal(item.nativeLink.rowId, 'commit-db314bf4');
+    assert.equal(item.nativeLink.tab, 'page');
+    assert.equal(item.nativeLink.owned, false);
+    item.pointer = await installedHover(page, selector, 'pointer', 'gitlab-commit-link-pointer');
+    item.keyboard = await installedHover(page, selector, 'keyboard', 'gitlab-commit-link-keyboard');
+    for (const value of [item.pointer, item.keyboard]) assertGitLabCommitBreakdown(value);
+    assert.equal(item.pointer.text, item.keyboard.text);
+    item.nativeReferenceCards = { status: 'not_evaluated', reason: 'This real native commit-row title targets the provider selected-commit diff. Native GFM/reference cards are separate discovery, not asserted from the Geld tooltip.' };
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'A genuine native MR Commits-tab link shows its own immutable two-file/+12−0 breakdown through trusted pointer and real Tab interactions, with viewport/accessible ownership and Escape assertions. It does not reuse the MR three-file/+36 totals.' };
+  });
+  await runCase('gitlab-native-commit-reference', GL_OVERVIEW, async (page, item) => {
+    const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+    const selector = `#note_4135599303 a.gfm-commit[data-reference-type="commit"][href="${GL_COMMIT}"]`;
+    try {
+      await patchSettings({ compactTimeline: 'off' });
+      item.nativeLink = await poll(() => page.evaluate((selector) => {
+        const link = document.querySelector(selector);
+        if (link === null || link.closest('[data-geld-ui]') !== null || link.getBoundingClientRect().height === 0) return null;
+        link.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+        return { href: link.href, text: link.textContent.trim(), noteId: link.closest('[data-testid="noteable-note-container"]')?.id, referenceType: link.getAttribute('data-reference-type'), commit: link.getAttribute('data-commit'), owned: link.closest('[data-geld-ui]') !== null };
+      }, selector), (value) => value !== null, 'Actual original note commit reference after the real compactTimeline off setting');
+      assert.equal(item.nativeLink.commit, GL_COMMIT_SHA);
+      assert.equal(item.nativeLink.owned, false);
+      await page.hover(selector);
+      await pause(1200);
+      item.nativeReferenceCards = await page.evaluate((selector) => {
+        const link = document.querySelector(selector);
+        const describedBy = (link?.getAttribute('aria-describedby') ?? '').split(/\s+/);
+        const cards = [...document.querySelectorAll('.gl-popover, [data-testid="commit-popover"]')].filter((node) => node.closest('[data-geld-ui]') === null && node.getBoundingClientRect().height > 0).map((node) => ({
+          id: node.id, role: node.getAttribute('role'), described: describedBy.includes(node.id), text: node.textContent.replace(/\s+/g, ' ').trim().slice(0, 1500),
+          links: [...node.querySelectorAll('a[href]')].map((anchor) => ({ href: anchor.href, testid: anchor.getAttribute('data-testid') })), nativeCounts: [...node.querySelectorAll('[data-testid="diff-stats-additions"], [data-testid="diff-stats-deletions"]')].map((count) => ({ testid: count.getAttribute('data-testid'), text: count.textContent })),
+        }));
+        return { status: cards.length === 0 ? 'not_observed' : 'discovery', cards, assertion: 'Native cards are recorded independently; their presence is not a Geld count-hover pass.' };
+      }, selector);
+      item.nativeReferenceArtifacts = await capture(page, 'gitlab-native-commit-reference-observation');
+      item.pointer = await installedHover(page, selector, 'pointer', 'gitlab-native-commit-reference-pointer');
+      item.keyboard = await installedHover(page, selector, 'keyboard', 'gitlab-native-commit-reference-keyboard');
+      for (const value of [item.pointer, item.keyboard]) assertGitLabCommitBreakdown(value);
+      assert.equal(item.pointer.text, item.keyboard.text);
+      item.featureParity = 'partial';
+      return { status: 'passed', verified: 'The actual native note link to the immutable standalone commit shows its source-specific Geld breakdown through pointer and real Tab, with accessible ownership, viewport and Escape assertions. Native reference cards remain separate observations.' };
+    } finally { await patchSettings({ compactTimeline: original.compactTimeline ?? 'compact' }); }
+  });
+  await runCase('gitlab-commit-counts', GL_COMMIT, async (page, item) => {
+    item.commitCounts = await gitLabCommitCounts(page);
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'The actual immutable standalone GitLab commit filters2/+12−0 to1/+2−0, hides its real test file, and restores native counts/visibility through actual category and master settings with source IDs/links retained.' };
   });
 
   for (const [name, url] of [['gitlab-project-mr-list', GL_PROJECT_LIST], ['gitlab-group-mr-list', GL_GROUP_LIST]]) {
