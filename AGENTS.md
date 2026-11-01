@@ -1379,6 +1379,14 @@ Provider-specific surfaces translate settings and sources into shared review and
   Cache clearing aborts or invalidates pending work so a late response cannot repopulate a cleared visit.
   GitLab's explicit `w=1` and `w=0` choices take precedence over automatic whitespace defaults, and explicitly choosing `w=1` removes the stored opt-out.
   A session guard remembers a requested whitespace mode that the site strips from the URL so the extension does not cause a navigation loop.
+- **Bitbucket PR metadata can abbreviate commit hashes.**
+  A public PR's source and destination can carry twelve-character hashes even though the native commit endpoint returns the full SHA.
+  Resolve abbreviated refs in the explicitly identified source or destination repository, including source forks, and require the returned full hash to match the prefix before treating it as immutable.
+  Resolve each snapshot again rather than caching the abbreviation, since a reused prefix, base movement or source-fork change must not inherit the previous snapshot.
+  PR diff and diffstat endpoints redirect to comparison resources, but browser Fetch with `redirect: 'manual'` hides the status and Location behind an `opaqueredirect` response.
+  After resolving the PR snapshot, request the native comparison endpoint directly with `{sourceRepository}:{fullHead}%0D{fullBase}`, `from_pullrequest_id` and `topic=true` instead of trying to follow an unreadable redirect.
+  Keep the exact comparison path and non-pagination query parameters on every diffstat page, so a next link cannot switch refs or merge-base mode within the same repository.
+  The CI runner also pins the source repository and both full commits before acquisition and again before writing a summary.
 - **Native branding belongs to each provider.**
   Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
@@ -1395,8 +1403,10 @@ Provider-specific surfaces translate settings and sources into shared review and
   Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.
   Current Atlaskit default buttons draw the border on `::after` so it does not add to the button's layout height.
   Token mappings documented from Atlassian's design system do not establish that Bitbucket has deployed the same component version or typography rollout.
-  The current verification environment can read Bitbucket's public HTML shell but blocks API/static hosts required to hydrate its PR UI, so exact live Bitbucket DOM and visual parity remain unverified until tested through an allowed environment.
-  Do not replace that verification gap with fabricated selectors or claim documented mappings as a successful public PR browser check.
+  The VM blocks Bitbucket API/static hosts, while the connected TinyFish browser can inspect public PR Overview and Diff pages and exercise their native controls.
+  TinyFish's current tools expose selected element context but cannot export full ancestor HTML, evaluate computed styles or load the supplied extension, so those acceptance checks remain separate.
+  Browser-agent element reference UUIDs are tool references rather than established native DOM IDs, and guessed font sizes or token meanings are not computed-style measurements.
+  Do not replace those verification gaps with fabricated selectors or claim documented mappings and native browsing as a successful installed-extension test.
 
 ## Code review bots
 
