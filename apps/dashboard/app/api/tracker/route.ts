@@ -1,4 +1,6 @@
-import {auditedRoute} from '@/lib/request-audit';
+import { auditedRoute } from '@/lib/request-audit';
+import { readJson } from '@/lib/http';
+import { auditedRoute } from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { parseIssueTracker } from '@geld/core';
@@ -9,8 +11,57 @@ import { trackerConnection } from '@/lib/tracker-status';
 import { encryptCredential } from '@/lib/crypto';
 import { appendAudit } from '@/lib/audit';
 import { transaction } from '@/lib/transactions';
-import { json,sameOrigin } from '@/lib/http';
-export async function GET(request:Request):Promise<Response>{await connection();const actor=await currentActor();const team=new URL(request.url).searchParams.get('team');if(!actor||!team||!await teamMembership(actor.id,team))return json({error:'Team membership is required'},403);const c=await trackerConnection(team);return json({config:c?.config??null,connected:!!c?.source});}
-async function handlePOST(request:Request):Promise<Response>{await connection();if(!sameOrigin(request))return json({error:'Invalid request origin'},403);const actor=await currentActor();if(!actor)return json({error:'Sign in first'},401);const i=z.object({teamId:z.string(),config:z.unknown(),token:z.string().max(10000).optional()}).safeParse(await request.json().catch(()=>null));if(!i.success)return json({error:'Invalid tracker settings'},400);const config=parseIssueTracker(i.data.config);if(!config)return json({error:'Choose a tracker, allowed keys and an HTTPS origin'},400);if(!await teamMembership(actor.id,i.data.teamId,true))return json({error:'Team admin permission is required'},403);const db=database();if(!db)return json({error:'Tracker storage is not configured'},503);await transaction(db,async sql=>{await sql.query(`INSERT INTO tracker_connections(team_id,provider,allowed_keys,base_url,settings,encrypted_credential) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(team_id) DO UPDATE SET config_version=tracker_connections.config_version+1,provider=EXCLUDED.provider,allowed_keys=EXCLUDED.allowed_keys,base_url=EXCLUDED.base_url,settings=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.settings||EXCLUDED.settings ELSE EXCLUDED.settings END,encrypted_credential=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.encrypted_credential ELSE EXCLUDED.encrypted_credential END,encrypted_refresh=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.encrypted_refresh ELSE NULL END,expires_at=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.expires_at ELSE NULL END`,[i.data.teamId,config.provider,config.keys,config.baseUrl??null,JSON.stringify({workspace:config.workspace}),i.data.token?await encryptCredential(i.data.token):null,i.data.token===undefined]);await appendAudit(sql,{teamId:i.data.teamId,actorId:actor.id,action:'tracker.configure',resourceType:'tracker',resourceId:config.provider,outcome:'success',after:{provider:config.provider,connected:!!i.data.token}});});return json({saved:true});}
+import { json, sameOrigin } from '@/lib/http';
+async function readGET(request: Request): Promise<Response> {
+  await connection();
+  const actor = await currentActor();
+  const team = new URL(request.url).searchParams.get('team');
+  if (!actor || !team || !(await teamMembership(actor.id, team)))
+    return json({ error: 'Team membership is required' }, 403);
+  const c = await trackerConnection(team);
+  return json({ config: c?.config ?? null, connected: !!c?.source });
+}
+async function handlePOST(request: Request): Promise<Response> {
+  await connection();
+  if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
+  const actor = await currentActor();
+  if (!actor) return json({ error: 'Sign in first' }, 401);
+  const i = z
+    .object({ teamId: z.string(), config: z.unknown(), token: z.string().max(10000).optional() })
+    .safeParse(await readJson(request).catch(() => null));
+  if (!i.success) return json({ error: 'Invalid tracker settings' }, 400);
+  const config = parseIssueTracker(i.data.config);
+  if (!config) return json({ error: 'Choose a tracker, allowed keys and an HTTPS origin' }, 400);
+  if (!(await teamMembership(actor.id, i.data.teamId, true)))
+    return json({ error: 'Team admin permission is required' }, 403);
+  const db = database();
+  if (!db) return json({ error: 'Tracker storage is not configured' }, 503);
+  await transaction(db, async (sql) => {
+    await sql.query(
+      `INSERT INTO tracker_connections(team_id,provider,allowed_keys,base_url,settings,encrypted_credential) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(team_id) DO UPDATE SET config_version=tracker_connections.config_version+1,provider=EXCLUDED.provider,allowed_keys=EXCLUDED.allowed_keys,base_url=EXCLUDED.base_url,settings=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.settings||EXCLUDED.settings ELSE EXCLUDED.settings END,encrypted_credential=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.encrypted_credential ELSE EXCLUDED.encrypted_credential END,encrypted_refresh=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.encrypted_refresh ELSE NULL END,expires_at=CASE WHEN tracker_connections.provider=EXCLUDED.provider AND tracker_connections.base_url IS NOT DISTINCT FROM EXCLUDED.base_url AND tracker_connections.settings->>'workspace' IS NOT DISTINCT FROM EXCLUDED.settings->>'workspace' AND $7 THEN tracker_connections.expires_at ELSE NULL END`,
+      [
+        i.data.teamId,
+        config.provider,
+        config.keys,
+        config.baseUrl ?? null,
+        JSON.stringify({ workspace: config.workspace }),
+        i.data.token ? await encryptCredential(i.data.token) : null,
+        i.data.token === undefined,
+      ],
+    );
+    await appendAudit(sql, {
+      teamId: i.data.teamId,
+      actorId: actor.id,
+      action: 'tracker.configure',
+      resourceType: 'tracker',
+      resourceId: config.provider,
+      outcome: 'success',
+      after: { provider: config.provider, connected: !!i.data.token },
+    });
+  });
+  return json({ saved: true });
+}
 
-export const POST=auditedRoute(handlePOST,'tracker.post');
+export const POST = auditedRoute(handlePOST, 'tracker.post');
+
+export const GET = auditedRoute(readGET, 'tracker.get');

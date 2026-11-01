@@ -1,4 +1,4 @@
-import {gitlabNoteUrl} from './comment-links';
+import { gitlabNoteUrl } from './comment-links';
 import { z } from 'zod';
 import type {
   Capability,
@@ -352,7 +352,27 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
           .safeParse(r.data.user ?? r.data.author);
         const content = z.object({ raw: z.string() }).safeParse(r.data.content);
         if (typeof r.data.id !== 'number' && typeof r.data.id !== 'string') continue;
-        items.push({ id: String(r.data.id), author: author.success ? author.data.login ?? author.data.username ?? author.data.display_name ?? 'unknown' : 'unknown', body: typeof r.data.body === 'string' ? r.data.body : content.success ? content.data.raw : '', path: null, line: null, url: provider==='gitlab'?gitlabNoteUrl(ref,r.data.id):typeof r.data.html_url === 'string' ? r.data.html_url : '',...(typeof r.data.id==='number'&&Number.isSafeInteger(r.data.id)?{databaseId:r.data.id}:{}),...(typeof r.data.created_at==='string'?{createdAt:r.data.created_at}:typeof r.data.created_on==='string'?{createdAt:r.data.created_on}:{}) });
+        items.push({
+          id: String(r.data.id),
+          author: author.success
+            ? (author.data.login ?? author.data.username ?? author.data.display_name ?? 'unknown')
+            : 'unknown',
+          body: typeof r.data.body === 'string' ? r.data.body : content.success ? content.data.raw : '',
+          path: null,
+          line: null,
+          url:
+            provider === 'gitlab'
+              ? gitlabNoteUrl(ref, r.data.id)
+              : typeof r.data.html_url === 'string'
+                ? r.data.html_url
+                : '',
+          ...(typeof r.data.id === 'number' && Number.isSafeInteger(r.data.id) ? { databaseId: r.data.id } : {}),
+          ...(typeof r.data.created_at === 'string'
+            ? { createdAt: r.data.created_at }
+            : typeof r.data.created_on === 'string'
+              ? { createdAt: r.data.created_on }
+              : {}),
+        });
       }
       return { ok: true, value: items };
     },
@@ -386,7 +406,18 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
       if (!detail.ok) return detail;
       const pull = gitlabPull(detail.value, ref);
       if (!pull?.startSha || pull.headSha !== comment.headSha) return { ok: false, reason: 'invalid_response' };
-      return write(`${pullBase(ref)}/discussions`, 'POST', { body: comment.body, position: { position_type: 'text', base_sha: pull.baseSha, start_sha: pull.startSha, head_sha: pull.headSha, old_path: comment.oldPath ?? comment.path, new_path: comment.path, ...(comment.side === 'new' ? { new_line: comment.line } : { old_line: comment.line }) } });
+      return write(`${pullBase(ref)}/discussions`, 'POST', {
+        body: comment.body,
+        position: {
+          position_type: 'text',
+          base_sha: pull.baseSha,
+          start_sha: pull.startSha,
+          head_sha: pull.headSha,
+          old_path: comment.oldPath ?? comment.path,
+          new_path: comment.path,
+          ...(comment.side === 'new' ? { new_line: comment.line } : { old_line: comment.line }),
+        },
+      });
     },
     async review(ref: PullRef, review: ReviewSubmission) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };

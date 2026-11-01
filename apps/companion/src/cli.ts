@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, access, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, isAbsolute, delimiter } from 'node:path';
@@ -37,10 +37,12 @@ async function main(): Promise<void> {
     if (raw.length > 10000) throw new Error('Invalid pairing file');
     const config = pairingSchema.parse(JSON.parse(raw));
     await mkdir(folder, { recursive: true, mode: 0o700 });
+    await chmod(folder, 0o700);
     await writeFile(configFile, JSON.stringify(config), {
       mode: 0o600,
       flag: 'w',
     });
+    await chmod(configFile, 0o600);
     process.stdout.write('Companion paired. Remove the downloaded pairing file, then run geld-companion serve.\n');
     return;
   }

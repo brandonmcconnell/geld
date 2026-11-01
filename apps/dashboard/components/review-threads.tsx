@@ -67,9 +67,17 @@ function Thread({
         }),
       });
       const value: unknown = await response.json();
-      if (response.ok) { mutationKey.current={content:'',key:''}; setReply(''); onChange(); }
-      else { const parsed = z.object({ error: z.string() }).safeParse(value); setMessage(parsed.success ? parsed.data.error : 'The thread could not be updated.'); }
-    } catch { setMessage('The provider could not confirm this update. Check before trying again.'); }
+      if (response.ok) {
+        mutationKey.current = { content: '', key: '' };
+        setReply('');
+        onChange();
+      } else {
+        const parsed = z.object({ error: z.string() }).safeParse(value);
+        setMessage(parsed.success ? parsed.data.error : 'The thread could not be updated.');
+      }
+    } catch {
+      setMessage('The provider could not confirm this update. Check before trying again.');
+    }
     setBusy(false);
   }
   return (

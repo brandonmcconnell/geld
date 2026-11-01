@@ -12,9 +12,27 @@ import type { PlanFile } from '@geld/review/plan';
 import type { TokenSource } from '@geld/github';
 import { providerClient } from './providers';
 import { reviewSettings } from './review-settings';
-export interface ReviewContext { readonly pull: PullDetail; readonly files: readonly PlanFile[]; readonly comments: readonly ProviderComment[]; readonly commentsUnavailable: boolean; readonly settingsWarning: string | null; readonly aiAllowed: boolean; readonly threads: readonly ProviderThread[]; readonly threadsUnavailable: boolean }
-export async function reviewContext(ref: PullRef, background?: {readonly client:ProviderClient;readonly source:TokenSource;readonly userId:string;readonly organisationSource?:TokenSource;readonly organisationComplete?:boolean}): Promise<ProviderResult<ReviewContext> | { readonly ok: false; readonly reason: 'stale' }> {
-  const client = background?.client ?? await providerClient(ref.provider, ref.host, ref.owner);
+export interface ReviewContext {
+  readonly pull: PullDetail;
+  readonly files: readonly PlanFile[];
+  readonly comments: readonly ProviderComment[];
+  readonly commentsUnavailable: boolean;
+  readonly settingsWarning: string | null;
+  readonly aiAllowed: boolean;
+  readonly threads: readonly ProviderThread[];
+  readonly threadsUnavailable: boolean;
+}
+export async function reviewContext(
+  ref: PullRef,
+  background?: {
+    readonly client: ProviderClient;
+    readonly source: TokenSource;
+    readonly userId: string;
+    readonly organisationSource?: TokenSource;
+    readonly organisationComplete?: boolean;
+  },
+): Promise<ProviderResult<ReviewContext> | { readonly ok: false; readonly reason: 'stale' }> {
+  const client = background?.client ?? (await providerClient(ref.provider, ref.host, ref.owner));
   const pull = await client.pull(ref);
   if (!pull.ok) return pull;
   const [diff, comments, threads] = await Promise.all([client.diff(ref), client.comments(ref), client.threads(ref)]);

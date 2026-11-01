@@ -125,21 +125,48 @@ describe('managed provider access', () => {
   });
 });
 
-describe('managed access recovery',()=>{
-  it('grants GitLab Reporter access and recognizes an already-shared project',async()=>{
-    const requests:{url:string;method:string;body:unknown}[]=[];
-    const adapter=managedAccessAdapter({provider:'gitlab',source,fetch:async(url,init)=>{requests.push({url,method:init?.method??'GET',body:init?.body});return Response.json(init?.method==='POST'?{id:42}:{shared_with_groups:[{group_id:7,group_access_level:20}]});}});
-    const ref:RepositoryRef={provider:'gitlab',host:'gitlab.com',owner:'org',repo:'repo'};
-    await adapter.grant(ref,{id:'42',login:'user',permission:'none',organisationMember:true},'read');
-    expect(requests[0]?.body).toBe(JSON.stringify({user_id:'42',access_level:20}));
-    expect(await adapter.share(ref,'7','read')).toEqual({ok:true,value:undefined});
+describe('managed access recovery', () => {
+  it('grants GitLab Reporter access and recognizes an already-shared project', async () => {
+    const requests: { url: string; method: string; body: unknown }[] = [];
+    const adapter = managedAccessAdapter({
+      provider: 'gitlab',
+      source,
+      fetch: async (url, init) => {
+        requests.push({ url, method: init?.method ?? 'GET', body: init?.body });
+        return Response.json(
+          init?.method === 'POST' ? { id: 42 } : { shared_with_groups: [{ group_id: 7, group_access_level: 20 }] },
+        );
+      },
+    });
+    const ref: RepositoryRef = { provider: 'gitlab', host: 'gitlab.com', owner: 'org', repo: 'repo' };
+    await adapter.grant(ref, { id: '42', login: 'user', permission: 'none', organisationMember: true }, 'read');
+    expect(requests[0]?.body).toBe(JSON.stringify({ user_id: '42', access_level: 20 }));
+    expect(await adapter.share(ref, '7', 'read')).toEqual({ ok: true, value: undefined });
     expect(requests).toHaveLength(2);
     expect(requests[1]?.method).toBe('GET');
   });
-  it('recovers an invitation identifier from an uncertain GitHub grant before withdrawing it',async()=>{
-    const urls:string[]=[];
-    const adapter=managedAccessAdapter({provider:'github',source,fetch:async(url,init)=>{urls.push(url);return init?.method==='DELETE'?new Response(null,{status:204}):Response.json([{id:99,invitee:{id:42}}]);}});
-    expect(await adapter.revoke({provider:'github',host:'github.com',owner:'org',repo:'repo'},{id:'42',login:'user',permission:'none',organisationMember:false},'intent:grant')).toEqual({ok:true,value:undefined});
-    expect(urls).toEqual(['https://api.github.com/repos/org/repo/invitations?per_page=100&page=1','https://api.github.com/repos/org/repo/invitations/99']);
+  it('recovers an invitation identifier from an uncertain GitHub grant before withdrawing it', async () => {
+    const urls: string[] = [];
+    const adapter = managedAccessAdapter({
+      provider: 'github',
+      source,
+      fetch: async (url, init) => {
+        urls.push(url);
+        return init?.method === 'DELETE'
+          ? new Response(null, { status: 204 })
+          : Response.json([{ id: 99, invitee: { id: 42 } }]);
+      },
+    });
+    expect(
+      await adapter.revoke(
+        { provider: 'github', host: 'github.com', owner: 'org', repo: 'repo' },
+        { id: '42', login: 'user', permission: 'none', organisationMember: false },
+        'intent:grant',
+      ),
+    ).toEqual({ ok: true, value: undefined });
+    expect(urls).toEqual([
+      'https://api.github.com/repos/org/repo/invitations?per_page=100&page=1',
+      'https://api.github.com/repos/org/repo/invitations/99',
+    ]);
   });
 });

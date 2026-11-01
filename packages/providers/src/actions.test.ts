@@ -49,10 +49,24 @@ describe('provider confirmation', () => {
   });
 });
 
-describe('Bitbucket archive support',()=>{
-  it.each([true,false])('rejects archived=%s before making an unrelated settings write',async archived=>{
-    const {providerAction}=await import('./actions');let requests=0;
-    expect(await providerAction({provider:'bitbucket',source:{get:async()=>({status:'ok',token:'fixture',refreshed:false})},fetch:async()=>{requests+=1;return Response.json({});}},{provider:'bitbucket',host:'bitbucket.org',owner:'workspace',repo:'repo',number:1},{kind:'settings',archived,description:'Changed'})).toEqual({ok:false,reason:'unsupported'});
+describe('Bitbucket archive support', () => {
+  it.each([true, false])('rejects archived=%s before making an unrelated settings write', async (archived) => {
+    const { providerAction } = await import('./actions');
+    let requests = 0;
+    expect(
+      await providerAction(
+        {
+          provider: 'bitbucket',
+          source: { get: async () => ({ status: 'ok', token: 'fixture', refreshed: false }) },
+          fetch: async () => {
+            requests += 1;
+            return Response.json({});
+          },
+        },
+        { provider: 'bitbucket', host: 'bitbucket.org', owner: 'workspace', repo: 'repo', number: 1 },
+        { kind: 'settings', archived, description: 'Changed' },
+      ),
+    ).toEqual({ ok: false, reason: 'unsupported' });
     expect(requests).toBe(0);
   });
 });
