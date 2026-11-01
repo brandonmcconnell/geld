@@ -1,12 +1,12 @@
 import type Stripe from 'stripe';
 import { connection } from 'next/server';
-import { z } from 'zod';
 import { testStripe, billingGateway } from '@/lib/billing-gateway';
 import { configured } from '@/lib/env';
 import { database } from '@/lib/db';
 import { transaction } from '@/lib/transactions';
 import { applyBillingSnapshot } from '@/lib/billing-events';
 import { json } from '@/lib/http';
+import { bindCheckoutSubscription } from '@/lib/billing-checkouts';
 export async function POST(request: Request): Promise<Response> {
   await connection();
   const stripe = testStripe(); const gateway = billingGateway(); const secret = configured(process.env.STRIPE_WEBHOOK_SECRET); const db = database();
@@ -22,10 +22,13 @@ export async function POST(request: Request): Promise<Response> {
       const customer = typeof session.customer === 'string' ? session.customer : session.customer?.id;
       const subscription = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
       if (!customer || !subscription || session.payment_status !== 'paid') return json({ received: true });
-      const pending = z.object({ team_id: z.string() }).safeParse((await db.query('SELECT team_id FROM billing_checkouts WHERE id = $1 AND state = \'pending\'', [session.id])).rows[0]);
-      if (pending.success) await db.query('UPDATE subscriptions SET stripe_customer_id = $2,stripe_subscription_id = $3 WHERE team_id = $1 AND (stripe_subscription_id IS NULL OR stripe_subscription_id = $3)', [pending.data.team_id,customer,subscription]);
       const snapshot = await gateway.subscription(subscription);
-      await transaction(db, async (sql) => { await applyBillingSnapshot(sql, { eventId: event.id, created: event.created, subscription: snapshot }); await sql.query('UPDATE billing_checkouts SET state = \'completed\' WHERE id = $1', [session.id]); });
+      if (snapshot.customerId !== customer) return json({ error: 'The checkout could not be reconciled' }, 503);
+      await transaction(db, async sql => {
+        const bound = await bindCheckoutSubscription(sql, { checkoutId: session.id, requestKey: session.metadata?.checkout_key ?? null, customerId: customer, subscriptionId: subscription });
+        if (!bound) throw new Error('The checkout needs reconciliation');
+        await applyBillingSnapshot(sql, { eventId: event.id, created: event.created, subscription: snapshot });
+      });
     } else if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
       const snapshot = await gateway.subscription(event.data.object.id);
       await transaction(db, (sql) => applyBillingSnapshot(sql, { eventId: event.id, created: event.created, subscription: snapshot }));

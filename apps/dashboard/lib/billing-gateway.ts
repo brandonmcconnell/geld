@@ -3,8 +3,12 @@ import Stripe from 'stripe';
 import { configured, dashboardOrigin } from './env';
 import { planFor, type Tier } from '@geld/domain';
 export interface BillingSnapshot { readonly id: string; readonly customerId: string; readonly tier: Tier; readonly status: string; readonly seats: number; readonly itemId: string | null; readonly start: number; readonly end: number; readonly card: boolean }
+export interface CheckoutInput { readonly teamId: string; readonly tier: 'starter' | 'team' | 'business'; readonly seats: number; readonly customerId: string | null; readonly key: string }
+export interface CheckoutState { readonly status: 'open' | 'complete' | 'expired'; readonly teamId: string | null; readonly url: string | null }
 export interface BillingGateway {
-  checkout(input: { readonly teamId: string; readonly actorId: string; readonly email: string; readonly tier: Tier; readonly seats: number; readonly customerId: string | null; readonly key: string }): Promise<{ readonly id: string; readonly url: string }>;
+  checkout(input: CheckoutInput): Promise<{ readonly id: string; readonly url: string }>;
+  checkoutState(id: string): Promise<CheckoutState>;
+  expireCheckout(id: string): Promise<void>;
   portal(customerId: string): Promise<string>;
   subscription(id: string): Promise<BillingSnapshot>;
   updateSeats(itemId: string, seats: number, key: string): Promise<void>;
@@ -26,9 +30,18 @@ export function billingGateway(): BillingGateway | null {
       if (!price) throw new Error('This test price is not configured');
       const verifiedPrice = await stripe.prices.retrieve(price);
       if (verifiedPrice.livemode || !verifiedPrice.active || verifiedPrice.currency !== 'usd' || verifiedPrice.unit_amount !== planFor(input.tier).centsPerSeat || verifiedPrice.recurring?.interval !== 'month' || verifiedPrice.recurring.interval_count !== 1) throw new Error('The test price must match this monthly plan');
-      const result = await stripe.checkout.sessions.create({ mode: 'subscription', line_items: [{ price, quantity: input.seats }], ...(input.customerId ? { customer: input.customerId } : { customer_email: input.email }), client_reference_id: input.teamId, metadata: { team_id: input.teamId, actor_id: input.actorId }, subscription_data: { metadata: { team_id: input.teamId } }, payment_method_collection: 'always', success_url: `${dashboardOrigin()}/settings/billing?checkout=complete`, cancel_url: `${dashboardOrigin()}/settings/billing?checkout=cancelled` }, { idempotencyKey: input.key });
+      const result = await stripe.checkout.sessions.create({ mode: 'subscription', line_items: [{ price, quantity: input.seats }], ...(input.customerId ? { customer: input.customerId } : {}), client_reference_id: input.teamId, metadata: { team_id: input.teamId, checkout_key: input.key }, subscription_data: { metadata: { team_id: input.teamId } }, payment_method_collection: 'always', success_url: `${dashboardOrigin()}/settings/billing?checkout=complete`, cancel_url: `${dashboardOrigin()}/settings/billing?checkout=cancelled` }, { idempotencyKey: input.key });
       if (!result.url || result.livemode) throw new Error('A test checkout could not be created');
       return { id: result.id, url: result.url };
+    },
+    async checkoutState(id) {
+      const result = await stripe.checkout.sessions.retrieve(id);
+      if (result.livemode || !result.status) throw new Error('The test checkout could not be verified');
+      return { status: result.status, teamId: result.metadata?.team_id ?? null, url: result.url };
+    },
+    async expireCheckout(id) {
+      const result = await stripe.checkout.sessions.expire(id, {}, { idempotencyKey: `expire:${id}` });
+      if (result.livemode || result.status !== 'expired') throw new Error('The test checkout could not be closed');
     },
     async portal(customerId) {
       const result = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${dashboardOrigin()}/settings/billing` });

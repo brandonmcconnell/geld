@@ -4,6 +4,11 @@ ALTER TABLE subscriptions ADD COLUMN stripe_item_id text;
 ALTER TABLE subscriptions ADD COLUMN pending_tier text;
 ALTER TABLE subscriptions ADD COLUMN included_credits integer NOT NULL DEFAULT 0;
 ALTER TABLE credit_reservations ADD COLUMN period_start timestamptz;
+ALTER TABLE credit_reservations ADD COLUMN billing_subscription_id text;
+ALTER TABLE credit_reservations ADD COLUMN settled_at timestamptz;
+UPDATE credit_reservations r SET period_start=s.period_start,billing_subscription_id=s.stripe_subscription_id
+FROM subscriptions s WHERE r.team_id=s.team_id AND r.state='reserved' AND r.created_at>=s.period_start AND r.created_at<s.period_end;
+UPDATE credit_reservations SET settled_at=created_at WHERE state='settled';
 ALTER TABLE audit_events ADD COLUMN sequence bigint GENERATED ALWAYS AS IDENTITY;
 ALTER TABLE audit_events ADD COLUMN actor_digest text NOT NULL DEFAULT '';
 CREATE TABLE billing_events (
@@ -39,5 +44,9 @@ CREATE TABLE billing_checkouts (
   actor_id text REFERENCES users(id) ON DELETE SET NULL,
   tier text NOT NULL,
   state text NOT NULL DEFAULT 'pending',
+  request_key text NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
+  encrypted_request text,
+  subscription_id text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX billing_checkouts_one_pending ON billing_checkouts(team_id) WHERE state IN ('creating','pending');

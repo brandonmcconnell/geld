@@ -7,6 +7,7 @@ import { database } from '@/lib/db';
 import { json, sameOrigin } from '@/lib/http';
 import { transaction } from '@/lib/transactions';
 import { appendAudit } from '@/lib/audit';
+import { teamCheckout } from '@/lib/billing-checkouts';
 export async function GET(): Promise<Response> {
   await connection();
   const actor = await currentActor();
@@ -34,9 +35,12 @@ export async function POST(request: Request): Promise<Response> {
     const row = z.object({ stripe_customer_id: z.string().nullable(), stripe_subscription_id: z.string().nullable(), seats: z.number() }).parse((await db.query('SELECT s.stripe_customer_id,s.stripe_subscription_id,count(m.user_id)::integer AS seats FROM subscriptions s JOIN team_members m ON m.team_id = s.team_id WHERE s.team_id = $1 GROUP BY s.team_id', [input.teamId])).rows[0]);
     if (input.action === 'portal') return row.stripe_customer_id ? json({ url: await gateway.portal(row.stripe_customer_id) }) : json({ error: 'This team does not have a billing customer yet' }, 409);
     if (!input.tier) return json({ error: 'Choose a plan' }, 400);
-    if (row.stripe_subscription_id) return json({ error: 'Use the billing portal to change an existing subscription' }, 409);
-    const checkout = await gateway.checkout({ teamId: input.teamId, actorId: actor.id, email: actor.email, tier: input.tier, seats: Math.max(1,row.seats), customerId: row.stripe_customer_id, key: input.key });
-    await transaction(db, async (sql) => { await sql.query('INSERT INTO billing_checkouts(id,team_id,actor_id,tier) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [checkout.id,input.teamId,actor.id,input.tier]); await appendAudit(sql, { teamId: input.teamId, actorId: actor.id, action: 'billing.checkout', resourceType: 'subscription', resourceId: input.teamId, outcome: 'pending', after: { tier: input.tier ?? '' } }); });
+    const checkout = await teamCheckout({ teamId: input.teamId, actorId: actor.id, tier: input.tier }, { run: work => transaction(db, work), gateway });
+    if (!checkout.ok) {
+      const messages = { forbidden: 'Only team admins can manage billing', existing: 'Use the billing portal to change an existing subscription', pending: 'A checkout is already being prepared for this team. Try again shortly.', confirming: 'This checkout completed and is awaiting billing confirmation. Try again shortly.', reconcile: 'This checkout needs billing reconciliation before another can start. Contact Geld support.', unavailable: 'The test checkout could not be verified. Try again.' };
+      return json({ error: messages[checkout.reason] }, checkout.reason === 'forbidden' ? 403 : checkout.reason === 'unavailable' ? 503 : 409);
+    }
+    await transaction(db, sql => appendAudit(sql, { teamId: input.teamId, actorId: actor.id, action: 'billing.checkout', resourceType: 'subscription', resourceId: input.teamId, outcome: 'pending', after: { tier: input.tier ?? '' } }));
     return json({ url: checkout.url, testMode: true });
   } catch { return json({ error: 'Billing could not be updated. No live billing is enabled.' }, 503); }
 }
