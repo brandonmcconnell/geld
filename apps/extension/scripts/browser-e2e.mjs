@@ -22,6 +22,7 @@ const FOCUSED_CASES = {
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
+  'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-review': ['gitlab-overview-digest'],
   github: ['github-regression'],
 };
