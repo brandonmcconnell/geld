@@ -1534,7 +1534,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
         });
       return;
     }
-    steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true }, nonce) }];
+    steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true, stackEntries: choice.targets.length }, nonce) }];
   } else if (action === 'queue') steps = [{ number: choice.via.number, request: stackQueueRequest(choice.via.path, nonce) }];
   else {
     const request = STACK_REQUEST[action];
@@ -1560,6 +1560,13 @@ const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
 };
 
 type Request = (pullPath: string, nonce: string) => { readonly url: string; readonly init: RequestInit };
+
+/** How many pull requests merging this stacked one takes: it and every open one below it, when the stack was read. */
+function stackEntriesOf(state: Mounted): { readonly stackEntries?: number } {
+  const members = state.mergeActions?.stack?.members;
+  const at = members?.findIndex((member) => member.current) ?? -1;
+  return members === undefined || at < 0 ? {} : { stackEntries: members.length - at };
+}
 
 /** A place in the merge queue: through the stack's own request for a stacked pull request, as GitHub's merge box sends it. */
 function queueFor(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
@@ -2364,7 +2371,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   const send = async (): Promise<void> => {
     if (submit.disabled) return;
     error.hidden = true;
-    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMerged(state, pullPath));
+    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked, ...stackEntriesOf(state) }, fetchNonce()), () => showMerged(state, pullPath));
     submit.textContent = 'Merging…';
     refresh();
     const failed = await pending;

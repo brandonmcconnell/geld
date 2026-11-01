@@ -706,6 +706,45 @@ describe('the tab bar button', () => {
     where.pathname = '/acme/widgets/pull/7';
   });
 
+  it('squash-merges the entire stack without choosing an author email, which GitHub refuses for several pull requests', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: { url: string; body: unknown }[] = [];
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push({ url, body: JSON.parse(String(init.body)) });
+          return new Response('{"status":"merged"}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          const payload = JSON.parse(mergeBox('MERGEABLE', true));
+          payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
+          payload.mergeRequirements.possibleCommitAuthorEmails = ['me@example.com', 'me@users.noreply.github.com'];
+          payload.mergeRequirements.defaultCommitAuthorEmail = 'me@example.com';
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="merge"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts.map((post) => post.url)).toEqual(['/acme/widgets/pull/9/page_data/enqueue_stack']);
+    expect(posts[0]?.body).toMatchObject({ mergeAction: 'DIRECT_MERGE', mergeMethod: 'SQUASH' });
+    expect(posts[0]?.body).not.toHaveProperty('authorEmail');
+  });
+
   it('confirms a merge only with the chosen method’s commit, whatever order GitHub answers in', async () => {
     const held: { [method: string]: (() => void) | undefined } = {};
     const slow = new Set<string>();
