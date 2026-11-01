@@ -1348,6 +1348,16 @@ note Greptile reads the file from the PR's *source* branch).
 `.github/CODEOWNERS` makes those files owner-reviewed.
 Keep `BUGBOT.md` in step with this file when an invariant changes.
 
+## Contributor licence agreement
+
+Every author of a pull request's commits signs `CLA.md` once, by posting "I have read the Geld CLA and I agree to it." on a pull request or an issue;
+the agreement lets the owner offer contributors' work under other terms too (the planned AGPL §7 App Store permission).
+`.github/workflows/cla.yml` runs `scripts/cla.mjs` (tests: `scripts/cla.test.mjs`, in `pnpm check`) from the default branch on `pull_request_target`, never the pull request's code, sets the `CLA` commit status and keeps one comment on the pull request up to date.
+Signatures live in `signatures.json` on the orphan `cla-signatures` branch (outside the main ruleset), each with the comment's words, its link and the agreement's blob SHA;
+a pull request's check also reads its own comments, so a past contributor can sign on their merged pull request.
+The owner, the Cursor agent and bots are exempt (`ALLOWED_LOGINS`, `ALLOWED_EMAILS`).
+`CLA.md` is the owner's: an agent proposes a change to it in a pull request and the owner decides, and a new version leaves earlier signatures on the version they signed.
+
 ## Verifying changes
 
 There is no GitHub login available to automation here.
