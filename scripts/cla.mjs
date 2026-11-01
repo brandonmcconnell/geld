@@ -267,19 +267,22 @@ async function signatureOf(github, repo, defaultBranch, comment) {
 }
 
 /**
- * Reacts 🚀 on each newly recorded signature's comment, so the signer sees it took. Before a merged pull request is
- * locked, since a locked conversation refuses the reaction; and never failing the run, since the signature is
- * already on record.
+ * Reacts 🚀 on a signing comment, so the signer sees it took. Before a merged pull request is locked, since a locked
+ * conversation refuses the reaction; and never failing the run, since the signature is already on record.
  */
+async function react(github, repo, commentId, login) {
+  try {
+    await github.rest.reactions.createForIssueComment({ ...repo, comment_id: commentId, content: 'rocket' });
+  } catch (error) {
+    console.warn(`@${login}'s signature is on record but its comment could not be reacted to: ${error.message}`);
+  }
+}
+
+/** Reacts to each newly recorded signature's comment, found from the link the record keeps. */
 async function acknowledge(github, repo, signatures) {
   for (const signature of signatures) {
     const id = /#issuecomment-(\d+)$/.exec(signature.comment ?? '')?.[1];
-    if (id === undefined) continue;
-    try {
-      await github.rest.reactions.createForIssueComment({ ...repo, comment_id: Number(id), content: 'rocket' });
-    } catch (error) {
-      console.warn(`Recorded @${signature.login}'s signature but could not react to its comment: ${error.message}`);
-    }
+    if (id !== undefined) await react(github, repo, Number(id), signature.login);
   }
 }
 
@@ -378,7 +381,14 @@ export async function run({ github, context, core }) {
   let signature = null;
   if (signs(comment.body) && !isAllowed(commenter)) {
     const { signatures } = await readSignatures(github, repo);
-    if (!signatures.some((known) => known.id === commenter.id)) signature = await signatureOf(github, repo, defaultBranch, comment);
+    if (signatures.some((known) => known.id === commenter.id)) {
+      // Signed before: the first signature stands and nothing is recorded twice, but this comment gets its 🚀 too. First,
+      // since the check below may lock the pull request.
+      await react(github, repo, comment.id, commenter.login);
+      core.info(`@${commenter.login} had already signed the CLA`);
+    } else {
+      signature = await signatureOf(github, repo, defaultBranch, comment);
+    }
   }
   const extraSignatures = signature === null ? [] : [signature];
 

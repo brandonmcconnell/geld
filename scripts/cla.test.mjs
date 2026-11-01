@@ -394,7 +394,22 @@ describe('an issue', () => {
     await run({ github: fake.github, context: commentEvent({ number: 150 }, comment), core });
     await run({ github: fake.github, context: commentEvent({ number: 150 }, { ...comment, id: 505 }), core });
     assert.deepEqual(fake.recorded().map((signature) => signature.login), ['Batuhan1999']);
-    assert.equal(fake.reactions.length, 1);
+    assert.equal(fake.recorded()[0].comment, comment.html_url);
+    // Signing again changes nothing on record, and still gets its 🚀.
+    assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [504, 505]);
+  });
+
+  it('acknowledges a repeat signature on another merged pull request before locking it', async () => {
+    const rex = { login: 'rexdotsh', id: 103, type: 'User' };
+    const first = { ...signing(rex, 514), html_url: 'https://github.com/brandonmcconnell/geld/pull/13#issuecomment-514' };
+    const again = { ...signing(rex, 515), html_url: 'https://github.com/brandonmcconnell/geld/pull/4#issuecomment-515' };
+    const pulls = { 13: pullRequest(13, { by: rex, merged: true }), 4: pullRequest(4, { by: rex, merged: true }) };
+    const fake = fakeGitHub({ commits: { 13: [[actor(rex)]], 4: [[actor(rex)]] }, comments: { 13: [first], 4: [again] }, pulls });
+    await run({ github: fake.github, context: commentEvent({ number: 13, pull_request: {} }, first), core });
+    await run({ github: fake.github, context: commentEvent({ number: 4, pull_request: {} }, again), core });
+    assert.deepEqual(fake.recorded().map((signature) => [signature.login, signature.comment]), [['rexdotsh', first.html_url]]);
+    assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [514, 515]);
+    assert.deepEqual(fake.locks, [13, 4]);
   });
 
   it('ignores the owner quoting the sentence', async () => {
