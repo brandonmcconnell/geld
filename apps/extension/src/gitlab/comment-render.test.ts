@@ -51,12 +51,20 @@ describe('GitLab native Markdown cloning', () => {
     expect(renderGitLabComment(comment, host)).toBe(true);
     expect([...host.querySelectorAll('th')].map((cell) => cell.textContent)).toEqual(sourceLabels);
     expect(host.querySelector('table')?.textContent).toBe(sourceTable?.textContent);
+    expect([...host.querySelectorAll('th')].map((cell) => cell.getAttribute('scope'))).toEqual(['col', 'col']);
     expect([...host.querySelectorAll('[data-geld-native-table-header-label]')].map((label) => label.className)).toEqual(['gl-font-bold gl-text-inherit', 'gl-font-bold gl-text-inherit']);
     for (const tag of ['table', 'thead', 'tbody', 'tr', 'th', 'td']) expect(host.querySelectorAll(tag)).toHaveLength(source?.querySelectorAll(tag).length ?? 0);
     expect(host.querySelector('button,svg,use,[id],[aria-sort],[data-sort-icon],[data-sourcepos],[onclick]')).toBeNull();
     expect(host.textContent).not.toContain('Re-trigger Greptile');
     expect(document.getElementById('note_11')).toBe(source);
     expect(source?.outerHTML).toBe(before);
+  });
+
+  it('retains validated native header scope without cloning sort state or unknown scope values', () => {
+    const host = fixture('<table><thead><tr><th scope="col" aria-sort="ascending">Column</th><th scope="row">Row</th><th scope="colgroup">Columns</th><th scope="rowgroup">Rows</th><th scope="unknown">Other</th></tr></thead></table>');
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect([...host.querySelectorAll('th')].map((cell) => cell.getAttribute('scope'))).toEqual(['col', 'row', 'colgroup', 'rowgroup', null]);
+    expect(host.querySelector('[aria-sort]')).toBeNull();
   });
 
   it('preserves the observed sort button label weight when the table header itself has normal weight', () => {

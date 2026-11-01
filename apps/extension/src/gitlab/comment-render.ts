@@ -134,6 +134,10 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       const align = node.getAttribute('align');
       if (align !== null && ['left', 'center', 'right'].includes(align)) element.setAttribute('align', align);
     }
+    if (tag === 'th') {
+      const scope = node.getAttribute('scope');
+      if (scope !== null && ['col', 'row', 'colgroup', 'rowgroup'].includes(scope)) element.setAttribute('scope', scope);
+    }
     for (const child of node.childNodes) {
       const cloned = copy(child, depth + 1);
       if (cloned !== null) element.append(cloned);
