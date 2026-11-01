@@ -1633,7 +1633,106 @@ async function verifyGitLabBot(page, item) {
   assert.deepEqual(captured.providerMutations, [], 'Bot verification must never post, resolve, approve or trigger a provider mutation');assert.deepEqual(captured.aiRequests, [], 'AI remains off');
   assert.ok(captured.metadata.every((metadata) => metadata.sha === GL_BOT_HEAD && metadata.diffHead === GL_BOT_HEAD), 'Native head changed during explicit trust verification');
   item.state = await tabState(page);assert.equal(item.state.repository?.path, 'whitebox-aero/whitebox');assert.equal(item.state.repository.provider, 'gitlab');
-  return { featureParity: 'partial', verified: 'Actual installed explicit account trust and withdrawal, native-source clean score, historical resolved item/source preservation. CI warnings remain native and no authenticated provider write is exercised.' };
+  await gitLabReferencesEvidence(page, item);
+  assert.deepEqual(captured.providerMutations, []);assert.deepEqual(captured.aiRequests, []);
+  return { featureParity: 'partial', verified: 'Actual installed explicit account trust and withdrawal, native-source clean score, historical resolved source preservation and exact native incoming/outgoing reference identities with guarded original-source reveal. CI warnings remain native; no authenticated provider write is exercised.' };
+}
+
+function assertGitLabReferenceIndex(index) {
+  const targets = [
+    { repository: 'whitebox-aero/insta360', project: '56211886', nativeId: '488556842', number: '34', kind: 'merge-request', href: 'https://gitlab.com/whitebox-aero/insta360/-/merge_requests/34' },
+    { repository: 'whitebox-aero/whitebox-plugin-device-insta360', project: '62516629', nativeId: '488807245', number: '44', kind: 'merge-request', href: 'https://gitlab.com/whitebox-aero/whitebox-plugin-device-insta360/-/merge_requests/44' },
+    { repository: 'whitebox-aero/whitebox', project: '56243493', nativeId: '185462933', number: '531', kind: 'issue', href: 'https://gitlab.com/whitebox-aero/whitebox/-/work_items/531' },
+  ];
+  for (const direction of ['outgoing', 'incoming']) {
+    const expected = direction === 'outgoing' ? targets : [targets[0], targets[2]];
+    const entries = index[direction] ?? [];
+    assert.equal(entries.length, expected.length, `Actual ${direction} reference count differs from the retained native fixture`);
+    for (const target of expected) {
+      const entry = entries.find((entry) => entry.href === target.href);
+      assert.ok(entry !== undefined, `Missing canonical ${direction} target ${target.href}`);
+      for (const key of ['repository', 'project', 'nativeId', 'number', 'kind', 'href']) assert.equal(entry[key], target[key], `Native ${direction} reference ${key} differs`);
+      assert.ok(entry.native !== null && entry.label === entry.native.label && entry.title === entry.native.title, 'Reference must preserve the actual native label and cached title');
+      assert.equal(entry.source, direction === 'outgoing' ? 'description' : target.number === '34' ? 'note_3381331989' : 'note_3381332675');
+      assert.equal(entry.initializationHooks, false, 'Owned reference link must not copy native initialization hooks');
+    }
+  }
+}
+
+async function gitLabReferencesEvidence(page, item) {
+  const progress = { status: 'reading', snapshots: [], requests: [], scope: 'Native reference index only. Existing body-helper sourceGets has a separate earlier scope; first-party focus/hover and legacy count reads are recorded here.' };
+  item.references = progress;
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const request = (value) => {
+    const url = new URL(value.url());
+    if (url.origin !== 'https://gitlab.com' || !(url.pathname.startsWith('/api/') || /\/merge_requests\/[^/]+\/.*\.json$/.test(url.pathname)) || progress.requests.length >= 60) return;
+    const frames = value.initiator?.()?.stack?.callFrames ?? [];
+    progress.requests.push({ method: value.method(), url: safeUrl(url.href), initiator: frames.some((frame) => frame.url?.startsWith(`chrome-extension://${extensionId}/`)) ? 'extension_frame_observed' : 'native_or_unattributed' });
+  };
+  page.on('request', request);
+  let nativeHandle;
+  let parentHandle;
+  try {
+    await patchSettings({ compactTimeline: 'minimal', collapseDescription: true });
+    const read = () => page.evaluate(() => {
+      const readDirection = (direction) => [...document.querySelectorAll(`[data-geld-review-key="references:${direction}"] > [data-geld-reference]`)].map((row) => {
+        const link = row.querySelector('.geld-provider-review__reference-link');
+        const source = row.getAttribute('data-geld-reference-source');
+        const root = source === 'description' ? document.querySelector('.issuable-discussion [data-testid="description-content"] > .md') : document.getElementById(source);
+        const scope = source === 'description' ? root : root?.querySelector('[data-testid="system-note-content"]');
+        const native = [...scope?.querySelectorAll('a.gfm[href]') ?? []].find((anchor) => anchor.closest('[data-geld-ui]') === null && anchor.href === link?.href);
+        return { href: link?.href, label: row.querySelector('.geld-provider-review__reference-label')?.textContent, title: row.querySelector('.geld-provider-review__reference-title')?.textContent ?? null,
+          repository: row.getAttribute('data-geld-reference-repository'), project: row.getAttribute('data-geld-reference-project'), nativeId: row.getAttribute('data-geld-reference-native-id'), number: row.getAttribute('data-geld-reference-number'), kind: row.getAttribute('data-geld-reference-kind'), source,
+          native: native === undefined ? null : { label: native.textContent.replace(/\s+/g, ' ').trim(), title: (native.getAttribute('title') ?? native.getAttribute('data-geld-hover-title'))?.trim() || null },
+          initializationHooks: link?.hasAttribute('data-reference-type') || link?.hasAttribute('data-popover-mounted') || link?.hasAttribute('data-popover-listener-added') };
+      });
+      return { outgoing: readDirection('outgoing'), incoming: readDirection('incoming') };
+    });
+    progress.before = await pollStable(async () => {
+      const value = await read();progress.snapshots.push(value);if (progress.snapshots.length > 4) progress.snapshots.shift();return value;
+    }, (value) => value.outgoing.length === 3 && value.incoming.length === 2, 'Exact retained native reference groups appear without fetching a new fixture', 8000, (value) => JSON.stringify(value));
+    assertGitLabReferenceIndex(progress.before);
+    const href = 'https://gitlab.com/whitebox-aero/insta360/-/merge_requests/34';
+    const rowSelector = `[data-geld-review-key="references:outgoing"] [data-geld-reference-native-id="488556842"]`;
+    progress.openedSummaries = await openReviewAncestors(page, rowSelector);
+    nativeHandle = await page.evaluateHandle((href) => [...document.querySelectorAll('.issuable-discussion [data-testid="description-content"] > .md a.gfm[href]')].find((anchor) => anchor.closest('[data-geld-ui]') === null && anchor.href === href) ?? null, href);
+    const native = nativeHandle.asElement();assert.ok(native !== null, 'Expected existing native reference anchor');
+    parentHandle = await native.evaluateHandle((anchor) => anchor.parentElement);
+    const readNative = () => native.evaluate((anchor, parent) => {
+      const bounds = anchor.getBoundingClientRect();
+      return { connected: anchor.isConnected, sameParent: anchor.parentElement === parent, focused: document.activeElement === anchor,
+        hiddenByGeldDescription: anchor.closest('[data-geld-provider-description-hidden]') !== null, frameworkHidden: anchor.closest('[hidden],[inert],[aria-hidden="true"]') !== null,
+        text: anchor.textContent, html: anchor.innerHTML, href: anchor.href, project: anchor.getAttribute('data-project'), nativeId: anchor.getAttribute('data-merge-request'), number: anchor.getAttribute('data-iid'), repository: anchor.getAttribute('data-project-path'),
+        bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height }, attributes: Object.fromEntries([...anchor.attributes].map((attribute) => [attribute.name, attribute.value])) };
+    }, parentHandle);
+    progress.nativeBefore = await poll(readNative, (value) => value.hiddenByGeldDescription, 'Real compact settings hide the existing native description reference before reveal', 8000);
+    const button = await page.$(`${rowSelector} button`);assert.ok(button !== null);
+    try {
+      assert.equal(await button.evaluate((node) => node.textContent), 'View in conversation');
+      await button.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' }));
+      progress.clickTarget = await poll(() => button.evaluate((node) => { const rect = node.getBoundingClientRect();const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);return { unobstructed: hit !== null && node.contains(hit), hit: hit?.tagName }; }), (value) => value.unobstructed, 'Actual reference source control is unobstructed', 8000);
+      await button.click();progress.action = 'Real Puppeteer pointer click on View in conversation';
+    } finally { await discardHandle(button); }
+    const assertNative = (value) => {
+      assert.equal(value.connected, true);assert.equal(value.sameParent, true);assert.equal(value.focused, true);assert.equal(value.hiddenByGeldDescription, false);assert.equal(value.frameworkHidden, false);assert.ok(value.bounds.width > 0 && value.bounds.height > 0);
+      for (const key of ['text', 'html', 'href', 'project', 'nativeId', 'number', 'repository']) assert.equal(value[key], progress.nativeBefore[key], `Reference reveal changed native ${key}`);
+    };
+    progress.nativeAfter = await poll(readNative, (value) => value.connected && value.sameParent && value.focused && !value.hiddenByGeldDescription && value.bounds.width > 0 && value.bounds.height > 0, 'Current original native reference is revealed and focused in its existing parent', 8000);
+    assertNative(progress.nativeAfter);
+    progress.artifacts = await capture(page, 'gitlab-reference-index-revealed');
+    progress.nativeAfterCapture = await readNative();assertNative(progress.nativeAfterCapture);
+    progress.afterSnapshots = [];
+    progress.after = await pollStable(async () => { const value = await read();progress.afterSnapshots.push(value);if (progress.afterSnapshots.length > 4) progress.afterSnapshots.shift();return value; }, (value) => { assertGitLabReferenceIndex(value);return true; }, 'Reference identities and native labels survive the real source reveal', 8000, (value) => JSON.stringify(value));
+    assertGitLabReferenceIndex(progress.after);
+    progress.nativeLifecycleAttributeChanges = Object.keys({ ...progress.nativeBefore.attributes, ...progress.nativeAfterCapture.attributes }).filter((key) => progress.nativeBefore.attributes[key] !== progress.nativeAfterCapture.attributes[key]).map((key) => ({ key, before: progress.nativeBefore.attributes[key] ?? null, after: progress.nativeAfterCapture.attributes[key] ?? null }));
+    progress.status = 'passed';
+  } catch (error) { progress.status = 'failed';progress.error = errorText(error);throw error; }
+  finally {
+    page.off('request', request);
+    if (parentHandle !== undefined) await discardHandle(parentHandle);
+    if (nativeHandle !== undefined) await discardHandle(nativeHandle);
+    await patchSettings({ compactTimeline: original.compactTimeline ?? 'compact', collapseDescription: original.collapseDescription ?? false });
+  }
 }
 
 async function openReviewAncestors(page, selector) {

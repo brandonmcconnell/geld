@@ -7,6 +7,8 @@ import type { ProviderSourceActionContext, ProviderSourceSelection } from './sou
 
 export type { ProviderSourceActionContext } from './source-selection';
 import { renderReviewerIdentity } from './reviewer-identity';
+import { referenceForSubject } from './references';
+import type { ProviderReviewReference } from './references';
 import { renderPublisherIdentity } from './publisher-identity';
 import { providerCheckKey, providerCheckPresentation, providerChecksCoverage } from './ci-checks';
 import { providerCheckIcon } from './ci-icons';
@@ -59,6 +61,8 @@ export interface ProviderReviewPanelOptions {
   readonly onActionComplete?: () => void;
   readonly comments?: readonly ProviderReviewComment[];
   readonly events?: readonly ProviderReviewPanelEvent[];
+  readonly references?: readonly ProviderReviewReference[];
+  readonly onRevealReference?: (reference: ProviderReviewReference) => boolean;
   readonly complete?: boolean;
   readonly unavailable?: readonly { readonly area: string; readonly reason: string }[];
   readonly approvalsRequired?: number | null;
@@ -174,6 +178,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let options = initialOptions;
   let identity = '';
   let checksScope: string | null = null;
+  let referenceScope: string | null = null;
   let destroyed = false;
   let items: readonly ReviewItem[] = [];
   let nativeItems: ReadonlyMap<string, ReviewItem> = new Map();
@@ -563,6 +568,59 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return details;
   }
 
+  function references(): readonly ProviderReviewReference[] {
+    const seen = new Set<string>();
+    return (options.references ?? []).filter((reference) => {
+      if (!referenceForSubject(reference, input.subject) || seen.has(reference.id)) return false;
+      seen.add(reference.id);return true;
+    });
+  }
+
+  function activityEvents(): readonly ProviderReviewPanelEvent[] {
+    const represented = new Set(references().filter((reference) => reference.direction === 'incoming').map((reference) => reference.source.eventId));
+    return (options.events ?? []).filter((event) => !represented.has(event.id));
+  }
+
+  function referenceRow(reference: ProviderReviewReference): HTMLElement {
+    const row = node('div', '', 'geld-provider-review__reference');
+    row.dataset.geldReference = reference.id;
+    row.dataset.geldReferenceNativeId = reference.target.nativeId;
+    row.dataset.geldReferenceProject = reference.target.projectId;
+    row.dataset.geldReferenceNumber = reference.target.number;
+    row.dataset.geldReferenceRepository = reference.target.repository;
+    row.dataset.geldReferenceKind = reference.target.kind;
+    row.dataset.geldReferenceSource = reference.source.anchor ?? 'description';
+    const target = node('a', '', 'geld-provider-review__reference-link');
+    target.href = reference.target.url;
+    target.dataset.geldReferenceRole = 'target';
+    target.append(node('span', reference.label, 'geld-provider-review__reference-label'));
+    if (reference.title !== null) {
+      target.title = reference.title;
+      target.append(node('span', reference.title, 'geld-provider-review__reference-title'));
+    }
+    row.append(target);
+    if (reference.source.author !== undefined || reference.source.createdAt !== undefined) {
+      const byline = node('div', reference.source.author?.login ?? '', 'geld-provider-review__byline');
+      const time = reference.source.createdAt === undefined ? null : timestamp(reference.source.createdAt);
+      if (time !== null) byline.append(time);
+      row.append(byline);
+    }
+    if (options.onRevealReference !== undefined) {
+      const actions = node('div', '', 'geld-provider-review__source-actions');
+      const reveal = node('button', 'View in conversation');
+      reveal.dataset.geldReferenceRole = 'source';
+      reveal.type = 'button';
+      const status = node('span', '', 'geld-provider-review__muted');
+      status.setAttribute('role', 'status');
+      reveal.addEventListener('click', () => {
+        if (destroyed || !row.isConnected || !references().some((current) => JSON.stringify(current) === JSON.stringify(reference))) return;
+        status.textContent = options.onRevealReference?.(reference) === true ? '' : 'Original reference is unavailable on this page';
+      });
+      actions.append(reveal, status);row.append(actions);
+    }
+    return row;
+  }
+
   function eventRow(event: ProviderReviewPanelEvent): HTMLElement {
     const row = node('div', '', 'geld-provider-review__event');
     row.dataset.geldEvent = event.id;
@@ -575,7 +633,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   function historySections(comments: ReadonlyMap<string, ProviderReviewComment>, ordinary: readonly ProviderReviewComment[]): readonly HTMLElement[] {
-    const events = options.events ?? [];
+    const events = activityEvents();
     const pushes = events.filter((event) => event.kind === 'push' && Number.isFinite(Date.parse(event.createdAt)) && safeUrl(event.url, input.subject.origin) !== null).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
     interface HistoryEntry { readonly at: number; readonly key: string; readonly render: () => HTMLElement }
     const entries: HistoryEntry[] = [
@@ -750,9 +808,18 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       lines.push('', `## Comment by ${comment.author.login}`, comment.body);
       if (url !== null) lines.push(url);
     }
-    for (const event of options.events ?? []) {
+    for (const event of activityEvents()) {
       const url = safeUrl(event.url, input.subject.origin);
       lines.push(`- ${event.author.login}: ${event.body}${url === null ? '' : ` ${url}`}`);
+    }
+    for (const direction of ['incoming', 'outgoing']) {
+      const entries = references().filter((reference) => reference.direction === direction);
+      if (entries.length === 0) continue;
+      lines.push('', direction === 'incoming' ? '## Incoming references' : '## Outgoing references');
+      for (const reference of entries) {
+        lines.push(`- ${reference.label}${reference.title === null ? '' : ` · ${reference.title}`}: ${reference.target.url}`);
+        if (reference.source.anchor !== null) lines.push(`  ${reference.source.reviewUrl}#${reference.source.anchor}`);
+      }
     }
     return lines.join('\n');
   }
@@ -763,6 +830,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
     const checkFocus = focusedCheck === null ? null : { key: focusedCheck.dataset.geldCheckKey, href: focused?.getAttribute('href') };
     const nextChecksScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
+    const nextReferenceScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
+    const referenceFocus = focused !== null && panel.contains(focused) ? { id: focused.closest('[data-geld-reference]')?.getAttribute('data-geld-reference'), role: focused.getAttribute('data-geld-reference-role') } : null;
     const reviewedFocus = focused !== null && panel.contains(focused) ? focused.getAttribute('data-geld-local-reviewed') ?? focused.getAttribute('data-geld-local-review-focus') : null;
     nativeTimes.clear();
     for (const time of doc.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
@@ -782,7 +851,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     const publication = options.publication?.result;
     const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
-    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
+    const signature = JSON.stringify([input, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
@@ -905,9 +974,17 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       for (const comment of ordinary) section.append(sourceComment(comment));
       children.push(section);
     }
-    if (options.reviewGrouping !== 'batch' && (options.events?.length ?? 0) > 0) {
-      const section = disclosure('activity', `Activity · ${options.events?.length ?? 0}`, false);
-      for (const event of options.events ?? []) {
+    for (const direction of ['incoming', 'outgoing']) {
+      const entries = references().filter((reference) => reference.direction === direction);
+      if (entries.length === 0) continue;
+      const section = disclosure(`references:${direction}`, `${direction === 'incoming' ? 'Incoming' : 'Outgoing'} references · ${entries.length}`, false);
+      for (const reference of entries) section.append(referenceRow(reference));
+      children.push(section);
+    }
+    const events = activityEvents();
+    if (options.reviewGrouping !== 'batch' && events.length > 0) {
+      const section = disclosure('activity', `Activity · ${events.length}`, false);
+      for (const event of events) {
         section.append(eventRow(event));
       }
       children.push(section);
@@ -919,6 +996,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (target !== undefined && target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) target.focus({ preventScroll: true });
     }
     checksScope = nextChecksScope;
+    if (referenceFocus?.id != null && referenceScope === nextReferenceScope && (doc.activeElement === doc.body || doc.activeElement === focused) && (referenceFocus.role === 'target' || referenceFocus.role === 'source')) {
+      const row = [...panel.querySelectorAll<HTMLElement>('[data-geld-reference]')].find((entry) => entry.dataset.geldReference === referenceFocus.id);
+      const control = row?.querySelector<HTMLElement>(`[data-geld-reference-role="${referenceFocus.role}"]`);
+      if (control !== null && control !== undefined && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) control.focus({ preventScroll: true });
+    }
+    referenceScope = nextReferenceScope;
     if (reviewedFocus !== null) {
       const button = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-local-reviewed]')].find((candidate) => candidate.dataset.geldLocalReviewed === reviewedFocus);
       if (button !== undefined) {

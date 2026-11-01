@@ -14,6 +14,7 @@ import { fetchGitLabConfig } from './config';
 import { renderGitLabComment } from './comment-render';
 import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
 import { gitLabAuthorPresentation } from './author-presentation';
+import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
@@ -21,6 +22,8 @@ export const gitlabAdapter: ProviderAdapter = {
   readDiff: readGitLabDiff,
   headerTargets: gitLabHeaderTargets,
   listRows: gitLabListRows,
+  readReferences: readGitLabReferences,
+  referenceAnchor: gitLabReferenceAnchor,
   conversationRoots: gitLabConversationRoots,
   descriptionHost: gitLabDescriptionHost,
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
