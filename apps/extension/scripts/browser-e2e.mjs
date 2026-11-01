@@ -8,6 +8,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
+import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -620,7 +621,7 @@ async function countA11y(page) {
     ownedDescriptions: document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]').length,
   }));
 }
-async function installedHover(page, selector, interaction, artifactName, anchorSelector, { preserveNativeCard = false } = {}) {
+async function installedHover(page, selector, interaction, artifactName, anchorSelector, { preserveNativeCard = false, verifyUnobscured = false, onVisibility } = {}) {
   if (!preserveNativeCard) {
     await page.keyboard.press('Escape');
     await page.mouse.move(1, 1);
@@ -691,10 +692,18 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
     const gap = snapshot.placement === 'below' ? snapshot.bounds.top - snapshot.anchor.bottom : snapshot.anchor.top - snapshot.bounds.bottom;
     assert.ok(Math.abs(gap - 8) <= 1, 'Header tooltip is positioned against its category hint rather than the native group');
   }
+  const visibility = verifyUnobscured ? { beforeScreenshot: await page.evaluate(countHoverVisibilityProbe) } : undefined;
+  if (visibility !== undefined) onVisibility?.({ selector, interaction, ...visibility });
   await page.screenshot({ path: resolve(artifacts, `${artifactName}.png`) });
+  if (visibility !== undefined) {
+    visibility.afterScreenshot = await page.evaluate(countHoverVisibilityProbe);
+    onVisibility?.({ selector, interaction, ...visibility });
+    assert.equal(visibility.beforeScreenshot?.unobscured, true, `Breakdown cells are obscured before capture: ${JSON.stringify(visibility.beforeScreenshot)}`);
+    assert.equal(visibility.afterScreenshot?.unobscured, true, `Breakdown cells are obscured after capture: ${JSON.stringify(visibility.afterScreenshot)}`);
+  }
   await page.keyboard.press('Escape');
   await poll(() => page.evaluate(() => { const tip = document.querySelector('#geld-provider-count-tooltip'); return tip === null || tip.hidden || getComputedStyle(tip).display === 'none'; }), (value) => value, 'Escape dismisses installed hover', 5000);
-  return { ...snapshot, interaction, ...(keyboardNavigation === undefined ? {} : { keyboardNavigation }), screenshot: `${artifactName}.png`, escapeDismissed: true };
+  return { ...snapshot, interaction, ...(visibility === undefined ? {} : { visibility }), ...(keyboardNavigation === undefined ? {} : { keyboardNavigation }), screenshot: `${artifactName}.png`, escapeDismissed: true };
 }
 
 async function headerHintsEvidence(page, expectedLabel, groupSelector, name, interactions = true) {
@@ -1745,7 +1754,20 @@ async function nativeFragmentEvidence(page, anchor, assertSourcesUnchanged, reco
   }
 }
 
-async function bitbucketListCounts(page) {
+async function bitbucketListCounts(page, item) {
+  const identityEvidence = {};
+  item.listIdentityEvidence = identityEvidence;
+  await page.evaluate(() => {
+    const events = [];
+    const describe = (node) => node instanceof Element ? { tag: node.tagName, id: node.id, qa: node.getAttribute('data-qa'), testid: node.getAttribute('data-testid'), role: node.getAttribute('role'), describedBy: node.getAttribute('aria-describedby'), anchorName: node.style.anchorName } : null;
+    const observe = (event) => {
+      const row = event.target instanceof Element ? event.target.closest('tr[data-qa="pull-request-row"]') : null;
+      if (!event.isTrusted || row?.querySelector('a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]') == null || events.length >= 100) return;
+      events.push({ type: event.type, trusted: event.isTrusted, target: describe(event.target), relatedTarget: describe(event.relatedTarget), path: event.composedPath().slice(0, 7).map(describe) });
+    };
+    for (const type of ['pointerover', 'focusin']) document.addEventListener(type, observe, true);
+    globalThis.__geldNativeListEvents = { events, cleanup: () => { for (const type of ['pointerover', 'focusin']) document.removeEventListener(type, observe, true); } };
+  });
   const fixture = BB_PR27_DIFF_FIXTURE;
   const selector = 'tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) .geld-provider-list-counts';
   const requests = [];
@@ -1792,18 +1814,17 @@ async function bitbucketListCounts(page) {
     assert.ok(intent.asElement() !== null);
     await intent.asElement().hover();
     await discardHandle(intent);
-    const read = () => page.evaluate(() => {
-      const title = [...document.querySelectorAll('a[data-qa="pull-request-row-link"]')].find((node) => new URL(node.href).pathname === '/atlassian/bitbucket-upload-file/pull-requests/27' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
-      const row = title?.closest('tr[data-qa="pull-request-row"]');
-      if (row == null) return null;
-      const chip = title.parentElement?.querySelector('.geld-provider-list-counts');
-      return { text: chip?.textContent.replace(/\s+/g, ' ').trim() ?? null, title: chip?.getAttribute('title') ?? null,
-        nativeIds: [row, ...row.querySelectorAll('[id]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.id).filter(Boolean),
-        nativeLinks: [...row.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ href: node.getAttribute('href'), qa: node.getAttribute('data-qa') })), rowHidden: row.hidden, display: getComputedStyle(row).display };
-    });
+    const read = () => page.evaluate(bitbucketListRowSnapshot);
     const initial = await poll(read, (value) => value !== null && /\b0 tests?\b/.test(value.text ?? '') && value.text.includes('+46') && value.text.includes('−29') && !/Counting|unavailable/.test(value.text), 'Visible native Bitbucket PR27 row settles at zero tests and+46−29');
-    const pointer = await installedHover(page, selector, 'pointer', 'bitbucket-list-pointer-hover');
-    const keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-list-keyboard-hover');
+    identityEvidence.initial = initial;
+    assert.equal(initial.chipMount?.insideTitleSpan, false, 'Owned list chip must sit outside the observed native title span tooltip trigger');
+    assert.equal(initial.chipMount?.insideNativePresentation, false, 'Owned list chip must sit outside the observed native title presentation wrapper');
+    const hover = (interaction, name) => installedHover(page, selector, interaction, name, undefined, { verifyUnobscured: true, onVisibility: (evidence) => {
+      identityEvidence.hoverVisibility ??= {};
+      identityEvidence.hoverVisibility[name] = evidence;
+    } });
+    const pointer = await hover('pointer', 'bitbucket-list-pointer-hover');
+    const keyboard = await hover('keyboard', 'bitbucket-list-keyboard-hover');
     const expectedTotal = { label: 'Total', files: `${fixture.all.files} files`, additions: `+${fixture.all.additions}`, deletions: `−${fixture.all.deletions}` };
     for (const hover of [pointer, keyboard]) {
       assert.deepEqual(hover.rows.find((row) => row.label === 'Essential'), { ...expectedTotal, label: 'Essential' });
@@ -1819,28 +1840,40 @@ async function bitbucketListCounts(page) {
     try {
       await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
       filtered = await poll(read, (value) => value !== null && /\b1 test\b/.test(value.text ?? '') && value.text.includes(`+${visible.additions}`) && value.text.includes(`−${visible.deletions}`), 'Shared custom pattern updates the actual same-row Bitbucket chip');
-      filteredHover = await installedHover(page, selector, 'keyboard', 'bitbucket-list-filtered-hover');
+      identityEvidence.filtered = filtered;
+      filteredHover = await hover('keyboard', 'bitbucket-list-filtered-hover');
       assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Essential'), { label: 'Essential', files: '4 files', additions: `+${visible.additions}`, deletions: `−${visible.deletions}` });
       assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '1 file', additions: `+${proof.additions}`, deletions: `−${proof.deletions}` });
       assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Total'), expectedTotal);
       assert.deepEqual(filtered.nativeIds, initial.nativeIds);assert.deepEqual(filtered.nativeLinks, initial.nativeLinks);
     } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
     const restored = await poll(read, (value) => value !== null && value.text === initial.text, 'Removing the shared custom pattern restores native Bitbucket list counts');
+    identityEvidence.restored = restored;
     assert.deepEqual(restored.nativeIds, initial.nativeIds);assert.deepEqual(restored.nativeLinks, initial.nativeLinks);
     const passiveAfterCounts = await assertPassive();
     await patchSettings({ showListStats: false });
     const statsOff = await poll(read, (value) => value !== null && value.text === null && value.display !== 'none', 'Real list-stat disable removes the tested chip while retaining its native row');
+    identityEvidence.statsOff = statsOff;
     await poll(passive, (value) => value.chips === 0, 'Real list-stat disable removes all owned list chips');
     assert.deepEqual(statsOff.nativeIds, initial.nativeIds);assert.deepEqual(statsOff.nativeLinks, initial.nativeLinks);
     await patchSettings({ showListStats: true });
     const statsRestored = await poll(read, (value) => value !== null && value.text === initial.text, 'Real list-stat enable restores the exact PR27 counts');
+    identityEvidence.statsRestored = statsRestored;
     assert.deepEqual(statsRestored.nativeIds, initial.nativeIds);assert.deepEqual(statsRestored.nativeLinks, initial.nativeLinks);
     await poll(passive, (value) => value.otherChips.length > 0, 'Other native rows restore their cold chips');
     const passiveAfterRestore = await assertPassive();
     return { selection: 'Actual native multi-row list is retained without search dependency or DOM hiding. Only PR27 receives explicit count intent; other anonymous chips remain cold.', nativeList, nativeFilter, coldLabel, sourceDemand, passiveBeforeIntent, initial, pointer, keyboard, priorInstalledFixture: fixture, visible, filtered, filteredHover, restored, passiveAfterCounts, statsOff, statsRestored, passiveAfterRestore,
       requestEvidence: { requests, extension: requests.filter((item) => item.extensionInitiator), nativeOrUnattributed: requests.filter((item) => !item.extensionInitiator), basis: 'Actual browser request initiator stacks identify extension frames when supplied; diff/diffstat immutable comparisons additionally retain from_pullrequest_id. Known native deployment400 responses are not count failures.' },
       nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
-  } finally { page.off('request', request); }
+  } finally {
+    page.off('request', request);
+    if (!page.isClosed()) identityEvidence.intentEvents = await page.evaluate(() => {
+      const observed = globalThis.__geldNativeListEvents;
+      observed?.cleanup();
+      delete globalThis.__geldNativeListEvents;
+      return observed?.events ?? [];
+    }).catch((error) => ({ unavailable: String(error) }));
+  }
 }
 
 async function authorPresentationProbe(page, provider, anchor) {
@@ -2175,7 +2208,7 @@ try {
   }
 
   await runCase('bitbucket-list-counts', BB_PR_LIST, async (page, item) => {
-    item.listCounts = await bitbucketListCounts(page);
+    item.listCounts = await bitbucketListCounts(page, item);
     item.state = await tabState(page);
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'The actual visible native PR27 row settles at complete counts. Pointer and real Tab breakdowns plus shared custom-pattern filtering/restoration preserve native IDs and links.' };
