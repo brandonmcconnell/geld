@@ -6,7 +6,7 @@ export function parseQuery(query: string): readonly QueryToken[] {
   const words = query.match(/(?:[^\s"\\]|\\.|"(?:\\.|[^"\\])*")+/g) ?? [];
   return words.map((word) => {
     const colon = word.indexOf(':');
-    const key = colon > 0 && /^[a-z][a-z-]*$/i.test(word.slice(0, colon)) ? word.slice(0, colon).toLowerCase() : null;
+    const key = colon > 0 && /^-?[a-z][a-z-]*$/i.test(word.slice(0, colon)) ? word.slice(0, colon).toLowerCase() : null;
     const raw = key === null ? word : word.slice(colon + 1);
     const value = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1).replace(/\\(["\\])/g, '$1') : raw;
     return { key, value };

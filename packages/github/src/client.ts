@@ -37,7 +37,7 @@ export function createApiTransport(options: { readonly baseUrl: string; readonly
         }
         if (response.status === 401 && attempt === 0 && access.status === 'ok') continue;
         if (response.status === 401) return { ok: false, reason: 'signed_out' };
-        if (response.status === 429 || (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0')) {
+        if (response.status === 429 || (response.status === 403 && (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after')))) {
           const retry = Number(response.headers.get('retry-after'));
           const reset = Number(response.headers.get('x-ratelimit-reset'));
           return { ok: false, reason: 'rate_limit', retryAt: retry > 0 ? now() + retry * 1000 : reset > 0 ? reset * 1000 : null };

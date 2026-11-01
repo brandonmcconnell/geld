@@ -35,8 +35,14 @@ export function githubAccessAdapter(options: { readonly source: TokenSource; rea
     return result.ok ? { ok: true, value: undefined } : result;
   }
   return {
-    grantCollaborator: (ref, user, permission) => request(repoPath(ref, user), 'PUT', { permission: permission === 'read' ? 'pull' : permission === 'write' ? 'push' : 'admin' }),
-    removeCollaborator: (ref, user) => request(repoPath(ref, user), 'DELETE'),
+    async grantCollaborator(ref, user, permission) {
+      if (ref.provider !== 'github' || ref.host !== 'github.com') return { ok: false, reason: 'unsupported' };
+      return request(repoPath(ref, user), 'PUT', { permission: permission === 'read' ? 'pull' : permission === 'write' ? 'push' : 'admin' });
+    },
+    async removeCollaborator(ref, user) {
+      if (ref.provider !== 'github' || ref.host !== 'github.com') return { ok: false, reason: 'unsupported' };
+      return request(repoPath(ref, user), 'DELETE');
+    },
     async addOrganisationMemberToTeam(organisation, team, user) {
       const membership = await api.request(`orgs/${encodeURIComponent(organisation)}/members/${encodeURIComponent(user)}`);
       if (!membership.ok) return membership;
