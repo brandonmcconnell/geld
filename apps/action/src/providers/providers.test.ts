@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSummaryBody, SUMMARY_MARKER } from '@geld/review';
+import { parsePublishedSummaryBody, parseSummaryBody, SUMMARY_HEADING, SUMMARY_MARKER } from '@geld/review';
 import type { ProviderReviewInput } from '@geld/review';
 import { readProviderCiConfig } from './config';
 import type { ProviderCiConfig } from './config';
@@ -13,6 +13,7 @@ const HEAD = 'a'.repeat(40);
 const NEXT = 'b'.repeat(40);
 const DATE = '2026-11-01T10:00:00Z';
 const TOKEN = 'fixture-secret-not-for-logs';
+const SUMMARY_PREFIX = `${SUMMARY_MARKER}\n### ${SUMMARY_HEADING}\n`;
 
 function json(value: unknown, status = 200, headers: Readonly<Record<string, string>> = {}): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -119,7 +120,56 @@ describe('provider summary ownership and determinism', () => {
 
   it('does not select another author by marker or heading', () => {
     expect(findOwnedSummary([{ id: '1', authorId: 'attacker', body: SUMMARY_MARKER }, { id: '2', authorId: 'owner', body: '### Geld review summary' }], 'owner')).toBeNull();
-    expect(findOwnedSummary([{ id: '1', authorId: 'attacker', body: SUMMARY_MARKER }, { id: '2', authorId: 'owner', body: SUMMARY_MARKER }], 'owner')?.id).toBe('2');
+    expect(findOwnedSummary([{ id: '1', authorId: 'attacker', body: SUMMARY_PREFIX }, { id: '2', authorId: 'owner', body: SUMMARY_PREFIX }], 'owner')?.id).toBe('2');
+  });
+
+  it('creates its machine comment without replacing the owner’s ordinary quoted mention', async () => {
+    const comments = [{ id: '901', authorId: '7', body: `I found this documentation example: ${SUMMARY_MARKER}; please investigate.` }];
+    expect(findOwnedSummary(comments, '7')).toBeNull();
+    expect(findOwnedSummary([...comments, { id: '902', authorId: '7', body: `${SUMMARY_PREFIX}Invalid JSON cache` }], '7')?.id).toBe('902');
+    let created = '';
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: input(), comments, notes: [] }),
+      upsert: async (id, body) => { expect(id).toBeNull(); created = body; },
+    };
+    expect(await produceProviderSummary(adapter, DATE)).toBe('created');
+    expect(parsePublishedSummaryBody(created).ok).toBe(true);
+    expect(comments[0]?.body).toContain('please investigate.');
+  });
+
+  it('allows both native APIs to repair an owned machine frame with damaged cached data', async () => {
+    for (const provider of ['gitlab', 'bitbucket'] as const) {
+      const broken = `${SUMMARY_PREFIX}\n\`\`\`geld\n{invalid}\n\`\`\``;
+      expect(parsePublishedSummaryBody(broken).ok).toBe(false);
+      const t = transport((url) => {
+        if (url.pathname.endsWith('/user')) return json(provider === 'gitlab' ? { id: 7 } : { uuid: '{owner}' });
+        return json(provider === 'gitlab' ? { id: 901, author: { id: 7, username: 'geld' }, body: broken } : { id: 901, user: { uuid: '{owner}', nickname: 'geld' }, content: { raw: broken } });
+      });
+      const http = new ProviderHttp(config(provider), t.fetcher);
+      const adapter = provider === 'gitlab' ? new GitLabCiAdapter(http) : new BitbucketCiAdapter(http);
+      await adapter.upsert('901', 'Corrected summary');
+      expect(t.requests.map((request) => request.method)).toEqual(['GET', 'GET', 'PUT']);
+      expect(t.requests[2]?.body).toEqual(provider === 'gitlab' ? { body: 'Corrected summary' } : { content: { raw: 'Corrected summary' } });
+    }
+  });
+
+  it('aborts a previously selected summary when its owner changes the body to an ordinary reply', async () => {
+    for (const provider of ['gitlab', 'bitbucket'] as const) {
+      const owner = provider === 'gitlab' ? '7' : '{owner}';
+      const selected = findOwnedSummary([{ id: '901', authorId: owner, body: `${SUMMARY_PREFIX}Damaged cached data` }], owner);
+      expect(selected?.id).toBe('901');
+      const changed = `The earlier comment was removed. Its marker was ${SUMMARY_MARKER}.`;
+      const t = transport((url) => {
+        if (url.pathname.endsWith('/user')) return json(provider === 'gitlab' ? { id: 7 } : { uuid: owner });
+        return json(provider === 'gitlab' ? { id: 901, author: { id: 7, username: 'geld' }, body: changed } : { id: 901, user: { uuid: owner, nickname: 'geld' }, content: { raw: changed } });
+      });
+      const http = new ProviderHttp(config(provider), t.fetcher);
+      const adapter = provider === 'gitlab' ? new GitLabCiAdapter(http) : new BitbucketCiAdapter(http);
+      await expect(adapter.upsert(selected?.id ?? null, 'New summary')).rejects.toThrow('not owned by the token');
+      expect(t.requests).toHaveLength(2);
+      expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+    }
   });
 
   it('writes a validated native payload, then stops rewriting unchanged own summaries', async () => {
@@ -141,11 +191,64 @@ describe('provider summary ownership and determinism', () => {
     expect(writes).toBe(1);
   });
 
+  it('keeps rich supplemental facts before the final footer and caches an unchanged rerun', async () => {
+    let saved = '';
+    let writes = 0;
+    const source = input();
+    const reviewInput = { ...source, checks: [{ name: 'CI', sha: HEAD, status: 'completed' as const, conclusion: 'success' as const }] };
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: reviewInput, notes: ['Required approvals: 1', '**Tasks**', '- [ ] Task: inspect output'], comments: saved === '' ? [] : [{ id: '11', authorId: '7', body: saved }] }),
+      upsert: async (_id, body) => { saved = body; writes += 1; },
+    };
+    expect(await produceProviderSummary(adapter, DATE)).toBe('created');
+    expect(parsePublishedSummaryBody(saved).ok).toBe(true);
+    expect(saved).toContain('Required approvals: 1\n**Tasks**\n- [ ] Task: inspect output\nCI checks: 1 passed, 0 failed, 0 running, 0 other\n\n<sub>');
+    expect(saved.trimEnd()).toMatch(/<\/span><\/sub>$/);
+    expect(await produceProviderSummary(adapter, '2026-11-02T10:00:00Z')).toBe('unchanged');
+    expect(writes).toBe(1);
+  });
+
   it('leaves an existing summary untouched when the head changes before writing', async () => {
     let writes = 0;
     const adapter: ProviderCiAdapter = { identity: async () => '7', head: async () => NEXT, load: async () => ({ input: input(), notes: [], comments: [] }), upsert: async () => { writes += 1; } };
     await expect(produceProviderSummary(adapter, DATE)).rejects.toThrow('head changed');
     expect(writes).toBe(0);
+  });
+
+  it('excludes only the owned summary note, retaining human replies and native thread state', async () => {
+    const source = input();
+    const original = source.threads[0];
+    const human = original?.comments[0];
+    if (original === undefined || human === undefined) throw new Error('Missing native fixture');
+    const summary = { ...human, id: '11', anchor: 'note_11', url: human.url.replace('#note_10', '#note_11'), author: { id: '7', login: 'geld-ci' }, body: `${SUMMARY_PREFIX}Old summary` };
+    const mixed = { ...original, path: 'src/cache.ts', line: 27, resolved: true, outdated: true, comments: [summary, human] };
+    const summaryOnly = { ...original, id: '87654321', anchor: summary.anchor, url: summary.url, comments: [summary] };
+    let saved = '';
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: { ...source, threads: [mixed, summaryOnly] }, comments: [{ id: '11', authorId: '7', body: summary.body }], notes: [] }),
+      upsert: async (id, body) => { expect(id).toBe('11'); saved = body; },
+    };
+    expect(await produceProviderSummary(adapter, DATE)).toBe('updated');
+    const parsed = parsePublishedSummaryBody(saved);
+    if (!parsed.ok) throw new Error('Invalid generated summary');
+    expect(parsed.value.items).toHaveLength(1);
+    expect(parsed.value.items[0]).toMatchObject({ path: 'src/cache.ts', line: 27, status: 'resolved', sources: [{ sourceId: human.id, authorId: human.author.id, anchor: human.anchor }] });
+    expect(parsed.value.items[0]?.sources.some((entry) => entry.authorId === '7')).toBe(false);
+    expect(source.threads[0]?.comments).toEqual([human]);
+    expect(mixed.comments).toEqual([summary, human]);
+  });
+
+  it('replaces a legacy or body-only cache with a correctly published footer', async () => {
+    let saved = '';
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: input(), comments: [{ id: '11', authorId: '7', body: `${SUMMARY_PREFIX}\n\`\`\`geld\n{}\n\`\`\`` }], notes: [] }),
+      upsert: async (id, body) => { expect(id).toBe('11'); saved = body; },
+    };
+    expect(await produceProviderSummary(adapter, DATE)).toBe('updated');
+    expect(parsePublishedSummaryBody(saved).ok).toBe(true);
   });
 });
 
@@ -154,7 +257,7 @@ describe('GitLab authenticated protocol fixture', () => {
     const project = '/api/v4/projects/group%2Fsubgroup%2Fproject';
     const mr = `${project}/merge_requests/42`;
     const user = { id: 8, username: 'reviewer' };
-    const owned = { id: 901, author: { id: 7, username: 'geld' }, body: `${SUMMARY_MARKER}\nOld body` };
+    const owned = { id: 901, author: { id: 7, username: 'geld' }, body: `${SUMMARY_PREFIX}Old body` };
     const t = transport((url, init) => {
       expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
       expect(init?.redirect).toBe('manual');

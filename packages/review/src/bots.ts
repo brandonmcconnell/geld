@@ -633,7 +633,12 @@ export interface DerivedBotVerdict {
  * is under way). Short — a refusal is a sentence or two with a link to fix
  * it — and shaped like one.
  */
-export function refusalReason(body: string): string | null {
+export interface RefusalOptions {
+  /** Provider-specific code evidence. Omitted keeps the historical GitHub rules. */
+  readonly isSourceLink?: (href: string) => boolean;
+}
+
+export function refusalReason(body: string, options: RefusalOptions = {}): string | null {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<\/?(?:h[1-6]|p|div|br|li|ul|ol|details|summary|blockquote)\b[^>]*>/gi, '\n').replace(/<[^>]+>/g, '');
   // A block ends a sentence: a heading carries no full stop, and merged into the explanation under it the
   // explanation's words would weigh on the heading's reading. Blocks are what a blank line or a heading line
@@ -709,7 +714,7 @@ export function refusalReason(body: string): string | null {
   // describes a feature flag as readily as a bot, and a short review can say exactly that. The one exception is
   // a comment that is nothing but the refusal — "Permission denied.", "Unable to access repository." — a few
   // words with no subject before the phrase; a review of code names what it is about.
-  const bare = sentences[0] !== undefined && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text)) ? sentences[0] : undefined;
+  const bare = sentences[0] !== undefined && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text, options)) ? sentences[0] : undefined;
   const first = skipped ? sentences[0] : (bare ?? sentences.find(isRefusalSentence));
   if (first === undefined) return null;
   // The first sentence, without the bot's own name as a prefix ("Skipping Bugbot: " → the explanation).
@@ -748,10 +753,10 @@ function onlyRefusalWords(text: string): boolean {
  * identifier (an underscore, a dot inside a word, camelCase). A finding
  * about code carries one of those; a refusal has nothing to point at.
  */
-function isBareAdvice(body: string, text: string): boolean {
+function isBareAdvice(body: string, text: string, options: RefusalOptions): boolean {
   // A link is where the advice points ("Visit https://github.com/settings/installations"), not code — unless
   // it points at code: a file in a repository (`/blob/`, `/tree/`, a `#L12` line anchor) is a finding's evidence.
-  if (SOURCE_LINK.test(body)) return false;
+  if (hasSourceLink(body, options)) return false;
   const unlinked = text.replace(/https?:\/\/\S+/g, '');
   if (unlinked.length > 200 || /`/.test(body)) return false;
   // The raw body, not the cleaned text: the cleanup strips underscores as emphasis marks.
@@ -834,6 +839,16 @@ function isRefusalSentence(sentence: string): boolean {
  * `/changes/` in its path is still a link, not code.
  */
 const SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]L?\d+)*[.,;:)\]]*(?:\s|$))/;
+
+function hasSourceLink(body: string, options: RefusalOptions): boolean {
+  if (options.isSourceLink === undefined) return SOURCE_LINK.test(body);
+  const links = [
+    ...[...body.matchAll(/https?:\/\/[^\s<>"']+/gi)].map((match) => match[0].replace(/[.,;:!?)\]}]+$/, '')),
+    ...[...body.matchAll(/\[[^\]]*\]\(\s*<?([^\s)>]+)>?(?:\s+["'][^"']*["'])?\s*\)/g)].map((match) => match[1] ?? ''),
+    ...[...body.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((match) => match[1] ?? ''),
+  ];
+  return links.some(options.isSourceLink);
+}
 
 /** Words that may follow a bare refusal's phrase without making it about the code. */
 const BARE_REFUSAL_WORDS = new Set([
@@ -1057,7 +1072,7 @@ export const RERUN_EDIT_GAP_MS = 5 * 60 * 1000;
  * reports a later run — the bot's latest word, with all threads resolved.
  * A request for a bot counts whoever posts it, another bot included.
  */
-export interface VerdictOptions {
+export interface VerdictOptions extends RefusalOptions {
   /**
    * The comments are not all of them yet (the page is still reading its
    * timeline). An old request for a bot with nothing from the bot after it is
@@ -1262,7 +1277,7 @@ export function verdictsFrom(
       runsBeforeAsk.delete(id);
       continue;
     }
-    const refusal = refusalReason(comment.body);
+    const refusal = refusalReason(comment.body, options);
     if (refusal !== null) {
       reported(id, comment);
       for (const at of [comment.createdAt, comment.editedAt]) {

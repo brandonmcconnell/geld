@@ -1,5 +1,5 @@
 import type { ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread, RawCheckRun } from '@geld/review';
-import { SUMMARY_MARKER } from '@geld/review';
+import { hasPublishedSummaryPrefix } from '@geld/review';
 import { ProviderCiError } from './config';
 import { id, isRecord, object, ProviderHttp, sameReviewUrl, sha, text, time } from './http';
 import type { OwnedComment, ProviderCiAdapter, ProviderCiReview } from './types';
@@ -278,7 +278,7 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
     if (commentId !== null) {
       const [owner, current] = await Promise.all([this.identity(), this.http.request(`${this.reviewPath}/comments/${id(commentId)}`)]);
       const raw = object(current.value);
-      if (author(raw.user).id !== owner || !body(raw.content).includes(SUMMARY_MARKER)) throw new ProviderCiError('Refusing to update a Bitbucket comment not owned by the token.');
+      if (author(raw.user).id !== owner || !hasPublishedSummaryPrefix(body(raw.content))) throw new ProviderCiError('Refusing to update a Bitbucket comment not owned by the token.');
     }
     await this.http.request(`${this.reviewPath}/comments${commentId === null ? '' : `/${id(commentId)}`}`, commentId === null ? 'POST' : 'PUT', { content: { raw: summary } });
   }

@@ -1457,6 +1457,14 @@ Provider-specific surfaces translate settings and sources into shared review and
   Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
   Bitbucket's native merge-check list supplies individual rule labels and observed states, including separate minimum approval and default-reviewer approval rules.
   Those sidebar rules do not establish a numeric approval threshold, complete API availability, review permission or permission to merge.
+- **Published summary caches need an unambiguous machine frame.**
+  Suggested source code can contain payload-shaped title attributes, so machine cache readers use `parsePublishedSummaryBody` and require the renderer's marker, heading and sole final canonical footer outside source-code fences.
+  Legacy parsing remains available for older rendered content, while malformed machine caches are rebuilt instead of adopted.
+  Suggestion fences grow longer than nested backtick runs so source code cannot close the publisher's frame.
+  Native summary selection and fresh update rechecks require the exact leading machine prefix and the token's durable author identity, keeping ordinary owner replies that quote a marker untouched.
+  A native discussion containing the owned machine note keeps its human replies and original location and resolution facts when that note is excluded from a summary.
+  Format validation is separate from author, provider, repository, review and head trust.
+  A native bot finding's source-link evidence uses its actual provider origin, full repository and review routes rather than GitHub-only URL patterns, so source-linked findings do not become false repository-access refusals.
 - **Count text and accessibility can have different native owners.**
   GitLab can put both Added and Removed totals in one native `aria-label`, which must be rewritten as a pair and restored to the latest native wording.
   Bitbucket's visual Lines updated totals are `aria-hidden`, so an owned screen-reader summary supplies the adjusted totals and the surrounding native summary becomes the keyboard hover target without exposing duplicate visual labels.
