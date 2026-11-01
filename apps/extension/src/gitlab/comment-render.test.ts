@@ -40,6 +40,65 @@ describe('GitLab native Markdown cloning', () => {
     expect(host.querySelector('img')).toBeNull();
   });
 
+  it('keeps the observed Greptile table header labels without cloning GitLab sort controls', () => {
+    // Reduced native note3381334808 in installed run41344637837, including GitLab's generated sort buttons.
+    const header = (column: number, label: string): string => `<th aria-sort="none" scope="col" data-sourcepos="22:2-22:11" class="gl-group/markdown-table-header"><div class="gl-flex gl-items-center gl-gap-2"><button id="markdown-table-62-col_${column}-sort" type="button" class="gl-group gl-flex gl-cursor-pointer gl-items-center gl-gap-2 gl-border-0 gl-bg-transparent gl-p-0 gl-text-left gl-font-bold gl-text-inherit focus-visible:gl-outline-none"><span aria-hidden="true" class="gl-absolute gl-inset-0 group-focus-visible:gl-focus-inset"></span> <span>${label}</span> <svg data-testid="sort-lowest-icon" role="img" aria-hidden="true" class="gl-icon s16" data-sort-icon=""><use href="/assets/icons.svg#sort-lowest"></use></svg></button></div></th>`;
+    const host = fixture(`<h3>Important Files Changed</h3><table class="gl-min-w-full gl-overflow-y-hidden"><thead><tr>${header(0, 'Filename')}${header(1, 'Overview')}</tr></thead><tbody><tr><td>backend/pyproject.toml</td><td>Updates dependencies</td></tr><tr><td>backend/poetry.lock</td><td>Locks packages</td></tr></tbody></table><button type="button">Re-trigger Greptile</button>`);
+    const source = document.getElementById('note_11');
+    const before = source?.outerHTML;
+    const sourceTable = source?.querySelector('table');
+    const sourceLabels = [...source?.querySelectorAll('th') ?? []].map((cell) => cell.textContent);
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect([...host.querySelectorAll('th')].map((cell) => cell.textContent)).toEqual(sourceLabels);
+    expect(host.querySelector('table')?.textContent).toBe(sourceTable?.textContent);
+    expect([...host.querySelectorAll('[data-geld-native-table-header-label]')].map((label) => label.className)).toEqual(['gl-font-bold gl-text-inherit', 'gl-font-bold gl-text-inherit']);
+    for (const tag of ['table', 'thead', 'tbody', 'tr', 'th', 'td']) expect(host.querySelectorAll(tag)).toHaveLength(source?.querySelectorAll(tag).length ?? 0);
+    expect(host.querySelector('button,svg,use,[id],[aria-sort],[data-sort-icon],[data-sourcepos],[onclick]')).toBeNull();
+    expect(host.textContent).not.toContain('Re-trigger Greptile');
+    expect(document.getElementById('note_11')).toBe(source);
+    expect(source?.outerHTML).toBe(before);
+  });
+
+  it('preserves the observed sort button label weight when the table header itself has normal weight', () => {
+    document.head.innerHTML = '<style>th { font-weight:400 } button { font:inherit } .gl-font-bold { font-weight:700 }</style>';
+    const host = fixture('<table><thead><tr><th scope="col" aria-sort="none" class="gl-group/markdown-table-header"><div class="gl-flex"><button id="markdown-table-62-col_0-sort" type="button" class="gl-text-inherit gl-font-bold"><span>Filename</span><svg data-sort-icon="" aria-hidden="true"></svg></button></div></th></tr></thead></table>');
+    const source = document.querySelector('#note_11 th');
+    const native = source?.querySelector('button > span');
+    if (!(source instanceof HTMLElement) || !(native instanceof HTMLElement)) throw new Error('Missing native label');
+    expect(getComputedStyle(source).fontWeight).toBe('400');
+    expect(getComputedStyle(native).fontWeight).toBe('700');
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    const label = host.querySelector('[data-geld-native-table-header-label]');
+    if (!(label instanceof HTMLElement)) throw new Error('Missing inert label');
+    expect(getComputedStyle(label).fontWeight).toBe(getComputedStyle(native).fontWeight);
+    expect(label.tagName).toBe('SPAN');
+    expect(host.querySelector('button')).toBeNull();
+  });
+
+  it('drops unknown table buttons instead of treating arbitrary controls as header content', () => {
+    const button = '<button id="markdown-table-62-col_0-sort" type="button"><span>Unknown action</span></button>';
+    const host = fixture(`<table><thead><tr><th>${button}</th></tr></thead><tbody><tr><td>${button}</td></tr></tbody></table><p>${button}</p>`);
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.textContent).not.toContain('Unknown action');
+    expect(host.querySelector('button,[id]')).toBeNull();
+  });
+
+  it.each(['wrong column', 'action attribute', 'nested label', 'outside header'])('rejects a generated-looking button with %s', (change) => {
+    const host = fixture('<table><thead><tr><th scope="col" aria-sort="none" class="gl-group/markdown-table-header"><div class="gl-flex"><button id="markdown-table-62-col_0-sort" type="button" class="gl-text-inherit gl-font-bold"><span>Unknown action</span><svg data-sort-icon="" aria-hidden="true"></svg></button></div></th></tr></thead></table>');
+    const source = document.getElementById('note_11');
+    const button = source?.querySelector('button');
+    if (button === null || button === undefined) throw new Error('Missing candidate control');
+    if (change === 'wrong column') button.id = 'markdown-table-62-col_1-sort';
+    if (change === 'action attribute') button.setAttribute('data-method', 'delete');
+    if (change === 'nested label') button.querySelector('span')?.append(document.createElement('a'));
+    if (change === 'outside header') source?.querySelector('.note-text')?.append(button);
+    const before = source?.outerHTML;
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.textContent).not.toContain('Unknown action');
+    expect(host.querySelector('button,[id],[data-method],svg')).toBeNull();
+    expect(source?.outerHTML).toBe(before);
+  });
+
   it('removes event and provider-action attributes and validates link protocols', () => {
     const host = fixture('<p id="paragraph" onclick="steal()" style="color:red"><a class="gfm js-user-link" href="/group/repo/-/issues/2" data-method="delete" data-user-id="23" target="_top">Issue</a><a href="javascript:steal()">Bad</a><a href="https://outside.example/docs" onmouseover="steal()">Docs</a><a href="#source-heading">Heading</a></p>');
     expect(renderGitLabComment(comment, host)).toBe(true);
