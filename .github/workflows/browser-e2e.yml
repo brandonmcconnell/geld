@@ -1,0 +1,49 @@
+name: Installed browser tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-e2e.yml'
+      - 'apps/extension/**'
+      - 'packages/core/**'
+      - 'packages/review/**'
+      - 'packages/github/**'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @geld/extension build:chrome
+      - name: Locate the runner's Chrome
+        shell: bash
+        run: |
+          browser_executable="$(command -v google-chrome-stable || command -v google-chrome)"
+          "$browser_executable" --version
+          echo "GELD_BROWSER_EXECUTABLE=$browser_executable" >> "$GITHUB_ENV"
+      - name: Test the installed extension on public pages
+        run: pnpm --filter @geld/extension test:browser
+      - name: Save browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: geld-installed-browser-e2e
+          path: artifacts/browser-e2e
+          if-no-files-found: warn
+          retention-days: 7

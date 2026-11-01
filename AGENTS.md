@@ -1437,6 +1437,13 @@ A merged pull request with outside authors is locked once all of them have signe
 
 ## Verifying changes
 
+`pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
+The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
+Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.
+The harness requires the installed service worker, real extension storage and tab messaging, and records browser/manifest identity with screenshots, DOM and a JSON report.
+An inactive provider adapter is an explicit unsupported result rather than a provider-parity pass, and an inaccessible live page must not be substituted with an injected controller or fixture.
+Managed browser installation policies remain in force, so run these tests in an environment configured to permit extension development instead of altering its policies.
+
 There is no GitHub login available to automation here.
 Verify against public pages: `https://github.com/wxt-dev/wxt/pull/2544/files` (classic view, 6 test files), `https://github.com/wxt-dev/wxt/commit/d05ac55ba78b7d01c5ab9feb0e862775e45509ef` (React view), `https://github.com/vitest-dev/vitest/pull/10554/files` (124 files, progressive loading), `https://github.com/wxt-dev/wxt/pulls` (PR list).
 Branded Chrome ignores `--load-extension`;
