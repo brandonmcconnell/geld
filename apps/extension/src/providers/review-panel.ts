@@ -1,4 +1,4 @@
-import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, sourceLink } from '@geld/review';
+import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -245,6 +245,37 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     time.dateTime = date.toISOString();
     time.title = date.toISOString();
     return time;
+  }
+
+  function copyControl(label: string, itemId: string, kind: 'markdown' | 'fix', text: () => string): HTMLElement {
+    const wrapper = node('span');
+    const button = node('button', label, 'geld-provider-review__copy');
+    button.type = 'button';button.setAttribute('aria-label', label);
+    button.dataset.geldItemCopy = itemId;button.dataset.geldCopyKind = kind;
+    const message = node('span', '', 'geld-provider-review__muted');
+    message.setAttribute('role', 'status');message.setAttribute('aria-live', 'polite');
+    const subject = JSON.stringify(input.subject);
+    const route = new URL(doc.URL);route.hash = '';
+    const current = (): boolean => {
+      const active = new URL(doc.URL);active.hash = '';
+      return !destroyed && button.isConnected && subject === JSON.stringify(input.subject) && route.href === active.href;
+    };
+    button.addEventListener('click', () => {
+      if (!current() || button.disabled) return;
+      button.disabled = true;button.setAttribute('aria-busy', 'true');message.textContent = '';
+      const write = options.copyText ?? ((value: string): Promise<void> => navigator.clipboard.writeText(value));
+      void Promise.resolve().then(async () => {
+        if (!current()) return;
+        await write(text());
+        if (current()) { button.textContent = 'Copied';message.textContent = kind === 'fix' ? 'Suggested fix copied.' : 'Item copied as Markdown.'; }
+      }).catch(() => {
+        if (current()) { button.textContent = label;message.textContent = 'Could not copy. Try again.'; }
+      }).finally(() => {
+        if (current()) { button.disabled = false;button.removeAttribute('aria-busy'); }
+      });
+    });
+    wrapper.append(button, message);
+    return wrapper;
   }
 
   function sourceComment(comment: ProviderReviewComment): HTMLElement {
@@ -518,6 +549,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const metadata = [item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, [...new Set(item.sources.map((source) => source.author))].join(', '), countLabel(item.sources.length, 'comment')].filter((value) => value !== '').join(' · ');
       summary.append(node('span', metadata, 'geld-provider-review__muted'));
     }
+    const originalItem = nativeItems.get(item.id);
+    if (originalItem !== undefined) {
+      const controls = node('div', '', 'geld-provider-review__source-actions');
+      controls.setAttribute('role', 'group');controls.setAttribute('aria-label', 'Copy review item');
+      controls.append(copyControl('Copy as Markdown', item.id, 'markdown', () => renderProviderItemMarkdown(item, input.subject, {
+        showFix: fixVisible(item.fix, options.suggestedFixes ?? 'all'), sourceStatus: originalItem.status,
+        reviewedOnDevice: options.localReviewed?.ids.has(item.id) === true,
+      })));
+      details.append(controls);
+    }
     if (item.rewritten === true) details.append(node('p', 'AI triage · original comments below', 'geld-provider-review__muted'));
     const local = options.localReviewed;
     if (local !== undefined) {
@@ -552,7 +593,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     if (fixVisible(item.fix, options.suggestedFixes ?? 'all')) {
       const fix = node('div');
-      fix.append(node('strong', item.fix.source === 'ai' ? 'Suggested fix · AI' : 'Suggested fix'), node('pre', item.fix.text));
+      const heading = node('div', '', 'geld-provider-review__source-actions');
+      heading.append(node('strong', item.fix.source === 'ai' ? 'Suggested fix · AI' : 'Suggested fix'));
+      const value = item.fix.text;
+      if (originalItem !== undefined) heading.append(copyControl('Copy suggested fix', item.id, 'fix', () => value));
+      fix.append(heading, node('pre', value));
       details.append(fix);
     }
     for (const source of item.sources) {
