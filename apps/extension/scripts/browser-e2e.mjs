@@ -15,6 +15,7 @@ import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
+import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -274,6 +275,29 @@ async function capture(page, name) {
   await writeFile(resolve(artifacts, files.accessibility), `${JSON.stringify(await page.accessibility.snapshot({ interestingOnly: false }), null, 2)}\n`);
   return files;
 }
+function observeBitbucketBudget(page, item, abort) {
+  const request = (request) => {
+    if (!bitbucketApi(request.url())) return;
+    bitbucketApiRequests += 1;
+    const now = Date.now();
+    while (bitbucketRequestTimes[0] <= now - 60 * 60 * 1000) bitbucketRequestTimes.shift();
+    bitbucketRequestTimes.push(now);
+    item.observedBitbucketApiRequests = (item.observedBitbucketApiRequests ?? 0) + 1;
+    report.observedBitbucketApiRequests = bitbucketApiRequests;
+    report.observedAnonymousRequestsWithinRollingHour = bitbucketRequestTimes.length;
+    if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget && !abort.signal.aborted) {
+      const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
+      cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));
+      item.rateLimitedUntil = new Date(cooldowns.get('bitbucket')).toISOString();
+      item.holdReason = 'conservative_anonymous_api_budget';
+      abort.abort(new Error('Conservative anonymous Bitbucket API request budget reached; demand stopped before continuing the verification slice'));
+      void page.close().catch(() => undefined);
+    }
+  };
+  page.on('request', request);
+  return () => page.off('request', request);
+}
+
 async function runCase(name, url, body, discovery = false) {
   const item = { name, url, startedAt: new Date().toISOString(), status: 'running', ...(discovery ? { purpose: 'Read-only native surface discovery. No feature parity assertion.' } : {}), console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
   report.cases.push(item);
@@ -292,7 +316,7 @@ async function runCase(name, url, body, discovery = false) {
       return;
     }
     const provider = providerOf(url);
-    const held = (name === 'cross-provider-settings' ? ['gitlab', 'github'] : [provider]).find((site) => (cooldowns.get(site) ?? 0) > Date.now());
+    const held = (name === 'cross-provider-settings' ? ['gitlab', 'github'] : name === 'bitbucket-commit-counts' ? ['bitbucket', 'gitlab', 'github'] : [provider]).find((site) => (cooldowns.get(site) ?? 0) > Date.now());
     const cooldown = cooldowns.get(held);
     if (held !== undefined && cooldown !== undefined) {
       item.cooldownProvider = held;
@@ -312,24 +336,7 @@ async function runCase(name, url, body, discovery = false) {
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
     await page.bringToFront();
     page.on('close', () => { if (!abort.signal.aborted) abort.abort(new Error('Browser case page closed; polling stopped immediately')); });
-    page.on('request', (request) => {
-      if (!bitbucketApi(request.url())) return;
-      bitbucketApiRequests += 1;
-      const now = Date.now();
-      while (bitbucketRequestTimes[0] <= now - 60 * 60 * 1000) bitbucketRequestTimes.shift();
-      bitbucketRequestTimes.push(now);
-      item.observedBitbucketApiRequests = (item.observedBitbucketApiRequests ?? 0) + 1;
-      report.observedBitbucketApiRequests = bitbucketApiRequests;
-      report.observedAnonymousRequestsWithinRollingHour = bitbucketRequestTimes.length;
-      if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget && !abort.signal.aborted) {
-        const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
-        cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));
-        item.rateLimitedUntil = new Date(cooldowns.get('bitbucket')).toISOString();
-        item.holdReason = 'conservative_anonymous_api_budget';
-        abort.abort(new Error('Conservative anonymous Bitbucket API request budget reached; demand stopped before continuing the verification slice'));
-        void page.close().catch(() => undefined);
-      }
-    });
+    observeBitbucketBudget(page, item, abort);
     page.on('console', (message) => { if (item.console.length < 100) item.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
     page.on('pageerror', (error) => { if (item.pageErrors.length < 100) item.pageErrors.push(errorText(error)); });
     page.on('requestfailed', (request) => {
@@ -428,7 +435,8 @@ async function crossSettingsDom(page, provider) {
         return { id: root.id, kind: root.getAttribute('data-geld-container'), expanded: root.hasAttribute('data-geld-expanded'), sectionExpanded: section?.getAttribute('data-expanded') ?? null, toggleExpanded: toggle?.getAttribute('aria-expanded') ?? null, toggleLabel: toggle?.textContent?.trim() ?? null };
       });
     }
-    return { provider: site, url: location.href, hidden: document.hidden, headers, headerIdentity, groups, files: files.sort((a, b) => String(a.path).localeCompare(String(b.path))) };
+    const nativeCheckboxes = [...document.querySelectorAll('input[type="checkbox"]')].filter(native).map((node) => ({ id: node.id, name: node.name, checked: node.checked }));
+    return { provider: site, url: location.href, hidden: document.hidden, headers, headerIdentity, groups, nativeCheckboxes, files: files.sort((a, b) => String(a.path).localeCompare(String(b.path))) };
   }, provider);
 }
 
@@ -2255,7 +2263,166 @@ async function bitbucketParentCommitHover(page, oracle) {
   return { status: 'passed', native, preparation, pointer, keyboard, oracle: observed, remainingBeforeDiscovery: remaining, basis: 'A genuine native parent link, real pointer and Tab input, and its own already-issued full metadata/diffstat responses. No parent count is assumed.' };
 }
 
-async function bitbucketCommitCounts(page) {
+async function threeSiteBitbucketDom(page) {
+  return page.evaluate(() => {
+    const native = (node) => node.closest('[data-geld-ui]') === null;
+    const region = document.querySelector('[role="region"][aria-label="Diff"]');
+    const heading = [...document.querySelectorAll('[role="region"][aria-label="Diff"] > div > div > h2')].find((node) => /^[\d,]+ files?$/.test(node.textContent.trim()));
+    const tab = document.querySelector('[data-testid="sidebar-tab-files"][role="tab"]');
+    const badge = tab?.querySelector(':scope > span > div > span > span');
+    const count = (node) => { const value = node?.textContent?.replace(/,/g, '').match(/^\d+/)?.[0]; return value === undefined ? null : Number(value); };
+    const anchor = document.getElementById('chg-pipe/pipe.py'); const file = anchor?.parentElement;
+    const groups = [...document.querySelectorAll('.geld-provider-diffs')].map((root) => { const toggle = root.querySelector(':scope > .geld-provider-hidden .geld-provider-toggle'); return { id: root.id, expanded: toggle?.getAttribute('aria-expanded') === 'true', toggleExpanded: toggle?.getAttribute('aria-expanded') ?? null, toggleLabel: toggle?.textContent?.trim() ?? null }; });
+    return { provider: 'bitbucket', url: location.href, hidden: document.hidden,
+      headers: [{ files: count(heading) }, { files: count(badge) }],
+      headerIdentity: { region: region?.getAttribute('aria-label') ?? null, headingTag: heading?.tagName ?? null, tabId: tab?.id ?? null, tabTestid: tab?.getAttribute('data-testid') ?? null, tabRole: tab?.getAttribute('role') ?? null },
+      files: file == null ? [] : [{ id: anchor.id, path: file.querySelector('[data-qa="bk-filepath"]')?.textContent ?? null, head: null, hidden: file.getAttribute('data-geld-provider-hidden'), display: getComputedStyle(file).display }], groups,
+      nativeLinks: [...region?.querySelectorAll('a[href]') ?? []].filter(native).map((node) => node.getAttribute('href')),
+      nativeCheckboxes: [...document.querySelectorAll('input[type="checkbox"]')].filter(native).map((node) => ({ id: node.id, name: node.name, checked: node.checked })) };
+  });
+}
+
+async function verifyThreeSiteCommitSettings(bitbucket, item, source, oracle) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY);
+  assertPatternOnlySettings(original, original);
+  const evidence = { mechanism: 'One actual Chrome sync settings key across three foregrounded public tabs; categoryPatterns is the sole modified field.',
+    scope: 'Same installed browser profile only, not cross-device synchronization. Native/unattributed Bitbucket refresh is recorded separately from extension demand.',
+    storageArea: 'chrome.storage.sync', storageKey: SETTINGS_KEY, extensionId, stages: [], counterparts: [], bitbucketRequests: [], providerMutations: [], aiRequests: [] };
+  item.threeSiteSettings = evidence;
+  const readSettings = () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY);
+  const settingsSummary = (settings) => ({ enabled: settings.enabled, categories: settings.categories, categoryPatterns: settings.categoryPatterns ?? {}, aiEnabled: settings.aiEnabled, autoViewed: settings.autoViewed, hideWhitespace: settings.hideWhitespace, repoConfigs: settings.repoConfigs });
+  const abort = currentCaseAbort;
+  const originalBitbucketUrl = bitbucket.url();
+  let closing = false;
+  const auxiliaries = [];
+  const detach = [];
+  const sourceRead = () => oracle.snapshot(new URL(bitbucket.url()).pathname.split('/').at(-1));
+  const tabs = [{ provider: 'bitbucket', page: bitbucket, oracle: { repo: 'atlassian/bitbucket-upload-file', all: source.totals, visible: source.totals, hidden: 0, sha: source.sha }, evidence: {} }];
+  const observeReadOnly = (page) => {
+    const request = (value) => {
+      const url = new URL(value.url());
+      if (/\/(?:chat\/completions|responses|completions)\/?$/.test(url.pathname) && providerOf(url.href) === null) evidence.aiRequests.push(safeUrl(url.href));
+      const site = providerOf(url.href);
+      if (site === null || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(value.method())) return;
+      const mutation = /\/(?:api\/)?graphql$/.test(url.pathname) ? /\bmutation\b/.test(value.postData() ?? '')
+        : /\/(?:notes|discussions|draft_notes|approve|unapprove|reviews|comments|tasks|request-changes|merge|decline)(?:\/|$)/.test(url.pathname);
+      if (mutation) evidence.providerMutations.push({ provider: site, method: value.method(), url: safeUrl(url.href) });
+    };
+    page.on('request', request); detach.push(() => page.off('request', request));
+  };
+  const bbRequest = (request) => {
+    const record = settingsRequestEvidence({ url: request.url(), method: request.method(), initiator: request.initiator?.() }, extensionId);
+    if (record !== null) {
+      evidence.bitbucketRequests.push({ ...record, url: safeUrl(record.url) });
+      if (record.extensionInitiator && !abort.signal.aborted) { abort.abort(new Error('Pattern-only shared settings triggered an extension-attributed Bitbucket source request')); void bitbucket.close().catch(() => undefined); }
+    }
+  };
+  bitbucket.on('request', bbRequest); detach.push(() => bitbucket.off('request', bbRequest));
+  observeReadOnly(bitbucket);
+  const guard = async () => {
+    abort.signal.throwIfAborted();
+    assert.equal(bitbucket.url(), originalBitbucketUrl, 'Three-site settings changed the Bitbucket commit selection');
+    assertPatternOnlySettings(await readSettings(), original);
+    assert.deepEqual(evidence.bitbucketRequests.filter((request) => request.extensionInitiator), [], 'Pattern-only cross-site settings triggered another extension-attributed Bitbucket source request');
+    assert.deepEqual(evidence.providerMutations, [], 'Shared settings verification must never write to a provider');
+    assert.deepEqual(evidence.aiRequests, [], 'AI must stay off throughout shared settings verification');
+  };
+  const activate = async (tab) => { await tab.page.bringToFront(); await poll(() => tab.page.evaluate(() => document.hidden), (hidden) => hidden === false, `${tab.provider} shared-settings foreground activation`); };
+  const read = async (tab) => ({ state: await tabState(tab.page), dom: tab.provider === 'bitbucket' ? await threeSiteBitbucketDom(tab.page) : await crossSettingsDom(tab.page, tab.provider), ...(tab.provider === 'bitbucket' ? { source: sourceRead() } : {}) });
+  const stage = async (label, mode) => {
+    const stage = { label, settings: settingsSummary(await readSettings()), tabs: [] }; evidence.stages.push(stage);
+    await guard();
+    for (const tab of tabs) {
+      await activate(tab);
+      const sample = await pollStable(() => read(tab), (value) => sharedSettingsSampleValid(tab.provider, value, tab.oracle, mode), `${tab.provider} actual shared ${label} semantic/native totals`, WAIT_MS, (value) => JSON.stringify([value.state.visible, value.state.hiddenCount, value.dom.headers, value.dom.files, value.dom.groups]));
+      if (tab.baseline !== undefined) {
+        assert.deepEqual(sharedSettingsSourceIdentity(sample.dom), sharedSettingsSourceIdentity(tab.baseline.dom), 'A shared pattern changed native source identity, links or checkbox state');
+        for (const key of ['repo', 'repository', 'diffPageUrl', 'onDiffPage', 'allowed', 'rule']) assert.deepEqual(sample.state[key], tab.baseline.state[key], 'Shared settings changed the selected source/status');
+      }
+      else tab.baseline = sample;
+      const entry = { provider: tab.provider, ...sample }; stage.tabs.push(entry);
+      entry.artifacts = await capture(tab.page, `three-settings-${tab.provider}-${label}`);
+      assert.equal(typeof entry.artifacts.screenshot, 'string');
+      const after = await read(tab);
+      assert.ok(sharedSettingsSampleValid(tab.provider, after, tab.oracle, mode), 'Screenshot capture changed three-site counts/status');
+      assert.deepEqual(sharedSettingsSourceIdentity(after.dom), sharedSettingsSourceIdentity(tab.baseline.dom));
+      for (const key of ['repo', 'repository', 'diffPageUrl', 'onDiffPage', 'allowed', 'rule']) assert.deepEqual(after.state[key], tab.baseline.state[key], 'Screenshot capture changed the selected source/status');
+      await guard();
+    }
+  };
+  try {
+    evidence.bitbucketAuth = await authObservation(bitbucket, 'bitbucket');
+    for (const [provider, url, repo] of [['gitlab', GL_MIXED, 'gitlab-org/gitlab'], ['github', GH_FILES, 'wxt-dev/wxt']]) {
+      assert.ok((cooldowns.get(provider) ?? 0) <= Date.now(), `${provider} cooldown prevents the three-site counterpart navigation`);
+      const page = await browser.newPage(); auxiliaries.push(page);
+      detach.push(observeBitbucketBudget(page, item, abort));
+      page.on('request', bbRequest); detach.push(() => page.off('request', bbRequest));
+      const observed = { provider, console: [], pageErrors: [], requestFailures: [], sourceFailures: [] }; evidence.counterparts.push(observed);
+      page.on('close', () => { if (!closing && !abort.signal.aborted) abort.abort(new Error(`${provider} shared-settings counterpart closed before acceptance`)); });
+      await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+      page.on('console', (message) => { if (observed.console.length < 100) observed.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
+      page.on('pageerror', (error) => { if (observed.pageErrors.length < 100) observed.pageErrors.push(errorText(error)); });
+      page.on('requestfailed', (request) => { if (observed.requestFailures.length < 100) observed.requestFailures.push({ url: safeUrl(request.url()), method: request.method(), error: request.failure()?.errorText }); });
+      page.on('response', (response) => {
+        const site = providerOf(response.url()); if (site === null || response.status() < 400) return;
+        const headers = response.headers();
+        if (observed.sourceFailures.length < 100) observed.sourceFailures.push({ url: safeUrl(response.url()), status: response.status(), retryAfter: headers['retry-after'] ?? null, quotaHeaders: quotaHeaders(headers), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 });
+        if (response.status() === 429) {
+          const until = Date.now() + retryAfter(headers['retry-after'], site); cooldowns.set(site, Math.max(cooldowns.get(site) ?? 0, until));
+          item.cooldownProvider = site; item.rateLimitedUntil = new Date(cooldowns.get(site)).toISOString(); item.holdReason = 'provider_http429';
+          if (!abort.signal.aborted) abort.abort(new Error(`${site} shared-settings HTTP429 until ${item.rateLimitedUntil}`));
+          void page.close().catch(() => undefined);
+        }
+      });
+      observeReadOnly(page);
+      await page.bringToFront();
+      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      abort.signal.throwIfAborted();
+      observed.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) }; assert.equal(response?.status(), 200);
+      assert.equal(page.url(), url, 'The counterpart left its independently proven public fixture selection');
+      observed.auth = await authObservation(page, provider);
+      tabs.push({ provider, page, oracle: { ...SHARED_SETTINGS_NATIVE_ORACLES[provider], repo }, evidence: observed });
+    }
+    evidence.nativeOracles = [{ provider: 'bitbucket', basis: 'Complete already-issued actual commit metadata/diffstat oracle, no extra GET', sha: source.sha, totals: source.totals, provenance: source.provenance }, ...Object.entries(SHARED_SETTINGS_NATIVE_ORACLES).map(([provider, value]) => ({ provider, basis: 'Retained independent untouched native header observation from installed run41348268807; no master toggle in this run', ...value }))];
+    evidence.tabs = await options.evaluate(async (urls) => { const tabs = await chrome.tabs.query({}); return urls.map((url) => { const tab = tabs.find((tab) => tab.url === url); return { url, id: tab?.id ?? null, windowId: tab?.windowId ?? null }; }); }, tabs.map((tab) => tab.page.url()));
+    assert.equal(new Set(evidence.tabs.map((tab) => tab.id)).size, 3);
+    assert.ok(evidence.tabs.every((tab) => Number.isInteger(tab.id) && Number.isInteger(tab.windowId)));
+    assert.equal(new Set(evidence.tabs.map((tab) => tab.windowId)).size, 1);
+    await stage('default-baseline', 'baseline');
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['**/*'] } });
+    assert.deepEqual((await readSettings()).categoryPatterns, { ...original.categoryPatterns, tests: ['**/*'] });
+    await stage('one-global-pattern-all-hidden', 'all');
+    await options.evaluate(async (key, settings) => { const current = (await chrome.storage.sync.get(key))[key] ?? {}; if (Object.hasOwn(settings, 'categoryPatterns')) current.categoryPatterns = settings.categoryPatterns; else delete current.categoryPatterns; await chrome.storage.sync.set({ [key]: current }); }, SETTINGS_KEY, original);
+    await stage('patterns-restored', 'restored');
+  } catch (error) { const cause = abort.signal.aborted ? abort.signal.reason : error; evidence.failure = errorText(cause); throw cause; }
+  finally {
+    const errors = [];
+    try {
+      const latest = await readSettings(); const restored = restoreCategoryPatterns(latest, original);
+      await options.evaluate(async (key, value) => { const current = (await chrome.storage.sync.get(key))[key] ?? {}; if (Object.hasOwn(value, 'categoryPatterns')) current.categoryPatterns = value.categoryPatterns; else delete current.categoryPatterns; await chrome.storage.sync.set({ [key]: current }); }, SETTINGS_KEY, restored);
+      const after = await readSettings(); assertPatternOnlySettings(after, original);
+      assert.deepEqual(Object.hasOwn(after, 'categoryPatterns'), Object.hasOwn(original, 'categoryPatterns')); assert.deepEqual(after.categoryPatterns, original.categoryPatterns);
+      evidence.cleanupSettings = { restored: true, fieldsWritten: ['categoryPatterns'] };
+    } catch (error) { errors.push(error); }
+    closing = true;
+    for (const page of auxiliaries) if (!page.isClosed()) try { await page.close(); } catch (error) { if (!closedTarget(error)) errors.push(error); }
+    if (!bitbucket.isClosed() && !abort.signal.aborted) try {
+      await activate(tabs[0]);
+      if (tabs[0].baseline !== undefined) {
+        const settled = await pollStable(() => read(tabs[0]), (sample) => sharedSettingsSampleValid('bitbucket', sample, tabs[0].oracle, 'restored'), 'Bitbucket remains source-stable after counterpart cleanup', WAIT_MS, (sample) => JSON.stringify([sample.dom.headers, sample.dom.files, sample.state.visible]));
+        assert.deepEqual(sharedSettingsSourceIdentity(settled.dom), sharedSettingsSourceIdentity(tabs[0].baseline.dom));
+      }
+      await guard();
+    } catch (error) { errors.push(error); }
+    evidence.extensionRequests = evidence.bitbucketRequests.filter((request) => request.extensionInitiator);
+    evidence.nativeOrUnattributedRequests = evidence.bitbucketRequests.filter((request) => !request.extensionInitiator);
+    for (const remove of detach) remove();
+    if (errors.length > 0) { evidence.cleanupErrors = errors.map(errorText); throw new AggregateError(errors, 'Three-site shared-settings cleanup failed'); }
+  }
+  evidence.verified = 'One global pattern update drives actual GitLab, GitHub and the already-open Bitbucket commit to semantic/native zero and back, preserving native identities and every other setting. No additional extension-attributed Bitbucket source request; native/unattributed traffic is retained separately.';
+}
+
+async function bitbucketCommitCounts(page, item) {
   const oracle = commitSources.get(page);
   assert.ok(oracle !== undefined, 'Commit response observer must attach before navigation');
   const ref = new URL(page.url()).pathname.split('/').at(-1);
@@ -2300,8 +2467,11 @@ async function bitbucketCommitCounts(page) {
   assert.equal(restored.file.id, native.file.id);assert.deepEqual(restored.nativeLinks, native.nativeLinks);
   const restoredHeaderHints = await headerHintsEvidence(page, '0 tests', headerGroup, 'bitbucket-commit-restored', false);
   assert.deepEqual(restoredHeaderHints.nativeIds, baselineHeaderHints.nativeIds);
-  const parentHover = await bitbucketParentCommitHover(page, oracle);
-  return { source, baseline, native, baselineHeaderHints, filtered, filteredHeaderHints, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, restoredHeaderHints, parentHover, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Already-issued metadata/diffstat is the independent count oracle; actual native file-count surfaces are asserted.' };
+  const proof = { source, baseline, native, baselineHeaderHints, filtered, filteredHeaderHints, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, restoredHeaderHints, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Already-issued metadata/diffstat is the independent count oracle; actual native file-count surfaces are asserted.' };
+  item.commitCounts = proof;
+  await verifyThreeSiteCommitSettings(page, item, source, oracle);
+  proof.parentHover = await bitbucketParentCommitHover(page, oracle);
+  return proof;
 }
 
 await mkdir(artifacts, { recursive: true });
@@ -2489,10 +2659,10 @@ try {
     return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. Anonymous write controls remain unavailable; no provider write is attempted.' };
   });
   await runCase('bitbucket-commit-counts', BB_COMMIT, async (page, item) => {
-    item.commitCounts = await bitbucketCommitCounts(page);
+    item.commitCounts = await bitbucketCommitCounts(page, item);
     item.state = await tabState(page);
     item.featureParity = 'partial';
-    return { status: 'passed', verified: `Standalone totals match complete already-issued immutable metadata/diffstat responses. The native heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved. ${item.commitCounts.parentHover.status === 'passed' ? 'The genuine native parent link also shows its own observed immutable count breakdown by pointer and real Tab input.' : `Parent hover remains unverified: ${item.commitCounts.parentHover.reason}`}` };
+    return { status: 'passed', verified: `Standalone totals match complete already-issued immutable metadata/diffstat responses. The native heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved. The pattern-only shared setting also reaches zero and restores all three public sites without another extension-attributed Bitbucket source request. ${item.commitCounts.parentHover.status === 'passed' ? 'The genuine native parent link also shows its own observed immutable count breakdown by pointer and real Tab input.' : `Parent hover remains unverified: ${item.commitCounts.parentHover.reason}`}` };
   });
 
   await runCase('gitlab-binary-counts', GL_BINARY, async (page, item) => gitLabBinaryCounts(page, item));
