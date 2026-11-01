@@ -15,6 +15,7 @@ const executablePath = process.env.GELD_BROWSER_EXECUTABLE ?? '/usr/bin/google-c
 const SETTINGS_KEY = 'settings'; // @geld/core SETTINGS_STORAGE_KEY = sync:settings; Chrome area's key omits sync:.
 const WAIT_MS = 90_000;
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
+const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
 const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
@@ -206,6 +207,61 @@ async function themeProbe(page) {
   });
 }
 
+async function countA11y(page) {
+  return page.evaluate(() => ({
+    additions: document.querySelector('[data-testid="js-file-addition-line"]')?.closest('[aria-label]')?.getAttribute('aria-label'),
+    changes: document.querySelector('[data-testid="diffs-tab"] > a')?.textContent.trim(),
+    ownedDescriptions: document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]').length,
+  }));
+}
+async function installedHover(page, selector, interaction, artifactName) {
+  await page.keyboard.press('Escape');
+  await page.mouse.move(1, 1);
+  if (interaction === 'keyboard') {
+    const previous = await page.evaluate((target) => {
+      const anchor = document.querySelector(target);
+      const prior = anchor?.closest('li')?.previousElementSibling?.querySelector('a[href]');
+      prior?.focus();
+      return prior !== null && prior !== undefined;
+    }, selector);
+    assert.equal(previous, true, 'Native previous tab needed for real Tab-key traversal is missing');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate((target) => document.activeElement === document.querySelector(target), selector), true, 'Tab did not focus the native Changes anchor');
+  } else await page.hover(selector);
+  const snapshot = await poll(() => page.evaluate((target) => {
+    const host = document.querySelector(target);
+    const tip = document.querySelector('#geld-provider-count-tooltip[role="tooltip"]');
+    if (tip === null || tip.hidden || getComputedStyle(tip).display === 'none') return null;
+    const style = getComputedStyle(tip);
+    const bounds = tip.getBoundingClientRect();
+    return { text: tip.textContent.replace(/\s+/g, ' ').trim(), fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, filter: style.filter,
+      described: [...document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]')].some((owner) => owner === host || host?.contains(owner)),
+      bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
+  }, selector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text), 'Installed native count hover breakdown and accessible owner', 12_000);
+  assert.ok(snapshot.bounds.left >= 0 && snapshot.bounds.right <= snapshot.viewport.width + 1 && snapshot.bounds.top >= 0 && snapshot.bounds.bottom <= snapshot.viewport.height + 1, 'Count tooltip escapes the tested viewport');
+  await page.screenshot({ path: resolve(artifacts, `${artifactName}.png`) });
+  await page.keyboard.press('Escape');
+  await poll(() => page.evaluate(() => { const tip = document.querySelector('#geld-provider-count-tooltip'); return tip === null || tip.hidden || getComputedStyle(tip).display === 'none'; }), (value) => value, 'Escape dismisses installed hover', 5000);
+  return { ...snapshot, interaction, screenshot: `${artifactName}.png`, escapeDismissed: true };
+}
+async function bitbucketNativeStyles(page) {
+  return page.evaluate(() => {
+    const sample = (selector, pseudo, chosen) => {
+      const node = chosen ?? document.querySelector(selector);
+      if (node === null) return null;
+      const style = getComputedStyle(node, pseudo);
+      const keys = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderRadius', 'boxShadow', 'outline', 'height', 'paddingInlineStart', 'paddingInlineEnd', 'transitionDuration'];
+      return { selector, pseudo: pseudo ?? null, tag: node.tagName, text: node.textContent.trim().slice(0, 80), ...Object.fromEntries(keys.map((key) => [key, style[key]])) };
+    };
+    const stateText = [...document.querySelectorAll('[data-qa="pr-branches-and-state-styles"] span')].find((node) => node.children.length === 0 && node.textContent.trim() === 'Merged');
+    const root = getComputedStyle(document.documentElement);
+    const tokens = Object.fromEntries([...root].filter((name) => name.startsWith('--ds-')).map((name) => [name, root.getPropertyValue(name).trim()]));
+    return { scope: 'Computed native Bitbucket styles in actual installed browser; extension adapter remains inactive. No inferred values or hashed selectors.', theme: document.documentElement.getAttribute('data-theme'), colorMode: document.documentElement.getAttribute('data-color-mode'), viewport: { width: innerWidth, height: innerHeight }, tokens,
+      stateText: stateText === undefined ? null : sample('[data-qa="pr-branches-and-state-styles"]', undefined, stateText), stateLozenge: stateText === undefined ? null : sample('[data-qa="pr-branches-and-state-styles"]', undefined, stateText.parentElement?.parentElement), body: sample('body'), moreActions: sample('[data-qa="pr-header-actions-drop-down-menu-styles"] button'), moreActionsBorder: sample('[data-qa="pr-header-actions-drop-down-menu-styles"] button', '::after'),
+      author: sample('[data-qa="pr-header-author"]'), activity: sample('[data-qa="pull-request-overview-activity-content"]'), time: sample('main time'), article: sample('article[data-qa="branch-diff-file"]'), header: sample('[data-qa="bk-file__header"]'), path: sample('h2[data-qa="bk-filepath"]'), code: sample('[data-qa="code-line"]'), line: sample('[data-qa="code-line-permalink"]') };
+  });
+}
+
 await mkdir(artifacts, { recursive: true });
 try {
   const manifestText = await readFile(resolve(extensionPath, 'manifest.json'), 'utf8');
@@ -225,6 +281,7 @@ try {
   assert.equal(installed.id, extensionId);
   assert.equal(installed.manifest.version, manifest.version);
   assert.equal(installed.storageAvailable, true);
+  console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
   report.settings = await patchSettings({ enabled: true, categories: { tests: true }, groupHidden: true, expandedByDefault: false, hideCommentLines: false, testOutline: false, hideLargeDiffs: false, hideWhitespace: false, repoRules: [], hiddenAuthors: [], repoConfigs: 'never', aiEnabled: false, autoViewed: {}, autoUpdatePatterns: false });
 
@@ -233,13 +290,32 @@ try {
     const enabled = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0) && value.hidden.some((row) => row.value === 'closed' && row.display === 'none'), 'Actual native header rewrite and hidden file DOM');
     item.enabledDom = enabled;
     item.theme = await themeProbe(page);
+    item.spokenEnabled = await countA11y(page);
+    assert.match(item.spokenEnabled.additions ?? '', /\b4\b/, 'Spoken additions must match the rewritten4 visible lines');
+    item.hoverAdditions = await installedHover(page, '[data-testid="js-file-addition-line"]', 'pointer', 'gitlab-additions-hover');
+    item.hoverChangesPointer = await installedHover(page, '[data-testid="diffs-tab"] > a', 'pointer', 'gitlab-changes-pointer-hover');
+    item.hoverChangesKeyboard = await installedHover(page, '[data-testid="diffs-tab"] > a', 'keyboard', 'gitlab-changes-keyboard-hover');
+    assert.equal(item.hoverChangesPointer.text, item.hoverAdditions.text, 'Native additions and Changes tooltip totals disagree');
+    assert.equal(item.hoverChangesKeyboard.text, item.hoverAdditions.text, 'Keyboard and pointer breakdowns disagree');
     await patchSettings({ enabled: false });
     item.disabledState = await poll(() => tabState(page), (state) => state.hasDiff === false && state.allowed === false, 'Real sync master toggle disable');
     item.disabledDom = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 3 && row.additions === 36 && row.deletions === 0) && value.hidden.length === 0 && value.inlineHidden === 0 && value.ownUi === 0, 'Native count restoration and owned hide-attribute removal');
+    item.spokenDisabled = await poll(() => countA11y(page), (value) => /\b36\b/.test(value.additions ?? '') && value.ownedDescriptions === 0, 'Native spoken count and hover ownership restored on real storage disable');
     item.disabledArtifacts = await capture(page, 'gitlab-mixed-disabled');
     await patchSettings({ enabled: true });
     item.reenabledState = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
     await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4) && value.hidden.some((row) => row.display === 'none'), 'Reenabled installed native UI');
+    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+    await pause(300);
+    const emulated = await themeProbe(page);
+    const nativeChanged = emulated.native?.background !== item.theme.native?.background || emulated.native?.color !== item.theme.native?.color;
+    item.darkPreferenceProbe = { mechanism: 'OS prefers-color-scheme emulation only; no manual native theme class or CSS injection', nativeThemeChanged: nativeChanged, status: nativeChanged ? 'native_scheme_observed' : 'site_did_not_select_dark_theme', measurement: emulated };
+    if (nativeChanged) {
+      assert.equal(emulated.owned?.color, emulated.native?.color, 'Owned/native text color diverges after native OS scheme change');
+      assert.equal(emulated.owned?.background, emulated.native?.background, 'Owned/native button backgrounds diverge after native OS scheme change');
+      item.darkPreferenceProbe.artifacts = await capture(page, 'gitlab-os-dark');
+    }
+    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
     return {};
   });
   // A failed assertion while disabled must not invalidate the following independent fixture.
@@ -247,6 +323,23 @@ try {
   await runCase('gitlab-all-tests', GL_TESTS, async (page, item) => {
     item.state = await waitTotals(page, { files: 1, additions: 4, deletions: 1 }, { files: 0, additions: 0, deletions: 0 }, 1);
     item.dom = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 0 && row.additions === 0 && row.deletions === 0) && value.hidden.some((row) => row.display === 'none'), 'All-test native zero essential counts and hidden DOM');
+    return {};
+  });
+  await runCase('gitlab-overview-digest', GL_OVERVIEW, async (page, item) => {
+    item.digest = await poll(() => page.evaluate(() => {
+      const panel = document.querySelector('.geld-provider-review');
+      if (panel === null) return null;
+      return { state: panel.getAttribute('data-state'), title: panel.querySelector('h2')?.textContent, reviews: panel.querySelector('[data-geld-review-key="reviewers"] summary')?.textContent,
+        checks: panel.querySelector('[data-geld-review-key="checks"] summary')?.textContent, items: panel.querySelectorAll('[data-geld-item]').length,
+        sources: panel.querySelectorAll('[data-geld-source]').length, reviewerRows: panel.querySelectorAll('.geld-provider-review__standing').length, checkRows: panel.querySelectorAll('.geld-provider-review__check').length, activity: panel.querySelectorAll('.geld-provider-review__event').length,
+        unavailable: [...panel.querySelectorAll('.geld-provider-review__unavailable')].map((node) => node.textContent),
+        sourceLinks: [...panel.querySelectorAll('[data-geld-source] a[href]')].slice(0, 8).map((link) => link.href),
+        aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length };
+    }), (value) => value !== null && ['ready', 'partial'].includes(value.state) && /Reviews/.test(value.reviews ?? '') && /CI checks/.test(value.checks ?? '') && value.items > 0 && value.sources > 0 && value.reviewerRows > 0 && value.checkRows > 0 && value.activity > 0, 'Installed public MR digest with real source items, review/CI rows and activity');
+    assert.equal(item.digest.aiRunControls, 0, 'AI is disabled in this signed-out smoke');
+    item.state = await tabState(page);
+    assert.equal(item.state.repository?.provider, 'gitlab');
+    assert.equal(item.state.onDiffPage, false);
     return {};
   });
   await runCase('github-regression', GH_FILES, async (page, item) => {
@@ -261,6 +354,18 @@ try {
       if (name === 'bitbucket-diff') await page.waitForFunction(() => document.body.innerText.includes('README.md') && document.body.innerText.includes('pipe/pipe.py'), { timeout: WAIT_MS });
       item.state = await poll(() => tabState(page), (state) => state.repository?.provider === 'bitbucket' && state.repository.path === 'atlassian/bitbucket-upload-file' && state.hasDiff === false, 'Installed Bitbucket routing response');
       assert.equal(item.state.onDiffPage, name === 'bitbucket-diff');
+      item.nativeStyles = await bitbucketNativeStyles(page);
+      assert.ok(Object.keys(item.nativeStyles.tokens).length > 0, 'No computed native --ds tokens were captured');
+      assert.ok(item.nativeStyles.moreActions !== null, 'Stable native More actions button sample missing');
+      if (name === 'bitbucket-diff') assert.ok(item.nativeStyles.article !== null && item.nativeStyles.header !== null && item.nativeStyles.code !== null, 'Stable native diff computed samples missing');
+      await page.hover('[data-qa="pr-header-actions-drop-down-menu-styles"] button');
+      await pause(250);
+      const hovered = await bitbucketNativeStyles(page);
+      item.nativeButtonHover = { button: hovered.moreActions, border: hovered.moreActionsBorder };
+      await page.mouse.move(1, 1);
+      await page.focus('[data-qa="pr-header-actions-drop-down-menu-styles"] button');
+      const focused = await bitbucketNativeStyles(page);
+      item.nativeButtonFocus = { mechanism: 'Programmatic native focus, not menu activation', button: focused.moreActions, border: focused.moreActionsBorder };
       item.featureParity = 'unsupported';
       return { status: 'unsupported', reason: 'Actual extension responds on native public Bitbucket page, but its DOM/digest adapter is inactive. Native accessibility/DOM capture and routing are evidence only; no Bitbucket feature parity pass.' };
     });
