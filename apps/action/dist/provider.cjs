@@ -19967,22 +19967,53 @@ function encodePayloadAttribute(json2) {
 function decodeEntities(text2) {
   return text2.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
-function normaliseRenderedJson(text2) {
-  return text2.replace(/\u00a0/g, " ").replace(/\u2018|\u2019/g, "'").replace(/\u201c|\u201d/g, '"').replace(/\u2013|\u2014/g, "-").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+function publishedSummaryFooter(json2, href, label) {
+  return `<sub>Maintained by Geld \xB7 <a href="${href}">${label}</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(json2)}'></span></sub>`;
 }
-function extractPayloadText(body2) {
-  const carried = CARRIER.exec(body2);
-  if (carried?.[1] !== void 0) return decodeEntities(carried[1]);
-  const normalised = normaliseRenderedJson(body2);
-  const fenced = FENCE.exec(normalised);
-  if (fenced?.[1] !== void 0) return fenced[1].trim();
-  const trimmed = normalised.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  return null;
+function publishedLink(href, label) {
+  if (label === "Open in Geld") {
+    return href === howItWorksUrl() || href.startsWith(`${SITE_ORIGIN}/pr/`) && /^[^/?#]+\/[^/?#]+\/[1-9]\d*#[A-Za-z0-9_-]+$/.test(href.slice(`${SITE_ORIGIN}/pr/`.length));
+  }
+  const review = label === "Open merge request" ? "-/merge_requests" : "(?:pull-requests|pull)";
+  return new RegExp(`^https?://[^/?#@\\s]+/(?:[^/?#\\s]+/)+${review}/[1-9]\\d*$`).test(href);
 }
-function parseSummaryBody(body2) {
-  const text2 = extractPayloadText(body2);
-  if (text2 === null) return { ok: false, issues: ["$: No geld payload fence found."] };
+function hasPublishedSummaryPrefix(body2) {
+  const [marker, heading] = body2.split(/\r?\n/, 3);
+  return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
+}
+function publishedPayloadText(body2) {
+  const lines = body2.split(/\r?\n/);
+  if (!hasPublishedSummaryPrefix(body2)) return null;
+  if (lines.at(-1) === "") lines.pop();
+  let fence = null;
+  let payload = null;
+  for (let index = 2; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === void 0) continue;
+    const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    const run = delimiter?.[1];
+    if (fence !== null) {
+      if (run !== void 0 && run[0] === fence.character && run.length >= fence.length && delimiter?.[2]?.trim() === "") fence = null;
+      continue;
+    }
+    if (run !== void 0) {
+      if (run[0] !== "`" || !delimiter?.[2]?.includes("`")) fence = { character: run[0] ?? "", length: run.length };
+      continue;
+    }
+    const footer = /^<sub>Maintained by Geld · <a href="([^"<>\r\n]+)">(Open in Geld|Open merge request|Open pull request)<\/a> · <a href="([^"<>\r\n]+)">what is this\?<\/a><span title='([^']*)'><\/span><\/sub>$/.exec(line);
+    if (footer === null) continue;
+    if (payload !== null || index !== lines.length - 1) return null;
+    const href = footer[1];
+    const label = footer[2];
+    const carried = footer[4];
+    if (href === void 0 || label === void 0 || carried === void 0 || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
+    const json2 = payloadFromAttribute(decodeEntities(carried));
+    if (json2 === null || line !== publishedSummaryFooter(json2, href, label)) return null;
+    payload = json2;
+  }
+  return fence === null ? payload : null;
+}
+function parsePayload(text2) {
   let parsed;
   try {
     parsed = JSON.parse(text2);
@@ -19990,6 +20021,14 @@ function parseSummaryBody(body2) {
     return { ok: false, issues: ["$: Payload is not valid JSON."] };
   }
   return parseGeldPrMeta(parsed);
+}
+function parsePublishedSummaryBody(body2) {
+  const text2 = publishedPayloadText(body2);
+  return text2 === null ? { ok: false, issues: ["$: No unambiguous published Geld footer."] } : parsePayload(text2);
+}
+function payloadFromAttribute(value) {
+  if (value === null || value === void 0 || !value.startsWith(PAYLOAD_ATTR_PREFIX)) return null;
+  return value.slice(PAYLOAD_ATTR_PREFIX.length);
 }
 var PAYLOAD_CARRIER_SELECTOR = `span[title^="${PAYLOAD_ATTR_PREFIX}"]`;
 
@@ -20038,7 +20077,11 @@ function itemLine(item, checked, links) {
   const head2 = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item, links)}`;
   const extra = [];
   if (item.context !== void 0) extra.push(`  ${inlineMd(item.context)}`);
-  if (item.fix !== void 0) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", "  ```suggestion", ...item.fix.text.split("\n").map((line) => `  ${line}`), "  ```", "", "  </details>");
+  if (item.fix !== void 0) {
+    const longest = (item.fix.text.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
+    const fence = "`".repeat(Math.max(3, longest + 1));
+    extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", `  ${fence}suggestion`, ...item.fix.text.split("\n").map((line) => `  ${line}`), `  ${fence}`, "", "  </details>");
+  }
   return [head2, ...extra].join("\n");
 }
 function groupItems(items) {
@@ -20090,16 +20133,16 @@ function headerLine(meta3) {
   }
   return parts.join(" \xB7 ");
 }
-function renderProviderSummary(meta3, subject) {
+function renderProviderSummary(meta3, subject, options = {}) {
   const noun = subject.provider === "gitlab" ? "merge request" : "pull request";
   return renderSummaryBody(meta3, {
     sourceHref: (source) => sourceLink(source, subject),
     openHref: providerReviewUrl(subject),
     openLabel: `Open ${noun}`,
     reviewNoun: noun
-  });
+  }, options.notes);
 }
-function renderSummaryBody(meta3, links) {
+function renderSummaryBody(meta3, links, notes = []) {
   const { open: open2, done } = groupItems(meta3.items);
   const lines = [
     SUMMARY_MARKER,
@@ -20131,7 +20174,8 @@ function renderSummaryBody(meta3, links) {
     lines.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines.push("");
   }
-  lines.push(`<sub>Maintained by Geld \xB7 <a href="${links.openHref}">${links.openLabel}</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta3))}'></span></sub>`);
+  if (notes.length > 0) lines.push(...notes, "");
+  lines.push(publishedSummaryFooter(JSON.stringify(meta3), links.openHref, links.openLabel));
   lines.push("");
   return lines.join("\n");
 }
@@ -20943,7 +20987,7 @@ var BitbucketCiAdapter = class {
     if (commentId !== null) {
       const [owner, current] = await Promise.all([this.identity(), this.http.request(`${this.reviewPath}/comments/${id(commentId)}`)]);
       const raw = object2(current.value);
-      if (author(raw.user).id !== owner || !body(raw.content).includes(SUMMARY_MARKER)) throw new ProviderCiError("Refusing to update a Bitbucket comment not owned by the token.");
+      if (author(raw.user).id !== owner || !hasPublishedSummaryPrefix(body(raw.content))) throw new ProviderCiError("Refusing to update a Bitbucket comment not owned by the token.");
     }
     await this.http.request(`${this.reviewPath}/comments${commentId === null ? "" : `/${id(commentId)}`}`, commentId === null ? "POST" : "PUT", { content: { raw: summary } });
   }
@@ -21099,7 +21143,7 @@ var GitLabCiAdapter = class {
     if (commentId !== null) {
       const [owner, current] = await Promise.all([this.identity(), this.http.request(`${this.reviewPath}/notes/${id(commentId)}`)]);
       const note2 = object2(current.value);
-      if (author2(note2.author).id !== owner || !text(note2.body).includes(SUMMARY_MARKER)) throw new ProviderCiError("Refusing to update a GitLab note not owned by the token.");
+      if (author2(note2.author).id !== owner || !hasPublishedSummaryPrefix(text(note2.body))) throw new ProviderCiError("Refusing to update a GitLab note not owned by the token.");
     }
     await this.http.request(`${this.reviewPath}/notes${commentId === null ? "" : `/${id(commentId)}`}`, commentId === null ? "POST" : "PUT", { body: body2 });
   }
@@ -21109,7 +21153,7 @@ var GitLabCiAdapter = class {
 var VERSION = "0.1.0";
 var MAX_SUMMARY_BYTES = 3e4;
 function findOwnedSummary(comments, owner) {
-  return comments.find((comment) => comment.authorId === owner && comment.body.includes(SUMMARY_MARKER)) ?? null;
+  return comments.find((comment) => comment.authorId === owner && hasPublishedSummaryPrefix(comment.body)) ?? null;
 }
 function validatedMeta(value) {
   const parsed = parseGeldPrMeta(value);
@@ -21134,7 +21178,7 @@ async function produceProviderSummary(adapter, now = (/* @__PURE__ */ new Date()
   const existing = findOwnedSummary(review.comments, owner);
   const input2 = existing === null ? review.input : {
     ...review.input,
-    threads: review.input.threads.filter((thread) => !thread.comments.some((comment) => comment.id === existing.id && comment.author.id === owner))
+    threads: review.input.threads.map((thread) => ({ ...thread, comments: thread.comments.filter((comment) => comment.id !== existing.id || comment.author.id !== owner) })).filter((thread) => thread.comments.length > 0)
   };
   const items = buildProviderReviewItems(input2);
   let meta3 = validatedMeta({
@@ -21149,14 +21193,11 @@ async function produceProviderSummary(adapter, now = (/* @__PURE__ */ new Date()
   });
   meta3 = validatedMeta(truncateMeta(meta3, 14e3));
   if (existing !== null) {
-    const previous = parseSummaryBody(existing.body);
+    const previous = parsePublishedSummaryBody(existing.body);
     if (previous.ok && JSON.stringify({ ...previous.value, generatedAt: "" }) === JSON.stringify({ ...meta3, generatedAt: "" })) meta3 = { ...meta3, generatedAt: previous.value.generatedAt };
   }
   const supplemental = [...review.notes, ...checksText(review.input.checks ?? [])];
-  let body2 = renderProviderSummary(meta3, review.input.subject);
-  if (supplemental.length > 0) body2 = body2.replace("<sub>Maintained by Geld", `${supplemental.join("\n")}
-
-<sub>Maintained by Geld`);
+  const body2 = renderProviderSummary(meta3, review.input.subject, { notes: supplemental });
   if (Buffer.byteLength(body2, "utf8") > MAX_SUMMARY_BYTES) throw new ProviderCiError("The review summary exceeds the provider comment budget.");
   if (existing?.body === body2) return "unchanged";
   if (await adapter.head() !== meta3.headSha) throw new ProviderCiError("The review head changed before the summary could be written.");

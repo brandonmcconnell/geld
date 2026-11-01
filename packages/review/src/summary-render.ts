@@ -22,7 +22,7 @@ import {
 } from './model';
 import { botTitle } from './bots';
 import { parseInlineMarkdown } from './inline-markdown';
-import { encodePayloadAttribute } from './summary-parse';
+import { publishedSummaryFooter } from './summary-parse';
 
 const STATUS_LABEL: Readonly<Record<ReviewItem['status'], string>> = {
   open: 'Open',
@@ -96,7 +96,11 @@ function itemLine(item: ReviewItem, checked: boolean, links: SummaryLinks): stri
   const head = `${box} **${inlineMd(item.title, true)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item, links)}`;
   const extra: string[] = [];
   if (item.context !== undefined) extra.push(`  ${inlineMd(item.context)}`);
-  if (item.fix !== undefined) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', '  ```suggestion', ...item.fix.text.split('\n').map((line) => `  ${line}`), '  ```', '', '  </details>');
+  if (item.fix !== undefined) {
+    const longest = (item.fix.text.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
+    const fence = '`'.repeat(Math.max(3, longest + 1));
+    extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', `  ${fence}suggestion`, ...item.fix.text.split('\n').map((line) => `  ${line}`), `  ${fence}`, '', '  </details>');
+  }
   return [head, ...extra].join('\n');
 }
 
@@ -172,17 +176,17 @@ export function renderSummary(
   });
 }
 
-export function renderProviderSummary(meta: GeldPrMeta, subject: ProviderReviewSubject): string {
+export function renderProviderSummary(meta: GeldPrMeta, subject: ProviderReviewSubject, options: { readonly notes?: readonly string[] } = {}): string {
   const noun = subject.provider === 'gitlab' ? 'merge request' : 'pull request';
   return renderSummaryBody(meta, {
     sourceHref: (source) => sourceLink(source, subject),
     openHref: providerReviewUrl(subject),
     openLabel: `Open ${noun}`,
     reviewNoun: noun,
-  });
+  }, options.notes);
 }
 
-function renderSummaryBody(meta: GeldPrMeta, links: SummaryLinks): string {
+function renderSummaryBody(meta: GeldPrMeta, links: SummaryLinks, notes: readonly string[] = []): string {
   const { open, done } = groupItems(meta.items);
   const lines: string[] = [
     SUMMARY_MARKER,
@@ -214,8 +218,9 @@ function renderSummaryBody(meta: GeldPrMeta, links: SummaryLinks): string {
     lines.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines.push('');
   }
+  if (notes.length > 0) lines.push(...notes, '');
   // The payload's carrier sits inside the footer's own line, so it adds no paragraph (an empty inline is sizeless).
-  lines.push(`<sub>Maintained by Geld · <a href="${links.openHref}">${links.openLabel}</a> · <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta))}'></span></sub>`);
+  lines.push(publishedSummaryFooter(JSON.stringify(meta), links.openHref, links.openLabel));
   lines.push('');
   return lines.join('\n');
 }

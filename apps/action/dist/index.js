@@ -19598,7 +19598,7 @@ function parseBotBody(body, botId) {
   const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
-function refusalReason(body) {
+function refusalReason(body, options = {}) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<\/?(?:h[1-6]|p|div|br|li|ul|ol|details|summary|blockquote)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, "");
   const blocks = [];
   for (const raw of untagged.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").split("\n")) {
@@ -19633,7 +19633,7 @@ function refusalReason(body) {
   if (text.length > 400) return null;
   const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|reviewing|pull request|pr|run|analysis|scan)\b)/i.test(text) || /^[A-Z][\w.-]*(?:\[bot\])?\s+skipped\s+reviewing\b/i.test(text) || /^[A-Z][\w.-]*(?:\[bot\])?\s+encountered an error\b/i.test(text);
   const sentences = text.split(/(?<=[.!?])\s+/);
-  const bare = sentences[0] !== void 0 && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text)) ? sentences[0] : void 0;
+  const bare = sentences[0] !== void 0 && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text, options)) ? sentences[0] : void 0;
   const first = skipped ? sentences[0] : bare ?? sentences.find(isRefusalSentence);
   if (first === void 0) return null;
   const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, "");
@@ -19650,8 +19650,8 @@ function onlyRefusalWords(text) {
   const rest = text.replace(/[.!?,;:]+$/, "").trim();
   return rest === "" || rest.split(/\s+/).every((word) => BARE_REFUSAL_WORDS.has(word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/gi, "")));
 }
-function isBareAdvice(body, text) {
-  if (SOURCE_LINK.test(body)) return false;
+function isBareAdvice(body, text, options) {
+  if (hasSourceLink(body, options)) return false;
   const unlinked = text.replace(/https?:\/\/\S+/g, "");
   if (unlinked.length > 200 || /`/.test(body)) return false;
   const raw = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "");
@@ -19678,6 +19678,15 @@ function isRefusalSentence(sentence) {
   return onlyRefusalWords(sentence.slice(match.index + match[0].length));
 }
 var SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]L?\d+)*[.,;:)\]]*(?:\s|$))/;
+function hasSourceLink(body, options) {
+  if (options.isSourceLink === void 0) return SOURCE_LINK.test(body);
+  const links = [
+    ...[...body.matchAll(/https?:\/\/[^\s<>"']+/gi)].map((match) => match[0].replace(/[.,;:!?)\]}]+$/, "")),
+    ...[...body.matchAll(/\[[^\]]*\]\(\s*<?([^\s)>]+)>?(?:\s+["'][^"']*["'])?\s*\)/g)].map((match) => match[1] ?? ""),
+    ...[...body.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((match) => match[1] ?? "")
+  ];
+  return links.some(options.isSourceLink);
+}
 var BARE_REFUSAL_WORDS = /* @__PURE__ */ new Set([
   "the",
   "this",
@@ -20002,7 +20011,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runsBeforeAsk.delete(id);
       continue;
     }
-    const refusal = refusalReason(comment.body);
+    const refusal = refusalReason(comment.body, options);
     if (refusal !== null) {
       reported(id, comment);
       for (const at of [comment.createdAt, comment.editedAt]) {
@@ -20684,22 +20693,53 @@ function encodePayloadAttribute(json2) {
 function decodeEntities(text) {
   return text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
-function normaliseRenderedJson(text) {
-  return text.replace(/\u00a0/g, " ").replace(/\u2018|\u2019/g, "'").replace(/\u201c|\u201d/g, '"').replace(/\u2013|\u2014/g, "-").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+function publishedSummaryFooter(json2, href, label) {
+  return `<sub>Maintained by Geld \xB7 <a href="${href}">${label}</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(json2)}'></span></sub>`;
 }
-function extractPayloadText(body) {
-  const carried = CARRIER.exec(body);
-  if (carried?.[1] !== void 0) return decodeEntities(carried[1]);
-  const normalised = normaliseRenderedJson(body);
-  const fenced = FENCE.exec(normalised);
-  if (fenced?.[1] !== void 0) return fenced[1].trim();
-  const trimmed = normalised.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  return null;
+function publishedLink(href, label) {
+  if (label === "Open in Geld") {
+    return href === howItWorksUrl() || href.startsWith(`${SITE_ORIGIN}/pr/`) && /^[^/?#]+\/[^/?#]+\/[1-9]\d*#[A-Za-z0-9_-]+$/.test(href.slice(`${SITE_ORIGIN}/pr/`.length));
+  }
+  const review = label === "Open merge request" ? "-/merge_requests" : "(?:pull-requests|pull)";
+  return new RegExp(`^https?://[^/?#@\\s]+/(?:[^/?#\\s]+/)+${review}/[1-9]\\d*$`).test(href);
 }
-function parseSummaryBody(body) {
-  const text = extractPayloadText(body);
-  if (text === null) return { ok: false, issues: ["$: No geld payload fence found."] };
+function hasPublishedSummaryPrefix(body) {
+  const [marker, heading] = body.split(/\r?\n/, 3);
+  return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
+}
+function publishedPayloadText(body) {
+  const lines2 = body.split(/\r?\n/);
+  if (!hasPublishedSummaryPrefix(body)) return null;
+  if (lines2.at(-1) === "") lines2.pop();
+  let fence = null;
+  let payload = null;
+  for (let index = 2; index < lines2.length; index += 1) {
+    const line = lines2[index];
+    if (line === void 0) continue;
+    const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    const run2 = delimiter?.[1];
+    if (fence !== null) {
+      if (run2 !== void 0 && run2[0] === fence.character && run2.length >= fence.length && delimiter?.[2]?.trim() === "") fence = null;
+      continue;
+    }
+    if (run2 !== void 0) {
+      if (run2[0] !== "`" || !delimiter?.[2]?.includes("`")) fence = { character: run2[0] ?? "", length: run2.length };
+      continue;
+    }
+    const footer = /^<sub>Maintained by Geld · <a href="([^"<>\r\n]+)">(Open in Geld|Open merge request|Open pull request)<\/a> · <a href="([^"<>\r\n]+)">what is this\?<\/a><span title='([^']*)'><\/span><\/sub>$/.exec(line);
+    if (footer === null) continue;
+    if (payload !== null || index !== lines2.length - 1) return null;
+    const href = footer[1];
+    const label = footer[2];
+    const carried = footer[4];
+    if (href === void 0 || label === void 0 || carried === void 0 || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
+    const json2 = payloadFromAttribute(decodeEntities(carried));
+    if (json2 === null || line !== publishedSummaryFooter(json2, href, label)) return null;
+    payload = json2;
+  }
+  return fence === null ? payload : null;
+}
+function parsePayload(text) {
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -20707,6 +20747,14 @@ function parseSummaryBody(body) {
     return { ok: false, issues: ["$: Payload is not valid JSON."] };
   }
   return parseGeldPrMeta(parsed);
+}
+function parsePublishedSummaryBody(body) {
+  const text = publishedPayloadText(body);
+  return text === null ? { ok: false, issues: ["$: No unambiguous published Geld footer."] } : parsePayload(text);
+}
+function payloadFromAttribute(value) {
+  if (value === null || value === void 0 || !value.startsWith(PAYLOAD_ATTR_PREFIX)) return null;
+  return value.slice(PAYLOAD_ATTR_PREFIX.length);
 }
 function looksLikeSummaryBody(body) {
   return body.includes(SUMMARY_MARKER) || body.includes(`### ${SUMMARY_HEADING}`) || body.includes(`title='${PAYLOAD_ATTR_PREFIX}`) || body.includes(`<summary>${DATA_SUMMARY}</summary>`);
@@ -20771,7 +20819,11 @@ function itemLine(item, checked, links) {
   const head = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item, links)}`;
   const extra = [];
   if (item.context !== void 0) extra.push(`  ${inlineMd(item.context)}`);
-  if (item.fix !== void 0) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", "  ```suggestion", ...item.fix.text.split("\n").map((line) => `  ${line}`), "  ```", "", "  </details>");
+  if (item.fix !== void 0) {
+    const longest = (item.fix.text.match(/`+/g) ?? []).reduce((length, run2) => Math.max(length, run2.length), 0);
+    const fence = "`".repeat(Math.max(3, longest + 1));
+    extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", `  ${fence}suggestion`, ...item.fix.text.split("\n").map((line) => `  ${line}`), `  ${fence}`, "", "  </details>");
+  }
   return [head, ...extra].join("\n");
 }
 function groupItems(items) {
@@ -20831,7 +20883,7 @@ function renderSummary(meta3, subject) {
     reviewNoun: "pull request"
   });
 }
-function renderSummaryBody(meta3, links) {
+function renderSummaryBody(meta3, links, notes = []) {
   const { open: open2, done } = groupItems(meta3.items);
   const lines2 = [
     SUMMARY_MARKER,
@@ -20863,7 +20915,8 @@ function renderSummaryBody(meta3, links) {
     lines2.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines2.push("");
   }
-  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${links.openHref}">${links.openLabel}</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta3))}'></span></sub>`);
+  if (notes.length > 0) lines2.push(...notes, "");
+  lines2.push(publishedSummaryFooter(JSON.stringify(meta3), links.openHref, links.openLabel));
   lines2.push("");
   return lines2.join("\n");
 }
@@ -22113,7 +22166,7 @@ function findSummaryComment(comments, ownLogins = []) {
   for (const comment of comments) {
     if (!isAllowedSummaryAuthor(comment.author, ownLogins)) continue;
     if (!looksLikeSummaryBody(comment.body)) continue;
-    const parsed = parseSummaryBody(comment.body);
+    const parsed = parsePublishedSummaryBody(comment.body);
     return { commentId: comment.databaseId, body: comment.body, meta: parsed.ok ? parsed.value : null };
   }
   return null;

@@ -1,4 +1,4 @@
-import { buildProviderReviewItems, META_VERSION, parseGeldPrMeta, parseSummaryBody, renderProviderSummary, SUMMARY_MARKER, truncateMeta } from '@geld/review';
+import { buildProviderReviewItems, hasPublishedSummaryPrefix, META_VERSION, parseGeldPrMeta, parsePublishedSummaryBody, renderProviderSummary, truncateMeta } from '@geld/review';
 import type { GeldPrMeta } from '@geld/review';
 import { BitbucketCiAdapter } from './bitbucket';
 import { ProviderCiError } from './config';
@@ -11,7 +11,7 @@ const VERSION = '0.1.0';
 const MAX_SUMMARY_BYTES = 30_000;
 
 export function findOwnedSummary(comments: readonly OwnedComment[], owner: string): OwnedComment | null {
-  return comments.find((comment) => comment.authorId === owner && comment.body.includes(SUMMARY_MARKER)) ?? null;
+  return comments.find((comment) => comment.authorId === owner && hasPublishedSummaryPrefix(comment.body)) ?? null;
 }
 
 function validatedMeta(value: GeldPrMeta): GeldPrMeta {
@@ -39,7 +39,7 @@ export async function produceProviderSummary(adapter: ProviderCiAdapter, now = n
   const existing = findOwnedSummary(review.comments, owner);
   const input = existing === null ? review.input : {
     ...review.input,
-    threads: review.input.threads.filter((thread) => !thread.comments.some((comment) => comment.id === existing.id && comment.author.id === owner)),
+    threads: review.input.threads.map((thread) => ({ ...thread, comments: thread.comments.filter((comment) => comment.id !== existing.id || comment.author.id !== owner) })).filter((thread) => thread.comments.length > 0),
   };
   const items = buildProviderReviewItems(input);
   let meta = validatedMeta({
@@ -50,12 +50,11 @@ export async function produceProviderSummary(adapter: ProviderCiAdapter, now = n
   });
   meta = validatedMeta(truncateMeta(meta, 14_000));
   if (existing !== null) {
-    const previous = parseSummaryBody(existing.body);
+    const previous = parsePublishedSummaryBody(existing.body);
     if (previous.ok && JSON.stringify({ ...previous.value, generatedAt: '' }) === JSON.stringify({ ...meta, generatedAt: '' })) meta = { ...meta, generatedAt: previous.value.generatedAt };
   }
   const supplemental = [...review.notes, ...checksText(review.input.checks ?? [])];
-  let body = renderProviderSummary(meta, review.input.subject);
-  if (supplemental.length > 0) body = body.replace('<sub>Maintained by Geld', `${supplemental.join('\n')}\n\n<sub>Maintained by Geld`);
+  const body = renderProviderSummary(meta, review.input.subject, { notes: supplemental });
   if (Buffer.byteLength(body, 'utf8') > MAX_SUMMARY_BYTES) throw new ProviderCiError('The review summary exceeds the provider comment budget.');
   if (existing?.body === body) return 'unchanged';
   if (await adapter.head() !== meta.headSha) throw new ProviderCiError('The review head changed before the summary could be written.');
