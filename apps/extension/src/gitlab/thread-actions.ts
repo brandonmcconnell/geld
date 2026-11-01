@@ -1,5 +1,7 @@
 import type { GitLabNativeNoteCapabilities, GitLabNativeThreadCapabilities } from './review';
 import type { ProviderReviewInput } from '@geld/review';
+import { mapProviderSourceSelection, selectionMatches, selectionRanges } from '../providers/source-selection';
+import type { ProviderSourceActionContext } from '../providers/source-selection';
 
 export type GitLabThreadAction = 'reply' | 'resolve' | 'reopen' | 'react' | 'edit' | 'quote' | 'menu';
 
@@ -12,6 +14,7 @@ export interface GitLabThreadTarget {
 export interface GitLabThreadActionOptions {
   readonly signedIn: boolean;
   readonly onReveal?: (target: GitLabThreadTarget) => boolean | void | Promise<boolean | void>;
+  readonly context?: ProviderSourceActionContext;
 }
 
 export interface GitLabThreadActionDescriptor {
@@ -19,7 +22,7 @@ export interface GitLabThreadActionDescriptor {
   readonly label: string;
   readonly available: boolean;
   readonly reason?: string;
-  activate(): Promise<boolean>;
+  activate(context?: ProviderSourceActionContext): Promise<boolean>;
 }
 
 const LABELS: Readonly<Record<GitLabThreadAction, string>> = {
@@ -29,6 +32,16 @@ const LABELS: Readonly<Record<GitLabThreadAction, string>> = {
 function validTarget(target: GitLabThreadTarget, permissions: GitLabNativeThreadCapabilities): boolean {
   return /^[a-f0-9]{8,64}$/.test(target.discussionId) && /^[1-9]\d*$/.test(target.noteId)
     && target.discussionId === permissions.discussionId && permissions.notes.some((note) => note.noteId === target.noteId);
+}
+
+function sameNativeReview(doc: Document, target: GitLabThreadTarget): boolean {
+  try {
+    const source = new URL(target.url);
+    const current = new URL(doc.URL);
+    const review = (url: URL): string | null => /^(.*\/-\/merge_requests\/[1-9]\d*)(?:\/diffs)?\/?$/.exec(url.pathname)?.[1] ?? null;
+    return ['https:', 'http:'].includes(source.protocol) && source.username === '' && source.password === '' && source.origin === current.origin
+      && review(source) !== null && review(source) === review(current) && source.hash === `#note_${target.noteId}`;
+  } catch { return false; }
 }
 
 function ownedElement(element: Element | null): element is HTMLElement {
@@ -123,7 +136,7 @@ function hasPermission(kind: GitLabThreadAction, target: GitLabThreadTarget, per
 }
 
 function available(kind: GitLabThreadAction, doc: Document, target: GitLabThreadTarget, permissions: GitLabNativeThreadCapabilities, options: GitLabThreadActionOptions): boolean {
-  if (!hasPermission(kind, target, permissions, options)) return false;
+  if (!hasPermission(kind, target, permissions, options) || !sameNativeReview(doc, target)) return false;
   if (kind === 'reply') return replyField(doc, target) !== null || enabled(replyControl(doc, target));
   if (kind === 'quote') return discussion(doc, target) !== null && bodyOf(doc, target) !== null && (replyField(doc, target) !== null || enabled(replyControl(doc, target)));
   if (kind === 'resolve' || kind === 'reopen') return currentResolved(doc, target) === (kind === 'reopen') && enabled(resolveControl(doc, target));
@@ -132,13 +145,15 @@ function available(kind: GitLabThreadAction, doc: Document, target: GitLabThread
   return enabled(menuControl(doc, target));
 }
 
-async function waitFor<T>(doc: Document, read: () => T | null): Promise<T | null> {
+async function waitFor<T>(doc: Document, read: () => T | null, current: () => boolean = () => true): Promise<T | null> {
+  if (!current()) return null;
   const present = read();
   if (present !== null) return present;
   const view = doc.defaultView;
   if (view === null) return null;
   return new Promise((resolve) => {
     const observer = new view.MutationObserver(() => {
+      if (!current()) { finish(null); return; }
       const next = read();
       if (next !== null) finish(next);
     });
@@ -152,29 +167,42 @@ async function waitFor<T>(doc: Document, read: () => T | null): Promise<T | null
   });
 }
 
-async function quoteReply(doc: Document, target: GitLabThreadTarget): Promise<boolean> {
-  const visit = doc.URL.split('#')[0];
+async function quoteReply(doc: Document, target: GitLabThreadTarget, options: GitLabThreadActionOptions, current: () => boolean): Promise<boolean> {
   const root = discussion(doc, target);
   const body = bodyOf(doc, target);
   const view = doc.defaultView;
   const selection = doc.getSelection();
   if (root === null || body === null || view === null || selection === null) return false;
-  const saved = [...Array(selection.rangeCount).keys()].map((index) => selection.getRangeAt(index).cloneRange());
+  const saved = selectionRanges(doc);
+  const focused = doc.activeElement;
+  const bodyText = body.textContent;
   const selectedHere = selection.rangeCount > 0 && !selection.isCollapsed && body.contains(selection.anchorNode) && body.contains(selection.focusNode);
-  if (!selectedHere) {
-    const range = doc.createRange();
-    range.selectNodeContents(body);
-    selection.removeAllRanges();
-    selection.addRange(range);
+  const excerpt = options.context?.selection;
+  let replacement: Range | null = null;
+  if (!selectedHere && excerpt !== undefined) {
+    replacement = mapProviderSourceSelection(excerpt, body, target.noteId, `note_${target.noteId}`, target.url);
+    if (replacement === null) return false;
+  } else if (!selectedHere) {
+    replacement = doc.createRange();
+    replacement.selectNodeContents(body);
   }
+  if (!current()) return false;
+  if (replacement !== null) {
+    selection.removeAllRanges();
+    selection.addRange(replacement);
+  }
+  const applied = selectionRanges(doc);
+  const here = (): boolean => current() && discussion(doc, target) === root && bodyOf(doc, target) === body && body.textContent === bodyText;
   root.dispatchEvent(new view.CustomEvent('quoteReply', { bubbles: true }));
-  const field = await waitFor(doc, () => replyField(doc, target));
-  if (doc.URL.split('#')[0] !== visit) return false;
+  const field = await waitFor(doc, () => replyField(doc, target), here);
+  if (!here()) return false;
   if (field !== null) {
+    if (doc.activeElement === field) return true;
+    if (!selectionMatches(doc, applied) || doc.activeElement !== focused) return false;
     field.focus();
     return true;
   }
-  if (!selectedHere) {
+  if (replacement !== null && selectionMatches(doc, applied) && doc.activeElement === focused) {
     selection.removeAllRanges();
     for (const range of saved) {
       if (range.commonAncestorContainer.isConnected) selection.addRange(range);
@@ -184,12 +212,17 @@ async function quoteReply(doc: Document, target: GitLabThreadTarget): Promise<bo
 }
 
 export async function activateGitLabThreadAction(kind: GitLabThreadAction, doc: Document, target: GitLabThreadTarget, permissions: GitLabNativeThreadCapabilities, options: GitLabThreadActionOptions): Promise<boolean> {
-  if (!hasPermission(kind, target, permissions, options)) return false;
+  if (!hasPermission(kind, target, permissions, options) || !sameNativeReview(doc, target)) return false;
   const visit = doc.URL.split('#')[0];
+  const current = (): boolean => doc.URL.split('#')[0] === visit && sameNativeReview(doc, target) && options.context?.current?.() !== false;
+  if (!current()) return false;
+  const beforeReveal = kind === 'quote' ? selectionRanges(doc) : [];
+  const focused = doc.activeElement;
   if (options.onReveal !== undefined && await options.onReveal(target) === false) return false;
-  if (doc.URL.split('#')[0] !== visit) return false;
+  if (!current()) return false;
+  if (kind === 'quote' && (!selectionMatches(doc, beforeReveal) || doc.activeElement !== focused)) return false;
   if (!available(kind, doc, target, permissions, options)) return false;
-  if (kind === 'quote') return quoteReply(doc, target);
+  if (kind === 'quote') return quoteReply(doc, target, options, current);
   if (kind === 'reply') {
     if (replyField(doc, target) === null) replyControl(doc, target)?.click();
     const field = await waitFor(doc, () => replyField(doc, target));
@@ -231,7 +264,7 @@ export function readGitLabThreadActions(doc: Document, target: GitLabThreadTarge
       label: LABELS[kind],
       available: canActivate,
       ...(!canActivate ? { reason: !options.signedIn && kind !== 'menu' ? 'Sign in to GitLab to use this action.' : 'This action is unavailable in the original GitLab thread.' } : {}),
-      activate: () => activateGitLabThreadAction(kind, doc, target, permissions, options),
+      activate: (context) => activateGitLabThreadAction(kind, doc, target, permissions, context === undefined ? options : { ...options, context }),
     };
   });
 }

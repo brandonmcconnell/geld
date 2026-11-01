@@ -9,6 +9,7 @@ import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
 import { ProviderConversation, providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
 import type { ProviderConversationServices } from './conversation';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
+import type { ProviderSourceActionContext } from './review-panel';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: vi.fn(() => { throw new Error('Unexpected real transport'); }) } } }));
 vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined }) } }));
@@ -47,10 +48,10 @@ const unitNativeFind = { supported: true, display: (root: HTMLElement): string =
 const cleanup: (() => void)[] = [];
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); document.body.replaceChildren(); });
 
-function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}) {
+function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}, initialPage: ProviderReviewPage = page) {
   const host = document.createElement('main');
   document.body.append(host);
-  let currentPage: ProviderReviewPage | null = page;
+  let currentPage: ProviderReviewPage | null = initialPage;
   let currentSettings: GeldSettings = { ...DEFAULT_SETTINGS, prOverview: true, aiEnabled: true, aiModel: 'writer', aiBaseUrl: 'https://gateway.example/v1', aiJev: false, ...overrides };
   let active = true;
   let runs: Readonly<Record<string, AiRunRecord>> = {};
@@ -67,6 +68,68 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
 }
 
 describe('provider conversation integrations', () => {
+  it('relays an overview quote with no DOM head using the captured full API head and rejects changed API snapshots', async () => {
+    const overview = { ...page, headSha: null };
+    let context: ProviderSourceActionContext | undefined;
+    const activate = vi.fn(async (value?: ProviderSourceActionContext) => { context = value; return true; });
+    const original = snapshot().input;
+    let live = original;
+    const source: ProviderReviewSnapshot = { ...snapshot(), get input() { return live; }, sourceActions: () => [{ kind: 'quote', label: 'Quote reply', available: true, activate }] };
+    let latest = source;
+    const fetchReview = vi.fn(async () => latest);
+    const f = fixture(source, {}, { aiEnabled: false }, { describe: () => overview, fetchReview }, overview);
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review__body')).not.toBeNull());
+    const body = f.host.querySelector('.geld-provider-review__body');
+    const button = [...f.host.querySelectorAll('button')].find((control) => control.textContent === 'Quote reply');
+    if (body === null || button === undefined) throw new Error('Missing overview quote fixture.');
+    const range = document.createRange(); range.selectNodeContents(body); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+    button.click();
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+    expect(context?.selection).toMatchObject({ kind: 'excerpt', sourceId: '1', text: comment().body });
+    expect(context?.current?.()).toBe(true);
+    live = { ...original, subject: { ...original.subject, headSha: 'b'.repeat(40) } };
+    expect(context?.current?.()).toBe(false);
+    live = original;
+    expect(context?.current?.()).toBe(true);
+    latest = { ...source, input: { ...original, subject: { ...original.subject, headSha: 'b'.repeat(40) } } };
+    const later = Date.now() + 120_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      f.apply(overview);
+      await vi.waitFor(() => expect(fetchReview).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(context?.current?.()).toBe(false));
+    } finally { clock.mockRestore(); document.getSelection()?.removeAllRanges(); }
+  });
+
+  it('forwards quote selections with current review/head/source/lifecycle guards', async () => {
+    let context: ProviderSourceActionContext | undefined;
+    let described: ProviderReviewPage | null = page;
+    const activate = vi.fn(async (value?: ProviderSourceActionContext) => { context = value; return true; });
+    let live = snapshot().input;
+    const source: ProviderReviewSnapshot = { ...snapshot(), get input() { return live; }, sourceActions: () => [{ kind: 'quote', label: 'Quote reply', available: true, activate }] };
+    const f = fixture(source, {}, { aiEnabled: false }, { describe: () => described });
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review__body')).not.toBeNull());
+    const body = f.host.querySelector('.geld-provider-review__body');
+    const button = [...f.host.querySelectorAll('button')].find((control) => control.textContent === 'Quote reply');
+    if (body === null || button === undefined) throw new Error('Missing quote fixture.');
+    const range = document.createRange(); range.selectNodeContents(body); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+    button.click();
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+    expect(context?.selection).toMatchObject({ kind: 'excerpt', anchor: 'note_1', sourceId: '1', text: comment().body });
+    expect(context?.current?.()).toBe(true);
+    described = { ...page, headSha: 'b'.repeat(40) };
+    expect(context?.current?.()).toBe(false);
+    described = page;
+    live = { ...live, threads: live.threads.map((thread) => ({ ...thread, comments: thread.comments.map((comment) => ({ ...comment, body: 'Changed source.' })) })) };
+    expect(context?.current?.()).toBe(false);
+    live = snapshot().input;
+    described = { ...page, number: '43' };
+    expect(context?.current?.()).toBe(false);
+    described = page;
+    f.apply(null);
+    expect(context?.current?.()).toBe(false);
+    document.getSelection()?.removeAllRanges();
+  });
   it('rechecks live native actions after remounts and rejects stale availability or detached controls', async () => {
     const first = vi.fn(async () => true);
     const replacement = vi.fn(async () => true);

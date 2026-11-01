@@ -2,6 +2,10 @@ import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPO
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
+import { captureProviderSourceSelection } from './source-selection';
+import type { ProviderSourceActionContext, ProviderSourceSelection } from './source-selection';
+
+export type { ProviderSourceActionContext } from './source-selection';
 import { renderReviewerIdentity } from './reviewer-identity';
 import { renderPublisherIdentity } from './publisher-identity';
 import type { ReviewerIdentityChoice, ReviewerIdentityControl } from './reviewer-identity';
@@ -92,7 +96,7 @@ export interface ProviderReviewSourceAction {
   readonly label: string;
   readonly available: boolean;
   readonly reason?: string;
-  activate(): Promise<boolean>;
+  activate(context?: ProviderSourceActionContext): Promise<boolean>;
 }
 
 export interface ProviderReviewPanel {
@@ -249,6 +253,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function sourceComment(comment: ProviderReviewComment): HTMLElement {
     const article = node('article', '', 'geld-provider-review__source');
     article.dataset.geldSource = comment.anchor;
+    article.dataset.geldSourceId = comment.id;
+    article.dataset.geldSourceUrl = comment.url;
     const byline = node('div', '', 'geld-provider-review__byline');
     const presentation = authorPresentations.get(authorPresentationKey(comment));
     if (presentation === undefined) byline.append(node('strong', comment.author.login));
@@ -330,11 +336,22 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       for (const action of actions) {
         const button = node('button', action.label);
         button.type = 'button';
+        let pointerSelection: ProviderSourceSelection | undefined;
+        if (action.kind === 'quote') {
+          button.addEventListener('pointerdown', () => { pointerSelection = captureProviderSourceSelection(comment, body); });
+          for (const event of ['pointercancel', 'pointerleave', 'keydown', 'blur']) button.addEventListener(event, () => { pointerSelection = undefined; });
+        }
         button.addEventListener('click', () => {
+          const captured = action.kind === 'quote' ? captureProviderSourceSelection(comment, body) : undefined;
+          const selection = captured ?? pointerSelection;
+          pointerSelection = undefined;
+          const current = (): boolean => !destroyed && body.isConnected && article.isConnected && article.dataset.geldSource === comment.anchor;
+          if (!current()) return;
           button.disabled = true;
-          void action.activate().then((activated) => {
+          void action.activate({ ...(selection === undefined ? {} : { selection }), current }).then((activated) => {
+            if (!current()) return;
             if (activated) options.onActionComplete?.();
-            else button.title = 'The original comment controls are unavailable';
+            else button.title = action.kind === 'quote' && selection !== undefined ? 'Select the passage again in the original comment.' : 'The original comment controls are unavailable';
           }).catch(() => { button.title = 'The original comment controls are unavailable'; })
             .finally(() => { button.disabled = false; });
         });
