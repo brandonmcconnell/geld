@@ -152,6 +152,43 @@ it('selects a category before asking the controller to expand its diff roots', (
   expect(calls.slice(-2)).toEqual(['select:essential', 'expand:false']);
 });
 
+it.each(['.geld-provider-category-header', '.geld-provider-essential-content', '.geld-provider-categories'])('recreates %s with the current controller selection without issuing a new choice', (selector) => {
+  const { tree, host, view, container } = fixture();
+  const selectCategory = vi.fn(); const setExpanded = vi.fn();
+  const actions = { revealPath: vi.fn(), selectCategory, setExpanded, subjectKey: 'same-review-and-head', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  expect(headers(host).map((button) => button.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+  required(host.querySelector(selector)).remove();
+  tree.update(view, hidden, all, FILES, actions);
+  tree.update(view, hidden, all, FILES, actions);
+  expect(headers(host).map((button) => button.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+  expect(container.getAttribute('data-geld-provider-category-body')).toBe('native');
+  expect(host.querySelector('.geld-provider-category-content')?.hasAttribute('hidden')).toBe(false);
+  expect(selectCategory).not.toHaveBeenCalled();
+  expect(setExpanded).not.toHaveBeenCalled();
+});
+
+it('uses the current subject choice after search suspension and explicit clear, rejecting a removed category', () => {
+  const { tree, host, view, container } = fixture();
+  const selectCategory = vi.fn(); const setExpanded = vi.fn();
+  const actions = { revealPath: vi.fn(), selectCategory, setExpanded, subjectKey: 'review-a', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  const search = required(host.querySelector<HTMLInputElement>('input'));
+  search.value = '*.rb'; tree.update(view, hidden, all, FILES, actions);
+  expect(host.querySelector('.geld-provider-categories')).toBeNull();
+  expect(container.hasAttribute('data-geld-provider-category-body')).toBe(false);
+  search.value = ''; tree.update(view, hidden, all, FILES, actions);
+  expect(headers(host)[1]?.getAttribute('aria-expanded')).toBe('true');
+  tree.clear();
+  expect(host.querySelector('.geld-provider-categories')).toBeNull();
+  tree.update(view, hidden, all, FILES, { ...actions, subjectKey: 'review-b', selectedCategoryId: 'essential' });
+  expect(headers(host).map((button) => button.getAttribute('aria-expanded'))).toEqual(['true', 'false']);
+  tree.update(view, hidden, all, FILES, { ...actions, selectedCategoryId: 'removed-category' });
+  expect(headers(host).map((button) => button.getAttribute('aria-expanded'))).toEqual(['true', 'false']);
+  expect(selectCategory).toHaveBeenCalledExactlyOnceWith('essential');
+  expect(setExpanded).not.toHaveBeenCalled();
+});
+
 it('retains sanitized native presentation when hiding the recycler unmounts the source row', () => {
   const { tree, host, view, row, update, revealPath } = fixture();
   const originalComment = required(row.querySelector<HTMLButtonElement>('button'));

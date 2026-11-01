@@ -14,6 +14,8 @@ export interface ProviderCategoryActions {
   readonly revealPath: (path: string) => void;
   readonly setExpanded: (expanded: boolean) => void;
   readonly selectCategory?: (id: string) => void;
+  /** Current controller choice; native framework remounts must not reset it independently. */
+  readonly selectedCategoryId?: string;
   /** Exact provider subject/version/head key; prevents presentation reuse across selected revisions. */
   readonly subjectKey?: string;
 }
@@ -78,7 +80,7 @@ export class ProviderCategoryTree {
     if (this.host !== null && this.subjectKey !== subjectKey) this.clear();
     if (host?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) { this.clear(); return; }
     if (host === null || hidden.categories.length === 0 || (view.virtualized && view.treeContainer == null)) { this.clear(); return; }
-    if (this.host !== host || this.essential?.isConnected !== true || this.nav?.isConnected !== true) {
+    if (this.host !== host || this.essential?.isConnected !== true || this.essentialContent?.isConnected !== true || this.nav?.isConnected !== true) {
       this.clear();
       this.host = host;
       this.essential = element('button', '', 'geld-provider-category-header');
@@ -126,6 +128,7 @@ export class ProviderCategoryTree {
     }
     const ids = new Set<string>(hidden.categories.map((group) => group.category.id));
     for (const [id, panel] of this.panels) if (!ids.has(id)) { panel.section.remove(); this.panels.delete(id); }
+    if (actions.selectedCategoryId !== undefined) this.active = actions.selectedCategoryId;
     if (this.active !== 'essential' && !ids.has(this.active)) { this.active = 'essential'; this.actions.selectCategory?.('essential'); }
     this.captureRows(rows, files);
     const stats = new Map(files.map((file) => [file.path, file]));

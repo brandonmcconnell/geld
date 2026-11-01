@@ -1466,6 +1466,7 @@ Provider-specific surfaces translate settings and sources into shared review and
   A grouped diff whose complete unfiltered inventory is entirely hidden starts expanded while its Essential counts remain zero, unless the reader explicitly collapsed that exact subject and revision.
   Inline mode keeps native file headers and has no grouped bottom section.
   GitLab can stream normal-flow files through `[data-stream-remaining-diffs] > streaming-element`, so flatten only those verified wrappers after mounted paths match the complete source inventory and restore their owned layout markers on teardown.
+  Native sidebar remounts can retire Geld's category nodes while the diff remains open, so reapply the controller's current category choice when rebuilding the projection instead of resetting the sidebar to Essential independently.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
 - **Digest bylines and native merge rules remain source facts.**
   Native author names, aliases, avatars and role badges are read only from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
