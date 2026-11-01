@@ -7702,3 +7702,10 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 ::highlight(geld-shell-meta) {
   color: var(--color-prettylights-syntax-comment);
 }
+
+.geld-links-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; color: var(--fgColor-muted, #636c76); }
+.geld-links-row a { border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 6px; padding: 3px 8px; color: var(--fgColor-default, #1f2328); text-decoration: none; }
+.geld-links-row a:hover { background: var(--bgColor-muted, #f6f8fa); }
+.geld-links-row a { display: inline-flex; align-items: center; gap: 5px; }
+.geld-tracker-icon { display: inline-flex; width: 16px; height: 16px; overflow: hidden; }
+.geld-tracker-icon svg { width: 16px; height: 16px; flex: none; }

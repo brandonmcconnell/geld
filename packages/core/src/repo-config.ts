@@ -1,3 +1,5 @@
+import { parseIssueTracker } from './trackers';
+import type { IssueTrackerConfig } from './trackers';
 import { parseDocument } from 'yaml';
 import type { Catalog, CategoryId, CustomCategory } from './categories';
 import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustomCategoryId, isGroupKey, isWellFormedGroupKey, isWellFormedId } from './categories';
@@ -40,13 +42,14 @@ export interface RepoConfig extends Pick<GeldSettings, 'categories' | 'groups' |
   /** Review bots installed on the repository, by registry id (`bugbot`, `coderabbit`, …), in the file's order. */
   readonly reviewBots: readonly string[];
   readonly review?: { readonly ai: boolean };
+  readonly issueTracker?: IssueTrackerConfig;
 }
 
 export const EMPTY_REPO_CONFIG: RepoConfig = { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [], reviewBots: [] };
 
 export type RepoConfigParse = { readonly ok: true; readonly config: RepoConfig } | { readonly ok: false; readonly issues: readonly SettingsIssue[] };
 
-const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'customCategories', 'reviewBots', 'review'] as const;
+const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'customCategories', 'reviewBots', 'review', 'issueTracker'] as const;
 
 /** The shape of a bot id: the registry's ids are lowercase words with dashes. */
 const BOT_ID = /^[a-z][a-z0-9-]*$/;
@@ -135,6 +138,7 @@ export function collectRepoConfigIssues(value: unknown, catalog: Catalog = BUNDL
   checkCustomCategories(issues, at('customCategories'), value.customCategories);
   checkReviewBots(issues, at('reviewBots'), value.reviewBots, knownBots);
   if (value.review !== undefined && (!isRecord(value.review) || typeof value.review.ai !== 'boolean')) issues.push({ path: at('review.ai'), message: 'Expected a boolean AI policy.' });
+  if (value.issueTracker !== undefined && !parseIssueTracker(value.issueTracker)) issues.push({path:at('issueTracker'),message:'Expected a supported tracker, allowed keys and an HTTPS origin.'});
   return issues;
 }
 
@@ -169,6 +173,7 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
   if (issues.length > 0) return { ok: false, issues };
   if (value === null || value === undefined || !isRecord(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
   const normalized = normalizeSettings(value);
+  const issueTracker=parseIssueTracker(value.issueTracker);
   return {
     ok: true,
     config: {
@@ -177,6 +182,7 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
       categoryPatterns: normalized.categoryPatterns,
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
+      ...(issueTracker?{issueTracker}:{}),
       ...(isRecord(value.review) && typeof value.review.ai === 'boolean' ? { review: { ai: value.review.ai } } : {}),
     },
   };
@@ -189,7 +195,7 @@ export function isEmptyRepoConfig(config: RepoConfig): boolean {
     Object.keys(config.groups).length === 0 &&
     Object.values(config.categoryPatterns).every((lines) => lines === undefined || lines.length === 0) &&
     config.customCategories.length === 0 &&
-    config.reviewBots.length === 0 && config.review === undefined
+    config.reviewBots.length === 0 && config.review === undefined && config.issueTracker === undefined
   );
 }
 

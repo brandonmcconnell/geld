@@ -55,6 +55,7 @@ export default defineConfig({
     // redirects to; it is fetched from the background script only.
     // api.github.com serves the optional GitHub sign-in (gist sync) and the
     // signed pattern catalog (catalog/patterns.json via the contents API).
+    web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
     host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
     ...(mv === 3
@@ -72,8 +73,8 @@ export default defineConfig({
             gecko: {
               id: 'geld@brandonmcconnell.com',
               strict_min_version: '128.0',
-              // Geld never sends data anywhere; everything runs locally.
-              data_collection_permissions: { required: ['none'] },
+              // Dashboard sign-in and tracker status are optional and need separate host permission.
+              data_collection_permissions: { required: ['none'], optional: ['authenticationInfo','personallyIdentifyingInfo','websiteContent'] },
             },
           },
         }

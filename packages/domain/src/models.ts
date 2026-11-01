@@ -37,6 +37,7 @@ export interface PullSummary {
 
 export interface PullDetail extends PullSummary {
   readonly startSha?: string;
+  readonly headBranch?: string;
   readonly body: string;
   readonly capabilities: readonly Capability[];
 }

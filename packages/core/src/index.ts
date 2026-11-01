@@ -27,3 +27,4 @@ export * from './settings-validate';
 export * from './test-patterns';
 
 export * from './diff-hunks';
+export * from './trackers';

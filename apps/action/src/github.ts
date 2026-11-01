@@ -1,3 +1,4 @@
+import { createApiTransport } from '@geld/github';
 /**
  * GitHub GraphQL + REST used by the Action. Token-only; never clones the
  * pull request. Pagination is followed until the cursor is exhausted.
@@ -21,21 +22,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function githubJson(client: GithubClient, url: string, init: RequestInit = {}): Promise<unknown> {
-  const headers = new Headers(init.headers);
-  headers.set('authorization', `Bearer ${client.token}`);
-  headers.set('accept', 'application/vnd.github+json');
-  headers.set('x-github-api-version', '2022-11-28');
-  if (init.body !== undefined && !headers.has('content-type')) headers.set('content-type', 'application/json');
-  const response = await client.fetch(url, { ...init, headers });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`GitHub ${response.status} ${url}: ${text.slice(0, 400)}`);
-  return text === '' ? null : JSON.parse(text);
+  const target=new URL(url);if(target.origin!==API)throw new Error('Unexpected provider origin');
+  const requested=init.method??'GET';const method=requested==='GET'||requested==='POST'||requested==='PATCH'||requested==='PUT'||requested==='DELETE'?requested:null;if(!method)throw new Error('Unsupported provider method');
+  const api=createApiTransport({baseUrl:`${API}/`,source:{get:async()=>({status:'ok',token:client.token,refreshed:false})},fetch:client.fetch});
+  const body:unknown=typeof init.body==='string'?JSON.parse(init.body):undefined;
+  const result=await api.request(`${target.pathname.slice(1)}${target.search}`,{method,...(body===undefined?{}:{body})});
+  if(!result.ok)throw new Error(`GitHub could not confirm the request (${result.reason})`);
+  return result.value;
 }
 
 async function graphql(client: GithubClient, query: string, variables: Record<string, unknown>): Promise<unknown> {
   const body = await githubJson(client, GRAPHQL, { method: 'POST', body: JSON.stringify({ query, variables }) });
   if (!isRecord(body)) throw new Error('GitHub GraphQL returned a non-object.');
-  if (body.errors !== undefined) throw new Error(`GitHub GraphQL: ${JSON.stringify(body.errors).slice(0, 400)}`);
+  if (body.errors !== undefined) throw new Error('GitHub GraphQL could not confirm the request');
   return body.data;
 }
 
@@ -56,6 +55,9 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
     pullRequest(number: $number) {
       number
       headRefOid
+      title
+      body
+      headRefName
       reviewThreads(first: 50, after: $threadCursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -206,6 +208,9 @@ interface GqlCheckContexts {
 interface GqlPr {
   readonly number: number;
   readonly headRefOid: string;
+  readonly title?:string;
+  readonly body?:string;
+  readonly headRefName?:string;
   readonly reviewThreads: { readonly pageInfo: PageInfo; readonly nodes: readonly GqlThread[] };
   readonly comments: { readonly pageInfo: PageInfo; readonly nodes: readonly GqlComment[] };
   readonly reviews: { readonly pageInfo: PageInfo; readonly nodes: readonly GqlReview[] };
@@ -303,7 +308,7 @@ export async function loadPullRequest(client: GithubClient, owner: string, repo:
   const comments: RawIssueComment[] = [];
   const reviews: RawReview[] = [];
   let checks: RawCheckRun[] = [];
-  let headSha = '';
+  let headSha = '';let title='';let description='';let headBranch='';
   let threadCursor: string | null = null;
   let commentCursor: string | null = null;
   let reviewCursor: string | null = null;
@@ -320,7 +325,7 @@ export async function loadPullRequest(client: GithubClient, owner: string, repo:
     assertPrQuery(data);
     const pr = data.repository.pullRequest;
     if (pr === null) throw new Error(`Pull request ${owner}/${repo}#${number} was not found.`);
-    headSha = pr.headRefOid;
+    headSha = pr.headRefOid;title=pr.title??'';description=pr.body??'';headBranch=pr.headRefName??'';
     for (const thread of pr.reviewThreads.nodes) {
       const threadComments = thread.comments.pageInfo.hasNextPage ? await remainingThreadComments(client, thread.id, thread.comments) : thread.comments.nodes;
       threads.push({
@@ -373,7 +378,7 @@ export async function loadPullRequest(client: GithubClient, owner: string, repo:
     if (!moreThreads && !moreComments && !moreReviews) break;
   }
 
-  return { owner, repo, number, headSha, threads, comments, reviews, checks };
+  return { owner, repo, number, headSha, threads, comments, reviews, checks,title,body:description,headBranch };
 }
 
 export interface ExistingSummary {
@@ -518,4 +523,15 @@ export function shouldSkipSelfEdit(event: ActionEvent): boolean {
   if (event.eventName !== 'issue_comment' || event.action !== 'edited') return false;
   if (event.commentAuthor !== 'github-actions[bot]' && event.commentAuthor !== 'geld[bot]') return false;
   return event.commentBody !== null && looksLikeSummaryBody(event.commentBody);
+}
+
+export async function repositoryTracker(client:GithubClient,owner:string,repo:string){
+  const {createApiTransport}=await import('@geld/github');const {parseRepoConfig}=await import('@geld/core');const api=createApiTransport({baseUrl:'https://api.github.com/',source:{get:async()=>({status:'ok',token:client.token,refreshed:false})},fetch:client.fetch});
+  for(const [name,path] of [[repo,'.github/geld.yml'],['.github','geld.yml']]){if(!name||!path)continue;const r=await api.request(`repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path}`,{text:true,accept:'application/vnd.github.raw+json'});if(r.ok&&typeof r.value==='string'){const parsed=parseRepoConfig(r.value);if(parsed.ok&&parsed.config.issueTracker)return parsed.config.issueTracker;}}
+  return null;
+}
+
+export async function trackerStates(client:GithubClient,references:readonly import('@geld/core').TrackerReference[]):Promise<readonly import('@geld/core').TrackerReference[]>{
+  const api=createApiTransport({baseUrl:'https://api.github.com/',source:{get:async()=>({status:'ok',token:client.token,refreshed:false})},fetch:client.fetch});
+  return Promise.all(references.map(async(reference,index)=>{if(index>=20||reference.provider!=='github_issues'||!reference.repository)return reference;const path=`repos/${reference.repository.split('/').map(encodeURIComponent).join('/')}/issues/${encodeURIComponent(reference.id)}`;const result=await api.request(path);return result.ok&&isRecord(result.value)&&typeof result.value.state==='string'?{...reference,status:result.value.state}:reference;}));
 }
