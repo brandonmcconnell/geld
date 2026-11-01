@@ -376,27 +376,38 @@ async function crossSettingsDom(page, provider) {
   return page.evaluate((site) => {
     const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const value = node.textContent?.replace(/[,\s]/g, '').match(/\d+/)?.[0]; return value === undefined ? null : Number(value); };
     const native = (node) => node.closest('[data-geld-ui]') === null;
-    let headers; let files; let headerIdentity;
+    let headers; let files; let headerIdentity; let groups;
     if (site === 'gitlab') {
-      const groups = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native);
-      headers = groups.map((root) => ({ files: numeric(root.querySelector(':scope > .diff-stats-group > span')), additions: numeric(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: numeric(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
+      const statsGroups = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native);
+      headers = statsGroups.map((root) => ({ files: numeric(root.querySelector(':scope > .diff-stats-group > span')), additions: numeric(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: numeric(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
       files = [...document.querySelectorAll('diff-file[data-file-data], .diff-file[data-file-data]')].filter(native).map((root) => {
         let data = null; try { data = JSON.parse(root.getAttribute('data-file-data') ?? 'null'); } catch { /* Incomplete native metadata fails below. */ }
         return { path: data?.new_path ?? data?.old_path ?? null, id: root.id, anchor: null, head: data?.diff_refs?.head_sha ?? null, hidden: root.getAttribute('data-geld-provider-hidden') };
       });
       const tab = document.querySelector('[data-testid="diffs-tab"]');
       headerIdentity = { id: tab?.id ?? null, testid: tab?.getAttribute('data-testid') ?? null, href: tab?.querySelector('a[href]')?.getAttribute('href') ?? null };
+      groups = [...document.querySelectorAll('.geld-provider-diffs')].map((root) => {
+        const toggle = root.querySelector(':scope > .geld-provider-hidden .geld-provider-toggle');
+        return { id: root.id, kind: 'provider', expanded: toggle?.getAttribute('aria-expanded') === 'true', toggleExpanded: toggle?.getAttribute('aria-expanded') ?? null, toggleLabel: toggle?.textContent?.trim() ?? null };
+      });
     } else {
       // These literal legacy hooks and file identities were observed on this exact public fixture in installed run41340321024.
       const stats = document.getElementById('diffstat'); const counter = document.getElementById('files_tab_counter');
       headers = stats === null || counter === null ? [] : [{ files: numeric(counter), additions: numeric(stats.querySelector('.color-fg-success')), deletions: numeric(stats.querySelector('.color-fg-danger')) }];
       files = [...document.querySelectorAll('.file-header[data-path][data-anchor]')].filter(native).map((header) => {
         const root = header.closest('.file[id]');
-        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, hidden: root?.getAttribute('data-geld') ?? null };
+        // The legacy adapter orders/classifies the native copilot wrapper, preserving the inner file ID.
+        // Installed run41347605877 has all 18 wrappers marked hidden and their inner .file markers absent.
+        const owner = root?.closest('copilot-diff-entry') ?? root;
+        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, ownerTag: owner?.tagName ?? null, ownerPath: owner?.getAttribute('data-file-path') ?? root?.getAttribute('data-tagsearch-path') ?? null, hidden: owner?.getAttribute('data-geld') ?? null };
       });
       headerIdentity = { id: stats?.id ?? null, counterId: counter?.id ?? null, href: counter?.closest('a[href]')?.getAttribute('href') ?? null, repository: document.querySelector('meta[name="octolytics-dimension-repository_nwo"]')?.getAttribute('content') ?? null };
+      groups = [...document.querySelectorAll('#files[data-geld-container="legacy"]')].map((root) => {
+        const section = root.querySelector(':scope > .geld-hidden-section'); const toggle = section?.querySelector('.geld-hidden-section__toggle');
+        return { id: root.id, kind: root.getAttribute('data-geld-container'), expanded: root.hasAttribute('data-geld-expanded'), sectionExpanded: section?.getAttribute('data-expanded') ?? null, toggleExpanded: toggle?.getAttribute('aria-expanded') ?? null, toggleLabel: toggle?.textContent?.trim() ?? null };
+      });
     }
-    return { provider: site, url: location.href, hidden: document.hidden, headers, headerIdentity, files: files.sort((a, b) => String(a.path).localeCompare(String(b.path))) };
+    return { provider: site, url: location.href, hidden: document.hidden, headers, headerIdentity, groups, files: files.sort((a, b) => String(a.path).localeCompare(String(b.path))) };
   }, provider);
 }
 
@@ -461,6 +472,7 @@ async function verifyCrossProviderSettings(gitlab, item) {
         const current = dom.files.find((candidate) => candidate.path === file.path);
         assert.ok(current, `Original native file disappeared: ${file.path}`);
         assert.deepEqual({ id: current.id, anchor: current.anchor, head: current.head }, { id: file.id, anchor: file.anchor, head: file.head }, 'Shared setting changed native file IDs or selected source');
+        if (dom.provider === 'github') assert.deepEqual({ tag: current.ownerTag, path: current.ownerPath }, { tag: file.ownerTag, path: file.ownerPath }, 'Shared setting changed the native legacy entry owner');
       }
     };
     const stage = async (label, mode) => {
@@ -470,15 +482,16 @@ async function verifyCrossProviderSettings(gitlab, item) {
         await activate(tab);
         const state = mode === 'disabled'
           ? await poll(() => tabState(tab.page), (value) => value.allowed === false && value.hasDiff === false, `${tab.provider} actual shared master disable`)
-          : await poll(() => tabState(tab.page), (value) => value.repo === tab.repo && value.hasDiff === true && equal(value.all, tab.oracle.headers[0]) && (mode === 'all' ? value.hiddenCount === value.all.files && equal(value.visible, { files: 0, additions: 0, deletions: 0 }) && value.categories.some((category) => category.id === 'tests' && category.count === value.all.files) : mode === 'baseline' ? value.hiddenCount > 0 && value.visible?.files > 0 && value.visible.files < value.all.files : equal(value.visible, tab.baseline.state.visible) && value.hiddenCount === tab.baseline.state.hiddenCount), `${tab.provider} complete source and shared ${label} totals`);
+          : await poll(() => tabState(tab.page), (value) => value.repo === tab.repo && value.hasDiff === true && equal(value.all, tab.oracle.headers[0]) && (mode === 'all' ? value.hiddenCount === value.all.files && equal(value.visible, { files: 0, additions: 0, deletions: 0 }) && value.expanded === true && value.categories.some((category) => category.id === 'tests' && category.count === value.all.files) : mode === 'baseline' ? value.hiddenCount > 0 && value.visible?.files > 0 && value.visible.files < value.all.files : equal(value.visible, tab.baseline.state.visible) && value.hiddenCount === tab.baseline.state.hiddenCount), `${tab.provider} complete source and shared ${label} totals`);
         const expected = mode === 'disabled' ? tab.oracle.headers[0] : state.visible;
-        const dom = await pollStable(() => crossSettingsDom(tab.page, tab.provider), (value) => !value.hidden && value.headers.length > 0 && value.headers.every((header) => equal(header, expected)) && (mode !== 'disabled' || value.files.every((file) => file.hidden === null)) && (mode !== 'all' || value.files.every((file) => file.hidden !== null)), `${tab.provider} native header and file response to ${label}`, WAIT_MS, (value) => JSON.stringify([value.headers, value.files.map((file) => [file.id, file.hidden])]));
+        const responded = (value) => !value.hidden && value.headers.length > 0 && value.headers.every((header) => equal(header, expected)) && (mode !== 'disabled' || value.files.every((file) => file.hidden === null) && value.groups.length === 0) && (mode !== 'all' || value.files.length > 0 && value.files.every((file) => file.hidden === (tab.provider === 'github' ? 'hidden' : 'open')) && value.groups.length === 1 && value.groups.every((group) => group.expanded && group.toggleExpanded === 'true' && /^Hide\b/.test(group.toggleLabel ?? '') && (tab.provider !== 'github' || group.sectionExpanded === 'true')));
+        const dom = await pollStable(() => crossSettingsDom(tab.page, tab.provider), responded, `${tab.provider} native header and file response to ${label}`, WAIT_MS, (value) => JSON.stringify([value.headers, value.groups, value.files.map((file) => [file.id, file.hidden])]));
         sameSource(dom, tab.oracle);
         if (tab.provider === 'gitlab' && mode !== 'disabled') assert.equal(state.repository?.provider, 'gitlab');
         const entry = { provider: tab.provider, state, dom }; sample.tabs.push(entry);
         entry.artifacts = await captureRequired(tab, label);
         const afterCapture = await crossSettingsDom(tab.page, tab.provider);
-        assert.ok(afterCapture.headers.every((header) => equal(header, expected)), 'Required screenshot capture changed native header totals'); sameSource(afterCapture, tab.oracle);
+        assert.ok(responded(afterCapture), 'Required screenshot capture changed native counts or the classified group state'); sameSource(afterCapture, tab.oracle);
         if (mode === 'baseline') tab.baseline = entry;
       }
       assert.deepEqual(await readSettings(), sample.settings, 'One provider visit changed the shared settings key');
@@ -490,6 +503,7 @@ async function verifyCrossProviderSettings(gitlab, item) {
       tab.oracle = await poll(() => crossSettingsDom(tab.page, tab.provider), (dom) => !dom.hidden && dom.headers.length > 0 && dom.headers.every((row) => row.files > 0 && Number.isInteger(row.additions) && Number.isInteger(row.deletions)) && dom.files.length > 0 && dom.files.every((file) => typeof file.path === 'string' && typeof file.id === 'string' && file.id !== '' && file.hidden === null), `${tab.provider} independent untouched native header oracle`);
       assert.ok(tab.oracle.headers.every((header) => equal(header, tab.oracle.headers[0])), 'Untouched native headers disagree');
       if (tab.provider === 'github') assert.equal(tab.oracle.headerIdentity.repository, tab.repo);
+      if (tab.provider === 'github') assert.ok(tab.oracle.files.every((file) => file.ownerPath === file.path), 'The independent native legacy entry paths must match their file headers');
       tab.oracleArtifacts = await captureRequired(tab, 'native-oracle');
     }
     evidence.nativeOracles = tabs.map((tab) => ({ provider: tab.provider, basis: 'Actual provider-rendered header text with shared master disabled; never derived from extension tabState.all.', dom: tab.oracle, artifacts: tab.oracleArtifacts }));
