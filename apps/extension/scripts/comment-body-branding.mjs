@@ -9,7 +9,7 @@ export function commentBodyPresentationProbe(provider, anchor) {
   const uncovered = [];
   const samples = [];
   const contentMismatches = [];
-  const result = { provider, anchor, samples, uncovered, contentMismatches, nativeRootPresent: false, ownedRootPresent: false, rootAligned: false, nativeNodes: 0, ownedNodes: 0, truncated: false };
+  const result = { provider, anchor, evidenceKind: 'Presented DOM and computed styles, including offscreen nodes. No simultaneous viewport painting assertion.', samples, uncovered, contentMismatches, nativeRootPresent: false, ownedRootPresent: false, rootAligned: false, nativeNodes: 0, ownedNodes: 0, truncated: false };
   const unavailable = (reason) => { uncovered.push(`comment body: ${reason}`);return result; };
   if (!(provider === 'gitlab' ? /^note_[1-9]\d*$/.test(anchor) : provider === 'bitbucket' && /^comment-[1-9]\d*$/.test(anchor))) return unavailable('unsupported source identity');
   const originals = [...document.querySelectorAll(`[id="${anchor}"]`)].filter((node) => node.closest('[data-geld-ui]') === null);
@@ -33,15 +33,20 @@ export function commentBodyPresentationProbe(provider, anchor) {
   if (nativeRoots.length !== 1) return unavailable('native body root is absent or ambiguous');
   const nativeRoot = nativeRoots[0];
   const ownedRoot = ownedRoots.length === 1 ? ownedRoots[0] : null;
+  const styles = new WeakMap();
+  const styleOf = (node) => { if (!styles.has(node)) styles.set(node, getComputedStyle(node));return styles.get(node); };
   const visible = (node) => {
-    if (node === null || node.closest('[hidden],[inert]') !== null) return false;
-    const style = getComputedStyle(node);
+    if (node === null || node.closest('[hidden],[inert],[aria-hidden="true"]') !== null) return false;
+    for (let ancestor = node; ancestor !== null; ancestor = ancestor.parentElement) {
+      const style = styleOf(ancestor);
+      if (style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility) || style.opacity !== '' && Number(style.opacity) === 0 || style.getPropertyValue('content-visibility') === 'hidden') return false;
+    }
     const rect = node.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && !['hidden', 'collapse'].includes(style.visibility);
+    return rect.width > 0 && rect.height > 0;
   };
   result.nativeRootPresent = visible(nativeRoot);
   result.ownedRootPresent = visible(ownedRoot);
-  if (!result.nativeRootPresent) return unavailable('native body is not visibly presented at this viewport');
+  if (!result.nativeRootPresent) return unavailable('native body is not presented in the DOM');
   if (ownedRoot === null) return unavailable('owned native body clone is absent or ambiguous');
   const nativeNodes = [nativeRoot, ...nativeRoot.querySelectorAll(selector)];
   const ownedNodes = [ownedRoot, ...ownedRoot.querySelectorAll(selector)];
@@ -52,7 +57,7 @@ export function commentBodyPresentationProbe(provider, anchor) {
   const kind = (node, index) => index === 0 ? 'root' : /^H[1-6]$/.test(node.tagName) ? 'heading' : ({ P: 'paragraph', A: 'link', CODE: node.closest('pre') === null ? 'inline code' : 'block code', PRE: 'preformatted', UL: 'list', OL: 'list', LI: 'list item', TABLE: 'table', THEAD: 'table section', TBODY: 'table section', TFOOT: 'table section', TR: 'table row', TH: 'table cell', TD: 'table cell', SPAN: 'table header label' })[node.tagName];
   const sample = (node) => {
     if (node === null) return null;
-    const style = getComputedStyle(node);
+    const style = styleOf(node);
     return { tag: node.tagName, text: node.textContent.trim().slice(0, 240), textLength: node.textContent.length, presented: visible(node), style: Object.fromEntries([...typography, ...decoration].map((key) => [key, style[key]])) };
   };
   for (let index = 0; index < Math.min(nativeNodes.length, maxNodes); index += 1) {
@@ -65,7 +70,7 @@ export function commentBodyPresentationProbe(provider, anchor) {
     if (native.closest('[contenteditable]') !== null) { uncovered.push(`${label}: native editing content excluded`);continue; }
     if (native.textContent.length > maxText) { uncovered.push(`${label}: text exceeds bounded sample size`);continue; }
     if (!native.textContent.trim()) { uncovered.push(`${label}: native element has no visible text`);continue; }
-    if (!visible(native)) { uncovered.push(`${label}: native element is not visibly presented`);continue; }
+    if (!visible(native)) { uncovered.push(`${label}: native element is not presented in the DOM`);continue; }
     if (owned === null || native.tagName !== owned.tagName || native.textContent !== owned.textContent || native.tagName === 'A' && native.href !== owned.href) {
       const content = (node) => node === null ? null : { tag: node.tagName, text: node.textContent.trim().slice(0, 240), textLength: node.textContent.length, ...(node.tagName === 'A' ? { href: node.href } : {}) };
       contentMismatches.push({ label: `${label}: exact tag, text, link or source order does not match`, native: content(native), owned: content(owned) });continue;
