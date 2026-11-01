@@ -31,7 +31,16 @@ export function createApiTransport(options: { readonly baseUrl: string; readonly
         if (init.body !== undefined) headers['Content-Type'] = 'application/json';
         let response: Response;
         try {
-          response = await fetchImpl(url.toString(), { method, headers, redirect: 'error', ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }) });
+          let target = url;
+          for (let redirects = 0; ; redirects += 1) {
+            response = await fetchImpl(target.toString(), { method, headers, redirect: 'manual', ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }) });
+            if (![301,302,303,307,308].includes(response.status)) break;
+            const location = response.headers.get('location');
+            if (method !== 'GET' || !location || redirects >= 2) return { ok: false, reason: 'unavailable' };
+            const next = new URL(location, target);
+            if (next.origin !== base.origin || !next.pathname.startsWith(base.pathname) || next.username || next.password) return { ok: false, reason: 'permission', required: null, url: null };
+            target = next;
+          }
         } catch {
           return { ok: false, reason: 'unavailable' };
         }

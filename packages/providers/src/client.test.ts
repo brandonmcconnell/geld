@@ -57,12 +57,25 @@ describe('transport credential boundaries', () => {
     expect(await transport.request('../user')).toMatchObject({ ok: false });
     expect(requests).toHaveLength(0);
     await transport.request('user');
-    expect(requests[0]?.redirect).toBe('error');
+    expect(requests[0]?.redirect).toBe('manual');
   });
   it('reports rate limits and suppresses exception text', async () => {
     const limited = createApiTransport({ baseUrl: 'https://api.github.com/', source, now: () => 1000, fetch: async () => new Response(null, { status: 429, headers: { 'retry-after': '5' } }) });
     expect(await limited.request('user')).toEqual({ ok: false, reason: 'rate_limit', retryAt: 6000 });
     const failed = createApiTransport({ baseUrl: 'https://api.github.com/', source, fetch: async () => { throw new Error('do not expose this'); } });
     expect(await failed.request('user')).toEqual({ ok: false, reason: 'unavailable' });
+  });
+});
+
+describe('same-provider redirects', () => {
+  it('follows Bitbucket diff redirects within its API and rejects foreign credential destinations', async () => {
+    const urls: string[] = [];
+    const transport = createApiTransport({ baseUrl: 'https://api.bitbucket.org/2.0/', source, fetch: async (url) => { urls.push(url); return urls.length === 1 ? new Response(null, { status: 302, headers: { location: '/2.0/repositories/o/r/diff/head..base' } }) : new Response('diff --git a/a b/a'); } });
+    expect(await transport.request('repositories/o/r/pullrequests/1/diff', { text: true })).toEqual({ ok: true, value: 'diff --git a/a b/a' });
+    expect(urls).toHaveLength(2);
+    let requests = 0;
+    const denied = createApiTransport({ baseUrl: 'https://api.bitbucket.org/2.0/', source, fetch: async () => { requests += 1; return new Response(null, { status: 302, headers: { location: 'https://foreign.example/diff' } }); } });
+    expect(await denied.request('repositories/o/r/pullrequests/1/diff')).toMatchObject({ ok: false, reason: 'permission' });
+    expect(requests).toBe(1);
   });
 });

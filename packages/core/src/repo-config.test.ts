@@ -129,3 +129,11 @@ plain.js diff=js
     expect(createMatcher(merged).categorize('vendor/keep.js')).toBeNull();
   });
 });
+
+describe('repository AI restrictions', () => {
+  it('reads inline and block YAML policies without allowing malformed booleans', () => {
+    expect(parseRepoConfig('review: { ai: false }')).toMatchObject({ ok: true, config: { review: { ai: false } } });
+    expect(parseRepoConfig('review:\n  ai: false')).toMatchObject({ ok: true, config: { review: { ai: false } } });
+    expect(parseRepoConfig('review: { ai: "false" }')).toMatchObject({ ok: false });
+  });
+});

@@ -3,6 +3,7 @@ import type { Capability, LineComment, Provider, ProviderClient, ProviderComment
 import { validEnterpriseHost } from '@geld/domain';
 import { createApiTransport } from '@geld/github';
 import type { ApiTransport, FetchLike, TokenSource } from '@geld/github';
+import { threadOperations } from './threads';
 import { bitbucketPull, bitbucketPullSchema, githubPull, githubPullSchema, githubRepo, gitlabPull, gitlabPullSchema } from './parse';
 
 const e = encodeURIComponent;
@@ -42,10 +43,11 @@ export function createProviderClient(options: ProviderClientOptions): ProviderCl
   if (provider === 'bitbucket' && host !== 'bitbucket.org') throw new Error('Bitbucket host is not registered');
   const baseUrl = provider === 'github' ? host === 'github.com' ? 'https://api.github.com/' : host.endsWith('.ghe.com') ? `https://api.${host}/` : `https://${host}/api/v3/` : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
   const api = createApiTransport({ baseUrl, source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.anonymousReads === undefined ? {} : { anonymousReads: options.anonymousReads }) });
-  return clientFor(api, provider, host);
+  const graphql = provider === 'gitlab' ? createApiTransport({ baseUrl: 'https://gitlab.com/api/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) }) : api;
+  return clientFor(api, provider, host, graphql);
 }
 
-function clientFor(api: ApiTransport, provider: Provider, host: string): ProviderClient {
+function clientFor(api: ApiTransport, provider: Provider, host: string, graphql: ApiTransport): ProviderClient {
   const owns = (repo: RepositoryRef): boolean => repo.provider === provider && repo.host === host;
   const repoPath = (repo: RepositoryRef): string => provider === 'gitlab' ? `projects/${e(`${repo.owner}/${repo.repo}`)}` : `repositories/${e(repo.owner)}/${e(repo.repo)}`;
   const pullBase = (ref: PullRef): string => provider === 'github' ? `repos/${e(ref.owner)}/${e(ref.repo)}/pulls/${ref.number}` : `${repoPath(ref)}/${provider === 'gitlab' ? 'merge_requests' : 'pullrequests'}/${ref.number}`;
@@ -64,6 +66,7 @@ function clientFor(api: ApiTransport, provider: Provider, host: string): Provide
   }
   return {
     provider,
+    ...threadOperations(api, graphql, provider, host),
     async repositories(cursor) {
       const page = pageNumber(cursor);
       if (page === null) return { ok: false, reason: 'invalid_response' };
@@ -174,18 +177,27 @@ function clientFor(api: ApiTransport, provider: Provider, host: string): Provide
       if (!owns(ref) || comment.line < 1 || !comment.body.trim()) return { ok: false, reason: 'invalid_response' };
       if (provider === 'github') return write(`${pullBase(ref)}/comments`, 'POST', { body: comment.body, path: comment.path, line: comment.line, side: comment.side === 'new' ? 'RIGHT' : 'LEFT', commit_id: comment.headSha });
       if (provider === 'bitbucket') return write(`${pullBase(ref)}/comments`, 'POST', { content: { raw: comment.body }, inline: { path: comment.path, ...(comment.side === 'new' ? { to: comment.line } : { from: comment.line }) } });
-      return { ok: false, reason: 'unsupported' };
+      const detail = await api.request(pullBase(ref));
+      if (!detail.ok) return detail;
+      const pull = gitlabPull(detail.value, ref);
+      if (!pull?.startSha || pull.headSha !== comment.headSha) return { ok: false, reason: 'invalid_response' };
+      return write(`${pullBase(ref)}/discussions`, 'POST', { body: comment.body, position: { position_type: 'text', base_sha: pull.baseSha, start_sha: pull.startSha, head_sha: pull.headSha, old_path: comment.path, new_path: comment.path, ...(comment.side === 'new' ? { new_line: comment.line } : { old_line: comment.line }) } });
     },
     async review(ref: PullRef, review: ReviewSubmission) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };
       if (provider === 'github') return write(`${pullBase(ref)}/reviews`, 'POST', { event: review.event === 'approve' ? 'APPROVE' : review.event === 'request_changes' ? 'REQUEST_CHANGES' : 'COMMENT', body: review.body, commit_id: review.headSha });
       if (provider === 'gitlab') {
-        if (review.event === 'approve') return write(`${pullBase(ref)}/approve`, 'POST', { sha: review.headSha });
+        if (review.event === 'approve') { const approved = await write(`${pullBase(ref)}/approve`, 'POST', { sha: review.headSha }); return approved.ok && review.body.trim() ? write(`${pullBase(ref)}/notes`, 'POST', { body: review.body }) : approved; }
         if (review.event === 'comment') return write(`${pullBase(ref)}/notes`, 'POST', { body: review.body });
-        return { ok: false, reason: 'unsupported' };
+        const requested = await graphql.request('graphql', { method: 'POST', body: { query: 'mutation($path:ID!,$iid:String!){mergeRequestRequestChanges(input:{projectPath:$path,iid:$iid}){errors mergeRequest{id}}}', variables: { path: `${ref.owner}/${ref.repo}`, iid: String(ref.number) } } });
+        if (!requested.ok) return requested;
+        const changed = z.object({ data: z.object({ mergeRequestRequestChanges: z.object({ errors: z.array(z.string()), mergeRequest: z.object({ id: z.string() }).nullable() }) }) }).safeParse(requested.value);
+        if (!changed.success || changed.data.data.mergeRequestRequestChanges.errors.length || !changed.data.data.mergeRequestRequestChanges.mergeRequest) return { ok: false, reason: 'unavailable' };
+        return review.body.trim() ? write(`${pullBase(ref)}/notes`, 'POST', { body: review.body }) : { ok: true, value: '' };
       }
       if (review.event === 'comment') return write(`${pullBase(ref)}/comments`, 'POST', { content: { raw: review.body } });
-      return write(`${pullBase(ref)}/${review.event === 'approve' ? 'approve' : 'request-changes'}`, 'POST');
+      const decision = await write(`${pullBase(ref)}/${review.event === 'approve' ? 'approve' : 'request-changes'}`, 'POST');
+      return decision.ok && review.body.trim() ? write(`${pullBase(ref)}/comments`, 'POST', { content: { raw: review.body } }) : decision;
     },
     async requestReviewers(ref, reviewers) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };

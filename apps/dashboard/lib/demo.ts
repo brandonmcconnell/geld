@@ -52,5 +52,6 @@ export function demoClient(provider: ProviderClient['provider']): ProviderClient
     diff: async () => ({ ok: true, value: DEMO_DIFF }),
     comments: async () => ({ ok: true, value: [] }),
     comment: denied, lineComment: denied, review: denied, requestReviewers: denied,
+    threads: async () => ({ ok: true, value: [] }), reply: denied, resolve: denied,
   };
 }
