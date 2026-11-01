@@ -254,7 +254,7 @@ async function runCase(name, url, body, discovery = false) {
     if (name === 'bitbucket-list-counts') {
       listSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
       await patchSettings({ showListStats: false });
-      item.listSourcePreparation = 'List stats disabled through real shared settings before native navigation; enable only after native list search returns the single fixture.';
+      item.listSourcePreparation = 'List stats disabled through real shared settings before native navigation; enable on the actual multi-row list and demand only PR27 through explicit intent.';
     }
     page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
@@ -357,17 +357,37 @@ async function waitTotals(page, all, visible, hiddenCount) {
 async function trustedHiddenToggle(page, expectedLabel, selector = '.geld-provider-toggle') {
   const before = await page.$eval(selector, (node) => ({ label: node.textContent.trim(), expanded: node.getAttribute('aria-expanded') }));
   assert.match(before.label, expectedLabel);
-  const [event] = await Promise.all([
-    page.evaluate((selector) => new Promise((resolve, reject) => {
-      const button = document.querySelector(selector);
-      if (button === null) { reject(new Error('Owned hidden-file toggle missing'));return; }
-      const timeout = setTimeout(() => reject(new Error('Trusted hidden-file toggle click was not observed')), 5000);
-      button.addEventListener('click', (event) => { clearTimeout(timeout);resolve({ trusted: event.isTrusted, label: button.textContent.trim(), expanded: button.getAttribute('aria-expanded') }); }, { once: true });
-    }), selector),
-    page.click(selector),
-  ]);
-  assert.equal(event.trusted, true, 'Hidden-file toggle must receive a real trusted browser click');
-  return { before, event };
+  await page.$eval(selector, (node) => node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' }));
+  const clickTarget = await poll(() => page.$eval(selector, (button) => {
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return { unobstructed: hit !== null && button.contains(hit), top: rect.top, bottom: rect.bottom, hitTag: hit?.tagName ?? null };
+  }), (value) => value.unobstructed, 'Native toggle center is visible below sticky navigation', 5000);
+  await page.evaluate((selector) => {
+    globalThis.__geldTrustedToggleClick?.cleanup();
+    let listener;
+    let timeout;
+    const cleanup = () => { clearTimeout(timeout);document.removeEventListener('click', listener, true); };
+    const pending = new Promise((resolve, reject) => {
+      listener = (event) => {
+        const button = event.target instanceof Element ? event.target.closest(selector) : null;
+        if (button === null) return;
+        cleanup();
+        resolve({ trusted: event.isTrusted, label: button.textContent.trim(), expanded: button.getAttribute('aria-expanded'), phase: 'document capture before native state changes' });
+      };
+      timeout = setTimeout(() => { cleanup();reject(new Error('Trusted hidden-file toggle click was not observed')); }, 5000);
+      document.addEventListener('click', listener, true);
+    });
+    globalThis.__geldTrustedToggleClick = { pending, cleanup };
+  }, selector);
+  try {
+    await page.click(selector);
+    const event = await page.evaluate(() => globalThis.__geldTrustedToggleClick.pending);
+    assert.equal(event.trusted, true, 'Hidden-file toggle must receive a real trusted browser click');
+    return { before, clickTarget, event };
+  } finally {
+    if (!page.isClosed()) await page.evaluate(() => { globalThis.__geldTrustedToggleClick?.cleanup();delete globalThis.__geldTrustedToggleClick; });
+  }
 }
 async function themeProbe(page) {
   return page.evaluate(() => {
@@ -1075,59 +1095,93 @@ async function nativeFragmentEvidence(page, anchor, assertSourcesUnchanged, reco
 
 async function bitbucketListCounts(page) {
   const selector = 'tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) .geld-provider-list-counts';
-  await page.waitForSelector('#search-pull-requests-input', { visible: true, timeout: WAIT_MS });
-  await page.type('#search-pull-requests-input', 'BCAT-6005', { delay: 10 });
-  const nativeFilter = await poll(() => page.evaluate(() => ({
-    value: document.querySelector('#search-pull-requests-input')?.value ?? null,
-    reviewPaths: [...new Set([...document.querySelectorAll('tr[data-qa="pull-request-row"] a[data-qa="pull-request-row-link"]')].map((link) => new URL(link.href).pathname))],
-    url: location.href,
-    chips: document.querySelectorAll('.geld-provider-list-counts').length,
-  })), (value) => value.value === 'BCAT-6005' && value.reviewPaths.length === 1 && value.reviewPaths[0] === '/atlassian/bitbucket-upload-file/pull-requests/27' && value.chips === 0, 'Actual native Bitbucket search narrows to PR27 before any extension list counts are enabled');
-  await patchSettings({ showListStats: true });
-  const coldLabel = await poll(() => page.evaluate((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0)?.textContent ?? null, selector), (value) => value !== null, 'Visible native-row chip is available for actual anonymous pointer intent');
-  // Real pointer intent is required for a cold anonymous list row; native list search alone does not request source diffs.
-  const intent = await page.evaluateHandle((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0), selector);
-  assert.ok(intent.asElement() !== null);
-  await intent.asElement().hover();
-  await discardHandle(intent);
-  const read = () => page.evaluate(() => {
-    const title = [...document.querySelectorAll('a[data-qa="pull-request-row-link"]')].find((node) => new URL(node.href).pathname === '/atlassian/bitbucket-upload-file/pull-requests/27' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
-    const row = title?.closest('tr[data-qa="pull-request-row"]');
-    if (row == null) return null;
-    const chip = title.parentElement?.querySelector('.geld-provider-list-counts');
-    return { text: chip?.textContent.replace(/\s+/g, ' ').trim() ?? null, title: chip?.getAttribute('title') ?? null,
-      nativeIds: [row, ...row.querySelectorAll('[id]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.id).filter(Boolean),
-      nativeLinks: [...row.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ href: node.getAttribute('href'), qa: node.getAttribute('data-qa') })), rowHidden: row.hidden, display: getComputedStyle(row).display };
+  const requests = [];
+  const request = (request) => {
+    if (!bitbucketApi(request.url())) return;
+    const url = new URL(request.url());
+    const initiator = request.initiator?.();
+    const frames = [];let stack = initiator?.stack;
+    for (let level = 0; stack != null && level < 8; level += 1) { frames.push(...(stack.callFrames ?? []).map((frame) => frame.url));stack = stack.parent; }
+    const reviewId = /\/pullrequests\/([1-9]\d*)(?:\/|$)/.exec(url.pathname)?.[1] ?? url.searchParams.get('from_pullrequest_id');
+    requests.push({ url: safeUrl(url.href), method: request.method(), reviewId, countResource: /\/(?:diff|diffstat)(?:\/|$)/.test(url.pathname), extensionInitiator: frames.some((frame) => frame.startsWith(`chrome-extension://${extensionId}/`)) });
+  };
+  const passive = () => page.evaluate(() => {
+    const rows = [...document.querySelectorAll('tr[data-qa="pull-request-row"]')];
+    const reviewPaths = [...new Set(rows.flatMap((row) => [...row.querySelectorAll('a[data-qa="pull-request-row-link"]')].map((link) => new URL(link.href).pathname)))];
+    const otherChips = rows.filter((row) => ![...row.querySelectorAll('a[data-qa="pull-request-row-link"]')].some((link) => new URL(link.href).pathname === '/atlassian/bitbucket-upload-file/pull-requests/27')).flatMap((row) => [...row.querySelectorAll('.geld-provider-list-counts')].filter((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0).map((node) => node.textContent.trim()));
+    return { reviewPaths, nativeRowCount: rows.length, otherChips, searchValue: document.querySelector('#search-pull-requests-input')?.value ?? null, url: location.href, chips: document.querySelectorAll('.geld-provider-list-counts').length };
   });
-  const initial = await poll(read, (value) => value !== null && /\b0 tests?\b/.test(value.text ?? '') && value.text.includes('+46') && value.text.includes('−29') && !/Counting|unavailable/.test(value.text), 'Visible native Bitbucket PR27 row settles at zero tests and+46−29');
-  const pointer = await installedHover(page, selector, 'pointer', 'bitbucket-list-pointer-hover');
-  const keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-list-keyboard-hover');
-  const expectedTotal = { label: 'Total', files: '5 files', additions: '+46', deletions: '−29' };
-  for (const hover of [pointer, keyboard]) {
-    assert.deepEqual(hover.rows.find((row) => row.label === 'Essential'), { ...expectedTotal, label: 'Essential' });
-    assert.deepEqual(hover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '0 files', additions: '+0', deletions: '−0' });
-    assert.deepEqual(hover.rows.find((row) => row.label === 'Total'), expectedTotal);
-  }
-  assert.equal(pointer.text, keyboard.text);
-  const proof = report.cases.find((item) => item.name === 'bitbucket-diff')?.derivedHidden;
-  assert.ok(proof?.path === 'pipe/pipe.py' && proof.files === 1 && Number.isFinite(proof.additions) && Number.isFinite(proof.deletions), 'Required PR27 diff must establish actual selected-file totals before its list cross-check');
-  const visible = { files: 4, additions: 46 - proof.additions, deletions: 29 - proof.deletions };
-  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
-  let filtered;
-  let filteredHover;
+  const assertPassive = async () => {
+    const state = await passive();
+    assert.ok(state.otherChips.length > 0, 'This native list must retain other cold rows to verify anonymous passive behavior');
+    assert.ok(state.otherChips.every((text) => text === 'Hover to count changes'), `Unrequested anonymous list rows started counting: ${JSON.stringify(state.otherChips)}`);
+    assert.deepEqual(requests.filter((item) => (item.extensionInitiator || item.countResource) && item.reviewId !== null && item.reviewId !== '27'), [], 'A cold anonymous row requested Geld counts without explicit intent');
+    assert.deepEqual(requests.filter((item) => item.countResource && item.reviewId === null), [], 'An unattributed diff request prevents proving bounded PR27-only counts');
+    return state;
+  };
+  page.on('request', request);
   try {
-    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
-    filtered = await poll(read, (value) => value !== null && /\b1 test\b/.test(value.text ?? '') && value.text.includes(`+${visible.additions}`) && value.text.includes(`−${visible.deletions}`), 'Shared custom pattern updates the actual same-row Bitbucket chip');
-    filteredHover = await installedHover(page, selector, 'keyboard', 'bitbucket-list-filtered-hover');
-    assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Essential'), { label: 'Essential', files: '4 files', additions: `+${visible.additions}`, deletions: `−${visible.deletions}` });
-    assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '1 file', additions: `+${proof.additions}`, deletions: `−${proof.deletions}` });
-    assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Total'), expectedTotal);
-    assert.deepEqual(filtered.nativeIds, initial.nativeIds);assert.deepEqual(filtered.nativeLinks, initial.nativeLinks);
-  } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
-  const restored = await poll(read, (value) => value !== null && value.text === initial.text, 'Removing the shared custom pattern restores native Bitbucket list counts');
-  assert.deepEqual(restored.nativeIds, initial.nativeIds);assert.deepEqual(restored.nativeLinks, initial.nativeLinks);
-  return { selection: 'Real native #search-pull-requests-input search narrows to PR27 while shared list stats are disabled; only then are counts enabled and actual pointer intent applied. No invented query parameter or other-row DOM hiding.', nativeFilter, coldLabel, initial, pointer, keyboard, runtimeDiffProof: proof, visible, filtered, filteredHover, restored,
-    nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
+    const nativeList = await poll(passive, (value) => value.reviewPaths.includes('/atlassian/bitbucket-upload-file/pull-requests/27') && value.reviewPaths.length > 1 && value.chips === 0, 'Actual multi-row native Bitbucket list loads while list counts remain disabled');
+    const nativeFilter = { status: 'not_used', reason: 'Native anonymous search updated its input and query URL but did not narrow the25rows in installed run41337759558. That provider behavior is not a Geld feature pass.', evidence: 'https://github.com/brandonmcconnell/geld/actions/runs/41337759558', observedSearchValue: nativeList.searchValue };
+    await patchSettings({ showListStats: true });
+    const coldLabel = await poll(() => page.evaluate((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0)?.textContent ?? null, selector), (value) => value !== null, 'Visible native-row chip is available for actual anonymous pointer intent');
+    await poll(passive, (value) => value.otherChips.length > 0, 'Other actual native list rows expose passive anonymous chips');
+    const passiveBeforeIntent = await assertPassive();
+    // The prerequisite can warm PR27's complete cache; every other row in this fresh profile must remain cold.
+    const intent = await page.evaluateHandle((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0), selector);
+    assert.ok(intent.asElement() !== null);
+    await intent.asElement().hover();
+    await discardHandle(intent);
+    const read = () => page.evaluate(() => {
+      const title = [...document.querySelectorAll('a[data-qa="pull-request-row-link"]')].find((node) => new URL(node.href).pathname === '/atlassian/bitbucket-upload-file/pull-requests/27' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+      const row = title?.closest('tr[data-qa="pull-request-row"]');
+      if (row == null) return null;
+      const chip = title.parentElement?.querySelector('.geld-provider-list-counts');
+      return { text: chip?.textContent.replace(/\s+/g, ' ').trim() ?? null, title: chip?.getAttribute('title') ?? null,
+        nativeIds: [row, ...row.querySelectorAll('[id]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.id).filter(Boolean),
+        nativeLinks: [...row.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ href: node.getAttribute('href'), qa: node.getAttribute('data-qa') })), rowHidden: row.hidden, display: getComputedStyle(row).display };
+    });
+    const initial = await poll(read, (value) => value !== null && /\b0 tests?\b/.test(value.text ?? '') && value.text.includes('+46') && value.text.includes('−29') && !/Counting|unavailable/.test(value.text), 'Visible native Bitbucket PR27 row settles at zero tests and+46−29');
+    const pointer = await installedHover(page, selector, 'pointer', 'bitbucket-list-pointer-hover');
+    const keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-list-keyboard-hover');
+    const expectedTotal = { label: 'Total', files: '5 files', additions: '+46', deletions: '−29' };
+    for (const hover of [pointer, keyboard]) {
+      assert.deepEqual(hover.rows.find((row) => row.label === 'Essential'), { ...expectedTotal, label: 'Essential' });
+      assert.deepEqual(hover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '0 files', additions: '+0', deletions: '−0' });
+      assert.deepEqual(hover.rows.find((row) => row.label === 'Total'), expectedTotal);
+    }
+    assert.equal(pointer.text, keyboard.text);
+    const proof = report.cases.find((item) => item.name === 'bitbucket-diff')?.derivedHidden;
+    assert.ok(proof?.path === 'pipe/pipe.py' && proof.files === 1 && Number.isFinite(proof.additions) && Number.isFinite(proof.deletions), 'Required PR27 diff must establish actual selected-file totals before its list cross-check');
+    const visible = { files: 4, additions: 46 - proof.additions, deletions: 29 - proof.deletions };
+    const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+    let filtered;
+    let filteredHover;
+    try {
+      await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
+      filtered = await poll(read, (value) => value !== null && /\b1 test\b/.test(value.text ?? '') && value.text.includes(`+${visible.additions}`) && value.text.includes(`−${visible.deletions}`), 'Shared custom pattern updates the actual same-row Bitbucket chip');
+      filteredHover = await installedHover(page, selector, 'keyboard', 'bitbucket-list-filtered-hover');
+      assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Essential'), { label: 'Essential', files: '4 files', additions: `+${visible.additions}`, deletions: `−${visible.deletions}` });
+      assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '1 file', additions: `+${proof.additions}`, deletions: `−${proof.deletions}` });
+      assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Total'), expectedTotal);
+      assert.deepEqual(filtered.nativeIds, initial.nativeIds);assert.deepEqual(filtered.nativeLinks, initial.nativeLinks);
+    } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
+    const restored = await poll(read, (value) => value !== null && value.text === initial.text, 'Removing the shared custom pattern restores native Bitbucket list counts');
+    assert.deepEqual(restored.nativeIds, initial.nativeIds);assert.deepEqual(restored.nativeLinks, initial.nativeLinks);
+    const passiveAfterCounts = await assertPassive();
+    await patchSettings({ showListStats: false });
+    const statsOff = await poll(read, (value) => value !== null && value.text === null && value.display !== 'none', 'Real list-stat disable removes the tested chip while retaining its native row');
+    await poll(passive, (value) => value.chips === 0, 'Real list-stat disable removes all owned list chips');
+    assert.deepEqual(statsOff.nativeIds, initial.nativeIds);assert.deepEqual(statsOff.nativeLinks, initial.nativeLinks);
+    await patchSettings({ showListStats: true });
+    const statsRestored = await poll(read, (value) => value !== null && value.text === initial.text, 'Real list-stat enable restores the exact PR27 counts');
+    assert.deepEqual(statsRestored.nativeIds, initial.nativeIds);assert.deepEqual(statsRestored.nativeLinks, initial.nativeLinks);
+    await poll(passive, (value) => value.otherChips.length > 0, 'Other native rows restore their cold chips');
+    const passiveAfterRestore = await assertPassive();
+    return { selection: 'Actual native multi-row list is retained without search dependency or DOM hiding. Only PR27 receives explicit count intent; other anonymous chips remain cold.', nativeList, nativeFilter, coldLabel, passiveBeforeIntent, initial, pointer, keyboard, runtimeDiffProof: proof, visible, filtered, filteredHover, restored, passiveAfterCounts, statsOff, statsRestored, passiveAfterRestore,
+      requestEvidence: { requests, extension: requests.filter((item) => item.extensionInitiator), nativeOrUnattributed: requests.filter((item) => !item.extensionInitiator), basis: 'Actual browser request initiator stacks identify extension frames when supplied; diff/diffstat immutable comparisons additionally retain from_pullrequest_id. Known native deployment400 responses are not count failures.' },
+      nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
+  } finally { page.off('request', request); }
 }
 
 async function authorPresentationProbe(page, provider, anchor) {
