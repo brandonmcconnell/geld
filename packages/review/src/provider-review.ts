@@ -64,6 +64,8 @@ export interface ProviderReviewBot {
 export interface ProviderReviewCheck extends RawCheckRun {
   readonly authorId?: string;
   readonly key?: string;
+  readonly nativeStatus?: string;
+  readonly allowFailure?: boolean;
 }
 
 export interface ProviderReviewInput {
@@ -71,6 +73,7 @@ export interface ProviderReviewInput {
   readonly threads: readonly ProviderReviewThread[];
   readonly reviewers?: readonly ProviderReviewReviewer[];
   readonly checks?: readonly ProviderReviewCheck[];
+  readonly checksCoverage?: 'complete' | 'partial' | 'unavailable';
   readonly bots?: readonly ProviderReviewBot[];
   readonly complete?: boolean;
   readonly closed?: boolean;

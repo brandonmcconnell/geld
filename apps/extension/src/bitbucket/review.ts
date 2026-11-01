@@ -1,4 +1,4 @@
-import type { ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread, RawCheckRun } from '@geld/review';
+import type { ProviderReviewAuthor, ProviderReviewCheck, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread } from '@geld/review';
 import type { ProviderReviewPanelEvent } from '../providers/review-panel';
 import type { ProviderReviewPage, ProviderReviewSnapshot } from '../providers/types';
 import { BitbucketApiError, BitbucketClient } from './api';
@@ -126,8 +126,8 @@ function normalizeReviewers(pr: BitbucketPullRequest): readonly ProviderReviewRe
   return [...reviewers.values()];
 }
 
-function normalizeChecks(source: readonly BitbucketStatus[], headSha: string, unavailable: Unavailable[]): readonly RawCheckRun[] {
-  const checks: RawCheckRun[] = [];
+function normalizeChecks(source: readonly BitbucketStatus[], headSha: string, unavailable: Unavailable[]): readonly ProviderReviewCheck[] {
+  const checks: ProviderReviewCheck[] = [];
   for (const status of source) {
     if (status.sha === null) {
       unavailable.push({ area: 'CI checks', reason: `Bitbucket did not identify the commit for ${status.name}.` });
@@ -135,6 +135,7 @@ function normalizeChecks(source: readonly BitbucketStatus[], headSha: string, un
     }
     if (status.sha !== headSha) continue;
     checks.push({
+      key: status.key, nativeStatus: status.state,
       name: status.name, sha: status.sha, status: status.state === 'INPROGRESS' ? 'in_progress' : 'completed',
       conclusion: status.state === 'INPROGRESS' ? null : status.state === 'SUCCESSFUL' ? 'success' : status.state === 'FAILED' ? 'failure' : 'cancelled',
       startedAt: status.createdAt,
@@ -212,12 +213,14 @@ export async function fetchBitbucketReview(page: ProviderReviewPage, signal: Abo
   const normalized = normalizeBitbucketComments(sourceComments, page);
   unavailable.push(...normalized.unavailable);
   const checks = normalizeChecks(statuses, before.headSha, unavailable);
+  const checksCoverage = statusResult.status === 'rejected' ? 'unavailable'
+    : unavailable.some((source) => source.area === 'CI checks') ? checks.length > 0 ? 'partial' : 'unavailable' : 'complete';
   const events = [...normalizeEvents(activity, page, unavailable), ...taskEvents(tasks, sourceComments, page, unavailable)];
   unavailable.push({ area: 'approval requirements', reason: 'Bitbucket did not supply repository approval requirements in the review response.' });
   const complete = unavailable.length === 0;
   const input: ProviderReviewInput = {
     subject: { provider: 'bitbucket', origin: page.repository.origin, repository: page.repository.path, id: page.number, headSha: before.headSha },
-    threads: normalized.threads, reviewers: normalizeReviewers(before), checks, bots: [], complete,
+    threads: normalized.threads, reviewers: normalizeReviewers(before), checks, checksCoverage, bots: [], complete,
     closed: after.state === 'DECLINED' || after.state === 'MERGED' || after.state === 'SUPERSEDED',
   };
   const commentsCoverage = commentResult.status === 'rejected' ? 'unavailable' : normalized.unavailable.some((source) => source.area === 'comments') ? 'partial' : 'complete';

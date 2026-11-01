@@ -1899,6 +1899,10 @@ async function bitbucketListCounts(page, item) {
       identityEvidence.hoverVisibility ??= {};
       identityEvidence.hoverVisibility[name] = evidence;
     } });
+    await page.hover('tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) a[data-qa="pull-request-row-link"]');
+    await pause(800);
+    identityEvidence.nativeTitleTransition = await read();
+    assert.equal(identityEvidence.nativeTitleTransition?.text, initial.text, 'A real native title-tooltip visit must retain its adjacent count chip');
     const pointer = await hover('pointer', 'bitbucket-list-pointer-hover');
     const keyboard = await hover('keyboard', 'bitbucket-list-keyboard-hover');
     const expectedTotal = { label: 'Total', files: `${fixture.all.files} files`, additions: `+${fixture.all.additions}`, deletions: `−${fixture.all.deletions}` };

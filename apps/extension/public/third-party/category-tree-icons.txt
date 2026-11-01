@@ -1,4 +1,4 @@
-Native category tree glyphs
+Native category tree and CI status glyphs
 
 Unmodified path geometry from:
 - @gitlab/svgs 3.171.0: dist/sprite_icons/{name}.svg
@@ -6,7 +6,7 @@ Unmodified path geometry from:
 - @atlaskit/icon 38.0.2: svgs/core/{name}.svg
   https://registry.npmjs.org/@atlaskit/icon/-/icon-38.0.2.tgz
 
-Only path geometry/fill-rule/clip-rule and viewBox are retained. Rendering normalizes the fill to currentColor, adds decorative accessibility attributes and dimensions; semantic mappings are maintained by Geld. Bitbucket directory controls use its native chevrons, not the Atlaskit folder pictogram.
+Category trees retain path geometry/fill-rule/clip-rule and viewBox. CI status glyphs additionally retain source rect/ellipse/circle geometry and presentation attributes, with group fill rules applied to their shapes. Rendering normalizes the fill to currentColor, adds decorative accessibility attributes and dimensions; semantic mappings are maintained by Geld. Bitbucket directory controls use its native chevrons, not the Atlaskit folder pictogram.
 
 GitLab MIT notice
 
@@ -256,3 +256,7 @@ limitations under the License.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+CI status glyph sources:
+- @gitlab/svgs dist/sprite_icons/status_{success,pending,running,failed,canceled,skipped,manual,scheduled,created,preparing}_borderless.svg
+- @atlaskit/icon svgs/core/check-circle.svg

@@ -16,6 +16,7 @@ html[data-geld-provider="bitbucket"] {
   --geld-provider-success: var(--ds-text-success);
   --geld-provider-danger: var(--ds-text-danger);
   --geld-provider-warning: var(--ds-text-warning);
+  --geld-provider-ci-success: var(--ds-icon-success);
   --geld-provider-bg: var(--ds-surface);
   --geld-provider-bg-subtle: var(--ds-surface-sunken);
   --geld-provider-border: var(--ds-border);

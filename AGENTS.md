@@ -1511,6 +1511,13 @@ Provider-specific surfaces translate settings and sources into shared review and
   Native sidebar remounts can retire Geld's category nodes while the diff remains open, so reapply the controller's current category choice when rebuilding the projection instead of resetting the sidebar to Essential independently.
   Rebuilding a known unchanged review/revision also retains its selected file and folder choices, while a different subject, explicit teardown or a path leaving the complete source inventory clears the corresponding selection.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
+- **CI presentation preserves provider source facts.**
+  Queued and pending checks remain separate from running checks, while native GitLab manual or scheduled jobs and Bitbucket stopped builds keep their own labels without changing bot-check voting semantics.
+  CI-area coverage distinguishes unavailable or partial reads from an authoritative empty result, independently of unavailable approvals or comments.
+  Malformed nonempty pipeline or head-pipeline metadata cannot establish that no CI checks exist.
+  Native job IDs and build-status keys identify Details links, and refresh restores their focus only for the same review, head, key and URL while focus remains in the owned CI interface.
+  Passive GitLab CI glyphs retain the raw native state class so GitLab's own light and dark fill rules apply, while Bitbucket's verified success glyph consumes its icon token and unsupported or allowed-failure mappings remain text-only.
+  An allowed-to-fail job remains a native job fact rather than evidence of a required-check rule or overall pipeline success.
 - **Digest bylines and native merge rules remain source facts.**
   Native author names, aliases, avatars and role badges are read only from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
   Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
