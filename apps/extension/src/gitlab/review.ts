@@ -7,7 +7,7 @@ import type {
   ProviderReviewThread,
   RawCheckRun,
 } from '@geld/review';
-import type { ProviderReviewPage } from '../providers/types';
+import type { ProviderReviewPage, ProviderReviewSnapshot } from '../providers/types';
 
 type JsonObject = Readonly<Record<string, unknown>>;
 type GitLabMergeRequestState = 'opened' | 'closed' | 'merged' | 'locked';
@@ -56,6 +56,7 @@ export interface GitLabReviewCheck extends RawCheckRun {
 }
 
 export interface GitLabReviewSnapshot {
+  readonly sourceCoverage: NonNullable<ProviderReviewSnapshot['sourceCoverage']>;
   readonly input: ProviderReviewInput;
   readonly comments: readonly ProviderReviewComment[];
   readonly events: readonly GitLabReviewEvent[];
@@ -228,6 +229,7 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
       url: sameOriginUrl(item.discussion_path, base, new URL(base).pathname) ?? first.url,
       resolved: item.resolved === true,
       outdated: item.active === false,
+      stateKnown: typeof item.resolved === 'boolean' && (item.diff_discussion === false || typeof item.active === 'boolean'),
       comments: notes,
       ...(typeof path === 'string' && path !== '' ? { path } : {}),
       ...(typeof line === 'number' && Number.isSafeInteger(line) && line > 0 ? { line } : {}),
@@ -372,6 +374,8 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   if (discussionResult?.status !== 'fulfilled') throw discussionResult?.status === 'rejected' ? discussionResult.reason : new GitLabReviewError('GitLab discussions are unavailable.');
   const parsed = parseGitLabDiscussions(discussionResult.value, subject);
   const unavailable: { area: string; reason: string }[] = [];
+  const unknownThreadState = parsed.threads.some((thread) => thread.stateKnown !== true);
+  if (unknownThreadState) unavailable.push({ area: 'thread state', reason: 'GitLab did not supply the native resolution or active state of every discussion.' });
   const areaError = (area: string, reason: unknown): void => {
     unavailable.push({ area, reason: reason instanceof Error ? reason.message : 'GitLab source unavailable.' });
   };
@@ -432,6 +436,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   return {
     input: { subject, threads: parsed.threads, reviewers: [...reviewerMap.values()], checks, complete, closed: state === 'closed' || state === 'merged' },
     comments: parsed.comments,
+    sourceCoverage: { comments: 'complete', threads: unknownThreadState ? 'partial' : 'complete' },
     events: parsed.events,
     checks,
     capabilities: gitLabReviewCapabilities(doc, approvals),
