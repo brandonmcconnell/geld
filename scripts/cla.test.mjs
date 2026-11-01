@@ -25,7 +25,7 @@ function httpError(status) {
 }
 
 /** Just enough of Octokit for scripts/cla.mjs, backed by maps. `commits` maps a pull request to its commits' author lists. */
-function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onStatus } = {}) {
+function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onStatus, reactionsFail = false } = {}) {
   const files = new Map(AGREEMENT.map((version) => [`${version.commit}:CLA.md`, { sha: version.blob, content: '' }]));
   const refs = new Set();
   if (signatures) {
@@ -104,7 +104,11 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onSta
         },
       },
       reactions: {
+        // As GitHub does: a locked conversation refuses a reaction from the workflow's token.
         createForIssueComment: async ({ comment_id, content }) => {
+          if (reactionsFail) throw httpError(502);
+          const home = Object.entries(comments).find(([, list]) => list.some((comment) => comment.id === comment_id))?.[0];
+          if (home !== undefined && locks.includes(Number(home))) throw httpError(403);
           reactions.push({ comment_id, content });
           return { data: {} };
         },
@@ -333,6 +337,31 @@ describe('a pull request', () => {
     assert.deepEqual(fake.recorded().map((signature) => signature.login), ['hunterchen7']);
     assert.equal(fake.comments[128].length, 1);
     assert.deepEqual(fake.locks, [128]);
+    // The 🚀 lands before the lock, which would refuse it (geld#128: the signature was recorded, the reaction failed the run).
+    assert.deepEqual(fake.reactions, [{ comment_id: comment.id, content: 'rocket' }]);
+  });
+
+  it('reacts to a signature it recovered from a pull request\'s comments', async () => {
+    const comment = signing(batuhan, 512, '2026-11-20T10:00:00Z');
+    const fake = fakeGitHub({ commits: { 154: [[actor(batuhan)]] }, comments: { 154: [comment] }, signatures: [] });
+    await run({ github: fake.github, context: prEvent(pullRequest(154, { by: batuhan, merged: true })), core });
+    assert.deepEqual(fake.reactions, [{ comment_id: 512, content: 'rocket' }]);
+    assert.deepEqual(fake.locks, [154]);
+  });
+
+  it('keeps a signature and finishes the check when the reaction is refused', async () => {
+    const pull = pullRequest(155, { by: hunter });
+    const comment = signing(hunter, 513);
+    const fake = fakeGitHub({ commits: { 155: [[actor(hunter)]] }, comments: { 155: [comment] }, pulls: { 155: pull }, reactionsFail: true });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await run({ github: fake.github, context: commentEvent({ number: 155, pull_request: {} }, comment), core });
+    } finally {
+      console.warn = warn;
+    }
+    assert.deepEqual(fake.recorded().map((signature) => signature.login), ['hunterchen7']);
+    assert.equal(fake.statuses.at(-1).state, 'success');
   });
 
   it('leaves a merged pull request open while an author has yet to sign, and the owner\'s own alone', async () => {
@@ -365,7 +394,22 @@ describe('an issue', () => {
     await run({ github: fake.github, context: commentEvent({ number: 150 }, comment), core });
     await run({ github: fake.github, context: commentEvent({ number: 150 }, { ...comment, id: 505 }), core });
     assert.deepEqual(fake.recorded().map((signature) => signature.login), ['Batuhan1999']);
-    assert.equal(fake.reactions.length, 1);
+    assert.equal(fake.recorded()[0].comment, comment.html_url);
+    // Signing again changes nothing on record, and still gets its 🚀.
+    assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [504, 505]);
+  });
+
+  it('acknowledges a repeat signature on another merged pull request before locking it', async () => {
+    const rex = { login: 'rexdotsh', id: 103, type: 'User' };
+    const first = { ...signing(rex, 514), html_url: 'https://github.com/brandonmcconnell/geld/pull/13#issuecomment-514' };
+    const again = { ...signing(rex, 515), html_url: 'https://github.com/brandonmcconnell/geld/pull/4#issuecomment-515' };
+    const pulls = { 13: pullRequest(13, { by: rex, merged: true }), 4: pullRequest(4, { by: rex, merged: true }) };
+    const fake = fakeGitHub({ commits: { 13: [[actor(rex)]], 4: [[actor(rex)]] }, comments: { 13: [first], 4: [again] }, pulls });
+    await run({ github: fake.github, context: commentEvent({ number: 13, pull_request: {} }, first), core });
+    await run({ github: fake.github, context: commentEvent({ number: 4, pull_request: {} }, again), core });
+    assert.deepEqual(fake.recorded().map((signature) => [signature.login, signature.comment]), [['rexdotsh', first.html_url]]);
+    assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [514, 515]);
+    assert.deepEqual(fake.locks, [13, 4]);
   });
 
   it('ignores the owner quoting the sentence', async () => {
