@@ -104,6 +104,47 @@ afterEach(() => {
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
 
 describe('provider controller behavior', () => {
+  it('switches the active category when a popup reveal targets a file in another category', async () => {
+    const files: readonly FileStats[] = [...FILES, { path: 'src/generated.ts', additions: 9, deletions: 1 }];
+    const { adapter } = fixture('gitlab', files);
+    const { controller } = start(adapter, { ...DEFAULT_SETTINGS, categories: { tests: true, generated: true }, categoryPatterns: { generated: ['src/generated.ts'] } });
+    await settle();
+    const headers = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')];
+    headers().find((button) => button.textContent?.startsWith('Generated'))?.click();
+    expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('closed');
+    controller.revealPath('src/first.test.ts');
+    expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('open');
+    expect(headers().find((button) => button.textContent?.startsWith('Tests'))?.getAttribute('aria-expanded')).toBe('true');
+    expect(headers().find((button) => button.textContent?.startsWith('Generated'))?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each([0, 1, 2])('shows %i hidden tests with singular only for one and native semantic line colors', async (count) => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const files: readonly FileStats[] = [
+      { path: 'src/main.ts', additions: 12, deletions: 2 },
+      ...Array.from({ length: count }, (_, index) => ({ path: `src/hidden${index}.test.ts`, additions: 4, deletions: 1 })),
+    ];
+    const { adapter } = fixture('gitlab', files);
+    const list = document.createElement('div');
+    const nativeLink = document.createElement('a');
+    nativeLink.textContent = 'Native MR';
+    list.append(nativeLink);
+    document.body.append(list);
+    const { controller } = start({ ...adapter, listRows: () => [{ root: list, host: list, author: 'alice', url: new URL('/reviews/1', window.location.href).href }] });
+    await settle();
+    const chip = list.querySelector('.geld-provider-list-counts');
+    expect(chip?.textContent).toBe(`${count} ${count === 1 ? 'test' : 'tests'} · +12 −2`);
+    expect(chip?.querySelector('.geld-provider-list-counts__add')?.textContent).toBe('+12');
+    expect(chip?.querySelector('.geld-provider-list-counts__del')?.textContent).toBe('−2');
+    expect(list.firstChild).toBe(nativeLink);
+    controller.updateSettings({ ...DEFAULT_SETTINGS, categories: { tests: false } });
+    await settle();
+    expect(chip?.textContent).toBe(`+${12 + count * 4} −${2 + count}`);
+    controller.stop();
+    expect(list.children).toHaveLength(1);
+    expect(list.firstChild).toBe(nativeLink);
+  });
+
   it.each(PROVIDERS)('counts hidden files missing from mounted %s DOM and restores native counts/icons on stop', async (provider) => {
     const { adapter } = fixture(provider, FILES);
     const nativeIcon = node('#add').querySelector('svg');
@@ -119,7 +160,7 @@ describe('provider controller behavior', () => {
     expect(node('#del').textContent).toBe('2 deletions');
     expect(node('#files').textContent).toBe('1 file changed');
     expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('closed');
-    expect(document.querySelector('.geld-provider-categories')?.textContent).toContain('test/not-mounted.test.ts');
+    expect(document.querySelector('[data-geld-category-path="test/not-mounted.test.ts"] button')?.getAttribute('aria-label')).toContain('test/not-mounted.test.ts');
     expect(node('#add').querySelector('svg')).toBe(nativeIcon);
     expect(node('#add').querySelector('b')).toBe(nativeNumber);
     controller.stop();

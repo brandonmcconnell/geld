@@ -55,6 +55,22 @@ function commentButton(root: HTMLElement): HTMLButtonElement | null { return roo
 afterEach(() => { clearProviderLineFolds(); document.body.replaceChildren(); window.location.hash = ''; });
 
 describe('provider test outlines', () => {
+  it.each([
+    ['https://gitlab.com/acme/widgets/-/merge_requests/7/diffs', '[acme/widgets]', false],
+    ['https://bitbucket.org/acme/widgets/pull-requests/7/diff', '[acme/widgets]', false],
+    ['https://gitlab.com/group/sub/widgets/-/merge_requests/7/diffs', '[gitlab.com/group/sub/widgets]', true],
+    ['https://bitbucket.org/acme/widgets/pull-requests/7/diff', '[bitbucket.org/acme/widgets]', true],
+  ] as const)('scopes test outlining for %s to the provider-qualified repository', (url, scope, expected) => {
+    const previous = window.location.href;
+    try {
+      window.location.href = url;
+      const file = fixture(["describe('custom', () => {", "  it('works', () => {", '    expect(value).toBe(1);', '  });', '});'].map((text, index) => added(index + 1, text)), 'src/custom.ts');
+      applyProviderLineFolds(file.view, [file.stats], settings({ categoryPatterns: { tests: [scope, 'src/custom.ts'] } }));
+      expect(testButtons(file.root)).toHaveLength(expected ? 1 : 0);
+      expect(file.lines.every((line) => hidden(line.root))).toBe(expected);
+    } finally { window.location.href = previous; }
+  });
+
   it('folds a whole added suite once and opens its original live source with a native keyboard button', () => {
     const file = fixture(["describe('cache', () => {", "  it('stores values', () => {", '    expect(cache.get()).toBe(1);', '  });', '});'].map((text, index) => added(index + 1, text)));
     const originalRows = [...file.root.querySelectorAll('tbody > tr')];

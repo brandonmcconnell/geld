@@ -164,7 +164,11 @@ function normalizeEvents(source: readonly BitbucketActivity[], page: ProviderRev
       continue;
     }
     const id = `activity:${event.kind}:${event.at}:${event.author.id}:${event.headSha ?? event.state}:${event.previousState ?? ''}`;
-    events.set(id, { id, url: page.url, author: reviewAuthor(event.author), body, createdAt: event.at });
+    const stateChange = event.kind === 'update' && event.previousState !== null && event.state !== null && event.state !== event.previousState;
+    events.set(id, { id, url: page.url, author: reviewAuthor(event.author), body, createdAt: event.at,
+      kind: stateChange ? 'state' : event.kind === 'update' && event.headSha !== null ? 'push' : 'activity',
+      ...(event.kind === 'update' && event.headSha !== null ? { headSha: event.headSha } : {}),
+    });
   }
   return [...events.values()];
 }
@@ -179,7 +183,7 @@ function taskEvents(tasks: readonly BitbucketTask[], comments: readonly Bitbucke
       unavailable.push({ area: 'tasks', reason: `Bitbucket did not supply the source link, author or timestamp of task ${task.id}.` });
       continue;
     }
-    events.push({ id: `task-${task.id}`, url: url.href, author: reviewAuthor(task.creator), body: `Task ${task.state === 'RESOLVED' ? 'resolved' : 'open'}: ${task.body}`, createdAt: task.createdAt });
+    events.push({ id: `task-${task.id}`, url: url.href, author: reviewAuthor(task.creator), body: `Task ${task.state === 'RESOLVED' ? 'resolved' : 'open'}: ${task.body}`, createdAt: task.createdAt, kind: 'task' });
   }
   return events;
 }

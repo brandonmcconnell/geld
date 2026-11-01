@@ -12,6 +12,24 @@ function host(): HTMLElement {
 }
 
 describe('native provider count ownership', () => {
+  it('adds accessible totals without exposing or replacing aria-hidden native visuals and restores them on disable', () => {
+    const group = document.createElement('div');
+    group.innerHTML = '<h5>Lines updated</h5><span aria-hidden="true"><b>+46</b><b>−29</b></span>';
+    document.body.append(group);
+    const native = group.querySelector('span');
+    const counts = new ProviderCounts();
+    counts.writeSummary(group, { files: 1, additions: 1, deletions: 0 });
+    expect(group.querySelector('.geld-provider-accessible-counts')?.textContent).toBe('1 file changed. Added 1 line. Removed 0 lines.');
+    expect(native?.getAttribute('aria-hidden')).toBe('true');
+    counts.writeSummary(group, { files: 0, additions: 0, deletions: 2 });
+    expect(group.querySelectorAll('.geld-provider-accessible-counts')).toHaveLength(1);
+    expect(group.querySelector('.geld-provider-accessible-counts')?.textContent).toBe('0 files changed. Added 0 lines. Removed 2 lines.');
+    counts.restore();
+    expect(group.querySelector('.geld-provider-accessible-counts')).toBeNull();
+    expect(group.querySelector('span')).toBe(native);
+    expect(group.textContent).toBe('Lines updated+46−29');
+  });
+
   it('restores native wording while preserving the original icon and child element identities', () => {
     const count = host();
     const icon = count.querySelector('svg');
@@ -91,6 +109,19 @@ describe('native provider count ownership', () => {
     expect(count.getAttribute('aria-label')).toBe('Added 0 lines.');
     counts.restore();
     expect(count.getAttribute('aria-label')).toBe('Added 208 lines.');
+  });
+
+  it('rewrites both spoken line counts in a combined native label and restores later native totals', () => {
+    const count = host();
+    const counts = new ProviderCounts();
+    count.setAttribute('aria-label', 'Added 36 lines. Removed 1 line.');
+    counts.writeLineAttribute(count, 'aria-label', { additions: 1, deletions: 0 });
+    expect(count.getAttribute('aria-label')).toBe('Added 1 line. Removed 0 lines.');
+    count.setAttribute('aria-label', 'Added 50 lines. Removed 8 lines.');
+    counts.writeLineAttribute(count, 'aria-label', { additions: 4, deletions: 2 });
+    expect(count.getAttribute('aria-label')).toBe('Added 4 lines. Removed 2 lines.');
+    counts.restore();
+    expect(count.getAttribute('aria-label')).toBe('Added 50 lines. Removed 8 lines.');
   });
 
   it('does not rewrite aggregate labels or overwrite later native accessibility changes', () => {

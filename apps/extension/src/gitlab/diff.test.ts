@@ -24,10 +24,46 @@ it('describes nested project namespaces and the actual selected version', () => 
   rapid();
   const page = describeGitLabPage(new URL('https://gitlab.com/gitlab-org/quality/triage-ops/-/merge_requests/4508/diffs?w=1'), document);
   expect(page?.repository).toEqual({ provider: 'gitlab', origin: 'https://gitlab.com', path: 'gitlab-org/quality/triage-ops' });
-  expect(page?.headSha).toBe(HEAD);
-  expect(page?.diffPageUrl).toContain('diff_id=2158495265');
+  expect(page?.headSha).toBeNull();
+  expect(page?.diffPageUrl).not.toContain('diff_id=2158495265');
   expect(page?.diffPageUrl).toContain('w=1');
   expect(describeGitLabPage(new URL('https://gitlab.com/groups/acme/-/merge_requests'), document)).toBeNull();
+});
+
+it('keeps current MR head and selected diff metadata out of other MR and repository links', () => {
+  rapid();
+  document.body.insertAdjacentHTML('beforeend', `<div data-noteable-type="MergeRequest" data-noteable-data='{"diff_head_sha":"${BASE}"}'></div>`);
+  for (const target of ['/gitlab-org/gitlab/-/merge_requests/266883', '/gitlab-org/quality/triage-ops/-/merge_requests/266882']) {
+    const page = describeGitLabPage(new URL(target, window.location.origin), document);
+    expect(page?.headSha).toBeNull();
+    expect(page?.diffPageUrl).not.toContain('diff_id=');
+  }
+  const current = describeGitLabPage(new URL(window.location.href), document);
+  expect(current?.headSha).toBe(HEAD);
+  expect(current?.diffPageUrl).toContain('diff_id=2158495265');
+});
+
+it('uses native revision metadata only for compatible target selection', () => {
+  rapid();
+  const base = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs';
+  expect(describeGitLabPage(new URL(`${base}?diff_id=2158495265&w=1`), document)?.headSha).toBe(HEAD);
+  expect(describeGitLabPage(new URL(`${base}?diff_id=123`), document)?.headSha).toBeNull();
+  window.location.href = `${base}?diff_id=2158495265`;
+  const latest = describeGitLabPage(new URL(base), document);
+  expect(latest?.headSha).toBeNull();
+  expect(latest?.diffPageUrl).not.toContain('diff_id=');
+  expect(describeGitLabPage(new URL(`${base}?diff_id=2158495265`), document)?.headSha).toBe(HEAD);
+  window.location.href = `${base}?diff_id=123`;
+  expect(describeGitLabPage(new URL(window.location.href), document)?.headSha).toBeNull();
+  expect(describeGitLabPage(new URL(`${base}?commit_id=${BASE}`), document)?.headSha).toBe(BASE);
+});
+
+it('does not substitute the latest MR note head for a selected historical diff awaiting hydration', () => {
+  window.location.href += '?diff_id=123';
+  document.body.innerHTML = `<div data-noteable-type="MergeRequest" data-noteable-data='{"diff_head_sha":"${HEAD}"}'></div>`;
+  expect(describeGitLabPage(new URL(window.location.href), document)?.headSha).toBeNull();
+  window.location.href = window.location.href.split('?')[0] ?? window.location.href;
+  expect(describeGitLabPage(new URL(window.location.href), document)?.headSha).toBe(HEAD);
 });
 
 it('does not run on sign-in interstitials or invalid review paths', () => {
@@ -48,6 +84,14 @@ it('declares native count labels and the interactive Changes link separately fro
   expect(targets[0]?.labels).toContainEqual({ host: wrapper, attribute: 'aria-label', count: 'additions' });
   expect(targets[1]?.hoverHosts).toEqual([document.querySelector('[data-testid="diffs-tab"] a')]);
   expect(targets[1]?.files).toBe(document.querySelector('.js-changes-tab-count'));
+});
+
+it('declares the observed paired native line-count label once and rejects unrelated numeric phrases', () => {
+  document.body.innerHTML = '<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div aria-label="Added 4 lines. Removed 1 line."><span data-testid="js-file-addition-line">4</span><span data-testid="js-file-deletion-line">1</span></div></div></div>';
+  const wrapper = document.querySelector<HTMLElement>('[aria-label]');
+  expect(gitLabHeaderTargets(document)[0]?.labels).toEqual([{ host: wrapper, attribute: 'aria-label', count: 'lines' }]);
+  wrapper?.setAttribute('aria-label', 'Added 4 lines. Removed 1 line. Pipeline 123');
+  expect(gitLabHeaderTargets(document)[0]?.labels).toEqual([]);
 });
 
 it('collapses with native controls, keeps nodes in place and respects disabled Viewed', () => {
@@ -93,6 +137,17 @@ it('reads classic file headers from the source-derived Vue structure', () => {
   expect(view?.kind).toBe('gitlab-classic');
   expect(view?.entries[0]?.path).toBe('spec/a_spec.rb');
   expect(view?.entries[0]?.isExpanded?.()).toBe(true);
+});
+
+it('exposes the entire observed native file row and ignores Geld category clones', () => {
+  rapid();
+  document.body.insertAdjacentHTML('beforeend', '<section data-testid="file-tree-container"><input aria-label="Search files"><nav class="mr-tree-list" aria-label="File tree"><div data-testid="file-row-container" data-file-row="bab0cb834"><a data-testid="file-row" data-file-row="bab0cb834" href="?file_path=src%2Fone.rb">one.rb</a><button data-testid="file-unresolved-threads-count">1</button><span data-testid="file-added-lines">+2</span></div></nav><div data-geld-ui><div data-testid="file-row-container"><a data-testid="file-row" data-file-row="clone" href="?file_path=spec%2Fclone_spec.rb">clone</a></div></div></section>');
+  const view = readGitLabDiff(document);
+  expect(view?.tree).toHaveLength(1);
+  expect(view?.tree[0]?.presentationRoot).toBe(document.querySelector('[data-testid="file-row-container"]'));
+  expect(view?.tree[0]?.presentationRoot?.querySelector('[data-testid="file-unresolved-threads-count"]')?.textContent).toBe('1');
+  expect(view?.treeContainer).toBe(document.querySelector('nav.mr-tree-list'));
+  expect(view?.treeContainer?.contains(document.querySelector('input'))).toBe(false);
 });
 
 it('finds real MR list rows and author login without confusing issues or external links', () => {

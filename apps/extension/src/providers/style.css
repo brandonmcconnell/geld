@@ -89,3 +89,36 @@
 .geld-provider-breakdown { font: var(--geld-provider-font); }
 .geld-provider-breakdown summary { cursor: pointer; }
 .geld-provider-actions, .geld-provider-review__source-actions { display: inline-flex; flex-wrap: wrap; gap: var(--geld-provider-space-2); margin-inline: var(--geld-provider-space-3); }
+
+/* Own the accordion around the native tree; provider file nodes stay in place. */
+[data-geld-provider-category-host] { display: flex; flex-direction: column; min-block-size: 0; }
+[data-geld-provider-category-row] { display: none !important; }
+[data-geld-provider-category-body] { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }
+[data-geld-provider-category-body="native"] { display: none !important; }
+.geld-provider-category-header { display: block; flex: 0 0 auto; inline-size: 100%; border: 0; border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); padding: var(--geld-provider-space-3) var(--geld-provider-space-2); text-align: start; color: var(--geld-provider-text); background: var(--geld-provider-bg); font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); cursor: pointer; }
+.geld-provider-category-header:hover, .geld-provider-category-folder:hover { background: var(--geld-provider-bg-subtle); }
+.geld-provider-category-header:focus-visible, .geld-provider-category-folder:focus-visible { outline: var(--geld-provider-focus-outline); box-shadow: var(--geld-provider-focus-ring); outline-offset: var(--geld-provider-focus-offset); }
+.geld-provider-category-header[aria-expanded="true"] { color: var(--geld-provider-link); }
+[data-geld-provider-category-host] > .geld-provider-categories { order: 2; display: flex; flex-direction: column; min-block-size: 0; padding: 0; border: 0; }
+.geld-provider-category { display: flex; flex-direction: column; min-block-size: 0; flex: 0 0 auto; }
+.geld-provider-category[data-active="true"] { flex: 1 1 auto; }
+.geld-provider-category-content { min-block-size: 0; overflow: auto; }
+.geld-provider-category-content[hidden], .geld-provider-category-list[hidden] { display: none !important; }
+.geld-provider-category-list { list-style: none; padding: 0; margin: 0; }
+.geld-provider-category-folder { border: 0; display: flex; align-items: center; gap: var(--geld-provider-space-2); inline-size: 100%; padding: var(--geld-provider-space-2); padding-inline-start: calc(var(--geld-provider-space-2) + var(--geld-category-depth, 0) * var(--geld-provider-space-4)); color: var(--geld-provider-text); background: none; text-align: start; font: var(--geld-provider-font); cursor: pointer; }
+.geld-provider-category-folder::before { content: ''; display: inline-block; inline-size: 6px; block-size: 6px; border-inline-end: 1px solid currentColor; border-block-end: 1px solid currentColor; transform: rotate(-45deg); flex: 0 0 auto; }
+.geld-provider-category-folder[aria-expanded="true"]::before { transform: rotate(45deg); }
+.geld-provider-category-native-row { max-inline-size: 100%; }
+.geld-provider-category-native-row.geld-provider-file { padding-inline-start: calc(var(--geld-provider-space-2) + var(--geld-category-depth, 0) * var(--geld-provider-space-4)); }
+.geld-provider-category-status { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
+.geld-provider-category-native-row [aria-current="true"], .geld-provider-category-native-row[aria-current="true"] { color: var(--geld-provider-link); background: var(--geld-provider-bg-subtle); }
+.geld-provider-list-counts__add { color: var(--geld-provider-success); }
+.geld-provider-list-counts__del { color: var(--geld-provider-danger); }
+
+[data-geld-provider-category-host][data-geld-provider-tree-sized] { max-block-size: var(--geld-provider-tree-max-height); }
+.geld-provider-essential-content { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }
+.geld-provider-essential-content[hidden] { display: none !important; }
+[data-geld-provider-category-host] > .geld-provider-categories:has(> .geld-provider-category[data-active="true"]) { flex: 1 1 auto; }
+.geld-provider-category[data-active="true"] > .geld-provider-category-content { flex: 1 1 auto; }
+
+.geld-provider-accessible-counts { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

@@ -19,11 +19,14 @@ const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/26633
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
 const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
+const GL_PROJECT_LIST = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests?state=opened';
+const GL_GROUP_LIST = 'https://gitlab.com/groups/gitlab-org/-/merge_requests?state=opened';
+const BB_PR_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/?state=MERGED';
 const report = {
   schema: 1, startedAt: new Date().toISOString(), mode: 'actual installed unpacked extension on live anonymous public pages',
   parity: 'incomplete', executablePath, extensionPath, artifacts,
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
-  limitations: ['Bitbucket extension DOM/review adapter is inactive: routing checks do not establish Bitbucket feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only.'],
+  limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
   installation: null, cases: [], infrastructureErrors: [],
 };
 const cooldowns = new Map();
@@ -130,8 +133,8 @@ async function capture(page, name) {
   await writeFile(resolve(artifacts, files.accessibility), `${JSON.stringify(await page.accessibility.snapshot({ interestingOnly: false }), null, 2)}\n`);
   return files;
 }
-async function runCase(name, url, body) {
-  const item = { name, url, startedAt: new Date().toISOString(), status: 'running', console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
+async function runCase(name, url, body, discovery = false) {
+  const item = { name, url, startedAt: new Date().toISOString(), status: 'running', ...(discovery ? { purpose: 'Read-only native surface discovery. No feature parity assertion.' } : {}), console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
   report.cases.push(item);
   let page;
   try {
@@ -166,9 +169,9 @@ async function runCase(name, url, body) {
     Object.assign(item, result);
     item.auth = await authObservation(page, provider);
     item.artifacts = await capture(page, name);
-    item.status = result?.status ?? 'passed';
+    item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
-    item.status = 'failed'; item.error = errorText(error);
+    item.status = discovery ? 'unavailable' : 'failed'; item.error = errorText(error);
     if (page !== undefined && !page.isClosed()) {
       try { item.artifacts = await capture(page, `${name}-failed`); } catch (captureError) { item.captureError = errorText(captureError); }
     }
@@ -256,10 +259,207 @@ async function bitbucketNativeStyles(page) {
     const stateText = [...document.querySelectorAll('[data-qa="pr-branches-and-state-styles"] span')].find((node) => node.children.length === 0 && node.textContent.trim() === 'Merged');
     const root = getComputedStyle(document.documentElement);
     const tokens = Object.fromEntries([...root].filter((name) => name.startsWith('--ds-')).map((name) => [name, root.getPropertyValue(name).trim()]));
-    return { scope: 'Computed native Bitbucket styles in actual installed browser; extension adapter remains inactive. No inferred values or hashed selectors.', theme: document.documentElement.getAttribute('data-theme'), colorMode: document.documentElement.getAttribute('data-color-mode'), viewport: { width: innerWidth, height: innerHeight }, tokens,
+    return { scope: 'Computed native Bitbucket styles in actual installed browser. This sample does not assert extension feature parity. No inferred values or hashed selectors.', theme: document.documentElement.getAttribute('data-theme'), colorMode: document.documentElement.getAttribute('data-color-mode'), viewport: { width: innerWidth, height: innerHeight }, tokens,
       stateText: stateText === undefined ? null : sample('[data-qa="pr-branches-and-state-styles"]', undefined, stateText), stateLozenge: stateText === undefined ? null : sample('[data-qa="pr-branches-and-state-styles"]', undefined, stateText.parentElement?.parentElement), body: sample('body'), moreActions: sample('[data-qa="pr-header-actions-drop-down-menu-styles"] button'), moreActionsBorder: sample('[data-qa="pr-header-actions-drop-down-menu-styles"] button', '::after'),
       author: sample('[data-qa="pr-header-author"]'), activity: sample('[data-qa="pull-request-overview-activity-content"]'), time: sample('main time'), article: sample('article[data-qa="branch-diff-file"]'), header: sample('[data-qa="bk-file__header"]'), path: sample('h2[data-qa="bk-filepath"]'), code: sample('[data-qa="code-line"]'), line: sample('[data-qa="code-line-permalink"]') };
   });
+}
+
+async function bitbucketDom(page) {
+  return page.evaluate(() => {
+    const number = (node) => {
+      const text = node?.textContent.trim().replace(/,/g, '') ?? '';
+      return /^[+−-]?\d+$/.test(text) ? Math.abs(Number(text.replace('−', '-'))) : null;
+    };
+    const tab = document.querySelector('a#pull-request-tabs-1[role="tab"]');
+    const files = tab?.querySelector(':scope > div > span > span');
+    const heading = [...document.querySelectorAll('#file-tree h5')].find((node) => node.textContent.trim() === 'Lines updated');
+    const leaves = [...heading?.parentElement?.parentElement?.querySelectorAll('span') ?? []].filter((node) => node.children.length === 0);
+    return { files: number(files), additions: number(leaves.find((node) => /^\+\s*[\d,]+$/.test(node.textContent.trim()))), deletions: number(leaves.find((node) => /^[-−]\s*[\d,]+$/.test(node.textContent.trim()))),
+      hidden: [...document.querySelectorAll('[data-geld-provider-hidden]')].map((node) => ({ path: node.querySelector(':scope > div[id^="chg-"]')?.id.slice(4) ?? null, mode: node.getAttribute('data-geld-provider-hidden'), display: getComputedStyle(node).display })),
+      nativeFiles: document.querySelectorAll('[role="region"][aria-label="Diff"] > div > div[id^="chg-"]').length,
+      renderedFiles: document.querySelectorAll('article[data-qa="branch-diff-file"]').length, placeholders: document.querySelectorAll('pre[data-testid="pr-diff-placeholder-wrapper"]').length };
+  });
+}
+
+async function bitbucketFiltering(page, item) {
+  const all = { files: 5, additions: 46, deletions: 29 };
+  item.baseline = await waitTotals(page, all, all, 0);
+  item.baselineDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Actual native Bitbucket baseline counts');
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  try {
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
+    item.filtered = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all?.files === 5 && state.all.additions === 46 && state.all.deletions === 29 && state.visible?.files === 4 && state.hiddenCount === 1 && state.categories.some((category) => category.id === 'tests' && category.paths.includes('pipe/pipe.py')), 'Actual shared pattern setting hides one complete Bitbucket file');
+    const visible = item.filtered.visible;
+    item.derivedHidden = { path: 'pipe/pipe.py', files: all.files - visible.files, additions: all.additions - visible.additions, deletions: all.deletions - visible.deletions, basis: 'Actual complete adapter result minus actual visible totals, not a guessed fixture count' };
+    assert.ok(item.derivedHidden.additions + item.derivedHidden.deletions > 0, 'The selected file did not remove any changed lines');
+    item.filteredDom = await poll(() => bitbucketDom(page), (value) => value.files === visible.files && value.additions === visible.additions && value.deletions === visible.deletions && value.hidden.some((file) => file.path === 'pipe/pipe.py' && file.mode === 'closed' && file.display === 'none'), 'Native Bitbucket file count/line totals and actual hidden file wrapper');
+    item.filteredArtifacts = await capture(page, 'bitbucket-pattern-filtered');
+    item.categoryInteraction = await categoryInteraction(page, 'pipe/pipe.py', 'bitbucket', 'bitbucket-category', true);
+  } finally {
+    await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} });
+  }
+  item.restored = await waitTotals(page, all, all, 0);
+  item.restoredDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Native Bitbucket counts and hiding attributes restored after pattern removal');
+}
+
+async function categoryInteraction(page, path, provider, name, reveal) {
+  const read = () => page.evaluate((path, provider) => {
+    const headers = [...document.querySelectorAll('.geld-provider-category-header')];
+    const active = document.querySelector('.geld-provider-category[data-active="true"]');
+    const item = [...active?.querySelectorAll('[data-geld-category-path]') ?? []].find((node) => node.getAttribute('data-geld-category-path') === path);
+    const copy = item?.querySelector('.geld-provider-category-native-row');
+    const copiedControl = copy?.matches('a,button') ? copy : copy?.querySelector('a,button');
+    const source = [...document.querySelectorAll(provider === 'gitlab' ? 'a[data-testid="file-row"][data-file-row]' : '#file-tree a[href^="#chg-"]')].find((node) => {
+      if (node.closest('[data-geld-ui]') !== null) return false;
+      const url = new URL(node.href);
+      return provider === 'gitlab' ? url.searchParams.get('file_path') === path : decodeURIComponent(url.hash.slice(1)) === `chg-${path}`;
+    });
+    const nativeRow = provider === 'gitlab' ? source?.closest('[data-testid="file-row-container"]') ?? source : source;
+    const root = provider === 'gitlab'
+      ? [...document.querySelectorAll('diff-file[data-file-data]')].find((node) => { try { return JSON.parse(node.getAttribute('data-file-data')).new_path === path; } catch { return false; } })
+      : document.getElementById(`chg-${path}`)?.parentElement;
+    const styles = (node) => {
+      if (node == null) return null;
+      const style = getComputedStyle(node);
+      return { tag: node.tagName, fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color };
+    };
+    const marks = (node) => [...node?.querySelectorAll('svg,img,[data-testid="file-unresolved-threads-count"]') ?? []].map((mark) => ({ tag: mark.tagName, hook: mark.getAttribute('data-testid'), label: mark.getAttribute('aria-label'), use: mark.querySelector('use')?.getAttribute('href') ?? null, color: getComputedStyle(mark).color, fill: getComputedStyle(mark).fill }));
+    const content = root?.querySelector('[data-testid="file-content"][data-qa="bk-file__content"]');
+    return { headers: headers.map((header) => ({ text: header.textContent, expanded: header.getAttribute('aria-expanded') })),
+      focusedHeader: document.activeElement?.classList.contains('geld-provider-category-header') ? document.activeElement.textContent : null,
+      clone: copy == null ? null : { ariaLabel: copiedControl?.getAttribute('aria-label'), hasNativePresentation: !copy.classList.contains('geld-provider-file'), style: styles(copiedControl), marks: marks(copy) },
+      source: source === undefined ? null : { style: styles(source), marks: marks(nativeRow) },
+      root: root == null ? null : { display: getComputedStyle(root).display, hiddenMode: root.getAttribute('data-geld-provider-hidden'), rendered: root.querySelector('article[data-qa="branch-diff-file"]') !== null,
+        expanded: content != null && content.closest('[aria-hidden="true"]') === null && getComputedStyle(content).display !== 'none', codeLines: root.querySelectorAll('[data-qa="code-line"]').length } };
+  }, path, provider);
+  const initial = await poll(read, (value) => value.headers.length >= 2 && /^Essential/.test(value.headers[0].text) && value.headers[0].expanded === 'true' && value.headers.at(-1).expanded === 'false' && value.root?.display === 'none', 'Essential starts expanded and Tests starts collapsed');
+  await page.focus('.geld-provider-category-header');
+  await page.keyboard.press('End');
+  const endFocused = await read();
+  assert.match(endFocused.focusedHeader ?? '', /^Tests/, 'Real End key did not focus the Tests category');
+  await page.keyboard.press('Enter');
+  const opened = await poll(read, (value) => value.headers.filter((header) => header.expanded === 'true').length === 1 && value.headers.at(-1).expanded === 'true' && value.root !== null && value.root.display !== 'none' && value.clone !== null, 'Real Enter opens only Tests and shows its native file wrapper');
+  assert.ok(opened.clone.ariaLabel?.includes(path), 'Cloned category file lost its full-path accessible label');
+  assert.equal(opened.clone.hasNativePresentation, true, 'Category row fell back instead of cloning an available native presentation');
+  assert.ok(opened.source !== null && opened.clone.style !== null, 'Native source and cloned control samples are required');
+  if (opened.source.style.tag === opened.clone.style.tag) {
+    for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color']) assert.equal(opened.clone.style[key], opened.source.style[key], `Cloned ${provider} native file ${key} diverges`);
+  }
+  assert.ok(opened.clone.marks.length >= opened.source.marks.length, 'Cloned native row lost status or annotation visuals');
+  const result = { path, interaction: 'Real Puppeteer End then Enter keyboard events', initial, endFocused, opened, openedArtifacts: await capture(page, `${name}-open`) };
+  if (reveal) {
+    result.beforeReveal = await read();
+    const controlHandle = await page.evaluateHandle((path) => {
+      const item = [...document.querySelectorAll('.geld-provider-category[data-active="true"] [data-geld-category-path]')].find((node) => node.getAttribute('data-geld-category-path') === path);
+      const row = item?.querySelector('.geld-provider-category-native-row');
+      return row?.matches('a,button') ? row : row?.querySelector('a,button') ?? null;
+    }, path);
+    const control = controlHandle.asElement();
+    assert.ok(control !== null, 'Actual cloned native file control is missing');
+    await control.click();
+    result.afterReveal = await poll(read, (value) => value.root?.display !== 'none' && value.root?.rendered === true && value.root?.expanded === true && value.root?.codeLines > 0, 'Real cloned Bitbucket file click hydrates and expands its native diff', 20_000);
+    result.revealObservation = result.beforeReveal.root?.rendered ? 'Native file was already hydrated before the click; expanded code is verified.' : 'Native placeholder became a rendered expanded diff with real code after the click.';
+    result.revealedArtifacts = await capture(page, `${name}-revealed`);
+    await controlHandle.dispose();
+  }
+  await page.focus('.geld-provider-category-header[aria-expanded="true"]');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  result.closed = await poll(read, (value) => value.headers.filter((header) => header.expanded === 'true').length === 1 && value.headers[0].expanded === 'true' && value.root?.display === 'none', 'Returning to Essential hides the categorized native file again');
+  result.closedArtifacts = await capture(page, `${name}-essential`);
+  return result;
+}
+
+async function nativeSurface(page) {
+  return page.evaluate(() => {
+    const visible = (node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+    const sample = (node) => {
+      const style = getComputedStyle(node);
+      return { tag: node.tagName, attributes: Object.fromEntries([...node.attributes].filter((attr) => /^(?:data-qa|data-testid|data-test-id|data-reference-type|data-project-path|data-iid|role|id|aria-label|aria-expanded|aria-selected|href)$/.test(attr.name)).map((attr) => [attr.name, attr.value])),
+        text: node.textContent.replace(/\s+/g, ' ').trim().slice(0, 200),
+        style: Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'fontWeight', 'color', 'backgroundColor', 'border', 'borderRadius', 'boxShadow', 'filter', 'outline', 'padding'].map((key) => [key, style[key]])) };
+    };
+    const links = [...document.querySelectorAll('a[href]')].flatMap((link) => {
+      if (!visible(link)) return [];
+      try {
+        const url = new URL(link.href);
+        if (url.origin !== location.origin || url.username !== '' || url.password !== '') return [];
+        const review = location.hostname === 'gitlab.com' ? /\/-\/merge_requests\/[1-9]\d*(?:\/|$)/.test(url.pathname) : /\/pull-requests\/[1-9]\d*(?:\/|$)/.test(url.pathname);
+        const commit = /\/-\/commit\/[0-9a-f]{7,64}$/i.test(url.pathname) || /\/commits\/[0-9a-f]{7,64}$/i.test(url.pathname);
+        if (!review && !commit) return [];
+        return [{ href: url.href, kind: commit ? 'commit' : 'review', text: link.textContent.trim().slice(0, 160), referenceType: link.getAttribute('data-reference-type'), projectPath: link.getAttribute('data-project-path'), iid: link.getAttribute('data-iid') }];
+      } catch { return []; }
+    }).slice(0, 60);
+    return { title: document.title, bodyExcerpt: document.body.innerText.slice(0, 3000), links,
+      hooks: [...document.querySelectorAll('[data-qa], [data-testid], [data-test-id], [role="tab"], [role="tree"], [role="treeitem"]')].filter(visible).slice(0, 100).map(sample),
+      nativeComments: [...document.querySelectorAll('[id^="comment-"], [id^="comment_"], a[href*="#comment-"]')].filter(visible).slice(0, 20).map(sample),
+      nativeTimes: [...document.querySelectorAll('time')].filter(visible).slice(0, 12).map((node) => ({ datetime: node.getAttribute('datetime'), title: node.getAttribute('title'), text: node.textContent, style: sample(node).style })),
+      ownedCounts: { list: document.querySelectorAll('.geld-provider-list-counts').length, panels: document.querySelectorAll('.geld-provider-review').length, hover: document.querySelectorAll('#geld-provider-count-tooltip').length },
+      listRows: [...document.querySelectorAll('.merge-request, [data-testid="issuable-container"], [role="row"]')].filter(visible).slice(0, 25).map(sample),
+      theme: { selection: document.documentElement.getAttribute('data-theme'), mode: document.documentElement.getAttribute('data-color-mode'), body: sample(document.body).style } };
+  });
+}
+
+async function nativeLinkHover(page, kind, artifactName) {
+  const selector = kind === 'merge_request' ? 'a[data-reference-type="merge_request"]' : 'a[data-reference-type="commit"], a.gfm-commit';
+  const handles = await page.$$(selector);
+  let chosen;
+  for (const handle of handles) {
+    const eligible = await handle.evaluate((node) => node.closest('[data-geld-ui], .geld-provider-review') === null && node.getBoundingClientRect().height > 0);
+    if (eligible) { chosen = handle; break; }
+  }
+  if (chosen === undefined) return { status: 'unavailable', reason: `No visible native ${kind} reference link was observed`, selector };
+  const trigger = await chosen.evaluate((node) => ({ href: node.href, text: node.textContent.trim(), attributes: Object.fromEntries([...node.attributes].filter((attr) => /^data-(reference-type|project-path|iid|commit|project)$/.test(attr.name)).map((attr) => [attr.name, attr.value])) }));
+  try {
+    await page.keyboard.press('Escape');
+    await page.mouse.move(1, 1);
+    await chosen.scrollIntoView();
+    await chosen.hover();
+    const observation = await poll(() => page.evaluate((type) => {
+      const visible = (node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+      const overlays = [...document.querySelectorAll('.gl-popover, .popover, [data-testid="commit-popover"], [role="tooltip"]')].filter(visible).map((node) => {
+        const style = getComputedStyle(node);
+        return { id: node.id, className: node.className, role: node.getAttribute('role'), owned: node.closest('[data-geld-ui], #geld-provider-count-tooltip') !== null,
+          kind: node.querySelector('.mr-popover') !== null ? 'merge_request' : node.matches('[data-testid="commit-popover"]') || node.querySelector('[data-testid="commit-title-link"], [data-testid="commit-sha-link"]') !== null ? 'commit' : 'other',
+          text: node.textContent.replace(/\s+/g, ' ').trim().slice(0, 3000), links: [...node.querySelectorAll('a[href]')].slice(0, 12).map((link) => ({ href: link.href, text: link.textContent.trim() })),
+          styles: Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'color', 'backgroundColor', 'border', 'borderRadius', 'filter', 'boxShadow'].map((key) => [key, style[key]])),
+          nativeCounts: [...node.querySelectorAll('[data-testid="diff-stats-additions"], [data-testid="diff-stats-deletions"]')].map((count) => ({ hook: count.getAttribute('data-testid'), text: count.textContent })) };
+      });
+      return { requestedKind: type, overlays, owners: [...document.querySelectorAll('[aria-describedby]')].filter((node) => visible(node) && overlays.some((overlay) => overlay.id !== '' && (node.getAttribute('aria-describedby') ?? '').split(/\s+/).includes(overlay.id))).slice(0, 8).map((node) => ({ tag: node.tagName, href: node.getAttribute('href'), describedBy: node.getAttribute('aria-describedby') })) };
+    }, kind), (value) => value.overlays.some((overlay) => !overlay.owned && overlay.kind === kind), 'Observed native provider reference card', 8000);
+    return { status: 'discovery', trigger, ...observation, artifacts: await capture(page, artifactName) };
+  } catch (error) {
+    return { status: 'unavailable', trigger, reason: errorText(error), artifacts: page.isClosed() ? null : await capture(page, `${artifactName}-unavailable`) };
+  } finally {
+    if (!page.isClosed()) { await page.keyboard.press('Escape'); await page.mouse.move(1, 1); }
+    for (const handle of handles) await handle.dispose();
+  }
+}
+
+async function publicJson(page, url) {
+  return page.evaluate(async (target) => {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 15_000);
+    try {
+      const response = await fetch(target, { method: 'GET', credentials: 'omit', signal: abort.signal, headers: { Accept: 'application/json' } });
+      if (!response.ok) return { status: response.status, retryAfter: response.headers.get('retry-after'), body: null };
+      return { status: response.status, body: await response.json() };
+    } catch (error) { return { status: null, body: null, error: error instanceof Error ? error.message : String(error) }; }
+    finally { clearTimeout(timer); }
+  }, url);
+}
+
+function bitbucketReviewUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.origin === 'https://bitbucket.org' && url.username === '' && url.password === '' && /^\/[^/]+\/[^/]+\/pull-requests\/[1-9]\d*\/?$/.test(url.pathname) ? `${url.origin}${url.pathname}` : null;
+  } catch { return null; }
+}
+
+async function unavailableDiscovery(name, reason, extra = {}) {
+  report.cases.push({ name, purpose: 'Read-only native surface discovery. No feature parity assertion.', status: 'unavailable', reason, ...extra, finishedAt: new Date().toISOString() });
+  await saveReport();
 }
 
 await mkdir(artifacts, { recursive: true });
@@ -289,6 +489,9 @@ try {
     item.enabledState = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
     const enabled = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0) && value.hidden.some((row) => row.value === 'closed' && row.display === 'none'), 'Actual native header rewrite and hidden file DOM');
     item.enabledDom = enabled;
+    const categorizedPath = item.enabledState.categories.find((category) => category.id === 'tests')?.paths[0];
+    assert.ok(typeof categorizedPath === 'string', 'Mixed GitLab fixture needs a real categorized path');
+    item.categoryInteraction = await categoryInteraction(page, categorizedPath, 'gitlab', 'gitlab-category', false);
     item.theme = await themeProbe(page);
     item.spokenEnabled = await countA11y(page);
     assert.match(item.spokenEnabled.additions ?? '', /\b4\b/, 'Spoken additions must match the rewritten4 visible lines');
@@ -348,12 +551,24 @@ try {
     assert.ok(item.dom.hidden > 0, 'GitHub reports hidden tests but no actual hidden diff entry exists');
     return {};
   });
+  let bitbucketCommit = null;
   for (const [name, url] of [['bitbucket-overview', BB_PR], ['bitbucket-diff', `${BB_PR}/diff`]]) {
     await runCase(name, url, async (page, item) => {
       await page.waitForFunction(() => document.body.innerText.includes('BCAT-6005') && document.body.innerText.includes('Support API token') && document.body.innerText.includes('Merged'), { timeout: WAIT_MS });
       if (name === 'bitbucket-diff') await page.waitForFunction(() => document.body.innerText.includes('README.md') && document.body.innerText.includes('pipe/pipe.py'), { timeout: WAIT_MS });
-      item.state = await poll(() => tabState(page), (state) => state.repository?.provider === 'bitbucket' && state.repository.path === 'atlassian/bitbucket-upload-file' && state.hasDiff === false, 'Installed Bitbucket routing response');
+      item.state = await poll(() => tabState(page), (state) => state.repository?.provider === 'bitbucket' && state.repository.path === 'atlassian/bitbucket-upload-file' && typeof state.hasDiff === 'boolean', 'Installed Bitbucket routing response');
       assert.equal(item.state.onDiffPage, name === 'bitbucket-diff');
+      if (name === 'bitbucket-diff') {
+        await bitbucketFiltering(page, item);
+        assert.equal(item.restored.hasDiff, true, 'Bitbucket diff adapter did not activate');
+      } else {
+        item.digest = await poll(() => page.evaluate(() => {
+          const panel = document.querySelector('.geld-provider-review');
+          return panel === null ? null : { state: panel.getAttribute('data-state'), title: panel.querySelector('h2')?.textContent, activity: panel.querySelectorAll('.geld-provider-review__event').length, sourceComments: panel.querySelectorAll('[data-geld-source]').length, unavailable: [...panel.querySelectorAll('.geld-provider-review__unavailable')].map((node) => node.textContent) };
+        }), (value) => value !== null && ['ready', 'partial'].includes(value.state) && value.activity > 0, 'Installed public Bitbucket digest with real activity');
+      }
+      const surfaceLinks = (await nativeSurface(page)).links;
+      bitbucketCommit ??= surfaceLinks.find((link) => link.kind === 'commit')?.href ?? null;
       item.nativeStyles = await bitbucketNativeStyles(page);
       assert.ok(Object.keys(item.nativeStyles.tokens).length > 0, 'No computed native --ds tokens were captured');
       assert.ok(item.nativeStyles.moreActions !== null, 'Stable native More actions button sample missing');
@@ -366,10 +581,91 @@ try {
       await page.focus('[data-qa="pr-header-actions-drop-down-menu-styles"] button');
       const focused = await bitbucketNativeStyles(page);
       item.nativeButtonFocus = { mechanism: 'Programmatic native focus, not menu activation', button: focused.moreActions, border: focused.moreActionsBorder };
-      item.featureParity = 'unsupported';
-      return { status: 'unsupported', reason: 'Actual extension responds on native public Bitbucket page, but its DOM/digest adapter is inactive. Native accessibility/DOM capture and routing are evidence only; no Bitbucket feature parity pass.' };
+      item.featureParity = 'partial';
+      return { status: 'passed', verified: name === 'bitbucket-diff' ? 'Installed complete diff counts, real synchronized pattern filtering, actual native file hiding/count rewrite, and restoration on this public fixture.' : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
     });
   }
+
+  for (const [name, url] of [['gitlab-project-mr-list-discovery', GL_PROJECT_LIST], ['gitlab-group-mr-list-discovery', GL_GROUP_LIST]]) {
+    await runCase(name, url, async (page, item) => {
+      try { await page.waitForFunction(() => [...document.querySelectorAll('a[href]')].some((link) => /\/-\/merge_requests\/[1-9]\d*(?:\/|$)/.test(new URL(link.href).pathname)), { timeout: 15_000 }); }
+      catch (error) { item.nativeReadiness = errorText(error); }
+      item.surface = await nativeSurface(page);
+      item.state = await tabState(page);
+      item.featureParity = 'not_evaluated';
+      return { status: item.surface.links.some((link) => link.kind === 'review') ? 'discovery' : 'unavailable', reason: 'Native project/group MR list capture. Counts and list chip parity are not asserted by this discovery case.' };
+    }, true);
+  }
+  await runCase('gitlab-native-reference-cards-discovery', GL_OVERVIEW, async (page, item) => {
+    try { await page.waitForFunction(() => document.querySelector('a[data-reference-type="merge_request"], a[data-reference-type="commit"]') !== null, { timeout: 15_000 }); }
+    catch (error) { item.nativeReadiness = errorText(error); }
+    item.surface = await nativeSurface(page);
+    item.mergeRequestCard = await nativeLinkHover(page, 'merge_request', 'gitlab-native-mr-card');
+    item.commitCard = await nativeLinkHover(page, 'commit', 'gitlab-native-commit-card');
+    item.featureParity = 'not_evaluated';
+    return { status: 'discovery', reason: 'Native reference links and cards are observed separately from Geld count hover assertions. Missing native cards remain explicitly unavailable.' };
+  }, true);
+
+  let bitbucketCandidates = [];
+  await runCase('bitbucket-pr-list-discovery', BB_PR_LIST, async (page, item) => {
+    try { await page.waitForFunction(() => [...document.querySelectorAll('a[href]')].some((link) => /\/pull-requests\/[1-9]\d*\/?$/.test(new URL(link.href).pathname)), { timeout: 15_000 }); }
+    catch (error) { item.nativeReadiness = errorText(error); }
+    item.surface = await nativeSurface(page);
+    bitbucketCandidates = [...new Set(item.surface.links.filter((link) => link.kind === 'review').map((link) => bitbucketReviewUrl(link.href)).filter((url) => url !== null))].map((url) => ({ url, basis: 'Actual native public PR list link', commentCount: null }));
+    bitbucketCommit ??= item.surface.links.find((link) => link.kind === 'commit')?.href ?? null;
+    const apiUrl = 'https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/pullrequests?state=MERGED&pagelen=30';
+    const listing = await publicJson(page, apiUrl);
+    const values = Array.isArray(listing.body?.values) ? listing.body.values : [];
+    item.publicListing = { url: apiUrl, status: listing.status, error: listing.error ?? null, next: typeof listing.body?.next === 'string' ? safeUrl(listing.body.next) : null,
+      candidates: values.map((value) => ({ id: value.id, url: bitbucketReviewUrl(value.links?.html?.href), title: typeof value.title === 'string' ? value.title : null, commentCount: typeof value.comment_count === 'number' ? value.comment_count : null })) };
+    const commented = item.publicListing.candidates.filter((value) => value.url !== null && value.commentCount > 0);
+    if (commented.length > 0) bitbucketCandidates = commented.map((value) => ({ ...value, basis: 'Actual public API PR with positive comment_count' }));
+    if (bitbucketCommit === null) {
+      for (const value of values) {
+        const candidate = value.source?.commit?.links?.html?.href;
+        if (typeof candidate === 'string' && /^https:\/\/bitbucket\.org\/[^/]+\/[^/]+\/commits\/[0-9a-f]{7,64}$/i.test(candidate)) { bitbucketCommit = candidate; break; }
+      }
+    }
+    item.featureParity = 'not_evaluated';
+    return { status: 'discovery', reason: 'Native PR list plus bounded public GET listing discovery. A positive comment_count is a fixture candidate, not a verified native discussion.' };
+  }, true);
+
+  let observedCommentFixture = false;
+  for (const [index, candidate] of bitbucketCandidates.slice(0, 3).entries()) {
+    await runCase(`bitbucket-public-comments-discovery-${index + 1}`, candidate.url, async (page, item) => {
+      const native = new URL(candidate.url);
+      const parts = native.pathname.split('/');
+      const commentsUrl = `https://api.bitbucket.org/2.0/repositories/${parts[1]}/${parts[2]}/pullrequests/${parts[4]}/comments?pagelen=20`;
+      const response = await publicJson(page, commentsUrl);
+      const values = Array.isArray(response.body?.values) ? response.body.values : [];
+      const comments = values.filter((value) => value.deleted !== true && typeof value.content?.raw === 'string' && value.content.raw.trim() !== '');
+      item.fixture = candidate;
+      item.publicComments = { url: commentsUrl, status: response.status, error: response.error ?? null, next: typeof response.body?.next === 'string' ? safeUrl(response.body.next) : null,
+        values: comments.slice(0, 10).map((value) => ({ id: value.id, parentId: value.parent?.id ?? null, authorId: value.user?.uuid ?? null, author: value.user?.display_name ?? null, createdOn: value.created_on ?? null, bodyExcerpt: value.content.raw.slice(0, 500), url: typeof value.links?.html?.href === 'string' ? safeUrl(value.links.html.href) : null })) };
+      try { await page.waitForFunction(() => document.querySelector('[data-qa="pull-request-activity"], [id^="comment-"], a[href*="#comment-"]') !== null, { timeout: 15_000 }); }
+      catch (error) { item.nativeReadiness = errorText(error); }
+      await pause(2000);
+      item.surface = await nativeSurface(page);
+      item.nativeStyles = await bitbucketNativeStyles(page);
+      item.featureParity = 'not_evaluated';
+      observedCommentFixture = comments.length > 0;
+      if (bitbucketCommit === null) bitbucketCommit = item.surface.links.find((link) => link.kind === 'commit')?.href ?? null;
+      return { status: comments.length > 0 ? 'discovery' : 'unavailable', reason: comments.length > 0 ? 'Public API confirms original nondeleted comments. Native DOM/accessibility evidence is captured separately; digest and comment actions are not asserted.' : 'No original nondeleted comment was confirmed in this bounded candidate capture.' };
+    }, true);
+    if (observedCommentFixture) break;
+  }
+  if (!observedCommentFixture) await unavailableDiscovery('bitbucket-comment-fixture-discovery', 'No comment-bearing PR was confirmed from the bounded native/public listing candidates.', { candidates: bitbucketCandidates.slice(0, 3) });
+  if (bitbucketCommit !== null) {
+    await runCase('bitbucket-native-commit-discovery', bitbucketCommit, async (page, item) => {
+      try { await page.waitForFunction(() => document.querySelector('article[data-qa="branch-diff-file"], [data-qa="bk-file__header"], [data-qa="code-line"]') !== null, { timeout: 15_000 }); }
+      catch (error) { item.nativeReadiness = errorText(error); }
+      item.surface = await nativeSurface(page);
+      item.nativeStyles = await bitbucketNativeStyles(page);
+      item.state = await tabState(page);
+      item.featureParity = 'not_evaluated';
+      return { status: 'discovery', reason: 'Actual native commit link discovered from a public PR/list response. Captures commit header, files and counts without claiming commit adapter parity.' };
+    }, true);
+  } else await unavailableDiscovery('bitbucket-native-commit-discovery', 'No native/public-response commit URL was observed. No commit URL or SHA was invented.');
 } catch (error) {
   report.infrastructureErrors.push(errorText(error));
   console.error(`INSTALLED EXTENSION INFRASTRUCTURE FAILURE: ${errorText(error)}`);
@@ -378,5 +674,5 @@ try {
   await saveReport();
 }
 const failed = report.status === 'failed';
-console.log(`Installed extension smoke: ${report.status}. Bitbucket feature parity remains UNSUPPORTED. Report: ${resolve(artifacts, 'report.json')}`);
+console.log(`Installed extension smoke: ${report.status}. Native discovery is not a feature parity pass. Report: ${resolve(artifacts, 'report.json')}`);
 process.exitCode = failed ? 1 : 0;

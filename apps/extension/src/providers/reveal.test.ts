@@ -65,6 +65,22 @@ it('discards stale reveal intent when the selected review changes before a file 
   expect(scroll).not.toHaveBeenCalled();
 });
 
+it('uses a verified provider navigation fallback once when the native tree row is recycled', async () => {
+  const { view, entries } = fixture();
+  const navigateToPath = vi.fn(() => true);
+  reveal = new ProviderReveal(() => ({ ...view, tree: [], navigateToPath }), () => 'same-visit');
+  reveal.request('src/lazy.ts');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(navigateToPath).toHaveBeenCalledExactlyOnceWith('src/lazy.ts');
+  const root = document.createElement('article');
+  view.container.append(root);
+  const scroll = vi.spyOn(root, 'scrollIntoView').mockImplementation(() => undefined);
+  entries.push({ path: 'src/lazy.ts', root, anchor: null, additions: null, deletions: null, isExpanded: () => true, expand: () => true, collapse: () => false });
+  reveal.refresh();
+  expect(scroll).toHaveBeenCalledTimes(1);
+  expect(navigateToPath).toHaveBeenCalledTimes(1);
+});
+
 it.each(['https://foreign.example/review', '/group/sub/project/-/merge_requests/42/diffs?file_path=src%2Flazy.ts', '/group/sub/project/-/merge_requests/42/diffs?diff_id=123&view=parallel&w=1&file_path=src%2Fother.ts'])('does not follow a stale or foreign tree link (%s)', async (href) => {
   const { view, link } = fixture();
   link.href = href;
@@ -113,4 +129,42 @@ it('waits for asynchronous native expansion readback without clicking the contro
   reveal.refresh();
   expect(expand).toHaveBeenCalledTimes(1);
   expect(scroll).toHaveBeenCalledTimes(1);
+});
+
+it('prepares a lazy native placeholder once, then waits for genuine mounted expansion before completing', () => {
+  const { view, entries } = fixture();
+  const root = document.createElement('div');
+  view.container.append(root);
+  let hydrated = false;
+  const prepareReveal = vi.fn();
+  const scroll = vi.spyOn(root, 'scrollIntoView').mockImplementation(() => undefined);
+  entries.push({ path: 'src/lazy.ts', root, anchor: null, additions: null, deletions: null, prepareReveal, isExpanded: () => hydrated, expand: () => hydrated, collapse: () => false });
+  reveal = new ProviderReveal(() => view, () => 'same-visit');
+  reveal.request('src/lazy.ts');
+  reveal.refresh();
+  reveal.refresh();
+  expect(prepareReveal).toHaveBeenCalledTimes(1);
+  expect(scroll).not.toHaveBeenCalled();
+  hydrated = true;
+  reveal.refresh();
+  expect(scroll).toHaveBeenCalledTimes(1);
+  expect(prepareReveal).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ['#chg-src%2Flazy.ts', true],
+  ['#chg-src/other.ts', false],
+  ['?context=20#chg-src/lazy.ts', false],
+] as const)('uses only the exact Bitbucket same-selection file fragment (%s)', (href, accepted) => {
+  const previous = window.location.href;
+  try {
+    window.location.href = 'https://bitbucket.org/acme/widgets/pull-requests/7/diff';
+    const { view, link } = fixture();
+    link.href = href;
+    const clicked = vi.fn();
+    link.addEventListener('click', clicked);
+    reveal = new ProviderReveal(() => view, () => 'same-visit');
+    reveal.request('src/lazy.ts');
+    expect(clicked).toHaveBeenCalledTimes(accepted ? 1 : 0);
+  } finally { window.location.href = previous; }
 });

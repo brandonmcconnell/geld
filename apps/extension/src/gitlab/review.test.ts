@@ -41,7 +41,7 @@ describe('GitLab discussion normalization', () => {
     expect(parsed.threads[0]).toMatchObject({ id: 'a'.repeat(40), anchor: `discussion_${'a'.repeat(40)}`, resolved: false, outdated: false });
     expect(parsed.threads[0]?.comments.map((entry) => entry.anchor)).toEqual(['note_11', 'note_12']);
     expect(parsed.comments.map((entry) => entry.anchor)).toEqual(['note_13']);
-    expect(parsed.events).toMatchObject([{ id: '14', body: 'pushed 1 commit', icon: 'commit' }]);
+    expect(parsed.events).toMatchObject([{ id: '14', body: 'pushed 1 commit', icon: 'commit', kind: 'push' }]);
   });
 
   it('uses the native diff position and URL while keeping outdated separate from resolved', () => {

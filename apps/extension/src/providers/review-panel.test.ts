@@ -4,6 +4,7 @@ import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewThread } from '@geld/review';
 import type { ProviderAiState } from './ai';
 import { renderProviderReviewPanel } from './review-panel';
+import type { ProviderReviewPanelEvent } from './review-panel';
 
 const subject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: 'a'.repeat(40) } as const;
 const reviewUrl = 'https://gitlab.com/group/subgroup/project/-/merge_requests/42';
@@ -186,5 +187,64 @@ describe('provider conversation digest', () => {
     panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-cancel]')?.click();
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('groups by recorded native pushes, moves edited comments by their actual edit time, and keeps an empty latest push', () => {
+    const original = input([thread('a')]);
+    const edited = { ...comment('2', 'Current edited review text.'), updatedAt: '2026-11-01T14:00:00Z' };
+    const events: readonly ProviderReviewPanelEvent[] = [{ id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Native push event one', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }, { id: 'push-2', url: reviewUrl, author: comment('1').author, body: 'Native push event two', createdAt: '2026-11-01T13:00:00Z', kind: 'push' }];
+    const options = { reviewGrouping: 'batch', comments: [edited], events } satisfies Parameters<typeof renderProviderReviewPanel>[2];
+    const panel = renderProviderReviewPanel(host(), original, options);
+    const rounds = panel.element.querySelectorAll<HTMLDetailsElement>('[data-geld-review-round]');
+    expect(rounds).toHaveLength(2);
+    expect(rounds[0]?.textContent).toContain(comment('1').body);
+    expect(rounds[0]?.textContent).not.toContain(edited.body);
+    expect(rounds[1]?.textContent).toContain('Latest recorded push');
+    expect(rounds[1]?.textContent).toContain(edited.body);
+    expect(rounds[1]?.textContent).toContain('Edited');
+    const item = rounds[0]?.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (item !== null && item !== undefined) item.open = true;
+    panel.update(original, { ...options, reviewGrouping: 'type' });
+    expect(panel.element.querySelector('[data-geld-review-round]')).toBeNull();
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    panel.update(original, { ...options, comments: [] });
+    expect(panel.element.querySelector('[data-geld-review-round="push-2"]')?.textContent).toContain('No conversation recorded after this push.');
+  });
+
+  it('does not invent push rounds from comment prose or events with unknown kinds', () => {
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { reviewGrouping: 'batch', comments: [comment('2', 'I pushed a new commit abc1234.')], events: [{ id: 'unknown', url: reviewUrl, author: comment('1').author, body: 'Added 1 commit', createdAt: '2026-11-01T11:00:00Z', kind: 'activity' }] });
+    expect(panel.element.querySelector('[data-geld-review-round]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-history]')?.textContent).toContain('push boundaries unavailable');
+    expect(panel.element.textContent).toContain('I pushed a new commit');
+  });
+
+  it('reads reports only from actual current check service hosts, without GitHub check-name inference', () => {
+    const panel = renderProviderReviewPanel(host(), { ...input(), checks: [
+      { name: 'codecov/project', sha: subject.headSha, status: 'completed', conclusion: 'success', description: '80.12% (+0.03%) compared to abc1234', detailsUrl: 'https://app.codecov.io/gl/group/project/pull/42' },
+      { name: 'codecov/patch', sha: subject.headSha, status: 'completed', conclusion: 'success', description: '90% covered', detailsUrl: 'https://codecov.io.evil.example/attack' },
+      { name: 'CodeQL', sha: subject.headSha, status: 'completed', conclusion: 'success', description: 'No new alerts in code changed by this pull request', detailsUrl: 'https://gitlab.com/group/project/runs/123' },
+      { name: 'codecov/old', sha: 'b'.repeat(40), status: 'completed', conclusion: 'failure', detailsUrl: 'https://codecov.io/gl/group/project' },
+    ] });
+    expect(panel.element.querySelectorAll('[data-geld-report]')).toHaveLength(1);
+    expect(panel.element.querySelector('[data-geld-report="codecov"]')?.textContent).toContain('80.12% (+0.03%)');
+    expect(panel.element.querySelector('[data-geld-report="codecov"] a')?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
+  });
+
+  it('attributes preview links to their actual automated source, archives earlier links, and never grants a review vote', () => {
+    const author = { id: '12345', login: 'native-deploy-account', automated: true };
+    const earlier = { ...comment('2', 'Preview ready: [Preview](https://deploy.example/first)'), author, createdAt: '2026-11-01T10:00:00Z' };
+    const latest = { ...comment('3', 'Preview failed: [Preview](https://deploy.example/second)'), author, createdAt: '2026-11-01T11:00:00Z' };
+    const human = { ...comment('4', 'Preview ready: [Preview](https://unverified.example/)'), author: { id: '456', login: 'a-person', automated: false } };
+    const unsafe = { ...comment('5', 'Preview ready: [Preview](javascript:alert(1))'), author };
+    const panel = renderProviderReviewPanel(host(), input(), { comments: [latest, earlier, human, unsafe] });
+    const section = panel.element.querySelector('[data-geld-review-key="previews"]');
+    expect(section?.querySelector('summary')?.textContent).toBe('Preview links · 1');
+    expect(section?.querySelector('[data-geld-preview="note_3"]')?.textContent).toContain('native-deploy-account · Reported status: failed');
+    expect(section?.querySelector('[data-geld-preview="note_3"] > a')?.getAttribute('href')).toBe('https://deploy.example/second');
+    expect(section?.querySelector('[data-geld-review-key="previews:earlier"] [data-geld-preview]')?.getAttribute('data-geld-preview')).toBe('note_2');
+    expect(section?.textContent).not.toContain('a-person');
+    expect(section?.querySelector('a[href^="javascript:"]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
   });
 });
