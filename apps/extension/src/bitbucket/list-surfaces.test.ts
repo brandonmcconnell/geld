@@ -30,5 +30,7 @@ it('accepts the native comment permalink aliases while preserving canonical revi
   const base = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22';
   expect(describeBitbucketPage(new URL(`${base}/_/diff#comment-471253038`))).toMatchObject({ kind: 'diff', number: '22', url: base, diffPageUrl: `${base}/diff` });
   expect(describeBitbucketPage(new URL(`${base}/_/overview#comment-471253038`))).toMatchObject({ kind: 'overview', number: '22', url: base });
-  for (const route of ['_/commits', '_/activity', '_/diff/other', '_/overview/other']) expect(describeBitbucketPage(new URL(`${base}/${route}`))).toBeNull();
+  expect(describeBitbucketPage(new URL(`${base}/overview`))).toMatchObject({ kind: 'overview', number: '22', url: base, diffPageUrl: `${base}/diff` });
+  expect(describeBitbucketPage(new URL(`${base}/overview/#comment-471253038`))).toMatchObject({ kind: 'overview', number: '22', url: base });
+  for (const route of ['_/commits', '_/activity', '_/diff/other', '_/overview/other', 'overview/other']) expect(describeBitbucketPage(new URL(`${base}/${route}`))).toBeNull();
 });

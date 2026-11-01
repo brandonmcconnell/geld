@@ -47,6 +47,7 @@ interface Painted {
   readonly notes: Map<string, FoldRow>;
   signature: string;
   folds: readonly TestFold[];
+  linkedFrame: number | null;
 }
 
 interface CommentRun {
@@ -225,7 +226,9 @@ function isPartial(fold: TestFold, reading: Reading): boolean {
 
 function followHash(state: Painted, reading: Reading, runs: readonly CommentRun[]): void {
   const hash = window.location.hash;
-  if (hash === '' || hash === state.visit.linkedHash) return;
+  if (hash === state.visit.linkedHash) return;
+  cancelLinkedScroll(state);
+  if (hash === '') return;
   let anchor: string;
   try { anchor = decodeURIComponent(hash.slice(1)); } catch { return; }
   const target = document.getElementById(anchor);
@@ -233,8 +236,31 @@ function followHash(state: Painted, reading: Reading, runs: readonly CommentRun[
   const row = reading.rows.find((entry) => entry.root === target || entry.root.contains(target));
   if (row === undefined) return;
   state.visit.linkedHash = hash;
-  for (const fold of state.folds) if ([...fold.headingKeys, ...fold.bodyKeys].some((key) => row.keys.has(key))) state.visit.opened.add(fold.id);
-  for (const run of runs) if (run.rows.includes(row)) state.visit.shown.add(run.key);
+  let revealed = false;
+  for (const fold of state.folds) if ([...fold.headingKeys, ...fold.bodyKeys].some((key) => row.keys.has(key))) {
+    if (!state.visit.opened.has(fold.id)) revealed = true;
+    state.visit.opened.add(fold.id);
+  }
+  for (const run of runs) if (run.rows.includes(row)) {
+    if (!state.visit.shown.has(run.key)) revealed = true;
+    state.visit.shown.add(run.key);
+  }
+  if (!revealed) return;
+  const href = window.location.href;
+  const signature = state.signature;
+  // The browser could not land on a folded row; retry once after this pass releases it.
+  state.linkedFrame = window.requestAnimationFrame(() => {
+    state.linkedFrame = null;
+    if (window.location.href !== href || state.visit.linkedHash !== hash || painted.get(state.root) !== state || state.signature !== signature) return;
+    if (!state.root.isConnected || !row.root.isConnected || !state.root.contains(row.root) || document.getElementById(anchor) !== target || !row.root.contains(target)) return;
+    if (row.root.closest(`[${ATTR_PROVIDER_LINE_HIDDEN}], [hidden], [aria-hidden="true"], [inert]`) !== null) return;
+    row.root.scrollIntoView({ block: 'center', behavior: 'auto' });
+  });
+}
+
+function cancelLinkedScroll(state: Painted): void {
+  if (state.linkedFrame !== null) window.cancelAnimationFrame(state.linkedFrame);
+  state.linkedFrame = null;
 }
 
 function paint(state: Painted, reading: Reading, runs: readonly CommentRun[]): { hiddenAdditions: number; hiddenDeletions: number } {
@@ -288,6 +314,7 @@ function paint(state: Painted, reading: Reading, runs: readonly CommentRun[]): {
 }
 
 function clearPainted(state: Painted): void {
+  cancelLinkedScroll(state);
   for (const row of state.managed) setAttribute(row, ATTR_PROVIDER_LINE_HIDDEN, null);
   for (const note of state.notes.values()) note.root.remove();
   state.notes.clear();
@@ -315,7 +342,7 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
     let state = painted.get(entry.root);
     if (state === undefined || state.visit !== visit) {
       if (state !== undefined) clearPainted(state);
-      state = { root: entry.root, visit, managed: new Set(), notes: new Map(), signature: '', folds: [] };
+      state = { root: entry.root, visit, managed: new Set(), notes: new Map(), signature: '', folds: [], linkedFrame: null };
       painted.set(entry.root, state);
     }
     const reading = readLines(entry);

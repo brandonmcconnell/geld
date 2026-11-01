@@ -123,6 +123,8 @@ it('rewrites only count text and restores native counts, badge nodes, and tab ac
   const stats = required(targets[1]?.additions?.parentElement?.parentElement?.parentElement);
   expect(targets[1]?.keyboardHoverHosts).toEqual([stats]);
   expect(targets[1]?.accessibleSummaryHost).toBe(stats);
+  expect(targets[1]?.hintHost).toBe(targets[1]?.additions?.parentElement?.parentElement);
+  expect(targets[1]?.hintBefore).toBe(targets[1]?.additions?.parentElement);
   counts.write(badge, 3);
   counts.write(targets[1]?.additions ?? null, 20);
   counts.write(targets[1]?.deletions ?? null, 10);
@@ -135,6 +137,38 @@ it('rewrites only count text and restores native counts, badge nodes, and tab ac
   expect(tab.textContent).toBe('Files changed5');
   expect(targets[1]?.additions?.textContent).toBe('+46');
   expect(targets[1]?.deletions?.textContent).toBe('-29');
+});
+
+it('provides a hint host in the native Lines updated count group, outside its hidden visual spans and tab badge', () => {
+  const targets = bitbucketHeaderTargets(document);
+  const target = required(targets[1]);
+  const host = required(target.hintHost);
+  const tab = required(document.querySelector('#pull-request-tabs-1'));
+  const visual = required(target.additions?.parentElement);
+  const tabMarkup = tab.outerHTML;
+  const visualMarkup = visual.outerHTML;
+  const hint = document.createElement('span'); hint.dataset.geldUi = ''; hint.textContent = '1 hidden'; hint.tabIndex = 0;
+  host.insertBefore(hint, target.hintBefore ?? null);
+  hint.focus();
+  expect(host.parentElement).toBe(target.accessibleSummaryHost);
+  expect(hint.closest('[aria-hidden="true"], a, button, [role="tab"], [role="tablist"]')).toBeNull();
+  expect(visual.outerHTML).toBe(visualMarkup);
+  expect(tab.outerHTML).toBe(tabMarkup);
+  expect(document.activeElement).toBe(hint);
+  expect(bitbucketHeaderTargets(document)[1]?.hintBefore).toBe(visual);
+});
+
+it('defers an overview hint rather than inserting into the native tablist or aria-hidden sticky header', () => {
+  window.location.href = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/overview';
+  document.body.innerHTML = '<div id="sticky-header-content" aria-hidden="true"></div><nav aria-label="Pull request"><div role="tablist"><a id="pull-request-tabs-1" role="tab" aria-selected="false" href="/atlassian/bitbucket-upload-file/pull-requests/27/diff"><div>Files changed<span><span>5</span></span></div></a></div></nav>';
+  const markup = document.body.innerHTML;
+  const targets = bitbucketHeaderTargets(document);
+  expect(targets).toHaveLength(1);
+  expect(targets[0]?.files?.textContent).toBe('5');
+  expect(targets[0]?.hintHost).toBeUndefined();
+  expect(document.body.innerHTML).toBe(markup);
+  document.querySelector('a')?.setAttribute('href', '/atlassian/bitbucket-upload-file/pull-requests/22/diff');
+  expect(bitbucketHeaderTargets(document)).toEqual([]);
 });
 
 it('ignores extension clones and foreign nested anchors, preserving provider-filtered paths', () => {
@@ -171,6 +205,7 @@ it('leaves unsupported shells and unrelated file regions untouched', () => {
 });
 
 it('reads the actual standalone commit diff and both native file-count surfaces', () => {
+  window.location.href = 'https://bitbucket.org/atlassian/bitbucket-upload-file/commits/9777bca47119';
   // Reduced from anonymous commit 9777bca47119 in the installed Chrome capture.
   document.body.innerHTML = '<h1 data-qa="page-header">9777bca</h1><button data-testid="commit-more-button--trigger">more</button><div role="region" aria-label="Diff"><div></div><div><div><h2>1 file</h2></div><div></div></div><div><div id="chg-pipe/pipe.py"></div><div><article data-qa="branch-diff-file"><div data-qa="bk-file__header" data-testid="file-header"><span aria-label="Expand/collapse file"></span><h2 data-qa="bk-filepath">pipe/pipe.py</h2></div><div aria-hidden="false"><div data-qa="bk-file__content" data-testid="file-content"><div data-qa="code-line"><div data-key="code-line-number" data-new-line-number="18"></div><span data-line-type="+"># These are the variables that are used in the pipe code.</span></div><div data-qa="code-line"><div data-key="code-line-number" data-new-line-number="19"></div><span data-line-type="+"># The variables are listed in README.md.</span></div></div></div></article></div></div><div data-qa="diff-end-of-list"></div></div><div data-testid="sidebar-tab-files" role="tab"><span><div><span>Files</span><span><span>1</span></span></div></span></div>';
   const view = required(readBitbucketDiff(document));
@@ -179,10 +214,27 @@ it('reads the actual standalone commit diff and both native file-count surfaces'
   const targets = bitbucketHeaderTargets(document);
   expect(targets.map((target) => target.files?.textContent)).toEqual(['1 file', '1']);
   expect(targets[0]?.keyboardHoverHosts).toEqual([targets[0]?.files]);
+  const slot = required(targets[0]?.files?.parentElement?.nextElementSibling);
+  expect(targets[0]?.hintHost).toBe(slot);
+  expect(targets[0]?.hintBefore).toBeNull();
   expect(targets[1]?.hoverHosts).toEqual([document.querySelector('[data-testid="sidebar-tab-files"]')]);
   const counts = new ProviderCounts();
   for (const target of targets) counts.write(target.files, 0);
   expect(targets.map((target) => target.files?.textContent)).toEqual(['0 files', '0']);
   counts.restore();
   expect(targets.map((target) => target.files?.textContent)).toEqual(['1 file', '1']);
+  const heading = required(targets[0]?.files);
+  const badge = required(targets[1]?.files);
+  const beforeHeading = heading.outerHTML;
+  const beforeBadge = badge.outerHTML;
+  const hint = document.createElement('span'); hint.dataset.geldUi = ''; hint.textContent = '0 tests'; hint.tabIndex = 0;
+  targets[0]?.hintHost?.append(hint);
+  hint.focus();
+  expect(heading.outerHTML).toBe(beforeHeading);
+  expect(badge.outerHTML).toBe(beforeBadge);
+  expect(hint.closest('[aria-hidden="true"], a, button, [role="tab"]')).toBeNull();
+  expect(document.activeElement).toBe(hint);
+  expect(bitbucketHeaderTargets(document)[0]?.hintHost).toBe(slot);
+  const nativeControl = document.createElement('button'); nativeControl.textContent = 'Native control'; slot.append(nativeControl);
+  expect(bitbucketHeaderTargets(document)[0]?.hintHost).toBeUndefined();
 });
