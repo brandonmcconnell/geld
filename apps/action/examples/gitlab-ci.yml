@@ -1,0 +1,16 @@
+# Run this job from a trusted default-branch pipeline, not an MR source pipeline.
+# Configure GELD_TRUSTED_IMAGE as a reviewed image pinned with @sha256:<digest>.
+# Store GELD_TOKEN as a protected, masked secret with API access and note writes.
+# A trusted webhook/trigger supplies GELD_REPOSITORY and GELD_REVIEW_NUMBER.
+geld-summary:
+  image:
+    name: $GELD_TRUSTED_IMAGE
+    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+    GELD_PROVIDER: gitlab
+  resource_group: "geld-summary-$GELD_REVIEW_NUMBER"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GELD_REVIEW_NUMBER && ($CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "pipeline")'
+  script:
+    - node /geld/provider.cjs
