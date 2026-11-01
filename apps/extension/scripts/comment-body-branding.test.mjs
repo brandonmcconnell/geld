@@ -93,7 +93,7 @@ test('keeps genuinely hidden native rich content uncovered rather than claiming 
   const f = fixture('<h3>Summary</h3><pre hidden><code>Unpresented native source</code></pre>');
   f.owned.querySelector('code').textContent = 'Different hidden clone';
   const evidence = f.read();
-  assert.ok(evidence.uncovered.some((label) => label.includes('block code') && label.includes('not visibly presented')));
+  assert.ok(evidence.uncovered.some((label) => label.includes('block code') && label.includes('not presented')));
   assert.ok(!evidence.contentMismatches.some((pair) => pair.label.includes('block code')));
 });
 
@@ -113,10 +113,39 @@ test('never claims hidden native bodies were compared and detects a missing owne
   f.native.hidden = true;
   assert.equal(f.read().samples.length, 0);
   assert.equal(compareCommentBodyPresentation(f.read()).covered.length, 0);
-  assert.ok(f.read().uncovered.some((label) => label.includes('not visibly presented')));
+  assert.ok(f.read().uncovered.some((label) => label.includes('not presented')));
   f.native.hidden = false;
   f.owned.remove();
   assert.deepEqual(compareCommentBodyPresentation(f.read()).mismatches, [{ label: 'comment body root', native: 'presented', owned: 'absent or not presented' }]);
+});
+
+for (const target of ['native', 'owned']) for (const hiddenBy of ['hidden', 'inert', 'aria-hidden', 'opacity', 'content-visibility']) test(`rejects a ${target} ancestor concealed by ${hiddenBy} despite positive child geometry`, () => {
+  const f = fixture('<h3>Summary</h3><p>Original words</p><ul><li>One item</li></ul>');
+  const ancestor = target === 'native' ? f.native : f.owned.parentElement;
+  if (hiddenBy === 'opacity') ancestor.style.opacity = '0';
+  else if (hiddenBy === 'content-visibility') ancestor.style.setProperty('content-visibility', 'hidden');
+  else ancestor.setAttribute(hiddenBy, hiddenBy === 'aria-hidden' ? 'true' : '');
+  const evidence = f.read();
+  const compared = compareCommentBodyPresentation(evidence);
+  if (target === 'native') {
+    assert.equal(evidence.nativeRootPresent, false);
+    assert.equal(compared.covered.length, 0);
+    assert.ok(evidence.uncovered.some((label) => label.includes('not presented in the DOM')));
+  } else {
+    assert.equal(evidence.nativeRootPresent, true);
+    assert.equal(evidence.ownedRootPresent, false);
+    assert.ok(compared.mismatches.some((pair) => pair.label === 'comment body root'));
+  }
+});
+
+test('labels valid offscreen comparisons as DOM/style evidence without claiming simultaneous viewport paint', () => {
+  const f = fixture('<p>Original words</p>');
+  window.Element.prototype.getBoundingClientRect = () => new window.DOMRect(0, -5000, 300, 20);
+  const evidence = f.read();
+  assert.equal(evidence.rootAligned, true);
+  assert.deepEqual(compareCommentBodyPresentation(evidence).mismatches, []);
+  assert.match(evidence.evidenceKind, /including offscreen nodes/);
+  assert.match(evidence.evidenceKind, /No simultaneous viewport painting assertion/);
 });
 
 test('compares visible code/pre/list/table samples and catches their own inner backgrounds/borders', () => {
@@ -172,7 +201,7 @@ test('compares the actual button label weight instead of accepting equal normal-
   assert.ok(compareCommentBodyPresentation(f.read()).mismatches.some((pair) => pair.label.includes('table header label') && pair.label.endsWith('.fontWeight') && pair.native === '700' && pair.owned === '400'));
 });
 
-function richBotFixture({ reveal = true, captureEffect = () => {} } = {}) {
+function richBotFixture({ reveal = true, captureEffect = () => {}, beforeProbe = () => {} } = {}) {
   const f = fixture(`<h3>Important Files Changed</h3><p>Update <code>insta360</code></p><ul><li>Published packages</li></ul><table><thead><tr>${sortableHeaders()}</tr></thead><tbody><tr><td>backend/pyproject.toml</td><td>Dependencies</td></tr></tbody></table><pre hidden><code>Closed Mermaid source</code></pre>`);
   inertHeaderLabels(f.owned);
   const review = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
@@ -181,10 +210,10 @@ function richBotFixture({ reveal = true, captureEffect = () => {} } = {}) {
   f.native.id = anchor;f.native.hidden = true;
   document.querySelector('article').setAttribute('data-geld-source', anchor);
   document.querySelector('.geld-provider-review__byline a').href = `${review}#${anchor}`;
-  const listeners = new Map();const events = [];
+  const listeners = new Map();const events = [];const item = {};let reads = 0;
   const page = {
     on: (event, fn) => listeners.set(event, fn), off: (event) => listeners.delete(event), url: () => review,
-    evaluate: async (fn, ...args) => fn(...args),
+    evaluate: async (fn, ...args) => { if (fn === commentBodyPresentationProbe) beforeProbe({ fixture: f, read: ++reads });return fn(...args); },
     evaluateHandle: async (fn, ...args) => {
       const link = fn(...args);
       return { asElement: () => link === null ? null : { evaluate: async (read) => { if (read.toString().includes('scrollIntoView')) return;return read(link); }, click: async () => { events.push('real-control-protocol');if (reveal) f.native.hidden = false; } }, dispose: async () => {} };
@@ -192,11 +221,20 @@ function richBotFixture({ reveal = true, captureEffect = () => {} } = {}) {
   };
   const read = harnessFunction('gitLabBotBodyEvidence', 'async function verifyGitLabBot', {
     assert, GL_BOT: review, safeUrl: (value) => value, openReviewAncestors: async () => 0,
+    errorText: (error) => error.message,
     discardHandle: async (handle) => handle.dispose(), commentBodyPresentationProbe, compareCommentBodyPresentation,
-    poll: async (read, accepts) => { const value = await read();assert.ok(accepts(value), 'Native and owned source must both be positively presented');return value; },
+    pollStable: async (read, accepts, label, ms, signature) => {
+      assert.equal(ms, 8000);let previous;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const value = await read();const key = signature(value);
+        if (accepts(value) && key === previous) return { ...value, stability: { samples: 2, stableMs: 1000, minimumMs: 200 } };
+        previous = accepts(value) ? key : undefined;
+      }
+      throw new Error('Native and owned source must both be positively presented with all required rich formats');
+    },
     capture: async () => { captureEffect({ fixture: f, listeners });return { screenshot: 'offline-layout-protocol-only.png' }; },
   });
-  return { fixture: f, listeners, events, run: () => read(page) };
+  return { fixture: f, listeners, events, item, run: () => read(page, item) };
 }
 
 test('rich bot case reveals the mounted original and positively requires actual format samples without source reads', async () => {
@@ -206,21 +244,47 @@ test('rich bot case reveals the mounted original and positively requires actual 
   assert.equal(result.beforeCapture.rootAligned, true);
   assert.equal(result.afterCapture.rootAligned, true);
   assert.deepEqual(result.sourceGets, []);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.beforeCaptureSamples.length, 2);
+  assert.equal(result.beforeCapture.stability.samples, 2);
   assert.ok(result.beforeCapture.samples.some((pair) => pair.category === 'heading'));
   assert.ok(result.beforeCapture.samples.some((pair) => pair.native.tag === 'TH' && pair.owned.text === 'Filename'));
-  assert.ok(result.beforeCapture.uncovered.some((label) => label.includes('preformatted') && label.includes('not visibly presented')));
+  assert.ok(result.beforeCapture.uncovered.some((label) => label.includes('preformatted') && label.includes('not presented')));
   assert.equal(f.listeners.size, 0);
 });
 
 test('rich bot case refuses hidden native originals instead of accepting uncovered formats', async () => {
   const f = richBotFixture({ reveal: false });
   await assert.rejects(f.run(), /both be positively presented/);
+  assert.equal(f.item.richBody.status, 'failed');
+  assert.equal(f.item.richBody.beforeCapture.nativeRootPresent, false);
+  assert.equal(f.item.richBody.beforeCaptureSamples.length, 3);
   assert.equal(f.listeners.size, 0);
+});
+
+test('rich bot case waits for two matching complete samples after a transient native clone remount', async () => {
+  let label;
+  const f = richBotFixture({ beforeProbe: ({ fixture, read }) => {
+    const cell = fixture.owned.querySelector('th');
+    if (read === 1) { label = cell.innerHTML;cell.textContent = ''; }
+    if (read === 2) cell.innerHTML = label;
+  } });
+  const result = await f.run();
+  assert.equal(result.status, 'passed');
+  assert.equal(result.beforeCaptureSamples.length, 3);
+  assert.equal(result.beforeCaptureSamples[0].rootAligned, false);
+  assert.ok(result.beforeCaptureSamples.slice(1).every((sample) => sample.rootAligned));
+  assert.deepEqual(result.sourceGets, []);
 });
 
 test('rich bot case refuses source text loss occurring during screenshot capture', async () => {
   const f = richBotFixture({ captureEffect: ({ fixture }) => { fixture.owned.querySelector('th').textContent = ''; } });
   await assert.rejects(f.run());
+  assert.equal(f.item.richBody.status, 'failed');
+  assert.equal(f.item.richBody.beforeCapture.rootAligned, true);
+  assert.equal(f.item.richBody.afterCapture.rootAligned, false);
+  assert.ok(f.item.richBody.afterCapture.mismatches.some((pair) => pair.label.includes('table cell')));
+  assert.equal(f.item.richBody.artifacts.screenshot, 'offline-layout-protocol-only.png');
   assert.equal(f.listeners.size, 0);
 });
 
@@ -233,7 +297,9 @@ test('rich bot case rejects an additional review-source GET during its local-onl
 test('rich bot case requires known-present headings even when both copies lose the same format', async () => {
   const f = richBotFixture();
   f.fixture.native.querySelector('h3').remove();f.fixture.owned.querySelector('h3').remove();
-  await assert.rejects(f.run(), /heading must be positively compared/);
+  await assert.rejects(f.run(), /all required rich formats/);
+  assert.equal(f.item.richBody.status, 'failed');
+  assert.ok(f.item.richBody.beforeCapture.uncovered.includes('comment body heading: absent from this native fixture'));
   assert.equal(f.listeners.size, 0);
 });
 
