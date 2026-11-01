@@ -287,17 +287,26 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
     ({ signatures, fresh } = await recordSignatures(github, repo, additions));
   }
 
-  const pending = pendingAccounts(accounts, signatures);
+  // Runs for other pull requests and issues write this status too. Reading the record again after each write and
+  // writing again when it moved means the last write always comes from a run that saw the newest record: a run that
+  // records a signature writes after recording it, and any write before that recording is followed by a re-read.
+  let pending = pendingAccounts(accounts, signatures);
+  for (let attempt = 0; ; attempt++) {
+    await github.rest.repos.createCommitStatus({
+      ...repo,
+      sha: pull.head.sha,
+      state: pending.length === 0 && unlinked.length === 0 ? 'success' : 'failure',
+      context: STATUS_CONTEXT,
+      description: statusDescription({ pending, unlinked }),
+      target_url: agreementUrl,
+    });
+    if (pending.length === 0 || attempt >= 4) break;
+    const now = pendingAccounts(accounts, (await readSignatures(github, repo)).signatures);
+    if (now.length === pending.length) break;
+    pending = now;
+  }
   const outcome = { pending, unlinked, agreementUrl };
   const passed = pending.length === 0 && unlinked.length === 0;
-  await github.rest.repos.createCommitStatus({
-    ...repo,
-    sha: pull.head.sha,
-    state: passed ? 'success' : 'failure',
-    context: STATUS_CONTEXT,
-    description: statusDescription(outcome),
-    target_url: agreementUrl,
-  });
 
   const existing = comments.find((comment) => comment.user?.type === 'Bot' && comment.body?.startsWith(MARKER));
   const body = commentBody(outcome);

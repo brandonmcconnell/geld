@@ -1361,6 +1361,7 @@ Signatures live in `signatures.json` on the orphan `cla-signatures` branch (outs
 a comment from before there was an agreement signs nothing.
 A pull request's check also reads its own comments, so a past contributor can sign on their merged pull request and a signature whose run was dropped is picked up on the next one;
 a new signature also rechecks every other open pull request whose `CLA` status was failing on its signer (`waitingOn`, from the status description, and any whose description GitHub cut short).
+Those rechecks race the pull request's own runs, so a check reads the record again after writing a failing status and writes again when it moved: the last write is always from a run that saw the newest record (signatures are only ever added).
 A merged pull request with outside authors is locked once all of them have signed, since a locked conversation takes comments, edits and deletions from collaborators only and the signatures then stay on the page as well as in the record.
 `CLA.md` is the owner's: an agent proposes a change to it in a pull request and the owner decides, and a new version leaves earlier signatures on the version they signed.
 

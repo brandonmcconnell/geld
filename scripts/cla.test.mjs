@@ -25,7 +25,7 @@ function httpError(status) {
 }
 
 /** Just enough of Octokit for scripts/cla.mjs, backed by maps. `commits` maps a pull request to its commits' author lists. */
-function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}) {
+function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onStatus } = {}) {
   const files = new Map(AGREEMENT.map((version) => [`${version.commit}:CLA.md`, { sha: version.blob, content: '' }]));
   const refs = new Set();
   if (signatures) {
@@ -85,6 +85,7 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures } = {}
         },
         createCommitStatus: async (status) => {
           statuses.push(status);
+          onStatus?.(status, files);
           return { data: {} };
         },
       },
@@ -298,6 +299,24 @@ describe('a pull request', () => {
     assert.equal(latest('head-152'), 'success');
     assert.equal(latest('head-153'), 'failure');
     assert.equal(fake.statuses.filter((status) => status.sha === 'head-153').length, 1);
+  });
+
+  it('does not leave a stale failure over a signature another run recorded meanwhile', async () => {
+    // Another run (a signature on an issue) records @hunterchen7 and writes success while this run, which read the
+    // record before that, is about to write its failure: this run's failure lands last.
+    let raced = false;
+    const onStatus = (status, files) => {
+      if (raced || status.sha !== 'head-160' || status.state !== 'failure') return;
+      raced = true;
+      const key = `${SIGNATURES_BRANCH}:${SIGNATURES_PATH}`;
+      const record = JSON.parse(files.get(key).content);
+      record.signatures.push({ login: 'hunterchen7', id: 101 });
+      files.set(key, { sha: 'raced', content: JSON.stringify(record) });
+    };
+    const fake = fakeGitHub({ commits: { 160: [[actor(hunter)]] }, signatures: [], onStatus });
+    await run({ github: fake.github, context: prEvent(pullRequest(160, { by: hunter })), core });
+    assert.deepEqual(fake.statuses.map((status) => status.state), ['failure', 'success']);
+    assert.equal(fake.comments[160], undefined);
   });
 
   it('does not count someone else posting the sentence for an author', async () => {
