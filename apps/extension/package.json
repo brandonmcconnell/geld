@@ -22,6 +22,7 @@
     "zip:safari": "wxt zip -b safari --mv3",
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
+    "test:browser": "node scripts/browser-e2e.mjs",
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
     "postinstall": "wxt prepare",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@types/node": "^26.4.1",
     "happy-dom": "^21.0.1",
+    "puppeteer-core": "25.16.0",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0",
