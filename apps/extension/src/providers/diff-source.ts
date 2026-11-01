@@ -82,7 +82,16 @@ export class ProviderDiffSource {
     for (const [id, request] of this.requests) {
       request.abort?.abort();
       if (request.abort !== null || request.queued || request.hydrating || request.state.status !== 'ready') this.requests.delete(id);
-      else if (!knownHead(request.page)) request.state = { status: 'ready', result: request.state.result, cached: true, provisional: true };
+      else {
+        // Keep complete snapshots without retaining an earlier visit's request demand.
+        request.priority = false;
+        request.requireExact = false;
+        request.allowFetch = false;
+        request.demandedAt = 0;
+        request.retryAt = 0;
+        request.attempts = 0;
+        if (!knownHead(request.page)) request.state = { status: 'ready', result: request.state.result, cached: true, provisional: true };
+      }
     }
     this.running = 0;
   }
