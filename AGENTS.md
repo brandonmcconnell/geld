@@ -1575,6 +1575,7 @@ Provider-specific surfaces translate settings and sources into shared review and
   GitLab list rows can use important flex utilities that override the user-agent rule for the native `hidden` attribute, so author filtering uses a scoped owned display rule and leaves native hidden state untouched.
   A counted author-filter notice supplies a keyboard-accessible Show action for its native list, with recovery remembered only for the current visit and filter set.
   List and table recovery notices use appropriate native container tags without moving rows or taking their handlers, and rows with no reliable author identity stay untouched.
+  Bitbucket list count chips mount beside the verified native title tooltip wrapper on the same title line, because placing them inside its span also triggers the provider's title tooltip over the breakdown.
 - **Digest settings operate only on represented native sources.**
   Compact and minimal modes fold native comment roots only when all their source anchors are represented in the digest and eligible for that mode.
   Unknown activity, unrepresented comments, composers and pending native review controls stay visible.
