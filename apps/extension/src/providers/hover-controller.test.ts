@@ -84,6 +84,30 @@ afterEach(() => {
 });
 
 describe('provider controller count hover integration', () => {
+  it('shows the category-aware hidden label while preserving native counter and tooltip ownership', async () => {
+    const base = fixture();
+    const header = node('header');
+    const controller = start({ ...base, headerTargets: () => [{ additions: node('#add'), deletions: node('#del'), files: node('#files'), hintHost: header, hintBefore: node('#add') }] });
+    await vi.advanceTimersByTimeAsync(300);
+    const label = node('.geld-provider-header-hidden-count');
+    vi.spyOn(label, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 60, 50, 20));
+    expect(label.textContent).toBe('1 test');
+    expect(node('#add').textContent).toBe('4 additions');
+    hover(node('#add'));
+    await vi.advanceTimersByTimeAsync(150);
+    expect(node('#add').getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    expect(label.hasAttribute('aria-describedby')).toBe(false);
+    expect(tooltip()?.textContent).toContain('Tests 1 file +3 −0');
+    label.focus();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(label.getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    controller.updateSettings({ ...DEFAULT_SETTINGS, categories: { tests: false } });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(document.querySelector('.geld-provider-header-hidden-count')).toBeNull();
+    expect(node('#add').textContent).toBe('7 additions');
+    expect(label.hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('defers anonymous Bitbucket list and repository requests until sustained intent on one review', async () => {
     window.location.href = 'https://bitbucket.org/acme/widgets/pull-requests/';
     document.body.innerHTML = Array.from({ length: 25 }, (_, i) => `<article id="row-${i + 1}"><div id="host-${i + 1}"></div></article>`).join('');
