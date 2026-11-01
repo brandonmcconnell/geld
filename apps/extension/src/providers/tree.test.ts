@@ -168,6 +168,52 @@ it.each(['.geld-provider-category-header', '.geld-provider-essential-content', '
   expect(setExpanded).not.toHaveBeenCalled();
 });
 
+it.each(['children', 'host'])('retains the exact current file and collapsed folder after a native %s remount', (replacement) => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, container, view } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:head-a', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  const selected = (): HTMLAnchorElement => required(document.querySelector<HTMLAnchorElement>('[data-geld-category-path="spec/unit.test.ts"] a'));
+  selected().click();
+  const folder = (): HTMLButtonElement => required([...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category .geld-provider-category-folder')].find((button) => button.textContent === 'spec'));
+  folder().click();
+  expect(selected().getAttribute('aria-current')).toBe('true');
+  expect(folder().getAttribute('aria-expanded')).toBe('false');
+  let nextView = view;
+  if (replacement === 'children') required(host.querySelector('.geld-provider-categories')).remove();
+  else {
+    const nextHost = document.createElement('section');
+    const nextContainer = container.cloneNode(true);
+    if (!(nextContainer instanceof HTMLElement)) throw new Error('Missing native replacement tree');
+    nextContainer.removeAttribute('data-geld-provider-category-body');
+    nextHost.append(nextContainer); host.replaceWith(nextHost);
+    const row = required(nextContainer.querySelector<HTMLElement>('#native-row'));
+    const link = required(row.querySelector<HTMLAnchorElement>('#native-link'));
+    nextView = { ...view, treeHost: nextHost, treeContainer: nextContainer, tree: [{ path: 'spec/unit.test.ts', root: link, presentationRoot: row, link }] };
+  }
+  tree.update(nextView, hidden, all, FILES, actions);
+  tree.update(nextView, hidden, all, FILES, actions);
+  expect(selected().getAttribute('aria-current')).toBe('true');
+  expect(folder().getAttribute('aria-expanded')).toBe('false');
+  expect(actions.revealPath).toHaveBeenCalledExactlyOnceWith('spec/unit.test.ts');
+  tree.update(nextView, hidden, all, FILES, { ...actions, subjectKey: 'review-a:head-b' });
+  expect(selected().hasAttribute('aria-current')).toBe(false);
+  expect(folder().getAttribute('aria-expanded')).toBe('true');
+});
+
+it('keeps only one current file across Essential and categorized panels', () => {
+  const { host, update } = fixture(); update();
+  const essential = required(host.querySelector<HTMLButtonElement>('.geld-provider-essential-content [data-geld-category-path="src/main.ts"] button'));
+  essential.click();
+  expect(essential.getAttribute('aria-current')).toBe('true');
+  required(headers(host)[1]).click();
+  const test = required(host.querySelector<HTMLAnchorElement>('[data-geld-category-path="spec/unit.test.ts"] a'));
+  test.click();
+  expect(essential.hasAttribute('aria-current')).toBe(false);
+  expect(test.getAttribute('aria-current')).toBe('true');
+  expect(host.querySelectorAll('[data-geld-category-path] [aria-current="true"]')).toHaveLength(1);
+});
+
 it('uses the current subject choice after search suspension and explicit clear, rejecting a removed category', () => {
   const { tree, host, view, container } = fixture();
   const selectCategory = vi.fn(); const setExpanded = vi.fn();

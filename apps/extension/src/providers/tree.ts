@@ -76,12 +76,17 @@ export class ProviderCategoryTree {
     const subjectKey = actions.subjectKey ?? null;
     const provider = host?.ownerDocument.documentElement.getAttribute('data-geld-provider');
     const nativeProvider = provider === 'gitlab' || provider === 'bitbucket' ? provider : null;
+    const sameSubject = subjectKey !== null && this.subjectKey === subjectKey && this.provider === nativeProvider;
     if (this.provider !== nativeProvider) this.clear();
     if (this.host !== null && this.subjectKey !== subjectKey) this.clear();
     if (host?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) { this.clear(); return; }
     if (host === null || hidden.categories.length === 0 || (view.virtualized && view.treeContainer == null)) { this.clear(); return; }
     if (this.host !== host || this.essential?.isConnected !== true || this.essentialContent?.isConnected !== true || this.nav?.isConnected !== true) {
+      const selected = sameSubject ? this.selected : null;
+      const collapsed = sameSubject ? [...this.collapsed] : [];
       this.clear();
+      this.selected = selected;
+      for (const key of collapsed) this.collapsed.add(key);
       this.host = host;
       this.essential = element('button', '', 'geld-provider-category-header');
       this.essential.type = 'button';
@@ -127,6 +132,7 @@ export class ProviderCategoryTree {
       this.headerLabel(this.essential, text, 'essential');
     }
     const ids = new Set<string>(hidden.categories.map((group) => group.category.id));
+    if (this.selected !== null && !files.some((file) => file.path === this.selected)) this.selected = null;
     for (const [id, panel] of this.panels) if (!ids.has(id)) { panel.section.remove(); this.panels.delete(id); }
     if (actions.selectedCategoryId !== undefined) this.active = actions.selectedCategoryId;
     if (this.active !== 'essential' && !ids.has(this.active)) { this.active = 'essential'; this.actions.selectCategory?.('essential'); }
@@ -334,7 +340,7 @@ export class ProviderCategoryTree {
           if (original !== undefined && original.isConnected && !original.disabled) { event.preventDefault(); original.click(); return; }
         }
         event.preventDefault(); this.selected = path;
-        for (const selected of this.nav?.querySelectorAll('[aria-current]') ?? []) selected.removeAttribute('aria-current');
+        for (const selected of [...this.essentialContent?.querySelectorAll('[aria-current]') ?? [], ...this.nav?.querySelectorAll('[aria-current]') ?? []]) selected.removeAttribute('aria-current');
         control?.setAttribute('aria-current', 'true');
         this.actions.setExpanded(category !== 'essential'); this.actions.revealPath(path);
       });
