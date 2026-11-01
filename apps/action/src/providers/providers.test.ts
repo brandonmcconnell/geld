@@ -242,3 +242,138 @@ describe('Bitbucket authenticated protocol fixture', () => {
     expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
   });
 });
+
+describe('Bitbucket authoritative abbreviated commit resolution', () => {
+  const repository = 'workspace/project';
+  const root = '/2.0/repositories/workspace/project/pullrequests/42';
+
+  function reference(hash: string, fullName = repository): Record<string, unknown> {
+    return { commit: { hash, type: 'commit', links: { self: { href: `https://api.bitbucket.org/2.0/repositories/${fullName}/commit/${hash}` } } }, repository: { full_name: fullName } };
+  }
+
+  it('resolves the observed public PR27 short hashes to full immutable SHAs at every snapshot', async () => {
+    const repo = 'atlassian/bitbucket-upload-file';
+    const shortHead = '9777bca47119';
+    const shortBase = 'c522201d16c0';
+    const fullHead = '9777bca47119a91758bde1209ac14e6076ffbf23';
+    const fullBase = 'c522201d16c0142bd10bf7e606e72851d9669eb0';
+    const path = `/2.0/repositories/${repo}/pullrequests/27`;
+    const pr = { id: 27, source: reference(shortHead, repo), destination: reference(shortBase, repo), participants: [] };
+    const t = transport((url, init) => {
+      if (url.pathname === '/2.0/user') return json({ uuid: '{owner}' });
+      if (url.pathname === path) return json(pr);
+      if (url.pathname === `/2.0/repositories/${repo}/commit/${shortHead}` || url.pathname === `/2.0/repositories/${repo}/commit/${shortBase}`) {
+        expect(url.searchParams.get('fields')).toBe('hash');
+        return json({ hash: url.pathname.endsWith(shortHead) ? fullHead : fullBase });
+      }
+      if (url.pathname === `${path}/statuses`) return json({ values: [{ key: 'ci', name: 'CI', state: 'SUCCESSFUL', created_on: DATE, updated_on: DATE, links: { self: { href: `https://api.bitbucket.org/2.0/repositories/${repo}/commit/${shortHead}/statuses/build/ci` } } }] });
+      if (url.pathname === `${path}/comments` && init?.method === 'POST') return json({ id: 100 }, 201);
+      return json({ values: [] });
+    });
+    const cfg = readProviderCiConfig({ GELD_PROVIDER: 'bitbucket', GELD_REPOSITORY: repo, GELD_REVIEW_NUMBER: '27', GELD_TOKEN: TOKEN });
+    expect(await runProviderSummary(cfg, t.fetcher, DATE)).toBe('created');
+    expect(t.requests.filter((request) => new URL(request.url).pathname === `/2.0/repositories/${repo}/commit/${shortBase}`)).toHaveLength(3);
+    expect(t.requests.filter((request) => new URL(request.url).pathname === `/2.0/repositories/${repo}/commit/${shortHead}`)).toHaveLength(4);
+    const write = t.requests.find((request) => request.method === 'POST');
+    const payload = write?.body;
+    if (!payload || typeof payload !== 'object' || !('content' in payload) || !payload.content || typeof payload.content !== 'object' || !('raw' in payload.content) || typeof payload.content.raw !== 'string') throw new Error('Missing fixture summary');
+    const parsed = parseSummaryBody(payload.content.raw);
+    if (!parsed.ok) throw new Error('Invalid fixture summary');
+    expect(parsed.value.headSha).toBe(fullHead);
+    expect(payload.content.raw).toContain('CI checks: 1 passed');
+  });
+
+  it('resolves equal short prefixes in a source fork and target repository independently', async () => {
+    const short = HEAD.slice(0, 12);
+    const fullBase = 'a'.repeat(39) + 'b';
+    const fork = 'contributor/project';
+    const t = transport((url, init) => {
+      if (url.pathname === '/2.0/user') return json({ uuid: '{owner}' });
+      if (url.pathname === root) return json({ id: 42, source: reference(short, fork), destination: reference(short), participants: [] });
+      if (url.pathname === `/2.0/repositories/${fork}/commit/${short}`) return json({ hash: HEAD, repository: { full_name: fork } });
+      if (url.pathname === `/2.0/repositories/${repository}/commit/${short}`) return json({ hash: fullBase, repository: { full_name: repository } });
+      if (url.pathname === `${root}/statuses`) return json({ values: [{ key: 'ci', name: 'CI', state: 'SUCCESSFUL', created_on: DATE, updated_on: DATE, links: { self: { href: `https://api.bitbucket.org/2.0/repositories/${fork}/commit/${short}/statuses/build/ci` } } }] });
+      if (url.pathname === `${root}/comments` && init?.method === 'POST') return json({ id: 100 }, 201);
+      return json({ values: [] });
+    });
+    expect(await runProviderSummary(config('bitbucket'), t.fetcher, DATE)).toBe('created');
+    expect(t.requests.filter((request) => new URL(request.url).pathname === `/2.0/repositories/${fork}/commit/${short}`)).toHaveLength(4);
+    expect(t.requests.filter((request) => new URL(request.url).pathname === `/2.0/repositories/${repository}/commit/${short}`)).toHaveLength(3);
+  });
+
+  it('rejects ambiguous, partial, wrong-prefix and mismatched-repository resolutions before writing', async () => {
+    const short = HEAD.slice(0, 12);
+    for (const result of [
+      () => json({ error: 'ambiguous reference' }, 409),
+      () => json({ hash: short }),
+      () => json({ hash: NEXT }),
+      () => json({ hash: HEAD, repository: { full_name: 'other/project' } }),
+      () => json({ hash: HEAD, type: 'branch' }),
+      () => json({ hash: HEAD, links: { self: { href: `https://api.bitbucket.org/2.0/repositories/${repository}/commit/${NEXT}` } } }),
+    ]) {
+      const t = transport((url) => {
+        if (url.pathname === '/2.0/user') return json({ uuid: '{owner}' });
+        if (url.pathname === root) return json({ id: 42, source: reference(short), destination: reference(NEXT), participants: [] });
+        if (url.pathname === `/2.0/repositories/${repository}/commit/${short}`) return result();
+        return json({ values: [] });
+      });
+      await expect(runProviderSummary(config('bitbucket'), t.fetcher, DATE)).rejects.toThrow();
+      expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+    }
+  });
+
+  it('refuses missing or untrusted repository metadata and never follows a hostile commit self link', async () => {
+    const short = HEAD.slice(0, 12);
+    for (const source of [
+      { commit: { hash: short } },
+      reference(short, 'workspace/../../private'),
+      { ...reference(short), commit: { hash: short, links: { self: { href: `https://example.com/commit/${short}` } } } },
+      { ...reference(short), commit: { hash: short, links: { self: { href: `https://api.bitbucket.org/2.0/repositories/other/project/commit/${short}` } } } },
+    ]) {
+      const t = transport((url) => url.pathname === '/2.0/user' ? json({ uuid: '{owner}' }) : json({ id: 42, source, destination: reference(NEXT), participants: [] }));
+      await expect(runProviderSummary(config('bitbucket'), t.fetcher, DATE)).rejects.toThrow();
+      expect(t.requests).toHaveLength(2);
+      expect(t.requests.every((request) => new URL(request.url).origin === 'https://api.bitbucket.org' && request.method === 'GET')).toBe(true);
+    }
+    const wrongTarget = transport((url) => url.pathname === '/2.0/user' ? json({ uuid: '{owner}' }) : json({ id: 42, source: reference(HEAD), destination: reference(NEXT, 'other/project'), participants: [] }));
+    await expect(runProviderSummary(config('bitbucket'), wrongTarget.fetcher, DATE)).rejects.toThrow('different destination repository');
+    expect(wrongTarget.requests.every((request) => request.method === 'GET')).toBe(true);
+  });
+
+  it('rejects a same-prefix commit change during acquisition and during the final pre-write recheck', async () => {
+    const short = HEAD.slice(0, 12);
+    const changed = 'a'.repeat(39) + 'c';
+    for (const changeAt of [2, 3]) {
+      let resolutions = 0;
+      const t = transport((url) => {
+        if (url.pathname === '/2.0/user') return json({ uuid: '{owner}' });
+        if (url.pathname === root) return json({ id: 42, source: reference(short), destination: reference(NEXT), participants: [] });
+        if (url.pathname === `/2.0/repositories/${repository}/commit/${short}`) return json({ hash: ++resolutions >= changeAt ? changed : HEAD });
+        return json({ values: [] });
+      });
+      await expect(runProviderSummary(config('bitbucket'), t.fetcher, DATE)).rejects.toThrow('changed');
+      expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+      expect(resolutions).toBe(changeAt);
+    }
+  });
+
+  it('rechecks the base and source repository as well as the head immediately before writing', async () => {
+    for (const change of ['base', 'fork']) {
+      let prReads = 0;
+      const t = transport((url) => {
+        if (url.pathname === '/2.0/user') return json({ uuid: '{owner}' });
+        if (url.pathname === root) {
+          const changed = ++prReads >= 3;
+          return json({
+            id: 42, source: reference(HEAD, changed && change === 'fork' ? 'other-fork/project' : 'contributor/project'),
+            destination: reference(changed && change === 'base' ? 'c'.repeat(40) : NEXT), participants: [],
+          });
+        }
+        return json({ values: [] });
+      });
+      await expect(runProviderSummary(config('bitbucket'), t.fetcher, DATE)).rejects.toThrow('before the summary could be written');
+      expect(t.requests.every((request) => request.method === 'GET')).toBe(true);
+      expect(prReads).toBe(3);
+    }
+  });
+});
