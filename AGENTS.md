@@ -1411,6 +1411,21 @@ Provider-specific surfaces translate settings and sources into shared review and
   Browser-agent element reference UUIDs are tool references rather than established native DOM IDs, and guessed font sizes or token meanings are not computed-style measurements.
   Do not replace those verification gaps with fabricated selectors or claim documented mappings and native browsing as a successful installed-extension test.
 
+- **Provider header rewrites have a guarded prepaint path.**
+  A native counter remount can otherwise display unfiltered totals for one frame before the normal debounced pass.
+  Reuse only a complete settled immutable subject with matching live selection, native filters, settings, configuration and catalog, without fetching or measuring layout in the mutation callback.
+  Unknown-head Bitbucket reviews and moving comparisons stay on the normal validation path rather than borrowing settled counts from another revision.
+- **Local reviewed marks are personal triage.**
+  `local:providerReviewedItems` binds exact provider, origin, repository, review and head to SHA-256 fingerprints of ordered native source identities, words, times and thread state.
+  Fresh queued reads preserve unrelated review records within a runtime, without claiming cross-tab compare-and-swap.
+  Reviewed on this device never resolves the native thread, changes bot findings or CI standing, edits source text or triggers AI.
+  AI wording is excluded from local mark fingerprints so an explicit triage rewrite cannot invalidate unchanged original evidence.
+- **Native source context and comment bodies have different owners.**
+  Bitbucket can place an Outdated badge and code hunk outside the exact native comment body, so synchronize the badge only after the surrounding file path and comment permalink agree.
+  A visible Resolve button on a public page does not establish authentication or permission.
+  Keep sanitized body copies distinct from native writers and preserve a source action leading to the complete original code context.
+  An existing native source on another tab of the same review can be revealed locally, while modified link clicks retain their original browser navigation behavior.
+
 - **Native file trees can recycle rows independently of diff mounting.**
   GitLab's file tree uses absolute virtualizer offsets, so hiding individual rows would leave gaps even though category counts were correct.
   The category accordion hides only the verified native file-list root and projects the complete validated file inventory into compact Essential and category panels using copies of available native row visuals.
