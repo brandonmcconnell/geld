@@ -2,6 +2,8 @@ import type { FileStats } from '@geld/core';
 import { parseUnifiedDiff } from '@geld/core';
 import { looksLikeHtml } from '../lib/http';
 import type { ProviderCommitPage, ProviderDiffResult, ProviderReviewPage } from '../providers/types';
+import { bitbucketTransport, BitbucketTransportError, canonicalBitbucketApiUrl } from './transport';
+import type { BitbucketTransport } from './transport';
 
 const API_ORIGIN = 'https://api.bitbucket.org';
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -231,8 +233,9 @@ function parseStatus(value: unknown, repositoryPath: string): BitbucketStatus {
   const state = status.state;
   if (state !== 'SUCCESSFUL' && state !== 'FAILED' && state !== 'INPROGRESS' && state !== 'STOPPED') return invalid('Bitbucket returned an invalid build state.');
   const self = link(status.links, 'self');
-  const selfUrl = self === null ? null : new URL(self);
-  const selfSha = selfUrl?.origin === API_ORIGIN && selfUrl.pathname.startsWith(`${repositoryPath}/commit/`) ? /\/commit\/([a-f0-9]{40,64})\/statuses(?:\/|$)/i.exec(selfUrl.pathname)?.[1] ?? null : null;
+  let selfUrl: URL | null = null;
+  if (self !== null) { try { selfUrl = canonicalBitbucketApiUrl(self); } catch { selfUrl = null; } }
+  const selfSha = selfUrl?.origin === API_ORIGIN && selfUrl.pathname.startsWith(`${repositoryPath}/commit/`) ? /\/commit\/((?:[a-f0-9]{40}|[a-f0-9]{64}))\/statuses(?:\/|$)/i.exec(selfUrl.pathname)?.[1] ?? null : null;
   const sha = optionalCommit(status) ?? selfSha;
   return { key: string(status.key), name: string(status.name), state, createdAt: timestamp(status.created_on), updatedAt: timestamp(status.updated_on), url: webUrl(status.url), sha };
 }
@@ -287,7 +290,7 @@ export class BitbucketClient {
   private readonly repositoryPath: string;
   private readonly pullPath: string;
 
-  constructor(readonly page: ProviderReviewPage | ProviderCommitPage, private readonly fetcher: typeof fetch = fetch) {
+  constructor(readonly page: ProviderReviewPage | ProviderCommitPage, private readonly fetcher: typeof fetch = fetch, private readonly transport: BitbucketTransport = bitbucketTransport) {
     if (page.provider !== 'bitbucket' || page.repository.provider !== 'bitbucket' || page.repository.origin !== 'https://bitbucket.org'
       || (page.kind === 'commit' ? !/^[a-f0-9]{7,40}$|^[a-f0-9]{64}$/i.test(page.ref) : !/^[1-9]\d*$/.test(page.number))) throw new BitbucketApiError('invalid-response', 'Invalid Bitbucket review identity.');
     this.repositoryPath = apiRepositoryPath(page.repository.path);
@@ -299,7 +302,8 @@ export class BitbucketClient {
   }
 
   private trustedUrl(value: string, initial: URL): URL {
-    const url = new URL(value, initial);
+    let url: URL;
+    try { url = canonicalBitbucketApiUrl(value, initial); } catch { return invalid('Bitbucket returned an untrusted resource URL.'); }
     const selection = (resource: URL): string => {
       const params = new URLSearchParams(resource.search);
       for (const key of ['page', 'pagelen', 'cursor']) params.delete(key);
@@ -311,18 +315,13 @@ export class BitbucketClient {
   }
 
   private async response(url: URL, signal: AbortSignal, raw = false): Promise<Response> {
-    const response = await this.fetcher.call(globalThis, url.href, { signal, credentials: 'omit', redirect: 'manual', headers: { Accept: raw ? 'text/plain' : 'application/json' } });
+    let response: Response;
+    try { response = await this.transport.fetch(url, { signal, headers: { Accept: raw ? 'text/plain' : 'application/json' } }, this.fetcher); }
+    catch (error) { if (error instanceof BitbucketTransportError) throw new BitbucketApiError(error.reason, error.message, error.retryAfterMs); throw error; }
     if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new BitbucketApiError('invalid-response', 'Bitbucket unexpectedly redirected a pinned review source.');
     if (response.url !== '') this.trustedUrl(response.url, url);
     if (response.status === 401) throw new BitbucketApiError('authentication', 'Sign in to Bitbucket to read this review.');
     if (response.status === 403) throw new BitbucketApiError('forbidden', 'Bitbucket did not allow this review source.');
-    if (response.status === 429) {
-      const retry = response.headers.get('retry-after');
-      const seconds = retry === null ? NaN : Number(retry);
-      const after = retry === null ? NaN : Date.parse(retry) - Date.now();
-      const delay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Number.isFinite(after) ? Math.max(0, after) : 60_000;
-      throw new BitbucketApiError('rate-limited', 'Bitbucket is limiting review requests.', delay);
-    }
     if (!response.ok) throw new BitbucketApiError('unavailable', `Bitbucket review source returned ${response.status}.`);
     return response;
   }
@@ -384,7 +383,11 @@ export class BitbucketClient {
     const path = apiRepositoryPath(string(record(side.repository).full_name));
     const url = new URL(`${API_ORIGIN}${path}/commit/${prefix}`);
     const self = link(native.links, 'self');
-    if (isRecord(native.links) && native.links.self !== undefined && self !== url.href) return invalid('Bitbucket returned a mismatched commit resource.');
+    if (isRecord(native.links) && native.links.self !== undefined) {
+      let canonical: URL | null = null;
+      if (self !== null) { try { canonical = canonicalBitbucketApiUrl(self); } catch { canonical = null; } }
+      if (canonical?.href !== url.href) return invalid('Bitbucket returned a mismatched commit resource.');
+    }
     url.searchParams.set('fields', 'hash');
     // Resolve every snapshot separately so an ambiguous or reused prefix never becomes an immutable revision.
     const resolved = record(await this.json(url, signal));

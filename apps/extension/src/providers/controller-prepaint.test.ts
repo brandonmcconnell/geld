@@ -85,6 +85,23 @@ it('keeps synchronous writes idempotent when the native framework repeatedly res
   expect(fetchDiff).toHaveBeenCalledTimes(1);
 });
 
+it('does not rescan the native diff for streamed line mutations while header counters are unchanged', async () => {
+  const { readDiff, fetchDiff } = await fixture();
+  readDiff.mockClear();
+  for (let i = 0; i < 20; i += 1) {
+    const line = document.createElement('div');
+    line.textContent = `Streamed native line ${i}`;
+    document.querySelector('main')?.append(line);
+    await vi.advanceTimersByTimeAsync(1);
+  }
+  expect(readDiff).not.toHaveBeenCalled();
+  expect(fetchDiff).toHaveBeenCalledOnce();
+  required(document.getElementById('add')).textContent = '7 additions';
+  await vi.advanceTimersByTimeAsync(1);
+  expect(document.getElementById('add')?.textContent).toBe('2 additions');
+  expect(readDiff).toHaveBeenCalledOnce();
+});
+
 it.each(['head', 'selected-version'])('does not reuse settled totals when the live native %s changes before the normal SPA pass', async (change) => {
   const { changeHead, fetchDiff } = await fixture();
   if (change === 'head') changeHead();

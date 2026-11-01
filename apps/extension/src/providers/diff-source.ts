@@ -5,6 +5,7 @@ export { providerDiffKey } from './diff-cache';
 
 export type ProviderDiffState =
   | { readonly status: 'loading' }
+  | { readonly status: 'deferred'; readonly reason: string }
   | { readonly status: 'ready'; readonly result: ProviderDiffResult; readonly cached?: true; readonly provisional?: true; readonly refreshing?: true; readonly refreshError?: string }
   | { readonly status: 'failed'; readonly reason: string };
 
@@ -20,18 +21,26 @@ interface Request {
   hydrated: boolean;
   hydrating: boolean;
   priority: boolean;
+  requireExact: boolean;
   visit: number;
   demandedAt: number;
+  allowFetch: boolean;
 }
 
 interface Lane { nextStart: number; cooldownUntil: number }
 
 const TTL_MS = 60_000;
+export const BITBUCKET_ANONYMOUS_DIFF_FRESH_MS = 30 * 60_000;
+const BITBUCKET_ANONYMOUS_RATE_PAUSE_MS = 60 * 60_000;
 const LIMIT = 200;
 const RETRIES = [4000, 15_000, 45_000];
 
 function knownHead(page: ProviderPage): boolean { return immutableProviderPage(page); }
 function laneKey(page: ProviderPage): string { return `${page.provider}:${page.repository.origin}`; }
+
+export interface ProviderDiffSourceOptions {
+  readonly anonymous?: () => boolean;
+}
 
 export function providerRetryAfter(error: unknown, now = Date.now()): number | null {
   if (typeof error !== 'object' || error === null) return null;
@@ -60,7 +69,7 @@ export class ProviderDiffSource {
   private visitKey: string | null = null;
   private clearing = false;
 
-  constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, cache?: ProviderDiffCache) {
+  constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, cache?: ProviderDiffCache, private readonly options: ProviderDiffSourceOptions = {}) {
     this.cache = cache ?? new ProviderDiffCache(undefined, () => { if (!this.stopped && this.active) this.changed(); });
   }
 
@@ -73,35 +82,57 @@ export class ProviderDiffSource {
     for (const [id, request] of this.requests) {
       request.abort?.abort();
       if (request.abort !== null || request.queued || request.hydrating || request.state.status !== 'ready') this.requests.delete(id);
-      else if (!knownHead(request.page)) request.state = { status: 'ready', result: request.state.result, cached: true, provisional: true };
+      else {
+        // Keep complete snapshots without retaining an earlier visit's request demand.
+        request.priority = false;
+        request.requireExact = false;
+        request.allowFetch = false;
+        request.demandedAt = 0;
+        request.retryAt = 0;
+        request.attempts = 0;
+        if (!knownHead(request.page)) request.state = { status: 'ready', result: request.state.result, cached: true, provisional: true };
+      }
     }
     this.running = 0;
   }
 
-  get(page: ProviderPage, priority = false): ProviderDiffState {
+  get(page: ProviderPage, priority = false, allowFetch = true, requireExact = false): ProviderDiffState {
     if (this.stopped || this.clearing) return { status: 'loading' };
     const key = providerDiffKey(page);
     let request = this.requests.get(key);
     if (request === undefined) {
-      request = { key, page, state: { status: 'loading' }, at: 0, retryAt: 0, attempts: 0, abort: null, queued: false, hydrated: false, hydrating: false, priority, visit: this.visit, demandedAt: Date.now() };
+      request = { key, page, state: allowFetch ? { status: 'loading' } : { status: 'deferred', reason: 'Hover to count changes' }, at: 0, retryAt: 0, attempts: 0, abort: null, queued: false, hydrated: false, hydrating: false, priority, requireExact, visit: this.visit, demandedAt: 0, allowFetch };
     }
     this.requests.delete(key);
     this.requests.set(key, request);
     this.prune();
     request.priority ||= priority;
+    request.requireExact ||= requireExact;
+    request.allowFetch = allowFetch || request.priority && request.allowFetch;
+    if (!request.allowFetch && request.queued) {
+      const queued = this.queue.indexOf(request);
+      if (queued >= 0) this.queue.splice(queued, 1);
+      request.queued = false;
+      if (request.state.status === 'ready') {
+        const { refreshing, ...ready } = request.state;
+        void refreshing;
+        request.state = ready;
+      }
+    }
     if (priority && request.queued) {
       const queued = this.queue.indexOf(request);
       if (queued >= 0) this.queue.splice(queued, 1);
       this.queue.unshift(request);
     }
     request.visit = this.visit;
-    request.demandedAt = Date.now();
-    const cached = this.cache.get(page, priority);
-    if (cached !== null && (request.state.status === 'loading' || request.state.status === 'failed' || (request.state.status === 'ready' && request.state.cached && cached.storedAt > request.at))) {
+    if (allowFetch) request.demandedAt = Date.now();
+    const cached = this.cache.get(page);
+    if (cached !== null && (request.state.status === 'loading' || request.state.status === 'deferred' || request.state.status === 'failed' || (request.state.status === 'ready' && request.state.cached && cached.storedAt > request.at))) {
       request.state = { status: 'ready', result: cached.result, cached: true, ...(cached.exact ? {} : { provisional: true }) };
       request.at = cached.storedAt;
     }
-    if (priority && request.state.status === 'ready' && request.state.provisional) request.state = { status: 'loading' };
+    if (allowFetch && request.state.status === 'deferred') request.state = { status: 'loading' };
+    if (!request.allowFetch && request.state.status === 'loading') request.state = { status: 'deferred', reason: 'Hover to count changes' };
     if (!this.stopped && !request.hydrated && !request.hydrating) {
       request.hydrating = true;
       const visit = this.visit;
@@ -110,15 +141,24 @@ export class ProviderDiffSource {
         if (this.stopped || this.visit !== visit || this.requests.get(key) !== current) return;
         current.hydrating = false;
         current.hydrated = true;
-        this.get(current.page, current.priority);
+        this.get(current.page, current.priority, current.allowFetch, current.requireExact);
         if (this.active) this.changed();
       });
     }
     const ready = request.state.status === 'ready';
-    const needsRefresh = !ready || (!knownHead(page) && (request.state.status !== 'ready' || (request.state.cached ? cached === null || !cached.fresh : Date.now() - request.at >= TTL_MS)));
-    if (!this.stopped && request.hydrated && request.abort === null && !request.queued && Date.now() >= request.retryAt && needsRefresh) this.enqueue(request);
+    const freshFor = this.anonymousBitbucket(page) ? BITBUCKET_ANONYMOUS_DIFF_FRESH_MS : TTL_MS;
+    const needsRefresh = !ready || ((request.requireExact || request.priority) && request.state.status === 'ready' && request.state.provisional === true) || (!knownHead(page) && (request.state.status !== 'ready' || (request.state.cached ? cached === null || !cached.fresh : Date.now() - request.at >= freshFor)));
+    if (allowFetch && !this.stopped && request.hydrated && request.abort === null && !request.queued && Date.now() >= request.retryAt && needsRefresh) this.enqueue(request);
+    // Header callers need current revision verification; a hover can still
+    // describe a complete cached snapshot while that verification waits or
+    // fails. Filtering the return must never discard the shared snapshot.
+    if (requireExact && request.state.status === 'ready' && request.state.provisional === true) {
+      return request.state.refreshError === undefined ? { status: 'loading' } : { status: 'failed', reason: request.state.refreshError };
+    }
     return request.state;
   }
+
+  private anonymousBitbucket(page: ProviderPage): boolean { return page.provider === 'bitbucket' && (this.options.anonymous?.() ?? true); }
 
   async clearCache(): Promise<void> {
     if (this.stopped || this.clearing) return;
@@ -178,7 +218,7 @@ export class ProviderDiffSource {
     if (this.stopped || !this.active) return;
     const now = Date.now();
     for (const request of this.requests.values()) {
-      if (request.visit === this.visit && request.attempts > 0 && request.abort === null && !request.queued && request.retryAt <= now && now - request.demandedAt <= TTL_MS) {
+      if (request.allowFetch && request.visit === this.visit && request.attempts > 0 && request.abort === null && !request.queued && request.retryAt <= now && now - request.demandedAt <= TTL_MS) {
         request.queued = true;
         if (request.priority) this.queue.unshift(request); else this.queue.push(request);
       }
@@ -187,14 +227,14 @@ export class ProviderDiffSource {
     let index = -1;
     for (let i = 0; i < this.queue.length; i += 1) {
       const request = this.queue[i];
-      if (request === undefined || request.visit !== this.visit) continue;
+      if (request === undefined || !request.allowFetch || request.visit !== this.visit) continue;
       const lane = this.lanes.get(laneKey(request.page));
       const due = Math.max(request.retryAt, lane?.nextStart ?? 0, lane?.cooldownUntil ?? 0);
       next = Math.min(next, due);
       if (index < 0 && due <= now) index = i;
     }
     for (const request of this.requests.values()) {
-      if (request.visit === this.visit && request.attempts > 0 && request.abort === null && !request.queued && now - request.demandedAt <= TTL_MS) next = Math.min(next, request.retryAt);
+      if (request.allowFetch && request.visit === this.visit && request.attempts > 0 && request.abort === null && !request.queued && now - request.demandedAt <= TTL_MS) next = Math.min(next, request.retryAt);
     }
     this.cancelTimer();
     if (this.running < 2 && index >= 0) {
@@ -227,7 +267,7 @@ export class ProviderDiffSource {
         const message = error instanceof Error ? error.message : 'Diff unavailable';
         const reason: unknown = typeof error === 'object' && error !== null ? Reflect.get(error, 'reason') : undefined;
         const rateLimited = reason === 'rate-limited' || /\b429\b|rate.limit/i.test(message);
-        const delay = retryAfter !== null ? retryAfter + 2000 : rateLimited ? Math.min(60_000 * 2 ** (request.attempts - 1), 15 * 60_000) : RETRIES[Math.min(request.attempts - 1, RETRIES.length - 1)] ?? 45_000;
+        const delay = retryAfter !== null ? retryAfter + 2000 : rateLimited ? this.anonymousBitbucket(request.page) ? BITBUCKET_ANONYMOUS_RATE_PAUSE_MS : Math.min(60_000 * 2 ** (request.attempts - 1), 15 * 60_000) : RETRIES[Math.min(request.attempts - 1, RETRIES.length - 1)] ?? 45_000;
         if (retryAfter !== null || rateLimited) lane.cooldownUntil = Math.max(lane.cooldownUntil, Date.now() + delay);
         const definitive = !rateLimited && (reason === 'authentication' || reason === 'forbidden' || /Sign in to (?:GitLab|Bitbucket)|diff too large|HTTP (?:401|403|404)\b/i.test(message));
         request.retryAt = definitive || request.attempts >= 8 ? Number.POSITIVE_INFINITY : Date.now() + delay;

@@ -2,6 +2,7 @@ name: Installed browser tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
       - '.github/workflows/browser-e2e.yml'
       - 'apps/extension/**'
@@ -10,6 +11,27 @@ on:
       - 'packages/github/**'
       - 'pnpm-lock.yaml'
   workflow_dispatch:
+    inputs:
+      focus:
+        description: 'Public read-only slice; unselected cases are reported without a pass. Respect carried provider cooldowns.'
+        required: true
+        default: regression
+        type: choice
+        options:
+          - regression
+          - bitbucket-diff
+          - bitbucket-list
+          - bitbucket-comment
+          - bitbucket-commit
+          - gitlab-lists
+          - gitlab-diff
+          - gitlab-review
+          - github
+          - all
+
+concurrency:
+  group: geld-installed-browser-public-providers
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -22,7 +44,21 @@ jobs:
     env:
       GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
       GELD_BROWSER_PREVIOUS_REPORT: ${{ github.workspace }}/.browser-previous-evidence/report.json
+      GELD_BROWSER_FOCUS: ${{ github.event_name == 'workflow_dispatch' && inputs.focus || 'regression' }}
     steps:
+      - name: Select a public verification slice
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const request = context.payload.pull_request;
+            const sameRepository = request?.head?.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
+            const marker = sameRepository ? /<!-- geld-browser-focus: ([a-z-]+) -->/.exec(request.body ?? '') : null;
+            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-list', 'bitbucket-comment', 'bitbucket-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-review', 'github', 'all']);
+            if (marker !== null && choices.has(marker[1])) {
+              core.exportVariable('GELD_BROWSER_FOCUS', marker[1]);
+              core.info(`Selected public verification slice: ${marker[1]}.`);
+            }
       - uses: actions/checkout@v7
         with:
           persist-credentials: false

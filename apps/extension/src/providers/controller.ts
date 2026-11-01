@@ -1,5 +1,5 @@
 import type { Catalog, ChangeTotals, FileStats, GeldSettings } from '@geld/core';
-import { allCategories, BUNDLED_CATALOG, compileAuthorRules, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, LARGE_CHANGE_LINES, pluralize, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
+import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, LARGE_CHANGE_LINES, pluralize, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
 import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } from '../github/breakdown';
 import type { HiddenBreakdown, StatsBreakdown } from '../github/breakdown';
 import type { TabState } from '../lib/messages';
@@ -10,6 +10,8 @@ import type { ProviderConversationServices } from './conversation';
 import { ProviderHover } from './hover';
 import { ProviderReveal } from './reveal';
 import { ProviderCategoryTree } from './tree';
+import { ProviderInlineTree } from './inline-tree';
+import { ProviderHiddenAuthors } from './hidden-authors';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
 import { immutableProviderPage, isProviderReviewPage } from './types';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
@@ -18,7 +20,6 @@ import type { RepoConfigChoices } from '../lib/local-state';
 
 const HIDDEN = 'data-geld-provider-hidden';
 const INLINE = 'data-geld-provider-inline';
-const AUTHOR_HIDDEN = 'data-geld-provider-author-hidden';
 
 interface SettledHeader {
   readonly key: string;
@@ -29,12 +30,16 @@ interface SettledHeader {
   readonly config: TabState['repoConfig'];
   readonly visible: ChangeTotals;
   readonly filtered: string | null;
+  readonly headers: readonly HeaderSnapshot[];
 }
+
+interface HeaderSnapshot { readonly nodes: readonly (HTMLElement | null | undefined)[]; readonly values: string }
 
 interface HoverCounts {
   readonly stats: StatsBreakdown | null;
   readonly status: 'loading' | 'unavailable' | 'provisional' | 'ready';
   readonly reason?: string;
+  readonly onIntent?: () => void;
 }
 
 export const PROVIDER_IDLE_STATE: TabState = {
@@ -53,6 +58,8 @@ export class ProviderController {
   private readonly source: ProviderDiffSource;
   private readonly counts = new ProviderCounts();
   private readonly categoryTree = new ProviderCategoryTree();
+  private readonly inlineTree = new ProviderInlineTree();
+  private readonly hiddenAuthors: ProviderHiddenAuthors;
   private readonly conversation: ProviderConversation;
   private readonly hover: ProviderHover;
   private readonly reveal: ProviderReveal;
@@ -64,6 +71,9 @@ export class ProviderController {
   private stopped = false;
   private pageKey = '';
   private expanded: boolean;
+  private expansionKey: string | null = null;
+  private readonly expansionChoices = new Map<string, boolean>();
+  private readonly inlineTouched = new Map<string, Set<string>>();
   private state: TabState = PROVIDER_IDLE_STATE;
   private settledHeader: SettledHeader | null = null;
   private effectiveSettings: GeldSettings | null = null;
@@ -77,10 +87,10 @@ export class ProviderController {
   private readonly viewed = new Map<string, { readonly attempts: number; readonly at: number; readonly confirmed: boolean }>();
   private shownInline = new WeakMap<HTMLElement, string>();
   private readonly expandedLarge = new WeakMap<HTMLElement, string>();
-  private readonly authors = new Set<HTMLElement>();
   private rowObserver: IntersectionObserver | null = null;
   private readonly observedRows = new WeakSet<HTMLElement>();
   private readonly visibleRows = new WeakSet<HTMLElement>();
+  private listDemand = new WeakMap<HTMLElement, string>();
 
   constructor(
     private readonly adapter: ProviderAdapter,
@@ -94,7 +104,10 @@ export class ProviderController {
     this.settings = settings;
     this.catalog = catalog;
     this.expanded = settings.expandedByDefault;
-    this.source = new ProviderDiffSource(adapter, () => this.requestRefresh());
+    this.hiddenAuthors = new ProviderHiddenAuthors(adapter.id, () => this.requestRefresh());
+    this.source = new ProviderDiffSource(adapter, () => this.requestRefresh(), undefined, {
+      anonymous: () => adapter.id === 'bitbucket' && adapter.eagerListDiffs?.(document) !== true,
+    });
     this.conversation = new ProviderConversation(adapter, () => this.requestRefresh(), services);
     this.reveal = new ProviderReveal(() => this.adapter.readDiff(document), () => this.pageKey);
     this.hover = new ProviderHover(adapter, this.source, () => this.settings, () => this.catalog, {
@@ -133,6 +146,8 @@ export class ProviderController {
     this.observer.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
     document.addEventListener('visibilitychange', this.visibility);
     document.addEventListener('click', this.nativeTreeClick, true);
+    document.addEventListener('click', this.nativeInlineActivate, true);
+    document.addEventListener('keydown', this.nativeInlineActivate, true);
     document.addEventListener('DiffFileMounted', this.refreshEvent);
     document.addEventListener(PROVIDER_LINE_FOLDS_CHANGED, this.refreshEvent);
     this.pulse = setInterval(() => this.requestRefresh(), 15_000);
@@ -140,6 +155,26 @@ export class ProviderController {
   }
 
   private readonly refreshEvent = (): void => this.requestRefresh();
+  private readonly nativeInlineActivate = (event: Event): void => {
+    if (!event.isTrusted || this.stopped || (this.effectiveSettings ?? this.settings).groupHidden
+      || (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ')) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target === null || target.closest('[data-geld-ui]') !== null) return;
+    const entry = this.adapter.readDiff(document)?.entries.find((item) => item.root.contains(target));
+    if (entry !== undefined && this.state.categories.some((category) => category.paths.includes(entry.path))) this.markInlineTouched(entry.path);
+  };
+
+  private markInlineTouched(path: string): void {
+    if (this.expansionKey === null) return;
+    const paths = this.inlineTouched.get(this.expansionKey) ?? new Set<string>();
+    paths.add(path);
+    this.inlineTouched.set(this.expansionKey, paths);
+    this.collapsed.delete(path);
+    if (this.inlineTouched.size > 100) {
+      const oldest = this.inlineTouched.keys().next().value;
+      if (oldest !== undefined) this.inlineTouched.delete(oldest);
+    }
+  }
   private readonly nativeTreeClick = (event: MouseEvent): void => {
     if (!event.isTrusted || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || this.stopped) return;
     const target = event.target instanceof Element ? event.target : null;
@@ -171,14 +206,15 @@ export class ProviderController {
   updateSettings(settings: GeldSettings): void {
     const layoutChanged = settings.groupHidden !== this.settings.groupHidden;
     const defaultChanged = settings.expandedByDefault !== this.settings.expandedByDefault;
+    if (settings !== this.settings) { this.expansionChoices.clear(); this.inlineTouched.clear(); }
     this.settings = settings;
-    if (defaultChanged) this.setExpanded(settings.expandedByDefault);
+    if (defaultChanged) this.setExpanded(settings.expandedByDefault, false);
     if (layoutChanged) this.restorePage();
     this.requestRefresh();
   }
 
-  updateCatalog(catalog: Catalog): void { this.catalog = catalog; this.configs?.setCatalog(catalog); this.requestRefresh(); }
-  updateRepoChoices(choices: RepoConfigChoices): void { this.choices = choices; this.requestRefresh(); }
+  updateCatalog(catalog: Catalog): void { this.expansionChoices.clear(); this.inlineTouched.clear(); this.catalog = catalog; this.configs?.setCatalog(catalog); this.requestRefresh(); }
+  updateRepoChoices(choices: RepoConfigChoices): void { this.expansionChoices.clear(); this.inlineTouched.clear(); this.choices = choices; this.requestRefresh(); }
   getTabState(): TabState { return this.state; }
 
   toggleHidden(): void {
@@ -189,6 +225,12 @@ export class ProviderController {
 
   revealPath(path: string): void {
     const category = this.state.categories.find((item) => item.paths.includes(path));
+    if (!(this.effectiveSettings ?? this.settings).groupHidden) {
+      if (category !== undefined) this.markInlineTouched(path);
+      this.apply();
+      this.reveal.request(path);
+      return;
+    }
     this.activeCategory = category?.id ?? null;
     this.setExpanded(category !== undefined);
     this.apply();
@@ -215,6 +257,8 @@ export class ProviderController {
     if (this.pulse !== null) clearInterval(this.pulse);
     document.removeEventListener('visibilitychange', this.visibility);
     document.removeEventListener('click', this.nativeTreeClick, true);
+    document.removeEventListener('click', this.nativeInlineActivate, true);
+    document.removeEventListener('keydown', this.nativeInlineActivate, true);
     document.removeEventListener('DiffFileMounted', this.refreshEvent);
     document.removeEventListener(PROVIDER_LINE_FOLDS_CHANGED, this.refreshEvent);
     this.hover.stop();
@@ -222,6 +266,7 @@ export class ProviderController {
     this.source.stop();
     this.configs?.stop();
     this.conversation.clear();
+    this.hiddenAuthors.clear();
     this.restorePage();
     if (document.documentElement.getAttribute('data-geld-provider') === this.adapter.id) document.documentElement.removeAttribute('data-geld-provider');
     this.state = PROVIDER_IDLE_STATE;
@@ -246,13 +291,12 @@ export class ProviderController {
     this.shownInline = new WeakMap();
     this.section?.remove();
     this.categoryTree.clear();
+    this.inlineTree.clear();
     this.activeCategory = null;
     this.section = null;
     this.signature = '';
     for (const chip of this.chips) chip.remove();
     this.chips.clear();
-    for (const row of this.authors) row.removeAttribute(AUTHOR_HIDDEN);
-    this.authors.clear();
   }
 
   private apply(): void {
@@ -265,10 +309,13 @@ export class ProviderController {
     const page = this.adapter.describe(new URL(window.location.href), document);
     const key = page === null ? window.location.href : providerDiffKey(page);
     if (key !== this.pageKey) {
+      this.listDemand = new WeakMap();
+      this.hiddenAuthors.clear();
       this.reveal.clear();
       this.source.beginVisit(key);
       this.restorePage();
       this.pageKey = key;
+      this.expansionKey = null;
       this.expanded = this.settings.expandedByDefault;
       this.viewed.clear();
     }
@@ -278,6 +325,7 @@ export class ProviderController {
       this.source.setActive(false);
       this.configs?.setActive(false);
       this.conversation.clear();
+      this.hiddenAuthors.clear();
       this.restorePage();
       this.state = {
         ...PROVIDER_IDLE_STATE, allowed: false, rule: decision.rule?.raw ?? null, repo: page?.repository.path ?? null,
@@ -310,7 +358,7 @@ export class ProviderController {
       this.publish(this.state);
       return;
     }
-    const result = this.source.get(page, true);
+    const result = this.source.get(page, true, true, true);
     if (result.status !== 'ready' || config?.status === 'loading') {
       this.restorePage(true);
       this.bindHeaders(targets, {
@@ -334,6 +382,10 @@ export class ProviderController {
       return withoutComments;
     }), effective);
     const visible = subtractTotals(subtractTotals(all, hidden.totals), hidden.filtered);
+    const expansionKey = JSON.stringify([key, result.result.revision]);
+    if (this.expansionKey !== expansionKey) this.activeCategory = null;
+    this.expansionKey = expansionKey;
+    this.setExpanded(this.expansionChoices.get(expansionKey) ?? (effective.groupHidden && hidden.totals.files > 0 && visible.files === 0 || effective.expandedByDefault), false);
     const activeCategories = allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id));
     this.bindHeaders(targets, {
       stats: statsBreakdown(all, hidden, hiddenNounPlural(activeCategories, hidden), activeCategories),
@@ -353,6 +405,7 @@ export class ProviderController {
     this.settledHeader = immutableProviderPage(page) && result.result.complete && result.provisional !== true ? {
       key, settings: this.settings, effective, catalog: this.catalog, choices: this.choices,
       config: this.state.repoConfig, visible, filtered: view === null ? null : JSON.stringify([...view.filteredPaths].sort()),
+      headers: this.snapshotHeaders(targets),
     } : null;
     this.applyLists();
     this.publish(this.state);
@@ -366,14 +419,34 @@ export class ProviderController {
       || this.catalog !== settled.catalog || this.choices !== settled.choices || this.state.repoConfig !== settled.config
       || this.state.visible !== settled.visible || this.pageKey !== settled.key) return;
     try {
+      const targets = this.adapter.headerTargets(document);
+      const headers = this.snapshotHeaders(targets);
+      if (headers.length === settled.headers.length && headers.every((header, index) => {
+        const previous = settled.headers[index];
+        return previous !== undefined && previous.values === header.values && previous.nodes.length === header.nodes.length
+          && header.nodes.every((node, position) => node === previous.nodes[position]);
+      })) return;
       const page = this.adapter.describe(new URL(window.location.href), document);
       if (page === null || !immutableProviderPage(page) || providerDiffKey(page) !== settled.key
         || !decideRepo(compileRepoRules(this.settings.repoRules), providerRepositoryScope(page.repository)).allowed) return;
       const view = this.adapter.readDiff(document);
       const filtered = view === null ? null : JSON.stringify([...view.filteredPaths].sort());
       if (filtered !== settled.filtered) return;
-      this.writeHeaderCounts(this.adapter.headerTargets(document), settled.visible);
+      this.writeHeaderCounts(targets, settled.visible);
+      this.settledHeader = { ...settled, headers: this.snapshotHeaders(targets) };
     } catch { /* Native SPA markup may be between subjects; wait for the normal validated pass. */ }
+  }
+
+  private snapshotHeaders(targets: readonly ProviderHeaderTarget[]): readonly HeaderSnapshot[] {
+    return targets.map((target) => ({
+      nodes: [target.additions, target.deletions, target.files, target.accessibleSummaryHost, ...(target.labels ?? []).map((label) => label.host)],
+      values: JSON.stringify([
+        target.additions?.textContent, target.deletions?.textContent, target.files?.textContent,
+        target.accessibleSummaryHost?.querySelector('.geld-provider-accessible-counts')?.textContent,
+        (target.labels ?? []).map((label) => [label.attribute, label.count, label.host.getAttribute(label.attribute)
+          ?? (label.attribute === 'title' ? label.host.getAttribute('data-geld-hover-title') : null)]),
+      ]),
+    }));
   }
 
   private writeHeaderCounts(targets: readonly ProviderHeaderTarget[], visible: ChangeTotals): void {
@@ -392,7 +465,7 @@ export class ProviderController {
   private applyFiles(page: ProviderPage, view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], effective: GeldSettings, revision: string): void {
     if (this.activeCategory !== null && !hidden.categories.some((group) => group.category.id === this.activeCategory)) {
       this.activeCategory = null;
-      this.setExpanded(false);
+      this.setExpanded(false, false);
     }
     const hiddenPaths = new Set(hidden.categories.flatMap((group) => group.paths));
     const categories = new Map(hidden.categories.flatMap((group) => group.paths.map((path) => [path, group.category] as const)));
@@ -412,9 +485,10 @@ export class ProviderController {
       const shown = this.expanded && (this.activeCategory === null || this.activeCategory === categories.get(entry.path)?.id);
       attribute(entry.root, HIDDEN, hiddenFile && effective.groupHidden && !view.virtualized ? (shown ? 'open' : 'closed') : null);
       attribute(entry.root, INLINE, hiddenFile && (!effective.groupHidden || view.virtualized) ? '' : null);
-      if (hiddenFile && shown && this.shownInline.get(entry.root) !== entry.path) {
+      const ownedInline = !effective.groupHidden && this.expansionKey !== null && this.inlineTouched.get(this.expansionKey)?.has(entry.path) === true;
+      if (hiddenFile && !ownedInline && shown && this.shownInline.get(entry.root) !== entry.path) {
         if (entry.expand()) { this.shownInline.set(entry.root, entry.path); this.collapsed.delete(entry.path); }
-      } else if (hiddenFile && (!effective.groupHidden || view.virtualized)) {
+      } else if (hiddenFile && !ownedInline && (!effective.groupHidden || view.virtualized)) {
         if (!shown && this.collapsed.get(entry.path)?.root !== entry.root && entry.isExpanded?.() === true) {
           if (entry.collapse()) this.collapsed.set(entry.path, entry);
         }
@@ -443,19 +517,24 @@ export class ProviderController {
       this.touched.add(row.root);
       attribute(row.root, INLINE, !effective.groupHidden && hiddenPaths.has(row.path) ? '' : null);
     }
-    if (effective.groupHidden) this.categoryTree.update(view, hidden, all, files, {
+    if (effective.groupHidden) {
+      this.inlineTree.clear();
+      this.categoryTree.update(view, hidden, all, files, {
       subjectKey: JSON.stringify([this.pageKey, revision]),
       revealPath: (path) => this.revealPath(path),
       selectCategory: (id) => { this.activeCategory = id === 'essential' ? null : id; },
       setExpanded: (expanded) => { this.setExpanded(expanded); this.apply(); },
-    });
-    else this.categoryTree.clear();
+      });
+    } else {
+      this.categoryTree.clear();
+      this.inlineTree.update(view, hidden, files, { subjectKey: JSON.stringify([this.pageKey, revision]) });
+    }
     const signature = JSON.stringify([this.pageKey, revision, hidden.categories.map((group) => [group.category.id, group.category.title, group.category.shortNoun, group.category.shortNounPlural, group.paths, group.totals]), hidden.lines, all, this.expanded, effective.groupHidden]);
     if (signature === this.signature && this.section?.isConnected === true) return;
     this.section?.remove();
     this.signature = signature;
     this.section = null;
-    if (hidden.totals.files === 0) return;
+    if (hidden.totals.files === 0 || !effective.groupHidden) return;
     const section = element('section', '', 'geld-provider-hidden');
     const toggle = element('button', `${this.expanded ? 'Hide' : 'Show'} ${hiddenLabel(hidden, allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id)))}`, 'geld-provider-toggle');
     toggle.type = 'button';
@@ -480,20 +559,21 @@ export class ProviderController {
       this.forgetHover(chip);
       this.chips.delete(chip);
     }
-    const rules = compileAuthorRules(this.settings.hiddenAuthors);
     const repoRules = compileRepoRules(this.settings.repoRules);
-    for (const row of this.adapter.listRows(document)) {
-      const page = this.adapter.describe(new URL(row.url, window.location.origin), document);
-      if (page === null) continue;
+    const rows = this.adapter.listRows(document).flatMap((row) => {
+      try {
+        const page = this.adapter.describe(new URL(row.url, window.location.origin), document);
+        return page === null ? [] : [{ row, page, allowed: decideRepo(repoRules, providerRepositoryScope(page.repository)).allowed }];
+      } catch { return []; }
+    });
+    const authorHidden = this.hiddenAuthors.update(rows.filter((entry) => entry.allowed).map((entry) => entry.row), this.settings, this.pageKey);
+    for (const { row, page, allowed } of rows) {
       const scope = providerRepositoryScope(page.repository);
-      if (!decideRepo(repoRules, scope).allowed) {
+      if (!allowed) {
         this.removeChip(row);
-        row.root.removeAttribute(AUTHOR_HIDDEN);
         continue;
       }
-      const shouldHide = row.author !== null && rules.hides(row.author);
-      this.authors.add(row.root);
-      attribute(row.root, AUTHOR_HIDDEN, shouldHide ? '' : null);
+      const shouldHide = authorHidden.has(row.root);
       if (!this.settings.showListStats || shouldHide) { this.removeChip(row); continue; }
       if (this.rowObserver !== null) {
         if (!this.observedRows.has(row.root)) {
@@ -502,27 +582,45 @@ export class ProviderController {
         }
         if (!this.visibleRows.has(row.root)) continue;
       }
-      const config = this.configs?.get(page, this.settings, this.choices);
+      const demandKey = providerDiffKey(page);
+      const demanded = this.adapter.eagerListDiffs?.(document) !== false || this.listDemand.get(row.root) === demandKey;
+      const config = this.configs?.get(page, this.settings, this.choices, demanded);
       const matcher = createMatcher(config?.settings ?? this.settings, scope, this.catalog);
-      const state = this.source.get(page);
+      const state = this.source.get(page, false, demanded);
       const chip = this.chip(row);
+      const onIntent = (): void => {
+        if (this.stopped || !this.settings.enabled || !this.settings.showListStats || !row.root.isConnected || !chip.isConnected
+          || !decideRepo(compileRepoRules(this.settings.repoRules), scope).allowed
+          || !this.adapter.listRows(document).some((current) => current.root === row.root && current.host === row.host && current.url === row.url)) return;
+        this.listDemand.set(row.root, demandKey);
+        this.source.get(page, true);
+        this.configs?.get(page, this.settings, this.choices);
+        this.requestRefresh();
+      };
       if (state.status !== 'ready' || config?.status === 'loading') {
+        const deferred = state.status === 'deferred' || (!demanded && config?.status === 'loading');
         this.bindHover(chip, {
           stats: null,
-          status: state.status === 'loading' || config?.status === 'loading' ? 'loading' : 'unavailable',
+          status: deferred || state.status === 'loading' || config?.status === 'loading' ? 'loading' : 'unavailable',
           ...(state.status === 'failed' ? { reason: state.reason } : {}),
+          onIntent,
         });
-        const text = state.status === 'loading' || config?.status === 'loading' ? 'Counting changes…' : 'Changes unavailable';
+        const text = deferred ? 'Hover to count changes' : state.status === 'loading' || config?.status === 'loading' ? 'Counting changes…' : 'Changes unavailable';
         if (chip.textContent !== text) chip.textContent = text;
-        if (state.status === 'failed') chip.title = state.reason;
+        this.hover.setTitle(chip, state.status === 'failed' ? state.reason : deferred ? 'Focus or hover to count changes.' : text);
         continue;
       }
       const { all, hidden } = breakdownFromFiles(state.result.files, matcher, (config?.settings ?? this.settings).hideCommentLines);
       const effective = config?.settings ?? this.settings;
       const activeCategories = allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id));
+      const cachedMessage = state.refreshError === undefined
+        ? state.refreshing === true ? 'Cached counts. Updating…' : 'Cached counts. Hover or focus to refresh.'
+        : `Cached counts. Refresh unavailable: ${state.refreshError.slice(0, 300)}`;
       this.bindHover(chip, {
         stats: statsBreakdown(all, hidden, hiddenNounPlural(activeCategories, hidden), activeCategories),
-        status: state.provisional === true ? 'provisional' : 'ready',
+        status: state.provisional === true ? 'provisional' : state.refreshError === undefined ? 'ready' : 'unavailable',
+        ...(state.provisional === true || state.refreshError !== undefined ? { reason: cachedMessage } : {}),
+        onIntent,
       });
       const visible = subtractTotals(all, hidden.totals);
       const label = activeCategories.length === 0 ? null : hiddenLabel(hidden, activeCategories);
@@ -532,7 +630,7 @@ export class ProviderController {
         element('span', `+${formatCount(visible.additions)}`, 'geld-provider-list-counts__add'), ' ',
         element('span', `−${formatCount(visible.deletions)}`, 'geld-provider-list-counts__del'),
       );
-      chip.title = `${state.provisional === true ? 'Cached counts. Updating…\n' : ''}Essential: ${pluralize(visible.files, 'file', 'files')} +${visible.additions} −${visible.deletions}\nTotal: ${pluralize(all.files, 'file', 'files')} +${all.additions} −${all.deletions}`;
+      this.hover.setTitle(chip, `${state.provisional === true || state.refreshError !== undefined ? `${cachedMessage}\n` : ''}Essential: ${pluralize(visible.files, 'file', 'files')} +${visible.additions} −${visible.deletions}\nTotal: ${pluralize(all.files, 'file', 'files')} +${all.additions} −${all.deletions}`);
     }
   }
 
@@ -556,6 +654,7 @@ export class ProviderController {
     this.hoverCounts.set(host, counts);
     if (bound) return;
     this.hover.bindBreakdown(host, () => this.hoverCounts.get(host)?.stats ?? null, {
+      onIntent: () => this.hoverCounts.get(host)?.onIntent?.(),
       ...(keyboard === undefined ? {} : { keyboard }),
       status: () => {
         const current = this.hoverCounts.get(host);
@@ -583,7 +682,16 @@ export class ProviderController {
     this.hoverCounts.delete(host);
   }
 
-  private setExpanded(expanded: boolean): void {
+  private setExpanded(expanded: boolean, remember = true): void {
+    if (remember && this.expansionKey !== null) {
+      this.inlineTouched.delete(this.expansionKey);
+      this.expansionChoices.delete(this.expansionKey);
+      this.expansionChoices.set(this.expansionKey, expanded);
+      if (this.expansionChoices.size > 100) {
+        const oldest = this.expansionChoices.keys().next().value;
+        if (oldest !== undefined) this.expansionChoices.delete(oldest);
+      }
+    }
     if (this.expanded === expanded) return;
     this.expanded = expanded;
     this.collapsed.clear();

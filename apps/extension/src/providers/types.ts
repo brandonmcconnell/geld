@@ -1,6 +1,6 @@
 import type { FileStats, RepositoryIdentity } from '@geld/core';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
-import type { ProviderReviewPanelEvent, ProviderReviewSourceAction } from './review-panel';
+import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
@@ -128,6 +128,7 @@ export interface ProviderReviewAction {
 export interface ProviderReviewSnapshot {
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement) => boolean;
+  readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly input: ProviderReviewInput;
   readonly comments: readonly ProviderReviewComment[];
   readonly events: readonly ProviderReviewPanelEvent[];
@@ -135,6 +136,7 @@ export interface ProviderReviewSnapshot {
   readonly unavailable: readonly { readonly area: string; readonly reason: string }[];
   readonly approvalsRequired: number | null;
   readonly approvalsLeft: number | null;
+  readonly requirements?: readonly ProviderReviewRequirement[] | null;
   readonly actions: readonly ProviderReviewAction[];
 }
 
@@ -150,6 +152,8 @@ export interface ProviderAdapter {
   readDiff(doc: Document): ProviderDiffView | null;
   headerTargets(doc: Document): readonly ProviderHeaderTarget[];
   listRows(doc: Document): readonly ProviderListRow[];
+  eagerListDiffs?(doc: Document): boolean;
+  reviewRefreshMs?(doc: Document): number;
   fetchDiff(page: ProviderPage, signal: AbortSignal): Promise<ProviderDiffResult>;
   readonly fetchConfig?: ProviderConfigFetcher;
   reviewHost?(doc: Document): HTMLElement | null;

@@ -1366,6 +1366,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   Opening a native writer retains the provider's validation and tier constraints, and relaying a click does not prove that the server accepted a write.
   An asynchronous native action must recheck the review route and selected comparison after hydration so a drawer opened on one MR cannot focus, select or click a writer on another SPA route.
   Do not synthesize a request-changes endpoint or silently substitute a comment when that review state is unavailable.
+  GitLab's native review summary starts as `input[data-testid="placeholder-input-field"]` and mounts its own `textarea[data-testid="comment-textarea"]` on focus, so select the outcome and writer within the same live `submit-gl-form` rather than focusing the unrelated main note writer.
+  Native outcome disablement, removal and navigation invalidate a pending drawer action without submitting or replacing draft text.
   Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
 - **Review bot trust is scoped to native account identity.**
   A GitLab numeric account ID or Bitbucket account UUID is bound to a documented service only after explicit confirmation for that exact provider/origin/repository.
@@ -1375,7 +1377,15 @@ Provider-specific surfaces translate settings and sources into shared review and
 - **Provider diff caching and throttling have their own boundaries.**
   Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.
   Unknown-head cache entries are provisional until refreshed, and an exact revision's cached result must not leak into a different comparison or whitespace mode.
+  Request priority schedules a real hover promptly but does not make a provisional cache exact, so strict header readers filter their own return value without deleting cached hover totals or refresh errors.
   Request lanes are scoped by provider and origin and respect numeric or date-form `Retry-After` values rather than reusing GitHub's API assumptions.
+  Bitbucket documents a rolling anonymous limit of 60 requests per hour across API resources, so eagerly resolving every visible review in a public list can exhaust the quota before the native page finishes loading.
+  Anonymous Bitbucket list rows hydrate existing complete cached counts first and fetch only after sustained pointer or keyboard intent, while an explicitly authenticated native bootstrap retains eager list counts.
+  Defer repository configuration with the same passive list demand, preserve explicit intent through cache hydration and lane waits, and never label a failed or paused refresh as Updating.
+  Anonymous Bitbucket live diff and digest snapshots refresh after 30 minutes rather than every minute, with complete pinned revision checks unchanged.
+  A shared persisted Bitbucket cooldown timestamp covers diff, review and configuration sources, uses a one-hour fallback for a 429 without a valid header, and never shortens an explicit longer `Retry-After`.
+  On the exact `https://bitbucket.org` page origin, use the observed same-origin `/!api/2.0/` GET transport with native session credentials and normalize validated response URLs back to canonical API identities.
+  Outside that origin the public API transport omits credentials, and an error never switches transports or follows a redirect.
   Cache clearing aborts or invalidates pending work so a late response cannot repopulate a cleared visit.
   GitLab's explicit `w=1` and `w=0` choices take precedence over automatic whitespace defaults, and explicitly choosing `w=1` removes the stored opt-out.
   A session guard remembers a requested whitespace mode that the site strips from the URL so the extension does not cause a navigation loop.
@@ -1393,7 +1403,9 @@ Provider-specific surfaces translate settings and sources into shared review and
 - **Native branding belongs to each provider.**
   Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
-  GitLab's live comment body and byline use GitLab Sans at 14px/21px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
+  GitLab's live comment body uses GitLab Sans at 14px/21px and native author headers use 14px/20px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
+  Native body and author typography use `--font-family-sans-serif`, while `--gl-font-family-regular` can repeat GitLab Sans in its computed stack.
+  Author profile links use the native default text color rather than the generic link color in both themes.
   Native GitLab default buttons have their own semantic background, foreground, border and interaction-state tokens, including a translucent background and transparent border in dark mode.
   Match GitLab's reduced-motion behavior as well as its normal button transition, since a copied transition otherwise keeps animating when native controls honor the reader's preference.
   GitLab focus uses its inner/outer ring tokens, and its informational popovers use the overlap surface, small font and feedback radius tokens.
@@ -1414,6 +1426,7 @@ Provider-specific surfaces translate settings and sources into shared review and
 - **Provider header rewrites have a guarded prepaint path.**
   A native counter remount can otherwise display unfiltered totals for one frame before the normal debounced pass.
   Reuse only a complete settled immutable subject with matching live selection, native filters, settings, configuration and catalog, without fetching or measuring layout in the mutation callback.
+  Compare the small header node and value snapshot first so unrelated streamed diff-line mutations do not repeatedly scan all native files before the debounced pass.
   Unknown-head Bitbucket reviews and moving comparisons stay on the normal validation path rather than borrowing settled counts from another revision.
 - **Local reviewed marks are personal triage.**
   `local:providerReviewedItems` binds exact provider, origin, repository, review and head to SHA-256 fingerprints of ordered native source identities, words, times and thread state.
@@ -1433,12 +1446,25 @@ Provider-specific surfaces translate settings and sources into shared review and
   A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
   Bitbucket's normal-flow diff wrappers include unloaded placeholders, so a complete file inventory must include those wrappers rather than only mounted articles.
   Explicit reveal brings a lazy placeholder into view once and waits for genuine native expansion instead of claiming that an unloaded file has expanded.
+  Configured category icons use native provider glyphs with explicit neutral native fallbacks for unsupported mappings, and the bundled third-party license notices ship in extension public assets.
+  GitLab directories switch between native folder and folder-open glyphs, while the observed Bitbucket tree uses chevrons for directories.
+  Inline category hints preserve original native glyph nodes and controls, and folder fading requires complete authoritative descendants rather than a recycled or virtualized subset.
+  Inline files activated by the reader remain under native user control across remounts until an explicit Show or Hide reset for that subject.
+  A grouped diff whose complete unfiltered inventory is entirely hidden starts expanded while its Essential counts remain zero, unless the reader explicitly collapsed that exact subject and revision.
+  Inline mode keeps native file headers and has no grouped bottom section.
+- **Digest bylines and native merge rules remain source facts.**
+  Native author names, aliases, avatars and role badges are read only from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
+  Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
+  Bitbucket's native merge-check list supplies individual rule labels and observed states, including separate minimum approval and default-reviewer approval rules.
+  Those sidebar rules do not establish a numeric approval threshold, complete API availability, review permission or permission to merge.
 - **Count text and accessibility can have different native owners.**
   GitLab can put both Added and Removed totals in one native `aria-label`, which must be rewritten as a pair and restored to the latest native wording.
   Bitbucket's visual Lines updated totals are `aria-hidden`, so an owned screen-reader summary supplies the adjusted totals and the surrounding native summary becomes the keyboard hover target without exposing duplicate visual labels.
   Zero uses plural wording, one uses singular, and one active category keeps its own short noun even when its count is zero.
   A link to another review must not inherit the current review's head, diff version or comparison selection merely because its target is described using the current document.
   GitLab list rows can use important flex utilities that override the user-agent rule for the native `hidden` attribute, so author filtering uses a scoped owned display rule and leaves native hidden state untouched.
+  A counted author-filter notice supplies a keyboard-accessible Show action for its native list, with recovery remembered only for the current visit and filter set.
+  List and table recovery notices use appropriate native container tags without moving rows or taking their handlers, and rows with no reliable author identity stay untouched.
 - **Digest settings operate only on represented native sources.**
   Compact and minimal modes fold native comment roots only when all their source anchors are represented in the digest and eligible for that mode.
   Unknown activity, unrepresented comments, composers and pending native review controls stay visible.

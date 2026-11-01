@@ -104,6 +104,85 @@ afterEach(() => {
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
 
 describe('provider controller behavior', () => {
+  it.each(PROVIDERS)('opens an all-hidden %s subject by default while preserving zero essential counts and a manual collapse', async (provider) => {
+    const files: readonly FileStats[] = [{ path: 'src/first.test.ts', additions: 30, deletions: 10 }];
+    const { adapter, view } = fixture(provider, files);
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries: view.entries.filter((entry) => entry.path.endsWith('.test.ts')) }) });
+    await settle();
+    expect(controller.getTabState()).toMatchObject({ expanded: true, visible: { files: 0, additions: 0, deletions: 0 } });
+    expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('open');
+    expect(document.querySelector('.geld-provider-toggle')?.textContent).toBe('Hide 1 test');
+    controller.toggleHidden();
+    controller.requestRefresh();
+    await settle();
+    expect(controller.getTabState().expanded).toBe(false);
+    expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('closed');
+    window.history.replaceState(null, '', '/reviews/2');
+    controller.requestRefresh();
+    await vi.advanceTimersByTimeAsync(900);
+    expect(controller.getTabState().expanded).toBe(true);
+    window.history.replaceState(null, '', '/reviews/1');
+    controller.requestRefresh();
+    await vi.advanceTimersByTimeAsync(900);
+    expect(controller.getTabState().expanded).toBe(false);
+  });
+
+  it('does not infer all-hidden expansion from only the mounted files of a partial native view', async () => {
+    const { adapter, view } = fixture('gitlab', FILES);
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries: view.entries.filter((entry) => entry.path.endsWith('.test.ts')) }) });
+    await settle();
+    expect(controller.getTabState().expanded).toBe(false);
+    expect(controller.getTabState().visible?.files).toBe(1);
+  });
+
+  it('uses native filtering when every remaining file belongs to a hidden category', async () => {
+    const { adapter, view } = fixture('gitlab', FILES);
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, filteredPaths: new Set(['src/main.ts']) }) });
+    await settle();
+    expect(controller.getTabState()).toMatchObject({ expanded: true, visible: { files: 0, additions: 0, deletions: 0 } });
+  });
+
+  it('keeps inline native file headers without adding a grouped bottom section', async () => {
+    const { adapter } = fixture('gitlab', FILES);
+    start(adapter, { ...DEFAULT_SETTINGS, groupHidden: false });
+    await settle();
+    expect(node('#hidden').hasAttribute('data-geld-provider-inline')).toBe(true);
+    expect(document.querySelector('.geld-provider-hidden')).toBeNull();
+  });
+
+  it('reveals only the requested inline file and keeps its native state after remounts', async () => {
+    const { adapter, view } = fixture('gitlab', FILES);
+    let firstExpanded = true;
+    let secondExpanded = true;
+    const firstCollapse = vi.fn(() => { firstExpanded = false; return true; });
+    const secondCollapse = vi.fn(() => { secondExpanded = false; return true; });
+    const first = view.entries.find((entry) => entry.path === 'src/first.test.ts');
+    if (first === undefined) throw new Error('Missing hidden fixture');
+    let current = { ...first, isExpanded: () => firstExpanded, expand: () => { firstExpanded = true; return true; }, collapse: firstCollapse };
+    const secondRoot = document.createElement('article');
+    view.container.append(secondRoot);
+    const second = { ...first, path: 'test/not-mounted.test.ts', root: secondRoot, isExpanded: () => secondExpanded, expand: () => { secondExpanded = true; return true; }, collapse: secondCollapse };
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries: [current, second] }) }, { ...DEFAULT_SETTINGS, groupHidden: false });
+    await settle();
+    expect(firstExpanded).toBe(false);
+    expect(secondExpanded).toBe(false);
+    controller.revealPath(first.path);
+    expect(firstExpanded).toBe(true);
+    expect(secondExpanded).toBe(false);
+    expect(controller.getTabState().expanded).toBe(false);
+    const replacement = document.createElement('article');
+    current.root.replaceWith(replacement);
+    current = { ...current, root: replacement };
+    controller.requestRefresh();
+    await settle();
+    expect(firstCollapse).toHaveBeenCalledOnce();
+    expect(firstExpanded).toBe(true);
+    controller.toggleHidden();
+    controller.toggleHidden();
+    expect(firstExpanded).toBe(false);
+    expect(secondExpanded).toBe(false);
+  });
+
   it('hides excluded authors without taking ownership of the provider native hidden state', async () => {
     vi.stubGlobal('IntersectionObserver', undefined);
     const { adapter } = fixture('gitlab', FILES);
