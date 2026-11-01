@@ -26,6 +26,8 @@ export async function teamCheckout(input: { readonly teamId: string; readonly ac
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const prepared = await dependencies.run(async (sql): Promise<Preparation> => {
+        const team = await sql.query('SELECT id FROM teams WHERE id=$1 AND deleting_at IS NULL FOR NO KEY UPDATE', [input.teamId]);
+        if (!team.rows.length) return { ok: false, reason: 'forbidden' };
         const raw = await sql.query("SELECT s.stripe_customer_id,s.stripe_subscription_id,s.status,(SELECT count(*)::integer FROM team_members m WHERE m.team_id=s.team_id) AS seats FROM subscriptions s WHERE s.team_id=$1 AND EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=s.team_id AND m.user_id=$2 AND m.role='admin') AND EXISTS(SELECT 1 FROM teams t WHERE t.id=s.team_id AND t.deleting_at IS NULL) FOR UPDATE OF s", [input.teamId, input.actorId]);
         const subscription = subscriptionSchema.safeParse(raw.rows[0]);
         if (!subscription.success) return { ok: false, reason: 'forbidden' };
@@ -74,6 +76,7 @@ export async function teamCheckout(input: { readonly teamId: string; readonly ac
 export async function bindCheckoutSubscription(sql: SqlExecutor, input: { readonly checkoutId: string; readonly requestKey: string | null; readonly customerId: string; readonly subscriptionId: string }): Promise<boolean> {
   const candidate = checkoutSchema.safeParse((await sql.query("SELECT * FROM billing_checkouts WHERE id=$1 OR (request_key=$2 AND state='creating')", [input.checkoutId, input.requestKey])).rows[0]);
   if (!candidate.success) return false;
+  if (!(await sql.query('SELECT id FROM teams WHERE id=$1 AND deleting_at IS NULL FOR NO KEY UPDATE', [candidate.data.team_id])).rows.length) return false;
   const row = z.object({ stripe_subscription_id: z.string().nullable(), status: z.string() }).safeParse((await sql.query('SELECT s.stripe_subscription_id,s.status FROM subscriptions s WHERE s.team_id=$1 AND EXISTS(SELECT 1 FROM teams t WHERE t.id=s.team_id AND t.deleting_at IS NULL) FOR UPDATE OF s', [candidate.data.team_id])).rows[0]);
   const checkout = checkoutSchema.safeParse((await sql.query('SELECT * FROM billing_checkouts WHERE request_key=$1 FOR UPDATE', [candidate.data.request_key])).rows[0]);
   if (!checkout.success || checkout.data.state === 'expired') return false;

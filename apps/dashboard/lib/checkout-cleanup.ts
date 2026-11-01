@@ -9,6 +9,10 @@ const snapshotSchema=z.object({id:z.string(),teamId:z.string(),requestKey:z.stri
 const payloadSchema=z.object({encryptedCheckout:z.string()});
 export async function queueTeamCheckoutCleanup(sql:SqlExecutor,teamId:string):Promise<void>{
   await assertTeamOperations(sql);
+  // Checkout creation takes these locks in the same order. Freeze before reading
+  // rows so a concurrent checkout cannot commit between the snapshot and erasure.
+  await sql.query('UPDATE teams SET deleting_at=COALESCE(deleting_at,now()) WHERE id=$1', [teamId]);
+  await sql.query('SELECT team_id FROM subscriptions WHERE team_id=$1 FOR UPDATE', [teamId]);
   const rows=z.array(z.object({id:z.string(),request_key:z.string(),created_at:z.date(),subscription_id:z.string().nullable(),stripe_customer_id:z.string().nullable()})).parse((await sql.query("SELECT c.id,c.request_key,c.created_at,c.subscription_id,s.stripe_customer_id FROM billing_checkouts c JOIN subscriptions s ON s.team_id=c.team_id WHERE c.team_id=$1 AND c.state IN('creating','pending','completed') FOR UPDATE OF c",[teamId])).rows);
   for(const row of rows){
     const digest=resourceDigest({checkout:row.request_key});
