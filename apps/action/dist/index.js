@@ -18917,17 +18917,56 @@ var SOURCE_KINDS = ["thread", "comment", "review"];
 var ADDRESSED_VERDICTS = ["yes", "partly", "no", "unclear"];
 var PRODUCER_KINDS = ["action", "app", "crawler"];
 var FIX_SOURCES = ["bot", "human", "ai"];
-var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
-var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN);
+var REVIEW_PROVIDERS = ["github", "gitlab", "bitbucket"];
+var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+|note_\d+|discussion_[a-f0-9]{8,64}|comment[-_]\d+|geld-(?:github|gitlab|bitbucket)-(?:note|discussion|comment|thread|event|review)-[A-Za-z0-9_-]{1,180})$/;
+var GITHUB_ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
+var GITLAB_ANCHOR = /^(note_\d+|discussion_[a-f0-9]{8,64})$/;
+var BITBUCKET_ANCHOR = /^comment[-_]\d+$/;
+var QUALIFIED_ANCHOR = /^geld-(github|gitlab|bitbucket)-(?:note|discussion|comment|thread|event|review)-[A-Za-z0-9_-]{1,180}$/;
+var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN).refine((value) => value.trim() === value);
+function isProviderSourceAnchor(provider, anchor2) {
+  if (anchor2.trim() !== anchor2) return false;
+  const qualified = QUALIFIED_ANCHOR.exec(anchor2);
+  if (qualified !== null) return qualified[1] === provider;
+  if (provider === "github") return GITHUB_ANCHOR.test(anchor2);
+  return provider === "gitlab" ? GITLAB_ANCHOR.test(anchor2) : BITBUCKET_ANCHOR.test(anchor2);
+}
 var FINDING_SEVERITIES = ["low", "medium", "high"];
 var PREVIEW_STATUSES = ["ready", "building", "failed", "skipped", "unknown"];
 var isoDate = external_exports.string().refine((value) => !Number.isNaN(Date.parse(value)), { error: "Expected an ISO date string." });
 var sha = external_exports.string().regex(/^[0-9a-f]{7,40}$/i, { error: "Expected a git SHA." });
+function httpOrigin(value) {
+  try {
+    const url2 = new URL(value);
+    return (url2.protocol === "https:" || url2.protocol === "http:") && url2.username === "" && url2.password === "" ? url2.origin : null;
+  } catch {
+    return null;
+  }
+}
 var reviewSourceSchema = external_exports.object({
   anchor: sourceAnchorSchema,
   kind: external_exports.enum(SOURCE_KINDS),
   author: external_exports.string().min(1),
-  bot: external_exports.string().min(1).optional()
+  bot: external_exports.string().min(1).optional(),
+  sourceId: external_exports.string().min(1).optional(),
+  authorId: external_exports.string().min(1).optional(),
+  automated: external_exports.boolean().optional(),
+  provider: external_exports.enum(REVIEW_PROVIDERS).optional(),
+  origin: external_exports.string().optional(),
+  url: external_exports.string().optional()
+}).superRefine((source, context) => {
+  if (source.provider !== void 0 && (!isProviderSourceAnchor(source.provider, source.anchor) || source.origin === void 0)) {
+    context.addIssue({ code: "custom", path: ["anchor"], message: "Expected an anchor and origin for the declared provider." });
+  }
+  if (!GITHUB_ANCHOR.test(source.anchor) && source.provider === void 0) {
+    context.addIssue({ code: "custom", path: ["provider"], message: "Native provider anchors require explicit provenance." });
+  }
+  if (source.origin !== void 0 && httpOrigin(source.origin) !== source.origin) {
+    context.addIssue({ code: "custom", path: ["origin"], message: "Expected an HTTP(S) origin without credentials or a path." });
+  }
+  if (source.url !== void 0 && (source.origin === void 0 || httpOrigin(source.url) !== source.origin)) {
+    context.addIssue({ code: "custom", path: ["url"], message: "Expected an HTTP(S) URL on the source origin." });
+  }
 });
 var addressedSchema = external_exports.object({
   verdict: external_exports.enum(ADDRESSED_VERDICTS),
@@ -18964,6 +19003,7 @@ var botVerdictSchema = external_exports.object({
   severity: external_exports.enum(FINDING_SEVERITIES).optional(),
   reviewedSha: sha,
   checkName: external_exports.string().min(1).optional(),
+  checkSha: sha.optional(),
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
   runJudged: external_exports.literal(true).optional()
@@ -19018,7 +19058,18 @@ function issuesOf(error61) {
   });
 }
 function reviewSourceFrom(value) {
-  return value.bot === void 0 ? { anchor: value.anchor, kind: value.kind, author: value.author } : { anchor: value.anchor, kind: value.kind, author: value.author, bot: value.bot };
+  return {
+    anchor: value.anchor,
+    kind: value.kind,
+    author: value.author,
+    ...value.bot === void 0 ? {} : { bot: value.bot },
+    ...value.sourceId === void 0 ? {} : { sourceId: value.sourceId },
+    ...value.authorId === void 0 ? {} : { authorId: value.authorId },
+    ...value.automated === void 0 ? {} : { automated: value.automated },
+    ...value.provider === void 0 ? {} : { provider: value.provider },
+    ...value.origin === void 0 ? {} : { origin: value.origin },
+    ...value.url === void 0 ? {} : { url: value.url }
+  };
 }
 function reviewItemFrom(value) {
   const item = {
@@ -19046,7 +19097,8 @@ function botVerdictFrom(value) {
   const scored = value.score === void 0 ? counted2 : { ...counted2, score: value.score };
   const graded = value.severity === void 0 ? scored : { ...scored, severity: value.severity };
   const named = value.checkName === void 0 ? graded : { ...graded, checkName: value.checkName };
-  const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
+  const checked = value.checkSha === void 0 ? named : { ...named, checkSha: value.checkSha };
+  const sourced = value.sourceId === void 0 ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
   return value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
 }
@@ -20241,35 +20293,49 @@ function guessSeverity(body, bot, humanQuestion) {
   if (/\b(bug|null|crash|incorrect|broken|error|exception)\b/.test(text)) return "bug";
   return bot ? "suggestion" : "suggestion";
 }
-function sourceOf(comment, extraLogins) {
-  const bot = resolveBotId(comment.author, extraLogins);
+function sourceOf(comment, extraLogins, options) {
+  const bot = options.resolveBot === void 0 ? resolveBotId(comment.author, extraLogins) : options.resolveBot(comment);
   const kind = "kind" in comment ? comment.kind : "comment";
-  return bot === null ? { anchor: comment.anchor, kind, author: comment.author } : { anchor: comment.anchor, kind, author: comment.author, bot };
+  return {
+    anchor: comment.anchor,
+    kind,
+    author: comment.author,
+    ...bot === null ? {} : { bot },
+    ...comment.sourceId === void 0 ? {} : { sourceId: comment.sourceId },
+    ...comment.authorId === void 0 ? {} : { authorId: comment.authorId },
+    ...comment.automated === void 0 ? {} : { automated: comment.automated },
+    ...comment.provider === void 0 ? {} : { provider: comment.provider },
+    ...comment.origin === void 0 ? {} : { origin: comment.origin },
+    ...comment.url === void 0 ? {} : { url: comment.url }
+  };
 }
-function atomFrom(comment, extraLogins) {
-  const sources = [sourceOf(comment, extraLogins)];
+function automated(source) {
+  return source.bot !== void 0 || (source.automated ?? looksLikeBotLogin(source.author));
+}
+function atomFrom(comment, extraLogins, options) {
+  const sources = [sourceOf(comment, extraLogins, options)];
   const bodies = [comment.body];
   for (const peer of comment.threadAnchors ?? []) {
     if (peer.anchor === comment.anchor) continue;
-    sources.push(sourceOf(peer, extraLogins));
+    sources.push(sourceOf(peer, extraLogins, options));
     bodies.push(peer.body);
   }
   const botIds = /* @__PURE__ */ new Set();
   const humanAuthors = [];
   for (const source of sources) {
     if (source.bot !== void 0) botIds.add(source.bot);
-    else if (!looksLikeBotLogin(source.author)) humanAuthors.push(source.author);
+    else if (!automated(source)) humanAuthors.push(source.author);
   }
   const lead = sources[0];
   return {
     sources,
     bodies,
     title: firstSentence(comment.body),
-    humanLead: lead !== void 0 && lead.bot === void 0 && !looksLikeBotLogin(lead.author),
+    humanLead: lead !== void 0 && !automated(lead),
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
-    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== void 0 && (lead.bot !== void 0 || looksLikeBotLogin(lead.author)) ? "bot" : "human",
+    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== void 0 && automated(lead) ? "bot" : "human",
     ruleId: ruleIdOf(comment.body),
     botIds,
     humanAuthors,
@@ -20320,7 +20386,7 @@ function severityOf(atom) {
   for (let index = 0; index < atom.bodies.length; index += 1) {
     const body = atom.bodies[index] ?? "";
     const source = atom.sources[index];
-    const bot = source?.bot !== void 0;
+    const bot = source !== void 0 && automated(source);
     const next = guessSeverity(body, bot, human && body.includes("?"));
     if (rank[next] < rank[worst]) worst = next;
   }
@@ -20359,11 +20425,12 @@ function sourceExcerpts(comments, item) {
     return `${who}: ${body.length > EXCERPT_CHARS ? `${body.slice(0, EXCERPT_CHARS)}\u2026` : body}`;
   });
 }
-function isReviewItemComment(comment, extraLogins = []) {
-  return comment.kind === "thread" && comment.body.trim() !== "" && !isTriggerComment(comment.body, extraLogins);
+function isReviewItemComment(comment, extraLogins = [], options = {}) {
+  const trigger = options.isTrigger === void 0 ? isTriggerComment(comment.body, extraLogins) : options.isTrigger(comment);
+  return comment.kind === "thread" && comment.body.trim() !== "" && !trigger;
 }
-function clusterComments(comments, extraLogins = []) {
-  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
+function clusterComments(comments, extraLogins = [], options = {}) {
+  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => atomFrom(comment, extraLogins, options));
   const parent = atoms.map((_, index) => index);
   const find = (index) => {
     const current = parent[index] ?? index;
@@ -20391,7 +20458,7 @@ function clusterComments(comments, extraLogins = []) {
   return [...groups.values()].map(itemFromAtom);
 }
 function isBotOnly(item) {
-  return item.sources.length > 0 && item.sources.every((source) => source.bot !== void 0 || looksLikeBotLogin(source.author));
+  return item.sources.length > 0 && item.sources.every(automated);
 }
 
 // ../../packages/review/src/addressed.ts
@@ -20693,12 +20760,15 @@ function authorsOf(item) {
   }
   return names.join(", ");
 }
-function sourcesOf(item) {
-  return item.sources.map((source) => `[source](#${source.anchor})`).join(" \xB7 ");
+function sourcesOf(item, links) {
+  return item.sources.map((source) => {
+    const href = links.sourceHref(source);
+    return href === null ? "source unavailable" : `[source](${href.replace(/\(/g, "%28").replace(/\)/g, "%29")})`;
+  }).join(" \xB7 ");
 }
-function itemLine(item, checked) {
+function itemLine(item, checked, links) {
   const box = checked ? "- [x]" : "- [ ]";
-  const head = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item)}`;
+  const head = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item, links)}`;
   const extra = [];
   if (item.context !== void 0) extra.push(`  ${inlineMd(item.context)}`);
   if (item.fix !== void 0) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", "  ```suggestion", ...item.fix.text.split("\n").map((line) => `  ${line}`), "  ```", "", "  </details>");
@@ -20754,6 +20824,14 @@ function headerLine(meta3) {
   return parts.join(" \xB7 ");
 }
 function renderSummary(meta3, subject) {
+  return renderSummaryBody(meta3, {
+    sourceHref: (source) => `#${source.anchor}`,
+    openHref: subject === void 0 ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta3),
+    openLabel: "Open in Geld",
+    reviewNoun: "pull request"
+  });
+}
+function renderSummaryBody(meta3, links) {
   const { open: open2, done } = groupItems(meta3.items);
   const lines2 = [
     SUMMARY_MARKER,
@@ -20766,13 +20844,13 @@ function renderSummary(meta3, subject) {
   }
   if (open2.length > 0) {
     lines2.push(`**Open (${open2.length})**`);
-    for (const item of open2) lines2.push(itemLine(item, false));
+    for (const item of open2) lines2.push(itemLine(item, false, links));
     lines2.push("");
   }
   if (done.length > 0) {
     lines2.push(`<details><summary>Done (${done.length})</summary>`);
     lines2.push("");
-    for (const item of done) lines2.push(itemLine(item, true));
+    for (const item of done) lines2.push(itemLine(item, true, links));
     lines2.push("");
     lines2.push("</details>");
     lines2.push("");
@@ -20782,11 +20860,10 @@ function renderSummary(meta3, subject) {
     lines2.push("");
   }
   if (meta3.truncated === true) {
-    lines2.push("_List truncated; open the pull request with Geld to see the rest._");
+    lines2.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines2.push("");
   }
-  const openHref = subject === void 0 ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta3);
-  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${openHref}">Open in Geld</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta3))}'></span></sub>`);
+  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${links.openHref}">${links.openLabel}</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta3))}'></span></sub>`);
   lines2.push("");
   return lines2.join("\n");
 }
@@ -21755,6 +21832,42 @@ var CHECK_REPORTERS = [
       return parts;
     }
   }
+];
+
+// ../../packages/review/src/provider-bots.ts
+function capability(id, provider, support, evidence, triggers = [], formatVerified = false, checkKeys = [], checkMode = "explicit") {
+  return { id, provider, support, evidence, triggers, formatVerified, checkKeys, checkMode };
+}
+var NATIVE_PROVIDERS = ["gitlab", "bitbucket"];
+var PROVIDER_BOT_CAPABILITIES = [
+  capability("bugbot", "gitlab", "supported", ["https://cursor.com/docs/bugbot"], ["bugbot run", "cursor review"]),
+  capability("bugbot", "bitbucket", "supported", ["https://cursor.com/docs/bugbot"], ["bugbot run", "cursor review"], false, ["cursor-bugbot"]),
+  capability("greptile", "gitlab", "supported", ["https://www.greptile.com/docs/integrations/code-providers", "https://www.greptile.com/docs/code-review/developer-essentials", "https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272"], ["@greptileai", "@greptile"], true),
+  capability("greptile", "bitbucket", "supported", ["https://www.greptile.com/docs/integrations/code-providers"]),
+  capability("devin", "gitlab", "supported", ["https://docs.devin.ai/work-with-devin/devin-review#supported-git-providers"]),
+  capability("devin", "bitbucket", "supported", ["https://docs.devin.ai/work-with-devin/devin-review#supported-git-providers"]),
+  capability("coderabbit", "gitlab", "supported", ["https://docs.coderabbit.ai/platforms/gitlab-com", "https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117"], ["@coderabbitai review", "@coderabbitai full review"], true),
+  capability("coderabbit", "bitbucket", "supported", ["https://docs.coderabbit.ai/platforms/bitbucket-cloud/"]),
+  capability("replicas", "gitlab", "supported", ["https://docs.replicas.dev/features/gitlab", "https://docs.replicas.dev/features/review"]),
+  capability("replicas", "bitbucket", "unverified", ["https://docs.replicas.dev/features/review"]),
+  capability("sourcery", "gitlab", "supported", ["https://docs.sourcery.ai/reviews/commands/", "https://docs.sourcery.ai/reviews/anatomy-of-a-review/"], ["@sourcery-ai review"], false, [], "none"),
+  capability("sourcery", "bitbucket", "unverified", ["https://docs.sourcery.ai/reviews/commands/"]),
+  capability("qodo", "gitlab", "supported", ["https://docs.qodo.ai/qodo-documentation/code-review/get-started/configuration-overview/configuration-file"], ["/agentic_review"]),
+  capability("qodo", "bitbucket", "supported", ["https://docs.qodo.ai/qodo-documentation/code-review/get-started/configuration-overview/configuration-file"], ["/agentic_review"]),
+  capability("entelligence", "gitlab", "unverified", ["https://docs.entelligence.ai/integrations/git-providers"]),
+  capability("entelligence", "bitbucket", "supported", ["https://docs.entelligence.ai/bitbucket-cloud"]),
+  ...NATIVE_PROVIDERS.flatMap((provider) => [
+    capability("codex", provider, "unverified", ["https://developers.openai.com/codex/integrations/github"]),
+    capability("copilot", provider, "unsupported", ["https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/code-review#availability"]),
+    capability("gemini", provider, "unverified", ["https://docs.cloud.google.com/gemini/docs/code-review/review-repo-code"]),
+    capability("capy", provider, "unverified", ["https://docs.capy.ai/review"]),
+    capability("claude", provider, "unsupported", ["https://code.claude.com/docs/en/code-review"]),
+    capability("cubic", provider, "unsupported", ["https://docs.cubic.dev/ai-review/introduction"]),
+    capability("amazon-q", provider, provider === "gitlab" ? "unsupported" : "unverified", ["https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/gitlab-with-amazon-q.html"]),
+    capability("ellipsis", provider, "unverified", ["https://www.ellipsis.dev/docs/agents"]),
+    capability("macroscope", provider, "unverified", ["https://docs.macroscope.com/welcome"]),
+    capability("korbit", provider, "unverified", ["https://www.korbit.ai/"])
+  ])
 ];
 
 // src/github.ts

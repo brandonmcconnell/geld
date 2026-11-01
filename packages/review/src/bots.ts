@@ -577,6 +577,8 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
 }
 
 export interface RawCheckRun {
+  /** An authoritative review association for merge-result jobs whose commit differs from the source head. */
+  readonly reviewHeadSha?: string;
   readonly name: string;
   readonly status: string;
   readonly conclusion: string | null;
