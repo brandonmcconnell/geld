@@ -156,6 +156,78 @@ describe('provider conversation digest', () => {
     expect(checks?.querySelector('a')?.rel).toBe('noopener noreferrer');
   });
 
+  it('keeps queued, running and native manual checks distinct in the visible and copied reading', async () => {
+    let copied = '';
+    const panel = renderProviderReviewPanel(host(), { ...input(), checksCoverage: 'partial', checks: [
+      { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'queued', conclusion: null, nativeStatus: 'pending' },
+      { key: 'job:2', name: 'Tests', sha: subject.headSha, status: 'in_progress', conclusion: null, nativeStatus: 'running' },
+      { key: 'job:3', name: 'Deploy', sha: subject.headSha, status: 'completed', conclusion: 'neutral', nativeStatus: 'manual', allowFailure: true },
+      { key: 'job:4', name: 'All checks passed', sha: subject.headSha, status: 'completed', conclusion: 'success', nativeStatus: 'unsupported' },
+    ] }, { copyText: (text) => { copied = text; } });
+    const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
+    expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
+    expect(checks?.querySelector('[data-state="manual"]')?.textContent).toContain('ManualAllowed to fail');
+    expect(checks?.querySelector('[data-state="manual"] svg')).toBeNull();
+    expect(checks?.querySelector('[data-state="passed"]')).toBeNull();
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain('CI checks: Partial'));
+    expect(copied).toContain('CI: Tests: Pending');
+    expect(copied).toContain('CI: Tests: Running');
+    expect(copied).toContain('CI: Deploy: Manual (allowed to fail)');
+    expect(copied).toContain('CI: All checks passed: Unknown');
+  });
+
+  it.each(['partial', 'unavailable'] as const)('never calls %s CI an empty complete result', (checksCoverage) => {
+    const panel = renderProviderReviewPanel(host(), { ...input(), checksCoverage });
+    const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
+    expect(checks?.textContent).not.toContain('None on this commit');
+    expect(checks?.textContent).not.toContain('No CI checks reported');
+    expect(checks?.textContent).toContain(checksCoverage === 'unavailable' ? 'Unavailable' : 'Partial');
+    panel.update(input());
+    expect(panel.element.querySelector('[data-geld-review-key="checks"]')?.textContent).toContain('No CI checks reported.');
+  });
+
+  it('labels a lone available pass as partial instead of an overall CI success', () => {
+    const panel = renderProviderReviewPanel(host(), { ...input(), checksCoverage: 'partial', checks: [
+      { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'completed', conclusion: 'success' },
+    ] });
+    const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
+    expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · Partial · 1 passed');
+    expect(checks?.textContent).toContain('Some CI checks could not be read.');
+    expect(checks?.getAttribute('data-state')).toBeNull();
+  });
+
+  it('restores only an unchanged current-source CI Details focus without stealing focus from outside the digest', () => {
+    const check = { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'queued', conclusion: null, detailsUrl: 'https://gitlab.com/group/subgroup/project/-/jobs/1' };
+    const panel = renderProviderReviewPanel(host(), { ...input(), checks: [check] });
+    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="checks"]');
+    if (section === null) throw new Error('Missing CI section');
+    section.open = true;
+    section.querySelector<HTMLAnchorElement>('a')?.focus();
+    panel.update({ ...input(), checks: [{ ...check, status: 'in_progress' }] });
+    const focused = panel.element.querySelector('[data-geld-check-key] a');
+    expect(document.activeElement).toBe(focused);
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    panel.update({ ...input(), checks: [{ ...check, status: 'completed', conclusion: 'success' }] });
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it.each(['head', 'review', 'url', 'key', 'duplicate'])('does not transfer check focus across a changed %s', (change) => {
+    const check = { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'queued', conclusion: null, detailsUrl: 'https://gitlab.com/group/subgroup/project/-/jobs/1' };
+    const panel = renderProviderReviewPanel(host(), { ...input(), checks: [check] });
+    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="checks"]');
+    if (section === null) throw new Error('Missing CI section');
+    section.open = true;
+    section.querySelector<HTMLAnchorElement>('a')?.focus();
+    panel.update({ ...input(), subject: { ...subject, ...(change === 'head' ? { headSha: 'b'.repeat(40) } : change === 'review' ? { id: '43' } : {}) }, checks: [
+      { ...check, status: 'in_progress', ...(change === 'key' ? { key: 'job:2' } : change === 'url' ? { detailsUrl: 'https://gitlab.com/group/subgroup/project/-/jobs/2' } : {}) },
+      ...(change === 'duplicate' ? [check] : []),
+    ] });
+    expect(panel.element.contains(document.activeElement)).toBe(false);
+  });
+
   it('counts independent pending requests beside standing approvals and change requests in UI and Markdown', async () => {
     let copied = '';
     const native: ProviderReviewInput = { ...input(), reviewers: [

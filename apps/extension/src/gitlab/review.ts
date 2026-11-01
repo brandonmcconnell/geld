@@ -1,11 +1,11 @@
 import type {
   ProviderReviewAuthor,
+  ProviderReviewCheck,
   ProviderReviewComment,
   ProviderReviewInput,
   ProviderReviewReviewer,
   ProviderReviewSubject,
   ProviderReviewThread,
-  RawCheckRun,
 } from '@geld/review';
 import type { ProviderReviewPage, ProviderReviewSnapshot } from '../providers/types';
 
@@ -46,7 +46,7 @@ export interface GitLabNativeThreadCapabilities {
   readonly notes: readonly GitLabNativeNoteCapabilities[];
 }
 
-export interface GitLabReviewCheck extends RawCheckRun {
+export interface GitLabReviewCheck extends ProviderReviewCheck {
   readonly id: string;
   readonly url: string;
   readonly pipelineId: string;
@@ -321,6 +321,11 @@ export function gitLabReviewCapabilities(doc: Document, approvals: unknown = nul
   };
 }
 
+function validPipeline(value: unknown): value is JsonObject {
+  return record(value) && nativeId(value.id) !== null && typeof value.sha === 'string' && SHA.test(value.sha)
+    && (value.project_id === undefined || nativeId(value.project_id) !== null);
+}
+
 function checkOf(value: unknown, pipelineId: string, sha: string, origin: string): GitLabReviewCheck {
   if (!record(value)) throw new GitLabReviewError('GitLab returned an invalid pipeline job.');
   const id = nativeId(value.id);
@@ -332,6 +337,7 @@ function checkOf(value: unknown, pipelineId: string, sha: string, origin: string
   return {
     id,
     name: value.name,
+    key: `job:${id}`,
     status: running ? nativeStatus === 'running' ? 'in_progress' : 'queued' : 'completed',
     conclusion,
     sha,
@@ -409,11 +415,15 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const pipelineResult = results[2];
   const pipelines = pipelineResult?.status === 'fulfilled' ? pipelineResult.value : [];
   if (pipelineResult?.status === 'rejected') areaError('checks', pipelineResult.reason);
-  const headPipeline = record(mr.head_pipeline) ? mr.head_pipeline : null;
-  const pipeline = pipelines.find((item) => record(item) && nativeId(item.id) === nativeId(headPipeline?.id))
-    ?? pipelines.find((item) => record(item) && item.sha === mr.sha)
+  const headPipeline = validPipeline(mr.head_pipeline) ? mr.head_pipeline : null;
+  const invalidPipelines = pipelines.some((pipeline) => !validPipeline(pipeline))
+    || (mr.head_pipeline !== undefined && mr.head_pipeline !== null && headPipeline === null);
+  if (invalidPipelines) areaError('checks', 'GitLab returned an incomplete pipeline identity.');
+  const pipeline = pipelines.find((item) => validPipeline(item) && nativeId(item.id) === nativeId(headPipeline?.id))
+    ?? pipelines.find((item) => validPipeline(item) && item.sha === mr.sha)
     ?? headPipeline;
   const checks: GitLabReviewCheck[] = [];
+  let checksCoverage: 'complete' | 'partial' | 'unavailable' = pipelineResult?.status === 'fulfilled' ? 'complete' : 'unavailable';
   if (record(pipeline)) {
     const pipelineId = nativeId(pipeline.id);
     const projectId = nativeId(pipeline.project_id) ?? nativeId(mr.project_id);
@@ -426,18 +436,24 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
           const check = checkOf(job, pipelineId, sha, origin);
           return associatedHead === null ? check : { ...check, reviewHeadSha: associatedHead };
         }));
+        checksCoverage = 'complete';
       } catch (error) {
         signal.throwIfAborted();
         areaError('checks', error);
+        checksCoverage = 'unavailable';
       }
-    } else areaError('checks', 'GitLab returned an incomplete pipeline identity.');
+    } else {
+      areaError('checks', 'GitLab returned an incomplete pipeline identity.');
+      checksCoverage = 'unavailable';
+    }
   }
+  if (invalidPipelines) checksCoverage = checks.length > 0 ? 'partial' : 'unavailable';
   const latest = (await jsonResponse(api, origin, signal)).value;
   if (!record(latest) || latest.sha !== mr.sha) throw new GitLabReviewError('The merge request changed while its review was loading.');
   const state = mergeRequestState(latest.state);
   const complete = unavailable.length === 0;
   return {
-    input: { subject, threads: parsed.threads, reviewers: [...reviewerMap.values()], checks, complete, closed: state === 'closed' || state === 'merged' },
+    input: { subject, threads: parsed.threads, reviewers: [...reviewerMap.values()], checks, checksCoverage, complete, closed: state === 'closed' || state === 'merged' },
     comments: parsed.comments,
     sourceCoverage: { comments: 'complete', threads: unknownThreadState ? 'partial' : 'complete' },
     events: parsed.events,
