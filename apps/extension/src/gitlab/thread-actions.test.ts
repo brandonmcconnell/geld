@@ -3,6 +3,7 @@ import type { GitLabNativeThreadCapabilities } from './review';
 import { activateGitLabThreadAction, readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-actions';
 import type { ProviderReviewInput } from '@geld/review';
 import type { GitLabThreadTarget } from './thread-actions';
+import { captureProviderSourceSelection } from '../providers/source-selection';
 
 const ID = 'a'.repeat(40);
 const target: GitLabThreadTarget = { discussionId: ID, noteId: '11', url: 'https://gitlab.com/group/repo/-/merge_requests/7#note_11' };
@@ -15,7 +16,25 @@ function mount(resolved = false, controls = ''): void {
   document.body.innerHTML = `<div data-testid="discussion-content" data-discussion-id="${ID}" data-discussion-resolvable="true" data-discussion-resolved="${resolved}"><li id="note_11" data-testid="noteable-note-container"><div class="note-body"><div class="note-text">The source text to quote.</div></div>${controls}</li><div data-testid="reply-wrapper"></div><button data-testid="resolve-discussion-button">${resolved ? 'Reopen thread' : 'Resolve thread'}</button></div>`;
 }
 
-afterEach(() => { document.body.innerHTML = ''; document.getSelection()?.removeAllRanges(); });
+beforeEach(() => { window.location.href = new URL(target.url).origin + new URL(target.url).pathname; });
+
+afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ''; document.getSelection()?.removeAllRanges(); });
+
+function selectedCopy() {
+  const native = document.querySelector<HTMLElement>('.note-text');
+  if (native === null) throw new Error('Missing native comment.');
+  const panel = document.createElement('section'); panel.dataset.geldUi = '';
+  const article = document.createElement('article'); article.dataset.geldSource = 'note_11'; article.dataset.geldSourceId = '11'; article.dataset.geldSourceUrl = target.url;
+  const body = document.createElement('div'); body.className = 'geld-provider-review__body'; body.innerHTML = native.innerHTML;
+  article.append(body); panel.append(article); document.body.append(panel);
+  const text = body.firstChild;
+  if (text === null) throw new Error('Missing copied text.');
+  const range = document.createRange(); range.setStart(text, 4); range.setEnd(text, 10);
+  document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+  const selection = captureProviderSourceSelection({ id: '11', anchor: 'note_11', url: target.url, author: { id: '23', login: 'author' }, body: native.textContent ?? '', createdAt: '2026-11-01T12:00:00Z' }, body);
+  if (selection === undefined) throw new Error('Missing captured excerpt.');
+  return { body, native, selection };
+}
 
 describe('GitLab native thread action relay', () => {
   it('opens a native reply field and never clicks its posting control', async () => {
@@ -114,6 +133,122 @@ describe('GitLab native thread action relay', () => {
     expect(await activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true })).toBe(true);
     expect(selected).toBe('The source text to quote.');
     expect(document.activeElement?.getAttribute('data-testid')).toBe('reply-field');
+  });
+
+  it('quotes the selected digest excerpt through the native event while preserving the native editor and draft', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    document.querySelector('[data-testid="reply-wrapper"]')?.insertAdjacentHTML('beforeend', '<textarea data-testid="reply-field">Existing native draft</textarea><button data-testid="reply-comment-button">Send</button><button data-testid="cancel">Cancel</button>');
+    const field = document.querySelector<HTMLTextAreaElement>('textarea');
+    if (field === null) throw new Error('Missing native draft fixture.');
+    const { selection, native } = selectedCopy();
+    const original = native.firstChild;
+    const controls = vi.fn(); document.querySelectorAll('[data-testid="reply-wrapper"] button').forEach((button) => button.addEventListener('click', controls));
+    let quoted = '';
+    document.querySelector('[data-discussion-id]')?.addEventListener('quoteReply', () => {
+      quoted = document.getSelection()?.toString() ?? '';
+      // Models the first-party append delegate, not authenticated GitLab acceptance.
+      field.value += `\n> ${quoted}`; field.setSelectionRange(2, 4);
+    });
+    expect(await activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection } })).toBe(true);
+    expect(quoted).toBe('source');
+    expect(field.value).toBe('Existing native draft\n> source');
+    expect(document.querySelector('textarea')).toBe(field);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([2, 4]);
+    expect(native.firstChild).toBe(original);
+    expect(controls).not.toHaveBeenCalled();
+  });
+
+  it('refuses an explicit excerpt after either body or source identity changes instead of quoting the whole comment', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection, native } = selectedCopy();
+    const quoted = vi.fn(); document.querySelector('[data-discussion-id]')?.addEventListener('quoteReply', quoted);
+    native.append(' Updated source.');
+    expect(await activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection } })).toBe(false);
+    expect(quoted).not.toHaveBeenCalled();
+    native.lastChild?.remove();
+    if (selection.kind !== 'excerpt') throw new Error('Missing excerpt.');
+    expect(await activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection: { ...selection, sourceId: '12' } } })).toBe(false);
+    expect(quoted).not.toHaveBeenCalled();
+  });
+
+  it('keeps a real native-body selection without requiring a digest range', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const native = document.querySelector('.note-text')?.firstChild;
+    if (native === null || native === undefined) throw new Error('Missing native text.');
+    const range = document.createRange(); range.setStart(native, 4); range.setEnd(native, 10); document.getSelection()?.addRange(range);
+    let quoted = '';
+    document.querySelector('[data-discussion-id]')?.addEventListener('quoteReply', () => { quoted = document.getSelection()?.toString() ?? ''; document.querySelector('[data-testid="reply-wrapper"]')?.insertAdjacentHTML('beforeend', '<textarea data-testid="reply-field"></textarea>'); });
+    expect(await activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection: { kind: 'unavailable' } } })).toBe(true);
+    expect(quoted).toBe('source');
+  });
+
+  it('does not quote or overwrite a newer user selection while revealing asynchronously', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection } = selectedCopy();
+    let reveal: (() => void) | undefined;
+    const waiting = new Promise<void>((resolve) => { reveal = resolve; });
+    const quoted = vi.fn(); document.querySelector('[data-discussion-id]')?.addEventListener('quoteReply', quoted);
+    const pending = activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection }, onReveal: () => waiting });
+    const other = document.createElement('p'); other.textContent = 'New user selection'; document.body.append(other);
+    const range = document.createRange(); range.selectNodeContents(other); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+    reveal?.();
+    expect(await pending).toBe(false);
+    expect(quoted).not.toHaveBeenCalled();
+    expect(document.getSelection()?.toString()).toBe('New user selection');
+  });
+
+  it('keeps a newer selection and focus when the native reply form arrives later', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection } = selectedCopy();
+    const pending = activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection } });
+    const other = document.createElement('p'); other.textContent = 'A newer passage'; document.body.append(other);
+    const range = document.createRange(); range.selectNodeContents(other); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+    document.querySelector('[data-testid="reply-wrapper"]')?.insertAdjacentHTML('beforeend', '<textarea data-testid="reply-field">Later draft</textarea>');
+    expect(await pending).toBe(false);
+    expect(document.activeElement?.tagName).not.toBe('TEXTAREA');
+    expect(document.getSelection()?.toString()).toBe('A newer passage');
+  });
+
+  it('stops a delayed quote on lifecycle invalidation and refuses cross-review target URLs', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection } = selectedCopy();
+    const quoted = vi.fn(); document.querySelector('[data-discussion-id]')?.addEventListener('quoteReply', quoted);
+    let current = true;
+    expect(await activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection, current: () => current }, onReveal: async () => { current = false; } })).toBe(false);
+    expect(quoted).not.toHaveBeenCalled();
+    expect(await activateGitLabThreadAction('quote', document, { ...target, url: target.url.replace('/7#', '/8#') }, permissions, { signedIn: true })).toBe(false);
+    expect(quoted).not.toHaveBeenCalled();
+  });
+
+  it('does not focus or restore a stale selection after the source remounts or the review changes', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection } = selectedCopy();
+    const pending = activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection } });
+    window.location.href = target.url.replace('/7#', '/8#');
+    document.querySelector('[data-testid="reply-wrapper"]')?.insertAdjacentHTML('beforeend', '<textarea data-testid="reply-field">Different review</textarea>');
+    expect(await pending).toBe(false);
+    expect(document.activeElement?.tagName).not.toBe('TEXTAREA');
+  });
+
+  it('does not focus a delayed native form after the original body is edited in place', async () => {
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection, native } = selectedCopy();
+    const pending = activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection } });
+    native.append(' Edited while the native handler was waiting.');
+    document.querySelector('[data-testid="reply-wrapper"]')?.insertAdjacentHTML('beforeend', '<textarea data-testid="reply-field">Native draft</textarea>');
+    expect(await pending).toBe(false);
+    expect(document.activeElement?.tagName).not.toBe('TEXTAREA');
+  });
+
+  it('restores the original excerpt only when an unanswered native event still owns the unchanged selection', async () => {
+    vi.useFakeTimers();
+    mount(false, '<button class="js-reply-button">Reply</button>');
+    const { selection, body } = selectedCopy();
+    const pending = activateGitLabThreadAction('quote', document, target, permissions, { signedIn: true, context: { selection } });
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(await pending).toBe(false);
+    expect(body.contains(document.getSelection()?.anchorNode ?? null)).toBe(true);
+    expect(document.getSelection()?.toString()).toBe('source');
   });
 
   it('cannot resolve an unknown native state or cross into a different discussion', async () => {
