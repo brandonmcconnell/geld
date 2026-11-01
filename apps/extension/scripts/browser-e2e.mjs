@@ -1749,8 +1749,18 @@ try {
       }, selector);
       item.nativeReferenceArtifacts = await capture(page, 'gitlab-native-commit-reference-observation');
       const openCard = async () => {
+        await page.mouse.move(1, 1);
+        const movedAway = await poll(() => page.evaluate((selector, commitUrl) => {
+          const link = document.querySelector(selector);
+          const cards = [...document.querySelectorAll('.gl-popover[role="tooltip"]')].filter((node) => node.querySelector('[data-testid="commit-title-link"]')?.href === commitUrl && node.querySelector('[data-testid="commit-sha-link"]')?.href === commitUrl);
+          return { href: link?.href, commit: link?.getAttribute('data-commit'), hovered: link?.matches(':hover'), describedBy: link?.getAttribute('aria-describedby'),
+            cards: cards.map((node) => ({ id: node.id, display: getComputedStyle(node).display, height: node.getBoundingClientRect().height })) };
+        }, selector, GL_COMMIT), (value) => value.hovered === false && value.cards.every((card) => card.display === 'none' || card.height === 0), 'Genuine pointer exit closes the native commit card before reentry', 8000);
+        assert.equal(movedAway.href, GL_COMMIT);
+        assert.equal(movedAway.commit, GL_COMMIT_SHA);
+        await page.$eval(selector, (link) => link.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' }));
         await page.hover(selector);
-        return poll(() => page.evaluate((selector, commitUrl) => {
+        const opened = await poll(() => page.evaluate((selector, commitUrl) => {
           const link = document.querySelector(selector);
           const owners = (link?.getAttribute('aria-describedby') ?? '').split(/\s+/);
           const card = [...document.querySelectorAll('.gl-popover[role="tooltip"]')].find((node) => owners.includes(node.id) && node.getBoundingClientRect().height > 0 && node.querySelector('[data-testid="commit-title-link"]')?.href === commitUrl && node.querySelector('[data-testid="commit-sha-link"]')?.href === commitUrl);
@@ -1760,6 +1770,7 @@ try {
             links: [...card.querySelectorAll('[data-testid="commit-title-link"], [data-testid="commit-sha-link"]')].map((anchor) => ({ href: anchor.href, testid: anchor.getAttribute('data-testid') })),
             chip: { text: chip.textContent.replace(/\s+/g, ' ').trim(), tabindex: chip.getAttribute('tabindex'), title: chip.getAttribute('title') } };
         }, selector, GL_COMMIT), (value) => value !== null && /\b1 test\b/.test(value.chip.text) && value.chip.text.includes('+2') && value.chip.text.includes('−0'), 'Actual ARIA-associated native commit card contains its exact source-specific Geld chip', 12_000);
+        return { ...opened, reentry: { mechanism: 'Real pointer move away, observed native close, source-preserving scroll and genuine original-link hover', movedAway } };
       };
       item.nativeCardPointer = await openCard();
       const pointerChip = `[id=${JSON.stringify(item.nativeCardPointer.id)}] .geld-provider-list-counts`;

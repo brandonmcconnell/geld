@@ -21,6 +21,7 @@ import type { RepoConfigChoices } from '../lib/local-state';
 
 const HIDDEN = 'data-geld-provider-hidden';
 const INLINE = 'data-geld-provider-inline';
+const FLOW_WRAPPER = 'data-geld-provider-flow-wrapper';
 
 interface SettledHeader {
   readonly key: string;
@@ -84,6 +85,8 @@ export class ProviderController {
   private section: HTMLElement | null = null;
   private activeCategory: string | null = null;
   private layout: HTMLElement | null = null;
+  private grouped = false;
+  private readonly flowWrappers = new Map<HTMLElement, string | null>();
   private signature = '';
   private readonly touched = new Set<HTMLElement>();
   private readonly chips = new Set<HTMLElement>();
@@ -160,7 +163,7 @@ export class ProviderController {
 
   private readonly refreshEvent = (): void => this.requestRefresh();
   private readonly nativeInlineActivate = (event: Event): void => {
-    if (!event.isTrusted || this.stopped || (this.effectiveSettings ?? this.settings).groupHidden
+    if (!event.isTrusted || this.stopped || this.grouped
       || (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ')) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target === null || target.closest('[data-geld-ui]') !== null) return;
@@ -229,7 +232,8 @@ export class ProviderController {
 
   revealPath(path: string): void {
     const category = this.state.categories.find((item) => item.paths.includes(path));
-    if (!(this.effectiveSettings ?? this.settings).groupHidden) {
+    if (!this.grouped) {
+      if ((this.effectiveSettings ?? this.settings).groupHidden) this.setExpanded(category !== undefined);
       if (category !== undefined) this.markInlineTouched(path);
       this.apply();
       this.reveal.request(path);
@@ -289,6 +293,8 @@ export class ProviderController {
     this.touched.clear();
     this.layout?.classList.remove('geld-provider-diffs');
     this.layout = null;
+    this.grouped = false;
+    this.syncFlowWrappers([]);
     const livePaths = new Map(this.adapter.readDiff(document)?.entries.map((entry) => [entry.root, entry.path]) ?? []);
     for (const entry of this.collapsed.values()) if (entry.root.isConnected && livePaths.get(entry.root) === entry.path) entry.expand();
     this.collapsed.clear();
@@ -486,18 +492,20 @@ export class ProviderController {
       this.layout?.classList.remove('geld-provider-diffs');
       this.layout = view.container;
     }
-    const grouped = effective.groupHidden && !view.virtualized;
+    const grouped = effective.groupHidden && this.canGroup(view, files);
+    this.grouped = grouped;
+    this.syncFlowWrappers(grouped ? view.groupingWrappers ?? [] : []);
     if (view.container.classList.contains('geld-provider-diffs') !== grouped) view.container.classList.toggle('geld-provider-diffs', grouped);
     for (const entry of view.entries) {
       this.touched.add(entry.root);
       const hiddenFile = hiddenPaths.has(entry.path);
       const shown = this.expanded && (this.activeCategory === null || this.activeCategory === categories.get(entry.path)?.id);
-      attribute(entry.root, HIDDEN, hiddenFile && effective.groupHidden && !view.virtualized ? (shown ? 'open' : 'closed') : null);
-      attribute(entry.root, INLINE, hiddenFile && (!effective.groupHidden || view.virtualized) ? '' : null);
-      const ownedInline = !effective.groupHidden && this.expansionKey !== null && this.inlineTouched.get(this.expansionKey)?.has(entry.path) === true;
+      attribute(entry.root, HIDDEN, hiddenFile && grouped ? (shown ? 'open' : 'closed') : null);
+      attribute(entry.root, INLINE, hiddenFile && !grouped ? '' : null);
+      const ownedInline = !grouped && this.expansionKey !== null && this.inlineTouched.get(this.expansionKey)?.has(entry.path) === true;
       if (hiddenFile && !ownedInline && shown && this.shownInline.get(entry.root) !== entry.path) {
         if (entry.expand()) { this.shownInline.set(entry.root, entry.path); this.collapsed.delete(entry.path); }
-      } else if (hiddenFile && !ownedInline && (!effective.groupHidden || view.virtualized)) {
+      } else if (hiddenFile && !ownedInline && !grouped) {
         if (!shown && this.collapsed.get(entry.path)?.root !== entry.root && entry.isExpanded?.() === true) {
           if (entry.collapse()) this.collapsed.set(entry.path, entry);
         }
@@ -527,9 +535,9 @@ export class ProviderController {
     }
     for (const row of view.tree) {
       this.touched.add(row.root);
-      attribute(row.root, INLINE, !effective.groupHidden && hiddenPaths.has(row.path) ? '' : null);
+      attribute(row.root, INLINE, !grouped && hiddenPaths.has(row.path) ? '' : null);
     }
-    if (effective.groupHidden) {
+    if (effective.groupHidden && (grouped || view.virtualized)) {
       this.inlineTree.clear();
       this.categoryTree.update(view, hidden, all, files, {
       subjectKey: JSON.stringify([this.pageKey, revision]),
@@ -541,12 +549,12 @@ export class ProviderController {
       this.categoryTree.clear();
       this.inlineTree.update(view, hidden, files, { subjectKey: JSON.stringify([this.pageKey, revision]) });
     }
-    const signature = JSON.stringify([this.pageKey, revision, hidden.categories.map((group) => [group.category.id, group.category.title, group.category.shortNoun, group.category.shortNounPlural, group.paths, group.totals]), hidden.lines, all, this.expanded, effective.groupHidden]);
+    const signature = JSON.stringify([this.pageKey, revision, hidden.categories.map((group) => [group.category.id, group.category.title, group.category.shortNoun, group.category.shortNounPlural, group.paths, group.totals]), hidden.lines, all, this.expanded, grouped]);
     if (signature === this.signature && this.section?.isConnected === true) return;
     this.section?.remove();
     this.signature = signature;
     this.section = null;
-    if (hidden.totals.files === 0 || !effective.groupHidden) return;
+    if (hidden.totals.files === 0 || !grouped) return;
     const section = element('section', '', 'geld-provider-hidden');
     const toggle = element('button', `${this.expanded ? 'Hide' : 'Show'} ${hiddenLabel(hidden, allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id)))}`, 'geld-provider-toggle');
     toggle.type = 'button';
@@ -555,6 +563,35 @@ export class ProviderController {
     section.append(toggle, this.breakdown(hidden, all));
     view.container.append(section);
     this.section = section;
+  }
+
+  private canGroup(view: ProviderDiffView, files: readonly FileStats[]): boolean {
+    if (view.virtualized) return false;
+    const wrappers = view.groupingWrappers ?? [];
+    if (wrappers.length === 0) return true;
+    if (view.groupingReady !== true) return false;
+    const paths = new Set(files.map((file) => file.path));
+    if (view.entries.length !== paths.size || paths.size !== files.length
+      || new Set(view.entries.map((entry) => entry.path)).size !== paths.size
+      || view.entries.some((entry) => !paths.has(entry.path) || !entry.root.isConnected || !view.container.contains(entry.root))) return false;
+    return wrappers.every((wrapper) => {
+      if (!wrapper.isConnected || !view.container.contains(wrapper) || wrapper.closest('[hidden], [aria-hidden="true"], [inert]') !== null) return false;
+      const style = getComputedStyle(wrapper);
+      return (style.position === '' || style.position === 'static') && (style.transform === '' || style.transform === 'none')
+        && (style.display === '' || ['block', 'inline', 'contents'].includes(style.display)) && style.visibility !== 'hidden' && style.visibility !== 'collapse';
+    });
+  }
+
+  private syncFlowWrappers(wrappers: readonly HTMLElement[]): void {
+    const current = new Set(wrappers);
+    for (const [node, original] of this.flowWrappers) if (!current.has(node)) {
+      if (node.getAttribute(FLOW_WRAPPER) === '') attribute(node, FLOW_WRAPPER, original);
+      this.flowWrappers.delete(node);
+    }
+    for (const node of wrappers) {
+      if (!this.flowWrappers.has(node)) this.flowWrappers.set(node, node.getAttribute(FLOW_WRAPPER));
+      attribute(node, FLOW_WRAPPER, '');
+    }
   }
 
   private breakdown(hidden: HiddenBreakdown, all: ChangeTotals | null): HTMLElement {
