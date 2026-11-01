@@ -32,7 +32,7 @@ export const bitbucketAdapter: ProviderAdapter = {
   actionHost: bitbucketActionHost,
   fetchReview: async (page, signal, doc) => {
     const snapshot = await fetchBitbucketReview(page, signal);
-    return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, actions: readBitbucketActions(doc),
+    return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { return readBitbucketActions(doc, page); },
       get requirements() { return readBitbucketRequirements(page, doc); },
       renderComment: (comment, host) => renderBitbucketComment(comment, host, doc),
       sourceActions: (comment) => bitbucketThreadActions(comment, doc),
