@@ -237,7 +237,7 @@ jobs:
             echo "::warning title=Safari::Skipped: Apple credentials are not configured (see apps/extension/store/PUBLISHING.md)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           elif [ -z "$REVIEW_VIDEO" ] || [ -z "$REVIEW_DEVICE" ]; then
-            echo "::warning title=Safari::Skipped: Apple requires a physical-Mac recording and tested-device details. Set SAFARI_REVIEW_VIDEO_URL and SAFARI_REVIEW_TEST_DEVICE (see apps/extension/store/PUBLISHING.md)."
+            echo "::warning title=Safari::Skipped: Apple requires a physical-Mac recording and tested-device details. Set SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and SAFARI_REVIEW_TEST_DEVICE (see apps/extension/store/PUBLISHING.md)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           elif [ "$recorded" != "$version" ]; then
             echo "::warning title=Safari::Skipped: the review recording shows Geld ${REVIEW_VIDEO_VERSION:-(unset)}, not $version. Record this version and update SAFARI_REVIEW_VIDEO_URL and SAFARI_REVIEW_VIDEO_VERSION (see apps/extension/store/PUBLISHING.md)."
