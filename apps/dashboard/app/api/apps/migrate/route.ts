@@ -6,6 +6,7 @@ import { database } from '@/lib/db';
 import { teamMembership } from '@/lib/workspaces';
 import { registrySchema,appTokenSource,installationTokenSource } from '@/lib/repository-apps';
 import { backgroundUserTokenSource } from '@/lib/background-tokens';
+import { prepareInstallationMigration } from '@/lib/app-migrations';
 import { appendAudit } from '@/lib/audit';
 import { transaction } from '@/lib/transactions';
 import { json,sameOrigin } from '@/lib/http';
@@ -19,6 +20,13 @@ export async function POST(request:Request):Promise<Response>{await connection()
   if(exists.ok){
     async function repositories(app:z.infer<typeof registrySchema>,installation:string){const api=createApiTransport({baseUrl:'https://api.github.com/',source:await installationTokenSource(app,installation)});const repos:{id:number;full_name:string}[]=[];for(let page=1;page<=50;page++){const r=await api.request(`installation/repositories?per_page=100&page=${page}`);const list=r.ok?z.object({repositories:z.array(z.object({id:z.number(),full_name:z.string()}))}).safeParse(r.value):null;if(!list?.success)throw new Error('Repository scope unavailable');repos.push(...list.data.repositories);if(list.data.repositories.length<100)return repos;}throw new Error('Scope check exceeded limit');}
     try{const before=await repositories(oldApp,old.external_id);const after=await repositories(nextApp,next.external_id);if(before.some(repo=>!after.some(r=>r.id===repo.id)))return json({error:'The new installation is missing repositories. The old installation was kept.'},409);const own=createApiTransport({baseUrl:'https://api.github.com/',source:await backgroundUserTokenSource(actor.id,'github',old.account_slug)});for(const repo of before){const r=await own.request(`repos/${repo.full_name.split('/').map(encodeURIComponent).join('/')}`);const permission=r.ok?z.object({permissions:z.object({admin:z.boolean()})}).safeParse(r.value):null;if(!permission?.success||!permission.data.permissions.admin)return json({error:'Your provider account must administer every repository being migrated'},403);}}catch{return json({error:'Repository coverage could not be confirmed. The old installation was kept.'},409);}
-    await db.query("UPDATE app_installations SET state='migrating' WHERE id=$1",[old.id]);const removed=await oldApi.request(`app/installations/${old.external_id}`,{method:'DELETE'});if(!removed.ok)return json({error:'The new installation is confirmed. The old installation could not be removed and was kept for retry.'},409);
+    const preparation=await transaction(db,async sql=>{
+      const state=await prepareInstallationMigration(sql,{teamId:i.teamId,oldId:old.id,newId:next.id});
+      if(state==='shared')await appendAudit(sql,{teamId:i.teamId,actorId:actor.id,action:'app.migrate',resourceType:'installation',resourceId:next.id,outcome:'success',before:{installation:old.id},after:{installation:next.id,retainedForOtherTeams:true}});
+      return state;
+    });
+    if(preparation==='changed')return json({error:'Installation links changed during verification. Reload and verify coverage again.'},409);
+    if(preparation==='shared')return json({saved:true,retainedForOtherTeams:true});
+    const removed=await oldApi.request(`app/installations/${old.external_id}`,{method:'DELETE'});if(!removed.ok)return json({error:'The new installation is confirmed. The old installation could not be removed and was kept for retry.'},409);
   }
   await transaction(db,async sql=>{await sql.query("UPDATE app_installations SET state='retired' WHERE id=$1",[old.id]);await sql.query('UPDATE app_installations SET replaces_id=$2 WHERE id=$1',[next.id,old.id]);await appendAudit(sql,{teamId:i.teamId,actorId:actor.id,action:'app.migrate',resourceType:'installation',resourceId:next.id,outcome:'success',before:{installation:old.id},after:{installation:next.id}});});return json({saved:true});}

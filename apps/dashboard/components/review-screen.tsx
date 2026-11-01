@@ -24,10 +24,10 @@ const failureSchema = z.object({ error: z.string() });
 const storedSchema = z.object({ plan: reviewPlanSchema.nullable(), progress: progressSchema });
 
 export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
-  const { session, loading } = useDashboard();
+  const { session, loading, activeTeam } = useDashboard();
   const owner = session.user?.id ?? (session.demo ? 'demo' : null);
   if (loading && !owner) return <div className="page" role="status">Loading your review workspace...</div>;
-  return <ReviewWorkspace key={`${owner ?? 'anonymous'}:${pullPath(reference)}`} reference={reference} owner={owner} />;
+  return <ReviewWorkspace key={`${owner ?? 'anonymous'}:${activeTeam}:${pullPath(reference)}`} reference={reference} owner={owner} />;
 }
 function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; readonly owner: string | null }) {
   const { session, teams, activeTeam, setActiveTeam } = useDashboard();
@@ -54,7 +54,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const wide = useSyncExternalStore(subscribeWide,wideSnapshot,()=>false);
   const showAssistant = assistantOpen ?? wide;
   const mutationKey = useRef({content:'',key:''});
-  const key = owner ? `geld.review.v2:${encodeURIComponent(owner)}:${pullPath(reference)}` : null;
+  const key = owner ? `geld.review.v2:${encodeURIComponent(owner)}:${pullPath(reference)}${teamId ? `:team:${encodeURIComponent(teamId)}` : ''}` : null;
   const loadedKey = useRef('');
   const current = plan?.steps[stepIndex];
   const completed = plan?.steps.filter((step) => progress[step.id]?.state === 'accepted' || progress[step.id]?.state === 'flagged').length ?? 0;
@@ -76,7 +76,20 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
     }).catch(() => { if (!abort.signal.aborted) { setError('The provider could not be reached. Try again.'); setLoading(false); } });
     return () => abort.abort();
   }, [params, key, revision]);
-  useEffect(()=>{if(!teamId||!data||plan)return;const abort=new AbortController();fetch(`/api/guides?${params}&teamId=${encodeURIComponent(teamId)}`,{signal:abort.signal}).then(async r=>{const value:unknown=await r.json();const saved=z.object({plan:reviewPlanSchema.nullable()}).safeParse(value);if(saved.success&&saved.data.plan){setPlan(saved.data.plan);setProgress(previous=>saved.data.plan?reconcileProgress(saved.data.plan,previous):previous);}}).catch(()=>undefined);return()=>abort.abort();},[teamId,params,data,plan]);
+  useEffect(() => {
+    if (!teamId || !data || (plan && plan.headSha === data.pull.headSha)) return;
+    const abort = new AbortController();
+    const headSha = data.pull.headSha;
+    fetch(`/api/guides?${params}&teamId=${encodeURIComponent(teamId)}`, { signal: abort.signal }).then(async response => {
+      const value: unknown = await response.json();
+      const saved = z.object({ plan: reviewPlanSchema.nullable() }).safeParse(value);
+      if (abort.signal.aborted || !response.ok || !saved.success || !saved.data.plan || saved.data.plan.headSha !== headSha) return;
+      const next = saved.data.plan;
+      setPlan(next); setProgress(previous => reconcileProgress(next,previous)); setStepIndex(0);
+    }).catch(() => undefined);
+    return () => abort.abort();
+  }, [teamId,params,data,plan]);
+
   function persist(nextPlan: ReviewPlan | null, nextProgress: Readonly<Record<string, StepProgress>>) {
     if (!key) return;
     try { localStorage.setItem(key, JSON.stringify({ plan: nextPlan, progress: nextProgress })); } catch { setNotice('Progress could not be saved on this device.'); }
@@ -115,7 +128,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
     try {
       const response = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: reference, key: mutationKey.current.key, kind: line ? 'line_comment' : 'review', event, body, headSha: draftHead, ...(line ?? {}) }) });
       const value: unknown = await response.json();
-      if (response.ok) { setNotice(line ? 'Comment posted on the provider.' : 'Review submitted on the provider.'); setSubmitOpen(false); setBody(''); setRevision((value) => value + 1); }
+      if (response.ok) { mutationKey.current={content:'',key:''}; setNotice(line ? 'Comment posted on the provider.' : 'Review submitted on the provider.'); setSubmitOpen(false); setBody(''); setRevision((value) => value + 1); }
       else { const error = failureSchema.safeParse(value); setNotice(error.success ? error.data.error : 'The provider could not confirm this review.'); }
     } catch { setNotice('The review could not connect. Check the provider before trying again.'); }
     setPosting(false);

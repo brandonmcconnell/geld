@@ -57,7 +57,7 @@ export async function providerAction(options: { readonly provider: 'github'|'git
   if(options.provider==='github')return githubAction(api,ref,action);
   const e=encodeURIComponent;const repo=options.provider==='gitlab'?`projects/${e(`${ref.owner}/${ref.repo}`)}`:`repositories/${e(ref.owner)}/${e(ref.repo)}`;const pull=`${repo}/${options.provider==='gitlab'?'merge_requests':'pullrequests'}/${ref.number}`;
   if(action.kind==='delete'&&action.confirmation!==`${ref.owner}/${ref.repo}`)return{ok:false,reason:'invalid_response'};
-  if(options.provider==='bitbucket'&&(action.kind==='merge'||action.kind==='reopen'||action.kind==='settings'&&action.archived))return{ok:false,reason:'unsupported'};
+  if(options.provider==='bitbucket'&&(action.kind==='merge'||action.kind==='reopen'||action.kind==='settings'&&action.archived!==undefined))return{ok:false,reason:'unsupported'};
   if(options.provider==='gitlab'&&action.kind==='merge'&&action.method==='rebase')return{ok:false,reason:'unsupported'};
   const result:ProviderResult<unknown>=action.kind==='merge'?await api.request(`${pull}/merge`,{method:'PUT',body:{sha:action.headSha,squash:action.method==='squash'}}):action.kind==='close'||action.kind==='reopen'?await api.request(options.provider==='gitlab'?pull:`${pull}/decline`,{method:options.provider==='gitlab'?'PUT':'POST',...(options.provider==='gitlab'?{body:{state_event:action.kind==='close'?'close':'reopen'}}:{})}):action.kind==='delete'?await api.request(repo,{method:'DELETE'}):action.kind==='settings'?await api.request(repo,{method:'PUT',body:{description:action.description}}):{ok:false,reason:'unsupported'};
   if(!result.ok)return result;

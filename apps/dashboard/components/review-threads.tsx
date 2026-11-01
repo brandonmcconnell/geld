@@ -20,7 +20,7 @@ function Thread({ thread, reference, headSha, onChange }: { readonly thread: Pro
     try {
       const response = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: reference, key:mutationKey.current.key, headSha, kind, threadId: thread.id, body: kind === 'reply' ? reply : '', resolved: !thread.resolved }) });
       const value: unknown = await response.json();
-      if (response.ok) { setReply(''); onChange(); }
+      if (response.ok) { mutationKey.current={content:'',key:''}; setReply(''); onChange(); }
       else { const parsed = z.object({ error: z.string() }).safeParse(value); setMessage(parsed.success ? parsed.data.error : 'The thread could not be updated.'); }
     } catch { setMessage('The provider could not confirm this update. Check before trying again.'); }
     setBusy(false);
