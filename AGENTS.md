@@ -1369,6 +1369,12 @@ Provider-specific surfaces translate settings and sources into shared review and
   GitLab's native review summary starts as `input[data-testid="placeholder-input-field"]` and mounts its own `textarea[data-testid="comment-textarea"]` on focus, so select the outcome and writer within the same live `submit-gl-form` rather than focusing the unrelated main note writer.
   Native outcome disablement, removal and navigation invalidate a pending drawer action without submitting or replacing draft text.
   Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
+  GitLab Quote reply maps a selected digest excerpt to exact character offsets in the original native body only when both complete texts and source identities still agree, including repeated words and inline markup.
+  A nonempty excerpt with a changed, disconnected or different-source body fails after revealing the original instead of silently quoting the whole comment.
+  The existing native `quoteReply` handler converts that original DOM range and appends through its own editor, retaining native draft ownership without a Geld formatter or submit/cancel click.
+  Pending quote relays and Geld's delayed focus stop after review, head, source or lifecycle changes and preserve a newer user selection.
+  An overview without a native head attribute uses the captured full API snapshot head instead, while a present mismatching DOM head or a changed API snapshot invalidates the pending relay.
+  Authenticated quote success remains unverified on public signed-out fixtures.
 - **Reviewer standing and current requests are independent native facts.**
   `ProviderReviewReviewer.reviewRequest` can retain a pending GitLab review beside an approval without lowering approval totals or replacing the verdict's source.
   GitLab's `unreviewed` reviewer state establishes a pending current review, not a re-request, a request time or a review of the latest push.

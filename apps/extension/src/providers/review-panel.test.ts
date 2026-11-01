@@ -4,7 +4,7 @@ import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread } from '@geld/review';
 import type { ProviderAiState } from './ai';
 import { renderProviderReviewPanel } from './review-panel';
-import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent } from './review-panel';
+import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderSourceActionContext } from './review-panel';
 
 const subject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: 'a'.repeat(40) } as const;
 const reviewUrl = 'https://gitlab.com/group/subgroup/project/-/merge_requests/42';
@@ -30,6 +30,48 @@ function host(): HTMLElement {
 beforeEach(() => document.body.replaceChildren());
 
 describe('provider conversation digest', () => {
+  it('captures a quote excerpt before pointer focus clears selection and invalidates it after remount', async () => {
+    let context: ProviderSourceActionContext | undefined;
+    const activate = vi.fn(async (value?: ProviderSourceActionContext) => { context = value; return true; });
+    const options = { actionsForSource: () => [{ kind: 'quote', label: 'Quote reply', available: true, activate }] };
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), options);
+    const body = panel.element.querySelector('.geld-provider-review__body');
+    const button = [...panel.element.querySelectorAll('button')].find((control) => control.textContent === 'Quote reply');
+    const text = body?.firstChild;
+    if (body === null || text === null || text === undefined || button === undefined) throw new Error('Missing quote controls.');
+    const range = document.createRange(); range.setStart(text, 6); range.setEnd(text, 18);
+    document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+    button.dispatchEvent(new Event('pointerdown'));
+    document.getSelection()?.removeAllRanges();
+    button.click();
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+    expect(context?.selection).toMatchObject({ kind: 'excerpt', sourceId: '1', anchor: 'note_1', url: comment('1').url, text: 'the response', body });
+    expect(context?.current?.()).toBe(true);
+    panel.update(input([thread('a')]), { ...options, version: 1 });
+    expect(context?.current?.()).toBe(false);
+    panel.destroy();
+  });
+
+  it('captures keyboard quote selection and marks cross-source selections explicitly unavailable', async () => {
+    const contexts: Array<ProviderSourceActionContext | undefined> = [];
+    const activate = vi.fn(async (value?: ProviderSourceActionContext) => { contexts.push(value); return false; });
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { actionsForSource: () => [{ kind: 'quote', label: 'Quote reply', available: true, activate }] });
+    const body = panel.element.querySelector('.geld-provider-review__body');
+    const button = [...panel.element.querySelectorAll('button')].find((control) => control.textContent === 'Quote reply');
+    if (body === null || button === undefined) throw new Error('Missing quote fixture.');
+    const range = document.createRange(); range.selectNodeContents(body); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(range);
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); button.click();
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+    expect(contexts[0]?.selection).toMatchObject({ kind: 'excerpt', text: comment('1').body });
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    const other = document.createElement('p'); other.textContent = 'Another source'; document.body.append(other);
+    const next = document.createRange(); next.selectNodeContents(other); document.getSelection()?.removeAllRanges(); document.getSelection()?.addRange(next);
+    button.click();
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(2));
+    expect(contexts[1]?.selection).toEqual({ kind: 'unavailable' });
+    expect(button.title).toBe('Select the passage again in the original comment.');
+    panel.destroy();
+  });
   it('keeps original untrusted bodies as text and refuses unsafe source and check links', () => {
     const attack = '<img src=x onerror="alert(1)"><script>alert(2)</script>';
     const panel = renderProviderReviewPanel(host(), {
