@@ -134,6 +134,8 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     const snapshot = await fetchBitbucketReview(page, new AbortController().signal, client);
     expect(snapshot.input.checks).toEqual([expect.objectContaining({ name: 'CI', sha: HEAD, status: 'completed', conclusion: 'success', startedAt: DATE, completedAt: LATER })]);
     expect(snapshot.unavailable.filter((item) => item.area === 'CI checks')).toHaveLength(2);
+    expect(snapshot.input.checksCoverage).toBe('partial');
+    expect(snapshot.input.checks?.[0]).toMatchObject({ key: 'ci', nativeStatus: 'SUCCESSFUL' });
   });
 
   it('renders only explicit source and state changes as timeline events', async () => {
@@ -195,6 +197,23 @@ describe('Bitbucket source state and completeness', () => {
 
 
 describe('Bitbucket narrow source coverage', () => {
+  it('distinguishes a failed status source from known empty CI even when approval requirements are unavailable', async () => {
+    const failed = setup({}, 'statuses');
+    expect((await fetchBitbucketReview(failed.page, new AbortController().signal, failed.client)).input.checksCoverage).toBe('unavailable');
+    const empty = setup({ statuses: [] });
+    const snapshot = await fetchBitbucketReview(empty.page, new AbortController().signal, empty.client);
+    expect(snapshot.input.checksCoverage).toBe('complete');
+    expect(snapshot.input.checks).toEqual([]);
+    expect(snapshot.complete).toBe(false);
+  });
+
+  it('retains native stopped status and its durable key without manufacturing a pass from the name', async () => {
+    const fixture = setup({ statuses: [{ key: 'build:1', name: 'All checks passed', state: 'STOPPED', created_on: DATE, updated_on: LATER, commit: { hash: HEAD } }] });
+    const snapshot = await fetchBitbucketReview(fixture.page, new AbortController().signal, fixture.client);
+    expect(snapshot.input.checks?.[0]).toMatchObject({ key: 'build:1', nativeStatus: 'STOPPED', conclusion: 'cancelled' });
+    expect(snapshot.input.checksCoverage).toBe('complete');
+  });
+
   it('distinguishes unavailable comments from an authoritative empty collection', async () => {
     const failed = setup({}, 'comments');
     expect((await fetchBitbucketReview(failed.page, new AbortController().signal, failed.client)).sourceCoverage).toEqual({ comments: 'unavailable', threads: 'unavailable' });
@@ -202,6 +221,7 @@ describe('Bitbucket narrow source coverage', () => {
     const snapshot = await fetchBitbucketReview(empty.page, new AbortController().signal, empty.client);
     expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
     expect(snapshot.complete).toBe(false);
+    expect(snapshot.input.checksCoverage).toBe('unavailable');
   });
 
   it.each(['resolution', 'outdated'])('marks missing %s as unknown thread state while preserving comment coverage', async (missing) => {
