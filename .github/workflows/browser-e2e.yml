@@ -22,6 +22,7 @@ on:
           - bitbucket-diff
           - bitbucket-list
           - bitbucket-authors
+          - bitbucket-native-bash
           - bitbucket-comment
           - bitbucket-commit
           - bitbucket-list-commit
@@ -51,7 +52,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-review', 'gitlab-bot', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-review', 'gitlab-bot', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
