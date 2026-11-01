@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, Mail } from 'lucide-react';
@@ -11,20 +12,36 @@ export function SignInForm() {
   const { session, refresh } = useDashboard();
   const router = useRouter();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [sent, setSent] = useState(false);
-  const [method, setMethod] = useState('otp');
+  const [method, setMethod] = useState<'otp' | 'magic' | 'password'>('otp');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  function chooseMethod(next: 'otp' | 'magic' | 'password') {
+    setMethod(next); setSent(false); setPassword(''); setOtp(''); setMessage('');
+  }
   async function social(provider: string) {
     setBusy(true); setMessage('');
     try { const result = await authClient.signIn.social({ provider, callbackURL: '/connect' }); if (result.error) setMessage('This provider is not configured or could not connect.'); } catch { setMessage('Sign-in could not connect. Try again.'); }
     setBusy(false);
   }
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function sendReset() {
+    setBusy(true); setMessage('');
+    try {
+      const result = await authClient.requestPasswordReset({ email, redirectTo: '/settings/account/reset-password' });
+      setMessage(result.error ? 'A reset link could not be sent. Try again.' : 'If this address has an account, a password reset link is on its way.');
+    } catch { setMessage('A reset link could not be sent. Try again.'); }
+    setBusy(false);
+  }
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage('');
     try {
-      if (method === 'magic') {
+      if (method === 'password') {
+        const result = await authClient.signIn.email({ email, password, callbackURL: '/connect' });
+        if (result.error) setMessage('Email or password could not be verified.');
+        else { setPassword(''); refresh(); router.push('/connect'); }
+      } else if (method === 'magic') {
         const result = await authClient.signIn.magicLink({ email, callbackURL: '/connect' });
         setMessage(result.error ? 'The sign-in link could not be sent. Try again.' : 'Check your email for a sign-in link.');
       } else if (!sent) {
@@ -40,6 +57,13 @@ export function SignInForm() {
   return <div className="page"><div className="form-card"><Brand/><h1>Your next review starts here.</h1><p>Bring your repositories together. Keep the change in focus.</p>
     {!session.configured && <div className="status-message" role="status">Sign-in is not configured in this environment.</div>}
     <div className="form-stack">{['github','gitlab','bitbucket'].map((provider) => <Button variant="outline" key={provider} disabled={busy || !session.configured} onClick={() => social(provider)}>Continue with {provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}<ArrowRight size={15}/></Button>)}</div><div className="form-divider">or use your email</div>
-    <form className="form-stack" onSubmit={submit}><label>Email address<input className="field" type="email" autoComplete="email" value={email} required onChange={(event) => setEmail(event.target.value)} disabled={sent}/></label>{sent && <label>One-time code<input className="field" value={otp} onChange={(event) => setOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required/></label>}<Button type="submit" disabled={busy || !session.configured}><Mail size={15}/>{busy ? 'Connecting...' : sent ? 'Verify code' : method === 'magic' ? 'Send a sign-in link' : 'Send a one-time code'}</Button><Button variant="ghost" size="sm" type="button" onClick={() => { setMethod((value) => value === 'otp' ? 'magic' : 'otp'); setSent(false); setMessage(''); }}>{method === 'otp' ? 'Use a magic link instead' : 'Use a one-time code instead'}</Button></form>
+    <form className="form-stack" onSubmit={submit}>
+      <label>Email address<input name="email" className="field" type="email" autoComplete={method === 'password' ? 'username' : 'email'} value={email} required onChange={(event) => setEmail(event.target.value)} disabled={sent}/></label>
+      {method === 'password' && <label>Password<input className="field" type="password" autoComplete="current-password" value={password} required onChange={(event) => setPassword(event.target.value)}/></label>}
+      {sent && <label>One-time code<input className="field" value={otp} onChange={(event) => setOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required/></label>}
+      <Button type="submit" disabled={busy || !session.configured}><Mail size={15}/>{busy ? 'Connecting...' : method === 'password' ? 'Sign in with password' : sent ? 'Verify code' : method === 'magic' ? 'Send a sign-in link' : 'Send a one-time code'}</Button>
+      <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={() => chooseMethod(method === 'otp' ? 'magic' : 'otp')}>{method === 'otp' ? 'Use a magic link instead' : 'Use a one-time code instead'}</Button>
+      {method !== 'password' ? <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={() => chooseMethod('password')}>Use a password instead</Button> : <Button variant="ghost" size="sm" type="button" disabled={busy || !session.configured} onClick={(event) => { const input = event.currentTarget.form?.elements.namedItem('email'); if (input instanceof HTMLInputElement && input.reportValidity()) void sendReset(); }}>Email a password reset link</Button>}
+    </form>
     {message && <div className="status-message" role="status">{message}</div>}<p>By continuing, you agree to the <Link href="https://www.geld.sh/privacy" className="underline">privacy policy</Link>. You can connect a Git provider later.</p></div></div>;
 }
