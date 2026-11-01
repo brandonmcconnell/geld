@@ -1,0 +1,6 @@
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE}
+WORKDIR /geld
+COPY dist/provider.cjs /geld/provider.cjs
+USER node
+CMD ["node", "/geld/provider.cjs"]
