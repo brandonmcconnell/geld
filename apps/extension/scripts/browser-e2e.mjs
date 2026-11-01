@@ -1691,7 +1691,7 @@ async function authorPresentationProbe(page, provider, anchor) {
       name: { native: sample(nativeName), owned: sample(byline?.querySelector(':scope > [data-geld-author-profile] > strong, :scope > strong')) },
       aliasPair: { native: sample(nativeAlias), owned: sample([...byline?.querySelectorAll(':scope > .geld-provider-review__muted') ?? []].find((node) => node.textContent.trim() === alias)) },
       profile: { native: nativeProfile?.href ?? null, owned: byline?.querySelector(':scope > [data-geld-author-profile]')?.href ?? null },
-      avatar: { native: sample(nativeAvatar), owned: sample(byline?.querySelector(':scope > [data-geld-author-avatar]')) },
+      avatar: { native: sample(nativeAvatar), owned: sample(byline?.querySelector(':scope > [data-geld-author-avatar-slot] > img[data-geld-author-avatar]')) },
       badges: nativeBadges.map((badge) => { const label = badge.querySelector(':scope > .gl-badge-content')?.textContent.trim() ?? badge.textContent.trim();const own = ownBadges.find((node) => node.textContent.trim() === label);return { label, native: sample(badge), nativeText: sample(badge.querySelector(':scope > .gl-badge-content') ?? badge), owned: sample(own) }; }),
       uncoveredNative: provider === 'bitbucket' ? ['No native profile URL, alias or role badge is presented by this captured public Bitbucket author header.'] : [],
     };
