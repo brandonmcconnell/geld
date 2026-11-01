@@ -7,13 +7,13 @@ export interface ProviderReviewReference {
   readonly label: string;
   readonly title: string | null;
   readonly target: {
-    readonly provider: 'gitlab';
+    readonly provider: ProviderReviewSubject['provider'];
     readonly origin: string;
     readonly repository: string;
     readonly projectId: string;
     readonly nativeId: string;
     readonly number: string;
-    readonly kind: 'merge-request' | 'issue';
+    readonly kind: 'merge-request' | 'pull-request' | 'issue';
     readonly url: string;
   };
   readonly source: {
@@ -26,16 +26,13 @@ export interface ProviderReviewReference {
 }
 
 export function referenceForSubject(reference: ProviderReviewReference, subject: ProviderReviewSubject): boolean {
-  if (reference.target.provider !== subject.provider || reference.target.origin !== subject.origin || reference.source.reviewUrl !== providerReviewUrl(subject)
-    || !reference.label.trim() || !/^[1-9]\d*$/.test(reference.target.number) || !/^[1-9]\d*$/.test(reference.target.nativeId) || !/^[1-9]\d*$/.test(reference.target.projectId)) return false;
-  if (reference.direction === 'incoming' && (reference.source.eventId === undefined || !/^[1-9]\d*$/.test(reference.source.eventId) || reference.source.anchor !== `note_${reference.source.eventId}`)) return false;
-  if (reference.direction === 'outgoing' && (reference.source.anchor !== null || reference.source.eventId !== undefined)) return false;
   try {
+    if (reference.target.provider !== subject.provider || reference.target.origin !== subject.origin || reference.source.reviewUrl !== providerReviewUrl(subject)
+      || !reference.label.trim() || [reference.id, reference.target.repository, reference.target.number, reference.target.nativeId, reference.target.projectId].some((value) => !value.trim() || /[\x00-\x1f\x7f]/.test(value))) return false;
+    if (reference.direction === 'incoming' && (reference.source.eventId === undefined || !reference.source.eventId.trim() || /[\x00-\x1f\x7f]/.test(reference.source.eventId)
+      || reference.source.anchor === null || !reference.source.anchor || /[#\x00-\x20\x7f]/.test(reference.source.anchor))) return false;
+    if (reference.direction === 'outgoing' && (reference.source.anchor !== null || reference.source.eventId !== undefined)) return false;
     const url = new URL(reference.target.url);
-    if (url.origin !== subject.origin || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || !['http:', 'https:'].includes(url.protocol)) return false;
-    const path = decodeURIComponent(url.pathname);
-    const root = `/${reference.target.repository}/-/`;
-    return reference.target.kind === 'merge-request' ? path === `${root}merge_requests/${reference.target.number}`
-      : path === `${root}work_items/${reference.target.number}` || path === `${root}issues/${reference.target.number}`;
+    return url.origin === subject.origin && url.username === '' && url.password === '' && ['http:', 'https:'].includes(url.protocol);
   } catch { return false; }
 }

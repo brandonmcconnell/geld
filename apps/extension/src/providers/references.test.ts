@@ -60,13 +60,13 @@ it('retains independent disclosure state across refresh and removes wrong-review
 it('uses text content for reference labels and titles and rejects unsafe or mismatched targets', () => {
   const unsafe = { ...outgoing, id: 'unsafe', target: { ...target, url: 'javascript:alert(1)' } };
   const wrongOrigin = { ...outgoing, id: 'foreign', target: { ...target, url: 'https://other.example/whitebox-aero/insta360/-/merge_requests/34' } };
-  const wrongId = { ...outgoing, id: 'wrong-id', target: { ...target, number: '35' } };
+  const wrongSource = { ...outgoing, id: 'wrong-source', source: { ...outgoing.source, reviewUrl: url.replace('/272', '/273') } };
   const literal = { ...outgoing, label: '<img src=x onerror=alert(1)>', title: '<script>alert(1)</script>' };
-  const panel = renderProviderReviewPanel(host(), input, { references: [unsafe, wrongOrigin, wrongId, literal] });
+  const panel = renderProviderReviewPanel(host(), input, { references: [unsafe, wrongOrigin, wrongSource, literal] });
   expect(panel.element.querySelectorAll('[data-geld-reference]')).toHaveLength(1);
   expect(panel.element.querySelector('img,script')).toBeNull();
   expect(panel.element.textContent).toContain(literal.label);
-  expect(referenceForSubject({ ...incoming, source: { ...incoming.source, eventId: 'not-an-id', anchor: 'note_not-an-id' } }, subject)).toBe(false);
+  expect(referenceForSubject({ ...incoming, source: { ...incoming.source, eventId: 'event-id', anchor: 'unsafe#anchor' } }, subject)).toBe(false);
 });
 
 it('copies each reference source once and never copies replaced activity as an extra mention', async () => {
@@ -161,4 +161,16 @@ it('does not carry a reference focus target into another review or head even whe
   panel.element.querySelector<HTMLAnchorElement>('.geld-provider-review__reference-link')?.focus();
   panel.update({ ...input, subject: { ...nextSubject, headSha: 'b'.repeat(40) } }, { references: [nextReference], version: 3 });
   expect(document.activeElement?.getAttribute('data-geld-reference-role')).not.toBe('target');
+});
+
+
+it('keeps shared URL safety independent of native route syntax, ID formats and fragment prefixes', () => {
+  const otherSubject = { ...subject, provider: 'bitbucket', origin: 'https://bitbucket.org', repository: 'workspace/repository' } as const;
+  const reference: ProviderReviewReference = { ...incoming,
+    target: { ...target, provider: 'bitbucket', origin: otherSubject.origin, repository: 'other/repository', projectId: '{project-uuid}', nativeId: '{resource-uuid}', number: '34', kind: 'pull-request', url: 'https://bitbucket.org/other/repository/pull-requests/34/?tab=overview#native-reference' },
+    source: { reviewUrl: 'https://bitbucket.org/workspace/repository/pull-requests/272', anchor: 'comment-source-id', eventId: 'event-source-id' } };
+  expect(referenceForSubject(reference, otherSubject)).toBe(true);
+  expect(referenceForSubject({ ...reference, target: { ...reference.target, url: 'https://user:password@bitbucket.org/other/repository/pull-requests/34/' } }, otherSubject)).toBe(false);
+  expect(referenceForSubject({ ...reference, target: { ...reference.target, url: 'javascript:alert(1)' } }, otherSubject)).toBe(false);
+  expect(referenceForSubject({ ...reference, target: { ...reference.target, url: 'https://other.example/other/repository/pull-requests/34/' } }, otherSubject)).toBe(false);
 });

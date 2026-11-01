@@ -1563,6 +1563,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   Moving across wrapped commit-link lines updates only popover geometry after genuine pointer intent, without another source fetch.
   GitLab's commit reference hook mounts its provider card only once, and Escape can leave that card mounted but hidden, so installed pointer and keyboard tests record separate native visits when the card cannot reopen instead of patching provider state or accepting a hidden chip.
   The GitLab digest reference index reads only mounted native description links and matching server-system-note events, with full origin, namespace, project, resource ID and IID identity and no extra lookup.
+  GitLab validates its exact native reference routes and note IDs inside its adapter, while shared reference rendering validates review scope and URL safety without imposing one provider's path or fragment conventions.
+  Valid native trailing-slash target URLs retain their source identity and spelling through extraction, rendering and original-source reacquisition.
   The same GitLab issue can appear as a native work_item/data-work-item description link and an issue/data-issue system-note link at the same work_items URL, so durable identity joins those aliases while the first actual native URL and label stay intact.
   A GitLab system note repeats its incoming reference in the headline and collapsed body, so only its verified system-note-content headline is indexed and each note/target pair is counted once.
   Reference labels and cached native titles do not establish target state, and native GFM initialization attributes and listeners are never copied into the digest.

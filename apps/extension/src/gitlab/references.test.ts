@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
+import { referenceForSubject } from '../providers/references';
 import type { ProviderReviewPage } from '../providers/types';
 import type { ProviderReviewPanelEvent } from '../providers/review-panel';
 
@@ -134,4 +135,16 @@ it('preserves a native cached title while the existing count hover temporarily h
   anchor.setAttribute('data-geld-hover-title', title);anchor.removeAttribute('title');
   expect(gitLabReferenceAnchor(initial, page, document, events)).toBe(anchor);
   expect(readGitLabReferences(page, document, events)[0]?.title).toBe(title);
+});
+
+
+it('retains valid trailing-slash native target URLs through extraction, shared validation and source reacquisition', () => {
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>('a.gfm[href]')) anchor.setAttribute('href', `${anchor.getAttribute('href')}/`);
+  const references = readGitLabReferences(page, document, events);
+  expect(references).toHaveLength(5);
+  for (const reference of references) {
+    expect(reference.target.url.endsWith('/')).toBe(true);
+    expect(referenceForSubject(reference, { provider: 'gitlab', origin: page.repository.origin, repository: page.repository.path, id: page.number, headSha: 'a'.repeat(40) })).toBe(true);
+    expect(gitLabReferenceAnchor(reference, page, document, events)?.href).toBe(reference.target.url);
+  }
 });
