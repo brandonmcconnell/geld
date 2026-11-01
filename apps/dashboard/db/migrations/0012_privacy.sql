@@ -11,3 +11,5 @@ CREATE TABLE erasure_jobs (
  completed_at timestamptz
 );
 CREATE INDEX erasure_pending ON erasure_jobs(run_after) WHERE state='pending';
+
+ALTER TABLE teams ADD COLUMN content_erasing_at timestamptz;
