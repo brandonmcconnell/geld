@@ -1453,6 +1453,10 @@ Provider-specific surfaces translate settings and sources into shared review and
   GitLab's rendered Markdown table headers can put their visible labels inside generated `markdown-table-<id>-col_<index>-sort` buttons, as the public Greptile summary note3381334808 does.
   Preserve only the inert label of that verified sortable column-header shape, including its native table ownership and column index, while dropping the control, IDs, action attributes and icons.
   Its marked inert span keeps only the observed `gl-font-bold gl-text-inherit` typography classes, and body comparison samples the actual native button's label span rather than assuming the enclosing TH has the same font weight.
+  GitLab also paints sticky Markdown headers through their native `data-sticky-header` wrapper, which is excluded from inert body copies.
+  Only verified sortable cells whose original matches that sticky-header selector receive a Geld paint marker, restoring `--gl-background-color-default` and the native inset shadow from `--gl-border-color-default` without copying sticky position, z-index or operational attributes.
+  Body decoration comparisons include shadows, and the existing trusted-bot case probes OS dark preference on the same mounted body, records whether native colors actually change and restores the original preference without requesting another source.
+  Closed details content remains uncovered even when its descendants retain positive rectangles, while the disclosure summary can still be compared.
   Unknown buttons remain excluded, and the original native table stays untouched.
   Installed body comparison treats missing positively presented native words as a mismatch rather than an uncovered sample, and the existing bot-trust case compares the mounted summary's headings, inline code, lists and table without requesting its sources again.
   Closed Mermaid code and finding notes without mounted native DOM remain uncovered, and offline cloned structure does not establish computed-style parity.

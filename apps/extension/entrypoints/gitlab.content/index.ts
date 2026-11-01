@@ -3,6 +3,7 @@ import { gitlabAdapter } from '../../src/gitlab';
 import { startProvider } from '../../src/providers/runtime';
 import '../../src/providers/style.css';
 import '../../src/gitlab/theme.css';
+import '../../src/gitlab/comment-render.css';
 
 export default defineContentScript({
   matches: ['https://gitlab.com/*'],
