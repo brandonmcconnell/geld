@@ -418,6 +418,46 @@ it('preserves a provisional snapshot through strict async hydration and a rate-l
   expect(source.get(unknown, true, true, true)).toMatchObject({ status: 'ready', result: { revision: 'new' } });
 });
 
+it('retains complete snapshots across visits without carrying old explicit retry demand', async () => {
+  const store = cacheStore();
+  const unknown = bitbucketPage('1');
+  const seeded = new ProviderDiffCache(store.backend);
+  seeded.set(unknown, complete('old'));
+  await vi.advanceTimersByTimeAsync(0);
+  seeded.stop();
+  const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>()
+    .mockRejectedValueOnce(Object.assign(new Error('Rate limited'), { retryAfterMs: 20_000 }))
+    .mockResolvedValue(complete('new'));
+  const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(store.backend), undefined, 'bitbucket');
+  source.beginVisit('first');
+  source.get(unknown, true, true, true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(source.get(unknown, true)).toMatchObject({ status: 'ready', refreshError: 'Rate limited', result: { revision: 'old' } });
+  source.beginVisit('second');
+  expect(source.get(unknown, false, false)).toMatchObject({ status: 'ready', cached: true, provisional: true, result: { revision: 'old' } });
+  // Waking the scheduler must not turn a prior visit's priority/retry into
+  // fresh intent merely because a passive row reads the retained snapshot.
+  source.setActive(true);
+  await vi.advanceTimersByTimeAsync(22_000);
+  expect(fetchDiff).toHaveBeenCalledTimes(1);
+  source.get(unknown, true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchDiff).toHaveBeenCalledTimes(2);
+  expect(source.get(unknown, true)).toMatchObject({ status: 'ready', result: { revision: 'new' } });
+});
+
+it('keeps an immutable verified snapshot usable after visit demand is reset', async () => {
+  const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockResolvedValue(complete('a'.repeat(40)));
+  const source = sourceFor(fetchDiff, vi.fn(), new ProviderDiffCache(cacheStore().backend));
+  source.beginVisit('first');
+  source.get(page('1'), true, true, true);
+  await vi.advanceTimersByTimeAsync(0);
+  source.beginVisit('second');
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(source.get(page('1'), true, true, true)).toMatchObject({ status: 'ready', result: { revision: 'a'.repeat(40) } });
+  expect(fetchDiff).toHaveBeenCalledTimes(1);
+});
+
 it('keeps stale list counts explicitly provisional during a failed revalidation', async () => {
   const store = cacheStore();
   const unknown = { ...page('1'), headSha: null, version: 'latest' };
