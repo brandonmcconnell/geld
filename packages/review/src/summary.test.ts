@@ -1050,6 +1050,20 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([neutral], [comment], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'failed', reason: 'Review limit reached', sourceId: 'issuecomment-1' });
   });
 
+  it('reads a neutral check that says it did not review as a skip, so a run seen to finish is not "clean" (geld#140)', () => {
+    // Asked again while out of free reviews: the page saw the check start and end, "Review rate limited", and nothing
+    // newer from CodeRabbit. The bare neutral used to make the chip "clean" until a reload brought the summary back.
+    const now = Date.parse('2026-11-01T14:40:00Z');
+    const limited = { name: 'CodeRabbit', status: 'completed' as const, conclusion: 'neutral' as const, sha: 'head', description: 'Review rate limited', startedAt: '2026-11-01T14:36:18Z', completedAt: '2026-11-01T14:36:18Z' };
+    expect(verdictsFrom([limited], [], 'head', [], now)[0]).toMatchObject({ id: 'coderabbit', verdict: 'failed', reason: 'Review rate limited' });
+    expect(verdictsFrom([{ ...limited, description: 'Completed in 1s — Review rate limited' }], [], 'head', [], now)[0]).toMatchObject({ verdict: 'failed', reason: 'Review rate limited' });
+    // An earlier review stands over the refused run, behind the head it was not made for.
+    const earlier = { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-1', createdAt: '2026-11-01T12:00:00Z' };
+    expect(verdictsFrom([limited], [earlier], 'head', [], now)[0]).toMatchObject({ verdict: 'clean', sourceId: 'pullrequestreview-1' });
+    // A neutral check that says what it did is the run's word as before.
+    expect(verdictsFrom([{ ...limited, description: 'Review completed' }], [], 'head', [], now)[0]?.verdict).toBe('clean');
+  });
+
   it('ends a run left under way by the bot giving up on it (geld#103)', () => {
     // A merge mid-run: CodeRabbit rewrote its summary into a failure notice over the last walkthrough, and its commit
     // status stayed "pending · Review in progress" for good.

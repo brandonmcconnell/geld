@@ -1046,6 +1046,21 @@ interface ThreadRun {
 export const RERUN_EDIT_GAP_MS = 5 * 60 * 1000;
 
 /**
+ * Why a finished check is a run the bot did not make, or null: a `skipped` conclusion, or a neutral or green one whose
+ * description says so (CodeRabbit's "Review rate limited" once its free reviews are spent; the merge box's timing,
+ * "Completed in 1s — ", goes first). The earlier review then stands, never "clean" from the bare conclusion.
+ */
+function checkRefusal(check: RawCheckRun): string | null {
+  if (check.status !== 'completed') return null;
+  if (check.conclusion === 'skipped') return 'Check skipped';
+  if (check.conclusion !== 'neutral' && check.conclusion !== 'success') return null;
+  const words = (check.description ?? '').replace(/^.*?\s[\u2014\u2013-]\s+/, '').trim();
+  if (words === '') return null;
+  if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, '');
+  return refusalReason(words);
+}
+
+/**
  * Combine check-run conclusions with the bot's own comments. A green check
  * with "no issues" is `clean`; a completed check plus findings in comments is
  * `findings`; an in-progress check is `running`. A comment that only says
@@ -1106,13 +1121,13 @@ export function verdictsFrom(
   const checkFinishedAt = new Map<string, number>();
   /** Bots that have posted a review thread here, resolved or not. */
   const postedThreads = new Set<string>();
-  /** Bots whose check was skipped: a run the bot did not make. */
-  const checkSkipped = new Set<string>();
+  /** Bots whose check was a run the bot did not make, with the reason the check gave (`checkRefusal`). */
+  const checkSkipped = new Map<string, string>();
   /**
    * The commit an earlier review stands for when it takes over a record: not the skipped check's, which is a commit the
    * bot did not review; the comments do not say which it is, so it reads as behind (`UNKNOWN_SHA`).
    */
-  const shaOver = (existing: DerivedBotVerdict): string => (checkSkipped.has(existing.id) && existing.verdict === 'failed' && existing.reason === 'Check skipped' ? UNKNOWN_SHA : existing.reviewedSha);
+  const shaOver = (existing: DerivedBotVerdict): string => (existing.verdict === 'failed' && existing.reason !== undefined && checkSkipped.get(existing.id) === existing.reason ? UNKNOWN_SHA : existing.reviewedSha);
 
   for (const check of checks) {
     const bot = botByCheckName(check.name);
@@ -1121,12 +1136,13 @@ export function verdictsFrom(
     const running = check.status !== 'completed';
     const failed = check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required' || check.conclusion === 'stale';
     // A skipped check is a run the bot did not make; its row is the word on that, as a "Review skipped" comment is.
-    const skipped = check.conclusion === 'skipped';
+    const refused = running ? null : checkRefusal(check);
+    const skipped = refused !== null;
     // `neutral` is the bot's own word: findings for one whose docs say so (Bugbot), else a run with nothing to say.
     const neutralFindings = check.conclusion === 'neutral' && bot.neutralConclusion === 'findings';
     const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings ? 'findings' : 'clean';
     checkVerdict.set(bot.id, verdict);
-    if (skipped) checkSkipped.add(bot.id);
+    if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
     // The start goes with the verdict: a later check for the same bot with no start of its own must not keep
     // the earlier one's, or its verdict would be read as the earlier run's below.
@@ -1142,7 +1158,7 @@ export function verdictsFrom(
       verdict,
       reviewedSha: check.sha || headSha,
       checkName: check.name,
-      ...(skipped ? { reason: 'Check skipped' } : {}),
+      ...(refused === null ? {} : { reason: refused }),
     };
     byId.set(bot.id, record);
   }
@@ -1507,7 +1523,7 @@ export function verdictsFrom(
     // A skip is a run not made: whatever stands keeps its verdict (an earlier review, already behind by `shaOver`, or the
     // skip itself with its reason), never the check's "failed" over it. Judged only when the skip is the current run's
     // (no request or status line after it began) and the whole timeline is read, since what places it may not have loaded.
-    if (check.conclusion === 'skipped') {
+    if (checkRefusal(check) !== null) {
       const pending = statusOnly.get(bot.id);
       const askedAt = pending === undefined ? undefined : (pending.askedAt ?? pending.at);
       const thisRun = askedAt === undefined || askedAt === null || started >= askedAt;
