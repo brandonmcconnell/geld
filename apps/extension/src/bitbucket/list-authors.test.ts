@@ -22,7 +22,7 @@ it('requests one state-bound UUID/name projection through native session transpo
   expect(fetcher).toHaveBeenCalledTimes(1);
   const [input, init] = fetcher.mock.calls[0] ?? [];const url = new URL(String(input));
   expect(url.origin).toBe('https://bitbucket.org');expect(url.pathname).toBe('/!api/2.0/repositories/atlassian/bitbucket-upload-file/pullrequests');
-  expect(Object.fromEntries(url.searchParams)).toEqual({ state: 'MERGED', pagelen: '100', fields: 'values.id,values.author.uuid,values.author.display_name' });
+  expect(Object.fromEntries(url.searchParams)).toEqual({ q: 'state="MERGED"', pagelen: '25', fields: 'values.id,values.author.uuid,values.author.display_name' });
   expect(init).toMatchObject({ cache: 'no-cache', credentials: 'same-origin', redirect: 'manual', signal });transport.dispose();
 });
 it('maps only exact current PR IDs and never follows next or fans out for omitted rows', async () => {
@@ -43,7 +43,7 @@ it('never uses nickname, display-name or account_id fallback as an identity and 
   expect(compileAuthorRules([`@BITBUCKET.ORG/uuid/${UUID.toUpperCase()}`]).hides(key)).toBe(true);
   expect(compileAuthorRules(['bitbucket.org/uuid/7177*']).hides(key)).toBe(true);
 });
-it.each([null, {}, { values: 'wrong' }, { values: [{ id: 0 }] }, { values: [{ id: 27 }, { id: 27 }] }, { values: Array.from({ length: 101 }, (_, index) => ({ id: index + 1 })) }])('rejects invalid/ambiguous collection batches', async (value) => {
+it.each([null, {}, { values: 'wrong' }, { values: [{ id: 0 }] }, { values: [{ id: 27 }, { id: 27 }] }, { values: Array.from({ length: 26 }, (_, index) => ({ id: index + 1 })) }])('rejects invalid/ambiguous collection batches', async (value) => {
   const { read } = setup(value);await expect(read(new URL(LIST), [REVIEW], new AbortController().signal)).rejects.toThrow();
 });
 it.each([null, {}, { uuid: 'not-a-uuid', display_name: 'Albert Sundjaja' }, { uuid: ` ${UUID}` }])('keeps missing/deleted/malformed authors unknown', async (author) => {
@@ -69,4 +69,9 @@ it('rejects pre-aborted reads and foreign response destinations', async () => {
   const bad: typeof fetch = async () => { const value = response(fixture());Object.defineProperty(value, 'url', { value: 'https://foreign.example/list' });return value; };
   const transport = createBitbucketTransport({ origin: () => null, store: { read: async () => 0, write: async () => undefined } });
   await expect(createBitbucketListAuthorFetcher(bad, transport)(new URL(LIST), [REVIEW], new AbortController().signal)).rejects.toThrow();
+});
+
+it.each(['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED'])('translates only validated native state %s into the observed fixed predicate', async (state) => {
+  const { read, fetcher } = setup();await read(new URL(LIST.replace('MERGED', state)), [REVIEW], new AbortController().signal);
+  const request = new URL(String(fetcher.mock.calls[0]?.[0]));expect(request.searchParams.get('q')).toBe(`state="${state}"`);expect(request.searchParams.has('state')).toBe(false);expect(request.searchParams.get('pagelen')).toBe('25');expect(fetcher).toHaveBeenCalledTimes(1);
 });

@@ -26,6 +26,7 @@ const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-list': ['bitbucket-list-counts'],
+  'bitbucket-authors': ['bitbucket-list-authors'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
   'bitbucket-list-commit': ['bitbucket-list-counts', 'bitbucket-commit-counts'],
@@ -279,6 +280,11 @@ async function runCase(name, url, body, discovery = false) {
   let listSettings;
   const abort = new AbortController();
   try {
+    if (name === 'bitbucket-list-authors' && focus === 'all') {
+      item.status = 'not_selected';
+      item.reason = 'Dedicated author-only slice avoids repeating the author acquisition already covered by the full list case. No navigation or feature pass.';
+      return;
+    }
     if (focus !== 'all' && !(FOCUSED_CASES[focus] ?? []).includes(name)) {
       item.status = 'not_selected';
       item.reason = `Budget-aware ${focus} slice does not select this case. No navigation or feature pass.`;
@@ -294,10 +300,12 @@ async function runCase(name, url, body, discovery = false) {
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
     currentCaseAbort = abort;
-    if (name === 'bitbucket-list-counts') {
+    if (name === 'bitbucket-list-counts' || name === 'bitbucket-list-authors') {
       listSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
       await patchSettings({ showListStats: false });
-      item.listSourcePreparation = 'List stats disabled through real shared settings before native navigation; enable on the actual multi-row list and demand only PR27 through explicit intent.';
+      item.listSourcePreparation = name === 'bitbucket-list-authors'
+        ? 'List stats remain disabled before and during native author-only verification. One UUID/name projection, no count intent or oracle GET.'
+        : 'List stats disabled through real shared settings before native navigation; enable on the actual multi-row list and demand only PR27 through explicit intent.';
     }
     page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
@@ -2460,6 +2468,14 @@ try {
     item.state = await tabState(page);
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'The actual visible native PR27 row settles at complete counts. Pointer/Tab breakdowns and shared custom-pattern restoration preserve native IDs/links. One observed UUID/name projection supports personal author hiding with stats off, native-row preservation and real keyboard Show recovery.' };
+  });
+  await runCase('bitbucket-list-authors', BB_PR_LIST, async (page, item) => {
+    const authorSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+    assert.equal(authorSettings.showListStats, false, 'Author-only verification must keep counts disabled');
+    item.authorFilters = await verifyBitbucketHiddenAuthors({ page, patchSettings, poll, pause, capture, original: authorSettings, extensionId, onProgress: (value) => { item.authorFilters = value; } });
+    item.state = await tabState(page);
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'One observed state-bound UUID/name projection supports author hiding and keyboard Show recovery on the real native list with stats off. No count intent, oracle GET or provider write.' };
   });
   await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);
