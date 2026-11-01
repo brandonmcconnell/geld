@@ -4,13 +4,14 @@ import { formatCount, pluralize } from '@geld/core';
 import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabState } from '../../src/lib/messages';
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
-import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor } from '@geld/core';
+import { compileRepoRules, decideRepo, ownerProbe, withRepoRule } from '@geld/core';
+import { allHosts, CLOUD_PROVIDER_HOSTS, describeRepository, isCategoryEnabled, isCategoryInPicker, plainText, providerForHost, providerRepositoryScope, sectionsFor } from '@geld/core';
 import type { CategoriesField, ToggleField } from '@geld/core';
 import type { TabRepoConfig, TabRepoConfigFile } from '../../src/lib/messages';
 import { loadCatalog } from '../../src/lib/catalog';
 import { repoConfigChoicesItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
+import { repositoryConfigChoiceKey } from '../../src/providers/repo-config';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { popupMaxHeight, popupNeedsScroll } from '../../src/ui/popup-size';
@@ -26,12 +27,12 @@ interface ActiveTab {
   readonly url: URL;
 }
 
-async function activeGitHubTab(hosts: readonly string[]): Promise<ActiveTab | null> {
+async function activeProviderTab(hosts: readonly string[]): Promise<ActiveTab | null> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined || tab.url === undefined) return null;
   try {
     const url = new URL(tab.url);
-    return hosts.includes(url.hostname) ? { id: tab.id, url } : null;
+    return url.protocol === 'https:' && url.username === '' && url.password === '' && hosts.includes(url.hostname) ? { id: tab.id, url } : null;
   } catch {
     return null;
   }
@@ -324,7 +325,7 @@ async function main(): Promise<void> {
     link.target = '_blank';
     link.rel = 'noreferrer';
     link.textContent = file.kind === 'org' ? `${file.repo}/${file.path}` : file.path;
-    link.title = `Open ${file.repo}/${file.path} on GitHub`;
+    link.title = `Open ${file.repo}/${file.path}`;
     const note = document.createElement('span');
     if (file.issues.length > 0) note.textContent = pluralize(file.issues.length, 'problem', 'problems');
     else note.textContent = file.kind === 'gitattributes' ? 'linguist-generated' : file.summary;
@@ -392,7 +393,7 @@ async function main(): Promise<void> {
     repoConfigHost.replaceChildren();
     // Nothing found, or still looking: nothing to say. A lookup can be under way whenever the page re-applies (the
     // cache runs out after 30 min), and a "Looking for…" box appearing mid-visit only moved everything below it.
-    if (config === null || config.mode === 'never' || config.files.length === 0) {
+    if (config === null || config.mode === 'never' || (config.files.length === 0 && config.error === undefined)) {
       repoConfigHost.hidden = true;
       return;
     }
@@ -401,7 +402,7 @@ async function main(): Promise<void> {
     const broken = config.files.filter((file) => file.issues.length > 0);
     const usable = config.files.filter((file) => file.issues.length === 0);
     const box = document.createElement('div');
-    box.className = `geld-alert${broken.length > 0 ? ' geld-alert--error' : ''}`;
+    box.className = `geld-alert${broken.length > 0 || config.error !== undefined ? ' geld-alert--error' : ''}`;
 
     const title = document.createElement('div');
     title.className = 'popup__repo-config-title';
@@ -409,7 +410,11 @@ async function main(): Promise<void> {
     eyebrow.className = 'geld-eyebrow';
     const text = document.createElement('p');
     text.className = 'geld-alert__text';
-    if (config.decision === 'use') {
+    if (config.error !== undefined) {
+      eyebrow.textContent = 'Repository config unavailable';
+      text.textContent = config.error;
+      title.dataset.tone = 'error';
+    } else if (config.decision === 'use') {
       eyebrow.textContent = usable.length > 0 ? 'Using repository config' : 'Repository config';
       const brokenNames = broken.map((file) => file.path).join(' and ');
       text.textContent =
@@ -440,7 +445,8 @@ async function main(): Promise<void> {
       const buttons = document.createElement('div');
       buttons.className = 'geld-alert__actions';
       const choose = (choice: 'use' | 'ignore') => async (): Promise<void> => {
-        await repoConfigChoicesItem.setValue({ ...(await repoConfigChoicesItem.getValue()), [config.repo]: choice });
+        const key = activeRepository === null ? config.repo : repositoryConfigChoiceKey({ ...activeRepository, path: config.repo });
+        await repoConfigChoicesItem.setValue({ ...(await repoConfigChoicesItem.getValue()), [key]: choice });
         // The content script re-publishes once it has applied the answer.
         setTimeout(() => void refreshContext(), 150);
       };
@@ -456,8 +462,11 @@ async function main(): Promise<void> {
     repoConfigHost.append(box);
   }
 
-  const tab = await activeGitHubTab(allHosts(settings));
-  let repo: string | null = tab === null ? null : repoFromPathname(tab.url.pathname);
+  const tab = await activeProviderTab([...new Set([...CLOUD_PROVIDER_HOSTS, ...allHosts(settings)])]);
+  const provider = tab === null ? null : providerForHost(tab.url.hostname) ?? 'github';
+  const repository = tab === null || provider === null ? null : describeRepository(tab.url, provider);
+  let activeRepository = repository;
+  let repo: string | null = repository?.path ?? null;
   // The feedback form's "Where" field: the kind of page, never its URL.
   const PAGE_WORDS: Readonly<Record<PageKind, string>> = {
     'pull-files': 'pull request files',
@@ -467,18 +476,25 @@ async function main(): Promise<void> {
     compare: 'compare',
     other: tab === null ? '' : /\/pulls\b|\/issues\b/.test(tab.url.pathname) ? 'pull request list' : 'other GitHub page',
   };
-  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), tab === null ? null : PAGE_WORDS[describePage(tab.url).kind]);
+  const feedbackContext = tab === null ? null : provider === 'github'
+    ? PAGE_WORDS[describePage(tab.url).kind]
+    : provider === 'gitlab'
+      ? /\/-\/merge_requests\/\d+/.test(tab.url.pathname) ? 'merge request' : 'other GitLab page'
+      : /\/pull-requests\/\d+/.test(tab.url.pathname) ? 'pull request' : 'other Bitbucket page';
+  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), feedbackContext);
 
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
+    activeRepository = state?.repository ?? activeRepository;
     repo = state?.repo ?? repo;
     contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
     // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
     contextRepo.dataset.context = 'repo';
 
     const rules = compileRepoRules(settings.repoRules);
-    const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
+    const scope = activeRepository === null ? repo : providerRepositoryScope(activeRepository);
+    const decision = scope === null ? { allowed: true, rule: null } : decideRepo(rules, scope);
 
     const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
 
@@ -488,7 +504,7 @@ async function main(): Promise<void> {
     } else if (!decision.allowed) {
       summary.textContent = `Off in ${repo ?? 'this repository'} because of the rule "${decision.rule?.raw ?? ''}".`;
     } else if (state === null || !state.hasDiff) {
-      summary.textContent = repo === null ? 'Open a GitHub repo to see what Geld is doing.' : 'No diff on this page.';
+      summary.textContent = repo === null ? 'Open a supported repository to see what Geld is doing.' : 'No diff on this page.';
     } else if (!showStats) {
       summary.textContent = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
     }
@@ -513,13 +529,19 @@ async function main(): Promise<void> {
       if (files.open) requestAnimationFrame(fitFileRows);
     }
 
-    actions.hidden = repo === null || !settings.enabled;
+    actions.hidden = repo === null || scope === null || !settings.enabled;
     renderRepoConfig(settings.enabled && decision.allowed ? (state?.repoConfig ?? null) : null);
-    if (repo !== null) {
-      const org = orgOf(repo);
-      const orgDecision = decideRepo(rules, ownerProbe(org));
-      renderRuleButton(toggleRepo, repo, decision.allowed, repo);
-      renderRuleButton(toggleOrg, `${org}/*`, orgDecision.allowed, org);
+    if (repo !== null && scope !== null) {
+      renderRuleButton(toggleRepo, scope, decision.allowed, scope);
+      if (provider === 'github') {
+        const org = orgOf(repo);
+        const orgDecision = decideRepo(rules, ownerProbe(org));
+        renderRuleButton(toggleOrg, `${org}/*`, orgDecision.allowed, org);
+      } else {
+        const namespace = scope.slice(0, scope.lastIndexOf('/'));
+        const target = `${namespace}/${provider === 'gitlab' ? '**' : '*'}`;
+        renderRuleButton(toggleOrg, target, decideRepo(rules, ownerProbe(namespace)).allowed, target);
+      }
     }
   }
 

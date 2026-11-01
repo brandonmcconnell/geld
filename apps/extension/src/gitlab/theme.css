@@ -1,0 +1,90 @@
+/* Semantic tokens observed on GitLab.com merge request pages in both themes.
+ * Geometry follows the native diff header and medium default button. */
+html[data-geld-provider="gitlab"] {
+  --geld-provider-font-family: var(--gl-font-family-regular);
+  --geld-provider-font-size: var(--gl-font-size-base);
+  --geld-provider-line-height: 1.5;
+  --geld-provider-font-weight: var(--gl-font-weight-normal);
+  --geld-provider-heading-weight: var(--gl-font-weight-bold);
+  --geld-provider-font: var(--gl-font-weight-normal) var(--gl-font-size-base)/1.5 var(--gl-font-family-regular);
+  --geld-provider-font-small: var(--gl-font-weight-normal) var(--gl-font-size-sm)/1.5 var(--gl-font-family-regular);
+  --geld-provider-byline-font: var(--geld-provider-font);
+  --geld-provider-text: var(--gl-text-color-default);
+  --geld-provider-text-subtle: var(--gl-text-color-subtle);
+  --geld-provider-link: var(--gl-text-color-link);
+  --geld-provider-success: var(--gl-text-color-success);
+  --geld-provider-danger: var(--gl-text-color-danger);
+  --geld-provider-warning: var(--gl-text-color-warning);
+  --geld-provider-bg: var(--gl-background-color-default);
+  --geld-provider-bg-subtle: var(--gl-background-color-subtle);
+  --geld-provider-border: var(--gl-border-color-default);
+  --geld-provider-border-width: 1px;
+  --geld-provider-radius: var(--gl-border-radius-lg);
+  --geld-provider-shadow: none;
+  --geld-provider-focus-ring: 0 0 0 1px var(--gl-focus-ring-inner-color), 0 0 0 3px var(--gl-focus-ring-outer-color);
+  --geld-provider-focus-outline: none;
+  --geld-provider-focus-offset: 0;
+  --geld-provider-button-font: var(--gl-font-weight-normal) var(--gl-font-size-base)/var(--gl-line-height-16) var(--gl-font-family-regular);
+  --geld-provider-button-weight: var(--gl-font-weight-normal);
+  --geld-provider-button-transition-duration: 0.2s;
+  --geld-provider-button-transition: color var(--geld-provider-button-transition-duration) cubic-bezier(0.22, 0.61, 0.36, 1), background-color var(--geld-provider-button-transition-duration) cubic-bezier(0.22, 0.61, 0.36, 1), border-color var(--geld-provider-button-transition-duration) cubic-bezier(0.22, 0.61, 0.36, 1), box-shadow var(--geld-provider-button-transition-duration) cubic-bezier(0.22, 0.61, 0.36, 1), text-decoration-color var(--geld-provider-button-transition-duration) cubic-bezier(0.22, 0.61, 0.36, 1);
+  --geld-provider-button-bg: var(--gl-button-default-primary-background-color-default);
+  --geld-provider-button-text: var(--gl-button-default-primary-foreground-color-default);
+  --geld-provider-button-border: var(--gl-button-default-primary-border-color-default);
+  --geld-provider-button-hover-bg: var(--gl-button-default-primary-background-color-hover);
+  --geld-provider-button-hover-text: var(--gl-button-default-primary-foreground-color-hover);
+  --geld-provider-button-hover-border: var(--gl-button-default-primary-border-color-hover);
+  --geld-provider-button-active-bg: var(--gl-button-default-primary-background-color-active);
+  --geld-provider-button-active-text: var(--gl-button-default-primary-foreground-color-active);
+  --geld-provider-button-active-border: var(--gl-button-default-primary-border-color-active);
+  --geld-provider-button-focus-bg: var(--gl-button-default-primary-background-color-focus);
+  --geld-provider-button-focus-text: var(--gl-button-default-primary-foreground-color-focus);
+  --geld-provider-button-focus-border: var(--gl-button-default-primary-border-color-focus);
+  --geld-provider-button-border-width: 1px;
+  --geld-provider-button-disabled-bg: var(--gl-button-disabled-background-color);
+  --geld-provider-button-disabled-text: var(--gl-button-disabled-foreground-color);
+  --geld-provider-button-disabled-border: var(--gl-button-disabled-border-color);
+  --geld-provider-button-radius: var(--gl-button-border-radius);
+  --geld-provider-button-min-height: var(--gl-spacing-scale-7);
+  --geld-provider-button-padding: 0 var(--gl-spacing-scale-4);
+  --geld-provider-overlay-font: var(--geld-provider-font-small);
+  --geld-provider-overlay-bg: var(--gl-background-color-overlap);
+  --geld-provider-overlay-radius: var(--gl-feedback-border-radius);
+  --geld-provider-overlay-padding: var(--gl-spacing-scale-3) var(--gl-spacing-scale-4);
+  --geld-provider-overlay-border-width: 0;
+  --geld-provider-overlay-filter: drop-shadow(0 0 0.5px var(--gl-shadow-color-default)) drop-shadow(0 0.5px 1px var(--gl-shadow-color-default)) drop-shadow(0 1px 3px var(--gl-shadow-color-default));
+  --geld-provider-overlay-z-index: 1060;
+  --geld-provider-overlay-shadow: none;
+  --geld-provider-space-1: var(--gl-spacing-scale-1);
+  --geld-provider-space-2: var(--gl-spacing-scale-2);
+  --geld-provider-space-3: var(--gl-spacing-scale-3);
+  --geld-provider-space-4: var(--gl-spacing-scale-4);
+  --geld-provider-space-5: var(--gl-spacing-scale-5);
+  --geld-provider-space-6: var(--gl-spacing-scale-6);
+}
+
+/* Rapid diff code-theme variables are inherited inside the file, not on html. */
+html[data-geld-provider="gitlab"] .geld-provider-line-fold {
+  color: var(--code-diff-hunk-header-color);
+  background: var(--code-diff-hunk-header-background-color);
+  font-family: var(--font-family-monospace);
+  font-size: var(--rd-body-font-size);
+  font-weight: var(--gl-font-weight-normal);
+  line-height: var(--rd-body-font-line-height);
+}
+html[data-geld-provider="gitlab"] .geld-provider-line-fold__toggle:hover {
+  color: var(--code-diff-expand-button-hover-color);
+  background: var(--code-diff-expand-button-hover-background-color);
+}
+html[data-geld-provider="gitlab"] .geld-provider-line-fold__toggle:focus-visible {
+  box-shadow: none;
+  outline: 1px solid var(--gl-focus-ring-outer-color);
+  outline-offset: 0;
+}
+html[data-geld-provider="gitlab"] :is(.geld-provider-line-fold__line, .geld-provider-line-fold__status, .geld-provider-line-fold__partial) {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-geld-provider="gitlab"] { --geld-provider-button-transition-duration: 0.01ms; }
+}

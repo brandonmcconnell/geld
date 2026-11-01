@@ -1,0 +1,33 @@
+.geld-provider-reviewer-identity {
+  margin-block: var(--geld-provider-space-3);
+  color: var(--geld-provider-text);
+  font: var(--geld-provider-font);
+}
+.geld-provider-reviewer-identity > summary { cursor: pointer; width: fit-content; }
+.geld-provider-reviewer-identity > summary:focus-visible {
+  box-shadow: var(--geld-provider-focus-ring);
+  outline: var(--geld-provider-focus-outline);
+  outline-offset: var(--geld-provider-focus-offset);
+  border-radius: var(--geld-provider-button-radius);
+}
+.geld-provider-reviewer-identity__content {
+  margin-block-start: var(--geld-provider-space-3);
+  padding: var(--geld-provider-space-4);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  background: var(--geld-provider-bg-subtle);
+  overflow-wrap: anywhere;
+}
+.geld-provider-reviewer-identity p { margin-block: 0 var(--geld-provider-space-3); }
+.geld-provider-reviewer-identity dl { margin-block: 0 var(--geld-provider-space-3); }
+.geld-provider-reviewer-identity dt { color: var(--geld-provider-text-subtle); font-weight: var(--geld-provider-font-weight); }
+.geld-provider-reviewer-identity dd { margin-inline: 0; margin-block: 0 var(--geld-provider-space-2); }
+.geld-provider-reviewer-identity a { color: var(--geld-provider-link); }
+.geld-provider-reviewer-identity .geld-provider-review__source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--geld-provider-space-2);
+  margin: var(--geld-provider-space-3) 0 0;
+}
+.geld-provider-reviewer-identity [hidden] { display: none !important; }
+.geld-provider-reviewer-identity__error { color: var(--geld-provider-danger); }

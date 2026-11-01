@@ -1,0 +1,190 @@
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
+import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewThread } from '@geld/review';
+import type { ProviderAiState } from './ai';
+import { renderProviderReviewPanel } from './review-panel';
+
+const subject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: 'a'.repeat(40) } as const;
+const reviewUrl = 'https://gitlab.com/group/subgroup/project/-/merge_requests/42';
+
+function comment(id: string, body = 'Check the response before reading it.'): ProviderReviewComment {
+  return { id, anchor: `note_${id}`, url: `${reviewUrl}#note_${id}`, author: { id: 'user-1', login: 'alice' }, body, createdAt: '2026-11-01T12:00:00Z' };
+}
+
+function thread(id: string, overrides: Partial<ProviderReviewThread> = {}): ProviderReviewThread {
+  return { id: id.repeat(40), anchor: `discussion_${id.repeat(40)}`, url: `${reviewUrl}#note_${id === 'b' ? '2' : '1'}`, path: `${id}.ts`, resolved: false, outdated: false, comments: [comment(id === 'b' ? '2' : '1')], ...overrides };
+}
+
+function input(threads: readonly ProviderReviewThread[] = []): ProviderReviewInput {
+  return { subject, threads, reviewers: [], checks: [] };
+}
+
+function host(): HTMLElement {
+  const value = document.createElement('div');
+  document.body.append(value);
+  return value;
+}
+
+beforeEach(() => document.body.replaceChildren());
+
+describe('provider conversation digest', () => {
+  it('keeps original untrusted bodies as text and refuses unsafe source and check links', () => {
+    const attack = '<img src=x onerror="alert(1)"><script>alert(2)</script>';
+    const panel = renderProviderReviewPanel(host(), {
+      ...input([thread('a', { comments: [comment('1', `**Unsafe** ${attack}`)] })]),
+      checks: [{ name: attack, status: 'completed', conclusion: 'success', sha: subject.headSha, detailsUrl: 'javascript:alert(1)' }],
+    }, {
+      comments: [{ ...comment('8', attack), url: 'https://user:secret@gitlab.com/private' }],
+      events: [{ id: 'event-1', url: 'javascript:alert(3)', author: { id: 'u2', login: attack }, body: attack, createdAt: '2026-11-01T12:00:00Z' }],
+    });
+    expect(panel.element.querySelector('img,script')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-source="note_1"] .geld-provider-review__body')?.textContent).toBe(`**Unsafe** ${attack}`);
+    expect([...panel.element.querySelectorAll('a')].every((value) => value.href.startsWith(`${reviewUrl}#note_`))).toBe(true);
+    expect(panel.element.querySelector('[data-geld-source="note_8"] a')).toBeNull();
+    expect(panel.element.textContent).toContain(attack);
+  });
+
+  it('preserves expanded conversations and closed groups across replies and state updates', () => {
+    const original = thread('a');
+    const panel = renderProviderReviewPanel(host(), input([original]));
+    const item = panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]');
+    const group = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="open"]');
+    expect(item).not.toBeNull();
+    if (item !== null) item.open = true;
+    if (group !== null) group.open = false;
+    panel.update(input([{ ...original, comments: [...original.comments, comment('3', 'The missing response still needs a guard.')] }]));
+    expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="open"]')?.open).toBe(false);
+    expect(panel.element.querySelectorAll('[data-geld-source]')).toHaveLength(2);
+    panel.update(input([{ ...original, resolved: true }]));
+    expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector('[data-geld-review-group="resolved"]')).not.toBeNull();
+    panel.update({ ...input([{ ...original, url: original.url.replace('/42#', '/43#'), comments: original.comments.map((entry) => ({ ...entry, url: entry.url.replace('/42#', '/43#') })) }]), subject: { ...subject, id: '43' } });
+    expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(false);
+  });
+
+  it('keeps outdated and resolved separate and reads no verdict into an unknown bot login', () => {
+    const outdated = thread('a', { outdated: true, comments: [{ ...comment('1'), author: { id: 'unknown', login: 'cursor[bot]', automated: true } }] });
+    const resolved = thread('b', { resolved: true, outdated: true });
+    const panel = renderProviderReviewPanel(host(), input([outdated, resolved]));
+    expect(panel.element.querySelector('[data-geld-review-group="outdated"] [data-state="outdated"]')).not.toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-group="resolved"] [data-state="resolved"]')).not.toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-group="open"]')).toBeNull();
+    expect(panel.element.textContent).toContain('Automated account');
+    expect(panel.element.textContent).not.toMatch(/Bugbot|Clean|Findings|running review/i);
+    expect([...panel.element.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Copy digest']);
+  });
+
+  it('distinguishes a known empty review, an unavailable source and malformed data', () => {
+    const panel = renderProviderReviewPanel(host(), input());
+    expect(panel.element.dataset.state).toBe('ready');
+    expect(panel.element.textContent).toContain('No review threads.');
+    panel.update(input(), { complete: false, unavailable: [{ area: 'Discussions', reason: 'Sign in is required.' }] });
+    expect(panel.element.dataset.state).toBe('partial');
+    expect(panel.element.textContent).toContain('No review threads in the available data.');
+    expect(panel.element.textContent).toContain('Discussions: Sign in is required.');
+    panel.update(input([thread('a', { comments: [{ ...comment('1'), url: 'https://evil.example/comment' }] })]), {});
+    expect(panel.element.dataset.state).toBe('unavailable');
+    expect(panel.element.textContent).toContain('The review source could not be read.');
+    expect(panel.element.textContent).not.toContain('No review threads.');
+  });
+
+  it('shows native reviewer standings and counts only CI on the current commit', () => {
+    const panel = renderProviderReviewPanel(host(), {
+      ...input(),
+      reviewers: [
+        { author: { id: '1', login: 'alice' }, state: 'approved' },
+        { author: { id: '2', login: 'bob' }, state: 'changes_requested' },
+        { author: { id: '3', login: 'carol' }, state: 'pending' },
+      ],
+      checks: [
+        { name: 'Test', status: 'completed', conclusion: 'success', sha: subject.headSha, detailsUrl: 'https://ci.example/job/1' },
+        { name: 'Build', status: 'in_progress', conclusion: null, sha: subject.headSha },
+        { name: 'Old failure', status: 'completed', conclusion: 'failure', sha: 'b'.repeat(40) },
+        { name: 'Unknown result', status: 'completed', conclusion: null, sha: subject.headSha },
+      ],
+    }, { approvalsRequired: 2, approvalsLeft: 1 });
+    expect(panel.element.textContent).toContain('1/2 required approvals · 1 change request');
+    expect(panel.element.textContent).toContain('Review requested');
+    const checks = panel.element.querySelector('details[data-geld-review-key="checks"]');
+    expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · 1 passed · 1 running · 1 unknown');
+    expect(checks?.textContent).toContain('Earlier commit · Failed');
+    expect(checks?.querySelector('a')?.rel).toBe('noopener noreferrer');
+  });
+
+  it('copies native source links and leaves navigation to the provider callback', async () => {
+    let copied = '';
+    const opened = vi.fn((_url: string, _anchor: string, event: MouseEvent) => event.preventDefault());
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { onOpenSource: opened, copyText: (text) => { copied = text; } });
+    panel.element.querySelector<HTMLAnchorElement>('[data-geld-source="note_1"] a')?.click();
+    expect(opened).toHaveBeenCalledWith(`${reviewUrl}#note_1`, 'note_1', expect.any(MouseEvent));
+    panel.element.querySelector<HTMLButtonElement>('button')?.click();
+    await vi.waitFor(() => expect(copied).toContain(`${reviewUrl}#note_1`));
+    expect(copied).toContain('Open: Check the response before reading it.');
+    expect(copied).not.toContain('github.com');
+    panel.destroy();
+    expect(document.querySelector('.geld-provider-review')).toBeNull();
+    panel.update(input());
+    expect(document.querySelector('.geld-provider-review')).toBeNull();
+  });
+
+  it('renders bound native bot results without granting a clean verdict to partial data', () => {
+    const author = { id: '38968537', login: 'group_117740890_bot_4b22dd1a4e94814ac4828214cbd93cfe', automated: true };
+    const finding = { ...comment('1', '**Fix malformed table rows in the properties table.**'), author };
+    const native: ProviderReviewInput = { ...input([thread('a', { resolved: true, comments: [finding] })]), bots: [{ id: 'coderabbit', authorId: author.id, login: author.login }], complete: true };
+    const summary = { ...comment('2', '**Actionable comments posted: 1**'), author, createdAt: '2026-11-01T11:59:00Z' };
+    const panel = renderProviderReviewPanel(host(), native, { comments: [summary] });
+    const row = panel.element.querySelector('[data-geld-review-bot="coderabbit"]');
+    expect(row?.textContent).toContain('CodeRabbit');
+    expect(row?.textContent).toContain('Findings resolved');
+    expect(row?.textContent).toContain(author.login);
+    expect(row?.querySelector('a')?.href).toBe(finding.url);
+    panel.update({ ...native, complete: false }, { comments: [summary] });
+    expect(panel.element.dataset.state).toBe('partial');
+    expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('count unavailable');
+    expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).not.toContain('No findings');
+  });
+
+  it('offers explicit identity only for unbound automated accounts and supported services', async () => {
+    const automated = { ...comment('1', '<!-- CodeRabbit marker is not an identity -->'), author: { id: '12345', login: 'unidentified-project-account', automated: true } };
+    const save = vi.fn(async (_comment: ProviderReviewComment, _botId: string) => undefined);
+    const options = { identifyReviewer: { repository: { provider: subject.provider, origin: subject.origin, path: subject.repository }, choices: [{ id: 'coderabbit', label: 'CodeRabbit' }, { id: 'copilot', label: 'Copilot' }], save } };
+    const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [automated, { ...comment('2'), author: { id: '67890', login: 'human-reviewer', automated: false } }] })]), options);
+    expect(save).not.toHaveBeenCalled();
+    const identities = panel.element.querySelectorAll('.geld-provider-reviewer-identity');
+    expect(identities).toHaveLength(1);
+    expect(identities[0]?.textContent).not.toContain('Copilot');
+    expect(identities[0]?.textContent).toContain('12345');
+    [...panel.element.querySelectorAll<HTMLButtonElement>('.geld-provider-reviewer-identity button')].find((button) => button.textContent === 'CodeRabbit')?.click();
+    expect(save).not.toHaveBeenCalled();
+    expect(panel.element.querySelector('.geld-provider-reviewer-identity__confirmation')?.textContent).toContain('Trust unidentified-project-account as CodeRabbit for this repository?');
+    [...panel.element.querySelectorAll<HTMLButtonElement>('.geld-provider-reviewer-identity button')].find((button) => button.textContent === 'Trust')?.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledWith(automated, 'coderabbit'));
+    panel.update({ ...input([thread('a', { comments: [automated] })]), bots: [{ id: 'coderabbit', authorId: '12345' }] }, options);
+    expect(panel.element.querySelector('.geld-provider-reviewer-identity')).toBeNull();
+  });
+
+  it('runs and cancels AI only from controls and keeps original human text alongside transformed findings', () => {
+    const original = input([thread('a')]);
+    const base = buildProviderReviewItems(original);
+    const run = vi.fn();
+    const cancel = vi.fn();
+    const state: ProviderAiState = { kind: 'ready', key: providerReviewKey(original.subject), pending: new Set(), stale: false, summary: { tldr: '<script>plain text</script>', updatedAt: '2026-11-01T13:00:00Z', forItems: base.map((item) => item.id) } };
+    const options = { ai: { enabled: true, state, run, cancel }, transformItems: (items: typeof base) => items.map((item) => ({ ...item, title: 'AI consolidated title', context: 'Additional context', rewritten: true })) };
+    const panel = renderProviderReviewPanel(host(), original, options);
+    expect(run).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(panel.element.querySelector('[data-geld-item] > summary')?.textContent).toContain('AI consolidated title');
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
+    expect(panel.element.querySelector('[data-geld-ai-summary]')?.textContent).toContain('<script>plain text</script>');
+    expect(panel.element.querySelector('script')).toBeNull();
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
+    expect(run).toHaveBeenCalledTimes(1);
+    panel.update(original, { ...options, ai: { ...options.ai, state: { ...state, kind: 'running', pending: new Set(['tldr']) } } });
+    expect(panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.disabled).toBe(true);
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-cancel]')?.click();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+});
