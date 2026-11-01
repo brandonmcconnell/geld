@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
+import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -340,6 +341,7 @@ async function runCase(name, url, body, discovery = false) {
       }
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
+    if (name === 'bitbucket-diff') observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     abort.signal.throwIfAborted();
     item.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) };
@@ -2236,6 +2238,14 @@ try {
       if (name === 'bitbucket-diff') {
         await bitbucketFiltering(page, item);
         assert.equal(item.restored.hasDiff, true, 'Bitbucket diff adapter did not activate');
+        await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget: () => {
+          currentCaseAbort?.signal.throwIfAborted();
+          assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Native context expansion suppressed by carried Bitbucket cooldown');
+          const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
+          const budget = report.quotaPolicy.conservativeObservedRequestBudget;
+          assert.ok(active + 4 < budget, 'Insufficient carried rolling request buffer for bounded native context input');
+          return { observedWithinRollingHour: active, budget, buffer: 4, basis: 'A conservative buffer, not a claim about native expansion request cost. Existing global request/429 aborts remain authoritative.' };
+        } });
       } else {
         item.digest = await poll(() => page.evaluate(() => {
           const panel = document.querySelector('.geld-provider-review');
@@ -2258,7 +2268,7 @@ try {
       const focused = await bitbucketNativeStyles(page);
       item.nativeButtonFocus = { mechanism: 'Programmatic native focus, not menu activation', button: focused.moreActions, border: focused.moreActionsBorder };
       item.featureParity = 'partial';
-      return { status: 'passed', verified: name === 'bitbucket-diff' ? 'Installed complete diff counts, real synchronized pattern filtering, actual native file hiding/count rewrite, and restoration on this public fixture.' : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
+      return { status: 'passed', verified: name === 'bitbucket-diff' ? 'Installed complete diff counts, real synchronized filtering/restoration, trusted native context expansion, exact original-source shell ranges and native ADS pseudo-highlight colors on the selected theme.' : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
     });
   }
 
