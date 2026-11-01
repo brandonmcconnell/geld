@@ -1470,6 +1470,9 @@ Provider-specific surfaces translate settings and sources into shared review and
 - **Digest bylines and native merge rules remain source facts.**
   Native author names, aliases, avatars and role badges are read only from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
   Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
+  Bitbucket author names use the native body font, medium weight and default text token independently of its smaller subdued timestamps.
+  Copied Atlassian avatar classes can fill the containing box through logical sizing even when the image has measured physical dimensions, so each verified avatar lives in its own measured, non-growing relative slot rather than directly in the full-width byline.
+  Preserve native avatar classes and theme tokens, and constrain both logical and physical slot dimensions without freezing computed colors.
   Bitbucket's native merge-check list supplies individual rule labels and observed states, including separate minimum approval and default-reviewer approval rules.
   Those sidebar rules do not establish a numeric approval threshold, complete API availability, review permission or permission to merge.
 - **Published summary caches need an unambiguous machine frame.**
