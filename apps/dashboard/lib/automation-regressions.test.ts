@@ -5,7 +5,7 @@ import { managedAccessAdapter } from '@geld/providers';
 import type { SqlExecutor } from './transactions';
 vi.mock('server-only',()=>({}));
 import { prepareInstallationMigration, linkVerifiedInstallation } from './app-migrations';
-import { recoverGuideCredits } from './guide-publications';
+import { recoverGuideCredits,recordGuidePublication } from './guide-publications';
 import { createGeneratedContentStore } from './content-store';
 import { readableRepositoryDefaults } from './review-defaults';
 import { reserveCredits } from './credits';
@@ -82,6 +82,23 @@ describe('review defaults visibility',()=>{
       expect(result).toEqual([{id:'r',owner:'org',name:'visible',settings:{}}]);
       expect(JSON.stringify(result)).not.toContain('secret-name');
       expect(JSON.stringify(result)).not.toContain('push');
+    } finally {await f.db.close();}
+  });
+});
+
+describe('automatic publication ownership',()=>{
+  it('refuses a replaced job claim or a reservation that has already been refunded',async()=>{
+    const f=await fixture();
+    try {
+      const reservation=await f.run(sql=>reserveCredits(sql,{teamId:'t',actorId:'u',credits:1,key:'claim-test'}));
+      if(!reservation.ok)throw new Error('Reservation failed');
+      await f.db.exec("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key,state,locked_at,lock_token) VALUES('job','t','automatic_guide','r','job-key','running',now(),'new-claim')");
+      const publication={reservationId:reservation.id,teamId:'t',repoId:'r',fingerprint:'fingerprint',headSha:'head',claim:{id:'job',token:'old-claim'}};
+      await expect(f.run(sql=>recordGuidePublication(sql,publication))).rejects.toThrow('claim changed');
+      expect((await f.db.query('SELECT reservation_id FROM guide_publications')).rows).toEqual([]);
+      await f.db.exec("UPDATE credit_reservations SET state='refunded'");
+      await expect(f.run(sql=>recordGuidePublication(sql,{...publication,claim:{id:'job',token:'new-claim'}}))).rejects.toThrow('reservation changed');
+      expect((await f.db.query('SELECT reservation_id FROM guide_publications')).rows).toEqual([]);
     } finally {await f.db.close();}
   });
 });
