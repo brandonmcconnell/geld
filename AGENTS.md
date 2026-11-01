@@ -1403,7 +1403,9 @@ Provider-specific surfaces translate settings and sources into shared review and
 - **Native branding belongs to each provider.**
   Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
-  GitLab's live comment body and byline use GitLab Sans at 14px/21px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
+  GitLab's live comment body uses GitLab Sans at 14px/21px and native author headers use 14px/20px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
+  Native body and author typography use `--font-family-sans-serif`, while `--gl-font-family-regular` can repeat GitLab Sans in its computed stack.
+  Author profile links use the native default text color rather than the generic link color in both themes.
   Native GitLab default buttons have their own semantic background, foreground, border and interaction-state tokens, including a translucent background and transparent border in dark mode.
   Match GitLab's reduced-motion behavior as well as its normal button transition, since a copied transition otherwise keeps animating when native controls honor the reader's preference.
   GitLab focus uses its inner/outer ring tokens, and its informational popovers use the overlap surface, small font and feedback radius tokens.

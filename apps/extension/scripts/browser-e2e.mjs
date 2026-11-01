@@ -888,7 +888,16 @@ async function localReviewedFlag(page) {
     const item = button?.closest('[data-geld-item]');
     if (panel === null || button === undefined || item === null || item === undefined) return null;
     let headSha = null;
-    try { headSha = JSON.parse(document.querySelector('[data-noteable-type="MergeRequest"][data-noteable-data]')?.getAttribute('data-noteable-data') ?? 'null')?.diff_head_sha ?? null; } catch { /* Native data may still be hydrating. */ }
+    let headEvidence = null;
+    try {
+      const app = JSON.parse(document.querySelector('[data-rapid-diffs][data-app-data]')?.getAttribute('data-app-data') ?? 'null');
+      const review = /^(.*\/-\/merge_requests\/([1-9]\d*))\/?$/.exec(location.pathname);
+      const selected = app?.versions?.source_versions?.filter((version) => version.selected === true && version.latest === true) ?? [];
+      if (review !== null && app?.mr_path === review[1] && String(app?.iid) === review[2] && selected.length === 1) {
+        headSha = selected[0].head_sha;
+        headEvidence = { mrPath: app.mr_path, iid: app.iid, versionId: selected[0].id, selected: selected[0].selected, latest: selected[0].latest };
+      }
+    } catch { /* Native Rapid Diffs data may still be hydrating. */ }
     const anchors = [...item.querySelectorAll('[data-geld-source]')].map((node) => node.getAttribute('data-geld-source'));
     const sources = anchors.map((anchor) => {
       const source = document.getElementById(anchor);
@@ -896,7 +905,7 @@ async function localReviewedFlag(page) {
       return { anchor, nativeId: source?.id ?? null, discussionId: thread?.getAttribute('data-discussion-id') ?? null, resolved: thread?.getAttribute('data-discussion-resolved') ?? null, resolvable: thread?.getAttribute('data-discussion-resolvable') ?? null };
     });
     const rows = (selector) => [...panel.querySelectorAll(selector)].map((node) => ({ id: node.getAttribute('data-geld-review-bot'), state: node.getAttribute('data-state'), text: node.textContent.replace(/\s+/g, ' ').trim(), links: [...node.querySelectorAll('a[href]')].map((link) => link.href) }));
-    return { itemId, headSha, pressed: button.getAttribute('aria-pressed'), disabled: button.disabled, buttonText: button.textContent,
+    return { itemId, headSha, headEvidence, pressed: button.getAttribute('aria-pressed'), disabled: button.disabled, buttonText: button.textContent,
       localStatus: item.getAttribute('data-state'), statusText: item.querySelector('.geld-provider-review__item-state')?.textContent,
       group: item.closest('[data-geld-review-group]')?.getAttribute('data-geld-review-group'), notice: item.querySelector('[data-geld-local-review-notice]')?.textContent ?? null,
       sourceLinks: [...item.querySelectorAll('[data-geld-source] .geld-provider-review__byline > a[href]')].map((link) => link.href), nativeSources: sources, checks: rows('.geld-provider-review__check'), bots: rows('[data-geld-review-bot]'), aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length };
