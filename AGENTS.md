@@ -1390,6 +1390,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   GitLab popover body padding is 8px vertically and 12px horizontally in the observed default density, and its small text is 12px/18px.
   Rapid diff fold rows inherit the selected code theme's `--code-*` colors and `--rd-body-font-size`/line-height with the native monospace font, rather than the surrounding UI's Sans font or surface palette.
   Define code-theme overrides at the fold row, since variables scoped below the document root cannot resolve in a bridge computed on `html`.
+  GitLab's Changes badge can be pointer-transparent, so bind its surrounding native tab link as the hover and keyboard target while retaining the count span for text updates.
+  The native line-count `aria-label` lives on a wrapper outside the numeric span, so update its count alongside the visible text and restore the latest native wording during teardown.
   Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.
   Current Atlaskit default buttons draw the border on `::after` so it does not add to the button's layout height.
   Token mappings documented from Atlassian's design system do not establish that Bitbucket has deployed the same component version or typography rollout.

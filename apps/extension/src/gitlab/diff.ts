@@ -112,8 +112,18 @@ export function gitLabHeaderTargets(doc: Document): readonly ProviderHeaderTarge
     additions: root.querySelector<HTMLElement>('[data-testid="js-file-addition-line"]'),
     deletions: root.querySelector<HTMLElement>('[data-testid="js-file-deletion-line"]'),
     files: root.querySelector<HTMLElement>(':scope > .diff-stats-group > span'),
+    labels: (['additions', 'deletions'] as const).flatMap((count) => {
+      const target = root.querySelector<HTMLElement>(`[data-testid="js-file-${count === 'additions' ? 'addition' : 'deletion'}-line"]`);
+      const host = target?.closest<HTMLElement>('[aria-label]');
+      return host === null || host === undefined || !root.contains(host)
+        || (host !== target && host.querySelectorAll('[data-testid="js-file-addition-line"], [data-testid="js-file-deletion-line"]').length !== 1)
+        ? [] : [{ host, attribute: 'aria-label' as const, count }];
+    }),
   }));
-  return [...counts, ...[...doc.querySelectorAll<HTMLElement>('[data-testid="diffs-tab"] .js-changes-tab-count')].map((files) => ({ files, additions: null, deletions: null }))];
+  return [...counts, ...[...doc.querySelectorAll<HTMLElement>('[data-testid="diffs-tab"] .js-changes-tab-count')].map((files) => {
+    const tab = files.closest<HTMLAnchorElement>('a[data-action="diffs"][data-toggle="tabvue"]');
+    return { files, additions: null, deletions: null, hoverHosts: tab === null ? [] : [tab] };
+  })];
 }
 
 export function gitLabListRows(doc: Document): readonly ProviderListRow[] {

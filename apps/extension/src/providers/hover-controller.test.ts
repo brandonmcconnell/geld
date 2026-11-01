@@ -130,6 +130,30 @@ describe('provider controller count hover integration', () => {
     expect(node('#add').textContent).toBe('7 additions');
   });
 
+  it('uses the native Changes link for pointer and keyboard hover while synchronizing spoken counts', async () => {
+    const base = fixture();
+    document.body.insertAdjacentHTML('afterbegin', '<a id="changes" href="#diff"><span id="badge" style="pointer-events:none">2 files</span></a>');
+    node('#add').setAttribute('aria-label', 'Added 7 lines.');
+    vi.spyOn(node('#changes'), 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 70, 100, 24));
+    const controller = start({ ...base, headerTargets: () => [{ additions: node('#add'), deletions: node('#del'), files: node('#badge'), hoverHosts: [node('#changes')], labels: [{ host: node('#add'), attribute: 'aria-label', count: 'additions' }] }] });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(node('#badge').textContent).toBe('1 file');
+    expect(node('#add').getAttribute('aria-label')).toBe('Added 4 lines.');
+    hover(node('#changes'));
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden).toBe(false);
+    expect(tooltip()?.textContent).toContain('Essential 1 file +4 −1');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    node('#changes').dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    node('#changes').focus();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden).toBe(false);
+    expect(node('#changes').getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    controller.stop();
+    expect(node('#add').getAttribute('aria-label')).toBe('Added 7 lines.');
+    expect(node('#changes').hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('binds a list chip to its own row totals and removes focus/tooltip ownership when list stats are disabled', async () => {
     const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>(async (request) => ({
       complete: true, revision: SHA,

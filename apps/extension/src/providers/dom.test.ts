@@ -77,4 +77,32 @@ describe('native provider count ownership', () => {
     expect(count.textContent).toBe('333 additions');
     expect(count.querySelector('svg')).toBe(replacement);
   });
+
+  it('keeps spoken line counts consistent and restores the newest native wording', () => {
+    const count = host();
+    count.setAttribute('aria-label', 'Added 1,204 lines.');
+    const counts = new ProviderCounts();
+    counts.write(count, 1);
+    counts.writeAttribute(count, 'aria-label', 1);
+    expect(count.textContent).toBe('1 addition');
+    expect(count.getAttribute('aria-label')).toBe('Added 1 line.');
+    count.setAttribute('aria-label', 'Added 208 lines.');
+    counts.writeAttribute(count, 'aria-label', 0);
+    expect(count.getAttribute('aria-label')).toBe('Added 0 lines.');
+    counts.restore();
+    expect(count.getAttribute('aria-label')).toBe('Added 208 lines.');
+  });
+
+  it('does not rewrite aggregate labels or overwrite later native accessibility changes', () => {
+    const count = host();
+    const counts = new ProviderCounts();
+    count.title = '3 files, 36 additions';
+    counts.writeAttribute(count, 'title', 4);
+    expect(count.title).toBe('3 files, 36 additions');
+    count.setAttribute('aria-label', 'Added 36 lines.');
+    counts.writeAttribute(count, 'aria-label', 4);
+    count.setAttribute('aria-label', 'Added 80 lines.');
+    counts.restore();
+    expect(count.getAttribute('aria-label')).toBe('Added 80 lines.');
+  });
 });
