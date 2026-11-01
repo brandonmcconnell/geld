@@ -89,6 +89,18 @@ html[data-geld-provider="bitbucket"] .geld-provider-review__body[data-geld-bitbu
   font: var(--ak-renderer-editor-font-normal-text, inherit);
 }
 
+/* Only the verified title line with an owned sibling chip reserves count width. */
+html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> .geld-provider-list-counts[data-geld-ui]) > div[role="presentation"]:has(> span > a[data-qa="pull-request-row-link"]) {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> div[role="presentation"] > span > a[data-qa="pull-request-row-link"]) > .geld-provider-list-counts[data-geld-ui] {
+  flex: 0 0 auto;
+}
+
 /* Embedded Pipelines shell: native ADS code tokens, no font/DOM overrides. */
 ::highlight(geld-bitbucket-shell-plain), ::highlight(geld-bitbucket-shell-subst) { color: var(--ds-text-code-default); }
 ::highlight(geld-bitbucket-shell-keyword) { color: var(--ds-text-code-keywords); }
