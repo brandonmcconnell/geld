@@ -1617,6 +1617,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   List and table recovery notices use appropriate native container tags without moving rows or taking their handlers, and rows with no reliable author identity stay untouched.
   Bitbucket list count chips mount beside the verified native title tooltip wrapper on the same title line, because placing them inside its span also triggers the provider's title tooltip over the breakdown.
   Bitbucket list author filtering uses a separate one-page UUID/name projection only when valid personal author rules are active and the current repository is allowed, independently of list counts.
+  Native public collection requests use 25 entries and a `q=state="MERGED"` predicate, so translate only the validated native state enum into that fixed query shape rather than assuming the generic 100-entry pagination ceiling is supported by this endpoint.
+  Capture bounded query-validation error fields before an installed assertion rejects a failed author response, without copying arbitrary error JSON or login HTML into evidence.
   Match `bitbucket.org/uuid/<canonical-uuid>` through the existing author glob grammar and keep the readable API display name separate, without nickname, account-ID, avatar or reviewer inference.
   Require an explicit documented native list state, decline unsupported query selections, map only exact returned current PR IDs, and leave omitted or unknown identities visible without pagination, diff/config fan-out or automatic retries.
   Abort obsolete author visits on navigation or relevant settings changes, and a background pause must not turn later mutation refreshes into another metadata request.

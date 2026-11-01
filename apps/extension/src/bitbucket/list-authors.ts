@@ -20,8 +20,9 @@ function selection(url: URL): { readonly repository: string; readonly endpoint: 
   try { parts = match.slice(1).map(decodeURIComponent); } catch { return null; }
   if (parts.some((part) => part === '' || part === '.' || part === '..' || /[\s\\/?#%\u0000-\u001f]/.test(part))) return null;
   const endpoint = new URL(`/2.0/repositories/${parts.map(encodeURIComponent).join('/')}/pullrequests`, 'https://api.bitbucket.org');
-  endpoint.searchParams.set('state', states[0] ?? '');
-  endpoint.searchParams.set('pagelen', '100');
+  // Native public list requests use this fixed predicate and page size; the generic 100 limit is not endpoint proof.
+  endpoint.searchParams.set('q', `state="${states[0] ?? ''}"`);
+  endpoint.searchParams.set('pagelen', '25');
   endpoint.searchParams.set('fields', FIELDS);
   return { repository: parts.join('/'), endpoint };
 }
@@ -65,7 +66,7 @@ export function createBitbucketListAuthorFetcher(fetcher: typeof fetch = fetch, 
     const response = await transport.fetch(current.endpoint, { signal, cache: 'no-cache', headers: { Accept: 'application/json' } }, fetcher);
     if (response.url !== current.endpoint.href) throw new Error('Bitbucket list author response left its scope');
     const value = await body(response, signal);
-    if (!record(value) || !Array.isArray(value.values) || value.values.length > 100) throw new Error('Bitbucket list author response is invalid');
+    if (!record(value) || !Array.isArray(value.values) || value.values.length > 25) throw new Error('Bitbucket list author response is invalid');
     const result: ProviderListAuthor[] = [];
     const seen = new Set<number>();
     for (const entry of value.values) {
