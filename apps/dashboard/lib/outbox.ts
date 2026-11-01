@@ -1,5 +1,4 @@
 import 'server-only';
-import {contentStore} from './content-store';
 import {enterpriseFetch} from './enterprise';
 import { z } from 'zod';
 import { transaction } from './transactions';
@@ -8,6 +7,7 @@ import { billingGateway } from './billing-gateway';
 import { sendEmail } from './email';
 import { dashboardOrigin } from './env';
 import { processGrant,repoRowSchema,refFor } from './team-access';
+import {fallbackSummaryUsage} from './fallback-usage';
 import {drainErasureJobs} from './erasure';
 import { recoverGuideCredits } from './guide-publications';
 import { contentStore } from './content-store';
@@ -36,7 +36,7 @@ async function handle(job:z.infer<typeof jobSchema>):Promise<boolean>{const db=d
   if(job.kind==='email_invite'){
     const user=z.object({email:z.string()}).safeParse((await db.query("SELECT u.email FROM users u JOIN team_invites i ON i.invited_user_id=u.id WHERE i.team_id=$1 AND u.id=$2 AND i.state='pending' AND i.expires_at>now()",[job.team_id,job.resource_id])).rows[0]);if(!user.success)return true;await sendEmail(user.data.email,'You have a Geld team invitation',`Review and accept your invitation: ${dashboardOrigin()}/inbox`,job.idempotency_key);return true;
   }
-  if(job.kind==='fallback_summary_email'){const period=z.object({start:z.iso.datetime(),end:z.iso.datetime()}).parse(job.payload);const usage=z.object({credits:z.coerce.number(),cents:z.coerce.number()}).parse((await db.query("SELECT COALESCE(sum(credits),0) AS credits,COALESCE(sum(overage_cents),0) AS cents FROM credit_reservations WHERE team_id=$1 AND state='settled' AND fallback=true AND settled_at>=$2 AND settled_at<$3",[job.team_id,period.start,period.end])).rows[0]);const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND m.role='admin'",[job.team_id])).rows);for(const user of users)await sendEmail(user.email,'Your weekly Geld safety-net usage',`The safety net used ${usage.credits} credits with $${(usage.cents/100).toFixed(2)} in overage this week. Review usage and your cap: ${dashboardOrigin()}/settings/billing`,`${job.idempotency_key}:${user.email}`);return true;}
+  if(job.kind==='fallback_summary_email'){const period=z.object({start:z.iso.datetime(),end:z.iso.datetime()}).parse(job.payload);const usage=await fallbackSummaryUsage(db,job.team_id??'',period);const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND m.role='admin'",[job.team_id])).rows);for(const user of users)await sendEmail(user.email,'Your weekly Geld safety-net usage',`The safety net used ${usage.credits} credits with $${(usage.cents/100).toFixed(2)} in overage this week. Review usage and your cap: ${dashboardOrigin()}/settings/billing`,`${job.idempotency_key}:${user.email}`);return true;}
   if(job.kind==='fallback_email'||job.kind==='email_access'){
     const users=z.array(z.object({email:z.string()})).parse((await db.query("SELECT u.email FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1 AND m.role='admin'",[job.team_id])).rows);for(const user of users)await sendEmail(user.email,job.kind==='fallback_email'?'Geld safety net was used':'A repository access request is waiting',job.kind==='fallback_email'?`The first safety-net overage has been recorded. Review usage and the cap: ${dashboardOrigin()}/settings/billing`:`Review this request and confirm your provider permissions: ${dashboardOrigin()}/teams/${job.team_id}`,`${job.idempotency_key}:${user.email}`);return true;
   }

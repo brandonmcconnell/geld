@@ -6,7 +6,8 @@ let engine:PGlite;
 const sql={query:async(text:string,values?:unknown[])=>engine.query(text,values)};
 vi.mock('./db',()=>({database:()=>({...sql,connect:async()=>({...sql,release:()=>undefined})})}));
 vi.mock('./team-access',async original=>({...await original<typeof import('./team-access')>(),processGrant:async()=>false}));
-import {prepareAccountErasure} from './erasure';
+import {decryptCredential} from './crypto';
+import {prepareAccountErasure,cleanupSchema} from './erasure';
 describe('account erasure boundaries',()=>{
  it('removes personal content and credentials while retaining only bounded encrypted external cleanup',async()=>{
   engine=new PGlite();vi.stubEnv('TOKEN_ENCRYPTION_KEY','synthetic-verification-key-at-least-32-characters');
@@ -21,9 +22,11 @@ describe('account erasure boundaries',()=>{
    INSERT INTO ai_providers(id,user_id,provider,label,enabled,settings) VALUES('ai','u','claude','Claude',true,'{"mode":"login"}');
    INSERT INTO relay_channels(id,kind,host,encrypted_secret,user_id) VALUES('channel','claude','claude.local.geld.invalid','encrypted','u');
    UPDATE ai_providers SET relay_channel='channel' WHERE id='ai';`);
+  await engine.exec("UPDATE team_repos SET removed_at='2026-10-31T12:00:00Z'; INSERT INTO generated_content_receipts(reservation_id,team_id,repo_id) VALUES('receipt','personal','repo')");
   await prepareAccountErasure('u');
-  expect((await engine.query('SELECT * FROM generated_content')).rows).toHaveLength(0);
+  expect((await engine.query('SELECT * FROM generated_content')).rows).toHaveLength(0);expect((await engine.query('SELECT * FROM generated_content_receipts')).rows).toHaveLength(0);
   const pending=await engine.query<{kind:string;encrypted_payload:string|null}>("SELECT kind,encrypted_payload FROM erasure_jobs WHERE state='pending'");expect(pending.rows).toHaveLength(1);expect(pending.rows[0]?.kind).toBe('provider_access');expect(pending.rows[0]?.encrypted_payload).toMatch(/^v1\./);expect(JSON.stringify(pending.rows)).not.toContain('deleted-user');
+  const encrypted=pending.rows[0]?.encrypted_payload;const text=encrypted?await decryptCredential(encrypted):null;if(!text)throw new Error('Cleanup snapshot missing');const restored=cleanupSchema.parse(JSON.parse(text));expect(restored.repo.removed_at).toEqual(new Date('2026-10-31T12:00:00Z'));
   await engine.exec("DELETE FROM users WHERE id='u'");
   expect((await engine.query('SELECT * FROM teams WHERE id=\'personal\'')).rows).toHaveLength(0);expect((await engine.query('SELECT * FROM ai_providers')).rows).toHaveLength(0);expect((await engine.query('SELECT * FROM relay_channels')).rows).toHaveLength(0);expect((await engine.query('SELECT seats FROM subscriptions WHERE team_id=\'shared\'')).rows).toEqual([{seats:1}]);expect((await engine.query('SELECT * FROM teams WHERE id=\'shared\'')).rows).toHaveLength(1);
   await engine.close();vi.unstubAllEnvs();

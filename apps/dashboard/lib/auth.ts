@@ -9,7 +9,6 @@ import { z } from 'zod';
 import { createApiTransport } from '@geld/github';
 import { database } from './db';
 import { configured, dashboardOrigin, isPreview } from './env';
-import {prepareAccountErasure} from './erasure';
 import { sendEmail } from './email';
 
 const bitbucketUser = z.object({ uuid: z.string(), display_name: z.string(), links: z.object({ avatar: z.object({ href: z.string() }) }) });
@@ -52,7 +51,7 @@ function createAuth() {
   return betterAuth({
     appName: 'Geld', database: db, secret, baseURL: origin,
     trustedOrigins: shareCookie ? [origin, 'https://www.geld.sh'] : [origin],
-    user: { modelName: 'users', changeEmail: { enabled: true }, deleteUser: { enabled: true, beforeDelete:async user=>prepareAccountErasure(user.id), sendDeleteAccountVerification: async ({ user, url }) => sendEmail(user.email, 'Delete your Geld account', `Confirm account deletion: ${url}`) } },
+    user: { modelName: 'users', changeEmail: { enabled: true }, deleteUser: { enabled: true, beforeDelete:async user=>{const {prepareAccountErasure}=await import('./erasure');await prepareAccountErasure(user.id);}, sendDeleteAccountVerification: async ({ user, url }) => sendEmail(user.email, 'Delete your Geld account', `Confirm account deletion: ${url}`) } },
     session: { modelName: 'sessions', cookieCache: { enabled: false } },
     account: { modelName: 'identities', encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: false, trustedProviders: [] } },
     verification: { modelName: 'verifications' },
