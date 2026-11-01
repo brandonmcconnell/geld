@@ -28,6 +28,7 @@ const FOCUSED_CASES = {
   'gitlab-binary': ['gitlab-binary-counts'],
   'gitlab-references': ['gitlab-commit-link-counts', 'gitlab-native-commit-reference', 'gitlab-commit-counts'],
   github: ['github-regression'],
+  'cross-provider-settings': ['cross-provider-settings'],
 };
 const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
@@ -274,8 +275,10 @@ async function runCase(name, url, body, discovery = false) {
       return;
     }
     const provider = providerOf(url);
-    const cooldown = cooldowns.get(provider);
-    if (cooldown !== undefined && cooldown > Date.now()) {
+    const held = (name === 'cross-provider-settings' ? ['gitlab', 'github'] : [provider]).find((site) => (cooldowns.get(site) ?? 0) > Date.now());
+    const cooldown = cooldowns.get(held);
+    if (held !== undefined && cooldown !== undefined) {
+      item.cooldownProvider = held;
       item.rateLimitedUntil = new Date(cooldown).toISOString();
       item.navigationSuppressedByCooldown = true;
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
@@ -369,6 +372,169 @@ async function runCase(name, url, body, discovery = false) {
     console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
   }
 }
+async function crossSettingsDom(page, provider) {
+  return page.evaluate((site) => {
+    const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const value = node.textContent?.replace(/[,\s]/g, '').match(/\d+/)?.[0]; return value === undefined ? null : Number(value); };
+    const native = (node) => node.closest('[data-geld-ui]') === null;
+    let headers; let files; let headerIdentity;
+    if (site === 'gitlab') {
+      const groups = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native);
+      headers = groups.map((root) => ({ files: numeric(root.querySelector(':scope > .diff-stats-group > span')), additions: numeric(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: numeric(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
+      files = [...document.querySelectorAll('diff-file[data-file-data], .diff-file[data-file-data]')].filter(native).map((root) => {
+        let data = null; try { data = JSON.parse(root.getAttribute('data-file-data') ?? 'null'); } catch { /* Incomplete native metadata fails below. */ }
+        return { path: data?.new_path ?? data?.old_path ?? null, id: root.id, anchor: null, head: data?.diff_refs?.head_sha ?? null, hidden: root.getAttribute('data-geld-provider-hidden') };
+      });
+      const tab = document.querySelector('[data-testid="diffs-tab"]');
+      headerIdentity = { id: tab?.id ?? null, testid: tab?.getAttribute('data-testid') ?? null, href: tab?.querySelector('a[href]')?.getAttribute('href') ?? null };
+    } else {
+      // These literal legacy hooks and file identities were observed on this exact public fixture in installed run41340321024.
+      const stats = document.getElementById('diffstat'); const counter = document.getElementById('files_tab_counter');
+      headers = stats === null || counter === null ? [] : [{ files: numeric(counter), additions: numeric(stats.querySelector('.color-fg-success')), deletions: numeric(stats.querySelector('.color-fg-danger')) }];
+      files = [...document.querySelectorAll('.file-header[data-path][data-anchor]')].filter(native).map((header) => {
+        const root = header.closest('.file[id]');
+        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, hidden: root?.getAttribute('data-geld') ?? null };
+      });
+      headerIdentity = { id: stats?.id ?? null, counterId: counter?.id ?? null, href: counter?.closest('a[href]')?.getAttribute('href') ?? null, repository: document.querySelector('meta[name="octolytics-dimension-repository_nwo"]')?.getAttribute('content') ?? null };
+    }
+    return { provider: site, url: location.href, hidden: document.hidden, headers, headerIdentity, files: files.sort((a, b) => String(a.path).localeCompare(String(b.path))) };
+  }, provider);
+}
+
+async function verifyCrossProviderSettings(gitlab, item) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY);
+  const readSettings = () => options.evaluate(async (key) => {
+    const value = (await chrome.storage.sync.get(key))[key] ?? {};
+    return { storageArea: 'chrome.storage.sync', storageKey: key, extensionId: chrome.runtime.id, enabled: value.enabled, categoryPatterns: value.categoryPatterns ?? {}, categories: value.categories, aiEnabled: value.aiEnabled, autoViewed: value.autoViewed };
+  }, SETTINGS_KEY);
+  const equal = (actual, expected) => actual !== null && actual !== undefined && ['files', 'additions', 'deletions'].every((key) => actual[key] === expected[key]);
+  const evidence = { mechanism: 'One real installed options target writes one chrome.storage.sync settings key for two actual public tabs in the same browser profile.', scope: 'Same-profile cross-site settings; not cross-device synchronization.', storageArea: 'chrome.storage.sync', storageKey: SETTINGS_KEY, extensionId, stages: [], github: { console: [], pageErrors: [], requestFailures: [], sourceFailures: [] } };
+  item.sharedSettings = evidence;
+  let github; let closing = false;
+  try {
+    assert.equal(original.enabled, true, 'The shared-settings slice must start with the ordinary enabled fresh-profile settings');
+    assert.equal(original.aiEnabled, false); assert.deepEqual(original.autoViewed, {});
+    await patchSettings({ enabled: false });
+    github = await browser.newPage();
+    await github.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+    // This auxiliary page is part of this case: its failures and cooldowns cannot become an unobserved helper pass.
+    const abort = currentCaseAbort;
+    github.on('close', () => { if (!closing && !abort.signal.aborted) abort.abort(new Error('Cross-provider GitHub page closed before acceptance')); });
+    github.on('console', (message) => { if (evidence.github.console.length < 100) evidence.github.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
+    github.on('pageerror', (error) => { if (evidence.github.pageErrors.length < 100) evidence.github.pageErrors.push(errorText(error)); });
+    github.on('requestfailed', (request) => { if (evidence.github.requestFailures.length < 100) evidence.github.requestFailures.push({ url: safeUrl(request.url()), method: request.method(), error: request.failure()?.errorText }); });
+    github.on('response', (response) => {
+      const provider = providerOf(response.url()); const headers = response.headers();
+      if (provider === null) return;
+      const quota = quotaHeaders(headers);
+      if (Object.keys(quota).length > 0) { evidence.github.quotaObservations ??= []; if (evidence.github.quotaObservations.length < 60) evidence.github.quotaObservations.push({ url: safeUrl(response.url()), status: response.status(), observedAt: new Date().toISOString(), headers: quota }); }
+      if (response.status() < 400) return;
+      const failure = { url: safeUrl(response.url()), status: response.status(), retryAfter: headers['retry-after'] ?? null, quotaHeaders: quotaHeaders(headers), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 };
+      if (evidence.github.sourceFailures.length < 100) evidence.github.sourceFailures.push(failure);
+      if (response.status() === 429) {
+        const until = Date.now() + retryAfter(headers['retry-after'], provider); cooldowns.set(provider, Math.max(cooldowns.get(provider) ?? 0, until));
+        item.rateLimitedUntil = new Date(cooldowns.get(provider)).toISOString(); item.holdReason = 'provider_http429'; item.cooldownProvider = provider;
+        if (!abort.signal.aborted) abort.abort(new Error(`Cross-provider source HTTP429 until ${item.rateLimitedUntil}`));
+        void github.close().catch(() => undefined);
+      }
+    });
+    await github.bringToFront();
+    const response = await github.goto(GH_FILES, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    currentCaseAbort.signal.throwIfAborted();
+    evidence.github.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(github.url()) };
+    assert.equal(response?.status(), 200, 'The actual GitHub counterpart did not load');
+    evidence.github.auth = await authObservation(github, 'github');
+    evidence.gitlabAuth = await authObservation(gitlab, 'gitlab');
+    const tabs = [{ provider: 'gitlab', page: gitlab, repo: 'gitlab-org/gitlab' }, { provider: 'github', page: github, repo: 'wxt-dev/wxt' }];
+    evidence.tabs = await options.evaluate(async (urls) => {
+      const tabs = await chrome.tabs.query({});
+      return urls.map((url) => { const tab = tabs.find((value) => value.url === url); return { url, tabId: tab?.id ?? null, windowId: tab?.windowId ?? null }; });
+    }, tabs.map((tab) => tab.page.url()));
+    assert.ok(evidence.tabs.every((tab) => Number.isInteger(tab.tabId) && Number.isInteger(tab.windowId)), 'Both provider pages must be actual installed-profile Chrome tabs');
+    assert.notEqual(evidence.tabs[0].tabId, evidence.tabs[1].tabId);
+    assert.equal(evidence.tabs[0].windowId, evidence.tabs[1].windowId);
+    const activate = async (tab) => { await tab.page.bringToFront(); await poll(() => tab.page.evaluate(() => document.hidden), (hidden) => hidden === false, `Actual ${tab.provider} foreground activation`); };
+    const captureRequired = async (tab, stage) => { const files = await capture(tab.page, `cross-settings-${tab.provider}-${stage}`); assert.equal(typeof files.screenshot, 'string', 'A closed counterpart cannot supply required per-tab artifact proof'); return files; };
+    const identity = (dom) => { const url = new URL(dom.url); url.hash = ''; return { provider: dom.provider, url: url.href, headerIdentity: dom.headerIdentity }; };
+    const sameSource = (dom, oracle) => {
+      assert.deepEqual(identity(dom), identity(oracle), 'Shared setting changed a native review/header identity');
+      for (const file of oracle.files) {
+        const current = dom.files.find((candidate) => candidate.path === file.path);
+        assert.ok(current, `Original native file disappeared: ${file.path}`);
+        assert.deepEqual({ id: current.id, anchor: current.anchor, head: current.head }, { id: file.id, anchor: file.anchor, head: file.head }, 'Shared setting changed native file IDs or selected source');
+      }
+    };
+    const stage = async (label, mode) => {
+      const sample = { label, settings: await readSettings(), tabs: [] }; evidence.stages.push(sample);
+      assert.equal(sample.settings.extensionId, extensionId); assert.equal(sample.settings.aiEnabled, false); assert.deepEqual(sample.settings.autoViewed, {});
+      for (const tab of tabs) {
+        await activate(tab);
+        const state = mode === 'disabled'
+          ? await poll(() => tabState(tab.page), (value) => value.allowed === false && value.hasDiff === false, `${tab.provider} actual shared master disable`)
+          : await poll(() => tabState(tab.page), (value) => value.repo === tab.repo && value.hasDiff === true && equal(value.all, tab.oracle.headers[0]) && (mode === 'all' ? value.hiddenCount === value.all.files && equal(value.visible, { files: 0, additions: 0, deletions: 0 }) && value.categories.some((category) => category.id === 'tests' && category.count === value.all.files) : mode === 'baseline' ? value.hiddenCount > 0 && value.visible?.files > 0 && value.visible.files < value.all.files : equal(value.visible, tab.baseline.state.visible) && value.hiddenCount === tab.baseline.state.hiddenCount), `${tab.provider} complete source and shared ${label} totals`);
+        const expected = mode === 'disabled' ? tab.oracle.headers[0] : state.visible;
+        const dom = await pollStable(() => crossSettingsDom(tab.page, tab.provider), (value) => !value.hidden && value.headers.length > 0 && value.headers.every((header) => equal(header, expected)) && (mode !== 'disabled' || value.files.every((file) => file.hidden === null)) && (mode !== 'all' || value.files.every((file) => file.hidden !== null)), `${tab.provider} native header and file response to ${label}`, WAIT_MS, (value) => JSON.stringify([value.headers, value.files.map((file) => [file.id, file.hidden])]));
+        sameSource(dom, tab.oracle);
+        if (tab.provider === 'gitlab' && mode !== 'disabled') assert.equal(state.repository?.provider, 'gitlab');
+        const entry = { provider: tab.provider, state, dom }; sample.tabs.push(entry);
+        entry.artifacts = await captureRequired(tab, label);
+        const afterCapture = await crossSettingsDom(tab.page, tab.provider);
+        assert.ok(afterCapture.headers.every((header) => equal(header, expected)), 'Required screenshot capture changed native header totals'); sameSource(afterCapture, tab.oracle);
+        if (mode === 'baseline') tab.baseline = entry;
+      }
+      assert.deepEqual(await readSettings(), sample.settings, 'One provider visit changed the shared settings key');
+      return sample;
+    };
+    for (const tab of tabs) {
+      await activate(tab);
+      await poll(() => tabState(tab.page), (value) => value.allowed === false && value.hasDiff === false, `${tab.provider} disabled before independent native oracle`);
+      tab.oracle = await poll(() => crossSettingsDom(tab.page, tab.provider), (dom) => !dom.hidden && dom.headers.length > 0 && dom.headers.every((row) => row.files > 0 && Number.isInteger(row.additions) && Number.isInteger(row.deletions)) && dom.files.length > 0 && dom.files.every((file) => typeof file.path === 'string' && typeof file.id === 'string' && file.id !== '' && file.hidden === null), `${tab.provider} independent untouched native header oracle`);
+      assert.ok(tab.oracle.headers.every((header) => equal(header, tab.oracle.headers[0])), 'Untouched native headers disagree');
+      if (tab.provider === 'github') assert.equal(tab.oracle.headerIdentity.repository, tab.repo);
+      tab.oracleArtifacts = await captureRequired(tab, 'native-oracle');
+    }
+    evidence.nativeOracles = tabs.map((tab) => ({ provider: tab.provider, basis: 'Actual provider-rendered header text with shared master disabled; never derived from extension tabState.all.', dom: tab.oracle, artifacts: tab.oracleArtifacts }));
+    await patchSettings({ enabled: true });
+    await stage('baseline', 'baseline');
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['**/*'] } });
+    evidence.globalPatternChange = await readSettings();
+    assert.deepEqual(evidence.globalPatternChange.categoryPatterns.tests, ['**/*']);
+    assert.deepEqual(evidence.globalPatternChange.categories, original.categories, 'All-hidden classification must come from one global pattern update');
+    await stage('one-global-pattern-all-hidden', 'all');
+    await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} });
+    await stage('patterns-restored', 'restored');
+    await patchSettings({ enabled: false });
+    await stage('master-disabled-native', 'disabled');
+    await patchSettings({ enabled: true });
+    await stage('master-reenabled', 'restored');
+    evidence.verified = 'One global pattern update in actual chrome.storage.sync drives both independently identified public providers to all-hidden zero totals and native zero headers. Original patterns, master disable/native full counts and reenable restore both sites while preserving native source IDs. Same profile only, no Bitbucket case or authenticated write.';
+    return {};
+  } catch (error) {
+    evidence.failure = errorText(error);
+    if (github !== undefined && !github.isClosed() && !currentCaseAbort.signal.aborted) {
+      try { evidence.github.failureArtifacts = await capture(github, 'cross-settings-github-failed'); }
+      catch (captureError) { evidence.github.captureError = errorText(captureError); }
+    }
+    throw error;
+  }
+  finally {
+    const errors = [];
+    try {
+      evidence.cleanupSettings = await options.evaluate(async (key, before) => {
+        const current = (await chrome.storage.sync.get(key))[key] ?? {};
+        for (const field of ['enabled', 'categoryPatterns']) { if (Object.hasOwn(before, field)) current[field] = before[field]; else delete current[field]; }
+        await chrome.storage.sync.set({ [key]: current });
+        const after = (await chrome.storage.sync.get(key))[key];
+        return { restored: ['enabled', 'categoryPatterns'].every((field) => Object.hasOwn(before, field) === Object.hasOwn(after, field) && JSON.stringify(before[field]) === JSON.stringify(after[field])) };
+      }, SETTINGS_KEY, original);
+      assert.equal(evidence.cleanupSettings.restored, true, 'Shared settings cleanup did not restore the original fields');
+    } catch (error) { errors.push(error); }
+    closing = true;
+    if (github !== undefined && !github.isClosed()) { try { await github.close(); } catch (error) { if (!closedTarget(error)) errors.push(error); } }
+    if (!gitlab.isClosed()) { try { await gitlab.bringToFront(); } catch (error) { if (!closedTarget(error)) errors.push(error); } }
+    if (errors.length > 0) { evidence.cleanupErrors = errors.map(errorText); throw new AggregateError(errors, 'Cross-provider settings cleanup failed'); }
+  }
+}
+
 async function gitLabDom(page) {
   return page.evaluate(() => {
     const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const match = node.textContent?.replace(/[,\s]/g, '').match(/\d+/); return match === undefined || match === null ? null : Number(match[0]); };
@@ -1942,6 +2108,7 @@ try {
     return {};
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
+  await runCase('cross-provider-settings', GL_MIXED, verifyCrossProviderSettings);
   await runCase('github-regression', GH_FILES, async (page, item) => {
     item.state = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all !== null && state.visible !== null && state.hiddenCount > 0 && state.categories.some((category) => category.id === 'tests' && category.count > 0), 'Installed GitHub public fixture classification');
     item.dom = await page.evaluate(() => ({ hidden: document.querySelectorAll('[data-geld="hidden"]').length, totalGeldEntries: document.querySelectorAll('[data-geld]').length }));
