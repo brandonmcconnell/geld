@@ -12,6 +12,7 @@ export interface GeneratedContentStore {
   get(teamId: string, repoId: string, number: number, headSha: string): Promise<ReviewPlan | null>;
   hasPublication(reservationId: string): Promise<boolean>;
   deleteTeam(teamId: string): Promise<void>;
+  purgeExpired():Promise<void>;
 }
 let customer: Pool | null = null;
 export function contentStore(): GeneratedContentStore {
@@ -43,6 +44,7 @@ export function createGeneratedContentStore(dependencies: { readonly sql: SqlExe
       try { const parsed = reviewPlanSchema.safeParse(JSON.parse(text)); return parsed.success ? parsed.data : null; } catch { return null; }
     },
     async hasPublication(reservationId) { return (await db.query(`SELECT reservation_id FROM ${receipts} WHERE reservation_id=$1 AND expires_at>now()`,[reservationId])).rows.length>0; },
+    async purgeExpired(){await dependencies.run(async sql=>{await sql.query(`DELETE FROM ${table} WHERE expires_at<=now()`);await sql.query(`DELETE FROM ${receipts} WHERE expires_at<=now()`);});},
     async deleteTeam(teamId) { await dependencies.run(async sql => { await sql.query(`DELETE FROM ${table} WHERE team_id=$1`,[teamId]); await sql.query(`DELETE FROM ${receipts} WHERE team_id=$1`,[teamId]); }); },
   };
 }

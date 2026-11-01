@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { currentActor } from '@/lib/session';
@@ -15,7 +16,7 @@ export async function GET(): Promise<Response> {
   if (!db) return json({ providers: [], configured: false });
   try { const result = await db.query('SELECT id,provider,label,base_url,enabled,(encrypted_key IS NOT NULL) AS has_key,settings FROM ai_providers WHERE user_id = $1 ORDER BY CASE WHEN provider = \'geld\' THEN 0 ELSE 1 END,label', [actor.id]); const parsed = safeRows.safeParse(result.rows); return parsed.success ? json({ providers: parsed.data, configured: true }) : json({ error: 'Provider settings could not be loaded' }, 503); } catch { return json({ error: 'Provider settings could not be loaded' }, 503); }
 }
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -45,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     return json({ id });
   } catch { return json({ error: 'Provider settings could not be saved. Check encryption configuration and try again.' }, 503); }
 }
-export async function DELETE(request: Request): Promise<Response> {
+async function handleDELETE(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor(); const db = database();
@@ -57,3 +58,7 @@ export async function DELETE(request: Request): Promise<Response> {
   await db.query('DELETE FROM ai_providers WHERE id = $1 AND user_id = $2 AND provider <> \'geld\'', [input.data.id, actor.id]);
   return json({ removed: true });
 }
+
+export const POST=auditedRoute(handlePOST,'ai.providers.post');
+
+export const DELETE=auditedRoute(handleDELETE,'ai.providers.delete');

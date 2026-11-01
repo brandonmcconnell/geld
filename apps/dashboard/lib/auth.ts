@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { createApiTransport } from '@geld/github';
 import { database } from './db';
 import { configured, dashboardOrigin, isPreview } from './env';
+import {prepareAccountErasure} from './erasure';
 import { sendEmail } from './email';
 
 const bitbucketUser = z.object({ uuid: z.string(), display_name: z.string(), links: z.object({ avatar: z.object({ href: z.string() }) }) });
@@ -51,7 +52,7 @@ function createAuth() {
   return betterAuth({
     appName: 'Geld', database: db, secret, baseURL: origin,
     trustedOrigins: shareCookie ? [origin, 'https://www.geld.sh'] : [origin],
-    user: { modelName: 'users', changeEmail: { enabled: true }, deleteUser: { enabled: true, sendDeleteAccountVerification: async ({ user, url }) => sendEmail(user.email, 'Delete your Geld account', `Confirm account deletion: ${url}`) } },
+    user: { modelName: 'users', changeEmail: { enabled: true }, deleteUser: { enabled: true, beforeDelete:async user=>prepareAccountErasure(user.id), sendDeleteAccountVerification: async ({ user, url }) => sendEmail(user.email, 'Delete your Geld account', `Confirm account deletion: ${url}`) } },
     session: { modelName: 'sessions', cookieCache: { enabled: false } },
     account: { modelName: 'identities', encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: false, trustedProviders: [] } },
     verification: { modelName: 'verifications' },
@@ -71,11 +72,12 @@ function createAuth() {
       genericOAuth({ config: [
         ...(bitbucketId && bitbucketSecret ? [{ providerId: 'bitbucket', name: 'Bitbucket', clientId: bitbucketId, clientSecret: bitbucketSecret, authorizationUrl: 'https://bitbucket.org/site/oauth2/authorize', tokenUrl: 'https://bitbucket.org/site/oauth2/access_token', authentication: 'basic', pkce: false, scopes: ['account', 'email', 'repository', 'pullrequest:write'], accountSubject: ({ profile }: { profile: Record<string, unknown> }) => { const p = bitbucketUser.parse(profile); return p.uuid; }, getUserInfo: async (tokens: { accessToken?: string | undefined }) => {
           if (!tokens.accessToken) return null;
-          const headers = { Authorization: `Bearer ${tokens.accessToken}` };
-          const [profileResponse, emailsResponse] = await Promise.all([fetch('https://api.bitbucket.org/2.0/user', { headers }), fetch('https://api.bitbucket.org/2.0/user/emails', { headers })]);
-          if (!profileResponse.ok || !emailsResponse.ok) return null;
-          const profile = bitbucketUser.safeParse(await profileResponse.json());
-          const emails = bitbucketEmails.safeParse(await emailsResponse.json());
+          const token=tokens.accessToken;
+          const api=createApiTransport({baseUrl:'https://api.bitbucket.org/2.0/',source:{get:async()=>({status:'ok',token,refreshed:false})}});
+          const [profileResult,emailsResult]=await Promise.all([api.request('user'),api.request('user/emails')]);
+          if(!profileResult.ok||!emailsResult.ok)return null;
+          const profile=bitbucketUser.safeParse(profileResult.value);
+          const emails=bitbucketEmails.safeParse(emailsResult.value);
           if (!profile.success || !emails.success) return null;
           const verified = emails.data.values.filter((email) => email.is_confirmed);
           const email = verified.find((entry) => entry.is_primary) ?? verified[0];

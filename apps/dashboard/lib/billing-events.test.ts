@@ -8,7 +8,7 @@ import { finishCredits, reserveCredits } from './credits';
 import type { BillingSnapshot } from './billing-gateway';
 async function fixture() {
   const db = new PGlite();
-  for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
+  for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql','0011_companion.sql','0012_privacy.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
   await db.exec("INSERT INTO users(id,name,email) VALUES ('u','Reviewer','reviewer@example.test'),('v','Reviewer 2','second@example.test'); INSERT INTO teams(id,name) VALUES ('t','Team'); INSERT INTO team_members(team_id,user_id,role) VALUES ('t','u','admin'),('t','v','member'); INSERT INTO subscriptions(team_id,tier,seats,used_credits,cap_cents,card_on_file,stripe_customer_id,stripe_subscription_id,period_start) VALUES ('t','starter',1,39,100,true,'cus_test','sub_test','2026-10-01')");
   return { db, sql: { query: async (text: string, values?: unknown[]) => db.query(text, values) } };
 }
@@ -30,8 +30,9 @@ describe('signed billing event application', () => {
     const { db, sql } = await fixture();
     const first = await reserveCredits(sql, { teamId: 't', actorId: 'u', credits: 2, key: 'first' });
     if (!first.ok) throw new Error('Reservation failed');
-    await finishCredits(sql, first.id, true); await finishCredits(sql, first.id, true);
+    await finishCredits(sql, first.id, true,true); await finishCredits(sql, first.id, true,true);
     expect((await db.query("SELECT count(*)::integer AS count FROM outbox_jobs WHERE kind = 'bill_overage'")).rows).toEqual([{ count: 1 }]);
+    expect((await db.query("SELECT kind FROM outbox_jobs WHERE kind LIKE 'fallback%' ORDER BY kind")).rows).toEqual([{kind:'fallback_email'},{kind:'fallback_summary_email'}]);
     const second = await reserveCredits(sql, { teamId: 't', actorId: 'u', credits: 1, key: 'second' });
     if (!second.ok) throw new Error('Reservation failed');
     await applyBillingSnapshot(sql, { eventId: 'rollover', created: 10, subscription: snapshot });

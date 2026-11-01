@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { currentActor } from '@/lib/session';
 import { database } from '@/lib/db';
@@ -7,7 +8,7 @@ import { accessAdapter } from '@/lib/team-access';
 import { withGrantLocks } from '@/lib/grant-locks';
 import { bitbucketConnectionSchema,changeBitbucketConnection } from '@/lib/provider-connections';
 import { json,sameOrigin } from '@/lib/http';
-export async function POST(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response> {
+async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response> {
   await connection();
   if(!sameOrigin(request))return json({error:'Invalid request origin'},403);
   const actor=await currentActor();const{id}=await params;
@@ -25,3 +26,5 @@ export async function POST(request:Request,{params}:{readonly params:Promise<{id
     return json({error:reason==='forbidden'?'Team admin permission is required':reason==='active'?'Revoke managed Bitbucket group grants before changing adapters':'Old Bitbucket groups could not be removed. The old adapter was kept for retry.'},reason==='forbidden'?403:409);
   } catch {return json({error:'The connection change could not be confirmed. Check its current state before retrying.'},503);}
 }
+
+export const POST=auditedRoute(handlePOST,'teams.team.provider-connection.post');
