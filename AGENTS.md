@@ -1450,6 +1450,12 @@ Provider-specific surfaces translate settings and sources into shared review and
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
   GitLab's live comment body uses GitLab Sans at 14px/21px and native author headers use 14px/20px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
   Native body and author typography use `--font-family-sans-serif`, while `--gl-font-family-regular` can repeat GitLab Sans in its computed stack.
+  GitLab's rendered Markdown table headers can put their visible labels inside generated `markdown-table-<id>-col_<index>-sort` buttons, as the public Greptile summary note3381334808 does.
+  Preserve only the inert label of that verified sortable column-header shape, including its native table ownership and column index, while dropping the control, IDs, action attributes and icons.
+  Its marked inert span keeps only the observed `gl-font-bold gl-text-inherit` typography classes, and body comparison samples the actual native button's label span rather than assuming the enclosing TH has the same font weight.
+  Unknown buttons remain excluded, and the original native table stays untouched.
+  Installed body comparison treats missing positively presented native words as a mismatch rather than an uncovered sample, and the existing bot-trust case compares the mounted summary's headings, inline code, lists and table without requesting its sources again.
+  Closed Mermaid code and finding notes without mounted native DOM remain uncovered, and offline cloned structure does not establish computed-style parity.
   Author profile links use the native default text color rather than the generic link color in both themes.
   Native GitLab default buttons have their own semantic background, foreground, border and interaction-state tokens, including a translucent background and transparent border in dark mode.
   Match GitLab's reduced-motion behavior as well as its normal button transition, since a copied transition otherwise keeps animating when native controls honor the reader's preference.

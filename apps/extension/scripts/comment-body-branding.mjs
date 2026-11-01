@@ -4,11 +4,12 @@ export function commentBodyPresentationProbe(provider, anchor) {
   const maxText = 20_000;
   const typography = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'color'];
   const decoration = ['backgroundColor', 'borderRadius', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', ...['Top', 'Right', 'Bottom', 'Left'].flatMap((side) => [`border${side}Width`, `border${side}Style`, `border${side}Color`])];
-  const categories = ['root', 'paragraph', 'link', 'inline code', 'block code', 'preformatted', 'list', 'list item', 'table', 'table section', 'table row', 'table cell'];
-  const selector = 'p,a,code,pre,ul,ol,li,table,thead,tbody,tfoot,tr,th,td';
+  const categories = ['root', 'heading', 'paragraph', 'link', 'inline code', 'block code', 'preformatted', 'list', 'list item', 'table', 'table section', 'table row', 'table cell', 'table header label'];
+  const selector = 'h1,h2,h3,h4,h5,h6,p,a,code,pre,ul,ol,li,table,thead,tbody,tfoot,tr,th,td,thead > tr > th[scope="col"][aria-sort][class~="gl-group/markdown-table-header"] > div > button[type="button"][id^="markdown-table-"][id$="-sort"] > span:not([aria-hidden]),span[data-geld-native-table-header-label]';
   const uncovered = [];
   const samples = [];
-  const result = { provider, anchor, samples, uncovered, nativeRootPresent: false, ownedRootPresent: false, rootAligned: false, nativeNodes: 0, ownedNodes: 0, truncated: false };
+  const contentMismatches = [];
+  const result = { provider, anchor, samples, uncovered, contentMismatches, nativeRootPresent: false, ownedRootPresent: false, rootAligned: false, nativeNodes: 0, ownedNodes: 0, truncated: false };
   const unavailable = (reason) => { uncovered.push(`comment body: ${reason}`);return result; };
   if (!(provider === 'gitlab' ? /^note_[1-9]\d*$/.test(anchor) : provider === 'bitbucket' && /^comment-[1-9]\d*$/.test(anchor))) return unavailable('unsupported source identity');
   const originals = [...document.querySelectorAll(`[id="${anchor}"]`)].filter((node) => node.closest('[data-geld-ui]') === null);
@@ -48,7 +49,7 @@ export function commentBodyPresentationProbe(provider, anchor) {
   result.ownedNodes = ownedNodes.length;
   result.truncated = nativeNodes.length > maxNodes || ownedNodes.length > maxNodes;
   const kinds = new Map();
-  const kind = (node, index) => index === 0 ? 'root' : ({ P: 'paragraph', A: 'link', CODE: node.closest('pre') === null ? 'inline code' : 'block code', PRE: 'preformatted', UL: 'list', OL: 'list', LI: 'list item', TABLE: 'table', THEAD: 'table section', TBODY: 'table section', TFOOT: 'table section', TR: 'table row', TH: 'table cell', TD: 'table cell' })[node.tagName];
+  const kind = (node, index) => index === 0 ? 'root' : /^H[1-6]$/.test(node.tagName) ? 'heading' : ({ P: 'paragraph', A: 'link', CODE: node.closest('pre') === null ? 'inline code' : 'block code', PRE: 'preformatted', UL: 'list', OL: 'list', LI: 'list item', TABLE: 'table', THEAD: 'table section', TBODY: 'table section', TFOOT: 'table section', TR: 'table row', TH: 'table cell', TD: 'table cell', SPAN: 'table header label' })[node.tagName];
   const sample = (node) => {
     if (node === null) return null;
     const style = getComputedStyle(node);
@@ -64,9 +65,12 @@ export function commentBodyPresentationProbe(provider, anchor) {
     if (native.closest('[contenteditable]') !== null) { uncovered.push(`${label}: native editing content excluded`);continue; }
     if (native.textContent.length > maxText) { uncovered.push(`${label}: text exceeds bounded sample size`);continue; }
     if (!native.textContent.trim()) { uncovered.push(`${label}: native element has no visible text`);continue; }
-    if (owned === null || native.tagName !== owned.tagName || native.textContent !== owned.textContent || native.tagName === 'A' && native.href !== owned.href) { uncovered.push(`${label}: exact tag, text, link or source order does not match`);continue; }
-    if (index === 0) result.rootAligned = true;
     if (!visible(native)) { uncovered.push(`${label}: native element is not visibly presented`);continue; }
+    if (owned === null || native.tagName !== owned.tagName || native.textContent !== owned.textContent || native.tagName === 'A' && native.href !== owned.href) {
+      const content = (node) => node === null ? null : { tag: node.tagName, text: node.textContent.trim().slice(0, 240), textLength: node.textContent.length, ...(node.tagName === 'A' ? { href: node.href } : {}) };
+      contentMismatches.push({ label: `${label}: exact tag, text, link or source order does not match`, native: content(native), owned: content(owned) });continue;
+    }
+    if (index === 0) result.rootAligned = true;
     if (samples.length >= maxSamples || samples.filter((item) => item.category === category).length >= 3) { uncovered.push(`${label}: bounded sample limit reached`);continue; }
     samples.push({ label, category, sourceOrder: index, alignment: 'exact tag and full text in matching native source order', native: sample(native), owned: sample(owned), decoration: ['inline code', 'block code', 'preformatted', 'table', 'table section', 'table row', 'table cell'].includes(category) });
   }
@@ -77,7 +81,7 @@ export function commentBodyPresentationProbe(provider, anchor) {
 
 export function compareCommentBodyPresentation(value) {
   const covered = [];
-  const mismatches = [];
+  const mismatches = [...value.contentMismatches ?? []];
   const typography = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'color'];
   const equal = (label, owned, native) => { if (owned !== native) mismatches.push({ label, native, owned }); };
   if (value.nativeRootPresent && !value.ownedRootPresent) mismatches.push({ label: 'comment body root', native: 'presented', owned: 'absent or not presented' });

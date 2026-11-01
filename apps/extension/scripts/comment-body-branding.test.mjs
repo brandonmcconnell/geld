@@ -72,8 +72,29 @@ test('does not pair reordered same-tag text or missing links with another source
   f.owned.innerHTML = '<p>Second <a href="/one">link</a></p><p>First</p>';
   const evidence = f.read();
   assert.equal(evidence.samples.length, 0);
-  assert.ok(evidence.uncovered.some((label) => label.includes('source order does not match')));
+  assert.ok(compareCommentBodyPresentation(evidence).mismatches.some((entry) => entry.label.includes('source order does not match')));
   assert.equal(evidence.rootAligned, false);
+});
+
+test('fails for actual visible source words missing from a cloned table header instead of marking them uncovered', () => {
+  const f = fixture('<h3>Important Files Changed</h3><table><thead><tr><th>Filename</th><th>Overview</th></tr></thead><tbody><tr><td>backend/pyproject.toml</td><td>Updates dependencies</td></tr></tbody></table>');
+  const original = f.read();
+  assert.ok(original.samples.some((pair) => pair.category === 'heading'));
+  assert.deepEqual(compareCommentBodyPresentation(original).mismatches, []);
+  f.owned.querySelector('th').textContent = '';
+  const missing = f.read();
+  assert.equal(missing.rootAligned, false);
+  assert.ok(compareCommentBodyPresentation(missing).mismatches.some((pair) => pair.label.includes('table cell') && pair.native.text === 'Filename' && pair.owned.text === ''));
+  assert.ok(compareCommentBodyPresentation(missing).mismatches.some((pair) => pair.label.includes('comment body root')));
+  assert.ok(!missing.uncovered.some((label) => label.includes('source order does not match')));
+});
+
+test('keeps genuinely hidden native rich content uncovered rather than claiming it matches or fails', () => {
+  const f = fixture('<h3>Summary</h3><pre hidden><code>Unpresented native source</code></pre>');
+  f.owned.querySelector('code').textContent = 'Different hidden clone';
+  const evidence = f.read();
+  assert.ok(evidence.uncovered.some((label) => label.includes('block code') && label.includes('not visibly presented')));
+  assert.ok(!evidence.contentMismatches.some((pair) => pair.label.includes('block code')));
 });
 
 test('rejects a duplicate source article and a cross-review original permalink', () => {
@@ -130,6 +151,91 @@ function harnessFunction(name, next, environment) {
   assert.ok(begin >= 0 && end > begin);
   return new vm.Script(`(({${Object.keys(environment).join(',')}}) => (${harness.slice(begin, end)}))`).runInThisContext()(environment);
 }
+
+const sortableHeaders = () => ['Filename', 'Overview'].map((label, index) => `<th scope="col" aria-sort="none" class="gl-group/markdown-table-header"><div class="gl-flex"><button type="button" id="markdown-table-62-col_${index}-sort" class="gl-font-bold gl-text-inherit"><span>${label}</span></button></div></th>`).join('');
+function inertHeaderLabels(root) {
+  for (const button of root.querySelectorAll('th button')) {
+    const label = document.createElement('span');
+    label.dataset.geldNativeTableHeaderLabel = '';label.className = 'gl-font-bold gl-text-inherit';label.textContent = button.textContent;button.replaceWith(label);
+  }
+}
+
+test('compares the actual button label weight instead of accepting equal normal-weight table cells', () => {
+  const f = fixture(`<table><thead><tr>${sortableHeaders()}</tr></thead></table>`);
+  document.head.insertAdjacentHTML('beforeend', '<style>th { font-weight:400 } button { font:inherit } .gl-font-bold { font-weight:700 }</style>');
+  inertHeaderLabels(f.owned);
+  const good = f.read();
+  assert.deepEqual(compareCommentBodyPresentation(good).mismatches, []);
+  assert.ok(good.samples.some((pair) => pair.category === 'table cell' && pair.native.style.fontWeight === '400'));
+  assert.ok(good.samples.some((pair) => pair.category === 'table header label' && pair.native.style.fontWeight === '700' && pair.owned.style.fontWeight === '700'));
+  f.owned.querySelector('[data-geld-native-table-header-label]').classList.remove('gl-font-bold');
+  assert.ok(compareCommentBodyPresentation(f.read()).mismatches.some((pair) => pair.label.includes('table header label') && pair.label.endsWith('.fontWeight') && pair.native === '700' && pair.owned === '400'));
+});
+
+function richBotFixture({ reveal = true, captureEffect = () => {} } = {}) {
+  const f = fixture(`<h3>Important Files Changed</h3><p>Update <code>insta360</code></p><ul><li>Published packages</li></ul><table><thead><tr>${sortableHeaders()}</tr></thead><tbody><tr><td>backend/pyproject.toml</td><td>Dependencies</td></tr></tbody></table><pre hidden><code>Closed Mermaid source</code></pre>`);
+  inertHeaderLabels(f.owned);
+  const review = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
+  const anchor = 'note_3381334808';
+  window.location.href = review;
+  f.native.id = anchor;f.native.hidden = true;
+  document.querySelector('article').setAttribute('data-geld-source', anchor);
+  document.querySelector('.geld-provider-review__byline a').href = `${review}#${anchor}`;
+  const listeners = new Map();const events = [];
+  const page = {
+    on: (event, fn) => listeners.set(event, fn), off: (event) => listeners.delete(event), url: () => review,
+    evaluate: async (fn, ...args) => fn(...args),
+    evaluateHandle: async (fn, ...args) => {
+      const link = fn(...args);
+      return { asElement: () => link === null ? null : { evaluate: async (read) => { if (read.toString().includes('scrollIntoView')) return;return read(link); }, click: async () => { events.push('real-control-protocol');if (reveal) f.native.hidden = false; } }, dispose: async () => {} };
+    },
+  };
+  const read = harnessFunction('gitLabBotBodyEvidence', 'async function verifyGitLabBot', {
+    assert, GL_BOT: review, safeUrl: (value) => value, openReviewAncestors: async () => 0,
+    discardHandle: async (handle) => handle.dispose(), commentBodyPresentationProbe, compareCommentBodyPresentation,
+    poll: async (read, accepts) => { const value = await read();assert.ok(accepts(value), 'Native and owned source must both be positively presented');return value; },
+    capture: async () => { captureEffect({ fixture: f, listeners });return { screenshot: 'offline-layout-protocol-only.png' }; },
+  });
+  return { fixture: f, listeners, events, run: () => read(page) };
+}
+
+test('rich bot case reveals the mounted original and positively requires actual format samples without source reads', async () => {
+  const f = richBotFixture();
+  const result = await f.run();
+  assert.equal(f.events.length, 1);
+  assert.equal(result.beforeCapture.rootAligned, true);
+  assert.equal(result.afterCapture.rootAligned, true);
+  assert.deepEqual(result.sourceGets, []);
+  assert.ok(result.beforeCapture.samples.some((pair) => pair.category === 'heading'));
+  assert.ok(result.beforeCapture.samples.some((pair) => pair.native.tag === 'TH' && pair.owned.text === 'Filename'));
+  assert.ok(result.beforeCapture.uncovered.some((label) => label.includes('preformatted') && label.includes('not visibly presented')));
+  assert.equal(f.listeners.size, 0);
+});
+
+test('rich bot case refuses hidden native originals instead of accepting uncovered formats', async () => {
+  const f = richBotFixture({ reveal: false });
+  await assert.rejects(f.run(), /both be positively presented/);
+  assert.equal(f.listeners.size, 0);
+});
+
+test('rich bot case refuses source text loss occurring during screenshot capture', async () => {
+  const f = richBotFixture({ captureEffect: ({ fixture }) => { fixture.owned.querySelector('th').textContent = ''; } });
+  await assert.rejects(f.run());
+  assert.equal(f.listeners.size, 0);
+});
+
+test('rich bot case rejects an additional review-source GET during its local-only comparison', async () => {
+  const f = richBotFixture({ captureEffect: ({ listeners }) => listeners.get('request')({ url: () => 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272/discussions.json', method: () => 'GET' }) });
+  await assert.rejects(f.run(), /reuse mounted notes/);
+  assert.equal(f.listeners.size, 0);
+});
+
+test('rich bot case requires known-present headings even when both copies lose the same format', async () => {
+  const f = richBotFixture();
+  f.fixture.native.querySelector('h3').remove();f.fixture.owned.querySelector('h3').remove();
+  await assert.rejects(f.run(), /heading must be positively compared/);
+  assert.equal(f.listeners.size, 0);
+});
 
 test('combined harness retains author assertions while adding matched comment body failures', async () => {
   const f = fixture('<p>Original</p>');
