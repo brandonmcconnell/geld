@@ -1343,17 +1343,33 @@ Ranges are refreshed when source nodes change and cleared on teardown.
 
 The unchanged GitHub workflow reader shares browser-only token/range mechanics through `src/lib/shell-highlight.ts`.
 Bitbucket `src/bitbucket/workflow-syntax.ts` colors only exact root `bitbucket-pipelines.yml`, over native code Text nodes and provider-owned `geld-bitbucket-shell-*` CSS highlights.
-Atlassian's native `--ds-text-code-*` variables supply colors; no fonts, line numbers, diff markers, source nodes, Viewed state or provider requests are changed.
+Atlassian's native `--ds-text-code-*` variables supply colors;
+no fonts, line numbers, diff markers, source nodes, Viewed state or provider requests are changed.
 Each side has independent YAML/shell state, common context belongs to the new side, and replaced/unmounted source nodes invalidate ranges.
-Only the unbroken native file prefix beginning at line1 can supply context, and that entire prefix must parse as one YAML mapping; never regex-split root-looking declarations out of multiline scalar text. Any gap taints all later source until actual native context is expanded; a parseable assembled projection cannot prove that omitted text did not open a quoted scalar.
+Only the unbroken native file prefix beginning at line1 can supply context, and that entire prefix must parse as one YAML mapping;
+never regex-split root-looking declarations out of multiline scalar text.
+Any gap taints all later source until actual native context is expanded;
+a parseable assembled projection cannot prove that omitted text did not open a quoted scalar.
 A step must have contiguous visible schema ancestry from its root declaration **through a visible following boundary before any hunk gap**: an apparent end-of-hunk cannot prove absence of a later `runs-on` or inherited merge.
-Hosted steps use documented `/bin/sh`; explicit literal `self.hosted` + `linux.shell` labels (plain or quoted; aliases/tags/interpolation stay native) use documented Bash. Windows, unknown runners, aliases/merges and unresolved inherited execution context stay native.
-The bounded reader supports adjacent unquoted command strings and literal blocks, including indentationless script sequences and anchored step declarations. Declared anchor source is colored in its own declared/default context; later aliases or runner overrides at callsites are never resolved or claimed as execution proof. `after-script` is a separate program.
-Pipe/variables mappings, quoted/folded YAML, aliases, unrelated YAML/README files and missing context stay native; GitLab runner context remains unsupported in this slice.
-The retained default public PR27 projection has an incomplete first step and later gap-tainted declarations, so all of it deliberately stays native. Its new30–37 declaration source is reused only in a self-contained synthetic-context grammar test; actual eligibility requires genuine native context expansion, with no automatic fetch/reveal by this feature.
-The shared controller uses the optional adapter `diffSyntax.apply(view)`/`clear()` lifecycle; no provider syntax reader is imported by the shared controller.
-Coloring is independent of comment/test folding and pending count fetches; master disable, no diff view, navigation and controller stop clear only its owned ranges.
-The existing GitHub18 regressions plus native-fixture unit checks do not prove installed Bitbucket highlighting, exact native Bash-scope palette mapping or actual Bitbucket dark-theme selection. Keep D25 partial until those are verified publicly.
+Hosted steps use documented `/bin/sh`;
+explicit literal `self.hosted` + `linux.shell` labels (plain or quoted;
+aliases/tags/interpolation stay native) use documented Bash.
+Windows, unknown runners, aliases/merges and unresolved inherited execution context stay native.
+The bounded reader supports adjacent unquoted command strings and literal blocks, including indentationless script sequences and anchored step declarations.
+Declared anchor source is colored in its own declared/default context;
+later aliases or runner overrides at callsites are never resolved or claimed as execution proof.
+`after-script` is a separate program.
+Pipe/variables mappings, quoted/folded YAML, aliases, unrelated YAML/README files and missing context stay native;
+GitLab runner context remains unsupported in this slice.
+The retained default public PR27 projection has an incomplete first step and later gap-tainted declarations, so all of it deliberately stays native.
+Its new30–37 declaration source is reused only in a self-contained synthetic-context grammar test;
+actual eligibility requires genuine native context expansion, with no automatic fetch/reveal by this feature.
+The shared controller uses the optional adapter `diffSyntax.apply(view)`/`clear()` lifecycle;
+no provider syntax reader is imported by the shared controller.
+Coloring is independent of comment/test folding and pending count fetches;
+master disable, no diff view, navigation and controller stop clear only its owned ranges.
+The existing GitHub18 regressions plus native-fixture unit checks do not prove installed Bitbucket highlighting, exact native Bash-scope palette mapping or actual Bitbucket dark-theme selection.
+Keep D25 partial until those are verified publicly.
 
 ## GitLab and Bitbucket provider adapters
 
