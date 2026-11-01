@@ -1184,7 +1184,7 @@ describe('the tab bar button', () => {
     expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__error')?.textContent).toBe('GitHub could not convert the pull request to a draft: Not allowed');
   });
 
-  it('is a 1-click merge while ⌘ (Ctrl) is held on an approved pull request, and turns Merged when it goes through', async () => {
+  it('is a 1-click merge while ⌘ (Ctrl) is held on a pull request GitHub would merge now, and turns Merged when it goes through', async () => {
     window.localStorage.clear();
     resetStatusHints();
     const posts: { url: string; body: string }[] = [];
@@ -1241,7 +1241,8 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     let approved = true;
-    const sent = stubBox(() => mergeBox('MERGEABLE', true, { reviews: approved ? [{ author: { login: 'ann' }, state: 'APPROVED' }] : [] }));
+    // A repository that requires the approval: dismissed, GitHub would no longer merge it.
+    const sent = stubBox(() => mergeBox(approved ? 'MERGEABLE' : 'BLOCKED', true, { reviews: approved ? [{ author: { login: 'ann' }, state: 'APPROVED' }] : [] }));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -1253,14 +1254,27 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 4; i += 1) await settle();
     expect(sent).toEqual([]);
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
-    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['closed']);
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
   });
 
-  it('has no 1-click merge without an approval: ⌘-click opens the menu', async () => {
+  it('is a 1-click merge without an approval when GitHub would merge it now (an admin the rules exempt, a repository that requires none)', async () => {
     window.localStorage.clear();
     resetStatusHints();
     const sent = stubBox(() => mergeBox('MERGEABLE', true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+    expect(sent).toEqual([]);
+  });
+
+  it('has no 1-click merge where approvals are required and none stands: ⌘-click opens the menu', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent = stubBox(() => mergeBox('BLOCKED', true));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -1269,7 +1283,47 @@ describe('the tab bar button', () => {
     pill()?.dispatchEvent(new MouseEvent('click', instant));
     await settle();
     expect(sent).toEqual([]);
-    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+  });
+
+  it('has no 1-click merge over a request for changes, even where GitHub would merge it', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent = stubBox(() => mergeBox('MERGEABLE', true, { reviews: [{ author: { login: 'ann' }, state: 'CHANGES_REQUESTED' }] }));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    pill()?.dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    expect(sent).toEqual([]);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+  });
+
+  it('has no 1-click merge for an admin who could merge only past the rules', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') sent.push(url);
+        if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        const payload = JSON.parse(mergeBox(url.includes('bypass_requirements=true') ? 'MERGEABLE' : 'BLOCKED', true));
+        payload.pullRequest.viewerCanAdminBypassMergeRequirements = true;
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    pill()?.dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    expect(sent).toEqual([]);
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
   });
 
