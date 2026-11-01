@@ -1339,6 +1339,75 @@ a default comes only from `defaults.run.shell` (a `shell` under `env` is a varia
 Unknown hunk context, visibly unsupported shells, scripts over 100 KB and browsers without the highlight API keep GitHub's native colors.
 Ranges are refreshed when source nodes change and cleared on teardown.
 
+## GitLab and Bitbucket provider adapters
+
+The cloud content scripts live in `entrypoints/gitlab.content/` and `entrypoints/bitbucket.content/`, with provider adapters in `src/gitlab/` and `src/bitbucket/` behind `src/providers/` interfaces.
+The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants requiring separate adapter verification and host permissions.
+Repository identity includes the provider, origin and full repository path, so nested GitLab groups and equally named repositories on different hosts remain separate.
+One synchronized Geld settings object follows the user across providers, with the same core matcher and category definitions.
+Provider-specific surfaces translate settings and sources into shared review and diff models rather than importing GitHub's DOM adapters or Primer styles.
+
+- **Selected GitLab diffs require immutable comparisons.**
+  An MR's `.diff` endpoint ignores `diff_id` and `start_sha`, so obtain the selected version metadata and request `/-/compare/{base}...{head}?format=diff&straight=true` with its immutable refs.
+  A compare URL ending in `.diff` can return HTML with HTTP 200, so successful HTTP status alone does not establish a raw diff.
+  Keep the selected version, comparison base, commit and whitespace mode in the request/cache identity.
+  Require complete metadata, unique matching file paths and matching per-file addition/deletion counts before replacing native counts or hiding files.
+  Missing, truncated, HTML or mismatched diff responses are unavailable data rather than zero changed files.
+  Git quotes UTF-8 path bytes as octal escapes and can quote only one side of a rename, so decode the byte sequence as UTF-8 and parse each path independently.
+- **GitLab's public discussion fallback differs from its REST API.**
+  Anonymous REST discussion requests can return 401 while the public MR's native web discussion source remains readable.
+  The web source paginates with an opaque `x-next-page-cursor` header and `cursor` query parameter, so do not treat one page or an absent `X-Next-Page` header as complete history.
+  Preserve native note IDs, source permalinks, separate resolved/outdated state and system-event attribution when normalizing discussions.
+  Integration accounts can author ordinary comments and system events, and a system event never becomes a bot review verdict merely because its author is a bot.
+  The MR's `head_pipeline` can run against a synthetic merge-result SHA rather than the source branch's review head.
+  Preserve the pipeline's actual SHA and attach the explicitly established `reviewHeadSha` association separately instead of replacing one SHA with the other.
+- **Quick actions use the provider's native controls and current capabilities.**
+  A GitLab review drawer, approval, request-changes choice, comment writer or per-thread control is available only when the actual native control and applicable permissions exist.
+  Opening a native writer retains the provider's validation and tier constraints, and relaying a click does not prove that the server accepted a write.
+  An asynchronous native action must recheck the review route and selected comparison after hydration so a drawer opened on one MR cannot focus, select or click a writer on another SPA route.
+  Do not synthesize a request-changes endpoint or silently substitute a comment when that review state is unavailable.
+  Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
+- **Review bot trust is scoped to native account identity.**
+  A GitLab numeric account ID or Bitbucket account UUID is bound to a documented service only after explicit confirmation for that exact provider/origin/repository.
+  User-selected PAT, group-token and service accounts have per-install identities, so GitHub logins, display names, comment markers and configuration files never establish account trust on another provider.
+  The Identify reviewer disclosure shows the actual account ID, original comment and repository scope before its separate Trust action saves shared settings.
+  Provider support, trusted account identity, verified verdict syntax and native write capabilities remain separate requirements for bot controls.
+- **Provider diff caching and throttling have their own boundaries.**
+  Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.
+  Unknown-head cache entries are provisional until refreshed, and an exact revision's cached result must not leak into a different comparison or whitespace mode.
+  Request lanes are scoped by provider and origin and respect numeric or date-form `Retry-After` values rather than reusing GitHub's API assumptions.
+  Cache clearing aborts or invalidates pending work so a late response cannot repopulate a cleared visit.
+  GitLab's explicit `w=1` and `w=0` choices take precedence over automatic whitespace defaults, and explicitly choosing `w=1` removes the stored opt-out.
+  A session guard remembers a requested whitespace mode that the site strips from the URL so the extension does not cause a navigation loop.
+- **Bitbucket PR metadata can abbreviate commit hashes.**
+  A public PR's source and destination can carry twelve-character hashes even though the native commit endpoint returns the full SHA.
+  Resolve abbreviated refs in the explicitly identified source or destination repository, including source forks, and require the returned full hash to match the prefix before treating it as immutable.
+  Resolve each snapshot again rather than caching the abbreviation, since a reused prefix, base movement or source-fork change must not inherit the previous snapshot.
+  PR diff and diffstat endpoints redirect to comparison resources, but browser Fetch with `redirect: 'manual'` hides the status and Location behind an `opaqueredirect` response.
+  After resolving the PR snapshot, request the native comparison endpoint directly with `{sourceRepository}:{fullHead}%0D{fullBase}`, `from_pullrequest_id` and `topic=true` instead of trying to follow an unreadable redirect.
+  Keep the exact comparison path and non-pagination query parameters on every diffstat page, so a next link cannot switch refs or merge-base mode within the same repository.
+  The CI runner also pins the source repository and both full commits before acquisition and again before writing a summary.
+- **Native branding belongs to each provider.**
+  Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
+  Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
+  GitLab's live comment body and byline use GitLab Sans at 14px/21px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
+  Native GitLab default buttons have their own semantic background, foreground, border and interaction-state tokens, including a translucent background and transparent border in dark mode.
+  Match GitLab's reduced-motion behavior as well as its normal button transition, since a copied transition otherwise keeps animating when native controls honor the reader's preference.
+  GitLab focus uses its inner/outer ring tokens, and its informational popovers use the overlap surface, small font and feedback radius tokens.
+  GitLab popovers and dropdowns draw their shadows with three CSS `drop-shadow()` filters using `--gl-shadow-color-default`, so `box-shadow: none` does not mean that the visible overlay has no shadow.
+  GitLab popover body padding is 8px vertically and 12px horizontally in the observed default density, and its small text is 12px/18px.
+  Rapid diff fold rows inherit the selected code theme's `--code-*` colors and `--rd-body-font-size`/line-height with the native monospace font, rather than the surrounding UI's Sans font or surface palette.
+  Define code-theme overrides at the fold row, since variables scoped below the document root cannot resolve in a bridge computed on `html`.
+  GitLab's Changes badge can be pointer-transparent, so bind its surrounding native tab link as the hover and keyboard target while retaining the count span for text updates.
+  The native line-count `aria-label` lives on a wrapper outside the numeric span, so update its count alongside the visible text and restore the latest native wording during teardown.
+  Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.
+  Current Atlaskit default buttons draw the border on `::after` so it does not add to the button's layout height.
+  Token mappings documented from Atlassian's design system do not establish that Bitbucket has deployed the same component version or typography rollout.
+  The VM blocks Bitbucket API/static hosts, while the connected TinyFish browser can inspect public PR Overview and Diff pages and exercise their native controls.
+  TinyFish's current tools expose selected element context but cannot export full ancestor HTML, evaluate computed styles or load the supplied extension, so those acceptance checks remain separate.
+  Browser-agent element reference UUIDs are tool references rather than established native DOM IDs, and guessed font sizes or token meanings are not computed-style measurements.
+  Do not replace those verification gaps with fabricated selectors or claim documented mappings and native browsing as a successful installed-extension test.
+
 ## Code review bots
 
 Two review bots are installed on the repository, both **manual-trigger only** (community PRs are reviewed on request, not on every push): **Cursor Bugbot** — comment `bugbot run` (or `cursor review`) on the PR;

@@ -1,0 +1,10 @@
+[data-geld-provider-line-hidden] { display: none !important; }
+.geld-provider-line-fold { color: var(--geld-provider-text); background: var(--geld-provider-bg-subtle); }
+.geld-provider-line-fold__cell { padding: 0 !important; }
+.geld-provider-line-fold__toggle { display: flex; align-items: center; gap: var(--geld-provider-space-3); width: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); color: inherit; font: inherit; text-align: start; border: 0; background: transparent; cursor: pointer; }
+.geld-provider-line-fold__toggle:hover { background: var(--geld-provider-button-hover-bg); }
+.geld-provider-line-fold__toggle:focus-visible { box-shadow: var(--geld-provider-focus-ring); outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); }
+.geld-provider-line-fold__line, .geld-provider-line-fold__status, .geld-provider-line-fold__partial { color: var(--geld-provider-text-subtle); }
+.geld-provider-line-fold__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geld-provider-line-fold__changes { margin-inline-start: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.geld-provider-line-fold__status, .geld-provider-line-fold__partial, .geld-provider-line-fold__chevron { white-space: nowrap; }

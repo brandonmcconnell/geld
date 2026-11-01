@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
-import { parseUnifiedDiff } from '@geld/core';
+import { CLOUD_PROVIDER_HOSTS, parseUnifiedDiff, providerForHost } from '@geld/core';
 import { completeChat, evaluateJev, listModels, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
@@ -40,7 +40,7 @@ const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 /** github.com, its diff host, and any Enterprise servers the user configured. */
 async function allowedHosts(): Promise<Set<string>> {
   const settings = await settingsItem.getValue();
-  return new Set([...BUILT_IN_HOSTS, ...settings.enterpriseHosts]);
+  return new Set([...BUILT_IN_HOSTS, ...settings.enterpriseHosts.filter((host) => providerForHost(host) === null)]);
 }
 
 /** Parsed diffs are reused across tabs/pages for a while (PR lists re-request them often). */
@@ -487,10 +487,11 @@ function updateBadge(tabId: number, state: TabState): void {
   }
 }
 
-/** Hosts the content script may run on: github.com plus granted Enterprise hosts. */
+/** Cloud providers and the GitHub Enterprise hosts the user granted. */
 async function contentHosts(): Promise<Set<string>> {
   const settings = await settingsItem.getValue();
-  return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
+  const enterpriseHosts = settings.enterpriseHosts.filter((host) => providerForHost(host) === null);
+  return new Set([...CLOUD_PROVIDER_HOSTS, ...(await grantedHosts(enterpriseHosts))]);
 }
 
 /**
@@ -500,11 +501,13 @@ async function contentHosts(): Promise<Set<string>> {
  * on top of it would only make the first one retire (github.content/index.ts).
  */
 async function ensureTab(tab: { readonly id?: number | undefined; readonly url?: string | undefined; readonly status?: string | undefined }, reason: 'activated' | 'popup'): Promise<EnsureContentResponse> {
-  if (tab.id === undefined || tab.status === 'loading' || hostOf(tab.url, await contentHosts()) === null) return { injected: false };
-  return { injected: await ensureContentScript(tab.id, { reason, url: tab.url }) };
+  if (tab.id === undefined || tab.status === 'loading') return { injected: false };
+  const host = hostOf(tab.url, await contentHosts());
+  if (host === null) return { injected: false };
+  return { injected: await ensureContentScript(tab.id, { reason, url: tab.url, provider: providerForHost(host) ?? 'github' }) };
 }
 
-/** Keyboard shortcut: ask the active GitHub tab to toggle its hidden files. */
+/** Keyboard shortcut: ask the active provider tab to toggle its hidden files. */
 async function toggleHiddenInActiveTab(): Promise<void> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) return;
@@ -600,21 +603,24 @@ export default defineBackground(() => {
   const syncHosts = (): void => {
     void settingsItem
       .getValue()
-      .then((settings) => syncEnterpriseHosts(settings.enterpriseHosts))
+      .then((settings) => syncEnterpriseHosts(settings.enterpriseHosts.filter((host) => providerForHost(host) === null)))
       .catch(() => undefined);
   };
   browser.runtime.onInstalled.addListener(syncHosts);
   browser.runtime.onStartup.addListener(syncHosts);
-  settingsItem.watch((settings) => void syncEnterpriseHosts(settings.enterpriseHosts).catch(() => undefined));
+  settingsItem.watch((settings) => void syncEnterpriseHosts(settings.enterpriseHosts.filter((host) => providerForHost(host) === null)).catch(() => undefined));
   syncHosts();
 
   // Tabs that were open before an install/update have no content script yet.
   browser.runtime.onInstalled.addListener(() => {
     void contentHosts().then(async (hosts) => {
-      for (const tab of await tabsOnHosts([...hosts])) void ensureContentScript(tab.id, { reason: 'install', url: tab.url });
+      for (const tab of await tabsOnHosts([...hosts])) {
+        const host = hostOf(tab.url, hosts);
+        if (host !== null) void ensureContentScript(tab.id, { reason: 'install', url: tab.url, provider: providerForHost(host) ?? 'github' });
+      }
     });
   });
-  // Switching to a GitHub tab that somehow lacks Geld (e.g. reinstalled while it was open).
+  // Switching to a supported tab that somehow lacks Geld (e.g. reinstalled while it was open).
   browser.tabs.onActivated.addListener(({ tabId }) => {
     void browser.tabs
       .get(tabId)

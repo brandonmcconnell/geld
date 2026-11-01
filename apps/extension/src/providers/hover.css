@@ -1,0 +1,40 @@
+.geld-provider-hover {
+  position: fixed;
+  z-index: var(--geld-provider-overlay-z-index, 1000);
+  box-sizing: border-box;
+  container-type: inline-size;
+  padding: var(--geld-provider-overlay-padding, var(--geld-provider-space-3) var(--geld-provider-space-4));
+  overflow: auto;
+  overscroll-behavior: contain;
+  font: var(--geld-provider-overlay-font, var(--geld-provider-font-small));
+  color: var(--geld-provider-text);
+  background: var(--geld-provider-overlay-bg);
+  border: var(--geld-provider-overlay-border-width, var(--geld-provider-border-width)) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-overlay-radius);
+  box-shadow: var(--geld-provider-overlay-shadow);
+  filter: var(--geld-provider-overlay-filter, none);
+  overflow-wrap: anywhere;
+}
+.geld-provider-hover[hidden] { display: none; }
+.geld-provider-hover__message { margin: 0 0 var(--geld-provider-space-3); color: var(--geld-provider-text-subtle); }
+.geld-provider-hover__message:only-child { margin: 0; }
+.geld-provider-hover__rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, max-content);
+  align-items: baseline;
+  gap: var(--geld-provider-space-2) var(--geld-provider-space-4);
+  font-variant-numeric: tabular-nums;
+}
+.geld-provider-hover__row { display: contents; }
+.geld-provider-hover__label { overflow-wrap: anywhere; }
+.geld-provider-hover__files { text-align: end; color: var(--geld-provider-text-subtle); }
+.geld-provider-hover__add { text-align: end; color: var(--geld-provider-success); }
+.geld-provider-hover__del { text-align: end; color: var(--geld-provider-danger); }
+.geld-provider-hover__rule { grid-column: 1 / -1; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); margin-block: var(--geld-provider-space-1); }
+.geld-provider-hover-anchor { cursor: help; }
+.geld-provider-hover-anchor:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
+@container (max-width: 280px) {
+  .geld-provider-hover__rows { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .geld-provider-hover__label { grid-column: 1 / -1; }
+  .geld-provider-hover__files { text-align: start; }
+}
