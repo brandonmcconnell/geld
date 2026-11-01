@@ -32,36 +32,66 @@ on:
           - github
           - all
 
-concurrency:
-  group: geld-installed-browser-public-providers
-  cancel-in-progress: false
-
 permissions:
   contents: read
   actions: read
 
 jobs:
+  select-public-verification:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.selection.outputs.run }}
+      focus: ${{ steps.selection.outputs.focus }}
+    steps:
+      - name: Select a public verification slice
+        id: selection
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-list', 'bitbucket-comment', 'bitbucket-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-review', 'gitlab-bot', 'gitlab-references', 'gitlab-binary', 'github', 'all']);
+            const parseFocus = (body) => {
+              const text = typeof body === 'string' ? body : '';
+              const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
+              const markers = [...text.matchAll(/<!-- geld-browser-focus: ([a-z-]+) -->/g)];
+              if (prefixes.length === 0) return { focus: 'regression', valid: true };
+              if (prefixes.length !== 1 || markers.length !== 1 || !choices.has(markers[0][1])) return { focus: 'regression', valid: false };
+              return { focus: markers[0][1], valid: true };
+            };
+            let focus = 'regression';
+            let run = false;
+            if (context.eventName === 'workflow_dispatch') {
+              const input = context.payload.inputs?.focus ?? 'regression';
+              if (choices.has(input)) { focus = input; run = true; }
+              else core.setFailed('Unsupported public verification focus. No provider navigation allowed.');
+            } else if (context.eventName === 'pull_request') {
+              const request = context.payload.pull_request;
+              const sameRepository = request?.head?.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
+              const selected = sameRepository ? parseFocus(request.body) : { focus: 'regression', valid: true };
+              focus = selected.focus;
+              if (['opened', 'synchronize', 'reopened'].includes(context.payload.action)) run = true;
+              else if (context.payload.action === 'edited' && sameRepository && selected.valid) {
+                const change = context.payload.changes?.body;
+                if (change && Object.hasOwn(change, 'from') && (typeof change.from === 'string' || change.from === null)) run = parseFocus(change.from).focus !== focus;
+              }
+            }
+            core.setOutput('focus', focus);
+            core.setOutput('run', run ? 'true' : 'false');
+            core.info(run ? `Selected public verification slice: ${focus}.` : 'Skipping provider navigation: this event did not request a valid focus change. No feature verification ran or passed.');
   installed-extension:
+    needs: select-public-verification
+    if: needs.select-public-verification.outputs.run == 'true'
+    # Skipped selector updates never enter the browser queue.
+    # GitHub keeps one running and one pending job; a new selected job may replace the pending job without FIFO guarantees.
+    concurrency:
+      group: geld-installed-browser-public-providers
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
       GELD_BROWSER_PREVIOUS_REPORT: ${{ github.workspace }}/.browser-previous-evidence/report.json
-      GELD_BROWSER_FOCUS: ${{ github.event_name == 'workflow_dispatch' && inputs.focus || 'regression' }}
+      GELD_BROWSER_FOCUS: ${{ needs.select-public-verification.outputs.focus }}
     steps:
-      - name: Select a public verification slice
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const request = context.payload.pull_request;
-            const sameRepository = request?.head?.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
-            const marker = sameRepository ? /<!-- geld-browser-focus: ([a-z-]+) -->/.exec(request.body ?? '') : null;
-            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-list', 'bitbucket-comment', 'bitbucket-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-review', 'gitlab-bot', 'gitlab-references', 'gitlab-binary', 'github', 'all']);
-            if (marker !== null && choices.has(marker[1])) {
-              core.exportVariable('GELD_BROWSER_FOCUS', marker[1]);
-              core.info(`Selected public verification slice: ${marker[1]}.`);
-            }
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
