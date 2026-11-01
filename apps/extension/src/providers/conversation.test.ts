@@ -203,6 +203,35 @@ describe('provider conversation integrations', () => {
     expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
   });
 
+  it('reveals an existing native source across review tabs while preserving modified link navigation', async () => {
+    const previous = window.location.href;
+    window.location.href = url;
+    try {
+      const native = document.createElement('article');
+      native.id = 'note_1';
+      document.body.append(native);
+      const bounds = [new DOMRect(0, 10, 100, 20)];
+      vi.spyOn(native, 'getClientRects').mockReturnValue(Object.assign(bounds, { item: (index: number) => bounds[index] ?? null }));
+      const scroll = vi.spyOn(native, 'scrollIntoView').mockImplementation(() => undefined);
+      const original = snapshot();
+      const source = { ...original, input: { ...original.input, threads: original.input.threads.map((thread) => ({ ...thread, comments: thread.comments.map((entry) => ({ ...entry, url: `${url}/diffs#note_1` })) })) } };
+      const f = fixture(source, {}, { aiEnabled: false }, { describe: (target) => target.origin === repository.origin && [new URL(url).pathname, new URL(`${url}/diffs`).pathname].includes(target.pathname) ? { ...page, kind: target.pathname.endsWith('/diffs') ? 'diff' : 'overview' } : null, conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }] });
+      await vi.waitFor(() => expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(true));
+      const anchor = f.host.querySelector<HTMLAnchorElement>('[data-geld-source="note_1"] a[href$="/diffs#note_1"]');
+      if (anchor === null) throw new Error('Missing native source link.');
+      const modified = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+      anchor.dispatchEvent(modified);
+      expect(modified.defaultPrevented).toBe(false);
+      expect(scroll).not.toHaveBeenCalled();
+      window.location.href = url;
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(click);
+      expect(click.defaultPrevented).toBe(true);
+      expect(native.hasAttribute('data-geld-provider-compact-hidden')).toBe(false);
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally { window.location.href = previous; }
+  });
+
   it('keeps push/state activity visible and only folds explicitly low-signal represented activity', async () => {
     const roots = ['99', '100', '101'].map((id) => { const root = document.createElement('article'); root.id = `note_${id}`; document.body.append(root); return root; });
     const source: ProviderReviewSnapshot = { ...snapshot(), events: roots.map((root, index) => ({ id: root.id, url: `${url}#${root.id}`, author: comment().author, createdAt: comment().createdAt, body: 'Native activity', kind: index === 0 ? 'activity' : index === 1 ? 'push' : 'state', lowSignal: true })) };

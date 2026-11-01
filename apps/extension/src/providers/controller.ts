@@ -11,7 +11,7 @@ import { ProviderHover } from './hover';
 import { ProviderReveal } from './reveal';
 import { ProviderCategoryTree } from './tree';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
-import { isProviderReviewPage } from './types';
+import { immutableProviderPage, isProviderReviewPage } from './types';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
 import type { ProviderRepoConfigSource } from './repo-config';
 import type { RepoConfigChoices } from '../lib/local-state';
@@ -19,6 +19,17 @@ import type { RepoConfigChoices } from '../lib/local-state';
 const HIDDEN = 'data-geld-provider-hidden';
 const INLINE = 'data-geld-provider-inline';
 const AUTHOR_HIDDEN = 'data-geld-provider-author-hidden';
+
+interface SettledHeader {
+  readonly key: string;
+  readonly settings: GeldSettings;
+  readonly effective: GeldSettings;
+  readonly catalog: Catalog;
+  readonly choices: RepoConfigChoices;
+  readonly config: TabState['repoConfig'];
+  readonly visible: ChangeTotals;
+  readonly filtered: string | null;
+}
 
 interface HoverCounts {
   readonly stats: StatsBreakdown | null;
@@ -54,6 +65,8 @@ export class ProviderController {
   private pageKey = '';
   private expanded: boolean;
   private state: TabState = PROVIDER_IDLE_STATE;
+  private settledHeader: SettledHeader | null = null;
+  private effectiveSettings: GeldSettings | null = null;
   private section: HTMLElement | null = null;
   private activeCategory: string | null = null;
   private layout: HTMLElement | null = null;
@@ -114,7 +127,8 @@ export class ProviderController {
         const nodes = [...record.addedNodes, ...record.removedNodes];
         return nodes.length > 0 && nodes.every((node) => node instanceof Element && node.hasAttribute('data-geld-ui'));
       })) return;
-      this.requestRefresh();
+      this.reassertHeader();
+      this.requestRefresh(false);
     });
     this.observer.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
     document.addEventListener('visibilitychange', this.visibility);
@@ -148,7 +162,8 @@ export class ProviderController {
     } else this.apply();
   };
 
-  requestRefresh(): void {
+  requestRefresh(invalidateHeader = true): void {
+    if (invalidateHeader) this.settledHeader = null;
     if (this.stopped || document.hidden || this.timer !== null) return;
     this.timer = setTimeout(() => { this.timer = null; this.apply(); }, 60);
   }
@@ -213,6 +228,8 @@ export class ProviderController {
   }
 
   private restorePage(preserveHeaderHover = false): void {
+    this.settledHeader = null;
+    this.effectiveSettings = null;
     for (const host of [...this.hoverCounts.keys()]) {
       if (!preserveHeaderHover || !this.headerHosts.has(host)) this.forgetHover(host);
     }
@@ -276,6 +293,7 @@ export class ProviderController {
     const hasPageSurface = page !== null && (view !== null || targets.length > 0 || this.adapter.reviewHost?.(document) != null || this.adapter.actionHost?.(document) != null);
     const config = page === null || !hasPageSurface ? null : this.configs?.get(page, this.settings, this.choices) ?? null;
     const effective = config?.settings ?? this.settings;
+    this.effectiveSettings = effective;
     const matcher = createMatcher(effective, page === null ? null : providerRepositoryScope(page.repository), this.catalog);
     this.conversation.apply(page !== null && hasPageSurface && isProviderReviewPage(page) ? page : null, effective);
     if (page === null) {
@@ -321,16 +339,7 @@ export class ProviderController {
       stats: statsBreakdown(all, hidden, hiddenNounPlural(activeCategories, hidden), activeCategories),
       status: result.provisional === true ? 'provisional' : 'ready',
     });
-    for (const target of targets) {
-      this.counts.write(target.additions, visible.additions);
-      this.counts.write(target.deletions, visible.deletions);
-      this.counts.write(target.files, visible.files);
-      if (target.accessibleSummaryHost !== undefined) this.counts.writeSummary(target.accessibleSummaryHost, visible);
-      for (const label of target.labels ?? []) {
-        if (label.count === 'lines') this.counts.writeLineAttribute(label.host, label.attribute, visible);
-        else this.counts.writeAttribute(label.host, label.attribute, visible[label.count]);
-      }
-    }
+    this.writeHeaderCounts(targets, visible);
     if (view !== null) this.applyFiles(page, view, hidden, all, files, effective, result.result.revision);
     this.state = {
       repository: page.repository, repo: page.repository.path, repoConfig: config?.tab ?? null, allowed: true, rule: null,
@@ -341,8 +350,43 @@ export class ProviderController {
       })),
       expanded: this.expanded, diffPageUrl: page.diffPageUrl, onDiffPage: page.kind === 'diff' || page.kind === 'commit' || page.kind === 'compare',
     };
+    this.settledHeader = immutableProviderPage(page) && result.result.complete && result.provisional !== true ? {
+      key, settings: this.settings, effective, catalog: this.catalog, choices: this.choices,
+      config: this.state.repoConfig, visible, filtered: view === null ? null : JSON.stringify([...view.filteredPaths].sort()),
+    } : null;
     this.applyLists();
     this.publish(this.state);
+  }
+
+  /** Reassert only settled, immutable totals in the mutation microtask, before native remounts paint. */
+  private reassertHeader(): void {
+    const settled = this.settledHeader;
+    if (settled === null || this.stopped || document.hidden || !this.settings.enabled || !this.state.allowed
+      || !this.state.hasDiff || this.settings !== settled.settings || this.effectiveSettings !== settled.effective
+      || this.catalog !== settled.catalog || this.choices !== settled.choices || this.state.repoConfig !== settled.config
+      || this.state.visible !== settled.visible || this.pageKey !== settled.key) return;
+    try {
+      const page = this.adapter.describe(new URL(window.location.href), document);
+      if (page === null || !immutableProviderPage(page) || providerDiffKey(page) !== settled.key
+        || !decideRepo(compileRepoRules(this.settings.repoRules), providerRepositoryScope(page.repository)).allowed) return;
+      const view = this.adapter.readDiff(document);
+      const filtered = view === null ? null : JSON.stringify([...view.filteredPaths].sort());
+      if (filtered !== settled.filtered) return;
+      this.writeHeaderCounts(this.adapter.headerTargets(document), settled.visible);
+    } catch { /* Native SPA markup may be between subjects; wait for the normal validated pass. */ }
+  }
+
+  private writeHeaderCounts(targets: readonly ProviderHeaderTarget[], visible: ChangeTotals): void {
+    for (const target of targets) {
+      this.counts.write(target.additions, visible.additions);
+      this.counts.write(target.deletions, visible.deletions);
+      this.counts.write(target.files, visible.files);
+      if (target.accessibleSummaryHost !== undefined) this.counts.writeSummary(target.accessibleSummaryHost, visible);
+      for (const label of target.labels ?? []) {
+        if (label.count === 'lines') this.counts.writeLineAttribute(label.host, label.attribute, visible);
+        else this.counts.writeAttribute(label.host, label.attribute, visible[label.count]);
+      }
+    }
   }
 
   private applyFiles(page: ProviderPage, view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], effective: GeldSettings, revision: string): void {

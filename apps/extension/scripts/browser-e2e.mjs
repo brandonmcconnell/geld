@@ -19,10 +19,12 @@ const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/26633
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
 const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
-const GL_LIST_QUERY = new URLSearchParams({ state: 'all', search: 'Return an error when issueMoveList cannot move the issue' });
+const GL_LIST_QUERY = new URLSearchParams({ state: 'all', search: 'issueMoveList' });
 const GL_PROJECT_LIST = `https://gitlab.com/gitlab-org/gitlab/-/merge_requests?${GL_LIST_QUERY}`;
 const GL_GROUP_LIST = `https://gitlab.com/groups/gitlab-org/-/merge_requests?${GL_LIST_QUERY}`;
 const BB_PR_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/?state=MERGED';
+const BB_COMMENT_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22';
+const BB_COMMIT = 'https://bitbucket.org/atlassian/bitbucket-upload-file/commits/9777bca47119';
 const report = {
   schema: 1, startedAt: new Date().toISOString(), mode: 'actual installed unpacked extension on live anonymous public pages',
   parity: 'incomplete', executablePath, extensionPath, artifacts,
@@ -177,6 +179,7 @@ async function runCase(name, url, body, discovery = false) {
     const cooldown = cooldowns.get(provider);
     if (cooldown !== undefined && cooldown > Date.now()) {
       item.rateLimitedUntil = new Date(cooldown).toISOString();
+      item.rateLimitInherited = true;
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
     page = await browser.newPage();
@@ -222,7 +225,10 @@ async function runCase(name, url, body, discovery = false) {
     item.finishedAt = new Date().toISOString();
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
-      catch (error) { if (!closedTarget(error)) throw error; }
+      catch (error) {
+        item.cleanupObservation = errorText(error);
+        if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = errorText(error); }
+      }
     }
     await saveReport();
     console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
@@ -268,7 +274,7 @@ async function installedHover(page, selector, interaction, artifactName) {
   await page.mouse.move(1, 1);
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
-      const anchor = document.querySelector(target);
+      const anchor = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const order = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter((node) => node.tabIndex >= 0 && !node.disabled && node.closest('[inert]') === null && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const at = order.indexOf(anchor);
       const prior = at > 0 ? order[at - 1] : null;
@@ -277,10 +283,16 @@ async function installedHover(page, selector, interaction, artifactName) {
     }, selector);
     assert.equal(previous, true, 'Native previous control needed for real Tab-key traversal is missing');
     await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate((target) => document.activeElement === document.querySelector(target), selector), true, 'Real Tab did not focus the native count host');
-  } else await page.hover(selector);
+    assert.equal(await page.evaluate((target) => [...document.querySelectorAll(target)].some((node) => node === document.activeElement), selector), true, 'Real Tab did not focus the native count host');
+  } else {
+    const handle = await page.evaluateHandle((target) => [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
+    const control = handle.asElement();
+    assert.ok(control !== null, 'Visible count hover host is missing');
+    await control.hover();
+    await discardHandle(handle);
+  }
   const snapshot = await poll(() => page.evaluate((target) => {
-    const host = document.querySelector(target);
+    const host = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
     const tip = document.querySelector('#geld-provider-count-tooltip[role="tooltip"]');
     if (tip === null || tip.hidden || getComputedStyle(tip).display === 'none') return null;
     const style = getComputedStyle(tip);
@@ -355,7 +367,12 @@ async function reducedMotionProbe(page, provider) {
 }
 
 async function captureNativeBitbucketResources(page) {
-  const observed = await page.evaluate(() => [...document.querySelectorAll('link[rel="modulepreload"][href], link[rel="preload"][as="script"][href]')].map((node) => node.href));
+  const observations = await page.evaluate(() => [
+    ...[...document.querySelectorAll('link[rel="modulepreload"][href], link[rel="preload"][as="script"][href]')].map((node) => ({ url: node.href, basis: 'Native modulepreload/script-preload element' })),
+    ...[...document.querySelectorAll('script[src]')].map((node) => ({ url: node.src, basis: 'Native script element src' })),
+    ...performance.getEntriesByType('resource').map((entry) => ({ url: entry.name, basis: 'Actual browser ResourceTiming entry', initiatorType: entry.initiatorType })),
+  ]);
+  const observed = [...new Set(observations.map((entry) => entry.url))];
   const resources = [];
   for (const component of ['action-single-app', 'overview-panel']) {
     const observedUrl = observed.find((value) => {
@@ -399,7 +416,8 @@ async function captureNativeBitbucketResources(page) {
       assert.ok(bytes.length <= 2 * 1024 * 1024);
       const file = new URL(observedUrl).pathname.split('/').at(-1).replace(/\.js$/, '.native.js');
       await writeFile(resolve(artifacts, file), bytes);
-      resources.push({ component, url: observedUrl, status: result.status, mime: result.mime, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), file, executed: false, basis: 'Exact modulepreload/script-preload URL observed on the native public page. Bounded credential-free browser GET only.' });
+      resources.push({ component, url: observedUrl, status: result.status, mime: result.mime, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), file, executed: false,
+        observations: observations.filter((entry) => entry.url === observedUrl), basis: 'Exact URL observed in a native preload/script element or actual browser ResourceTiming entry. Bounded credential-free browser GET only.' });
     } catch (error) { resources.push({ component, url: observedUrl, unavailable: errorText(error) }); }
   }
   return { observedComponents: observed.filter((value) => /repo-pull-request-(?:action-single-app|overview-panel)\./.test(value)), captures: resources, limit: 'At most two observed component resources,2MiB each. No source maps or downloaded script execution.' };
@@ -498,7 +516,15 @@ async function categoryInteraction(page, path, provider, name, reveal) {
     };
     const marks = (node) => [...node?.querySelectorAll('svg,img,[data-testid="file-unresolved-threads-count"]') ?? []].map((mark) => ({ tag: mark.tagName, hook: mark.getAttribute('data-testid'), label: mark.getAttribute('aria-label'), use: mark.querySelector('use')?.getAttribute('href') ?? null, color: getComputedStyle(mark).color, fill: getComputedStyle(mark).fill }));
     const content = root?.querySelector('[data-testid="file-content"][data-qa="bk-file__content"]');
+    const firstRow = active?.querySelector('[data-geld-category-path] .geld-provider-category-native-row');
+    const firstControl = firstRow?.matches('a,button') ? firstRow : firstRow?.querySelector('a,button');
+    const bounds = (node) => {
+      if (node == null) return null;
+      const rect = node.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, display: getComputedStyle(node).display, visibility: getComputedStyle(node).visibility };
+    };
     return { headers: headers.map((header) => ({ text: header.textContent, expanded: header.getAttribute('aria-expanded') })),
+      layout: { firstFile: bounds(firstControl), panel: bounds(active?.closest('.geld-provider-categories')), content: bounds(active?.querySelector('.geld-provider-category-content')), treeHost: bounds(active?.closest('[data-geld-provider-category-host]')), viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY } },
       focusedHeader: document.activeElement?.classList.contains('geld-provider-category-header') ? document.activeElement.textContent : null,
       clone: copy == null ? null : { ariaLabel: copiedControl?.getAttribute('aria-label'), hasNativePresentation: !copy.classList.contains('geld-provider-file'), style: styles(copiedControl), marks: marks(copy) },
       source: source === undefined ? null : { style: styles(source), marks: marks(nativeRow) },
@@ -514,6 +540,13 @@ async function categoryInteraction(page, path, provider, name, reveal) {
   const opened = await poll(read, (value) => value.headers.filter((header) => header.expanded === 'true').length === 1 && value.headers.at(-1).expanded === 'true' && value.root !== null && value.root.display !== 'none' && value.clone !== null, 'Real Enter opens only Tests and shows its native file wrapper');
   assert.ok(opened.clone.ariaLabel?.includes(path), 'Cloned category file lost its full-path accessible label');
   assert.equal(opened.clone.hasNativePresentation, true, 'Category row fell back instead of cloning an available native presentation');
+  const { firstFile, panel, content, viewport } = opened.layout;
+  assert.ok(firstFile !== null && panel !== null && content !== null, 'Opened category needs actual first-file and owned-panel layout bounds');
+  assert.ok(firstFile.width > 0 && firstFile.height > 0 && firstFile.display !== 'none' && firstFile.visibility !== 'hidden', 'Opened category first file is not rendered');
+  assert.ok(firstFile.left >= -1 && firstFile.right <= viewport.width + 1 && firstFile.top >= -1 && firstFile.bottom <= viewport.height + 1, `Opened ${provider} first file is clipped outside the viewport before any scrolling or file click: ${JSON.stringify(opened.layout)}`);
+  for (const [label, container] of [['owned panel', panel], ['active content', content]]) {
+    assert.ok(firstFile.left >= container.left - 1 && firstFile.right <= container.right + 1 && firstFile.top >= container.top - 1 && firstFile.bottom <= container.bottom + 1, `Opened ${provider} first file is outside its ${label}: ${JSON.stringify(opened.layout)}`);
+  }
   assert.ok(opened.source !== null && opened.clone.style !== null, 'Native source and cloned control samples are required');
   if (opened.source.style.tag === opened.clone.style.tag) {
     for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color']) assert.equal(opened.clone.style[key], opened.source.style[key], `Cloned ${provider} native file ${key} diverges`);
@@ -533,7 +566,7 @@ async function categoryInteraction(page, path, provider, name, reveal) {
     result.afterReveal = await poll(read, (value) => value.root?.display !== 'none' && value.root?.rendered === true && value.root?.expanded === true && value.root?.codeLines > 0, 'Real cloned Bitbucket file click hydrates and expands its native diff', 20_000);
     result.revealObservation = result.beforeReveal.root?.rendered ? 'Native file was already hydrated before the click; expanded code is verified.' : 'Native placeholder became a rendered expanded diff with real code after the click.';
     result.revealedArtifacts = await capture(page, `${name}-revealed`);
-    await controlHandle.dispose();
+    await discardHandle(controlHandle);
   }
   await page.focus('.geld-provider-category-header[aria-expanded="true"]');
   await page.keyboard.press('Home');
@@ -683,6 +716,223 @@ async function gitLabListCounts(page, name) {
   } finally { await patchSettings({ showListStats: original.showListStats ?? true, hiddenAuthors: original.hiddenAuthors ?? [] }); }
 }
 
+async function openReviewAncestors(page, selector) {
+  let clicks = 0;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const handle = await page.evaluateHandle((selector) => {
+      const target = document.querySelector(selector);
+      const closed = [];
+      for (let node = target?.parentElement; node != null; node = node.parentElement) if (node instanceof HTMLDetailsElement && !node.open) closed.push(node);
+      return closed.at(-1)?.querySelector(':scope > summary') ?? null;
+    }, selector);
+    const summary = handle.asElement();
+    if (summary === null) { await discardHandle(handle); return clicks; }
+    await summary.click();
+    await discardHandle(handle);
+    clicks += 1;
+  }
+  throw new Error('Review disclosure nesting did not settle after real summary clicks');
+}
+
+async function localReviewedStorage() {
+  return options.evaluate(async () => ({ local: (await chrome.storage.local.get('providerReviewedItems')).providerReviewedItems ?? {}, synchronized: Object.hasOwn(await chrome.storage.sync.get('providerReviewedItems'), 'providerReviewedItems') }));
+}
+
+function assertReviewedStorage(value, itemId, reviewKey, headSha) {
+  assert.equal(value.synchronized, false, 'Device review marks leaked into synchronized settings');
+  let selected = null;
+  for (const [bucket, record] of Object.entries(value.local)) {
+    assert.deepEqual(Object.keys(record).sort(), ['headSha', 'items', 'reviewKey', 'updatedAt'], 'Local review storage retained unexpected source fields');
+    assert.equal(bucket, JSON.stringify([record.reviewKey, record.headSha]), 'Local review storage key does not match its actual review/head');
+    assert.match(record.headSha, /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
+    assert.ok(Number.isFinite(record.updatedAt) && record.updatedAt > 0);
+    for (const [id, fingerprint] of Object.entries(record.items)) {
+      assert.match(id, /^[a-zA-Z0-9_-]{1,180}$/);
+      assert.match(fingerprint, /^[a-f0-9]{64}$/, 'Local review record contains source text instead of a SHA256 fingerprint');
+    }
+    if (record.reviewKey === reviewKey && record.headSha === headSha && Object.hasOwn(record.items, itemId)) selected = record;
+  }
+  return selected;
+}
+
+async function localReviewedFlag(page) {
+  const initial = await poll(() => page.evaluate(() => {
+    const button = document.querySelector('.geld-provider-review [data-geld-local-reviewed]');
+    return button === null ? null : { id: button.getAttribute('data-geld-local-reviewed'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
+  }), (value) => value !== null && value.id !== '' && value.pressed === 'false' && !value.disabled, 'First installed local-review control becomes available');
+  const itemId = initial.id;
+  const selector = `.geld-provider-review [data-geld-local-reviewed=${JSON.stringify(itemId)}]`;
+  const observe = () => page.evaluate((itemId) => {
+    const panel = document.querySelector('.geld-provider-review');
+    const button = [...panel?.querySelectorAll('[data-geld-local-reviewed]') ?? []].find((node) => node.getAttribute('data-geld-local-reviewed') === itemId);
+    const item = button?.closest('[data-geld-item]');
+    if (panel === null || button === undefined || item === null || item === undefined) return null;
+    let headSha = null;
+    try { headSha = JSON.parse(document.querySelector('[data-noteable-type="MergeRequest"][data-noteable-data]')?.getAttribute('data-noteable-data') ?? 'null')?.diff_head_sha ?? null; } catch { /* Native data may still be hydrating. */ }
+    const anchors = [...item.querySelectorAll('[data-geld-source]')].map((node) => node.getAttribute('data-geld-source'));
+    const sources = anchors.map((anchor) => {
+      const source = document.getElementById(anchor);
+      const thread = source?.closest('[data-testid="discussion-content"][data-discussion-id]');
+      return { anchor, nativeId: source?.id ?? null, discussionId: thread?.getAttribute('data-discussion-id') ?? null, resolved: thread?.getAttribute('data-discussion-resolved') ?? null, resolvable: thread?.getAttribute('data-discussion-resolvable') ?? null };
+    });
+    const rows = (selector) => [...panel.querySelectorAll(selector)].map((node) => ({ id: node.getAttribute('data-geld-review-bot'), state: node.getAttribute('data-state'), text: node.textContent.replace(/\s+/g, ' ').trim(), links: [...node.querySelectorAll('a[href]')].map((link) => link.href) }));
+    return { itemId, headSha, pressed: button.getAttribute('aria-pressed'), disabled: button.disabled, buttonText: button.textContent,
+      localStatus: item.getAttribute('data-state'), statusText: item.querySelector('.geld-provider-review__item-state')?.textContent,
+      group: item.closest('[data-geld-review-group]')?.getAttribute('data-geld-review-group'), notice: item.querySelector('[data-geld-local-review-notice]')?.textContent ?? null,
+      sourceLinks: [...item.querySelectorAll('[data-geld-source] .geld-provider-review__byline > a[href]')].map((link) => link.href), nativeSources: sources, checks: rows('.geld-provider-review__check'), bots: rows('[data-geld-review-bot]'), aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length };
+  }, itemId);
+  const original = await poll(observe, (value) => value !== null && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value.headSha) && value.sourceLinks.length > 0 && value.nativeSources.some((source) => source.nativeId !== null) && !value.disabled, 'Local mark has an actual native source head, original source and canonical links');
+  assert.equal(original.aiRunControls, 0, 'Local flag smoke must not expose an AI run');
+  assert.ok(['open', 'needs-reply', 'addressed'].includes(original.localStatus), 'First native item must be an actionable local review item');
+  const url = new URL(page.url());
+  const match = /^(.*)\/-\/merge_requests\/([1-9]\d*)/.exec(url.pathname);
+  assert.ok(match !== null);
+  const reviewKey = `gitlab@${url.origin}:${encodeURIComponent(match[1].slice(1))}!${match[2]}`;
+  const beforeStorage = await localReviewedStorage();
+  assert.equal(assertReviewedStorage(beforeStorage, itemId, reviewKey, original.headSha), null, 'Fresh browser unexpectedly has a current local mark');
+  const mutations = [];
+  const request = (request) => {
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method()) || providerOf(request.url()) !== 'gitlab') return;
+    const url = new URL(request.url());
+    const mutation = url.pathname === '/api/graphql' ? /\bmutation\b/.test(request.postData() ?? '') : /\/(?:notes|discussions|draft_notes|approve|unapprove|reviews|merge)(?:\/|$)/.test(url.pathname);
+    if (mutation) mutations.push({ method: request.method(), url: safeUrl(request.url()) });
+  };
+  const unchanged = (value) => {
+    assert.equal(value.headSha, original.headSha, 'Native review head changed during local flag verification');
+    assert.deepEqual(value.sourceLinks, original.sourceLinks, 'Local mark changed original comment links');
+    for (const source of original.nativeSources.filter((source) => source.nativeId !== null)) assert.deepEqual(value.nativeSources.find((candidate) => candidate.anchor === source.anchor), source, 'Local mark changed an observed native thread status or identity');
+    assert.deepEqual(value.checks, original.checks, 'Local mark changed native CI results');
+    assert.deepEqual(value.bots, original.bots, 'Local mark changed a bot verdict');
+    assert.equal(value.aiRunControls, 0);
+  };
+  page.on('request', request);
+  try {
+    const openedSummaries = await openReviewAncestors(page, selector);
+    await page.click(selector);
+    const marked = await poll(observe, (value) => value !== null && value.pressed === 'true' && !value.disabled && value.group === 'done' && value.notice?.includes(`Native status: ${original.statusText}.`), 'Real local mark moves the item to Reviewed on this device while retaining native status');
+    unchanged(marked);
+    const stored = await localReviewedStorage();
+    assert.ok(assertReviewedStorage(stored, itemId, reviewKey, original.headSha) !== null, 'Actual chrome.storage.local did not persist the current mark');
+    const markedArtifacts = await capture(page, 'gitlab-local-reviewed-marked');
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+    const reloaded = await poll(observe, (value) => value !== null && value.pressed === 'true' && !value.disabled && value.group === 'done', 'Actual page reload rehydrates the exact item/head mark through the installed storage service');
+    unchanged(reloaded);
+    const reopenedSummaries = await openReviewAncestors(page, selector);
+    await page.click(selector);
+    const undone = await poll(observe, (value) => value !== null && value.pressed === 'false' && !value.disabled && value.notice === null && value.localStatus === original.localStatus, 'Real Undo removes only the local review mark');
+    unchanged(undone);
+    const afterStorage = await poll(localReviewedStorage, (value) => assertReviewedStorage(value, itemId, reviewKey, original.headSha) === null, 'Actual local storage removes the undone flag');
+    assert.deepEqual(mutations, [], 'Local reviewed flag attempted a native provider mutation');
+    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
+  } finally { page.off('request', request); }
+}
+
+async function bitbucketListCounts(page) {
+  const selector = 'tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) .geld-provider-list-counts';
+  const read = () => page.evaluate(() => {
+    const title = [...document.querySelectorAll('a[data-qa="pull-request-row-link"]')].find((node) => new URL(node.href).pathname === '/atlassian/bitbucket-upload-file/pull-requests/27' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+    const row = title?.closest('tr[data-qa="pull-request-row"]');
+    if (row == null) return null;
+    const chip = title.parentElement?.querySelector('.geld-provider-list-counts');
+    return { text: chip?.textContent.replace(/\s+/g, ' ').trim() ?? null, title: chip?.getAttribute('title') ?? null,
+      nativeIds: [row, ...row.querySelectorAll('[id]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.id).filter(Boolean),
+      nativeLinks: [...row.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ href: node.getAttribute('href'), qa: node.getAttribute('data-qa') })), rowHidden: row.hidden, display: getComputedStyle(row).display };
+  });
+  const initial = await poll(read, (value) => value !== null && /\b0 tests?\b/.test(value.text ?? '') && value.text.includes('+46') && value.text.includes('−29') && !/Counting|unavailable/.test(value.text), 'Visible native Bitbucket PR27 row settles at zero tests and+46−29');
+  const pointer = await installedHover(page, selector, 'pointer', 'bitbucket-list-pointer-hover');
+  const keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-list-keyboard-hover');
+  const expectedTotal = { label: 'Total', files: '5 files', additions: '+46', deletions: '−29' };
+  for (const hover of [pointer, keyboard]) {
+    assert.deepEqual(hover.rows.find((row) => row.label === 'Essential'), { ...expectedTotal, label: 'Essential' });
+    assert.deepEqual(hover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '0 files', additions: '+0', deletions: '−0' });
+    assert.deepEqual(hover.rows.find((row) => row.label === 'Total'), expectedTotal);
+  }
+  assert.equal(pointer.text, keyboard.text);
+  const proof = report.cases.find((item) => item.name === 'bitbucket-diff')?.derivedHidden;
+  assert.ok(proof?.path === 'pipe/pipe.py' && proof.files === 1 && Number.isFinite(proof.additions) && Number.isFinite(proof.deletions), 'Required PR27 diff must establish actual selected-file totals before its list cross-check');
+  const visible = { files: 4, additions: 46 - proof.additions, deletions: 29 - proof.deletions };
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  let filtered;
+  let filteredHover;
+  try {
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
+    filtered = await poll(read, (value) => value !== null && /\b1 test\b/.test(value.text ?? '') && value.text.includes(`+${visible.additions}`) && value.text.includes(`−${visible.deletions}`), 'Shared custom pattern updates the actual same-row Bitbucket chip');
+    filteredHover = await installedHover(page, selector, 'keyboard', 'bitbucket-list-filtered-hover');
+    assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Essential'), { label: 'Essential', files: '4 files', additions: `+${visible.additions}`, deletions: `−${visible.deletions}` });
+    assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '1 file', additions: `+${proof.additions}`, deletions: `−${proof.deletions}` });
+    assert.deepEqual(filteredHover.rows.find((row) => row.label === 'Total'), expectedTotal);
+    assert.deepEqual(filtered.nativeIds, initial.nativeIds);assert.deepEqual(filtered.nativeLinks, initial.nativeLinks);
+  } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
+  const restored = await poll(read, (value) => value !== null && value.text === initial.text, 'Removing the shared custom pattern restores native Bitbucket list counts');
+  assert.deepEqual(restored.nativeIds, initial.nativeIds);assert.deepEqual(restored.nativeLinks, initial.nativeLinks);
+  return { selection: 'Only the first visible native PR27 row is inspected. No unverified native filter or other-row DOM hiding.', initial, pointer, keyboard, runtimeDiffProof: proof, visible, filtered, filteredHover, restored,
+    nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
+}
+
+async function bitbucketCommentDigest(page) {
+  const read = () => page.evaluate(() => {
+    const native = document.querySelector('#comment-471253038[data-testid="comment"]');
+    const nativeBody = native?.querySelector('[data-testid="comment-content"] .ak-renderer-document');
+    const originalLink = native?.querySelector('[data-testid="comment-header"] a[href]');
+    const panel = document.querySelector('.geld-provider-review');
+    const source = panel?.querySelector('[data-geld-source="comment-471253038"]');
+    const body = source?.querySelector('.geld-provider-review__body .ak-renderer-document');
+    const item = source?.closest('[data-geld-item]');
+    const activity = native?.closest('[data-qa="pull-request-overview-activity-content"]');
+    const header = activity?.querySelector('[data-qa="bk-file__header"][data-testid="file-header"]');
+    let authenticated = null;
+    try { authenticated = JSON.parse(document.querySelector('meta#bb-bootstrap[data-current-user]')?.getAttribute('data-current-user') ?? 'null')?.isAuthenticated ?? null; } catch { /* Recorded as unavailable. */ }
+    const dangerous = body == null ? null : [...body.querySelectorAll('*')].some((node) => /^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|FORM|BUTTON|INPUT|SELECT|TEXTAREA|SVG)$/.test(node.tagName) || [...node.attributes].some((attribute) => attribute.name.startsWith('on') || ['style', 'contenteditable', 'id'].includes(attribute.name)));
+    return { authenticated, panelState: panel?.getAttribute('data-state') ?? null, nativeId: native?.id ?? null,
+      nativeBody: nativeBody?.textContent.trim() ?? null, renderedBody: body?.textContent.trim() ?? null, renderedSanitized: dangerous === false,
+      originalLink: originalLink?.href ?? null, sourceLinks: [...source?.querySelectorAll('.geld-provider-review__byline > a[href]') ?? []].map((link) => link.href),
+      nativeOutdated: [...header?.querySelectorAll('span') ?? []].some((node) => node.children.length === 0 && node.textContent.trim() === 'Outdated'),
+      nativePath: header?.querySelector('[data-qa="bk-filepath"]')?.textContent ?? null, itemState: item?.getAttribute('data-state') ?? null,
+      sourceActions: [...source?.querySelectorAll('.geld-provider-review__source-actions button') ?? []].map((button) => button.textContent.trim()),
+      quickActions: [...document.querySelectorAll('.geld-provider-actions button')].map((button) => button.textContent.trim()), aiControls: panel?.querySelectorAll('[data-geld-ai-run]').length ?? 0 };
+  });
+  const original = await poll(read, (value) => ['ready', 'partial'].includes(value.panelState) && value.nativeId !== null && value.nativeOutdated && value.itemState === 'outdated' && value.renderedBody !== null, 'Installed PR22 digest keeps the actual native comment and outdated state');
+  assert.equal(original.authenticated, false, 'Native bootstrap must explicitly establish anonymous Bitbucket access');
+  assert.match(original.nativeBody, /Internal maintenance: Update tests to access token auth\./);
+  assert.equal(original.renderedBody, original.nativeBody, 'Sanitized digest text differs from the actual native comment');
+  assert.equal(original.renderedSanitized, true);
+  assert.equal(new URL(original.originalLink).hash, '#comment-471253038', 'Native comment timestamp must retain the actual source anchor');
+  const permalink = `${BB_COMMENT_PR}/_/diff#comment-471253038`;
+  assert.ok(original.sourceLinks.includes(permalink), 'Digest must preserve the actual API original permalink, including its native /_/diff alias');
+  assert.equal(original.nativePath, '.changes/next-release/patch-20240213112019723332.json');
+  assert.ok(original.sourceActions.includes('Show conversation'), 'Anonymous read-only native conversation navigation is missing');
+  assert.equal(original.sourceActions.some((label) => /^(Reply|Resolve thread|Resolve|Reopen)/i.test(label)), false, 'Anonymous digest exposed a native write relay');
+  assert.deepEqual(original.quickActions, []);assert.equal(original.aiControls, 0);
+  return { ...original, permalink, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: original.nativeId, body: original.nativeBody, link: original.originalLink, path: original.nativePath, outdated: original.nativeOutdated })).digest('hex'),
+    writeVerification: 'Native bootstrap explicitly anonymous. Owned Reply/Resolve/Reopen and global quick actions are absent; no provider write controls are activated.' };
+}
+
+async function bitbucketCommitCounts(page) {
+  const read = () => page.evaluate(() => ({
+    heading: [...document.querySelectorAll('[role="region"][aria-label="Diff"] > div > div > h2')].find((node) => /^[\d,]+ files?$/.test(node.textContent.trim()))?.textContent.trim() ?? null,
+    badge: document.querySelector('[data-testid="sidebar-tab-files"][role="tab"] > span > div > span > span')?.textContent.trim() ?? null,
+    file: document.getElementById('chg-pipe/pipe.py')?.parentElement == null ? null : { id: document.getElementById('chg-pipe/pipe.py').id, display: getComputedStyle(document.getElementById('chg-pipe/pipe.py').parentElement).display, hidden: document.getElementById('chg-pipe/pipe.py').parentElement.getAttribute('data-geld-provider-hidden'), path: document.getElementById('chg-pipe/pipe.py').parentElement.querySelector('[data-qa="bk-filepath"]')?.textContent ?? null },
+    nativeLinks: [...document.querySelectorAll('[role="region"][aria-label="Diff"] a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.getAttribute('href')) }));
+  const all = { files: 1, additions: 2, deletions: 0 };
+  const baseline = await waitTotals(page, all, all, 0);
+  const native = await poll(read, (value) => value.heading === '1 file' && value.badge === '1' && value.file?.path === 'pipe/pipe.py', 'Actual standalone commit heading and sidebar Files badge');
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  let filtered;
+  let hidden;
+  let hiddenArtifacts;
+  try {
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
+    filtered = await waitTotals(page, all, { files: 0, additions: 0, deletions: 0 }, 1);
+    hidden = await poll(read, (value) => value.heading === '0 files' && value.badge === '0' && value.file?.display === 'none' && value.file.hidden === 'closed', 'Actual standalone commit reaches zero native file counts and hides its sole file');
+    assert.equal(hidden.file.id, native.file.id);assert.deepEqual(hidden.nativeLinks, native.nativeLinks);
+    hiddenArtifacts = await capture(page, 'bitbucket-commit-filtered');
+  } finally { await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} }); }
+  const restoredState = await waitTotals(page, all, all, 0);
+  const restored = await poll(read, (value) => value.heading === '1 file' && value.badge === '1' && value.file?.display !== 'none' && value.file?.hidden === null, 'Actual commit file counts and sole-file visibility restore');
+  assert.equal(restored.file.id, native.file.id);assert.deepEqual(restored.nativeLinks, native.nativeLinks);
+  return { baseline, native, filtered, hidden, hiddenArtifacts, restoredState, restored, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Only actual runtime totals and native file-count surfaces are asserted.' };
+}
+
 await mkdir(artifacts, { recursive: true });
 try {
   await inheritCooldowns();
@@ -768,6 +1018,7 @@ try {
     item.state = await tabState(page);
     assert.equal(item.state.repository?.provider, 'gitlab');
     assert.equal(item.state.onDiffPage, false);
+    item.localReviewed = await localReviewedFlag(page);
     return {};
   });
   await runCase('github-regression', GH_FILES, async (page, item) => {
@@ -811,6 +1062,25 @@ try {
       return { status: 'passed', verified: name === 'bitbucket-diff' ? 'Installed complete diff counts, real synchronized pattern filtering, actual native file hiding/count rewrite, and restoration on this public fixture.' : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
     });
   }
+
+  await runCase('bitbucket-list-counts', BB_PR_LIST, async (page, item) => {
+    item.listCounts = await bitbucketListCounts(page);
+    item.state = await tabState(page);
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'The actual visible native PR27 row settles at complete counts. Pointer and real Tab breakdowns plus shared custom-pattern filtering/restoration preserve native IDs and links.' };
+  });
+  await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
+    item.commentDigest = await bitbucketCommentDigest(page);
+    item.state = await tabState(page);
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. Anonymous write controls remain unavailable; no provider write is attempted.' };
+  });
+  await runCase('bitbucket-commit-counts', BB_COMMIT, async (page, item) => {
+    item.commitCounts = await bitbucketCommitCounts(page);
+    item.state = await tabState(page);
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: 'The actual standalone commit has one file and two added lines in runtime state. Its native file heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved.' };
+  });
 
   for (const [name, url] of [['gitlab-project-mr-list', GL_PROJECT_LIST], ['gitlab-group-mr-list', GL_GROUP_LIST]]) {
     await runCase(name, url, async (page, item) => {
