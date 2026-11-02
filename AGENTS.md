@@ -1,7 +1,7 @@
 # Geld — guide for agents and contributors
 
 Geld is a browser extension that hides test files (and, optionally, other review noise) from GitHub diffs.
-This repository is a pnpm monorepo that also hosts the marketing site for geld.sh.
+This pnpm monorepo also hosts the marketing site and an independent web dashboard in `apps/dashboard`.
 Read this file before changing anything;
 it captures decisions that are not obvious from the code.
 
@@ -722,7 +722,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the content script's disk cache (`DiffCache`) is what avoids refetching: SHA-keyed entries for pages (`github:{owner}:{repo}:{pull}:{sha}`, exact and never stale), plus `…:{pull}:latest` entries for list rows — the list markup carries no head SHA (verified: none in the page), so these are served stale-while-revalidate: shown for up to 24 h so a row is never blank, refreshed through the budget once older than 30 min, and a SHA-keyed write (opening the PR) refreshes `latest` too.
   A failed revalidation keeps the stale counts on screen.
   Four concurrent fetches per tab, only for rows near the viewport.
-  **No GitHub API is used.**
+  **These line counts use GitHub-served diffs and page data.**
+  Optional account, review and dashboard features also use provider APIs.
 - Browsers do not inject content scripts into tabs that were open before an install/update.
   `src/lib/inject.ts` puts Geld there on demand: the background injects into every open GitHub tab on `onInstalled`, into a GitHub tab on `tabs.onActivated` when it does not answer a ping, and when the popup gets no answer (`geld:ensure-content`, then one retry).
   The content script dispatches a `geld:takeover` event on start so an older copy still running in the page retires (and `ctx.onInvalidated` retires orphans), so there is never more than one active instance.
@@ -1311,8 +1312,10 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   Author profile URLs live in `lib/site.ts` (entries with `url: null` are not rendered).
 - **Deployment:** Vercel, dreamthinkbuild account, Root Directory `apps/site`, domain geld.sh.
   `apps/site/vercel.json` points the Ignored Build Step at `scripts/vercel-ignore.sh`, which skips builds for commits that only touch the extension (core, the extension's `package.json`, brand assets and the lockfile do trigger builds).
-- **No database, ever.**
-  The only user data is the settings gist on the user's own GitHub account.
+- **The dashboard uses Postgres for accounts and team metadata.**
+  Raw PR content must never be persisted in the application database.
+  The existing site settings flow still uses the user's GitHub gist.
+  Identity and repository Apps are separate, and provider permissions remain authoritative.
   The site signs users in with the **same Geld GitHub App** as the extension, via the web flow (the App's callback URLs are `https://www.geld.sh/auth` and `http://localhost:3000/auth`;
   the extension's device flow never uses them).
   The canonical host is **www.geld.sh** (`SITE_URL`);
