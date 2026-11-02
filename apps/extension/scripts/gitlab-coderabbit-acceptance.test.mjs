@@ -4,7 +4,9 @@ import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { Window } from 'happy-dom';
-import { CODERABBIT_FIXTURE as F, createCodeRabbitFixtureOracle, codeRabbitDomProbe, codeRabbitRequestObservation, observeCodeRabbitFixture, assertCodeRabbitSource, assertCodeRabbitRequestSource, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
+import { tsImport } from 'tsx/esm/api';
+const { normalizeSettings } = await tsImport('@geld/core', import.meta.url);
+import { CODERABBIT_FIXTURE as F, createCodeRabbitFixtureOracle, codeRabbitDomProbe, codeRabbitRequestObservation, observeCodeRabbitFixture, assertCodeRabbitSource, assertCodeRabbitRequestSource, assertCodeRabbitSettings, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 
 const SHA = 'a'.repeat(40);
 const API = 'https://gitlab.com/api/v4/projects/ark-bitcoin%2Fbark/merge_requests/2117';
@@ -121,8 +123,8 @@ for (const id of ['', 0, '0', '03436654383', '3.436654383e9', '3436654383 ', Num
 
 // Offline browser/storage protocol doubles exercise failure cleanup and call ordering only.
 // These are not an installed CodeRabbit result and do not replace the real UI/clipboard assertions.
-function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false } = {}) {
-  const initial = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [], untouched: { original: true } };let settings = structuredClone(initial);
+function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false } = {}) {
+  const initial = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [], categoryPatterns: { tests: ['**/*.spec.ts'] }, aiModel: 'original-model' };if (originalTrustAbsent) delete initial.trustedReviewAccounts;let settings = structuredClone(initial);
   let trusted = false;let held = false;let commandHeld = false;let mode = 'Incremental review';let clipboard = 'Original clipboard';let status = '';let input = null;let granted = false;let cleared = false;let disposed = false;let withdrew = false;
   const oracle = ready();const snapshot = oracle.snapshot();const fixture = { ...oracle, copyPhase() {}, dispose() { disposed = true; } };
   const snapshotDom = () => ({ ...dom(), nativeHead: sourceFailure ? 'b'.repeat(40) : SHA, native: { ...dom().native, sameNode: held ? true : null },
@@ -148,9 +150,9 @@ function commandFlow({ permissionFailure = false, captureFailure = false, source
   const run = () => verifyCodeRabbitCommands(page, item, { fixture,
     context: { overridePermissions: async (origin, permissions) => { assert.equal(origin, 'https://gitlab.com');assert.ok(permissions.includes('clipboard-write'));granted = true;if (permissionFailure) throw new Error('Clipboard permission denied'); }, clearPermissionOverrides: async () => { cleared = true; } },
     poll, openReviewAncestors: async () => [],
-    clickReviewButton: async (_page, _selector, label) => { if (label === 'Trust') { trusted = true;settings.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`]; } else if (label.endsWith('review')) { mode = label;status = ''; }return { label }; },
+    clickReviewButton: async (_page, _selector, label) => { if (label === 'Trust') { trusted = true;settings.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`];if (materializeSettings) settings = normalizeSettings(settings); } else if (label.endsWith('review')) { mode = label;status = ''; }return { label }; },
     readSettings: async () => structuredClone(settings), withdrawTrust: async () => { withdrew = true;trusted = false;settings.trustedReviewAccounts = [];return { bindingRemoved: true }; },
-    restoreTrust: async (original) => { settings.trustedReviewAccounts = original.trustedReviewAccounts;trusted = false; },
+    restoreTrust: async (original) => { if (Object.hasOwn(original, 'trustedReviewAccounts')) settings.trustedReviewAccounts = original.trustedReviewAccounts;else if (corruptCleanupPresence) settings.trustedReviewAccounts = [];else delete settings.trustedReviewAccounts;trusted = false; },
     capture: async () => { if (captureFailure) throw new Error('Screenshot failed');return { screenshot: 'offline-protocol-only.png' }; },
   });
   return { run, item, initial, settings: () => settings, clipboard: () => clipboard, cleanup: () => ({ granted, cleared, disposed, withdrew }) };
@@ -222,4 +224,47 @@ test('native scope is mandatory and note-body/owned copies do not become head ev
   assert.equal(native.assertSource().nativeVersion.count, 1);assert.equal(native.probe().nativeHead, null);
   native.doc.querySelector('.merge-request').setAttribute('data-project-path', 'foreign/project');assert.throws(native.assertSource);
   native.doc.querySelector('.merge-request').remove();assert.throws(native.assertSource);
+});
+
+test('production normalization permits sparse-to-materialized defaults without claiming raw settings equality', () => {
+  const original = { aiEnabled: false, enabled: true, categories: { tests: true }, repoConfigs: 'never' };
+  const binding = `gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`;
+  const current = normalizeSettings({ ...original, trustedReviewAccounts: [binding] });
+  const observed = assertCodeRabbitSettings(current, original, [binding]);assert.equal(observed.effectiveSettingsEqual, true);assert.equal(observed.rawOtherSettingsEqual, false);
+  assert.ok(observed.materializedKnownFields.includes('prOverview'));assert.ok(observed.materializedKnownFields.includes('aiModel'));assert.deepEqual(observed.unknownRawKeys, []);
+});
+for (const [name, change] of [
+  ['category setting', (value) => { value.categories.tests = false; }],
+  ['AI enablement', (value) => { value.aiEnabled = true; }],
+  ['existing known preference', (value) => { value.enabled = false; }],
+  ['newly materialized nondefault value', (value) => { value.prOverview = false; }],
+  ['exact raw account binding', (value) => { value.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit 999`]; }],
+  ['unknown raw-key addition', (value) => { value.futurePreference = { unexpected: true }; }],
+]) test(`normalization cannot hide a changed ${name}`, () => {
+  const original = { aiEnabled: false, enabled: true, categories: { tests: true } };const binding = `gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`;
+  const current = structuredClone(normalizeSettings({ ...original, trustedReviewAccounts: [binding] }));change(current);assert.throws(() => assertCodeRabbitSettings(current, original, [binding]));
+});
+test('existing unknown raw settings must remain present and unchanged independently of effective normalization', () => {
+  const original = { aiEnabled: false, futurePreference: { original: true } };const current = { ...normalizeSettings(original), futurePreference: { original: true } };
+  assert.deepEqual(assertCodeRabbitSettings(current, original, []).unknownRawKeys, ['futurePreference']);
+  delete current.futurePreference;assert.throws(() => assertCodeRabbitSettings(current, original, []), /Unknown raw settings fields changed/);
+  current.futurePreference = { original: false };assert.throws(() => assertCodeRabbitSettings(current, original, []), /Unknown raw settings fields changed/);
+});
+for (const originalTrustAbsent of [false, true]) test(`materialized trust flow restores original raw trust ${originalTrustAbsent ? 'absence' : 'value/presence'} and all effective preferences`, async () => {
+  const flow = commandFlow({ materializeSettings: true, originalTrustAbsent });await flow.run();const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.status, 'passed');assert.equal(proof.settingsRestored, true);assert.equal(proof.rawTrustRestored, true);
+  assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), Object.hasOwn(flow.initial, 'trustedReviewAccounts'));
+  assert.deepEqual(flow.settings().trustedReviewAccounts, flow.initial.trustedReviewAccounts);assertCodeRabbitSettings(flow.settings(), flow.initial, []);
+  assert.ok(proof.settingsComparisons.some((value) => value.stage === 'trusted' && value.materializedKnownFields.length > 0 && value.rawOtherSettingsEqual === false));
+  assert.equal(proof.settingsComparisons.at(-1).stage, 'cleanup');assert.equal(flow.clipboard(), 'Original clipboard');assert.equal(flow.cleanup().cleared, true);
+});
+test('effective equality cannot turn a wrong raw trust cleanup shape into a cleanup pass', async () => {
+  const flow = commandFlow({ materializeSettings: true, originalTrustAbsent: true, corruptCleanupPresence: true });await assert.rejects(flow.run(), /CodeRabbit clipboard\/trust cleanup failed/);
+  assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.equal(flow.item.codeRabbitCommands.settingsRestored, undefined);assert.equal(flow.item.codeRabbitCommands.rawTrustRestored, undefined);
+  assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), true);assert.equal(flow.cleanup().cleared, true);assert.equal(flow.cleanup().disposed, true);
+});
+test('post-trust failure still restores the exact raw absent trust field after defaults materialize', async () => {
+  const flow = commandFlow({ materializeSettings: true, originalTrustAbsent: true, captureFailure: true });await assert.rejects(flow.run(), /Screenshot failed/);
+  assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.equal(flow.item.codeRabbitCommands.settingsRestored, true);assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), false);
+  assertCodeRabbitSettings(flow.settings(), flow.initial, []);assert.equal(flow.clipboard(), 'Original clipboard');assert.equal(flow.cleanup().cleared, true);assert.equal(flow.cleanup().disposed, true);
 });
