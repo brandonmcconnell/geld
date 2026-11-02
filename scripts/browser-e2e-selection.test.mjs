@@ -76,6 +76,18 @@ test('GitLab whitespace characterization is one explicit literal with no default
   assert.match(harness, /await runCase\('gitlab-whitespace-viewed', GL_MIXED/);
 });
 
+test('native GitLab whitespace session has an independent literal case without weakening the legacy characterization', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['gitlab-whitespace-session']), ['gitlab-whitespace-session']);
+  assert.deepEqual(Array.from(cases['gitlab-whitespace-viewed']), ['gitlab-whitespace-viewed']);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'gitlab-whitespace-session') assert.equal(selected.includes('gitlab-whitespace-session'), false);
+  assert.deepEqual(select({ body: marker('gitlab-whitespace-session'), from: marker('github') }), { focus: 'gitlab-whitespace-session', run: 'true', failures: [] });
+  assert.deepEqual(select({ body: `${marker('gitlab-whitespace-session')}\nEvidence`, from: marker('gitlab-whitespace-session') }), { focus: 'gitlab-whitespace-session', run: 'false', failures: [] });
+  assert.match(harness, /name === 'gitlab-whitespace-session' && focus !== 'gitlab-whitespace-session'/);
+  assert.match(harness, /const whitespacePrivacy = \['gitlab-whitespace-viewed', 'gitlab-whitespace-session'\]\.includes\(name\)/);
+});
+
 test('unchanged cross-provider settings prose edits do not enqueue another two-provider visit', () => {
   assert.deepEqual(select({ body: `${marker('cross-provider-settings')}\nNew evidence`, from: `${marker('cross-provider-settings')}\nEarlier evidence` }), { focus: 'cross-provider-settings', run: 'false', failures: [] });
 });

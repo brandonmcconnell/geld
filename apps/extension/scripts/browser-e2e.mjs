@@ -24,6 +24,7 @@ import { verifyGitLabAuthorReuseThemes } from './gitlab-author-reuse-acceptance.
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { cleanupGitLabWhitespace, gitLabWhitespaceSettings, observeGitLabWhitespace, verifyGitLabWhitespace, whitespaceReceiptURL } from './gitlab-whitespace-viewed.mjs';
+import { GITLAB_WHITESPACE_SESSION, gitLabWhitespaceSessionSettings, verifyGitLabWhitespaceSession } from './gitlab-whitespace-session.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 import { verifyGitLabWholeTestContext } from './gitlab-whole-test-context.mjs';
 import { observeStandaloneWhole, standaloneWholeURL, verifyStandaloneWhole } from './gitlab-standalone-whole.mjs';
@@ -66,6 +67,7 @@ const FOCUSED_CASES = {
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-file-search': ['gitlab-file-search'],
   'gitlab-whitespace-viewed': ['gitlab-whitespace-viewed'],
+  'gitlab-whitespace-session': ['gitlab-whitespace-session'],
   'gitlab-standalone-whole': ['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'],
   'gitlab-review': ['gitlab-overview-digest'],
   'gitlab-bot': ['gitlab-bot-digest'],
@@ -348,7 +350,7 @@ function observeBitbucketBudget(page, item, abort) {
 }
 
 async function runCase(name, url, body, discovery = false) {
-  const whitespacePrivacy = name === 'gitlab-whitespace-viewed';
+  const whitespacePrivacy = ['gitlab-whitespace-viewed', 'gitlab-whitespace-session'].includes(name);
   const fileMenuPrivacy = name === 'bitbucket-native-file-menu';
   const item = { name, url, startedAt: new Date().toISOString(), status: 'running', ...(discovery ? { purpose: 'Read-only native surface discovery. No feature parity assertion.' } : {}), console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
   report.cases.push(item);
@@ -371,7 +373,8 @@ async function runCase(name, url, body, discovery = false) {
   const abort = new AbortController();
   try {
     if (fileMenuPrivacy && focus !== 'bitbucket-native-file-menu') { item.status = 'not_selected';item.reason = 'Native file-menu diagnosis is literal-only. No navigation or input.';return; }
-    if (whitespacePrivacy && focus !== 'gitlab-whitespace-viewed') { item.status = 'not_selected';item.reason = 'Anonymous native whitespace characterization is literal-only, excluded from all/default/regression. No navigation or preference action.';return; }
+    if (whitespacePrivacy && focus !== 'gitlab-whitespace-viewed' && name !== 'gitlab-whitespace-session') { item.status = 'not_selected';item.reason = 'Anonymous native whitespace characterization is literal-only, excluded from all/default/regression. No navigation or preference action.';return; }
+    if (name === 'gitlab-whitespace-session' && focus !== 'gitlab-whitespace-session') { item.status = 'not_selected';item.reason = 'Native whitespace session is literal-only, excluded from all/default/regression. No navigation or native preference action.';return; }
     if (name === 'bitbucket-native-settings-diagnostic' && focus !== 'bitbucket-native-settings-diagnostic') { item.status = 'not_selected';item.reason = 'Opener-only native Settings diagnosis is literal-only, excluded from default/all/regression. No navigation or form action.';return; }
     if (name === 'bitbucket-pipeline-initial-on' && focus !== 'bitbucket-pipeline-initial-on') { item.status = 'not_selected';item.reason = 'First-use file-local native On acceptance requires its literal focus, excluding default/all/regression. No navigation, master enable or native preference action.';return; }
     if (name === 'bitbucket-native-bash-on' && focus !== 'bitbucket-native-bash-on') { item.status = 'not_selected';item.reason = 'Standalone native Bash On requires its literal focus, excluding default/all/regression. No navigation, field or Save action.';return; }
@@ -422,7 +425,7 @@ async function runCase(name, url, body, discovery = false) {
     currentCaseAbort = abort;
     if (whitespacePrivacy) {
       item.nativeWhitespaceSettings = {};
-      whitespaceSettings = gitLabWhitespaceSettings({ progress: item.nativeWhitespaceSettings,
+      whitespaceSettings = (name === 'gitlab-whitespace-session' ? gitLabWhitespaceSessionSettings : gitLabWhitespaceSettings)({ progress: item.nativeWhitespaceSettings,
         read: () => options.evaluate(async () => {
           const sync = await chrome.storage.sync.get('settings');const local = await chrome.storage.local.get('whitespaceOptOuts');
           return { sync: Object.hasOwn(sync, 'settings') ? { present: true, value: sync.settings } : { present: false }, local: Object.hasOwn(local, 'whitespaceOptOuts') ? { present: true, value: local.whitespaceOptOuts } : { present: false } };
@@ -635,8 +638,8 @@ async function runCase(name, url, body, discovery = false) {
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
       catch (error) {
-        item.cleanupObservation = fileMenuPrivacy ? 'native_file_menu_page_close_failed' : errorText(error);
-        if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = fileMenuPrivacy ? 'native_file_menu_page_close_failed' : errorText(error); }
+        item.cleanupObservation = fileMenuPrivacy ? 'native_file_menu_page_close_failed' : name === 'gitlab-whitespace-session' ? 'native_whitespace_session_page_close_failed' : errorText(error);
+        if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = fileMenuPrivacy ? 'native_file_menu_page_close_failed' : name === 'gitlab-whitespace-session' ? 'native_whitespace_session_page_close_failed' : errorText(error); }
       }
     }
     if (syntaxOnTraffic !== undefined) {
@@ -2829,6 +2832,22 @@ try {
     const context = gitLabWhitespaceCases.get(page);
     assert.ok(context, 'Dedicated whitespace context unavailable');
     return verifyGitLabWhitespace(page, { ...context, acquisition: () => item.gitLabComparisonObservations, poll, progress: item.nativeWhitespace });
+  }, true);
+
+  await runCase('gitlab-whitespace-session', GITLAB_WHITESPACE_SESSION.url, async (page, item) => {
+    const context = gitLabWhitespaceCases.get(page);
+    assert.ok(context, 'Dedicated whitespace session context unavailable');
+    return verifyGitLabWhitespaceSession(page, { ...context, acquisition: () => item.gitLabComparisonObservations, poll, progress: item.nativeWhitespace, totals: async () => {
+      const state = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
+      assert.deepEqual(state.categories.find((category) => category.id === 'tests')?.paths, [GITLAB_FILE_SEARCH.path]);
+      const native = await poll(() => page.evaluate((paths) => {
+        const number = (node, absentZero = false) => { if (node === null) return absentZero ? 0 : null;const text = node.textContent.trim().replace(/[+,−\s]/g, '');return /^\d+$/.test(text) ? Number(text) : null; };
+        const headers = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].map((root) => ({ files: number(root.querySelector(':scope > .diff-stats-group > span')), additions: number(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: number(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
+        const files = [...document.querySelectorAll('diff-file[data-file-data]')].map((root) => { let data;try { const raw = root.getAttribute('data-file-data');if (raw.length <= 16384) data = JSON.parse(raw); } catch { /* Unknown native file is an unqualified slot. */ }return { slot: paths.indexOf(data?.new_path), hidden: getComputedStyle(root).display === 'none' }; });
+        return { headers, files };
+      }, GITLAB_WHITESPACE_SESSION.paths), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0) && value.files.length === 3 && value.files.every((file) => file.slot >= 0 && file.hidden === (file.slot === 2)), 'Native whitespace session corrected counts and exact hidden file');
+      return { all: state.all, visible: state.visible, hiddenCount: state.hiddenCount, tests: { count: 1, paths: [GITLAB_FILE_SEARCH.path] }, native };
+    } });
   }, true);
 
   await runCase('gitlab-file-search', GITLAB_FILE_SEARCH.url, async (page, item) => {
