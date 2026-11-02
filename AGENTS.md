@@ -1511,6 +1511,11 @@ Boundary structure participates in the fold cache signature even when every disp
 This folding reads only displayed source and neither fetches whole files nor activates native context expansion.
 Installed GitLab mixed-file acceptance toggles the real test-outline setting on retained native suite declarations, verifies original row/text/control/Viewed identities and corrected counts, opens one outline with trusted input and restores settings and category state.
 That displayed-outline phase retains an unknown source head explicitly and does not establish whole-file extents or native context expansion.
+  Bitbucket full-hash standalone commits can explicitly load test boundaries through the shared whole-source cache and the original above/below chunk controls.
+  The file action uses Atlassian theme variables, never replaces native rows, shares the persisted API cooldown, and declines dummy-only chunks, stale controls and missing native source authority.
+  Bitbucket pull requests and abbreviated standalone routes still have no whole-file grant until their current native source is independently bound.
+  Bitbucket Syntax-on code rows omit their renderer-added terminal LF only when original rowgroup position and exact native gridcell aria text agree, while malformed or ambiguous row text stays unavailable.
+  Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
 
 
 - **Selected GitLab diffs require immutable comparisons.**

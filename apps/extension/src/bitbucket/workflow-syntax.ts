@@ -21,8 +21,9 @@ function linesOf(entry: ProviderDiffEntry, side: 'old' | 'new'): ShellLine[] {
     if (content === null || content.closest('[data-geld-ui]') !== null) continue;
     const nodes = textNodes(content);
     // Refuse a changed/mismatched native surface rather than paint line numbers or markers.
-    if (nodes.map((part) => part.text).join('') !== text) continue;
-    result.push({ number, text, nodes });
+    const raw = nodes.map((part) => part.text).join('');
+    if (raw === text) result.push({ number, text, nodes });
+    else if (raw === `${text}\n`) result.push(sliced({ number, text: raw, nodes }, 0, text.length));
   }
   return result;
 }

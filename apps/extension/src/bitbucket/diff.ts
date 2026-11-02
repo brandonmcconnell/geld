@@ -36,8 +36,24 @@ function viewed(root: HTMLElement): HTMLInputElement | null {
     .find((label) => label.textContent?.trim() === 'Viewed')?.querySelector<HTMLInputElement>('input[type="checkbox"]') ?? null;
 }
 
+function lineText(row: HTMLElement, code: HTMLElement, kind: string, groupEnds: Map<Element, Element | null>): string | null {
+  const raw = code.textContent ?? '';
+  const highlighted = code.classList.contains('syntax-highlighted') || code.classList.contains('__rbb_syntax_highlight');
+  if (!highlighted) return /[\r\n]/.test(raw) ? null : raw;
+  const group = row.closest('[role="rowgroup"]'), owner = row.parentElement;
+  if (group !== null && !groupEnds.has(group)) groupEnds.set(group, [...group.querySelectorAll('[data-qa="code-line"]')].findLast((node) => node.closest('[role="rowgroup"]') === group && node.closest('[data-geld-ui]') === null) ?? null);
+  const last = group === null ? null : groupEnds.get(group), continues = last !== null && last !== row;
+  if (code.tagName !== 'SPAN' || [...code.classList].sort().join(' ') !== '__rbb_syntax_highlight code-diff syntax-highlighted' || code.getAttribute('role') !== 'gridcell'
+    || group === null || last === null || !owner?.matches('[role="row"][data-key="code-line"]') || owner.closest('[role="rowgroup"]') !== group
+    || raw.endsWith('\n') !== continues || /\r/.test(raw)) return null;
+  const text = continues ? raw.slice(0, -1) : raw;
+  const label = kind === '+' ? 'Added' : kind === '-' ? 'Removed' : 'Unchanged';
+  return !text.includes('\n') && code.getAttribute('aria-label') === `${label}: ${text}` ? text : null;
+}
+
 function lines(root: HTMLElement): readonly ProviderDiffLine[] {
   const result: ProviderDiffLine[] = [];
+  const groupEnds = new Map<Element, Element | null>();
   for (const row of native(root.querySelectorAll<HTMLElement>('[data-qa="code-line"], .diff-chunk > .diff-chunk-inner > .chunk-heading-wrapper'))) {
     if (row.classList.contains('chunk-heading-wrapper')) {
       const control = row.querySelector('button[data-qa="pr-diff-show-more-lines-above"], button[data-qa="pr-diff-show-more-lines-below"]');
@@ -56,7 +72,8 @@ function lines(root: HTMLElement): readonly ProviderDiffLine[] {
     const oldLine = count(numbers.getAttribute('data-old-line-number'));
     const newLine = count(numbers.getAttribute('data-new-line-number'));
     if (oldLine === null && newLine === null) continue;
-    result.push({ root: row, oldLine, newLine, oldText: oldLine === null ? null : code.textContent ?? '', newText: newLine === null ? null : code.textContent ?? '', kind: type === '+' ? 'added' : type === '-' ? 'removed' : 'context' });
+    const text = lineText(row, code, type ?? '', groupEnds);
+    result.push({ root: row, oldLine, newLine, oldText: oldLine === null ? null : text, newText: newLine === null ? null : text, kind: type === '+' ? 'added' : type === '-' ? 'removed' : 'context' });
   }
   return result;
 }
