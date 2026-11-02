@@ -7,9 +7,11 @@ import { validateSettingsDocument } from './settings-validate';
 
 /**
  * Settings live in a **secret Gist on the user's own GitHub account**. Nobody
- * else — not even Geld's author — can read or change it: there is no Geld
- * server holding data, and any token that can touch the gist is either on the
- * user's device (extension) or in their own browser session (geld.sh).
+ * else — not even Geld's author — can change it: there is no Geld server
+ * holding data, and any token that can touch the gist is either on the user's
+ * device (extension) or in their own browser session (geld.sh). A secret gist
+ * is unlisted, not private: anyone with its link can read it, which the copy
+ * shown to people says.
  *
  * Both the extension and the website use this module, so the file name, the
  * payload shape and the equality rule are defined exactly once. Tokens come
