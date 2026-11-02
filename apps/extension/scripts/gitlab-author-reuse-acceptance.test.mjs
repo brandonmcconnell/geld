@@ -6,7 +6,7 @@ import test from 'node:test';
 import { Window } from 'happy-dom';
 import { tsImport } from 'tsx/esm/api';
 import { RENDERED_NOTES_FIXTURE as F } from './gitlab-rendered-notes-acceptance.mjs';
-import { beginGitLabAuthorReuseProbe, endGitLabAuthorReuseProbe, gitLabAuthorReuseProbe, verifyGitLabAuthorReuse } from './gitlab-author-reuse-acceptance.mjs';
+import { beginGitLabAuthorReuseProbe, endGitLabAuthorReuseProbe, gitLabAuthorReuseProbe, verifyGitLabAuthorReuse, verifyGitLabAuthorReuseThemes } from './gitlab-author-reuse-acceptance.mjs';
 
 const { createGitLabAuthorPresentationReader } = await tsImport('../src/gitlab/author-presentation.ts', import.meta.url);
 // Node has no CSS renderer. Omit side-effect styles for this structural integration only.
@@ -54,26 +54,43 @@ async function domFixture(run) {
 }
 
 function protocol(selected, options = {}) {
-  const page = new EventEmitter();const item = {};let opens = 0;
+  const page = new EventEmitter();const item = {};let opens = 0;let osDark = false;const emulations = [];
   const fixture = { metadata: [{ sha: HEAD, diffHead: HEAD, projectId: F.project, noteableId: F.review, iid: F.iid, webUrl: F.url }], discussions: [{ discussionCount: 36, noteCount: 40, nextCursor: null, selected }], errors: [], providerMutations: [], aiRequests: [] };
   const settings = { aiEnabled: false, enabled: true, trustedReviewAccounts: ['gitlab.com/whitebox-aero/whitebox greptile 37628862'] };
   const readDigest = () => ({ selectedHead: HEAD, items: [...document.querySelectorAll('[data-geld-item]')].map((node) => ({ id: node.dataset.geldItem, state: node.dataset.state })), bots: [], sources: [...document.querySelectorAll('article[data-geld-source-id]')].map((node) => ({ id: node.dataset.geldSourceId, body: node.querySelector('.geld-provider-review__body')?.innerHTML })) });
   const request = (path, extension = false) => ({ method: () => 'GET', url: () => `https://gitlab.com${path}`, initiator: () => extension ? { stack: { callFrames: [{ url: 'chrome-extension://installed/content-scripts/content.js' }] } } : undefined });
   page.url = () => location.href;page.isClosed = () => false;
+  window.matchMedia = (query) => ({ matches: query === '(prefers-color-scheme: dark)' && osDark });
+  page.emulateMediaFeatures = async (features) => {
+    emulations.push(features);
+    if (features.length === 0 && options.restoreFailure) throw new Error('Synthetic media restoration failed');
+    osDark = features.some((feature) => feature.name === 'prefers-color-scheme' && feature.value === 'dark');
+    // Explicit synthetic first-party theme response, not a production class mutation or native-paint claim.
+    if ((!options.nativeKeepsLight || features.length === 0) && !(features.length === 0 && options.ignoreRestore)) document.documentElement.classList.toggle('gl-dark', osDark);
+    if (document.documentElement.dataset.syntheticTheme !== undefined) syntheticNativeThemeColors();
+    if (osDark) options.onDark?.({ fixture, page, request, settings });
+    else options.onRestore?.({ fixture, page, request, settings });
+  };
   page.evaluate = async (fn, ...args) => {
     const value = fn(...args);
+    if (fn === endGitLabAuthorReuseProbe && osDark) {
+      if (options.lateThemeChange) { document.documentElement.classList.add('gl-dark');syntheticNativeThemeColors(); }
+      if (options.laterPaletteDrift) document.querySelector('[data-testid="author-name"]').style.color = 'rgb(1, 2, 3)';
+    }
     if (fn === endGitLabAuthorReuseProbe && options.cleanupFailure) throw new Error('Synthetic post-restoration cleanup failure');
     return value;
   };
-  const run = () => verifyGitLabAuthorReuse(page, item, { fixture, head: HEAD, extensionId: 'installed', readDigest, assertSources: (value, previous) => { assert.equal(value.selectedHead, HEAD);if (previous) assert.deepEqual(value.sources, previous.sources); }, readSettings: async () => settings,
+  const services = { fixture, head: HEAD, extensionId: 'installed', readDigest, assertSources: (value, previous) => { assert.equal(value.selectedHead, HEAD);if (previous) assert.deepEqual(value.sources, previous.sources); }, readSettings: async () => settings,
     openReviewAncestors: async (_page, selector) => {
       opens += 1;let count = 0;
       for (let node = document.querySelector(selector)?.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement && !node.open) { node.open = true;count += 1; }
       if (options.onOpen && opens === 1) options.onOpen({ fixture, page, request, settings });
       return count;
-    }, poll: async (read, accepts) => { const value = await read();assert.equal(accepts(value), true, `Independent author comparison did not align: ${item.authorReuse.lastComparisonError}`);return value; },
-  });
-  return { page, item, run, fixture };
+    }, poll: async (read, accepts) => { const value = await read();assert.equal(accepts(value), true, `Independent author comparison did not align: ${item.authorReuse?.lastComparisonError}`);return value; }, pause: async () => {},
+  };
+  const run = () => verifyGitLabAuthorReuse(page, item, services);
+  const runThemes = () => verifyGitLabAuthorReuseThemes(page, item, services);
+  return { page, item, run, runThemes, fixture, emulations };
 }
 
 test('independent DOM oracle consumes the real account reader and shared renderer without inventing finding headers', () => domFixture(async ({ probe, selected }) => {
@@ -145,4 +162,66 @@ test('late genuine native mounting is unavailable while a late copied ID fails',
 test('a late malformed owned ID cannot mask account-reuse failure as fixture unavailability', () => domFixture(async ({ selected }) => {
   const f = protocol(selected, { onOpen: () => { document.querySelector('article[data-geld-source-id]').id = `note_${F.ids[0]}`; } });
   await assert.rejects(f.run());assert.equal(f.item.authorReuse.status, 'failed');assert.equal(f.page.listenerCount('request'), 0);assert.equal(globalThis.__geldAuthorReuseNative, undefined);
+}));
+
+function syntheticNativeTheme({ unchangedColors = false } = {}) {
+  document.documentElement.classList.add('gl-system');
+  document.documentElement.dataset.syntheticTheme = unchangedColors ? 'unchanged' : 'changing';syntheticNativeThemeColors();
+}
+function syntheticNativeThemeColors() {
+  // HappyDOM does not recompute descendant CSS after ancestor-class changes. These explicit test-only
+  // effective colors model the native event; the installed helper only reads untouched native styles.
+  const dark = document.documentElement.classList.contains('gl-dark') && document.documentElement.dataset.syntheticTheme !== 'unchanged';
+  for (const node of document.querySelectorAll('[data-testid="author-name"], [data-geld-author-name]')) if (!node.hasAttribute('data-synthetic-frozen-color')) node.style.color = dark ? 'rgb(236, 236, 239)' : 'rgb(58, 56, 63)';
+  for (const node of document.querySelectorAll('.note-headline-light, .geld-provider-review__byline > .geld-provider-review__muted')) node.style.color = dark ? 'rgb(170, 169, 175)' : 'rgb(98, 97, 104)';
+}
+
+test('three independent phases compare actual synthetic native color changes and restore the full original signature', () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const f = protocol(selected);const proof = await f.runThemes();
+  assert.equal(proof.status, 'passed');assert.equal(proof.nativeThemeChanged, true);assert.equal(proof.darkAcceptance, 'native_scheme_observed');
+  assert.equal(f.item.authorReuse, proof.phases.light);assert.deepEqual(Object.keys(proof.phases), ['light', 'dark', 'restored']);
+  for (const phase of Object.values(proof.phases)) { assert.equal(phase.status, 'passed');assert.equal(phase.listenerDisposed, true);assert.equal(phase.cleanup.stateRemoved, true);assert.equal(phase.comparison.native.sameNode, true);assert.equal(phase.comparison.native.sameThemeNode, true); }
+  assert.notEqual(proof.phases.light.comparison.native.name.typography.color, proof.phases.dark.comparison.native.name.typography.color);
+  assert.deepEqual(proof.phases.light.comparison.findings.map((finding) => finding.sourceTuple), proof.phases.dark.comparison.findings.map((finding) => finding.sourceTuple));
+  assert.deepEqual(proof.phases.light.comparison.native.name, proof.phases.restored.comparison.native.name);
+  assert.equal(proof.mediaCleared, true);assert.equal(proof.mediaRestored, true);assert.deepEqual(proof.cleanup, { stateRemoved: true, sameNative: true });assert.equal(proof.listenerDisposed, true);
+  assert.deepEqual(f.emulations, [[{ name: 'prefers-color-scheme', value: 'dark' }], []]);assert.equal(f.page.listenerCount('request'), 0);assert.equal(globalThis.__geldAuthorReuseThemesNative, undefined);assert.equal(globalThis.__geldAuthorReuseNative, undefined);
+}));
+
+for (const options of [{ nativeKeepsLight: true }, { unchangedColors: true }]) test(`OS preference or gl-dark class alone cannot earn native dark acceptance: ${JSON.stringify(options)}`, () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme(options);const f = protocol(selected, options);const proof = await f.runThemes();assert.equal(proof.status, 'unavailable');assert.equal(proof.darkAcceptance, 'unavailable');assert.equal(proof.nativeThemeChanged, false);assert.equal(proof.phases.dark.status, 'passed');assert.equal(proof.phases.restored.status, 'passed');assert.equal(proof.mediaRestored, true);assert.equal(proof.listenerDisposed, true);
+}));
+
+test('a frozen owned light color fails the dark comparison while media, phase listeners and disclosures still restore', () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const node = document.querySelector('article [data-geld-author-name]');node.dataset.syntheticFrozenColor = '';
+  const f = protocol(selected);await assert.rejects(f.runThemes());const proof = f.item.authorReuseThemes;
+  assert.equal(proof.status, 'failed');assert.equal(proof.phases.light.status, 'passed');assert.equal(proof.phases.dark.status, 'failed');assert.equal(proof.phases.restored.status, 'passed');assert.equal(proof.mediaRestored, true);assert.equal(proof.cleanup.stateRemoved, true);assert.equal(proof.listenerDisposed, true);assert.equal(f.page.listenerCount('request'), 0);assert.equal(globalThis.__geldAuthorReuseThemesNative, undefined);
+}));
+
+test('a light phase comparison followed by a later native dark change cannot earn dark acceptance', () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const f = protocol(selected, { nativeKeepsLight: true, lateThemeChange: true });await assert.rejects(f.runThemes(), /Later theme evidence differs/);
+  const proof = f.item.authorReuseThemes;assert.equal(proof.status, 'failed');assert.equal(proof.phases.dark.status, 'passed');assert.equal(proof.phases.dark.comparison.theme.dark, false);assert.equal(proof.darkMeasurement.theme.dark, true);assert.equal(proof.nativeThemeChanged, false);assert.notEqual(proof.darkAcceptance, 'native_scheme_observed');assert.equal(proof.phases.restored.status, 'passed');assert.equal(proof.mediaRestored, true);assert.equal(proof.listenerDisposed, true);assert.equal(f.page.listenerCount('request'), 0);
+}));
+
+test('a later changed native palette cannot replace the validated dark comparison even when gl-dark remains selected', () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const f = protocol(selected, { laterPaletteDrift: true });await assert.rejects(f.runThemes(), /Later theme evidence differs/);
+  const proof = f.item.authorReuseThemes;assert.equal(proof.status, 'failed');assert.equal(proof.phases.dark.comparison.theme.dark, true);assert.equal(proof.darkMeasurement.theme.dark, true);assert.equal(proof.phases.restored.status, 'passed');assert.equal(proof.mediaRestored, true);assert.equal(proof.listenerDisposed, true);assert.equal(f.page.listenerCount('request'), 0);
+}));
+
+for (const [label, onDark] of [
+  ['donor remount between phases', () => { const node = document.getElementById('note_3381334808');node.replaceWith(node.cloneNode(true)); }],
+  ['native selected head drift', () => { const node = document.querySelector('[data-app-data]');const value = JSON.parse(node.dataset.appData);value.versions.source_versions[0].head_sha = 'b'.repeat(40);node.dataset.appData = JSON.stringify(value); }],
+  ['source acquisition in the transition gap', ({ page, request }) => { page.emit('request', request('/whitebox-aero/whitebox/-/merge_requests/272/discussions.json')); }],
+  ['settings drift across phases', ({ settings }) => { settings.enabled = false; }],
+  ['source fingerprint drift across phases', ({ fixture }) => { fixture.discussions[0].selected[1].bodySha256 = 'b'.repeat(64); }],
+]) test(`theme wrapper fails ${label} instead of accepting independent phases in a changed context`, () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const f = protocol(selected, { onDark });await assert.rejects(f.runThemes());const proof = f.item.authorReuseThemes;assert.equal(proof.status, 'failed');assert.equal(proof.listenerDisposed, true);assert.equal(f.page.listenerCount('request'), 0);assert.equal(globalThis.__geldAuthorReuseThemesNative, undefined);assert.equal(globalThis.__geldAuthorReuseNative, undefined);
+}));
+
+test('incidental transition JSON retains unknown attribution without becoming a zero-HTTP or native-source claim', () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const f = protocol(selected, { onDark: ({ page, request }) => page.emit('request', request('/whitebox-aero/whitebox/-/merge_requests/272/test_reports.json')) });const proof = await f.runThemes();assert.equal(proof.status, 'passed');assert.deepEqual(proof.sourceGets, []);assert.equal(proof.otherGets.length, 1);assert.equal(proof.otherGets[0].attribution, 'native_or_unattributed');assert.deepEqual(proof.phases.dark.otherGets, []);
+}));
+
+for (const options of [{ restoreFailure: true }, { ignoreRestore: true }]) test(`failed media or native-signature restoration cannot retain a successful dark status: ${JSON.stringify(options)}`, () => domFixture(async ({ selected }) => {
+  syntheticNativeTheme();const f = protocol(selected, options);await assert.rejects(f.runThemes());const proof = f.item.authorReuseThemes;assert.equal(proof.status, 'failed');assert.equal(proof.phases.dark.status, 'passed');assert.ok(proof.restorationError);assert.equal(proof.mediaRestored, false);assert.equal(proof.listenerDisposed, true);assert.equal(f.page.listenerCount('request'), 0);assert.equal(globalThis.__geldAuthorReuseThemesNative, undefined);
 }));

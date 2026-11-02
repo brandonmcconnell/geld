@@ -18,7 +18,7 @@ import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommit
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { observeGreptileCommandRequest, verifyGreptileCommand } from './greptile-command-acceptance.mjs';
 import { captureGitLabRenderedNote, verifyGitLabRenderedNotes } from './gitlab-rendered-notes-acceptance.mjs';
-import { verifyGitLabAuthorReuse } from './gitlab-author-reuse-acceptance.mjs';
+import { verifyGitLabAuthorReuseThemes } from './gitlab-author-reuse-acceptance.mjs';
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
@@ -1760,9 +1760,9 @@ async function verifyGitLabBot(page, item) {
   await verifyGitLabRenderedNotes(page, item, { fixture: captured, head: GL_BOT_HEAD, extensionId,
     readDigest: () => gitLabBotDigest(page), assertSources: assertGitLabBotSources,
     readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), openReviewAncestors, poll, capture });
-  await verifyGitLabAuthorReuse(page, item, { fixture: captured, head: GL_BOT_HEAD, extensionId,
+  await verifyGitLabAuthorReuseThemes(page, item, { fixture: captured, head: GL_BOT_HEAD, extensionId,
     readDigest: () => gitLabBotDigest(page), assertSources: assertGitLabBotSources,
-    readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), openReviewAncestors, poll });
+    readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), openReviewAncestors, poll, pause });
   await verifyGitLabItemCopies(page, item, { context: browser.defaultBrowserContext(), expectedFix: discussionPage.selected.find((source) => source.id === '3381334872')?.suggestedFix, expectedAuthor: discussionPage.selected.find((source) => source.id === '3381334872')?.author.username, openReviewAncestors, poll, safeUrl });
   await verifyGreptileCommand(page, item, { context: browser.defaultBrowserContext(), fixture: captured, head: GL_BOT_HEAD,
     readDigest: () => gitLabBotDigest(page), assertSources: assertGitLabBotSources,

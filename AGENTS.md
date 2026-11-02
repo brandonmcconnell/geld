@@ -1685,6 +1685,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   This performs no metadata requests and introduces no separate observer or cross-review account cache.
   Borrowed presentation omits all note-specific badges and service labels, while a later valid target header immediately takes precedence and retains its own badges.
   The donor supplies only its actual native name, profile, alias and independently measured avatar through the existing geometry cache and live provider theme.
+  The public Greptile author-reuse check repeats its independent donor comparison under the original system theme, OS dark preference and restored theme, requiring an actual native gl-dark transition and changed native colors within that validated comparison before accepting dark coverage.
+  Each phase retains its own source and cleanup evidence, while the wrapper watches transition requests and restores the complete original author/theme/source signature in finally without changing native classes, styles or settings.
   Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
   Bitbucket author names use the native body font, medium weight and default text token independently of its smaller subdued timestamps.
   Copied Atlassian avatar classes can fill the containing box through logical sizing even when the image has measured physical dimensions, so each verified avatar lives in its own measured, non-growing relative slot rather than directly in the full-width byline.
