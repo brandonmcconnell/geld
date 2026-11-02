@@ -2276,7 +2276,7 @@ async function bitbucketParentCommitHover(page, oracle) {
   let native;
   let preparation;
   try {
-    preparation = await prepareBitbucketParentCommit(page, initial, poll);
+    preparation = await prepareBitbucketParentCommit(page, initial, poll, (progress) => { preparation = progress; });
     native = preparation.native;
     assert.equal(native.links[0].href, initial.links[0].href, 'Native parent identity changed during discovery');
     const selector = `[data-testid="expanded-CommitCard"] a[href="${native.links[0].raw}"]`;
