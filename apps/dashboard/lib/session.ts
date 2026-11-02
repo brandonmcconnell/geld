@@ -24,16 +24,16 @@ export async function currentActor(): Promise<Actor | null> {
   }
 }
 
-export async function providerTokenSource(provider: Provider, owner?: string, identity=false): Promise<TokenSource> {
+export async function providerTokenSource(provider: Provider, owner?: string, identity=false,host='github.com', broad=false): Promise<TokenSource> {
   const auth = getAuth();
   if (!auth) return { get: async () => ({ status: 'signed-out', reason: 'Connect a provider' }) };
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) return { get: async () => ({ status: 'signed-out', reason: 'Sign in' }) };
-  const repositorySource = provider === 'github' && !identity ? await (await import('./repository-apps')).storedAppUserSource(session.user.id,owner) : null;
+  const repositorySource = provider === 'github' && !identity && !broad ? await (await import('./repository-apps')).storedAppUserSource(session.user.id,owner,host) : null;
   const accounts = await auth.api.listUserAccounts({ headers: requestHeaders });
-  const account = provider === 'github'
-    ? identity ? accounts.find(a=>a.providerId==='github') : accounts.find((a) => a.providerId === 'github-repository') ?? accounts.find((a) => a.providerId === 'github-oauth') ?? accounts.find((a) => a.providerId === 'github')
+  const account = provider === 'github' && host !== 'github.com' ? accounts.find(a=>a.providerId===`github@${host}`) : provider === 'github'
+    ? broad ? accounts.find(a=>a.providerId==='github-oauth')??accounts.find(a=>a.providerId==='github-repository')??accounts.find(a=>a.providerId==='github') : identity ? accounts.find(a=>a.providerId==='github') : accounts.find((a) => a.providerId === 'github-repository') ?? accounts.find((a) => a.providerId === 'github-oauth') ?? accounts.find((a) => a.providerId === 'github')
     : accounts.find((a) => a.providerId === provider);
   const identitySource: TokenSource = {
     async get(options = {}) {
@@ -50,10 +50,11 @@ export async function providerTokenSource(provider: Provider, owner?: string, id
   return repositorySource ? { get: options => repositorySource.get(options), alternatives: [...(repositorySource.alternatives ?? []), identitySource] } : identitySource;
 }
 
-export async function providerViewer(provider: Provider): Promise<string | null> {
+export async function providerViewer(provider: Provider,host='github.com',owner?:string): Promise<string | null> {
   const { createApiTransport } = await import('@geld/github');
-  const baseUrl = provider === 'github' ? 'https://api.github.com/' : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
-  const api = createApiTransport({ baseUrl, source: await providerTokenSource(provider) });
+  const {githubEndpoints}=await import('@geld/domain');const {enterpriseFetch}=await import('./enterprise');
+  const baseUrl = provider === 'github' ? githubEndpoints(host).api : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
+  const api = createApiTransport({ baseUrl, source: await providerTokenSource(provider,owner,false,host),...(provider==='github'&&host!=='github.com'?{fetch:await enterpriseFetch(host)}:{}) });
   const result = await api.request('user');
   if (!result.ok) return null;
   return providerProfileIdentity(provider, result.value)?.username ?? null;

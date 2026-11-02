@@ -111,6 +111,7 @@ describe('legacy credit reservation migration', () => {
       for (const name of migrations.slice(0, 3)) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
       await db.exec("INSERT INTO users(id,name,email) VALUES('u','One','one@example.test'); INSERT INTO teams(id,name) VALUES('t','Team'); INSERT INTO team_members(team_id,user_id,role) VALUES('t','u','admin'); INSERT INTO subscriptions(team_id,tier,used_credits,spent_cents,cap_cents,card_on_file,stripe_subscription_id) VALUES('t','starter',41,25,100,true,'sub'); INSERT INTO credit_reservations(id,team_id,actor_id,idempotency_key,credits,overage_cents) VALUES('legacy','t','u','legacy_key',2,25)");
       await db.exec(await readFile(new URL('../db/migrations/0004_workspaces.sql', import.meta.url), 'utf8'));
+      for(const name of ['0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql'])await db.exec(await readFile(new URL(`../db/migrations/${name}`,import.meta.url),'utf8'));
       const sql: SqlExecutor = { query: (text, values) => db.query(text, values) };
       await finishCredits(sql, 'legacy', false);
       await finishCredits(sql, 'legacy', false);

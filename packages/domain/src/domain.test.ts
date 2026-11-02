@@ -67,3 +67,10 @@ describe('guide inheritance', () => {
     expect(shouldGenerateGuide(policy, 'created', 'open', false)).toBe(true);
   });
 });
+
+it('uses a verified negotiated Enterprise pool and never guesses a quote',()=>{
+  const input={tier:'enterprise',seats:2,used:99,requested:2,capCents:100,spentCents:0,card:true} satisfies Parameters<typeof canSpend>[0];
+  expect(canSpend(input)).toEqual({allowed:false,reason:'quote'});
+  expect(canSpend({...input,negotiated:{included:100,overageCents:10}})).toEqual({allowed:true,overageCents:10});
+  expect(canSpend({...input,capCents:0,negotiated:{included:100,overageCents:10}})).toEqual({allowed:false,reason:'cap'});
+});

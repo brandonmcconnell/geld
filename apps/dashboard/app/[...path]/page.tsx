@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { connection } from 'next/server';
 import { notFound } from 'next/navigation';
-import { parseDashboardRoute, repositoryPath } from '@geld/domain';
+import { organisationPath,parseDashboardRoute, repositoryPath } from '@geld/domain';
 import { Repositories } from '@/components/repositories';
 import { ReviewQueue } from '@/components/review-queue';
 import { ReviewScreen } from '@/components/review-screen';
@@ -14,7 +14,7 @@ async function ProviderView({ params }: { readonly params: Promise<{ path: strin
   await connection();
   const route = parseDashboardRoute((await params).path);
   if (!route) notFound();
-  if (route.kind === 'organisation') return route.settings ? <RepositorySettings owner={route.owner} provider={route.provider}/> : <Repositories owner={route.owner} provider={route.provider}/>;
-  if (route.kind === 'repository') return route.settings ? <RepositorySettings owner={route.ref.owner} provider={route.ref.provider} repository={route.ref}/> : <><div className="page pb-0"><nav className="breadcrumbs" aria-label="Breadcrumb"><Link href="/">Review queue</Link><span>/</span><Link href={`/${route.ref.provider}/${encodeURIComponent(route.ref.owner)}`}>{route.ref.owner}</Link><span>/</span><span>{route.ref.repo}</span><Link href={`${repositoryPath(route.ref)}/~settings`} className="ml-auto">Repository settings</Link></nav></div><ReviewQueue repository={route.ref}/></>;
+  if (route.kind === 'organisation') return route.settings ? <RepositorySettings owner={route.owner} provider={route.provider}/> : <Repositories owner={route.owner} provider={route.provider} host={route.host}/>;
+  if (route.kind === 'repository') return route.settings ? <RepositorySettings owner={route.ref.owner} provider={route.ref.provider} repository={route.ref}/> : <><div className="page pb-0"><nav className="breadcrumbs" aria-label="Breadcrumb"><Link href="/">Review queue</Link><span>/</span><Link href={organisationPath(route.ref)}>{route.ref.owner}</Link><span>/</span><span>{route.ref.repo}</span><Link href={`${repositoryPath(route.ref)}/~settings`} className="ml-auto">Repository settings</Link></nav></div><ReviewQueue repository={route.ref}/></>;
   return <ReviewScreen key={JSON.stringify(route.ref)} reference={route.ref}/>;
 }

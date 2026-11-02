@@ -4,9 +4,9 @@ export const providerSchema = z.enum(['github', 'gitlab', 'bitbucket']);
 export type Provider = z.infer<typeof providerSchema>;
 export const resourceSchema = z.object({
   provider: providerSchema,
-  host: z.string().min(1),
-  owner: z.string().min(1),
-  repo: z.string().min(1),
+  host: z.string().regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/),
+  owner: z.string().min(1).refine(value=>value.split('/').every(segment=>segment&&segment!=='.'&&segment!=='..'&&!/[\\\x00-\x1f]/.test(segment))),
+  repo: z.string().min(1).refine(value=>value!=='.'&&value!=='..'&&!/[/\\\x00-\x1f]/.test(value)),
 });
 export type RepositoryRef = z.infer<typeof resourceSchema>;
 export const pullRefSchema = resourceSchema.extend({ number: z.number().int().positive() });

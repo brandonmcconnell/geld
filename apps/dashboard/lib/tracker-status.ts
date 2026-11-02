@@ -1,5 +1,7 @@
 import 'server-only';
 import { trackerOAuthSource } from './tracker-oauth';
+import { githubEndpoints } from '@geld/domain';
+import { enterpriseFetch } from './enterprise';
 import { z } from 'zod';
 import { parseIssueTracker } from '@geld/core';
 import type { IssueTrackerConfig,TrackerReference } from '@geld/core';
@@ -16,7 +18,7 @@ export function allowedTrackerOrigin(provider:string,raw:string):boolean{try{con
 export async function trackerStatus(reference:TrackerReference,connection:TrackerConnection|null):Promise<string|null>{
   const p=reference.provider;const e=encodeURIComponent;
   if(p==='github_issues'||p==='gitlab'||p==='bitbucket'){
-    if(!reference.repository)return null;const source=await providerTokenSource(p==='github_issues'?'github':p,reference.repository.split('/')[0]);const api=createApiTransport({baseUrl:p==='github_issues'?'https://api.github.com/':p==='gitlab'?'https://gitlab.com/api/v4/':'https://api.bitbucket.org/2.0/',source,anonymousReads:true});
+    if(!reference.repository)return null;const host=new URL(reference.url).hostname;const source=await providerTokenSource(p==='github_issues'?'github':p,reference.repository.split('/')[0],false,host);const api=createApiTransport({baseUrl:p==='github_issues'?githubEndpoints(host).api:p==='gitlab'?'https://gitlab.com/api/v4/':'https://api.bitbucket.org/2.0/',source,anonymousReads:true,...(p==='github_issues'&&host!=='github.com'?{fetch:await enterpriseFetch(host)}:{})});
     const path=p==='github_issues'?`repos/${reference.repository.split('/').map(e).join('/')}/issues/${e(reference.id)}`:p==='gitlab'?`projects/${e(reference.repository)}/issues/${e(reference.id)}`:`repositories/${reference.repository.split('/').map(e).join('/')}/issues/${e(reference.id)}`;const result=await api.request(path);if(!result.ok)return null;const parsed=z.object({state:z.string()}).safeParse(result.value);return parsed.success?parsed.data.state:null;
   }
   if(p==='github_projects'){

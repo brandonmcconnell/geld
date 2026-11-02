@@ -31,3 +31,6 @@ apps/extension/safari/**/DerivedData/
 
 # TypeScript incremental build state
 *.tsbuildinfo
+packages/relay/dist/
+apps/companion/dist/
+apps/dashboard/db/migrate.cjs

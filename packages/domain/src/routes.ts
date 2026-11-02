@@ -58,3 +58,11 @@ export function parseDashboardPathname(pathname: string): DashboardRoute | null 
   try { return parseDashboardRoute(pathname.split('/').filter(Boolean).map(decodeURIComponent)); }
   catch { return null; }
 }
+export function githubEndpoints(host='github.com'):{readonly api:string;readonly graphql:string;readonly web:string}{
+  if(host==='github.com')return{api:'https://api.github.com/',graphql:'https://api.github.com/',web:'https://github.com/'};
+  if(!validEnterpriseHost(host))throw new Error('Invalid Enterprise host');
+  return host.endsWith('.ghe.com')?{api:`https://api.${host}/`,graphql:`https://api.${host}/`,web:`https://${host}/`}:{api:`https://${host}/api/v3/`,graphql:`https://${host}/api/`,web:`https://${host}/`};
+}
+
+export function organisationPath(ref:Pick<RepositoryRef,'provider'|'host'|'owner'>):string{const prefix=ref.provider==='github'&&ref.host!=='github.com'?`/ghe/${segment(ref.host)}`:`/${ref.provider}`;return `${prefix}/${segment(ref.owner)}`;}
+export function providerAuthKey(provider:Provider,host:string):string{return provider==='github'&&host!=='github.com'?`github@${host}`:provider;}

@@ -1,0 +1,65 @@
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: geld
+      POSTGRES_USER: geld
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a database password}
+    volumes:
+      - geld-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U geld -d geld]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: dashboard
+    image: geld-dashboard:local
+    ports: ["127.0.0.1:3001:3001"]
+    environment:
+      DATABASE_URL: postgresql://geld:${POSTGRES_PASSWORD}@database:5432/geld
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set the public dashboard HTTPS origin}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set an authentication secret}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set an encryption key}
+      CRON_SECRET: ${CRON_SECRET:?Set a private worker secret}
+      RELAY_BROKER_URL: http://relay-broker:8080
+      RELAY_ALLOW_HTTP: "true"
+    depends_on:
+      database:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp, /app/apps/dashboard/.next/cache]
+  migrate:
+    image: geld-dashboard:local
+    profiles: [setup]
+    command: [node, apps/dashboard/db/migrate.cjs]
+    environment:
+      DATABASE_URL: postgresql://geld:${POSTGRES_PASSWORD}@database:5432/geld
+    depends_on:
+      database:
+        condition: service_healthy
+  relay-broker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: relay
+    image: geld-relay:local
+    profiles: [relay]
+    environment:
+      RELAY_CHANNELS: ${RELAY_CHANNELS:-[]}
+    read_only: true
+    tmpfs: [/tmp]
+  worker:
+    image: geld-dashboard:local
+    profiles: [worker]
+    command: [node, apps/dashboard/db/worker.mjs]
+    environment:
+      GELD_JOB_ORIGIN: http://dashboard:3001
+      CRON_SECRET: ${CRON_SECRET}
+    depends_on: [dashboard]
+    read_only: true
+volumes:
+  geld-data:
