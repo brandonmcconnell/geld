@@ -4,6 +4,7 @@ import { listModels } from '@geld/review/ai-client';
 import { isEvaluationModel } from '@geld/review/jev';
 import { currentActor } from '@/lib/session';
 import { aiConfigurations } from '@/lib/ai-config';
+import {companionFetch} from '@/lib/companion';
 import { configured } from '@/lib/env';
 import { json } from '@/lib/http';
 export async function GET(): Promise<Response> {
@@ -19,7 +20,7 @@ export async function GET(): Promise<Response> {
         const parsed = z.object({ data: z.array(z.object({ id: z.string(), display_name: z.string() })) }).safeParse(value);
         return parsed.success ? parsed.data.data.map((model) => ({ id: model.id, name: model.display_name, instance: config.id, provider: config.provider })) : [];
       }
-      const models = await listModels(async (input, init) => fetch(input, { ...init, redirect: 'error' }), config.baseUrl, config.apiKey);
+      const models = await listModels(config.relay?companionFetch(config.relay):async (input, init) => fetch(input, { ...init, redirect: 'error' }), config.baseUrl, config.apiKey);
       return models.ok ? models.models.filter((model) => !isEvaluationModel(model.id, model.type)).map((model) => ({ id: model.id, name: model.name ?? model.id, instance: config.id, provider: config.provider })) : [];
     }));
     return json({ models: result.flat(), geldConfigured: !!configured(process.env.AI_GATEWAY_API_KEY) });

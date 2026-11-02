@@ -14,10 +14,11 @@ export function Models() {
   async function choose(instance: string, model: string) {
     try {
       const response = await fetch('/api/ai/providers'); const value: unknown = await response.json();
-      const parsed = z.object({ providers: z.array(z.object({ id: z.string(), provider: z.string(), label: z.string(), base_url: z.string().nullable(), enabled: z.boolean() })) }).safeParse(value);
+      const parsed = z.object({ providers: z.array(z.object({ id: z.string(), provider: z.string(), label: z.string(), base_url: z.string().nullable(), enabled: z.boolean(), settings:z.object({mode:z.string().optional(),automaticLadder:z.boolean().optional()}) })) }).safeParse(value);
       const provider = parsed.success ? parsed.data.providers.find((provider) => provider.id === instance) : null;
       if (!provider) return;
-      const saved = await fetch('/api/ai/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: provider.id, provider: provider.provider, label: provider.label, baseUrl: provider.base_url ?? undefined, enabled: provider.enabled, models: [model], automaticLadder: true }) });
+      if(provider.provider==='geld'){setMessage('Geld chooses its managed model. Enable Geld AI in provider settings.');return;}
+      const saved = await fetch('/api/ai/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: provider.id, provider: provider.provider, mode:provider.settings.mode??'api', label: provider.label, baseUrl: provider.base_url ?? undefined, enabled: provider.enabled, models: [model], automaticLadder: true }) });
       setMessage(saved.ok ? 'Model selected for this provider.' : 'The model could not be saved.');
     } catch { setMessage('The model could not be saved.'); }
   }

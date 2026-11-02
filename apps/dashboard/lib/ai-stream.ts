@@ -2,11 +2,13 @@ import 'server-only';
 import { z } from 'zod';
 import { joinUrl } from '@geld/review/ai-client';
 import type { ChatMessage } from '@geld/review/ai-client';
+import {completeConfigured} from './ai-config';
 import type { AiConfiguration } from './ai-config';
 const openAiChunk = z.object({ choices: z.array(z.object({ delta: z.object({ content: z.string().nullable().optional() }) })) });
 const claudeChunk = z.object({ type: z.string(), delta: z.object({ text: z.string().optional() }).optional() });
 export async function openAiStream(config: AiConfiguration, messages: readonly ChatMessage[], signal: AbortSignal): Promise<Response | null> {
   try {
+    if(config.provider==='companion'){if(signal.aborted)return null;const result=await completeConfigured(config,{messages,fetch,baseUrl:config.baseUrl,apiKey:config.apiKey,model:config.model,signal});return result.ok&&!signal.aborted?new Response(`data: ${JSON.stringify({choices:[{delta:{content:result.text}}]})}\n\ndata: [DONE]\n\n`,{headers:{'content-type':'text/event-stream'}}):null;}
     const claude = config.provider === 'claude';
     const response = await fetch(claude ? 'https://api.anthropic.com/v1/messages' : joinUrl(config.baseUrl, '/v1/chat/completions'), { method: 'POST', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]), headers: claude ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } : { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify(claude ? { model: config.model, stream: true, max_tokens: 4000, system: messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n'), messages: messages.filter((message) => message.role !== 'system') } : { model: config.model, stream: true, messages, max_tokens: 4000 }) });
     return response.ok && response.body ? response : null;
