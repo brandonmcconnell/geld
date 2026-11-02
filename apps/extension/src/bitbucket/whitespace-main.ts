@@ -39,9 +39,9 @@ function opener(doc: Document): HTMLButtonElement | null {
     .filter(node => node.isConnected && !node.disabled && node.closest('[data-geld-ui],[hidden],[inert],form') === null && ['Global diff settings', 'Global diff view settings'].includes(node.textContent?.trim() ?? ''));
   return candidates.length === 1 ? candidates[0] ?? null : null;
 }
-function allChanges(doc: Document): boolean {
+function allChanges(doc: Document): Element | null {
   const panels = doc.querySelectorAll('#pull-request-tabs-1-tab[role="tabpanel"]');
-  const panel = panels.length === 1 ? panels[0] : null;if (panel === null || panel === undefined) return false;
+  const panel = panels.length === 1 ? panels[0] : null;if (panel === null || panel === undefined) return null;
   const candidates = [...panel.querySelectorAll('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter(node => {
     if (node.textContent?.trim() !== 'All changes' || node.getAttribute('aria-expanded') !== 'false'
       || node.closest('[data-geld-ui],[hidden],[inert],[aria-hidden="true"]') !== null) return false;
@@ -51,7 +51,7 @@ function allChanges(doc: Document): boolean {
     }
     return true;
   });
-  return candidates.length === 1;
+  return candidates.length === 1 ? candidates[0] ?? null : null;
 }
 function nativeAlert(doc: Document, target?: Element): boolean {
   const alerts = target === undefined ? [...doc.querySelectorAll('[role="alert"]')] : [target.closest('[role="alert"]')];
@@ -68,7 +68,8 @@ function nativeAlert(doc: Document, target?: Element): boolean {
 export function startBitbucketNativeWhitespace(doc: Document, host: Window): () => void {
   if (host.top !== host || new URL(doc.URL).origin !== 'https://bitbucket.org') return () => undefined;
   doc.dispatchEvent(new Event(TAKEOVER));let native: Binding | null = null, off: (() => void) | null = null, id = '', active = false, stopped = false, revoked = false, startedAt = 0;
-  let lastQualified: NativeWhitespaceSnapshot | null = null;
+  let lastQualified: NativeWhitespaceSnapshot | null = null, loadingSpinner: Element | null = null;
+  let lastControls: { readonly header: Element; readonly opener: Element; readonly comparison: Element } | null = null;
   const read = (): NativeWhitespaceSnapshot | null => {
     let fallback: NativeWhitespaceSnapshot | null = null;
     try {
@@ -83,13 +84,33 @@ export function startBitbucketNativeWhitespace(doc: Document, host: Window): () 
         || typeof head !== 'string' || !/^(?:[a-f0-9]{7,40}|[a-f0-9]{64})$/i.test(head) || typeof base !== 'string' || !/^(?:[a-f0-9]{7,40}|[a-f0-9]{64})$/i.test(base) || mode === null || typeof settings.isDialogOpen !== 'boolean'
         || typeof settings.isDialogLoading !== 'boolean' || typeof slice.isDiffsLoading !== 'boolean' || typeof slice.isDiffStatLoading !== 'boolean' || !Array.isArray(slice.diff) || !Array.isArray(slice.diffStat)) return fallback;
       const repository = `${pieces.owner}/${pieces.slug}`, source = JSON.stringify([repository, String(number), sourceRepo.full_name, head.toLowerCase(), base.toLowerCase()]);
-      const current = !nativeAlert(doc) && page !== null && page.repository === repository && page.number === String(number) && opener(doc) !== null
-        && doc.querySelectorAll('[role="region"][aria-label="Diff"]').length === 1
-        && [...doc.querySelectorAll('[data-testid="pr-header"]')].some(node => new RegExp(`^#${page.number}\\s*•`).test(node.querySelector('[data-qa="pr-branches-and-state-styles"]')?.nextElementSibling?.textContent?.trim() ?? ''))
-        && allChanges(doc);
-      const snapshot = { owner: native.owner, settings, subject: source, current, detached: page === null, ...mode, open: settings.isDialogOpen, loading: settings.isDialogLoading,
+      const panels = doc.querySelectorAll('#pull-request-tabs-1-tab[role="tabpanel"]'), panel = panels.length === 1 ? panels[0] ?? null : null;
+      const regions = doc.querySelectorAll('[role="region"][aria-label="Diff"]');
+      const button = opener(doc), comparison = allChanges(doc);
+      const headers = [...doc.querySelectorAll('[data-testid="pr-header"]')].filter(node => page !== null && new RegExp(`^#${page.number}\\s*•`).test(node.querySelector('[data-qa="pr-branches-and-state-styles"]')?.nextElementSibling?.textContent?.trim() ?? ''));
+      const header = headers.length === 1 ? headers[0] ?? null : null;
+      const sourceCurrent = !nativeAlert(doc) && page !== null && page.repository === repository && page.number === String(number)
+        && button !== null && header !== null && comparison !== null;
+      const current = sourceCurrent && regions.length === 1 && panel !== null && panel.contains(regions[0] ?? null);
+      const loadingScope = sourceCurrent && regions.length === 0 && panel !== null && lastQualified?.panel === panel
+        && lastQualified.owner === native.owner && lastQualified.subject === source
+        && lastControls?.header === header && lastControls.opener === button && lastControls.comparison === comparison && slice.diffErrorCode === null && slice.diffStatErrorCode === null;
+      const spinners = loadingScope ? [...panel.querySelectorAll('[data-testid="diff-loading-spinner"]')].filter(node => {
+        if (!node.matches('span[data-testid="diff-loading-spinner-wrapper"] > svg[role="none"]') || node.getAttribute('viewBox') !== '0 0 16 16'
+          || node.closest('[data-geld-ui],[hidden],[inert],[aria-hidden="true"]') !== null) return false;
+        for (let parent: Element | null = node; parent !== null; parent = parent.parentElement) {
+          const style = doc.defaultView?.getComputedStyle(parent);
+          if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return false;
+        }
+        return true;
+      }) : [];
+      const spinner = spinners.length === 1 ? spinners[0] ?? null : null;
+      // Redux SUCCESS precedes React's commit: only the same witnessed DiffLoader spinner bridges that gap.
+      const loadingCurrent = loadingScope && spinner !== null && (slice.isDiffsLoading || slice.isDiffStatLoading || spinner === loadingSpinner);
+      loadingSpinner = loadingCurrent ? spinner : null;
+      const snapshot = { owner: native.owner, settings, subject: source, panel, current, loadingCurrent, detached: page === null, ...mode, open: settings.isDialogOpen, loading: settings.isDialogLoading,
         failed: slice.diffErrorCode !== null || slice.diffStatErrorCode !== null, diffLoading: slice.isDiffsLoading, statsLoading: slice.isDiffStatLoading, busy: slice.isDiffsLoading || slice.isDiffStatLoading || slice.diffErrorCode !== null || slice.diffStatErrorCode !== null, diff: slice.diff, stats: slice.diffStat };
-      if (current) lastQualified = snapshot;
+      if (current && header !== null && button !== null && comparison !== null) { lastQualified = snapshot;lastControls = { header, opener: button, comparison }; }
       return snapshot;
     } catch { return fallback; }
   };
@@ -120,7 +141,13 @@ export function startBitbucketNativeWhitespace(doc: Document, host: Window): () 
     if (native !== null && !native.current()) { revoked = true;lease.revoke();off?.();off = null;native = null;publish();return; }
     lease.tick();if (active) publish();
   };
-  const observer = new MutationObserver(() => { if (active && nativeAlert(doc)) lease.suspend(); });
+  const observer = new MutationObserver(records => {
+    if (!active) return;
+    if (nativeAlert(doc)) { lease.suspend();return; }
+    const selector = '[role="region"][aria-label="Diff"],[data-testid="diff-loading-spinner"]';
+    if (records.some(record => record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].some(node =>
+      node instanceof Element && (node.matches(selector) || node.querySelector(selector) !== null)))) tick();
+  });
   observer.observe(doc, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'hidden', 'inert', 'aria-hidden', 'class', 'style'], characterData: true });
   const timer = host.setInterval(tick, 500);
   const stop = (): void => { if (stopped) return;active = false;lease.stop();publish();stopped = true;observer.disconnect();host.clearInterval(timer);off?.();doc.removeEventListener(WHITESPACE_REQUEST, request);doc.removeEventListener('click', click, true);doc.removeEventListener('change', change, true);doc.removeEventListener('submit', submit, true); };

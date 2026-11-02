@@ -2416,3 +2416,8 @@ A known pending request remains separate from the current verdict, while an unkn
 Conversation comment and started-thread counts are labelled as activity in this conversation, with observed counts for incomplete sources, never as one grouped review.
 GitLab reviewer links use only the unique newest matching native system verdict note with the exact account ID and a supplied same-MR note URL.
 Ordinary comments, ambiguous timestamps and missing or foreign note URLs cannot supply that link, and Bitbucket standings remain non-links while its activity source lacks an event permalink.
+
+Bitbucket's native DiffLoader removes the Diff region while either its diff or diffstat request is loading, retaining the surrounding diff panel.
+An already-owned whitespace transition preserves its lease through that exact loading state only with the same store, comparison, original panel and visible native spinner plus the usual route, header, settings and All changes guards.
+When Redux settles before React remounts the Diff region, only the same previously witnessed spinner can retain that pending lease, and no ready receipt is published until the original-panel region returns.
+The missing region cannot authorize initial acquisition or a ready receipt, and errors, duplicate regions, changed custody or a settled missing region still release the exact raw preference.
