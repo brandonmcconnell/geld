@@ -278,3 +278,14 @@ test('native file-menu research is a literal-only safe marker and never broadens
  const literal=/const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];const cases=new vm.Script(`(${literal})`).runInNewContext();assert.deepEqual(Array.from(cases['bitbucket-native-file-menu']),['bitbucket-native-file-menu']);for(const[k,v]of Object.entries(cases))if(k!=='bitbucket-native-file-menu')assert.equal(v.includes('bitbucket-native-file-menu'),false);
  assert.deepEqual(select({body:marker('bitbucket-native-file-menu'),from:marker('github')}),{focus:'bitbucket-native-file-menu',run:'true',failures:[]});assert.equal(select({body:marker('bitbucket-native-file-menu')+'\nOnly prose',from:marker('bitbucket-native-file-menu')}).run,'false');assert.equal(select({fork:true,body:marker('bitbucket-native-file-menu'),from:marker('github')}).run,'false');assert.match(harness,/fileMenuPrivacy && focus !== 'bitbucket-native-file-menu'/);assert.match(harness,/nativeFileMenuPreflight\(active, report.quotaPolicy.conservativeObservedRequestBudget\)/);
 });
+
+test('GitLab shell is an independent literal-only acceptance with one pinned public fixture', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['gitlab-shell']), ['gitlab-shell']);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'gitlab-shell') assert.equal(selected.includes('gitlab-shell'), false);
+  assert.deepEqual(select({ body: marker('gitlab-shell'), from: marker('github') }), { focus: 'gitlab-shell', run: 'true', failures: [] });
+  assert.deepEqual(select({ body: `${marker('gitlab-shell')}\nEvidence`, from: marker('gitlab-shell') }), { focus: 'gitlab-shell', run: 'false', failures: [] });
+  assert.match(harness, /shellPrivacy && focus !== 'gitlab-shell'/);
+  assert.match(harness, /await runCase\('gitlab-shell', GITLAB_SHELL.url/);
+});
