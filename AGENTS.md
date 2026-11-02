@@ -2061,3 +2061,10 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
   Progress retains only bounded safe names/types and fixed boolean/numeric presentation diagnostics, with no unknown form values, DOM, AX, screenshots or generic Cancel.
   A never-ready initial form remains unavailable and untouched, while an unknown fresh form after a prior Save remains failed native restoration.
   The actual first standalone attempt stopped at one dialog sample that failed its visibility predicate before schema inspection, which establishes no specific visibility cause, empty form, animation or successful native Bash palette reference.
+
+- **Native Settings refusal diagnosis is a separate opener-only literal**: `bitbucket-native-settings-diagnostic` disables Geld before its immutable standalone Bash visit, observes the original source/actor/opener and reports strict form rejection codes without binding or operating a field, Save, Cancel or Escape.
+  The diagnostic preserves the existing12/13-control schemas and NativeOn eligibility predicates, classifies only finite known heading/button phrases and emits evaluated index/boolean/count checks with null for later checks that were not reached.
+  Unknown form values and text, individual checkbox states, full vectors, generic authentication reads, console/error text and DOM/AX/PNG captures are omitted even if the form fully recognizes or cleanup fails.
+  The page closes before exact raw master-settings restoration, and an observer/source failure does not skip the settings-restoration attempt.
+  Its separate read-only budget forecast uses two actual ten-request opener visits plus the existing minimum-five reserve under the unchanged40 cap and429 abort, while every NativeOn full40/immediate-eight gate remains unchanged.
+  A diagnostic-complete result is a report, not Syntax-On, native Bash palette, server-persistence or provider-parity acceptance.
