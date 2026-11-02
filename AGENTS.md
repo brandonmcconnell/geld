@@ -1779,6 +1779,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
 - **Reviewer controls are a focus-only native handoff.**
   GitLab's legacy reviewer dropdown saves on its hidden handler, and modern Edit also submits the selected reviewer list when hidden even without a changed selection.
   The digest's Reviewer controls button only scrolls to and focuses one actual enabled, presented, positively closed native Edit or Select reviewers button, with no click, toggle, typing, native attribute mutation or automatic cleanup close.
+  GitLab's first-party sidebar also renders `sidebar-reviewers-assign-button` beside Edit, so an Assign-only sidebar uses the same guarded focus-only fallback without clicking the native drawer opener or claiming authenticated assignment.
   Decline while a native menu or overlay is open, because focus moving outside can close it and save its selection.
   Require a numeric native viewer captured before the complete review snapshot, matching immutable full head, MR, project and noteable identities from both metadata reads and original native datasets, and the same native scope and control lifetime at activation.
   `data-current-user=true` is a legacy candidate-filter option rather than authentication, and a generic signed-in flag or missing native head does not enable this handoff.
