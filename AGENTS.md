@@ -44,6 +44,7 @@ scripts/             catalog-build.ts (generate/check), catalog-sign.mjs, catalo
 
 Store publishing (`.github/workflows/publish.yml`) runs after every CI release on `main`, every six hours and on demand: it submits the latest release to Chrome, Edge, Firefox and Safari, skipping a store that already has that version or has a submission under review (Chrome/Edge cannot cancel reviews via API;
 Apple can and the Safari job withdraws a waiting submission).
+**Safari is paused on the schedule and after CI** (the job's `if`: a manual run with `safari` typed into its channels, which the default leaves out, or the repository variable `SAFARI_AUTO_PUBLISH=true`): withdrawing the waiting submission twice a day meant Apple never finished reviewing one build, so builds are submitted by hand until reviews go through.
 The pattern catalog is signed and committed by CI on push (`GELD_CATALOG_PRIVATE_KEY` to sign, `CATALOG_DEPLOY_KEY` — a write deploy key — to push, with "Deploy keys" on the ruleset bypass list).
 Zips built by CI carry a four-part version (`package.json` version + run number, via `GELD_BUILD_NUMBER` in `wxt.config.ts`), so no bump commit is needed between store releases.
 Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
@@ -54,7 +55,7 @@ Bump `apps/extension/package.json` `version` for a new version number;
 the build number keeps tags unique.
 `workflow_dispatch` forces a release.
 \n\n
-Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build`, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`), `pnpm dev` (extension;
+Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build` (Chrome, WXT's default browser, the same build `build:chrome` names outright), `pnpm build:firefox`, `build:edge` and `build:safari` for the other browsers, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`, or `zip:<browser>` for one), `pnpm dev` (extension;
 it does **not** launch a browser — load `apps/extension/.output/chrome-mv3-dev` once with "Load unpacked" in your own Chrome, or `firefox-mv2-dev` via about:debugging, and WXT rebuilds and reloads it on change;
 a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings the launcher back per developer), `pnpm dev:site`.
 
@@ -1020,7 +1021,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a closed one Open ("Reopen pull request": GitHub gives no reopen permission of its own, so `viewerCanClose` stands for it);
   a merged one nothing, and GitHub's pill stays as it is.
   Pull requests have one way to close: the close reasons (not planned, duplicate) are issues', and GitHub's close request carries no body.
-  **⌘ (Ctrl off a Mac) held makes the pill a 1-click merge on an approved pull request** (`instantMergeReady`, `showInstantMerge`, `instantMerge`, `data-geld-instant-merge`): an approval standing, no request for changes, not in a stack (which would merge the pull requests below it too, so that goes through the merge box and its sentence), and GitHub would merge it now with its default method (`mergeOffer` is `merge`;
+  **⌘ (Ctrl off a Mac) held makes the pill a 1-click merge on a pull request GitHub would merge now for the reader** (`instantMergeReady`, `showInstantMerge`, `instantMerge`, `data-geld-instant-merge`): no request for changes standing, not in a stack (which would merge the pull requests below it too, so that goes through the merge box and its sentence), and GitHub would merge it now with its default method (`mergeOffer` is `merge`;
+  no approval of Geld's own is asked for, since GitHub's answer already holds the rules as they apply to the reader: where approvals are required it is not mergeable without one, while an admin the ruleset exempts, or a repository that asks for none, gets GitHub's plain merge button and the 1-click merge with it;
   a merge only past the rules never goes in one click, its box asks for GitHub's checkbox).
   While the key is held (read as the review group's instant key is, `followInstantKey`, plus the pointer over a pill) the pill reads "Merge" with the merge glyph in `--fgColor-done`, no fill and a 1.5px ring of `--borderColor-done-emphasis`, the stroke of GitHub's 16px glyphs so it weighs what the merge glyph and its word do, with keyboard focus's outline moved 2px outside it since GitHub draws it just inside the pill, over the ring (`!important` over Primer's fill for the status), its aria-label "Merge now: Squash and merge";
   the merge face (`.geld-status-pill__merge`, `aria-hidden`) lies absolutely over the usual one, which keeps its room (`visibility: hidden`), so the pill's width and the header's words after it never move.
@@ -1052,6 +1054,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Requests are GitHub's (read from its bundle, captured with writes stubbed, Oct 2026): `POST page_data/merge` `{ bypassBranchProtections, mergeMethod, commitTitle, commitMessage, authorEmail }`, or for a pull request in a GitHub stack `POST page_data/enqueue_stack` `{ mergeAction: 'DIRECT_MERGE', bypassRules: 'true'|'false', … }` (which takes every pull request below it too, so its merge box says so, `.geld-quick-review__stack-note`), `POST page_data/enable_auto_merge` `{ mergeMethod: 'GROUP' }` for "Merge when ready" and `{ mergeMethod, commitTitle, commitMessage, authorEmail }` for "Enable auto-merge" (GitHub's merge queue strategy is `GROUP`;
   `SOLO` is its "Queue and force solo merge"), and `POST page_data/close_pull_request`, `mark_ready_for_review`, `convert_to_draft` and `reopen_pull_request`, each with no body (`Accept: application/json`);
   `authorEmail` is `defaultCommitAuthorEmail` and is sent only while the merge box lists `possibleCommitAuthorEmails`, as GitHub's own button does (`parseMergeBox`): on a pull request a bot opened the default is the bot's noreply address with no emails to pick, and sending it answered "Invalid email for web commit" (mintlify/docs#8081), where leaving it out lets GitHub take the reader's own.
+  Nor is it sent for a rebase, or for a squash of more than one stacked pull request (`authorEmailFor`, merge-actions.ts;
+  `stackEntries` is how many the merge takes, a stack of unknown size counts as several): GitHub's box leaves it out there (`method !== REBASE && !(squash && stacked && entries > 1)`), since each pull request becomes its own commit, and `enqueue_stack` answers "Choosing author email is not allowed" when it is sent (geld#157, merging an 11-deep stack from its top).
   reopening could not be tried live (no closed, unmerged pull request the test account may act on).
   **A place in the queue and auto-merge finish in place** (`IN_PLACE` in quick-review.ts): the header and tabs stay as they were, so the page is not reloaded as it is after a merge, close, reopen or draft change;
   "Added to the merge queue" / "Auto-merge enabled" is said, the merge box is read again at once and 3 s later, and the timeline caught up (`catchUpAfterPost`), GitHub's own merge box updating itself.
@@ -1060,10 +1064,12 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `Stack` from `GET page_data/stacks`, top first, merged members left out, and every member's merge box, read with the page's in `readMergeActions`): each type (Ready for review, Reopen, the merge or "Merge when ready" as the page's own merge box would offer it, Convert to draft, Close;
   auto-merge and the bypass stay a stack of one's) is a parent, not a choice, with a chevron and a submenu beside it on the menu's inline-end side as Primer's open (`placeSubmenu`: its first choice level with the parent, `data-geld-flip` to the other side where the viewport has no room and `data-geld-under`, under the parent over the rows below it, where neither side has, placed again on resize;
   hover or a click opens it, the arrow toward it moves in and the arrow away or Escape comes back to the parent);
-  the choices are "This pull request", "This and N below" and "Entire stack (N)", each shown only when every pull request it takes allows the type (`STACK_CAN`, from its merge box;
-  a member whose box could not be read allows nothing) and a type only with a choice left;
+  the choices are "This pull request", "This and N below" and "Entire stack (N)".
+  A merge or "Merge when ready" is one request that takes them all, so it is shown only when every pull request it takes allows it (`STACK_CAN`, from its merge box);
+  a change made one at a time (Ready for review, Reopen, Convert to draft, Close) takes the pull requests in the state it starts from (`STACK_FROM`: a draft to mark ready, an open one to draft or close, a closed one to reopen) and passes over the rest, already where it leads or out of its reach, so a stack of drafts and open pull requests can be drafted or made ready whole, labelled with the share it changes ("Entire stack (2 of 4)", "Convert 2 of the stack's 4 pull requests to drafts (#4 and #2)?");
+  one it should change but may not (no permission) keeps the choices that take it off the menu, a member whose box could not be read allows nothing, a choice that would change the same pull requests as a narrower one is that one, and a type is shown only with a choice left;
   merging mirrors GitHub, which merges a stacked pull request with every one below it, so "This pull request" merges only at the foot of the stack, from the top "this and below" is the entire stack and says so, and the entire stack merges through its top's `enqueue_stack` whichever pull request is being read;
-  this pull request alone goes as the flat menu's item would (the merge box, a confirmation before closing or queueing, the rest at once), and anything that changes more than one asks `window.confirm` first naming every one ("Close the entire stack of 3 pull requests (#9, #7 and #5)?", `stackConfirmWords`);
+  this pull request alone goes as the flat menu's item would (the merge box, a confirmation before closing or queueing, the rest at once), which acts on the pull request being read, so a choice whose one target is another pull request (the rest of its scope passed over) goes the stack's way instead, and anything that changes more than one asks `window.confirm` first naming every one ("Close the entire stack of 3 pull requests (#9, #7 and #5)?", `stackConfirmWords`);
   what is chosen goes out only while the reader is still on the pull request it was chosen on, by the controls' own record and by the address (which changes first), checked before each request and before the reload (they move with the reader to another one, and a stack's merge first reads its top's merge box);
   a merge then goes through the top of the choice's `enqueue_stack` (`DIRECT_MERGE` with GitHub's default method and the commit it would write, read afresh) and "Merge when ready" as `{ mergeAction: 'MERGE_QUEUE' }` alone (`stackQueueRequest`, also what a stacked pull request's own "Merge when ready" sends), the rest as one request per pull request, top first (`sendSteps`), stopping at the first GitHub refuses with its reason and a retry of what was left (`openRetryBox`), and the menu read again when any before it went through.
   A stacked pull request whose stack could not be read gets the flat menu without its merge and its place in the queue (`flatStatusOptions`): both would take every pull request below it, which only the stack names.
@@ -1255,12 +1261,19 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   where the property is missing — Safari — the `hyperellipse` polyfill is dynamically imported by `src/ui/corner-shape.ts` from the popup/options entrypoints only, reads the `--corner-shape` twin declared next to the native property, and `--corner-scale: 0` keeps corners square until it runs;
   the site does the same in `components/corner-shape-polyfill.tsx`, gated on `CSS.supports`, so Chrome never downloads the chunk), and uses the site's 36×20 switch with a 12px thumb.
   Change a token in both places or not at all.
-- **Safari ships through a thin Xcode wrapper** in `apps/extension/safari/` (generated once with `pnpm --filter @geld/extension safari:project`, i.e. `xcrun safari-web-extension-converter --copy-resources`;
+- **Safari ships through an Xcode containing app** in `apps/extension/safari/` (generated once with `pnpm --filter @geld/extension safari:project`, i.e. `xcrun safari-web-extension-converter --copy-resources`;
   committed, including the copied extension build under the extension target's `Resources`).
+  Its native shell reports the extension status, explains setup and opens Safari Settings/a public demo;
+  the product itself runs inside Safari.
   Before every App Store archive run `pnpm --filter @geld/extension safari:sync`: it rebuilds the Safari flavour, rsyncs it over `Resources`, sets `MARKETING_VERSION` from `package.json` and bumps `CURRENT_PROJECT_VERSION`.
   Archive/upload happens in Xcode (`safari:open`, Product → Archive, Distribute App → App Store Connect);
   submissions must come from a release Xcode, not a beta.
   Bundle ids `sh.geld.safari` / `sh.geld.safari.Extension`.
+  App Review requires a physical-Mac recording and device/OS details in repository variables `SAFARI_REVIEW_VIDEO_URL` / `SAFARI_REVIEW_TEST_DEVICE`;
+  CI renders `store/safari-review-notes.txt` into App Review Information and skips Safari rather than submitting without that evidence.
+  App Store Connect takes at most 4,000 characters of App Review notes, so the renderer refuses longer notes once the placeholders are filled;
+  keep the template near 3,000.
+  Mac screenshots must be physical Safari captures listed in `store/assets/safari/README.md`, never title art.
 - Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
   Firefox uses `theme_icons`;
   Safari tints template icons.
@@ -1355,6 +1368,23 @@ config in `greptile.json` (`skipReview: "AUTOMATIC"` is the manual-only switch;
 note Greptile reads the file from the PR's *source* branch).
 `.github/CODEOWNERS` makes those files owner-reviewed.
 Keep `BUGBOT.md` in step with this file when an invariant changes.
+
+## Contributor licence agreement
+
+The person who opens a pull request and every author and co-author of its commits sign `CLA.md` once, by posting a comment that says only "I have read the Geld CLA and I agree to it." on a pull request or an issue (a code span, bold or a closing full stop are fine;
+a quotation or other words around it, which may refuse it, never sign);
+the agreement lets the owner offer contributors' work under other terms too (the planned AGPL §7 App Store permission).
+`.github/workflows/cla.yml` runs `scripts/cla.mjs` (tests: `scripts/cla.test.mjs`, in `pnpm check`) from the default branch on `pull_request_target`, never the pull request's code, sets the `CLA` commit status and keeps one comment on the pull request up to date.
+Commit authors come from GraphQL's `Commit.authors`, which reads the `Co-authored-by` trailers and resolves each email to an account.
+**Commit metadata is whatever the pusher wrote, so an exempt author on a commit never exempts the pull request**: its opener, the identity GitHub authenticates, signs unless exempt themselves.
+The owner, the Cursor agent and bots are exempt (`ALLOWED_LOGINS`, `ALLOWED_EMAILS`, any `[bot]` login).
+Signatures live in `signatures.json` on the orphan `cla-signatures` branch (outside the main ruleset), each with the comment's words, its link, when it held the sentence (an edited comment counts from its edit) and the blob SHA of `CLA.md` on the default branch as of that time;
+a comment from before there was an agreement signs nothing.
+A pull request's check also reads its own comments, so a past contributor can sign on their merged pull request and a signature whose run was dropped is picked up on the next one;
+a new signature also rechecks every other open pull request whose `CLA` status was failing on its signer (`waitingOn`, from the status description, and any whose description GitHub cut short).
+Those rechecks race the pull request's own runs, so a check reads the record again after writing a failing status and writes again when it moved: the last write is always from a run that saw the newest record (signatures are only ever added).
+A merged pull request with outside authors is locked once all of them have signed, since a locked conversation takes comments, edits and deletions from collaborators only and the signatures then stay on the page as well as in the record.
+`CLA.md` is the owner's: an agent proposes a change to it in a pull request and the owner decides, and a new version leaves earlier signatures on the version they signed.
 
 ## Verifying changes
 
