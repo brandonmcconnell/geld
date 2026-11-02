@@ -71,7 +71,7 @@ export async function fetchReviewerCandidates(): Promise<readonly ReviewerCandid
   if (form === null) return null;
   const source = form.querySelector('[data-filterable-src]')?.getAttribute('data-filterable-src') ?? form.getAttribute('action') ?? '';
   if (source === '') return null;
-  const response = await fetch(source, { credentials: 'same-origin', headers: { ...fragmentHeaders(), Accept: 'application/json' } });
+  const response = await fetch(new URL(source, location.href), { credentials: 'same-origin', headers: { ...fragmentHeaders(), Accept: 'application/json' } });
   if (!response.ok) return null;
   const body: unknown = await response.json();
   if (!isRecord(body)) return null;
@@ -116,7 +116,7 @@ export async function requestReviewers(ids: readonly number[], teamIds: readonly
   }
   for (const id of users) body.append('reviewer_user_ids[]', String(id));
   for (const id of teams) body.append('reviewer_team_ids[]', String(id));
-  const response = await fetch(action, { method: 'POST', credentials: 'same-origin', headers: fragmentHeaders(), body });
+  const response = await fetch(new URL(action, location.href), { method: 'POST', credentials: 'same-origin', headers: fragmentHeaders(), body });
   if (!response.ok) return false;
   void refreshSidebarReviewers();
   return true;
@@ -133,7 +133,7 @@ async function refreshSidebarReviewers(): Promise<void> {
   const url = block?.getAttribute('data-url') ?? '';
   if (block === null || url === '') return;
   try {
-    const response = await fetch(url, { credentials: 'same-origin', headers: fragmentHeaders() });
+    const response = await fetch(new URL(url, location.href), { credentials: 'same-origin', headers: fragmentHeaders() });
     if (!response.ok) return;
     const html = await response.text();
     const parsed = new DOMParser().parseFromString(html, 'text/html');

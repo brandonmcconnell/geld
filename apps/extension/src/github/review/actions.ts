@@ -142,7 +142,7 @@ export async function postTopLevelComments(bodies: readonly string[]): Promise<n
   for (const body of bodies) {
     const { url, init } = timelineCommentRequest(pullPath, body, fetchNonce());
     try {
-      const response = await fetch(url, init);
+      const response = await fetch(new URL(url, location.href), init);
       if (!response.ok) break;
     } catch {
       break;

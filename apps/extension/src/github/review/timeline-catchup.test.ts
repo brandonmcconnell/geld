@@ -111,8 +111,8 @@ describe('postTopLevelComments', () => {
     );
     expect(await postTopLevelComments(['@greptileai', 'bugbot run'])).toBe(2);
     expect(calls.slice(0, 2)).toEqual([
-      { url: '/acme/widgets/pull/7/page_data/create_timeline_comment', body: JSON.stringify({ text: '@greptileai' }) },
-      { url: '/acme/widgets/pull/7/page_data/create_timeline_comment', body: JSON.stringify({ text: 'bugbot run' }) },
+      { url: `${location.origin}/acme/widgets/pull/7/page_data/create_timeline_comment`, body: JSON.stringify({ text: '@greptileai' }) },
+      { url: `${location.origin}/acme/widgets/pull/7/page_data/create_timeline_comment`, body: JSON.stringify({ text: 'bugbot run' }) },
     ]);
     expect(calls[2]?.url).toContain('unread_timeline?since=1');
     expect(document.querySelector<HTMLTextAreaElement>('#new_comment_field')?.value).toBe('');

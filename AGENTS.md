@@ -77,6 +77,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - Extension imports shared logic only from `@geld/core` (never `../../packages/core/...`).
   Anything that could be reused by the site belongs in core;
   anything touching `browser.*`, the DOM or WXT stays in the extension.
+- **A content script's `fetch` takes an absolute URL**: `fetch(new URL(path, location.href), …)`, never a bare `/owner/repo/…` path.
+  Firefox (MV2) runs a content script's `fetch` in the extension's sandbox, which has no page base URL, so a relative path throws before any request goes out.
+  Chrome resolves it against the page, so the break only shows in Firefox and its forks (Zen, Floorp).
+  A test that stubs `location` keeps `href` and `origin`: they are getters, which `{ ...window.location }` drops.
 - UI copy is short and specific, with no em or en dashes and no semicolons (a plain sentence break, a comma or a middle dot instead);
   commit messages explain *why*.
 - **Code comments are the exception, not the habit.**
