@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { tsImport } from 'tsx/esm/api';
+
+const { normalizeSettings } = await tsImport('@geld/core', import.meta.url);
 
 export const CODERABBIT_FIXTURE = { url: 'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117', project: 'ark-bitcoin/bark', id: '2117', note: '3436654383', author: '38968537', login: 'group_117740890_bot_4b22dd1a4e94814ac4828214cbd93cfe' };
 const FULL = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
@@ -196,12 +200,27 @@ export function assertCodeRabbitRequestSource(value, snapshot, baseline) {
   if (baseline !== undefined) { assert.deepEqual({ ...original, sameNode: null }, { ...baseline.requestNative, sameNode: null });assert.equal(original.sameNode, true);assert.equal(source, baseline.requests[0].source); }
 }
 
+/** Compare production-effective settings while preserving unknown raw fields and exact personal trust. */
+export function assertCodeRabbitSettings(current, original, trusted) {
+  const known = new Set(Object.keys(normalizeSettings({})));
+  const unknown = (value) => Object.fromEntries(Object.entries(value).filter(([key]) => !known.has(key)));
+  assert.deepEqual(unknown(current), unknown(original), 'Unknown raw settings fields changed.');
+  const { trustedReviewAccounts: _oldTrust, ...before } = normalizeSettings(original);
+  const { trustedReviewAccounts: _newTrust, ...after } = normalizeSettings(current);
+  assert.deepEqual(after, before, 'Unrelated effective settings changed.');
+  assert.deepEqual(current.trustedReviewAccounts ?? [], trusted, 'Exact personal account binding changed.');assert.equal(current.aiEnabled, false);
+  const { trustedReviewAccounts: _rawOldTrust, ...rawBefore } = original;
+  const { trustedReviewAccounts: _rawNewTrust, ...rawAfter } = current;
+  return { effectiveSettingsEqual: true, rawOtherSettingsEqual: isDeepStrictEqual(rawBefore, rawAfter),
+    materializedKnownFields: Object.keys(rawAfter).filter((key) => known.has(key) && !Object.hasOwn(rawBefore, key)).sort(), unknownRawKeys: Object.keys(unknown(current)).sort() };
+}
+
 /** Real installed UI only; no runtime injection, source replacement, bot post or oracle GET. */
 export async function verifyCodeRabbitCommands(page, item, { fixture, context, poll, openReviewAncestors, clickReviewButton, readSettings, withdrawTrust, restoreTrust, capture }) {
   const proof = { status: 'running', actions: [], scope: 'Explicit personal account trust and anonymous command clipboard preparation; no posting or authenticated writer proof.' };item.codeRabbitCommands = proof;
   const original = await readSettings();let permissionAttempted = false;let originalClipboard;let completed = false;let acquiringFixture = false;
   const read = () => page.evaluate(codeRabbitDomProbe, CODERABBIT_FIXTURE);
-  const unchangedSettings = async (trusted) => { const current = await readSettings();const { trustedReviewAccounts: _before, ...old } = original;const { trustedReviewAccounts: _after, ...now } = current;assert.deepEqual(now, old);assert.deepEqual(current.trustedReviewAccounts ?? [], trusted);assert.equal(current.aiEnabled, false); };
+  const unchangedSettings = async (trusted, stage = trusted.length === 0 ? 'untrusted' : 'trusted') => { const current = await readSettings();const normalization = assertCodeRabbitSettings(current, original, trusted);(proof.settingsComparisons ??= []).push({ stage, ...normalization });return current; };
   try {
     assert.deepEqual(original.trustedReviewAccounts ?? [], []);assert.equal(original.aiEnabled, false);
     acquiringFixture = true;assert.ok(fixture !== undefined, 'Actual native CodeRabbit fixture observer is unavailable.');
@@ -255,7 +274,7 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
   } catch (error) { proof.status = acquiringFixture ? 'unavailable' : 'failed';proof.error = error instanceof Error ? error.message : String(error);if (!acquiringFixture) throw error; }
   finally {
     const errors = [];try { fixture?.copyPhase(false); } catch (error) { errors.push(error); }
-    try { await restoreTrust(original);await unchangedSettings(original.trustedReviewAccounts ?? []);proof.settingsRestored = true; } catch (error) { errors.push(error); }
+    try { await restoreTrust(original);const restored = await unchangedSettings(original.trustedReviewAccounts ?? [], 'cleanup');assert.equal(Object.hasOwn(restored, 'trustedReviewAccounts'), Object.hasOwn(original, 'trustedReviewAccounts'));if (Object.hasOwn(original, 'trustedReviewAccounts')) assert.deepEqual(restored.trustedReviewAccounts, original.trustedReviewAccounts);proof.rawTrustRestored = true;proof.settingsRestored = true; } catch (error) { errors.push(error); }
     try { if (!page.isClosed()) { if (permissionAttempted && originalClipboard !== undefined) await page.evaluate((value) => navigator.clipboard.writeText(value), originalClipboard);await page.evaluate(() => { delete globalThis.__geldCodeRabbitInput;delete globalThis.__geldCodeRabbitNative;delete globalThis.__geldCodeRabbitCommandNative; }); } } catch (error) { errors.push(error); }
     if (permissionAttempted) try { await context.clearPermissionOverrides();proof.permissionsRestored = true; } catch (error) { errors.push(error); }
     try { fixture?.dispose(); } catch (error) { errors.push(error); }
