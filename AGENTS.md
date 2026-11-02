@@ -1405,6 +1405,11 @@ Provider-specific surfaces translate settings and sources into shared review and
   Do not synthesize a request-changes endpoint or silently substitute a comment when that review state is unavailable.
   GitLab's native review summary starts as `input[data-testid="placeholder-input-field"]` and mounts its own `textarea[data-testid="comment-textarea"]` on focus, so select the outcome and writer within the same live `submit-gl-form` rather than focusing the unrelated main note writer.
   Native outcome disablement, removal and navigation invalidate a pending drawer action without submitting or replacing draft text.
+  GitLab action availability reads current native controls on each pass instead of retaining the fetch-time array, while the fetched approval permission remains a conservative ceiling.
+  A captured native sign-in identity, review route and known head bind both the live reader and retained descriptors, so native sign-out, a changed mounted account, a new revision or a debounced SPA navigation invalidates the previous review's permission.
+  An SSR signed-in flag establishes only flag continuity when mounted current-user metadata is absent, not authenticated account identity or successful native writes.
+  A fresh reader on another tab of the same MR retains its fetched account, canonical review and head ceiling without refetching, while an older descriptor remains bound to the route where it was offered.
+  Request changes remains unavailable until its exact enabled native outcome establishes support, and readonly, hidden, disabled or ambiguous forms and writers never become substitute controls.
   Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
   GitLab Quote reply maps a selected digest excerpt to exact character offsets in the original native body only when both complete texts and source identities still agree, including repeated words and inline markup.
   A nonempty excerpt with a changed, disconnected or different-source body fails after revealing the original instead of silently quoting the whole comment.
