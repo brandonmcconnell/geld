@@ -1550,6 +1550,9 @@ Provider-specific surfaces translate settings and sources into shared review and
   PR 220's first installed search attempt failed on the obsolete rendered-head fixture gate before any search action, establishing neither a search pass nor a product defect.
   Native file-search acceptance waits within its existing deadline for the complete exact result set, since a desired row can preexist asynchronous filtering and its presence alone is not readiness.
   Keep pending source observations and strict final result checks, and record trusted keyboard clear events, final native ownership/category preferences and owned-listener release separately even after a failed search assertion.
+  Native RecycleScroller pools can retain unused anchors at `translateY(-9999px)` with positive dimensions, so search membership excludes only a validated native pool chain with matching computed translation and genuinely clipping native ancestry.
+  Record every included or excluded original row, count unknown and active offscreen rows conservatively, and activate only the unique included original target through its guarded native element handle.
+  Capture native model indicators, input default prevention and failed query geometry before cleanup, while retaining PR 224's original ninety-second failure and verified cleanup as separate evidence.
   It is excluded from default and `all` demand, preserves original source/input/list/checkbox identity, allows native recycler result rows to change, and makes no browser Ctrl+F or zero-native-hydration claim.
   A verified native file reveal during search updates that remembered selection against the complete same-subject inventory, so clearing search cannot restore an older file over the reader's choice.
   Search suspension still discards removed source paths and folder keys, and a changed subject or provider, explicit teardown or disable clears all remembered choices even with no live owned host.
