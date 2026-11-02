@@ -20,7 +20,13 @@ export function gitLabWholeTestProbe(action='read', argument=null) {
     const walk=document.createTreeWalker(row,NodeFilter.SHOW_TEXT),texts=[];for(let node=walk.nextNode();node!==null;node=walk.nextNode())texts.push([node,node.data]);
     return{node:row,html:row.innerHTML,attributes:[...row.attributes].filter((attribute)=>attribute.name!=='data-geld-provider-line-hidden').map((attribute)=>[attribute.name,attribute.value]),texts,number:number&&/^[1-9]\d*$/.test(number)?Number(number):null,text:cell?.querySelector('.rd-line-text')?.textContent?.replace(/\n$/,'')??null,ids:[...row.querySelectorAll('[id]')].map((node)=>[node,node.id]),links:[...row.querySelectorAll('a[href]')].map((node)=>[node,node.getAttribute('href')])};
   });
-  const controls=()=>[...root.querySelectorAll('tr.rd-hunk-header[data-hunk-header] button[data-click="expandLines"][data-expand-direction]')].filter((button)=>native(button)&&['up','down','both'].includes(button.dataset.expandDirection));
+  const controls=()=>[...root.querySelectorAll('tr.rd-hunk-header[data-hunk-header] button[data-click="expandLines"][data-expand-direction]')].filter((button)=>native(button)&&button.closest('diff-file')===root&&button.closest('.note,.md,[data-testid="noteable-note-container"],form,dialog,[role="dialog"]')===null&&button.closest('table.rd-text-view-root')!==null&&button.closest('tr')?.querySelector('.rd-line-content')===null&&['up','down','both'].includes(button.dataset.expandDirection));
+  const contextSample=(button)=>{
+    const sequence=[...root.querySelectorAll('tr')],index=sequence.indexOf(button.closest('tr')),numbered=new Map(rows().map((line)=>[line.node,line.number]));
+    const beforeNew=sequence.slice(0,index).map((row)=>numbered.get(row)??null).findLast((number)=>number!==null)??null;
+    const afterNew=sequence.slice(index+1).map((row)=>numbered.get(row)??null).find((number)=>number!==null)??null;
+    return{direction:button.dataset.expandDirection,label:button.getAttribute('aria-label'),beforeNew,afterNew};
+  };
   const viewed=()=>[...root.querySelectorAll('input[data-viewed-checkbox],[data-testid="fileReviewCheckbox"] input')].filter(native);
   const intent=root.querySelector('header[data-testid="rd-diff-file-header"] > .rd-diff-file-info > button[data-geld-test-boundaries]');
   if(action==='setup'){
@@ -31,17 +37,19 @@ export function gitLabWholeTestProbe(action='read', argument=null) {
       if(!(event.target instanceof Element))return;
       if(event.type==='click'&&store.expected?.contains(event.target))store.lastClick={trusted:event.isTrusted===true,label:store.expected.getAttribute('aria-label')??store.expected.textContent,url:location.href};
       if(!root.contains(event.target))return;
-      if(event.target.closest('button[data-click="expandLines"][data-expand-direction]'))store.events.push({kind:'context',type:event.type,trusted:event.isTrusted===true,url:location.href});
+      const context=event.target.closest('button[data-click="expandLines"][data-expand-direction]');
+      if(context)store.events.push({kind:'context',type:event.type,trusted:event.isTrusted===true,nativeOwned:controls().includes(context),...contextSample(context),url:location.href});
       if(store.viewed.some(({node})=>node===event.target))store.events.push({kind:'viewed',type:event.type,trusted:event.isTrusted===true});
     };
     for(const type of ['click','input','change'])document.addEventListener(type,store.listener,true);
     store.cleanup=()=>{for(const type of ['click','input','change'])document.removeEventListener(type,store.listener,true);};globalThis[KEY]=store;
   }
   if(!store)return null;
-  const currentRows=rows();const sameOriginal=store.root===root&&root.parentElement===store.parent&&store.url===location.href&&store.data===root.getAttribute('data-file-data')&&store.rows.every((old)=>{
+  const currentRows=rows();const sameOriginal=store.root===root&&root.parentElement===store.parent&&store.url===location.href&&store.data===root.getAttribute('data-file-data')&&(store.firstOpenedRows??store.rows).every((old)=>{
     const current=currentRows.find((line)=>line.node===old.node);return current&&current.number===old.number&&current.text===old.text&&current.html===old.html&&JSON.stringify(current.attributes)===JSON.stringify(old.attributes)&&current.texts.length===old.texts.length&&current.texts.every(([node,text],i)=>node===old.texts[i][0]&&text===old.texts[i][1])&&current.ids.length===old.ids.length&&current.ids.every(([node,id],i)=>node===old.ids[i][0]&&id===old.ids[i][1])&&current.links.length===old.links.length&&current.links.every(([node,href],i)=>node===old.links[i][0]&&href===old.links[i][1]);
   });
   const unchangedViewed=store.viewed.length===viewed().length&&store.viewed.every(({node,checked,disabled})=>node.isConnected&&root.contains(node)&&node.checked===checked&&node.disabled===disabled);
+  if(action==='retain-first'){if(!sameOriginal||!unchangedViewed)throw Error('First opened native source changed before second-test checkpoint');store.firstOpenedRows=currentRows;}
   const folds=[...root.querySelectorAll('[data-geld-provider-fold-row^="test:"]')].map((row)=>({row,button:row.querySelector('button'),title:row.querySelector('.geld-provider-line-fold__title')?.textContent??'',start:Number(row.querySelector('.geld-provider-line-fold__line')?.textContent),expanded:row.querySelector('button')?.getAttribute('aria-expanded'),label:row.querySelector('button')?.getAttribute('aria-label')??''}));
   const category=(name)=>[...document.querySelectorAll('.geld-provider-category-header')].filter((button)=>new RegExp(`^${name}\\b`).test(button.textContent.trim()));
   if(action==='button'){
@@ -57,7 +65,7 @@ export function gitLabWholeTestProbe(action='read', argument=null) {
   return{url:location.href,path,sameOriginal,unchangedViewed,rawPath:data.blob_raw_path??null,headSha:data.diff_refs?.head_sha??null,baseSha:data.diff_refs?.base_sha??null,startSha:data.diff_refs?.start_sha??null,
     intent:intent?{label:intent.textContent,status:intent.dataset.status,disabled:intent.disabled,nativeClasses:intent.className,style:css(intent),nativeComparison:sampleNative?{classes:sampleNative.className,style:css(sampleNative)}:null}:null,
     visible:getComputedStyle(root).display!=='none'&&root.getBoundingClientRect().height>0,sourceRows:currentRows.map((line)=>({number:line.number,text:line.text,hidden:line.node.hasAttribute('data-geld-provider-line-hidden')})),
-    folds:folds.map(({row,button,...fold})=>fold),controls:controls().map((button)=>({direction:button.dataset.expandDirection,label:button.getAttribute('aria-label')})),events:[...store.events],
+    folds:folds.map(({row,button,...fold})=>fold),controls:controls().map(contextSample),events:[...store.events],
     categories:[...document.querySelectorAll('.geld-provider-category-header')].map((button)=>({text:button.textContent.trim(),expanded:button.getAttribute('aria-expanded')}))};
 }
 
@@ -76,10 +84,24 @@ export function qualifyGitLabWholeResponse(sample, response) {
 }
 
 export function assertWholeTestMounted(sample, response, target=GITLAB_WHOLE_TEST.target) {
-  assert.equal(sample.sameOriginal,true);assert.equal(sample.unchangedViewed,true);
+  assert.equal(sample.sameOriginal,true);assert.equal(sample.unchangedViewed,true);assert.equal(sample.visible,true);
+  assert.equal(new URL(sample.rawPath,'https://gitlab.com').href,response.url);assert.equal(new URL(response.url).pathname,`/gitlab-org/gitlab/-/raw/${sample.headSha}/${GITLAB_WHOLE_TEST.path}`);
   const fold=sample.folds.find((fold)=>fold.start===target.start);assert.ok(fold);assert.equal(fold.title,target.title);assert.equal(fold.expanded,'true');assert.doesNotMatch(fold.label,/Only displayed lines are available/);
   for(let n=target.start;n<=target.end;n++){const row=sample.sourceRows.find((row)=>row.number===n);assert.ok(row,`Missing original native R${n}`);assert.equal(row.text,response.lines[n-1]);assert.equal(row.hidden,false);}
-  const clicks=sample.events.filter((event)=>event.kind==='context'&&event.type==='click');assert.ok(clicks.length>=1&&clicks.length<=4);assert.equal(sample.events.some((event)=>event.kind==='viewed'),false);
+  const clicks=sample.events.filter((event)=>event.kind==='context'&&event.type==='click');assert.ok(clicks.length>=1&&clicks.length<=4);assert.ok(clicks.every((event)=>event.nativeOwned===true));assert.equal(sample.events.some((event)=>event.kind==='viewed'),false);
+}
+
+export function assertSecondWholeTestMounted(sample,response,before) {
+  assertWholeTestMounted(sample,response);assertWholeTestMounted(sample,response,GITLAB_WHOLE_TEST.second);
+  assert.equal(sample.headSha,before.headSha);assert.equal(sample.rawPath,before.rawPath);
+  assert.deepEqual(sample.events.slice(0,before.events.length),before.events,'Original context event history changed');
+  const added=sample.events.slice(before.events.length).filter((event)=>event.kind==='context'&&event.type==='click');
+  assert.ok(added.some((event)=>event.nativeOwned===true&&event.direction==='both'&&event.beforeNew===115&&event.afterNew===131),'Second test requires the original BOTH context gap115→131');
+}
+
+export async function scrollGitLabWholeTestControl(page,target) {
+  const handle=await page.evaluateHandle(gitLabWholeTestProbe,'button',target);
+  try{const button=handle.asElement();assert.ok(button,'Second qualified test control unavailable');await button.scrollIntoView();}finally{await handle.dispose();}
 }
 
 export async function verifyGitLabWholeTestContext(page,{progress,poll,capture,readSettings,writeSettings,readState,safeUrl,extensionId}) {
@@ -109,15 +131,31 @@ export async function verifyGitLabWholeTestContext(page,{progress,poll,capture,r
     progress.boundariesArtifacts=await capture(page,'gitlab-whole-boundaries',{fullPage:false});progress.unfoldInput=await click(GITLAB_WHOLE_TEST.target.start);
     progress.unfolded=await poll(read,(s)=>{try{assertWholeTestMounted(s,body);return true;}catch{return false;}},'All required original native test lines mounted after explicit Show',30_000);assertWholeTestMounted(progress.unfolded,body);
     progress.unfoldedArtifacts=await capture(page,'gitlab-whole-test-open',{fullPage:false});progress.afterCapture=await read();assertWholeTestMounted(progress.afterCapture,body);progress.afterCounts=await readState();assertDisplayedOutlineCounts(progress.beforeCounts,progress.afterCounts);
+    progress.firstLeafStatus='passed';progress.secondLeafStatus='running';
+    progress.firstOpenedCheckpoint=await page.evaluate(gitLabWholeTestProbe,'retain-first');assertWholeTestMounted(progress.firstOpenedCheckpoint,body);
+    const secondReady=(sample)=>{
+      assertWholeTestMounted(sample,body);const second=sample.folds.find((fold)=>fold.start===GITLAB_WHOLE_TEST.second.start);
+      assert.equal(second?.title,GITLAB_WHOLE_TEST.second.title);assert.equal(second.expanded,'false');assert.match(second.label,/Only displayed lines are available/);
+      assert.equal(sample.controls.filter((control)=>control.direction==='both'&&control.beforeNew===115&&control.afterNew===131).length,1);
+    };
+    await scrollGitLabWholeTestControl(page,GITLAB_WHOLE_TEST.second.start);
+    progress.beforeSecondUnfold=await read();secondReady(progress.beforeSecondUnfold);
+    progress.beforeSecondArtifacts=await capture(page,'gitlab-whole-second-before',{fullPage:false});progress.afterSecondBeforeCapture=await read();secondReady(progress.afterSecondBeforeCapture);assert.deepEqual(progress.afterSecondBeforeCapture.events,progress.beforeSecondUnfold.events);
+    progress.secondUnfoldInput=await click(GITLAB_WHOLE_TEST.second.start);
+    progress.secondUnfolded=await poll(read,(sample)=>{try{assertSecondWholeTestMounted(sample,body,progress.beforeSecondUnfold);return true;}catch{return false;}},'Both qualified original native tests mounted after second explicit Show',30_000);assertSecondWholeTestMounted(progress.secondUnfolded,body,progress.beforeSecondUnfold);
+    progress.secondUnfoldedArtifacts=await capture(page,'gitlab-whole-second-open',{fullPage:false});progress.afterSecondCapture=await read();assertSecondWholeTestMounted(progress.afterSecondCapture,body,progress.beforeSecondUnfold);
+    await Promise.all([...pending]);assert.equal(responses.length,1,'Second test must reuse the same exact whole-file response');assert.equal(requests.filter((request)=>/\/-\/raw\//.test(request.url)&&request.url.endsWith(`/${GITLAB_WHOLE_TEST.path}`)).length,1,'Second test must not request another raw file');
+    progress.afterSecondCounts=await readState();assertDisplayedOutlineCounts(progress.beforeCounts,progress.afterSecondCounts);
+    progress.secondLeafStatus='passed';
     progress.status='passed';
     }
-  }catch(error){failure=error;progress.status='failed';progress.error=error.message;}
+  }catch(error){failure=error;progress.status='failed';progress.error=error.message;if(progress.secondLeafStatus==='running')progress.secondLeafStatus='failed';}
   finally{
     try{
       const current=await readSettings();if(prepared&&isDeepStrictEqual(current,enabled))await writeSettings(structuredClone(original));else assert.ok(isDeepStrictEqual(current,original),'Do not overwrite unrelated concurrent settings');assert.ok(isDeepStrictEqual(await readSettings(),original));progress.settingsRestored=true;
       if(setup){if(page.isClosed())throw Error('Native page closed before whole-context cleanup');progress.restored=await poll(read,(s)=>intact(s)&&s.folds.length===0&&s.intent===null&&s.sourceRows.every((r)=>!r.hidden),'Owned whole-context controls and folds restored',8000);if(!progress.restored.categories.some((c)=>/^Essential\b/.test(c.text)&&c.expanded==='true'))progress.closeCategoryInput=await click('Essential');progress.closed=await poll(read,(s)=>intact(s)&&!s.visible&&s.categories.some((c)=>/^Essential\b/.test(c.text)&&c.expanded==='true'),'Original Essential category restored after native expansion',8000);progress.restoredCounts=await readState();assertDisplayedOutlineCounts(progress.beforeCounts,progress.restoredCounts);}
     }catch(error){failure=error;progress.status='failed';progress.cleanupError=error.message;}
-    finally{page.off('request',request);page.off('response',response);await Promise.all([...pending]);progress.requests=requests;progress.responses=responses.map(({lines,...metadata})=>metadata);progress.limitations=['Only one unchanged-context leaf is explicitly unfolded. No old-side/deleted/fork acquisition or automatic raw loading.','Native context expansion is not reversed; all native source rows remain provider-owned. No Viewed/count/server state is written.','HTTP initiator stack absence does not prove native ownership; only observed requests and original controls are reported.'];if(setup&&!page.isClosed()){try{await page.evaluate(gitLabWholeTestProbe,'cleanup');}catch(error){failure=error;progress.status='failed';progress.cleanupError=error.message;}}}
+    finally{page.off('request',request);page.off('response',response);await Promise.all([...pending]);progress.requests=requests;progress.responses=responses.map(({lines,...metadata})=>metadata);progress.limitations=['At most the two qualified unchanged-context leaves96–100 and125–131 are tested; actual completion is recorded per stage. No old-side/deleted/fork acquisition or automatic raw loading.','Native context expansion is not reversed; all native source rows remain provider-owned. No Viewed/count/server state is written.','HTTP initiator stack absence does not prove native ownership; only observed requests and original controls are reported.'];if(setup&&!page.isClosed()){try{await page.evaluate(gitLabWholeTestProbe,'cleanup');}catch(error){failure=error;progress.status='failed';progress.cleanupError=error.message;}}}
   }
   if(progress.status==='unavailable'){try{assert.equal(responses.length,0,'Unavailable whole-source authority unexpectedly issued a raw response');assert.equal(requests.filter((r)=>/\/-\/raw\//.test(r.url)&&r.url.endsWith(`/${GITLAB_WHOLE_TEST.path}`)).length,0,'Unavailable authority unexpectedly issued a raw request');}catch(error){failure=error;progress.status='failed';progress.error=error.message;}}
   if(failure)throw failure;return progress;
