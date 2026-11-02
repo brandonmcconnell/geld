@@ -9,12 +9,13 @@ import { useDashboard } from '@/lib/dashboard-context';
 import { useRepositoryOptions } from '@/lib/use-repository-options';
 import { Check, ChevronsUpDown, FolderGit2, Layers, Search, Settings, Sparkles } from './icons';
 import { OpenReview } from './open-review';
-import { SidebarTrigger } from './ui/sidebar';
+import { SidebarTrigger, useSidebar } from './ui/sidebar';
 
 export function WorkspaceHeader() {
   const pathname = usePathname();
   const route = parseDashboardPathname(pathname);
   const { assistantOpen, setAssistantOpen } = useDashboard();
+  const { open, isMobile } = useSidebar();
   const queue = pathname === '/' || (route?.kind === 'repository' && !route.settings);
   const settings =
     pathname.startsWith('/settings') ||
@@ -37,7 +38,7 @@ export function WorkspaceHeader() {
   return (
     <header className="workspace-header" aria-label="Workspace toolbar">
       <div className="workspace-header-start">
-        <SidebarTrigger className="lg:hidden" />
+        {(isMobile || !open) && <SidebarTrigger className="workspace-sidebar-trigger" />}
         <RepositoryPicker />
       </div>
       {queue ? <h1 className="workspace-header-title">{title}</h1> : <p className="workspace-header-title">{title}</p>}

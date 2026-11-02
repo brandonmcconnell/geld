@@ -6,6 +6,10 @@
       "label": "Review queue",
       "file": "desktop/queue.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -13,6 +17,10 @@
       "label": "Repositories",
       "file": "desktop/repositories.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/repositories"
     },
     {
@@ -20,6 +28,10 @@
       "label": "Organization repositories",
       "file": "desktop/organization.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme"
     },
     {
@@ -27,6 +39,10 @@
       "label": "Repository queue",
       "file": "desktop/repository.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform"
     },
     {
@@ -34,6 +50,10 @@
       "label": "Repository settings",
       "file": "desktop/repository-settings.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/~settings"
     },
     {
@@ -41,6 +61,10 @@
       "label": "Organization settings",
       "file": "desktop/organization-settings.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/~settings"
     },
     {
@@ -48,6 +72,10 @@
       "label": "Teams",
       "file": "desktop/teams.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams"
     },
     {
@@ -55,6 +83,10 @@
       "label": "Team repositories",
       "file": "desktop/team.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001"
     },
     {
@@ -62,6 +94,10 @@
       "label": "Team members",
       "file": "desktop/team-members.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=members"
     },
     {
@@ -69,6 +105,10 @@
       "label": "Team access and permissions",
       "file": "desktop/team-access.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
     },
     {
@@ -76,6 +116,10 @@
       "label": "Team grant ledger",
       "file": "desktop/team-grants.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=activity"
     },
     {
@@ -83,6 +127,10 @@
       "label": "Team single sign-on",
       "file": "desktop/team-sso.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
     },
     {
@@ -90,6 +138,10 @@
       "label": "Advanced team settings",
       "file": "desktop/team-advanced.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
@@ -97,6 +149,10 @@
       "label": "Team review defaults and tracker",
       "file": "desktop/review-defaults.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
     },
     {
@@ -104,6 +160,10 @@
       "label": "Inbox",
       "file": "desktop/inbox.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/inbox"
     },
     {
@@ -111,6 +171,10 @@
       "label": "Connections and repository selection",
       "file": "desktop/connect.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/connect"
     },
     {
@@ -118,6 +182,10 @@
       "label": "Repository access and visibility",
       "file": "desktop/repository-access.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/connect?view=repositories"
     },
     {
@@ -125,6 +193,10 @@
       "label": "Settings entry point",
       "file": "desktop/settings.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/account"
     },
     {
@@ -132,6 +204,10 @@
       "label": "Account and identity settings",
       "file": "desktop/account.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/account"
     },
     {
@@ -139,6 +215,10 @@
       "label": "AI providers and local companion",
       "file": "desktop/providers.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/providers"
     },
     {
@@ -146,6 +226,10 @@
       "label": "Model selection",
       "file": "desktop/models.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/models"
     },
     {
@@ -153,6 +237,10 @@
       "label": "Plans and billing",
       "file": "desktop/billing.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/billing"
     },
     {
@@ -160,6 +248,10 @@
       "label": "Audit log",
       "file": "desktop/security.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/security"
     },
     {
@@ -167,6 +259,10 @@
       "label": "Enterprise instances",
       "file": "desktop/enterprise.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/enterprise"
     },
     {
@@ -174,6 +270,10 @@
       "label": "Review preferences",
       "file": "desktop/preferences.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/review"
     },
     {
@@ -181,6 +281,10 @@
       "label": "Privacy information",
       "file": "desktop/privacy.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/privacy"
     },
     {
@@ -188,13 +292,54 @@
       "label": "Page not found",
       "file": "desktop/not-found.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/not-a-dashboard-page"
+    },
+    {
+      "name": "not-found-short",
+      "label": "Page not found on a short screen",
+      "file": "desktop/not-found-short.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 320
+      },
+      "route": "/not-a-dashboard-page"
+    },
+    {
+      "name": "sidebar-resized",
+      "label": "Wider workspace navigation",
+      "file": "desktop/sidebar-resized.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
     },
     {
       "name": "sidebar-collapsed",
       "label": "Collapsed workspace navigation",
       "file": "desktop/sidebar-collapsed.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "queue-selection",
+      "label": "Selected review and indeterminate checkbox",
+      "file": "desktop/queue-selection.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -202,6 +347,10 @@
       "label": "Review requests received",
       "file": "desktop/queue-incoming.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -209,6 +358,10 @@
       "label": "Review requests sent",
       "file": "desktop/queue-outgoing.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -216,6 +369,10 @@
       "label": "Hidden change counts",
       "file": "desktop/queue-hidden-counts.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -223,6 +380,10 @@
       "label": "Open a pull request by URL",
       "file": "desktop/open-review.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -230,6 +391,10 @@
       "label": "Plan comparison",
       "file": "desktop/billing-plans.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/billing"
     },
     {
@@ -237,6 +402,10 @@
       "label": "Configure team single sign-on",
       "file": "desktop/sso-setup.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
     },
     {
@@ -244,6 +413,10 @@
       "label": "Search and switch teams",
       "file": "desktop/team-switcher.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -251,6 +424,21 @@
       "label": "Account menu",
       "file": "desktop/account-menu.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-popover",
+      "label": "Inbox from the account row",
+      "file": "desktop/inbox-popover.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -258,6 +446,10 @@
       "label": "Search and switch repositories",
       "file": "desktop/repository-picker.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -265,6 +457,10 @@
       "label": "Add AI provider",
       "file": "desktop/provider-dialog.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/providers"
     },
     {
@@ -272,6 +468,10 @@
       "label": "Advanced AI provider options",
       "file": "desktop/provider-advanced.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/providers"
     },
     {
@@ -279,6 +479,10 @@
       "label": "Add local companion",
       "file": "desktop/companion-dialog.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/providers"
     },
     {
@@ -286,6 +490,10 @@
       "label": "Geld AI cost confirmation",
       "file": "desktop/ai-cost-confirmation.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/providers?enable=geld"
     },
     {
@@ -293,6 +501,10 @@
       "label": "Team deletion preview",
       "file": "desktop/team-deletion.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
@@ -300,6 +512,10 @@
       "label": "Outside collaborator audit",
       "file": "desktop/collaborator-audit.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
     },
     {
@@ -307,6 +523,10 @@
       "label": "Issue tracker status connection",
       "file": "desktop/tracker-status.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
     },
     {
@@ -314,6 +534,10 @@
       "label": "Advanced preferences",
       "file": "desktop/advanced-preferences.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/review"
     },
     {
@@ -321,6 +545,10 @@
       "label": "Guided review start",
       "file": "desktop/guide-start.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -328,6 +556,10 @@
       "label": "Diff with Geld categories",
       "file": "desktop/changes.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -335,6 +567,10 @@
       "label": "Wrapped code lines",
       "file": "desktop/changes-wrap.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -342,6 +578,10 @@
       "label": "Submit review composer",
       "file": "desktop/review-submit.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -349,6 +589,10 @@
       "label": "Comment on a changed line",
       "file": "desktop/line-comment.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -356,6 +600,10 @@
       "label": "Expanded supporting changes",
       "file": "desktop/supporting-changes.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -363,6 +611,10 @@
       "label": "Pull request actions",
       "file": "desktop/provider-actions.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -370,6 +622,10 @@
       "label": "Repository action controls",
       "file": "desktop/repository-actions.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -377,6 +633,10 @@
       "label": "Pull request digest",
       "file": "desktop/conversation.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -384,6 +644,10 @@
       "label": "Review assistant",
       "file": "desktop/assistant.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -391,6 +655,10 @@
       "label": "Assistant response in context",
       "file": "desktop/assistant-response.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -398,6 +666,10 @@
       "label": "Privacy preferences",
       "file": "desktop/privacy-dialog.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -405,6 +677,10 @@
       "label": "First visit privacy choices",
       "file": "desktop/privacy-banner.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -412,6 +688,10 @@
       "label": "Loading review queue",
       "file": "desktop/queue-loading.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -419,6 +699,10 @@
       "label": "Guided review step",
       "file": "desktop/guided-step.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -426,6 +710,10 @@
       "label": "Flag a guided review step",
       "file": "desktop/flag-step.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -433,6 +721,10 @@
       "label": "Completed guided review",
       "file": "desktop/guide-complete.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -440,6 +732,10 @@
       "label": "200-step guide navigation",
       "file": "desktop/guide-large.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -447,6 +743,10 @@
       "label": "Sign in with email code",
       "file": "desktop/sign-in.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
     },
     {
@@ -454,6 +754,10 @@
       "label": "Password sign in",
       "file": "desktop/password-sign-in.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
     },
     {
@@ -461,6 +765,10 @@
       "label": "Company SSO sign in",
       "file": "desktop/sso-sign-in.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
     },
     {
@@ -468,6 +776,10 @@
       "label": "Magic link sent",
       "file": "desktop/magic-link-sent.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
     },
     {
@@ -475,6 +787,10 @@
       "label": "Create account",
       "file": "desktop/sign-up.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-up"
     },
     {
@@ -482,6 +798,10 @@
       "label": "Verify email code",
       "file": "desktop/verify-email.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-up"
     },
     {
@@ -489,6 +809,10 @@
       "label": "Password recovery",
       "file": "desktop/forgot-password.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/forgot-password"
     },
     {
@@ -496,6 +820,10 @@
       "label": "Password recovery sent",
       "file": "desktop/reset-link-sent.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/forgot-password"
     },
     {
@@ -503,6 +831,10 @@
       "label": "Set new password",
       "file": "desktop/reset-password.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/account/reset-password?token=synthetic-only"
     },
     {
@@ -510,6 +842,10 @@
       "label": "Password reset success",
       "file": "desktop/reset-password-saved.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/account/reset-password?token=synthetic-only"
     },
     {
@@ -517,6 +853,10 @@
       "label": "Public review before sign-in",
       "file": "desktop/review-signed-out.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -524,6 +864,10 @@
       "label": "Digest with bot reviews from an earlier commit",
       "file": "desktop/digest-stale.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -531,6 +875,10 @@
       "label": "Team admin permission state",
       "file": "desktop/team-permission.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
@@ -538,6 +886,10 @@
       "label": "Empty queue",
       "file": "desktop/queue-empty.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -545,6 +897,10 @@
       "label": "Queue connection error",
       "file": "desktop/queue-error.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -552,6 +908,10 @@
       "label": "Pull request connection error",
       "file": "desktop/pull-error.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -559,6 +919,10 @@
       "label": "Empty model catalog",
       "file": "desktop/models-empty.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/models"
     },
     {
@@ -566,6 +930,10 @@
       "label": "Partial model catalog",
       "file": "desktop/models-partial.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/models"
     },
     {
@@ -573,6 +941,10 @@
       "label": "Connect your first provider",
       "file": "desktop/onboarding.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/connect"
     },
     {
@@ -580,6 +952,10 @@
       "label": "Sign-in configuration unavailable",
       "file": "desktop/auth-unavailable.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
     },
     {
@@ -587,13 +963,54 @@
       "label": "Invalid email code",
       "file": "desktop/auth-error.png",
       "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
+    },
+    {
+      "name": "inbox-empty",
+      "label": "Empty inbox",
+      "file": "desktop/inbox-empty.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-error",
+      "label": "Inbox connection error",
+      "file": "desktop/inbox-error.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-signed-out",
+      "label": "Inbox before sign-in",
+      "file": "desktop/inbox-signed-out.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
     },
     {
       "name": "queue",
       "label": "Review queue",
       "file": "mobile/queue.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -601,6 +1018,10 @@
       "label": "Repositories",
       "file": "mobile/repositories.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/repositories"
     },
     {
@@ -608,6 +1029,10 @@
       "label": "Organization repositories",
       "file": "mobile/organization.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme"
     },
     {
@@ -615,6 +1040,10 @@
       "label": "Repository queue",
       "file": "mobile/repository.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform"
     },
     {
@@ -622,6 +1051,10 @@
       "label": "Repository settings",
       "file": "mobile/repository-settings.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/~settings"
     },
     {
@@ -629,6 +1062,10 @@
       "label": "Organization settings",
       "file": "mobile/organization-settings.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/~settings"
     },
     {
@@ -636,6 +1073,10 @@
       "label": "Teams",
       "file": "mobile/teams.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams"
     },
     {
@@ -643,6 +1084,10 @@
       "label": "Team repositories",
       "file": "mobile/team.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001"
     },
     {
@@ -650,6 +1095,10 @@
       "label": "Team members",
       "file": "mobile/team-members.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=members"
     },
     {
@@ -657,6 +1106,10 @@
       "label": "Team access and permissions",
       "file": "mobile/team-access.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
     },
     {
@@ -664,6 +1117,10 @@
       "label": "Team grant ledger",
       "file": "mobile/team-grants.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=activity"
     },
     {
@@ -671,6 +1128,10 @@
       "label": "Team single sign-on",
       "file": "mobile/team-sso.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
     },
     {
@@ -678,6 +1139,10 @@
       "label": "Advanced team settings",
       "file": "mobile/team-advanced.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
@@ -685,6 +1150,10 @@
       "label": "Team review defaults and tracker",
       "file": "mobile/review-defaults.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
     },
     {
@@ -692,6 +1161,10 @@
       "label": "Inbox",
       "file": "mobile/inbox.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/inbox"
     },
     {
@@ -699,6 +1172,10 @@
       "label": "Connections and repository selection",
       "file": "mobile/connect.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/connect"
     },
     {
@@ -706,6 +1183,10 @@
       "label": "Repository access and visibility",
       "file": "mobile/repository-access.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/connect?view=repositories"
     },
     {
@@ -713,6 +1194,10 @@
       "label": "Settings entry point",
       "file": "mobile/settings.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/account"
     },
     {
@@ -720,6 +1205,10 @@
       "label": "Account and identity settings",
       "file": "mobile/account.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/account"
     },
     {
@@ -727,6 +1216,10 @@
       "label": "AI providers and local companion",
       "file": "mobile/providers.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/providers"
     },
     {
@@ -734,6 +1227,10 @@
       "label": "Model selection",
       "file": "mobile/models.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/models"
     },
     {
@@ -741,6 +1238,10 @@
       "label": "Plans and billing",
       "file": "mobile/billing.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/billing"
     },
     {
@@ -748,6 +1249,10 @@
       "label": "Audit log",
       "file": "mobile/security.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/security"
     },
     {
@@ -755,6 +1260,10 @@
       "label": "Enterprise instances",
       "file": "mobile/enterprise.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/enterprise"
     },
     {
@@ -762,6 +1271,10 @@
       "label": "Review preferences",
       "file": "mobile/preferences.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/review"
     },
     {
@@ -769,6 +1282,10 @@
       "label": "Privacy information",
       "file": "mobile/privacy.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/privacy"
     },
     {
@@ -776,6 +1293,21 @@
       "label": "Page not found",
       "file": "mobile/not-found.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/not-a-dashboard-page"
+    },
+    {
+      "name": "not-found-short",
+      "label": "Page not found on a short screen",
+      "file": "mobile/not-found-short.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 320
+      },
       "route": "/not-a-dashboard-page"
     },
     {
@@ -783,6 +1315,10 @@
       "label": "Review requests received",
       "file": "mobile/queue-incoming.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -790,6 +1326,10 @@
       "label": "Review requests sent",
       "file": "mobile/queue-outgoing.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -797,6 +1337,10 @@
       "label": "Hidden change counts",
       "file": "mobile/queue-hidden-counts.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -804,6 +1348,10 @@
       "label": "Open a pull request by URL",
       "file": "mobile/open-review.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -811,6 +1359,10 @@
       "label": "Plan comparison",
       "file": "mobile/billing-plans.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/billing"
     },
     {
@@ -818,6 +1370,10 @@
       "label": "Configure team single sign-on",
       "file": "mobile/sso-setup.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
     },
     {
@@ -825,6 +1381,10 @@
       "label": "Search and switch teams",
       "file": "mobile/team-switcher.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -832,6 +1392,21 @@
       "label": "Account menu",
       "file": "mobile/account-menu.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-popover",
+      "label": "Inbox from the account row",
+      "file": "mobile/inbox-popover.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -839,6 +1414,10 @@
       "label": "Search and switch repositories",
       "file": "mobile/repository-picker.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -846,6 +1425,10 @@
       "label": "Add AI provider",
       "file": "mobile/provider-dialog.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/providers"
     },
     {
@@ -853,6 +1436,10 @@
       "label": "Advanced AI provider options",
       "file": "mobile/provider-advanced.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/providers"
     },
     {
@@ -860,6 +1447,10 @@
       "label": "Add local companion",
       "file": "mobile/companion-dialog.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/providers"
     },
     {
@@ -867,6 +1458,10 @@
       "label": "Geld AI cost confirmation",
       "file": "mobile/ai-cost-confirmation.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/providers?enable=geld"
     },
     {
@@ -874,6 +1469,10 @@
       "label": "Team deletion preview",
       "file": "mobile/team-deletion.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
@@ -881,6 +1480,10 @@
       "label": "Outside collaborator audit",
       "file": "mobile/collaborator-audit.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
     },
     {
@@ -888,6 +1491,10 @@
       "label": "Issue tracker status connection",
       "file": "mobile/tracker-status.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
     },
     {
@@ -895,6 +1502,10 @@
       "label": "Advanced preferences",
       "file": "mobile/advanced-preferences.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/review"
     },
     {
@@ -902,6 +1513,10 @@
       "label": "Guided review start",
       "file": "mobile/guide-start.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -909,6 +1524,10 @@
       "label": "Diff with Geld categories",
       "file": "mobile/changes.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -916,6 +1535,10 @@
       "label": "Wrapped code lines",
       "file": "mobile/changes-wrap.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -923,6 +1546,10 @@
       "label": "Changed file navigation",
       "file": "mobile/files-menu.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -930,6 +1557,10 @@
       "label": "Submit review composer",
       "file": "mobile/review-submit.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -937,6 +1568,10 @@
       "label": "Comment on a changed line",
       "file": "mobile/line-comment.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -944,6 +1579,10 @@
       "label": "Expanded supporting changes",
       "file": "mobile/supporting-changes.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -951,6 +1590,10 @@
       "label": "Pull request actions",
       "file": "mobile/provider-actions.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -958,6 +1601,10 @@
       "label": "Repository action controls",
       "file": "mobile/repository-actions.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -965,6 +1612,10 @@
       "label": "Pull request digest",
       "file": "mobile/conversation.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -972,6 +1623,10 @@
       "label": "Review assistant",
       "file": "mobile/assistant.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -979,6 +1634,10 @@
       "label": "Assistant response in context",
       "file": "mobile/assistant-response.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -986,6 +1645,10 @@
       "label": "Privacy preferences",
       "file": "mobile/privacy-dialog.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -993,6 +1656,10 @@
       "label": "First visit privacy choices",
       "file": "mobile/privacy-banner.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -1000,6 +1667,10 @@
       "label": "Loading review queue",
       "file": "mobile/queue-loading.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -1007,6 +1678,10 @@
       "label": "Guided review step",
       "file": "mobile/guided-step.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1014,6 +1689,10 @@
       "label": "Flag a guided review step",
       "file": "mobile/flag-step.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1021,6 +1700,10 @@
       "label": "Completed guided review",
       "file": "mobile/guide-complete.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1028,6 +1711,10 @@
       "label": "200-step guide navigation",
       "file": "mobile/guide-large.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1035,6 +1722,10 @@
       "label": "Sign in with email code",
       "file": "mobile/sign-in.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-in"
     },
     {
@@ -1042,6 +1733,10 @@
       "label": "Password sign in",
       "file": "mobile/password-sign-in.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-in"
     },
     {
@@ -1049,6 +1744,10 @@
       "label": "Company SSO sign in",
       "file": "mobile/sso-sign-in.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-in"
     },
     {
@@ -1056,6 +1755,10 @@
       "label": "Magic link sent",
       "file": "mobile/magic-link-sent.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-in"
     },
     {
@@ -1063,6 +1766,10 @@
       "label": "Create account",
       "file": "mobile/sign-up.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-up"
     },
     {
@@ -1070,6 +1777,10 @@
       "label": "Verify email code",
       "file": "mobile/verify-email.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-up"
     },
     {
@@ -1077,6 +1788,10 @@
       "label": "Password recovery",
       "file": "mobile/forgot-password.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/forgot-password"
     },
     {
@@ -1084,6 +1799,10 @@
       "label": "Password recovery sent",
       "file": "mobile/reset-link-sent.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/forgot-password"
     },
     {
@@ -1091,6 +1810,10 @@
       "label": "Set new password",
       "file": "mobile/reset-password.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/account/reset-password?token=synthetic-only"
     },
     {
@@ -1098,6 +1821,10 @@
       "label": "Password reset success",
       "file": "mobile/reset-password-saved.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/account/reset-password?token=synthetic-only"
     },
     {
@@ -1105,6 +1832,10 @@
       "label": "Public review before sign-in",
       "file": "mobile/review-signed-out.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1112,6 +1843,10 @@
       "label": "Digest with bot reviews from an earlier commit",
       "file": "mobile/digest-stale.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1119,6 +1854,10 @@
       "label": "Team admin permission state",
       "file": "mobile/team-permission.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
@@ -1126,6 +1865,10 @@
       "label": "Empty queue",
       "file": "mobile/queue-empty.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -1133,6 +1876,10 @@
       "label": "Queue connection error",
       "file": "mobile/queue-error.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -1140,6 +1887,10 @@
       "label": "Pull request connection error",
       "file": "mobile/pull-error.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1147,6 +1898,10 @@
       "label": "Empty model catalog",
       "file": "mobile/models-empty.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/models"
     },
     {
@@ -1154,6 +1909,10 @@
       "label": "Partial model catalog",
       "file": "mobile/models-partial.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/settings/models"
     },
     {
@@ -1161,6 +1920,10 @@
       "label": "Connect your first provider",
       "file": "mobile/onboarding.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/connect"
     },
     {
@@ -1168,6 +1931,10 @@
       "label": "Sign-in configuration unavailable",
       "file": "mobile/auth-unavailable.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-in"
     },
     {
@@ -1175,13 +1942,54 @@
       "label": "Invalid email code",
       "file": "mobile/auth-error.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/sign-in"
+    },
+    {
+      "name": "inbox-empty",
+      "label": "Empty inbox",
+      "file": "mobile/inbox-empty.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-error",
+      "label": "Inbox connection error",
+      "file": "mobile/inbox-error.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-signed-out",
+      "label": "Inbox before sign-in",
+      "file": "mobile/inbox-signed-out.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
     },
     {
       "name": "navigation",
       "label": "Mobile workspace navigation",
       "file": "mobile/navigation.png",
       "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
       "route": "/"
     },
     {
@@ -1189,6 +1997,10 @@
       "label": "Dark mode · queue",
       "file": "dark/queue.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/"
     },
     {
@@ -1196,6 +2008,10 @@
       "label": "Dark mode · guided-step",
       "file": "dark/guided-step.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1203,6 +2019,10 @@
       "label": "Dark mode · changes",
       "file": "dark/changes.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/github/acme/platform/pull/128"
     },
     {
@@ -1210,6 +2030,10 @@
       "label": "Dark mode · sign-in",
       "file": "dark/sign-in.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/sign-in"
     },
     {
@@ -1217,6 +2041,10 @@
       "label": "Dark mode · account",
       "file": "dark/account.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/account"
     },
     {
@@ -1224,6 +2052,10 @@
       "label": "Dark mode · providers",
       "file": "dark/providers.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/providers"
     },
     {
@@ -1231,7 +2063,55 @@
       "label": "Dark mode · billing",
       "file": "dark/billing.png",
       "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
       "route": "/settings/billing"
+    },
+    {
+      "name": "provider-dialog",
+      "label": "Dark mode · provider-dialog",
+      "file": "dark/provider-dialog.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/settings/providers"
+    },
+    {
+      "name": "queue-selection",
+      "label": "Dark mode · queue-selection",
+      "file": "dark/queue-selection.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "inbox-popover",
+      "label": "Dark mode · inbox-popover",
+      "file": "dark/inbox-popover.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "not-found",
+      "label": "Dark mode · not-found",
+      "file": "dark/not-found.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/not-a-dashboard-page"
     }
   ],
   "warnings": []

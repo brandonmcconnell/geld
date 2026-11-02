@@ -7,8 +7,9 @@ No real provider login, email, AI generation, billing or infrastructure operatio
 Open [the visual gallery](./index.html) to filter screenshots by device and view.
 The production application follows the operating system’s color scheme.
 
-The shared navigation uses [shadcn/ui’s Base UI sidebar](https://ui.shadcn.com/docs/components/base/sidebar) composition and Vega spacing, with Geld branding and theme tokens.
-The team picker lives in the sidebar, the repository picker lives in the top bar, and the review assistant opens beside the workspace.
+The shared navigation uses [shadcn/ui’s Base UI sidebar](https://ui.shadcn.com/docs/components/base/sidebar) composition and Vega spacing, with Geld theme tokens.
+Drag the sidebar edge to resize or collapse it. The team picker opens from its chevrons, the repository picker lives in the top bar, and Inbox sits beside the account menu.
+Fields and checkboxes use two beveled corners. Radio buttons use four, with a matching inner shape. The 404 centers within the available workspace and scrolls naturally on short screens.
 
 ## Screenshots
 
@@ -40,8 +41,11 @@ The team picker lives in the sidebar, the repository picker lives in the top bar
 | Enterprise instances | `/settings/enterprise` | [View](./screenshots/desktop/enterprise.png) | [View](./screenshots/mobile/enterprise.png) | — |
 | Review preferences | `/settings/review` | [View](./screenshots/desktop/preferences.png) | [View](./screenshots/mobile/preferences.png) | — |
 | Privacy information | `/privacy` | [View](./screenshots/desktop/privacy.png) | [View](./screenshots/mobile/privacy.png) | — |
-| Page not found | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found.png) | [View](./screenshots/mobile/not-found.png) | — |
+| Page not found | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found.png) | [View](./screenshots/mobile/not-found.png) | [View](./screenshots/dark/not-found.png) |
+| Page not found on a short screen | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found-short.png) | [View](./screenshots/mobile/not-found-short.png) | — |
+| Wider workspace navigation | `/` | [View](./screenshots/desktop/sidebar-resized.png) | — | — |
 | Collapsed workspace navigation | `/` | [View](./screenshots/desktop/sidebar-collapsed.png) | — | — |
+| Selected review and indeterminate checkbox | `/` | [View](./screenshots/desktop/queue-selection.png) | — | [View](./screenshots/dark/queue-selection.png) |
 | Review requests received | `/` | [View](./screenshots/desktop/queue-incoming.png) | [View](./screenshots/mobile/queue-incoming.png) | — |
 | Review requests sent | `/` | [View](./screenshots/desktop/queue-outgoing.png) | [View](./screenshots/mobile/queue-outgoing.png) | — |
 | Hidden change counts | `/` | [View](./screenshots/desktop/queue-hidden-counts.png) | [View](./screenshots/mobile/queue-hidden-counts.png) | — |
@@ -50,8 +54,9 @@ The team picker lives in the sidebar, the repository picker lives in the top bar
 | Configure team single sign-on | `/teams/00000000-0000-4000-8000-000000000001?view=sso` | [View](./screenshots/desktop/sso-setup.png) | [View](./screenshots/mobile/sso-setup.png) | — |
 | Search and switch teams | `/` | [View](./screenshots/desktop/team-switcher.png) | [View](./screenshots/mobile/team-switcher.png) | — |
 | Account menu | `/` | [View](./screenshots/desktop/account-menu.png) | [View](./screenshots/mobile/account-menu.png) | — |
+| Inbox from the account row | `/` | [View](./screenshots/desktop/inbox-popover.png) | [View](./screenshots/mobile/inbox-popover.png) | [View](./screenshots/dark/inbox-popover.png) |
 | Search and switch repositories | `/` | [View](./screenshots/desktop/repository-picker.png) | [View](./screenshots/mobile/repository-picker.png) | — |
-| Add AI provider | `/settings/providers` | [View](./screenshots/desktop/provider-dialog.png) | [View](./screenshots/mobile/provider-dialog.png) | — |
+| Add AI provider | `/settings/providers` | [View](./screenshots/desktop/provider-dialog.png) | [View](./screenshots/mobile/provider-dialog.png) | [View](./screenshots/dark/provider-dialog.png) |
 | Advanced AI provider options | `/settings/providers` | [View](./screenshots/desktop/provider-advanced.png) | [View](./screenshots/mobile/provider-advanced.png) | — |
 | Add local companion | `/settings/providers` | [View](./screenshots/desktop/companion-dialog.png) | [View](./screenshots/mobile/companion-dialog.png) | — |
 | Geld AI cost confirmation | `/settings/providers?enable=geld` | [View](./screenshots/desktop/ai-cost-confirmation.png) | [View](./screenshots/mobile/ai-cost-confirmation.png) | — |
@@ -98,6 +103,9 @@ The team picker lives in the sidebar, the repository picker lives in the top bar
 | Connect your first provider | `/connect` | [View](./screenshots/desktop/onboarding.png) | [View](./screenshots/mobile/onboarding.png) | — |
 | Sign-in configuration unavailable | `/sign-in` | [View](./screenshots/desktop/auth-unavailable.png) | [View](./screenshots/mobile/auth-unavailable.png) | — |
 | Invalid email code | `/sign-in` | [View](./screenshots/desktop/auth-error.png) | [View](./screenshots/mobile/auth-error.png) | — |
+| Empty inbox | `/` | [View](./screenshots/desktop/inbox-empty.png) | [View](./screenshots/mobile/inbox-empty.png) | — |
+| Inbox connection error | `/` | [View](./screenshots/desktop/inbox-error.png) | [View](./screenshots/mobile/inbox-error.png) | — |
+| Inbox before sign-in | `/` | [View](./screenshots/desktop/inbox-signed-out.png) | [View](./screenshots/mobile/inbox-signed-out.png) | — |
 | Changed file navigation | `/github/acme/platform/pull/128` | — | [View](./screenshots/mobile/files-menu.png) | — |
 | Mobile workspace navigation | `/` | — | [View](./screenshots/mobile/navigation.png) | — |
 

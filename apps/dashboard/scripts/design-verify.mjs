@@ -38,14 +38,34 @@ async function privacy(page) {
 }
 try {
   const q = await open();
-  await q.page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
-  assert.equal(await q.page.getByRole('link', { name: 'Review queue', exact: true }).count(), 1);
-  assert.equal(await q.page.getByRole('link', { name: 'Repositories', exact: true }).count(), 1);
+  assert.equal(await q.page.getByRole('button', { name: 'Collapse sidebar', exact: true }).count(), 0);
+  const handle = q.page.getByRole('separator', { name: 'Resize sidebar', exact: true });
+  let handleBox = await handle.boundingBox();
+  assert.ok(handleBox);
+  await q.page.mouse.move(handleBox.x + handleBox.width / 2, 200);
+  await q.page.mouse.down();
+  await q.page.mouse.move(handleBox.x + handleBox.width / 2 + 48, 200, { steps: 6 });
+  await q.page.mouse.up();
+  assert.equal(await handle.getAttribute('aria-valuenow'), '304');
+  handleBox = await handle.boundingBox();
+  await q.page.mouse.move(handleBox.x + handleBox.width / 2, 200);
+  await q.page.mouse.down();
+  await q.page.mouse.move(80, 200, { steps: 8 });
+  await q.page.mouse.up();
+  await q.page.getByRole('button', { name: 'Expand sidebar', exact: true }).waitFor();
+  assert.equal(await q.page.getByRole('link', { name: 'Review queue', exact: true }).count(), 0);
+  assert.equal(await q.page.locator('#main:visible').evaluate((e) => e.getBoundingClientRect().left), 0);
   await q.page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+  await handle.dblclick();
   await q.page.keyboard.press('Control+b');
   await q.page.getByRole('button', { name: 'Expand sidebar', exact: true }).waitFor();
   await q.page.keyboard.press('Control+b');
-  await q.page.getByRole('button', { name: 'Collapse sidebar', exact: true }).waitFor();
+  await handle.waitFor();
+  await q.page.locator('.team-switcher .workspace-name:visible').click();
+  assert.equal(await q.page.getByRole('button', { name: 'Platform engineering', exact: true }).count(), 0);
+  await q.page.locator('.account-name:visible').click();
+  await q.page.getByRole('link', { name: 'Settings', exact: true }).waitFor();
+  await q.page.keyboard.press('Escape');
   await q.page.keyboard.press('/');
   assert.equal(
     await q.page.getByRole('textbox', { name: 'Filter pull requests' }).evaluate((e) => e === document.activeElement),
@@ -154,6 +174,28 @@ try {
   console.log(
     'PASS sidebar shortcut and repository picker pagination, search, navigation, team scope and sign-out isolation',
   );
+  const notifications = await open();
+  await notifications.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
+  await notifications.page.getByRole('heading', { name: 'Invitations', exact: true }).waitFor();
+  await notifications.page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await notifications.page.getByText('Invitation accepted.', { exact: true }).waitFor();
+  await notifications.page.getByRole('heading', { name: 'Invitations', exact: true }).waitFor({ state: 'hidden' });
+  assert.ok(
+    notifications.writes.some(
+      (write) => write.path === '/api/teams/' + teamId && JSON.parse(write.body).action === 'accept_invite',
+    ),
+  );
+  await notifications.page.keyboard.press('Escape');
+  await notifications.context.route('**/api/session', (request) =>
+    request.fulfill({ json: { user: null, configured: true, demo: false } }),
+  );
+  await notifications.page.getByRole('button', { name: 'Refresh review queue', exact: true }).click();
+  await notifications.page.locator('.account-name:visible').filter({ hasText: 'Sign in' }).waitFor();
+  await notifications.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
+  await notifications.page.getByRole('link', { name: 'Sign in to view your inbox', exact: true }).waitFor();
+  assert.equal(await notifications.page.getByText('Review requested', { exact: true }).count(), 0);
+  await notifications.context.close();
+  console.log('PASS drag resizing/collapse, chevron-only team switching, account trigger and inbox isolation');
   const review = await open({ guided: true }, 1440, pull);
   await tab(review.page, 'Guide');
   await review.page.getByRole('button', { name: 'Reply', exact: true }).click();
@@ -264,6 +306,30 @@ try {
   assert.equal(await settings.page.locator('.pricing-card').count(), 3);
   await settings.context.close();
   console.log('PASS long-guide navigation, contextual settings and Model A plan comparison');
+  const missing = await open({}, 1440, '/not-a-dashboard-page');
+  const center = await missing.page.locator('.error-content:visible').evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const main = element.closest('main').getBoundingClientRect();
+    return {
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+      expectedX: main.x + main.width / 2,
+      expectedY: 48 + (innerHeight - 48) / 2,
+    };
+  });
+  assert.ok(Math.abs(center.x - center.expectedX) < 2 && Math.abs(center.y - center.expectedY) < 2);
+  await missing.page.setViewportSize({ width: 320, height: 260 });
+  assert.equal(await missing.page.evaluate(() => document.documentElement.scrollHeight > innerHeight), true);
+  await missing.page.getByRole('link', { name: 'Review queue', exact: true }).last().scrollIntoViewIfNeeded();
+  assert.equal(await missing.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await missing.context.close();
+  const controls = await open({}, 1440, '/settings/providers');
+  await controls.page.getByRole('button', { name: 'Add provider', exact: true }).click();
+  await controls.page.getByRole('radio', { name: 'Gateway', exact: true }).focus();
+  await controls.page.keyboard.press('ArrowRight');
+  assert.equal(await controls.page.getByRole('radio', { name: 'OpenAI', exact: true }).isChecked(), true);
+  await controls.context.close();
+  console.log('PASS centered 404, short-screen scrolling and native radio keyboard selection');
   const consent = await open({ measurement: true }, 1440, '/', false);
   await consent.page.getByRole('button', { name: 'Decline optional', exact: true }).click();
   assert.equal(consent.requests.filter((url) => url.includes('/api/measurement/')).length, 0);
@@ -333,6 +399,8 @@ try {
       );
     }
     if (width < 1024) {
+      await test.page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+      await test.page.getByRole('button', { name: 'Close navigation', exact: true }).click();
       await test.page.getByRole('button', { name: 'Open navigation', exact: true }).click();
       await test.page.keyboard.press('Escape');
       await test.page.getByRole('dialog', { name: 'Navigation', exact: true }).waitFor({ state: 'hidden' });

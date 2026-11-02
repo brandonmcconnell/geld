@@ -97,6 +97,7 @@ const plan = {
   ],
 };
 async function configure(context, state = {}) {
+  let acceptedInvite = false;
   const writes = [];
   const stressFiles = Array.from({ length: 50 }, (_, index) => {
     const template = fixture.review.files.find((file) => !file.hidden);
@@ -171,6 +172,8 @@ async function configure(context, state = {}) {
       p = url.pathname,
       post = request.method() !== 'GET';
     if (post) writes.push({ path: p, body: request.postData() });
+    if (p === `/api/teams/${teamId}` && post && request.postDataJSON()?.action === 'accept_invite')
+      acceptedInvite = true;
     let data = {},
       status = 200;
     if (p === '/api/session')
@@ -255,15 +258,21 @@ async function configure(context, state = {}) {
     else if (p === '/api/repositories/selection') data = { choices: [] };
     else if (p === '/api/account/connections')
       data = { connections: [{ id: 'connection-1', host: 'github.com', slug: 'geld-repositories' }] };
-    else if (p === '/api/notifications')
+    else if (p === '/api/notifications') {
+      if (state.inboxError) {
+        await route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+        return;
+      }
       data = {
-        invites: [{ team_id: teamId, name: 'Platform engineering' }],
-        notifications: [
-          { id: 'notification-1', team_id: teamId, kind: 'review_requested' },
-          { id: 'notification-2', team_id: teamId, kind: 'repository_connected' },
-        ],
+        invites: acceptedInvite || state.emptyInbox ? [] : [{ team_id: teamId, name: 'Platform engineering' }],
+        notifications: state.emptyInbox
+          ? []
+          : [
+              { id: 'notification-1', team_id: teamId, kind: 'review_requested' },
+              { id: 'notification-2', team_id: teamId, kind: 'repository_connected' },
+            ],
       };
-    else if (p === '/api/ai/providers')
+    } else if (p === '/api/ai/providers')
       data = post ? { id: 'new-provider' } : { configured: true, providers: state.emptyModels ? [] : providers };
     else if (p === '/api/ai/models')
       data = {

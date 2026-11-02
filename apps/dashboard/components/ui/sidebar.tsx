@@ -18,6 +18,10 @@ interface SidebarContextProps {
   readonly setOpenMobile: (open: boolean) => void;
   readonly isMobile: boolean;
   readonly toggleSidebar: () => void;
+  readonly width: number;
+  readonly setWidth: (width: number) => void;
+  readonly resizing: boolean;
+  readonly setResizing: (resizing: boolean) => void;
 }
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
@@ -34,6 +38,7 @@ function SidebarProvider({
   className,
   children,
   navigationKey = '',
+  style,
   ...props
 }: React.ComponentProps<'div'> & {
   readonly defaultOpen?: boolean;
@@ -47,10 +52,16 @@ function SidebarProvider({
   const setOpenMobile = React.useCallback((open: boolean) => setMobile({ key: navigationKey, open }), [navigationKey]);
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
   const open = openProp ?? internalOpen;
+  const [width, setWidth] = React.useState(256);
+  const [resizing, setResizing] = React.useState(false);
   const setOpen = React.useCallback(
     (value: boolean) => {
       if (onOpenChange) onOpenChange(value);
       else setInternalOpen(value);
+      if (!value)
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLButtonElement>('[data-slot="sidebar-trigger"]')?.focus(),
+        );
     },
     [onOpenChange],
   );
@@ -89,13 +100,20 @@ function SidebarProvider({
       setOpenMobile,
       isMobile,
       toggleSidebar,
+      width,
+      setWidth,
+      resizing,
+      setResizing,
     }),
-    [state, open, setOpen, openMobile, setOpenMobile, isMobile, toggleSidebar],
+    [state, open, setOpen, openMobile, setOpenMobile, isMobile, toggleSidebar, width, resizing],
   );
+  const sizing: React.CSSProperties & { '--sidebar-width': string } = { ...style, '--sidebar-width': `${width}px` };
   return (
     <SidebarContext.Provider value={value}>
       <div
         data-slot="sidebar-wrapper"
+        data-resizing={resizing}
+        style={sizing}
         className={cn('group/sidebar-wrapper flex min-h-svh w-full', className)}
         {...props}
       >
@@ -106,7 +124,7 @@ function SidebarProvider({
 }
 
 function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>) {
-  const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
+  const { state, open, isMobile, openMobile, setOpenMobile } = useSidebar();
   if (isMobile)
     return (
       <Dialog.Root open={openMobile} onOpenChange={setOpenMobile}>
@@ -128,26 +146,90 @@ function Sidebar({ className, children, ...props }: React.ComponentProps<'div'>)
       className="group peer hidden text-sidebar-foreground lg:block"
       data-slot="sidebar"
       data-state={state}
-      data-collapsible={state === 'collapsed' ? 'icon' : ''}
+      data-collapsible={state === 'collapsed' ? 'offcanvas' : ''}
       data-side="left"
     >
       <div
         data-slot="sidebar-gap"
-        className="cn-sidebar-gap relative w-(--sidebar-width) bg-transparent group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
+        className="cn-sidebar-gap relative w-(--sidebar-width) bg-transparent group-data-[collapsible=offcanvas]:w-0"
       />
       <div
         data-slot="sidebar-container"
+        inert={!open}
+        aria-hidden={!open || undefined}
         className={cn(
-          'fixed inset-y-0 left-0 z-20 hidden h-svh w-(--sidebar-width) border-r border-sidebar-border transition-[width] duration-200 ease-linear group-data-[collapsible=icon]:w-(--sidebar-width-icon) lg:flex',
+          'fixed inset-y-0 left-0 z-20 hidden h-svh w-(--sidebar-width) border-r border-sidebar-border transition-transform duration-200 ease-linear group-data-[collapsible=offcanvas]:-translate-x-full lg:flex',
           className,
         )}
         {...props}
       >
         <div data-slot="sidebar-inner" className="cn-sidebar-inner flex size-full flex-col">
-          {children}
+          {open ? children : null}
         </div>
+        <SidebarResizeHandle />
       </div>
     </div>
+  );
+}
+
+function SidebarResizeHandle() {
+  const { width, setWidth, open, setOpen, setResizing } = useSidebar();
+  const drag = React.useRef<{ id: number; x: number; width: number; next: number } | null>(null);
+  const collapse = () => {
+    setOpen(false);
+  };
+  return (
+    <div
+      role="separator"
+      aria-label="Resize sidebar"
+      aria-orientation="vertical"
+      aria-valuemin={0}
+      aria-valuemax={384}
+      aria-valuenow={open ? width : 0}
+      aria-valuetext={open ? `${width} pixels. Drag left to collapse.` : 'Collapsed'}
+      tabIndex={open ? 0 : -1}
+      className="sidebar-resize-handle"
+      onDoubleClick={() => setWidth(256)}
+      onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        if (event.key === 'Home' || (event.key === 'ArrowLeft' && width <= 192)) collapse();
+        else
+          setWidth(
+            event.key === 'End' ? 384 : Math.min(384, Math.max(192, width + (event.key === 'ArrowRight' ? 16 : -16))),
+          );
+      }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { id: event.pointerId, x: event.clientX, width, next: width };
+        setResizing(true);
+      }}
+      onPointerMove={(event) => {
+        if (drag.current?.id !== event.pointerId) return;
+        const next = Math.max(0, Math.min(384, drag.current.width + event.clientX - drag.current.x));
+        drag.current.next = next;
+        setWidth(next);
+      }}
+      onPointerUp={(event) => {
+        const current = drag.current;
+        if (!current || current.id !== event.pointerId) return;
+        drag.current = null;
+        setResizing(false);
+        if (current.next < 160) {
+          setWidth(current.width);
+          collapse();
+        } else setWidth(Math.max(192, current.next));
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onLostPointerCapture={() => {
+        if (!drag.current) return;
+        setWidth(drag.current.width);
+        drag.current = null;
+        setResizing(false);
+      }}
+    />
   );
 }
 

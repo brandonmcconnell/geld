@@ -29,10 +29,10 @@ async function create(browser, state = {}, viewport = { width: 1440, height: 100
 }
 async function go(page, url) {
   try {
-    await page.goto(base + url, { waitUntil: 'networkidle' });
+    await page.goto(base + url, { waitUntil: 'networkidle', timeout: 30000 });
   } catch (error) {
     if (!String(error).includes('ERR_ABORTED')) throw error;
-    await page.goto(base + url, { waitUntil: 'networkidle' });
+    await page.goto(base + url, { waitUntil: 'networkidle', timeout: 30000 });
   }
   const cancel = page.getByRole('button', { name: 'Decline optional', exact: true });
   if (await page.getByRole('region', { name: 'Privacy choices' }).count()) await cancel.first().click();
@@ -64,7 +64,14 @@ async function shot(page, name, label, group) {
   const file = `${group}/${name}.png`;
   fs.mkdirSync(path.join(output, group), { recursive: true });
   await page.screenshot({ path: path.join(output, file), fullPage: true });
-  entries.push({ name, label, file, group, route: new URL(page.url()).pathname + new URL(page.url()).search });
+  entries.push({
+    name,
+    label,
+    file,
+    group,
+    viewport: page.viewportSize(),
+    route: new URL(page.url()).pathname + new URL(page.url()).search,
+  });
   console.log('Captured', file);
 }
 let browser;
@@ -109,11 +116,25 @@ let browser;
       await go(page, url);
       await shot(page, name, label, group);
     }
+    const short = await create(browser, {}, { width: viewport.width, height: 320 });
+    await go(short.page, '/not-a-dashboard-page');
+    await shot(short.page, 'not-found-short', 'Page not found on a short screen', group);
+    await short.context.close();
     await go(page, '/');
     if (group === 'desktop') {
-      await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
+      const resize = page.getByRole('separator', { name: 'Resize sidebar', exact: true });
+      await resize.focus();
+      for (let step = 0; step < 4; step++) await page.keyboard.press('ArrowRight');
+      await shot(page, 'sidebar-resized', 'Wider workspace navigation', group);
+      await resize.dblclick();
+      await page.keyboard.press('Control+b');
       await shot(page, 'sidebar-collapsed', 'Collapsed workspace navigation', group);
       await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+    }
+    if (group === 'desktop') {
+      await page.locator('.pull-row:visible input[type=checkbox]').first().check();
+      await shot(page, 'queue-selection', 'Selected review and indeterminate checkbox', group);
+      await page.locator('.pull-row:visible input[type=checkbox]').first().uncheck();
     }
     await page.getByRole('tab', { name: 'Requested from me', exact: true }).click();
     await shot(page, 'queue-incoming', 'Review requests received', group);
@@ -145,6 +166,12 @@ let browser;
       await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
     await page.getByRole('button', { name: 'Account menu', exact: true }).click();
     await shot(page, 'account-menu', 'Account menu', group);
+    await page.keyboard.press('Escape');
+    if (group === 'mobile') await page.keyboard.press('Escape');
+    if (group === 'mobile') await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+    await page.getByRole('button', { name: 'Open inbox', exact: true }).click();
+    await page.getByRole('heading', { name: 'Invitations', exact: true }).waitFor();
+    await shot(page, 'inbox-popover', 'Inbox from the account row', group);
     await page.keyboard.press('Escape');
     if (group === 'mobile') await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Select repository', exact: true }).click();
@@ -325,6 +352,31 @@ let browser;
       await shot(test.page, name, label, group);
       await test.context.close();
     }
+    for (const [name, state] of [
+      ['inbox-empty', { emptyInbox: true }],
+      ['inbox-error', { inboxError: true }],
+      ['inbox-signed-out', { signedOut: true }],
+    ]) {
+      const inbox = await create(browser, state, viewport);
+      await go(inbox.page, '/');
+      if (group === 'mobile') await inbox.page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+      await inbox.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
+      const label =
+        name === 'inbox-empty'
+          ? 'Empty inbox'
+          : name === 'inbox-error'
+            ? 'Inbox connection error'
+            : 'Inbox before sign-in';
+      const wait =
+        name === 'inbox-empty'
+          ? 'You’re up to date'
+          : name === 'inbox-error'
+            ? 'Inbox could not be loaded.'
+            : 'Sign in to view your inbox';
+      await inbox.page.getByText(wait, { exact: true }).filter({ visible: true }).waitFor();
+      await shot(inbox.page, name, label, group);
+      await inbox.context.close();
+    }
     if (group === 'mobile') {
       const menu = await create(browser, {}, viewport);
       await go(menu.page, '/');
@@ -342,9 +394,19 @@ let browser;
     ['account', '/settings/account', {}],
     ['providers', '/settings/providers', {}],
     ['billing', '/settings/billing', {}],
+    ['provider-dialog', '/settings/providers', {}],
+    ['queue-selection', '/', {}],
+    ['inbox-popover', '/', {}],
+    ['not-found', '/not-a-dashboard-page', {}],
   ]) {
     const dark = await create(browser, state, { width: 1440, height: 1000 }, 'dark');
     await go(dark.page, url);
+    if (name === 'provider-dialog') await dark.page.getByRole('button', { name: 'Add provider', exact: true }).click();
+    if (name === 'queue-selection') await dark.page.locator('.pull-row:visible input[type=checkbox]').first().check();
+    if (name === 'inbox-popover') {
+      await dark.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
+      await dark.page.getByRole('heading', { name: 'Invitations', exact: true }).waitFor();
+    }
     if (name === 'guided-step') await dark.page.getByRole('tab', { name: 'Guide', exact: true }).click();
     if (name === 'changes') await dark.page.getByRole('tab', { name: 'Diff', exact: true }).click();
     await shot(dark.page, name, 'Dark mode · ' + name, 'dark');

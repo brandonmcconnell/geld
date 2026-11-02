@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
-  Bell,
   ArrowLeft,
   ChevronDown,
   Check,
@@ -27,13 +26,12 @@ import { z } from 'zod';
 import { parseDashboardPathname, repositoryPath } from '@geld/domain';
 import { queueSchema, sessionSchema } from '@/lib/contracts';
 import type { QueueData, SessionData } from '@/lib/contracts';
-import { Brand } from './brand';
+import { InboxPopover } from './inbox';
 import { DashboardContext, useDashboard } from '@/lib/dashboard-context';
 import { WorkspaceHeader } from './workspace-header';
 import {
   Sidebar,
   SidebarProvider,
-  SidebarTrigger,
   SidebarHeader,
   SidebarContent,
   SidebarFooter,
@@ -298,12 +296,6 @@ function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="sidebar-brand-row">
-          <Link href="/" aria-label="Geld home" className="sidebar-wordmark">
-            <Brand compact />
-          </Link>
-          <SidebarTrigger className="sidebar-desktop-toggle" />
-        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <TeamSwitcher />
@@ -342,9 +334,6 @@ function AppSidebar() {
                   </NavigationLink>
                   <NavigationLink href="/repositories" icon={Layers}>
                     Repositories
-                  </NavigationLink>
-                  <NavigationLink href="/inbox" icon={Bell}>
-                    Inbox
                   </NavigationLink>
                 </SidebarMenu>
               </SidebarGroup>
@@ -432,11 +421,16 @@ function TeamSwitcher() {
   const name = teams.find((team) => team.id === activeTeam)?.name ?? 'Personal view';
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger render={<SidebarMenuButton />} aria-label="Switch team" title={name}>
+      <div className="team-switcher">
         <span className="workspace-avatar">{activeTeam ? name.slice(0, 1) : <Users size={16} />}</span>
-        <span className="workspace-name">{name}</span>
-        <ChevronsUpDown size={14} className="ml-auto" />
-      </Popover.Trigger>
+        <span className="workspace-name" title={name}>
+          {name}
+        </span>
+        <Popover.Trigger className="icon-button team-switcher-trigger" aria-label="Switch team" title="Switch team">
+          <ChevronsUpDown size={16} />
+          <span className="touch-target" aria-hidden="true" />
+        </Popover.Trigger>
+      </div>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="popover-positioner">
           <Popover.Popup className="scope-menu">
@@ -496,44 +490,51 @@ function AccountMenu() {
   const { session } = useDashboard();
   const [open, setOpen] = useState(false);
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger render={<SidebarMenuButton />} aria-label="Account menu" title={session.user?.name ?? 'Sign in'}>
-        <span className="account-avatar">{session.user?.name.slice(0, 1).toUpperCase() ?? 'G'}</span>
-        <span className="account-name">{session.user?.name ?? 'Sign in'}</span>
-        <MoreHorizontal size={16} className="ml-auto" />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner side="top" align="start" sideOffset={6} className="popover-positioner">
-          <Popover.Popup className="account-menu">
-            <Popover.Title>{session.user?.name ?? 'Your account'}</Popover.Title>
-            {session.user && <p className="muted account-email">{session.user.email}</p>}
-            <Link
-              href={session.user ? '/settings/account' : '/sign-in'}
-              className="menu-link"
-              onClick={() => setOpen(false)}
-            >
-              <Settings size={16} />
-              {session.user ? 'Settings' : 'Sign in'}
-            </Link>
-            <Link href="https://www.geld.sh/how-it-works" className="menu-link">
-              <CircleHelp size={16} />
-              Documentation
-            </Link>
-            <button
-              type="button"
-              className="menu-link"
-              onClick={() => {
-                setOpen(false);
-                window.dispatchEvent(new Event('geld:close-navigation'));
-                requestAnimationFrame(() => window.dispatchEvent(new Event('geld:privacy')));
-              }}
-            >
-              Privacy choices
-            </button>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+    <div className="account-row">
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger
+          render={<SidebarMenuButton className="account-trigger" />}
+          aria-label="Account menu"
+          title={session.user?.name ?? 'Sign in'}
+        >
+          <span className="account-avatar">{session.user?.name.slice(0, 1).toUpperCase() ?? 'G'}</span>
+          <span className="account-name">{session.user?.name ?? 'Sign in'}</span>
+          <MoreHorizontal size={16} className="ml-auto" />
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner side="top" align="start" sideOffset={6} className="popover-positioner">
+            <Popover.Popup className="account-menu">
+              <Popover.Title>{session.user?.name ?? 'Your account'}</Popover.Title>
+              {session.user && <p className="muted account-email">{session.user.email}</p>}
+              <Link
+                href={session.user ? '/settings/account' : '/sign-in'}
+                className="menu-link"
+                onClick={() => setOpen(false)}
+              >
+                <Settings size={16} />
+                {session.user ? 'Settings' : 'Sign in'}
+              </Link>
+              <Link href="https://www.geld.sh/how-it-works" className="menu-link">
+                <CircleHelp size={16} />
+                Documentation
+              </Link>
+              <button
+                type="button"
+                className="menu-link"
+                onClick={() => {
+                  setOpen(false);
+                  window.dispatchEvent(new Event('geld:close-navigation'));
+                  requestAnimationFrame(() => window.dispatchEvent(new Event('geld:privacy')));
+                }}
+              >
+                Privacy choices
+              </button>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+      <InboxPopover />
+    </div>
   );
 }
 export function EmptyState({
