@@ -34,7 +34,9 @@
     "test": "pnpm -r run test && pnpm test:scripts",
     "test:scripts": "node --test scripts/cla.test.mjs",
     "typecheck": "pnpm -r run typecheck",
-    "lint": "pnpm -r run lint"
+    "lint": "pnpm -r run lint",
+    "dev:dashboard": "pnpm --filter @geld/dashboard dev",
+    "build:dashboard": "pnpm --filter @geld/dashboard build"
   },
   "devDependencies": {
     "@geld/core": "workspace:*",
