@@ -8,6 +8,7 @@ import { parseDashboardPathname, repositoryPath } from '@geld/domain';
 import { useDashboard } from '@/lib/dashboard-context';
 import { useRepositoryOptions } from '@/lib/use-repository-options';
 import { Check, ChevronsUpDown, FolderGit2, Layers, Search, Settings, Sparkles } from './icons';
+import { settingsLinks } from './settings-navigation';
 import { OpenReview } from './open-review';
 import { SidebarTrigger, useSidebar } from './ui/sidebar';
 
@@ -27,7 +28,7 @@ export function WorkspaceHeader() {
     : route?.kind === 'pull'
       ? `Pull request #${route.ref.number}`
       : settings
-        ? 'Settings'
+        ? (settingsLinks.find((item) => pathname === item.href)?.name ?? 'Settings')
         : pathname === '/repositories'
           ? 'Repositories'
           : pathname === '/teams'

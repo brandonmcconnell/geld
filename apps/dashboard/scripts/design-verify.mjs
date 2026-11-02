@@ -90,7 +90,7 @@ try {
   await q.page.getByRole('button', { name: 'Star', exact: true }).click();
   assert.equal(await q.page.locator('.star-button[aria-pressed=true]').count(), 5);
   await q.page
-    .getByRole('button', { name: /hidden$/ })
+    .getByRole('button', { name: /^Hidden files:/ })
     .first()
     .click();
   await q.page.getByRole('heading', { name: 'Hidden from your review', exact: true }).waitFor();
@@ -324,12 +324,50 @@ try {
   assert.equal(await missing.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await missing.context.close();
   const controls = await open({}, 1440, '/settings/providers');
-  await controls.page.getByRole('button', { name: 'Add provider', exact: true }).click();
+  assert.equal(await controls.page.locator('.workspace-header-title:visible').innerText(), 'AI providers');
+  const providerToggles = controls.page.getByRole('checkbox', { name: 'Enabled', exact: true });
+  await providerToggles.nth(1).uncheck();
+  await controls.page.getByRole('status').filter({ hasText: 'Provider settings saved.' }).waitFor();
+  assert.equal(await providerToggles.nth(1).isChecked(), false);
+  await controls.page.getByRole('checkbox', { name: 'Geld fallback', exact: true }).check();
+  await controls.page.waitForFunction(() => document.querySelector('input[name="safety"]')?.checked === true);
+  assert.equal(
+    controls.writes.some(
+      (write) =>
+        write.path === '/api/ai/providers' &&
+        JSON.parse(write.body).safetyNet === true &&
+        JSON.parse(write.body).billed === false,
+    ),
+    true,
+  );
+  await controls.page.getByRole('checkbox', { name: 'Geld fallback', exact: true }).uncheck();
+  await controls.page.waitForFunction(() => document.querySelector('input[name="safety"]')?.checked === false);
+  await controls.page.getByRole('button', { name: 'Add a provider', exact: true }).click();
   await controls.page.getByRole('radio', { name: 'Gateway', exact: true }).focus();
   await controls.page.keyboard.press('ArrowRight');
   assert.equal(await controls.page.getByRole('radio', { name: 'OpenAI', exact: true }).isChecked(), true);
+  const dialogGeometry = await controls.page.getByRole('dialog').evaluate((dialog) => {
+    const cancel = [...dialog.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Cancel');
+    const submit = dialog.querySelector('button[type="submit"]');
+    const input = dialog.querySelector('input[type="radio"]');
+    const style = getComputedStyle(input);
+    return {
+      cancelHeight: cancel.getBoundingClientRect().height,
+      submitHeight: submit.getBoundingClientRect().height,
+      radius: style.borderTopLeftRadius,
+      borderTop: style.borderTopWidth,
+      borderLeft: style.borderLeftWidth,
+    };
+  });
+  assert.equal(dialogGeometry.cancelHeight, dialogGeometry.submitHeight);
+  assert.equal(dialogGeometry.radius, '0px');
+  assert.equal(dialogGeometry.borderTop, dialogGeometry.borderLeft);
+  await controls.page.getByRole('button', { name: 'Advanced options', exact: true }).click();
+  await controls.page.getByLabel('Connection name', { exact: true }).waitFor();
   await controls.context.close();
-  console.log('PASS centered 404, short-screen scrolling and native radio keyboard selection');
+  console.log(
+    'PASS centered 404, short-screen scrolling, square radio keyboard selection, autosaved provider settings and matching button geometry',
+  );
   const consent = await open({ measurement: true }, 1440, '/', false);
   await consent.page.getByRole('button', { name: 'Decline optional', exact: true }).click();
   assert.equal(consent.requests.filter((url) => url.includes('/api/measurement/')).length, 0);

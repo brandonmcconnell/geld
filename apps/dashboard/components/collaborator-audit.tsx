@@ -297,11 +297,11 @@ function CollaboratorAvatar({
     /* Use a local initial when no safe avatar is available. */
   }
   return url ? (
-    <Image unoptimized src={url} width={22} height={22} className="rounded-full" alt="" />
+    <Image unoptimized src={url} width={22} height={22} className="rounded-none" alt="" />
   ) : (
     <span
       aria-hidden="true"
-      className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs"
+      className="inline-flex size-6 shrink-0 items-center justify-center rounded-none bg-muted text-xs"
     >
       {person.login.slice(0, 1).toUpperCase()}
     </span>

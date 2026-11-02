@@ -99,6 +99,18 @@ const plan = {
 async function configure(context, state = {}) {
   let acceptedInvite = false;
   const writes = [];
+  let providerRows = [
+    {
+      id: 'geld-provider',
+      provider: 'geld',
+      label: 'Geld',
+      base_url: null,
+      enabled: true,
+      has_key: false,
+      settings: { billed: !!state.geldEnabled, safetyNet: !!state.fallbackEnabled, capCents: 5000, teamId },
+    },
+    ...(state.emptyProviders || state.emptyModels ? [] : structuredClone(providers)),
+  ];
   const stressFiles = Array.from({ length: 50 }, (_, index) => {
     const template = fixture.review.files.find((file) => !file.hidden);
     return {
@@ -272,9 +284,30 @@ async function configure(context, state = {}) {
               { id: 'notification-2', team_id: teamId, kind: 'repository_connected' },
             ],
       };
-    } else if (p === '/api/ai/providers')
-      data = post ? { id: 'new-provider' } : { configured: true, providers: state.emptyModels ? [] : providers };
-    else if (p === '/api/ai/models')
+    } else if (p === '/api/ai/providers') {
+      if (post && state.providerSaveError) {
+        status = 503;
+        data = { error: 'Provider settings could not be saved.' };
+      } else if (request.method() === 'DELETE') {
+        providerRows = providerRows.filter((row) => row.id !== request.postDataJSON().id);
+        data = { removed: true };
+      } else if (post) {
+        const input = request.postDataJSON();
+        const id = input.id ?? 'new-provider';
+        const existing = providerRows.find((row) => row.id === id);
+        const saved = {
+          id,
+          provider: input.provider,
+          label: input.label,
+          base_url: input.baseUrl ?? null,
+          has_key: !!input.key || !!existing?.has_key,
+          enabled: input.enabled,
+          settings: { ...input },
+        };
+        providerRows = [...providerRows.filter((row) => row.id !== id), saved];
+        data = { id };
+      } else data = { configured: true, providers: providerRows };
+    } else if (p === '/api/ai/models')
       data = {
         models: state.emptyModels
           ? []
@@ -290,7 +323,8 @@ async function configure(context, state = {}) {
             ],
         someUnavailable: !!state.partialModels,
       };
-    else if (p === '/api/billing') data = { teams: [team], configured: true, testMode: true };
+    else if (p === '/api/billing')
+      data = { teams: [{ ...team, card_on_file: !state.fallbackUnavailable }], configured: true, testMode: true };
     else if (p === '/api/security')
       data = {
         events: [

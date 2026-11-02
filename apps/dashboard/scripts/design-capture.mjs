@@ -142,7 +142,7 @@ let browser;
     await shot(page, 'queue-outgoing', 'Review requests sent', group);
     await page.getByRole('tab', { name: /^All/ }).click();
     await page
-      .getByRole('button', { name: /hidden$/ })
+      .getByRole('button', { name: /^Hidden files:/ })
       .first()
       .click();
     await shot(page, 'queue-hidden-counts', 'Hidden change counts', group);
@@ -178,10 +178,20 @@ let browser;
     await page.getByRole('button', { name: 'acme/api on gitlab.com', exact: true }).waitFor();
     await shot(page, 'repository-picker', 'Search and switch repositories', group);
     await page.keyboard.press('Escape');
+    for (const [name, state] of [
+      ['providers-empty', { emptyProviders: true }],
+      ['providers-fallback', { fallbackEnabled: true, geldEnabled: true }],
+      ['providers-fallback-unavailable', { fallbackUnavailable: true }],
+    ]) {
+      const providerState = await create(browser, state, viewport);
+      await go(providerState.page, '/settings/providers');
+      await shot(providerState.page, name, name.replaceAll('-', ' '), group);
+      await providerState.context.close();
+    }
     await go(page, '/settings/providers');
-    await page.getByRole('button', { name: 'Add provider', exact: true }).click();
+    await page.getByRole('button', { name: 'Add a provider', exact: true }).click();
     await shot(page, 'provider-dialog', 'Add AI provider', group);
-    await page.locator('summary:visible').filter({ hasText: 'Advanced options' }).click();
+    await page.getByRole('button', { name: 'Advanced options', exact: true }).click();
     await shot(page, 'provider-advanced', 'Advanced AI provider options', group);
     await page.getByRole('radio', { name: 'Claude', exact: true }).check();
     await page.getByRole('combobox', { name: 'Connect with', exact: true }).selectOption('login');
@@ -401,7 +411,8 @@ let browser;
   ]) {
     const dark = await create(browser, state, { width: 1440, height: 1000 }, 'dark');
     await go(dark.page, url);
-    if (name === 'provider-dialog') await dark.page.getByRole('button', { name: 'Add provider', exact: true }).click();
+    if (name === 'provider-dialog')
+      await dark.page.getByRole('button', { name: 'Add a provider', exact: true }).click();
     if (name === 'queue-selection') await dark.page.locator('.pull-row:visible input[type=checkbox]').first().check();
     if (name === 'inbox-popover') {
       await dark.page.getByRole('button', { name: 'Open inbox', exact: true }).click();

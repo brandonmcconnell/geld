@@ -9,7 +9,9 @@ The production application follows the operating system’s color scheme.
 
 The shared navigation uses [shadcn/ui’s Base UI sidebar](https://ui.shadcn.com/docs/components/base/sidebar) composition and Vega spacing, with Geld theme tokens.
 Drag the sidebar edge to resize or collapse it. The team picker opens from its chevrons, the repository picker lives in the top bar, and Inbox sits beside the account menu.
-Fields and checkboxes use two beveled corners. Radio buttons use four, with a matching inner shape. The 404 centers within the available workspace and scrolls naturally on short screens.
+Controls, panels and navigation states use square corners. Brand buttons retain two beveled corners. The 404 uses tabular numerals, centers within the available workspace and scrolls naturally on short screens.
+
+Compare the unchanged icon set with [three alternatives](./icon-options.html), or view the [comparison image](./icon-options.png).
 
 ## Screenshots
 
@@ -56,6 +58,9 @@ Fields and checkboxes use two beveled corners. Radio buttons use four, with a ma
 | Account menu | `/` | [View](./screenshots/desktop/account-menu.png) | [View](./screenshots/mobile/account-menu.png) | — |
 | Inbox from the account row | `/` | [View](./screenshots/desktop/inbox-popover.png) | [View](./screenshots/mobile/inbox-popover.png) | [View](./screenshots/dark/inbox-popover.png) |
 | Search and switch repositories | `/` | [View](./screenshots/desktop/repository-picker.png) | [View](./screenshots/mobile/repository-picker.png) | — |
+| providers empty | `/settings/providers` | [View](./screenshots/desktop/providers-empty.png) | [View](./screenshots/mobile/providers-empty.png) | — |
+| providers fallback | `/settings/providers` | [View](./screenshots/desktop/providers-fallback.png) | [View](./screenshots/mobile/providers-fallback.png) | — |
+| providers fallback unavailable | `/settings/providers` | [View](./screenshots/desktop/providers-fallback-unavailable.png) | [View](./screenshots/mobile/providers-fallback-unavailable.png) | — |
 | Add AI provider | `/settings/providers` | [View](./screenshots/desktop/provider-dialog.png) | [View](./screenshots/mobile/provider-dialog.png) | [View](./screenshots/dark/provider-dialog.png) |
 | Advanced AI provider options | `/settings/providers` | [View](./screenshots/desktop/provider-advanced.png) | [View](./screenshots/mobile/provider-advanced.png) | — |
 | Add local companion | `/settings/providers` | [View](./screenshots/desktop/companion-dialog.png) | [View](./screenshots/mobile/companion-dialog.png) | — |

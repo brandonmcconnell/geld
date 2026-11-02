@@ -453,6 +453,39 @@
       "route": "/"
     },
     {
+      "name": "providers-empty",
+      "label": "providers empty",
+      "file": "desktop/providers-empty.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/settings/providers"
+    },
+    {
+      "name": "providers-fallback",
+      "label": "providers fallback",
+      "file": "desktop/providers-fallback.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/settings/providers"
+    },
+    {
+      "name": "providers-fallback-unavailable",
+      "label": "providers fallback unavailable",
+      "file": "desktop/providers-fallback-unavailable.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/settings/providers"
+    },
+    {
       "name": "provider-dialog",
       "label": "Add AI provider",
       "file": "desktop/provider-dialog.png",
@@ -1419,6 +1452,39 @@
         "height": 844
       },
       "route": "/"
+    },
+    {
+      "name": "providers-empty",
+      "label": "providers empty",
+      "file": "mobile/providers-empty.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/settings/providers"
+    },
+    {
+      "name": "providers-fallback",
+      "label": "providers fallback",
+      "file": "mobile/providers-fallback.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/settings/providers"
+    },
+    {
+      "name": "providers-fallback-unavailable",
+      "label": "providers fallback unavailable",
+      "file": "mobile/providers-fallback-unavailable.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/settings/providers"
     },
     {
       "name": "provider-dialog",

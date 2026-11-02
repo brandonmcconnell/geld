@@ -101,6 +101,7 @@ async function handlePOST(request: Request): Promise<Response> {
       billed: input.billed ?? true,
       safetyNet: input.safetyNet ?? false,
       capCents: input.capCents ?? 0,
+      ...(input.teamId ? { teamId: input.teamId } : {}),
     };
     await db.query(
       "INSERT INTO ai_providers(id,user_id,provider,label,base_url,encrypted_key,enabled,settings) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label,base_url = EXCLUDED.base_url,encrypted_key = CASE WHEN EXCLUDED.settings->>'mode'='login' THEN NULL ELSE COALESCE(EXCLUDED.encrypted_key,ai_providers.encrypted_key) END,enabled = EXCLUDED.enabled,settings = EXCLUDED.settings WHERE ai_providers.user_id = $2",

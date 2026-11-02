@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import type { PullSummary } from '@geld/domain';
 import { pullPath } from '@geld/domain';
-import { queueInsightSchema } from '@/lib/queue-insight';
+import { hiddenFilesLabel, queueInsightSchema } from '@/lib/queue-insight';
 import type { QueueInsight } from '@/lib/queue-insight';
 export function useQueueInsights(pulls: readonly PullSummary[], scope: string) {
   const requestKey = JSON.stringify(
@@ -56,14 +56,11 @@ export function ChangeCounts({ insight }: { readonly insight: QueueInsight | nul
     );
   return (
     <div className="queue-change-counts">
-      <span className="essential-count">{insight.essential.files} essential</span>
-      <span className="diffstat">
-        <span>+{insight.essential.additions}</span>
-        <span>−{insight.essential.deletions}</span>
-      </span>
       {insight.hidden.files > 0 && (
         <Popover.Root>
-          <Popover.Trigger className="hidden-count">{insight.hidden.files} hidden</Popover.Trigger>
+          <Popover.Trigger className="hidden-count" aria-label={`Hidden files: ${hiddenFilesLabel(insight)}`}>
+            {hiddenFilesLabel(insight)}
+          </Popover.Trigger>
           <Popover.Portal>
             <Popover.Positioner side="bottom" align="end" sideOffset={6} className="popover-positioner">
               <Popover.Popup className="counts-popover">
@@ -84,6 +81,10 @@ export function ChangeCounts({ insight }: { readonly insight: QueueInsight | nul
           </Popover.Portal>
         </Popover.Root>
       )}
+      <span className="diffstat">
+        <span>+{insight.essential.additions}</span>
+        <span>−{insight.essential.deletions}</span>
+      </span>
     </div>
   );
 }
