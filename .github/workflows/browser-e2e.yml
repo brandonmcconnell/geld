@@ -185,7 +185,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Read the one retained public app asset as source
-        run: node apps/extension/scripts/bitbucket-whitespace-source-research.mjs
+        run: node apps/extension/scripts/bitbucket-whitespace-source-research.mjs --retain-asset
       - name: Save bounded static source evidence
         if: always()
         uses: actions/upload-artifact@v7

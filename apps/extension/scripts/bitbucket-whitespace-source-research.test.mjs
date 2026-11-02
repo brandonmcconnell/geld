@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { BITBUCKET_WHITESPACE_ASSET as URL, BITBUCKET_WHITESPACE_BODY_LIMIT as LIMIT, BITBUCKET_WHITESPACE_WORKER_DEADLINE, collectBitbucketWhitespaceFactories as collect } from './bitbucket-whitespace-source-research.mjs';
+import { gunzipSync } from 'node:zlib';
+import { BITBUCKET_WHITESPACE_ASSET as URL, BITBUCKET_WHITESPACE_BODY_LIMIT as LIMIT, BITBUCKET_WHITESPACE_WORKER_DEADLINE, BITBUCKET_WHITESPACE_SOURCE_ARCHIVE as ARCHIVE, collectBitbucketWhitespaceFactories as collect } from './bitbucket-whitespace-source-research.mjs';
 const first='r("fozrM",function(e,r){e.exports={getGlobalShouldIgnoreWhitespace:s=>s.settings.ignore};})';
 const second='r("h43l2",function(e,r){e.exports={DiffLoader:()=>{throw Error("never execute")}};})';
 const body=Buffer.from(first+';'+second+';throw Error("private runtime data must not execute");');
@@ -60,4 +61,25 @@ test('unsafe declared byte length is not rounded into a valid diagnostic',async(
 test('static reports distinguish known worker memory and parser depth without raw exceptions',async()=>{
   const f=setup({collect:{extractModule:async(_bytes,{moduleId})=>({status:'unavailable',reason:moduleId==='fozrM'?'worker_memory':'parser_depth'})}}),r=await f.run();
   assert.deepEqual(r.modules,{fozrM:{status:'unavailable',reason:'worker_memory'},h43l2:{status:'unavailable',reason:'parser_depth'}});assert.equal(r.status,'unavailable');assert.equal(f.writes.length,0);assert.equal(r.executed,false);
+});
+
+test('explicit retention saves only a fixed gzip of the already-fetched public asset with both hashes',async()=>{
+  const f=setup({collect:{retainAsset:true,url:'https://unrelated.invalid/private.js'}}),r=await f.run();
+  assert.equal(f.calls.length,1);assert.equal(f.calls[0][0],URL);assert.equal(f.writes[0].file,ARCHIVE);assert.equal(f.writes.length,3);
+  const archive=f.writes[0].bytes;assert.deepEqual(gunzipSync(archive),body);
+  assert.deepEqual(r.asset.archive,{file:ARCHIVE,encoding:'gzip',bytes:archive.length,sha256:createHash('sha256').update(archive).digest('hex'),uncompressedBytes:body.length,uncompressedSha256:createHash('sha256').update(body).digest('hex')});
+  assert.equal(r.asset.archive.uncompressedSha256,r.asset.sha256);assert.equal(r.executed,false);assert.equal(JSON.stringify(r).includes('private runtime data'),false);
+});
+test('default extraction retains no full-asset archive',async()=>{
+  const f=setup(),r=await f.run();assert.equal(r.asset.archive,undefined);assert.equal(f.writes.some(({file})=>file===ARCHIVE),false);
+});
+test('missing factories still leave the requested private source archive for later offline inspection',async()=>{
+  const bytes=Buffer.from('throw Error("DO NOT EVALUATE SOURCE");'),f=setup({chunks:[bytes],collect:{retainAsset:true}}),r=await f.run();
+  assert.equal(r.status,'unavailable');assert.deepEqual(f.writes.map(({file})=>file),[ARCHIVE]);assert.deepEqual(gunzipSync(f.writes[0].bytes),bytes);assert.equal(JSON.stringify(r).includes('DO NOT EVALUATE SOURCE'),false);
+});
+for(const [name,options] of [['wrong URL',{response:{url:URL+'?other=1'}}],['bad MIME',{response:{headers:new Headers({'content-type':'text/html'})}}],['declared overflow',{response:{headers:new Headers({'content-type':'application/javascript','content-length':String(LIMIT+1)})}}],['stream overflow',{chunks:[new Uint8Array(LIMIT+1)]}]])test('retention cannot archive '+name,async()=>{
+  const f=setup({...options,collect:{retainAsset:true}}),r=await f.run();assert.equal(r.status,'unavailable');assert.equal(f.writes.length,0);assert.equal(r.asset?.archive,undefined);assert.equal(f.calls.length,1);
+});
+test('a nonboolean retention option is refused before a request',async()=>{
+  const f=setup({collect:{retainAsset:'true'}}),r=await f.run();assert.equal(r.status,'unavailable');assert.equal(f.calls.length,0);assert.equal(f.writes.length,0);
 });

@@ -2202,7 +2202,9 @@ The installed-browser worker keeps its6MiB source,256MiB old-generation and2s pa
 AST traversal uses an explicit stack so deeply nested minified comma chains do not exhaust JavaScript recursion, and known worker memory exhaustion and parser depth failures receive fixed diagnostics without raw error text.
 Reports retain the valid declared byte length and a streamed bytes-seen count capped at the body limit plus one, with a separate capped flag, without retaining an oversized body.
 The bounded worker extracts only `fozrM` and `h43l2` function registrations, independently recording absent or ambiguous modules, source offsets and SHA256 hashes without executing fetched code.
-Each selected factory is limited to256KiB and written under a fixed filename, while the full app body is not saved.
+Each selected factory is limited to256KiB and written under a fixed filename.
+The static-only job explicitly enables --retain-asset to save the same validated public app body as a bounded gzip under a fixed filename in its private CI artifact, with compressed and uncompressed byte counts and SHA256 receipts.
+The full app body never goes to stdout or a committed fixture, and ordinary browser captures retain their prior limits and output policy.
 Static source capture does not establish native source authority, live preference state or feature acceptance.
 
 
