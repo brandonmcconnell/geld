@@ -212,6 +212,18 @@ describe('signersOf', () => {
     assert.deepEqual(accounts.map((account) => account.login), ['Batuhan1999']);
   });
 
+  it('skips an agent co-author whose address GitHub links to an account, and still needs the opener', () => {
+    const claude = { name: 'Claude Opus 5.5', email: 'noreply@anthropic.com', user: { login: 'claude', databaseId: 4 } };
+    const { accounts, unlinked: emails } = signersOf([actor(batuhan), claude], batuhan);
+    assert.deepEqual(accounts.map((account) => account.login), ['Batuhan1999']);
+    assert.deepEqual(emails, []);
+  });
+
+  it('still needs a person who co-authored alongside the opener', () => {
+    const { accounts } = signersOf([actor(batuhan), actor(hunter)], batuhan);
+    assert.deepEqual(accounts.map((account) => account.login), ['Batuhan1999', 'hunterchen7']);
+  });
+
   it('exempts a pull request a bot opened', () => {
     assert.deepEqual(signersOf([actor(brandon)], cursorBot).accounts, []);
   });
