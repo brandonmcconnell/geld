@@ -6,10 +6,14 @@ import { gitLabReviewIdentity } from './review';
 import { describeGitLabPage } from './page';
 import { isProviderReviewPage } from '../providers/types';
 
-// Verified by CodeRabbit's GitLab documentation and native note3436654383; the account is bound separately.
-const COMMANDS = [
-  { id: 'incremental', label: 'Incremental review', text: '@coderabbitai review' },
-  { id: 'full', label: 'Full review', text: '@coderabbitai full review' },
+// Each service needs GitLab-specific command evidence; native account trust remains separate.
+const REQUESTS = [
+  { id: 'coderabbit', label: 'CodeRabbit', commands: [
+    { id: 'incremental', label: 'Incremental review', text: '@coderabbitai review' },
+    { id: 'full', label: 'Full review', text: '@coderabbitai full review' },
+  ] },
+  // Greptile Developer Essentials explicitly documents this literal for GitHub/GitLab comments.
+  { id: 'greptile', label: 'Greptile', commands: [{ id: 'review', label: 'Review', text: '@greptileai' }] },
 ] as const;
 
 function nativeNote(comment: ProviderReviewComment, doc: Document): HTMLElement | null {
@@ -37,7 +41,9 @@ export function readGitLabBotRequests(doc: Document, input: ProviderReviewInput,
     } catch { return false; }
   };
   if (!sameReview()) return [];
-  return (input.bots ?? []).filter((bot) => bot.id === 'coderabbit').flatMap((bot) => {
+  return (input.bots ?? []).flatMap((bot): ProviderBotRequest[] => {
+    const request = REQUESTS.find((request) => request.id === bot.id);
+    if (request === undefined) return [];
     const sources = comments.filter((comment) => comment.author.id === bot.authorId && (bot.login === undefined || comment.author.login === bot.login)
       && sourceLink({ kind: 'comment', anchor: comment.anchor, author: comment.author.login, url: comment.url }, subject) === comment.url);
     const source = sources.find((comment) => nativeNote(comment, doc) !== null);
@@ -45,7 +51,7 @@ export function readGitLabBotRequests(doc: Document, input: ProviderReviewInput,
     const root = nativeNote(source, doc);
     const valid = (): boolean => sameReview() && nativeNote(source, doc) === root;
     const comment = readGitLabMainCommentAction(doc, signedIn, visit);
-    return [{ key: JSON.stringify([subject, source.id, source.author.id, source.author.login, source.url]), botId: bot.id, label: 'CodeRabbit', sourceUrl: source.url, commands: COMMANDS,
+    return [{ key: JSON.stringify([subject, bot.id, source.id, source.author.id, source.author.login, source.url]), botId: bot.id, label: request.label, sourceUrl: source.url, commands: request.commands,
       current: valid,
       comment: { available: valid() && comment.available, ...(comment.reason === undefined ? {} : { reason: comment.reason }), activate: async () => valid() && await comment.activate() && valid() },
     }];

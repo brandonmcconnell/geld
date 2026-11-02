@@ -10,6 +10,8 @@ import { ProviderConversation, providerReviewWithTrustedAccounts, reviewedItemFi
 import type { ProviderConversationServices } from './conversation';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 import type { ProviderSourceActionContext } from './review-panel';
+import { readGitLabBotRequests } from '../gitlab/bot-request';
+import type { ProviderBotRequest } from './bot-request';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: vi.fn(() => { throw new Error('Unexpected real transport'); }) } } }));
 vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined }) } }));
@@ -49,6 +51,32 @@ const cleanup: (() => void)[] = [];
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); document.body.replaceChildren(); });
 
 describe('native bot command binding lifetime', () => {
+  it.each(['service', 'account'] as const)('invalidates a real retained descriptor after %s rebinding through current settings', async (binding) => {
+    const previousUrl = window.location.href;window.location.href = url;
+    cleanup.push(() => { window.location.href = previousUrl; });
+    const first = comment();
+    const second = { ...first, id: '2', anchor: 'note_2', url: `${url}#note_2`, author: { id: '67890', login: 'another_native_account', automated: true } };
+    document.body.innerHTML = `<div id="js-vue-mr-discussions" data-current-user-data='{}' data-noteable-type="MergeRequest" data-noteable-data='{"diff_head_sha":"${sha}"}'></div>`;
+    for (const source of [first, second]) document.body.insertAdjacentHTML('beforeend', `<div id="${source.anchor}" data-testid="noteable-note-container"><div class="timeline-entry-inner"><div class="timeline-content"><div class="note-header"><div class="note-header-info"><a class="author-name-link" data-user-id="${source.author.id}" data-username="${source.author.login}">Original native account</a></div></div><div class="note-body"><div class="note-text">Original review</div></div></div></div></div>`);
+    const nativeRoot = document.getElementById(first.anchor);const nativeParent = nativeRoot?.parentElement;
+    let requests: readonly ProviderBotRequest[] = [];
+    const source: ProviderReviewSnapshot = { ...snapshot([first, second]), botRequests: (input, comments, current) => {
+      requests = readGitLabBotRequests(document, input, comments, false, current);return requests;
+    } };
+    const trustedReviewAccounts = withTrustedReviewAccount([], repository, 'coderabbit', first.author.id);
+    const f = fixture(source, {}, { aiEnabled: false, trustedReviewAccounts });
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    const old = requests[0]!;expect(old.current()).toBe(true);expect(old.label).toBe('CodeRabbit');
+    const account = binding === 'service' ? first.author.id : second.author.id;
+    f.apply(page, { ...DEFAULT_SETTINGS, prOverview: true, aiEnabled: false, trustedReviewAccounts: withTrustedReviewAccount([], repository, 'greptile', account) });
+    expect(old.current()).toBe(false);expect(requests).toHaveLength(1);expect(requests[0]?.current()).toBe(true);
+    expect(requests[0]?.key).not.toBe(old.key);expect(requests[0]?.label).toBe('Greptile');
+    expect(requests[0]?.commands).toEqual([{ id: 'review', label: 'Review', text: '@greptileai' }]);
+    expect(f.host.querySelector('[data-geld-bot-request] summary')?.textContent).toBe('Prepare Greptile request');
+    expect(document.getElementById(first.anchor)).toBe(nativeRoot);expect(nativeRoot?.parentElement).toBe(nativeParent);
+    expect(await old.comment.activate()).toBe(false);expect(f.send).not.toHaveBeenCalled();
+  });
+
   it('revalidates explicit account trust independently of the fetched snapshot', async () => {
     let retained: (() => boolean) | undefined;
     const source: ProviderReviewSnapshot = { ...snapshot([comment()]), botRequests: (_input, _comments, current) => { retained = current;return []; } };
