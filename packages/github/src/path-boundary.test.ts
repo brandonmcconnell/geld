@@ -15,3 +15,17 @@ describe('provider path confinement before URL normalization', () => {
     },
   );
 });
+
+describe('credential failure result contract',()=>{
+ it.each(['initial','refresh'])('maps a rejected %s credential read to unavailable without exposing its error',async failure=>{
+  const get=vi.fn(async({force=false}:{readonly force?:boolean}={})=>{
+   if(failure==='initial'||force)throw new Error('private token-store detail');
+   return {status:'ok',token:'synthetic',refreshed:false} satisfies import('./auth').TokenAccess;
+  });
+  const request=vi.fn(async()=>new Response(null,{status:401}));
+  const api=createApiTransport({baseUrl:'https://api.github.com/',source:{get},fetch:request});
+  expect(await api.request('user')).toEqual({ok:false,reason:'unavailable'});
+  expect(get).toHaveBeenCalledTimes(failure==='initial'?1:2);
+  expect(request).toHaveBeenCalledTimes(failure==='initial'?0:1);
+ });
+});
