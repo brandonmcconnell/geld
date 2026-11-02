@@ -2254,3 +2254,7 @@ Missing native source, original controls or usable native palettes is unavailabl
 The literal Bitbucket local-reviewed acceptance uses the existing public PR22 outdated human comment and already-issued review/commit responses, with no helper request or fabricated source identity.
 A local mark on an already-outdated item preserves its native Outdated state and group while its explicit device-local notice survives a real reload and Undo removes only that mark.
 The case closes its provider page before restoring exact raw settings and local storage presence, and any observed review API write fails acceptance.
+
+A GitLab Rapid Diff page can report idle before its client-side target file and native file tree have hydrated.
+The installed shell acceptance waits within its existing bounded poll for a mounted target or a qualified original reveal control, and records only its final bounded readiness fields when neither becomes available.
+An idle server-rendered page alone does not establish target unavailability or authorize a guessed reveal action.
