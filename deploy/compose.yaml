@@ -42,6 +42,23 @@ services:
     depends_on:
       database:
         condition: service_healthy
+  relay-database-setup:
+    image: postgres:17-alpine
+    profiles: [relay]
+    command: [sh, /setup/relay-role.sh]
+    environment:
+      PGHOST: database
+      PGDATABASE: geld
+      PGUSER: geld
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      RELAY_DATABASE_PASSWORD: ${RELAY_DATABASE_PASSWORD:-}
+    volumes:
+      - ./relay-role.sh:/setup/relay-role.sh:ro
+    depends_on:
+      database:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
   relay-broker:
     build:
       context: ..
@@ -51,11 +68,14 @@ services:
     profiles: [relay]
     environment:
       RELAY_CHANNELS: ${RELAY_CHANNELS:-[]}
-      RELAY_DATABASE_URL: postgresql://geld:${POSTGRES_PASSWORD}@database:5432/geld
+      RELAY_DATABASE_URL: postgresql://geld_relay@database:5432/geld
+      PGPASSWORD: ${RELAY_DATABASE_PASSWORD:-}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
     depends_on:
       database:
         condition: service_healthy
+      relay-database-setup:
+        condition: service_completed_successfully
     read_only: true
     tmpfs: [/tmp]
   worker:
