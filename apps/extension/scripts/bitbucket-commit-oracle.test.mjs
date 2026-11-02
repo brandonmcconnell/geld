@@ -256,3 +256,135 @@ test('refuses an offscreen parent scroll after URL-only navigation', async () =>
   await assert.rejects(prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll), /changed before its scroll/);
   assert.equal(fixture.state.scrolls, 0);
 });
+
+function consentParentFixture(options = {}) {
+  window.innerWidth = 1440;window.innerHeight = 1000;
+  const fixture = parentRevealFixture();
+  // Reduced actual run41365072551 structure. Geometry and trusted input below are unit protocol only.
+  const layout = document.createElement('div');layout.id = 'unsafe-design-system-page-layout-root';
+  const sidebar = fixture.toggle.closest('[data-testid="sidebar"]');
+  document.body.append(layout);layout.append(sidebar);
+  const slot = document.createElement('div');slot.setAttribute('data-layout-slot', 'true');
+  slot.innerHTML = '<div><div role="dialog" aria-labelledby="cookiesTrackingNoticeLink"><a id="cookiesTrackingNoticeLink" href="https://www.atlassian.com/legal/cookies">Atlassian cookies and tracking notice</a><button type="button" data-testid="only-necessary-button">Only necessary</button></div></div>';
+  const header = document.createElement('header');header.setAttribute('data-layout-slot', 'true');header.id = 'native-global-header';layout.prepend(slot, header);
+  const dialog = slot.querySelector('[role="dialog"]');const necessary = dialog.querySelector('button');
+  const state = { active: true, blockedAfterDismissal: options.blockedAfterDismissal === true };
+  const toggleBox = fixture.toggle.getBoundingClientRect;
+  fixture.toggle.getBoundingClientRect = () => state.active ? { left: 1388, top: 131, width: 40, height: 32 } : toggleBox();
+  header.getBoundingClientRect = () => ({ left: 0, top: state.active ? 105 : 0, width: 1440, height: 56 });
+  dialog.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1440, height: 105 });
+  necessary.getBoundingClientRect = () => ({ left: 1174, top: 37, width: 128, height: 32 });
+  const nativeHit = document.elementFromPoint;
+  document.elementFromPoint = (x, y) => {
+    if (state.active && x >= 1174 && x < 1302 && y >= 37 && y < 69) return necessary;
+    if (state.active && x === 720 && y === 52.5) return dialog;
+    if (state.active && x === 1408 && y === 147 || !state.active && state.blockedAfterDismissal && y === 110) return header;
+    return nativeHit(x, y);
+  };
+  necessary.addEventListener('click', () => { state.active = false;slot.remove(); });
+  const lookup = fixture.page.$;
+  fixture.page.$ = async (selector) => {
+    const handle = await lookup(selector);
+    if (handle !== null && selector.includes('only-necessary-button')) {
+      const click = handle.click;
+      handle.click = async () => {
+        await click();
+        // Synthetic protocol record, never an assertion that HappyDOM creates a real trusted click.
+        if (options.untrusted !== true) globalThis.__geldParentConsent.event = { trusted: true, detail: 1, nativeButton: true };
+      };
+    }
+    return handle;
+  };
+  return { ...fixture, layout, slot, dialog, necessary, header, consentState: state };
+}
+
+test('records the actual obstruction target and binds only the observed native layout-slot necessary-cookie control', () => {
+  const fixture = consentParentFixture();const initial = bitbucketParentCommitSnapshot();
+  assert.equal(initial.controls.expandSidebar.presented, true);assert.equal(initial.controls.expandSidebar.visible, false);
+  assert.deepEqual(initial.controls.expandSidebar.point, { x: 1408, y: 147 });
+  assert.equal(initial.controls.expandSidebar.hit.id, 'native-global-header');assert.equal(initial.controls.expandSidebar.hit.nativeHeader, true);
+  assert.equal(initial.consent.control.visible, true);assert.equal(initial.consent.label, 'Only necessary');
+  assert.equal(initial.consent.legalUrl, 'https://www.atlassian.com/legal/cookies');
+  assert.equal(initial.nativeLayout.headers[0].bounds.top, 105);
+  assert.equal(document.querySelector('[data-testid="only-necessary-button"]'), fixture.necessary);
+});
+
+test('uses native necessary-cookie pointer input before rechecking and clicking the original sidebar control', async () => {
+  const fixture = consentParentFixture();const nativeBody = fixture.link.outerHTML;let progress;
+  const result = await prepareBitbucketParentCommit(fixture.page, bitbucketParentCommitSnapshot(), immediateParentPoll, (value) => { progress = value; });
+  assert.deepEqual(result.actions.map((action) => action.kind), ['necessaryCookies', 'expandSidebar']);
+  assert.deepEqual(fixture.state.clicks.map((node) => node === fixture.necessary ? 'necessary' : node === fixture.toggle ? 'sidebar' : 'unexpected'), ['necessary', 'sidebar']);
+  assert.deepEqual(result.actions[0].event, { trusted: true, detail: 1, nativeButton: true });
+  assert.equal(result.actions[0].before.controls.expandSidebar.hit.nativeHeader, true);
+  assert.equal(result.actions[0].after.consent, null);assert.equal(result.actions[0].after.controls.expandSidebar.visible, true);
+  assert.equal(result.native.links[0].visible, true);assert.equal(result.native.links[0].href, progress.initial.links[0].href);
+  assert.equal(progress.status, 'ready');assert.equal(fixture.link.outerHTML, nativeBody);assert.equal(globalThis.__geldParentConsent, undefined);
+});
+
+for (const shape of ['wrong label', 'wrong legal URL', 'duplicate button', 'duplicate dialog', 'form', 'owned', 'comment', 'disabled', 'hidden', 'unknown obstruction']) test(`refuses consent preparation for ${shape}`, async () => {
+  const fixture = consentParentFixture();
+  if (shape === 'wrong label') fixture.necessary.textContent = 'Accept all';
+  if (shape === 'wrong legal URL') fixture.dialog.querySelector('a').href = 'https://foreign.example/legal/cookies';
+  if (shape === 'duplicate button') fixture.dialog.append(fixture.necessary.cloneNode(true));
+  if (shape === 'duplicate dialog') fixture.slot.append(fixture.dialog.cloneNode(true));
+  if (shape === 'form') { const form = document.createElement('form');fixture.dialog.replaceWith(form);form.append(fixture.dialog); }
+  if (shape === 'owned') fixture.dialog.setAttribute('data-geld-ui', '');
+  if (shape === 'comment') fixture.dialog.classList.add('ak-renderer-document');
+  if (shape === 'disabled') fixture.necessary.disabled = true;
+  if (shape === 'hidden') fixture.dialog.hidden = true;
+  if (shape === 'unknown obstruction') document.elementFromPoint = () => document.body;
+  let progress;await assert.rejects(prepareBitbucketParentCommit(fixture.page, bitbucketParentCommitSnapshot(), immediateParentPoll, (value) => { progress = value; }));
+  assert.equal(fixture.state.clicks.length, 0);assert.equal(progress.status, 'failed');assert.equal(globalThis.__geldParentConsent, undefined);
+});
+
+for (const change of ['navigation', 'parent identity', 'original sidebar', 'consent replacement', 'disabled consent']) test(`rechecks original native identity after ${change} changes during consent lookup`, async () => {
+  const fixture = consentParentFixture();const initial = bitbucketParentCommitSnapshot();const lookup = fixture.page.$;
+  fixture.page.$ = async (selector) => {
+    const handle = await lookup(selector);
+    if (selector.includes('only-necessary-button')) {
+      if (change === 'navigation') window.history.replaceState(null, '', '/atlassian/bitbucket-upload-file/commits/' + 'b'.repeat(40));
+      if (change === 'parent identity') fixture.link.setAttribute('href', 'c'.repeat(40));
+      if (change === 'original sidebar') fixture.toggle.remove();
+      if (change === 'consent replacement') fixture.necessary.replaceWith(fixture.necessary.cloneNode(true));
+      if (change === 'disabled consent') fixture.necessary.disabled = true;
+    }
+    return handle;
+  };
+  let progress;await assert.rejects(prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll, (value) => { progress = value; }));
+  assert.equal(fixture.state.clicks.length, 0);assert.equal(progress.status, 'failed');assert.equal(globalThis.__geldParentConsent, undefined);
+});
+
+for (const [label, options] of [['untrusted pointer', { untrusted: true }], ['still-obstructed original sidebar', { blockedAfterDismissal: true }]]) test(`retains failed preparation and cleans up after ${label}`, async () => {
+  const fixture = consentParentFixture(options);let progress;
+  await assert.rejects(prepareBitbucketParentCommit(fixture.page, bitbucketParentCommitSnapshot(), immediateParentPoll, (value) => { progress = value; }));
+  assert.equal(progress.status, 'failed');assert.deepEqual(fixture.state.clicks.map((node) => node === fixture.necessary ? 'necessary' : 'unexpected'), ['necessary']);
+  assert.equal(progress.actions[0].kind, 'necessaryCookies');assert.ok(progress.actions[0].event);
+  assert.equal(globalThis.__geldParentConsent, undefined);assert.equal(progress.initial.controls.expandSidebar.hit.nativeHeader, true);
+});
+
+for (const change of ['label', 'legal URL']) test(`rechecks the native consent ${change} at the last pre-click binding`, async () => {
+  const fixture = consentParentFixture();const initial = bitbucketParentCommitSnapshot();const lookup = fixture.page.$;
+  fixture.page.$ = async (selector) => {
+    const handle = await lookup(selector);
+    if (handle !== null && !selector.includes('only-necessary-button')) {
+      const evaluate = handle.evaluate;
+      handle.evaluate = async (...args) => {
+        if (change === 'label') fixture.necessary.textContent = 'Accept all';
+        else fixture.dialog.querySelector('a').href = 'https://foreign.example/legal/cookies';
+        return evaluate(...args);
+      };
+    }
+    return handle;
+  };
+  let progress;await assert.rejects(prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll, (value) => { progress = value; }), /consent control changed/);
+  assert.equal(fixture.state.clicks.length, 0);assert.equal(progress.status, 'failed');assert.equal(globalThis.__geldParentConsent, undefined);
+});
+
+test('retains the native consent action but rejects replacement of the original sidebar after dismissal', async () => {
+  const fixture = consentParentFixture();const initial = bitbucketParentCommitSnapshot();
+  fixture.necessary.addEventListener('click', () => fixture.toggle.remove());
+  let progress;await assert.rejects(prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll, (value) => { progress = value; }));
+  assert.deepEqual(fixture.state.clicks.map((node) => node === fixture.necessary ? 'necessary' : 'unexpected'), ['necessary']);
+  assert.equal(progress.status, 'failed');assert.deepEqual(progress.actions[0].event, { trusted: true, detail: 1, nativeButton: true });
+  assert.equal(globalThis.__geldParentConsent, undefined);
+});
