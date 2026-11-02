@@ -6,6 +6,7 @@ const { parseUnifiedDiff } = await tsImport('@geld/core', import.meta.url);
 
 export const BITBUCKET_WHITESPACE_URL = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff';
 const REPO = 'atlassian/bitbucket-upload-file';
+const RESPONSE_CODES = new Set(['RESPONSE_SIZE', 'CACHE_PROVENANCE', 'DIFF_TYPE', 'PR_SOURCE', 'PR_REF', 'COMMIT_REF', 'STAT_COMPLETE', 'STAT_FILE', 'FILE_SET']);
 const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const REF = /^[a-f0-9]{7,64}$/;
 const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { code }); };
@@ -68,16 +69,66 @@ const requestOwner = (request, id) => {
   }
   return native ? 'native' : 'unknown';
 };
+const AUDITED_CONNECT_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
+const CONNECT_PATH = '/!api/internal/workspaces/{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}/connect/modules';
+
+/** The audited native Connect bulk lookup is a POST read, not a preference or review mutation. */
+export function bitbucketConnectRead(request) {
+  let url;try { url = new URL(request.url()); } catch { return { allowed: false, code: 'CONNECT_URL' }; }
+  if (url.origin !== 'https://bitbucket.org' || url.username || url.password || url.hash || request.method() !== 'POST') return { allowed: false, code: 'CONNECT_TRANSPORT' };
+  try { if (decodeURIComponent(url.pathname).toLowerCase() !== CONNECT_PATH) return { allowed: false, code: 'CONNECT_PATH' }; } catch { return { allowed: false, code: 'CONNECT_PATH' }; }
+  let stack = request.initiator?.()?.stack, audited = false, extension = false;
+  for (let depth = 0; stack && depth < 8; depth++, stack = stack.parent) for (const frame of (stack.callFrames ?? []).slice(0, 256)) { audited ||= frame.url === AUDITED_CONNECT_ASSET;extension ||= typeof frame.url === 'string' && frame.url.startsWith('chrome-extension://'); }
+  if (!audited || extension || requestOwner(request, '__no_extension_id__') !== 'native') return { allowed: false, code: 'CONNECT_INITIATOR' };
+  const query = [...url.searchParams];
+  if (query.length > 32 || query.some(([key, value]) => !/^(?:app_key|module_key)(?:\[\d{1,2}\])?$/.test(key) || !/^[a-zA-Z0-9_.:-]{1,200}$/.test(value))) return { allowed: false, code: 'CONNECT_QUERY' };
+  const headers = request.headers?.() ?? {};
+  if (!/^application\/json(?:;\s*charset=utf-8)?$/i.test(headers['content-type'] ?? '') || headers.accept !== 'application/json') return { allowed: false, code: 'CONNECT_HEADERS' };
+  const raw = request.postData?.();if (typeof raw !== 'string' || Buffer.byteLength(raw) > 128 * 1024) return { allowed: false, code: 'CONNECT_BODY_SIZE' };
+  let body;try { body = JSON.parse(raw); } catch { return { allowed: false, code: 'CONNECT_BODY_JSON' }; }
+  if (!Array.isArray(body) || body.length < 1 || body.length > 16) return { allowed: false, code: 'CONNECT_BODY_SHAPE' };
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const targetPath = value => { try { const link = new URL(value);if (link.username || link.password || link.search || link.hash) return null;return link.origin === 'https://api.bitbucket.org' ? link.pathname.replace(/\/$/, '') : link.origin === 'https://bitbucket.org' && link.pathname.startsWith('/!api/') ? link.pathname.slice(5).replace(/\/$/, '') : null; } catch { return null; } };
+  let moduleCount = 0;
+  for (const entry of body) {
+    if (!object(entry) || Object.keys(entry).sort().join(',') !== 'modules,target' || !object(entry.target) || !Array.isArray(entry.modules) || entry.modules.length > 32) return { allowed: false, code: 'CONNECT_BODY_SHAPE' };
+    const target = entry.target, path = targetPath(target.links?.self?.href);
+    const repository = target.type === 'repository' && target.full_name === REPO && path === `/2.0/repositories/${REPO}`;
+    const pullrequest = target.type === 'pullrequest' && target.id === 22 && path === `/2.0/repositories/${REPO}/pullrequests/22`
+      && (target.source?.repository?.full_name === undefined || target.source.repository.full_name === REPO)
+      && (target.destination?.repository?.full_name === undefined || target.destination.repository.full_name === REPO);
+    if (!repository && !pullrequest) return { allowed: false, code: 'CONNECT_TARGET', diagnostic: {
+      targetKind: ['repository', 'pullrequest', 'workspace', 'commit', 'commit_file', 'commit_directory', 'branch'].includes(target.type) ? target.type : 'other',
+      selfRepositoryMatches: path === `/2.0/repositories/${REPO}`, selfPullrequestMatches: path === `/2.0/repositories/${REPO}/pullrequests/22`,
+      repositoryNameMatches: target.full_name === REPO, pullrequestIdMatches: target.id === 22,
+      nestedRepositoryMatches: target.repository?.full_name === REPO, sourceRepositoryMatches: target.source?.repository?.full_name === REPO,
+      workspaceUuidMatches: target.uuid === '{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}',
+    } };
+    if (entry.modules.some(module => typeof module !== 'string' || !/^(?:webItems|webPanels|repoPages|generalPages|associatedAddon)(?::[a-zA-Z0-9_.-]{1,160})?$/.test(module))) return { allowed: false, code: 'CONNECT_MODULES' };
+    moduleCount += entry.modules.length;
+  }
+  return { allowed: true, code: 'AUDITED_CONNECT_METADATA_READ', entries: body.length, moduleCount };
+}
+
 const totals = files => ({ files: files.length, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) });
 
 /** Passive already-issued traffic only. Response bodies stay private in the observer, receipts are bounded. */
 export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
   const pending = new Set(), records = [], requests = new WeakMap();let released = false, phase = 'baseline', responseSequence = 0;
-  Object.assign(progress, { requests: [], failures: [], providerWrites: 0, overflow: false });
+  Object.assign(progress, { requests: [], failures: [], providerWrites: 0, blockedWrites: [], nativeReadPosts: [], overflow: false });
   const request = r => {
     let url;try { url = new URL(r.url()); } catch { return; }
     const api = url.origin === 'https://api.bitbucket.org' && url.pathname.startsWith('/2.0/') || url.origin === 'https://bitbucket.org' && url.pathname.startsWith('/!api/');
-    if (api && !['GET', 'HEAD', 'OPTIONS'].includes(r.method())) { progress.providerWrites++;abort.abort(new Error('NATIVE_WRITE'));void page.close().catch(() => {}); }
+    if (api && !['GET', 'HEAD', 'OPTIONS'].includes(r.method())) {
+      const read = bitbucketConnectRead(r), owner = requestOwner(r, extensionId);
+      if (read.allowed && owner === 'native') {
+        if (progress.nativeReadPosts.length < 8) progress.nativeReadPosts.push({ origin: url.origin, path: url.pathname.slice(0, 256), method: 'POST', owner, phase, ...read });
+        else { progress.overflow = true;abort.abort(new Error('TRAFFIC_BOUND'));void page.close().catch(() => {}); }
+      } else {
+        progress.providerWrites++;if (progress.blockedWrites.length < 8) progress.blockedWrites.push({ origin: url.origin, path: url.pathname.slice(0, 256), method: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method()) ? r.method() : 'OTHER', owner, phase, code: read.code, ...(read.diagnostic ? { diagnostic: read.diagnostic } : {}) });
+        abort.abort(new Error('NATIVE_WRITE'));void page.close().catch(() => {});
+      }
+    }
     const resource = bitbucketWhitespaceResource(r.url());if (!resource) return;
     if (records.length >= 80) { progress.overflow = true;abort.abort(new Error('TRAFFIC_BOUND'));return; }
     const chain = r.redirectChain?.() ?? [];const first = chain[0] ?? r;
@@ -92,24 +143,25 @@ export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
     record.status = r.status();record.responseSequence = responseSequence++;if (r.status() === 429) { abort.abort(new Error('RATE_LIMIT'));return; }
     if (![200, 304].includes(r.status())) return;
     const task = (async () => {
+      let failureCode = 'RESPONSE_READ_FAILED';
       try {
         const declared = r.headers()['content-length'];check(declared === undefined || /^\d+$/.test(declared) && Number(declared) <= 512 * 1024, 'RESPONSE_SIZE');
-        const body = await r.buffer();check(body.length > 0 && body.length <= 512 * 1024, 'RESPONSE_SIZE');
+        failureCode = 'RESPONSE_BUFFER_FAILED';const body = await r.buffer();check(body.length > 0 && body.length <= 512 * 1024, 'RESPONSE_SIZE');
         record.bytes = body.length;record.sha256 = createHash('sha256').update(body).digest('hex');
         if (record.status === 304) { check(records.some(prior => prior.sequence < record.sequence && prior.responseSequence < record.responseSequence && prior.status === 200 && prior.qualified && prior.owner === record.owner && prior.requestKey === record.requestKey && prior.sha256 === record.sha256), 'CACHE_PROVENANCE');record.cacheBasis = 'same_key_prior200_same_body'; }
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+        failureCode = 'RESPONSE_UTF8_FAILED';const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
         if (record.kind === 'diff') {
           check(/^(?:text\/(?!html\b)[^;]+|application\/octet-stream)(?:;|$)/i.test(r.headers()['content-type'] ?? ''), 'DIFF_TYPE');
           record.files = parseUnifiedDiff(text).map(f => ({ path: f.path, additions: f.additions, deletions: f.deletions }));
         } else {
-          const value = JSON.parse(text);
+          failureCode = 'RESPONSE_JSON_FAILED';const value = JSON.parse(text);
           if (record.kind === 'pr') { check(value.id === 22 && value.source?.repository?.full_name === REPO && value.destination?.repository?.full_name === REPO, 'PR_SOURCE');record.sourceRef = value.source.commit.hash;record.baseRef = value.destination.commit.hash;check(REF.test(record.sourceRef) && REF.test(record.baseRef), 'PR_REF');record.nativeLinks = ['diff', 'diffstat'].map(kind => { const link = bitbucketWhitespaceResource(value.links?.[kind]?.href ?? '');return link?.kind === kind ? { kind, routeKey: link.routeKey, topic: link.topic, pullRequest: link.pullRequest } : null; }).filter(Boolean); }
           if (record.kind === 'resolve') { check(HASH.test(value.hash) && value.hash.startsWith(record.ref), 'COMMIT_REF');record.hash = value.hash; }
           if (record.kind === 'diffstat') { check(Array.isArray(value.values) && value.values.length <= 100 && value.next == null, 'STAT_COMPLETE');record.files = value.values.map(f => { const path = f.new?.path ?? f.old?.path;check(typeof path === 'string' && path.length <= 1024 && Number.isSafeInteger(f.lines_added) && f.lines_added >= 0 && Number.isSafeInteger(f.lines_removed) && f.lines_removed >= 0, 'STAT_FILE');return { path, additions: f.lines_added, deletions: f.lines_removed }; }); }
         }
         if (record.files) { check(record.files.length > 0 && record.files.length <= 100 && new Set(record.files.map(f => f.path)).size === record.files.length, 'FILE_SET');record.totals = totals(record.files); }
         record.qualified = true;
-      } catch { record.error = 'RESPONSE_UNQUALIFIED';progress.failures.push({ phase: record.phase, kind: record.kind }); }
+      } catch (failure) { record.error = RESPONSE_CODES.has(failure?.code) ? failure.code : failureCode;progress.failures.push({ phase: record.phase, kind: record.kind, code: record.error }); }
     })();pending.add(task);void task.finally(() => pending.delete(task));
   };
   page.on('request', request);page.on('response', response);
@@ -327,11 +379,11 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
     progress.stage = 'final';progress.final = await current();check(observer.evidence.providerWrites === 0 && !observer.evidence.overflow, 'TRAFFIC_UNQUALIFIED');
     progress.status = 'passed';
     progress.limitations = ['Actual fixture may contain no whitespace-only hunk; request mode, initial native checkbox and current-response counts are proven independently.', ...(fullCycle ? [] : ['Cancel/reapply and disabling are unit-tested only; this public case closes the page while Settings remains open and baseline native mode is restored.'])];
-  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = error;try { if (!page.isClosed()) progress.readiness = await page.evaluate(bitbucketWhitespaceProbe, 'diagnostic'); } catch { progress.readiness = { unavailable: 'DIAGNOSTIC_READ_FAILED' }; } }
+  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = observer.evidence.blockedWrites?.length ? 'BLOCKED_PROVIDER_WRITE' : error;try { if (!page.isClosed()) progress.readiness = await page.evaluate(bitbucketWhitespaceProbe, 'diagnostic'); } catch { progress.readiness = { unavailable: 'DIAGNOSTIC_READ_FAILED' }; } }
   finally {
     const failures = [];
     if (installed && !page.isClosed()) try { progress.beforeClose = await current();check((await page.evaluate(bitbucketWhitespaceProbe, 'dispose')).released, 'PROBE_DISPOSE'); } catch { failures.push('PROBE_CLEANUP'); }
-    try { if (!page.isClosed()) await page.close(); } catch { failures.push('PAGE_CLOSE'); }
+    try { if (!page.isClosed()) await page.close(); } catch { if (!page.isClosed()) failures.push('PAGE_CLOSE'); }
     try { await observer.dispose(); } catch { failures.push('OBSERVER_RELEASE'); }
     try { await settings.restore(page.isClosed()); } catch { failures.push('SETTINGS_RESTORE'); }
     progress.cleanup = { failures, pageClosed: page.isClosed() };if (failures.length) { progress.status = 'failed';error ??= 'CLEANUP_FAILED'; }

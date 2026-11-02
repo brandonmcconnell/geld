@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { Window } from 'happy-dom';
-import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
+import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketConnectRead, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
 const API = 'https://bitbucket.org/!api/2.0/repositories/atlassian/bitbucket-upload-file/';
 const H = 'a'.repeat(40), B = 'b'.repeat(40);
 const FILES = [{ path: 'test/test.py', additions: 2, deletions: 1 }];
@@ -77,11 +77,11 @@ for (const changed of ['node', 'value']) test('Viewed ' + changed + ' drift is n
   const d = dom();try { probe('bind');const box = d.w.document.querySelector('article input');if (changed === 'node') box.replaceWith(box.cloneNode());else box.checked = true;assert.equal(probe().viewedPreserved, false); } finally { d.close(); }
 });
 
-function protocol({ fullCycle = false, leak = false, untrusted = false, fail = false, remount = false, settledMutation = false, frameUnavailable = false } = {}) {
+function protocol({ fullCycle = false, leak = false, untrusted = false, fail = false, remount = false, settledMutation = false, frameUnavailable = false, closeRace = false, closeOpenFailure = false } = {}) {
   let dialog = false, setting = false, phase = 'baseline', closed = false, restored = false, disposed = false, generation = 0, preserved = true;const events = [], calls = [], rows = phaseRecords('baseline', false).filter(r => r.owner === 'native');
   const state = () => ({ originalPage: true, originalsPreserved: preserved, rowsPreserved: preserved, viewedPreserved: preserved, samePaths: true, viewedSemanticsPreserved: true, settledMounted: true, busy: false, forbiddenInputs: 0, overflow: false, events: [...events], dialogCount: dialog ? 1 : 0, checkbox: dialog ? { checked: leak && setting ? false : true } : null, cancelAvailable: dialog, totals: TOTALS });
   const settings = { current: async () => ({ hideWhitespace: setting }), hide: async v => { setting = v;if (remount) preserved = false;calls.push('settings:' + v);rows.push(...phaseRecords(phase, v)); }, restore: async value => { assert.equal(value, true);restored = true;calls.push('restored'); } };
-  const page = { isClosed: () => closed, close: async () => { closed = true;calls.push('closed'); }, evaluate: async (_f, action) => { if (_f !== probe) return !frameUnavailable;if (action === 'dispose') return { released: true };if (action === 'begin') return { begun: true, generation };if (action === 'candidate') return { stable: true, generation };if (action === 'rebind') { generation++;preserved = true;return { rebound: true, generation, originalsReplaced: remount, rowsReplaced: remount, viewedReplaced: remount }; }return state(); }, evaluateHandle: async (_f, _action, which) => ({ asElement: () => ({ evaluate: async () => true, click: async () => { events.push({ control: which, trusted: !untrusted });dialog = which === 'opener';if (remount && phase !== 'baseline') preserved = false;calls.push(which);if (phase === 'open') rows.push(...phaseRecords(phase, false));if (phase === 'cancel') rows.push(...phaseRecords(phase, true)); } }), dispose: async () => {} }) };
+  const page = { isClosed: () => closed, close: async () => { if (closeOpenFailure) throw Error('Still open');closed = true;calls.push('closed');if (closeRace) throw Error('Already closing'); }, evaluate: async (_f, action) => { if (_f !== probe) return !frameUnavailable;if (action === 'dispose') return { released: true };if (action === 'begin') return { begun: true, generation };if (action === 'candidate') return { stable: true, generation };if (action === 'rebind') { generation++;preserved = true;return { rebound: true, generation, originalsReplaced: remount, rowsReplaced: remount, viewedReplaced: remount }; }return state(); }, evaluateHandle: async (_f, _action, which) => ({ asElement: () => ({ evaluate: async () => true, click: async () => { events.push({ control: which, trusted: !untrusted });dialog = which === 'opener';if (remount && phase !== 'baseline') preserved = false;calls.push(which);if (phase === 'open') rows.push(...phaseRecords(phase, false));if (phase === 'cancel') rows.push(...phaseRecords(phase, true)); } }), dispose: async () => {} }) };
   const observer = { evidence: { providerWrites: 0, overflow: false }, records: () => rows, idle: () => ({ pending: 0, observed: rows.length }), phase: v => { phase = v; }, flush: async () => {}, dispose: async () => { disposed = true; } };
   const progress = {};const poll = async (read, accept) => { if (fail && phase === 'hide') throw Error('SECRET_FAILURE');for (let attempt = 0; attempt < 3; attempt++) { const v = await read();if (accept(v)) return v; }assert.fail('Protocol poll failed'); };
   return { run: () => verify(page, { settings, observer, progress, poll, readState: async () => { if (settledMutation) preserved = false;return { hasDiff: true, all: TOTALS, visible: TOTALS }; }, guardBudget: () => {}, fullCycle }), progress, calls, finished: () => ({ closed, restored, disposed }) };
@@ -164,7 +164,7 @@ test('a later200 response cannot qualify an earlier304 whose body finishes last'
   page.emit('response', response(second, 304, delayed));
   page.emit('response', response(first, 200, Promise.resolve(bytes)));
   await new Promise(resolve => setImmediate(resolve));assert.equal(observer.records()[0].qualified, true);
-  release(bytes);await observer.flush();assert.equal(observer.records()[1].qualified, undefined);assert.equal(observer.records()[1].error, 'RESPONSE_UNQUALIFIED');await observer.dispose();
+  release(bytes);await observer.flush();assert.equal(observer.records()[1].qualified, undefined);assert.equal(observer.records()[1].error, 'CACHE_PROVENANCE');await observer.dispose();
 });
 
 test('equal counts do not override conflicting comparison topic or pull request IDs', () => {
@@ -243,4 +243,84 @@ test('row content changing after the last candidate sample cannot be adopted', (
 
 test('missing native render ticks fail finitely and still close before raw restore', async () => {
   const p = protocol({ frameUnavailable: true });await assert.rejects(p.run(), { code: 'NATIVE_RENDER_TICKS' });assert.deepEqual(p.finished(), { closed: true, restored: true, disposed: true });
+});
+
+const CONNECT = 'https://bitbucket.org/!api/internal/workspaces/%7B02b941e3-cfaa-40f9-9a58-cec53e20bdc3%7D/connect/modules';
+const APP = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
+function connectRequest(options = {}) {
+  const target = options.target ?? { type: 'repository', full_name: 'atlassian/bitbucket-upload-file', name: 'bitbucket-upload-file', links: { self: { href: API.slice(0, -1) } } };
+  const body = options.body ?? JSON.stringify([{ target, modules: ['webItems:org.bitbucket.repository.navigation'] }]);
+  return { url: () => options.url ?? CONNECT, method: () => options.method ?? 'POST', postData: () => body,
+    headers: () => options.headers ?? { accept: 'application/json', 'content-type': 'application/json' },
+    initiator: () => ({ stack: { callFrames: options.frames ?? [{ url: APP }] } }), redirectChain: () => [] };
+}
+
+test('only the audited fixed-workspace native JSON module lookup is exempted as a read POST', () => {
+  const value = bitbucketConnectRead(connectRequest());assert.deepEqual(value, { allowed: true, code: 'AUDITED_CONNECT_METADATA_READ', entries: 1, moduleCount: 1 });
+  assert.equal(bitbucketConnectRead(connectRequest({ url: CONNECT + '?app_key%5B0%5D=known-addon&module_key=review-panel' })).allowed, true);
+  const target = { type: 'pullrequest', id: 22, links: { self: { href: API + 'pullrequests/22' } }, source: { repository: { full_name: 'atlassian/bitbucket-upload-file' } } };
+  assert.equal(bitbucketConnectRead(connectRequest({ target })).allowed, true);
+  assert.equal(bitbucketConnectRead(connectRequest({ body: JSON.stringify([{ target, modules: [] }]) })).allowed, true);
+});
+for (const [name, options] of [
+  ['different endpoint', { url: CONNECT.replace('/modules', '/addons/access_token') }],
+  ['different workspace', { url: CONNECT.replace('02b941e3', '12b941e3') }],
+  ['different origin', { url: CONNECT.replace('bitbucket.org', 'api.bitbucket.org') }],
+  ['mutation method', { method: 'PUT' }], ['unknown query', { url: CONNECT + '?delete=true' }],
+  ['unqualified native source', { frames: [{ url: 'https://bitbucket.org/unrelated.js' }] }],
+  ['extension initiator', { frames: [{ url: 'chrome-extension://installed/background.js' }, { url: APP }] }],
+  ['unknown content type', { headers: { accept: 'application/json', 'content-type': 'text/plain' } }],
+  ['invalid JSON', { body: '{broken' }], ['wrong outer body', { body: '{}' }],
+  ['extra operation', { body: JSON.stringify([{ target: {}, modules: [], delete: true }]) }],
+  ['foreign repository', { target: { type: 'repository', full_name: 'someone/private', links: { self: { href: API.slice(0, -1) } } } }],
+  ['foreign pull request', { target: { type: 'pullrequest', id: 23, links: { self: { href: API + 'pullrequests/23' } } } }],
+  ['missing self source', { target: { type: 'repository', full_name: 'atlassian/bitbucket-upload-file' } }],
+  ['unrecognized module selector', { body: JSON.stringify([{ target: {}, modules: ['delete'] }]) }],
+]) test('read POST exemption rejects ' + name, () => { assert.equal(bitbucketConnectRead(connectRequest(options)).allowed, false); });
+
+test('native read POST does not trigger write abort, while blocked receipts precede abort without body/query values', async () => {
+  const page = new EventEmitter(), progress = {}, abort = new AbortController();let closed = false;page.close = async () => { closed = true; };
+  const observer = observeBitbucketWhitespace(page, progress, 'installed', abort);page.emit('request', connectRequest());
+  assert.equal(abort.signal.aborted, false);assert.equal(progress.providerWrites, 0);assert.equal(progress.nativeReadPosts.length, 1);
+  let atAbort;abort.signal.addEventListener('abort', () => { atAbort = structuredClone(progress.blockedWrites); });
+  page.emit('request', connectRequest({ url: CONNECT.replace('/modules', '/addons/access_token') + '?SECRET_QUERY', body: 'SECRET_BODY' }));
+  assert.equal(closed, true);assert.equal(progress.providerWrites, 1);assert.equal(atAbort.length, 1);
+  assert.deepEqual(atAbort[0], { origin: 'https://bitbucket.org', path: '/!api/internal/workspaces/%7B02b941e3-cfaa-40f9-9a58-cec53e20bdc3%7D/connect/addons/access_token', method: 'POST', owner: 'native', phase: 'baseline', code: 'CONNECT_PATH' });
+  assert.equal(JSON.stringify(progress).includes('SECRET_'), false);await observer.dispose();
+});
+
+test('response failures retain fixed body, JSON and source reasons instead of raw error text', async () => {
+  for (const [mode, expected] of [['buffer', 'RESPONSE_BUFFER_FAILED'], ['json', 'RESPONSE_JSON_FAILED'], ['source', 'PR_SOURCE']]) {
+    const page = new EventEmitter(), progress = {}, observer = observeBitbucketWhitespace(page, progress, 'installed', new AbortController());
+    const request = { url: () => API + 'pullrequests/22', method: () => 'GET', redirectChain: () => [], initiator: () => ({ stack: { callFrames: [{ url: APP }] } }) };
+    page.emit('request', request);page.emit('response', { request: () => request, status: () => 200, headers: () => ({}), buffer: async () => { if (mode === 'buffer') throw Error('PRIVATE_ERROR');return Buffer.from(mode === 'json' ? 'PRIVATE_JSON_ERROR' : '{}'); } });
+    await observer.flush();assert.equal(progress.requests[0].error, expected);assert.equal(progress.failures[0].code, expected);assert.equal(JSON.stringify(progress).includes('PRIVATE_'), false);await observer.dispose();
+  }
+});
+
+
+test('observer-initiated page-close race is successful cleanup when the page actually closes', async () => {
+  const p = protocol({ closeRace: true });await p.run();assert.deepEqual(p.finished(), { closed: true, restored: true, disposed: true });assert.deepEqual(p.progress.cleanup.failures, []);
+});
+test('failed close that leaves page open remains a hard cleanup failure', async () => {
+  const p = protocol({ closeOpenFailure: true });await assert.rejects(p.run(), { code: 'CLEANUP_FAILED' });assert.equal(p.finished().closed, false);assert.ok(p.progress.cleanup.failures.includes('PAGE_CLOSE'));assert.ok(p.progress.cleanup.failures.includes('SETTINGS_RESTORE'));
+});
+
+
+test('external response error codes are not serialized as trusted diagnostic reasons', async () => {
+  const page = new EventEmitter(), progress = {}, observer = observeBitbucketWhitespace(page, progress, 'installed', new AbortController());
+  const request = { url: () => API + 'pullrequests/22', method: () => 'GET', redirectChain: () => [], initiator: () => ({ stack: { callFrames: [{ url: APP }] } }) };
+  page.emit('request', request);page.emit('response', { request: () => request, status: () => 200, headers: () => ({}), buffer: async () => { throw Object.assign(Error('PRIVATE_MESSAGE'), { code: 'PRIVATE_CANARY' }); } });
+  await observer.flush();assert.equal(progress.requests[0].error, 'RESPONSE_BUFFER_FAILED');assert.equal(JSON.stringify(progress).includes('PRIVATE_'), false);await observer.dispose();
+});
+
+
+test('unexpected Connect targets produce bounded known-shape diagnostics, never unknown values', async () => {
+  const page = new EventEmitter(), progress = {}, abort = new AbortController();page.close = async () => {};
+  const observer = observeBitbucketWhitespace(page, progress, 'installed', abort);
+  page.emit('request', connectRequest({ target: { type: 'PRIVATE_TYPE', uuid: 'PRIVATE_UUID', full_name: 'PRIVATE_NAME', id: 'PRIVATE_ID', links: { self: { href: 'https://api.bitbucket.org/PRIVATE_PATH' } } } }));
+  assert.equal(abort.signal.aborted, true);assert.deepEqual(progress.blockedWrites[0].diagnostic, { targetKind: 'other', selfRepositoryMatches: false, selfPullrequestMatches: false, repositoryNameMatches: false, pullrequestIdMatches: false, nestedRepositoryMatches: false, sourceRepositoryMatches: false, workspaceUuidMatches: false });
+  assert.equal(JSON.stringify(progress).includes('PRIVATE_'), false);await observer.dispose();
+  const workspace = bitbucketConnectRead(connectRequest({ target: { type: 'workspace', uuid: '{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}' } }));
+  assert.equal(workspace.allowed, false);assert.equal(workspace.diagnostic.targetKind, 'workspace');assert.equal(workspace.diagnostic.workspaceUuidMatches, true);
 });
