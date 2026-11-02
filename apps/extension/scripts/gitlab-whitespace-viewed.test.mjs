@@ -19,7 +19,7 @@ function evidence() {
     { kind: 'metadata', status: 'projected', projection: { projectPath: 'gitlab-org/gitlab', diffId: F.version, inventory: { state: 'observed', scanComplete: true, total: 3, uniqueNewPaths: 3, size: 3, realSize: 3, overflow: false, paths: F.paths.map((newPath) => ({ newPath, deleted: false, submodule: false })) } } }] };
 }
 async function protocol(options = {}) {
-  let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;let binds = 0;const order = [];const progress = {};const settingsProgress = {};
+  let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;let binds = 0;let acquisitionReads = 0;const order = [];const progress = {};const settingsProgress = {};
   if (options.mountPending) live.files.forEach((file) => { file.mounted = false; });
   const original = { sync: { present: true, value: { enabled: false, keep: 'DO_NOT_RETAIN_SETTINGS_CANARY' } }, local: { present: false } };let storage = structuredClone(original);
   const settings = gitLabWhitespaceSettings({ progress: settingsProgress, read: async () => structuredClone(storage), write: async (value) => { writes++;storage = structuredClone(value);order.push(closed ? 'restore-after-close' : 'prepare'); } });
@@ -29,7 +29,7 @@ async function protocol(options = {}) {
       phase = value;if (options.revertBeforeRestore && value === 'restore') live.checked = false;
       if (value === 'restore' && options.closedAfterToggle && options.driftBeforeReopen) { live.qualified = false;live.code = options.driftBeforeReopen === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED'; }
     }, dispose: async () => { order.push('observer');if (options.observerFailure) throw Error('DO_NOT_RETAIN_OBSERVER_CANARY'); } };
-  const comparisons = { checkpoint: async () => {}, dispose: async () => { order.push('comparisons');if (options.comparisonFailure) throw Error('DO_NOT_RETAIN_COMPARISON_CANARY'); } };
+  const comparisons = { checkpoint: async () => { if (options.checkpointFailure) throw Error('DO_NOT_RETAIN_CHECKPOINT_CANARY'); }, dispose: async () => { order.push('comparisons');if (options.comparisonFailure) throw Error('DO_NOT_RETAIN_COMPARISON_CANARY'); } };
   const page = {
     isClosed: () => closed, close: async () => { order.push('close');if (options.closeFailure) throw Error('DO_NOT_RETAIN_CLOSE_CANARY');closed = true; },
     evaluate: async (fn, action) => {
@@ -46,6 +46,9 @@ async function protocol(options = {}) {
       if (action === 'arm-opener') live.armed = true;
       if (action === 'bind') { live.bound = true;binds++; }
       if (action === 'frame' && phase === 'toggle' && options.closedAfterToggle) live.open = false;
+      if (options.snapshotExtras) { live.secret = 'DO_NOT_RETAIN_PROBE_CANARY';live.app.token = 'DO_NOT_RETAIN_BOOTSTRAP_CANARY';live.files[0].secret = 'DO_NOT_RETAIN_FILE_CANARY'; }
+      if (options.pairingUnknown && acquisitionReads) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED', secret: 'DO_NOT_RETAIN_UNKNOWN_CANARY' };
+      if (options.pairingTargetDrift && acquisitionReads) { live.app.targetVersions[0].head_sha = 'b'.repeat(40);live.files.forEach((file) => { file.head = 'b'.repeat(40); }); }
       if (options.unknown) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED' };
       return structuredClone(live);
     },
@@ -70,11 +73,17 @@ async function protocol(options = {}) {
       } }), dispose: async () => {} };
     },
   };
-  const poll = async (read, accepts) => { for (let i = 0; i < 4; i++) { const value = await read();if (accepts(value)) return value; }throw Object.assign(Error('Unit deadline'), { code: 'OBSERVATION_DEADLINE' }); };
+  const poll = async (read, accepts) => { for (let i = 0; i < 4; i++) { try { const value = await read();if (accepts(value)) return value; } catch (failure) { if (!options.swallowPollErrors) throw failure; } }throw Object.assign(Error('Unit deadline'), { code: 'OBSERVATION_DEADLINE' }); };
   return { page, progress, settingsProgress, observer, comparisons, order, original, storage: () => storage, clicks: () => clicks, writes: () => writes, readinessReads: () => readinessReads, binds: () => binds,
     run: () => verifyGitLabWhitespace(page, { settings, observer, comparisons, acquisition: () => {
-      if (options.noAcquisition) return {};
-      const value = evidence();if (options.incompleteInventory) value.responses[1].projection.inventory.realSize = 4;return value;
+      acquisitionReads++;
+      if (options.acquisitionFailure) throw Error('DO_NOT_RETAIN_ACQUISITION_CANARY');
+      if (options.noAcquisition || options.pairingUnknown || options.pairingTargetDrift) return {};
+      const value = evidence();
+      if (options.acquisitionSourceMismatch) value.responses[0].projection.source.values[0].headSha = 'b'.repeat(40);
+      if (options.acquisitionTargetMismatch) value.responses[0].projection.target.values[0].headSha = 'b'.repeat(40);
+      if (options.splitVersions) { const split = structuredClone(value.responses[0]);value.responses[0].projection.target.values[0].headSha = 'b'.repeat(40);split.projection.source.values[0].headSha = 'b'.repeat(40);value.responses.push(split); }
+      if (options.incompleteInventory) value.responses[1].projection.inventory.realSize = 4;return value;
     }, poll, progress }), settings };
 }
 
@@ -84,6 +93,32 @@ test('actual orchestrator observes natural anonymous401 plus local transition, r
   assert.deepEqual(f.storage(), f.original);assert.equal(f.settingsProgress.restoredAfterPageClose, true);assert.ok(f.order.indexOf('close') < f.order.indexOf('restore-after-close'));
   assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
+
+test('pairing timeout retains the qualified original baseline and finite setup diagnostics before any toggle', async () => {
+  const f = await protocol({ noAcquisition: true, snapshotExtras: true });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.failurePhase, 'INDEPENDENT_ACQUISITION');assert.equal(f.progress.primaryFailure, 'OBSERVATION_DEADLINE');
+  assert.deepEqual(f.progress.selection, { source: { id: F.version, head: F.head }, target: { id: '2159233785', head: T, mergeHead: true } });
+  assert.equal(f.progress.baseline.bound, true);assert.equal(f.progress.baseline.checked, false);assert.equal(f.progress.lastProbe.bound, true);assert.equal(f.progress.lastCurrentCheck, 'QUALIFIED');
+  assert.deepEqual(f.progress.acquisitionMatch, { attempts: 4, source: false, target: false, pairedVersions: false, metadata: false, matched: false });
+  assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.equal(f.binds(), 1);assert.deepEqual(f.observer.evidence.nonreads, []);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+for (const [option, source, target, metadata] of [['acquisitionSourceMismatch', false, true, true], ['acquisitionTargetMismatch', true, false, true], ['splitVersions', true, true, true], ['incompleteInventory', true, true, false]]) test(`${option} reports independent pairing facts without accepting a mismatched or split response`, async () => {
+  const f = await protocol({ [option]: true });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.acquisitionMatch.source, source);assert.equal(f.progress.acquisitionMatch.target, target);assert.equal(f.progress.acquisitionMatch.metadata, metadata);
+  assert.equal(f.progress.acquisitionMatch.pairedVersions, option === 'incompleteInventory');assert.equal(f.progress.acquisitionMatch.matched, false);
+  assert.equal(f.progress.failurePhase, 'INDEPENDENT_ACQUISITION');assert.equal(f.progress.baseline.app.targetVersions[0].head_sha, T);assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.deepEqual(f.storage(), f.original);
+});
+for (const [option, expected] of [['pairingTargetDrift', 'SELECTED_TARGET_CHANGED'], ['pairingUnknown', 'MENU_SCHEMA_UNQUALIFIED']]) test(`${option} retains the old baseline and last fixed current failure when polling swallows errors`, async () => {
+  const f = await protocol({ [option]: true, swallowPollErrors: true });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.failurePhase, 'INDEPENDENT_ACQUISITION');assert.equal(f.progress.primaryFailure, 'OBSERVATION_DEADLINE');assert.equal(f.progress.lastCurrentCheck, expected);assert.equal(f.progress.failureCurrentCheck, expected);assert.deepEqual(f.progress.failureProbe, f.progress.lastProbe);
+  assert.equal(f.progress.selection.target.head, T);assert.equal(f.progress.acquisitionMatch.attempts, 1);assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+for (const [option, phase] of [['checkpointFailure', 'BEFORE_INTENT_CHECKPOINT'], ['acquisitionFailure', 'INDEPENDENT_ACQUISITION']]) test(`${option} keeps the qualified bound baseline without raw operation errors or unknown fields`, async () => {
+  const f = await protocol({ [option]: true, snapshotExtras: true, swallowPollErrors: true });await assert.rejects(f.run(), AggregateError);
+  if (option === 'acquisitionFailure') assert.equal(f.progress.lastAcquisitionCheck, 'ACQUISITION_READ_FAILED');
+  assert.equal(f.progress.failurePhase, phase);assert.equal(f.progress.baseline.bound, true);assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+
 test('same original closed menu is reopened once for restoration without rebinding or replacing the baseline', async () => {
   const f = await protocol({ closedAfterToggle: true });assert.equal((await f.run()).status, 'discovery');
   assert.equal(f.progress.afterToggle.open, false);assert.equal(f.progress.baseline.checked, false);assert.equal(f.progress.baseline.open, true);
