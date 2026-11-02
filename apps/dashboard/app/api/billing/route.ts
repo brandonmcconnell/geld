@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { currentActor } from '@/lib/session';
@@ -15,7 +16,7 @@ export async function GET(): Promise<Response> {
   return json({ teams: await listTeams(actor.id), configured: billingGateway() !== null, testMode: true });
 }
 const inputSchema = z.object({ teamId: z.string(), action: z.enum(['checkout','portal','cap']), tier: z.enum(['starter','team','business']).optional(), capCents: z.number().int().min(0).max(10000000).optional(), key: z.string().uuid() });
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -44,3 +45,5 @@ export async function POST(request: Request): Promise<Response> {
     return json({ url: checkout.url, testMode: true });
   } catch { return json({ error: 'Billing could not be updated. No live billing is enabled.' }, 503); }
 }
+
+export const POST=auditedRoute(handlePOST,'billing.post');

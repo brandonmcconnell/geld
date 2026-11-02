@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { registeredEnterpriseHost } from '@/lib/enterprise';
@@ -45,7 +46,7 @@ export async function GET(request:Request,{params}:{readonly params:Promise<{id:
     return json({team,repositories:visible,hiddenCount:team.visibility==='count'?hiddenCount:null,members,requests,grants,jobs:team.role==='admin'?(await db.query('SELECT id,kind,state,attempts FROM outbox_jobs WHERE team_id=$1 ORDER BY created_at DESC LIMIT 50',[id])).rows:[]});
   }catch{return json({error:'This team could not be loaded'},503);}
 }
-export async function POST(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response>{
+async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response>{
   await connection();if(!sameOrigin(request))return json({error:'Invalid request origin'},403);const actor=await currentActor();if(!actor)return json({error:'Sign in first'},401);const{id}=await params;const db=database();if(!db)return json({error:'Team storage is not configured'},503);
   const parsed=inputSchema.safeParse(await request.json().catch(()=>null));if(!parsed.success)return json({error:'Invalid team action'},400);const input=parsed.data;
   try{
@@ -108,3 +109,5 @@ export async function POST(request:Request,{params}:{readonly params:Promise<{id
     return json({error:'Unsupported team action'},400);
   }catch{return json({error:'This team action could not be completed. Check its current state before retrying.'},503);}
 }
+
+export const POST=auditedRoute(handlePOST,'teams.team.post');

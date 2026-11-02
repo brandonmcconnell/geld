@@ -776,8 +776,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the content script, popup and options page `loadCatalog()` on start and `watchCatalog()` for changes.
   The pure parts (parse, verify, resolve, version compare) are in core and unit tested;
   only the fetch/cache/alarm wiring is in the extension.
-- **GitHub sign-in is the Geld GitHub App's device flow** (`@geld/github/auth`, no secret, no server);
-  settings sync to a secret gist orchestrated by `src/lib/account-service.ts` in the background.
+- **Geld sign-in uses the dashboard's shared Better Auth session**.
+  The extension requests optional dashboard-host access only when the user connects, and reflects that existing session without receiving provider credentials.
+  The website uses the same hosted session.
+  **The legacy GitHub gist connection remains available separately** through the Geld GitHub App's device flow (`@geld/github/auth`, without a client secret or Geld token exchange server);
+  legacy settings sync to a secret gist orchestrated by `src/lib/account-service.ts` in the background.
   Client id comes from `WXT_GELD_APP_CLIENT_ID` (`.env`, CI variable) or the options override;
   tokens live in `storage.local` only (`local:githubAccount`, versioned item).
   App tokens expire after 8 h with a 6-month refresh token that **rotates on every use**, so the background is the only refresher: every gist call goes through `withToken`, which renews five minutes ahead via `createTokenSource` (single in-flight refresh) and retries once after a 401;

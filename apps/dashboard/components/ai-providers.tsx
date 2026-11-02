@@ -1,4 +1,5 @@
 'use client';
+import { measure } from '@/lib/measurement';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -81,6 +82,7 @@ export function AiProviders() {
       }
       setRevision((value) => value + 1);
       setMessage('Provider settings saved.');
+      measure('flow', { feature: 'connections', stage: 'completed' });
       return true;
     } catch {
       setMessage('Provider settings could not be saved.');
@@ -112,7 +114,13 @@ export function AiProviders() {
           <h1>Bring your intelligence.</h1>
           <p>Use Geld-billed AI or connect the providers you already use.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            measure('flow', { feature: 'connections', stage: 'started' });
+            setOpen(true);
+          }}
+        >
           <Plus size={15} />
           Add provider
         </Button>
@@ -291,7 +299,13 @@ export function AiProviders() {
           {message}
         </div>
       )}
-      <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Root
+        open={open}
+        onOpenChange={(value) => {
+          if (!value) measure('flow', { feature: 'connections', stage: 'abandoned' });
+          setOpen(value);
+        }}
+      >
         <Dialog.Portal>
           <Dialog.Backdrop className="dialog-backdrop" />
           <Dialog.Popup className="privacy-dialog">
