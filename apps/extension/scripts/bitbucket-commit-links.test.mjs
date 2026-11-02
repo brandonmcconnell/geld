@@ -78,11 +78,13 @@ function protocol(options = {}) {
   oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/commit/${OTHER}`, { hash: OTHER });
   if (!options.incomplete) oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/diffstat/${OTHER}?pagelen=100`, { size: 1, values: [{ new: { path: 'pipe/pipe.py' }, lines_added: 2, lines_removed: 0 }] });
   const events = [];const calls = [];let cleanups = 0;
-  const state = () => ({ url: BITBUCKET_COMMIT_LIST, sameNode: !options.replaced || calls.length === 0, sameParent: true, sameText: !options.changedText || calls.length === 0, href: selected.href, raw: selected.raw, text: selected.text, events, nativeCards: [] });
+  const actualURL = options.canonical ? `${BITBUCKET_COMMIT_LIST}branch/master` : BITBUCKET_COMMIT_LIST;
+  const branch = options.canonical ? { selector: '[data-testid="ref-selector-trigger"]', label: 'Filter by ref: master', text: 'master' } : null;
+  const state = () => ({ url: calls.length > 0 && options.navigation ? options.navigation : actualURL, branch: branch === null ? null : { ...branch, unique: true, sameNode: !options.branchReplaced || calls.length === 0, sameParent: true, label: calls.length > 0 && options.branchChanged ? 'Filter by ref: another' : branch.label }, sameNode: !options.replaced || calls.length === 0, sameParent: true, sameText: !options.changedText || calls.length === 0, href: selected.href, raw: selected.raw, text: selected.text, events, nativeCards: [] });
   const page = {
     isClosed: () => false,
     evaluate: async (fn) => {
-      if (fn === bitbucketCommitLinksSnapshot) return { selected: options.noFixture ? null : selected, links: [] };
+      if (fn === bitbucketCommitLinksSnapshot) return { actualURL, branch, selected: options.noFixture ? null : selected, links: [] };
       if (fn === bitbucketCommitLinkState) return state();
       if (fn.toString().includes('delete globalThis')) cleanups += 1;
     },
@@ -135,4 +137,67 @@ test('a partially failed settings preparation still restores captured originals,
   await assert.rejects(scope.prepare());await scope.restore(true);assert.deepEqual(saved, original);
   const broken = commitLinkSettingsScope({ readSettings: async () => saved, writeSettings: async () => {}, progress });
   await assert.rejects(broken.prepare());saved = { ...saved, enabled: true };await assert.rejects(broken.restore(true));assert.equal(progress.restoration, 'failed');
+});
+
+const MASTER_LIST = `${BITBUCKET_COMMIT_LIST}branch/master`;
+const masterRef = () => '<div data-qa="commit-list-filters"><div data-qa="ref-selector"><p role="presentation"><button type="button" data-testid="ref-selector-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Filter by ref: master">master</button></p></div></div>';
+
+test('accepts only the actual canonical master listing and its verified original native ref control', () => {
+  window.history.replaceState(null, '', MASTER_LIST);
+  // Reduced original structure retained by run41366452688, with explicit unit-only link geometry.
+  document.body.innerHTML = `<main>${masterRef()}<table><tbody><tr><td>${link(OTHER)}</td></tr></tbody></table></main>`;geometry();
+  const before = document.body.innerHTML;const discovery = bitbucketCommitLinksSnapshot();
+  assert.equal(discovery.actualURL, MASTER_LIST);assert.equal(discovery.url, MASTER_LIST);assert.equal(discovery.selected.ref, OTHER);
+  assert.deepEqual({ label: discovery.branch.label, text: discovery.branch.text }, { label: 'Filter by ref: master', text: 'master' });
+  assert.equal(document.querySelector(discovery.branch.selector), document.querySelector('[data-testid="ref-selector-trigger"]'));
+  assert.equal(document.body.innerHTML, before);
+});
+
+for (const shape of ['absent', 'wrong ref label', 'wrong ref text', 'duplicate', 'form', 'owned', 'outside main', 'disabled']) test(`canonical master listing fails closed for ${shape} native ref binding`, () => {
+  window.history.replaceState(null, '', MASTER_LIST);
+  document.body.innerHTML = `<main>${masterRef()}${link()}</main>`;geometry();
+  const button = document.querySelector('button');
+  if (shape === 'absent') button.remove();
+  if (shape === 'wrong ref label') button.setAttribute('aria-label', 'Filter by ref: development');
+  if (shape === 'wrong ref text') button.textContent = 'development';
+  if (shape === 'duplicate') button.parentElement.append(button.cloneNode(true));
+  if (shape === 'form') { const form = document.createElement('form');button.replaceWith(form);form.append(button); }
+  if (shape === 'owned') button.setAttribute('data-geld-ui', '');
+  if (shape === 'outside main') document.body.append(button.closest('[data-qa="commit-list-filters"]'));
+  if (shape === 'disabled') button.disabled = true;
+  const result = bitbucketCommitLinksSnapshot();assert.equal(result.actualURL, MASTER_LIST);assert.equal(result.selected, null);assert.match(result.unavailable, /master ref selector/);
+});
+
+for (const route of [BITBUCKET_COMMIT_LIST.replace('atlassian', 'foreign'), `${BITBUCKET_COMMIT_LIST}branch/development`, `${MASTER_LIST}/`, `${MASTER_LIST}?page=2`, `${MASTER_LIST}#note`, `${BITBUCKET_COMMIT_LIST}${OTHER}`, MASTER_LIST.replace('bitbucket.org', 'foreign.example'), MASTER_LIST.replace('https://', 'https://user:password@')]) test(`records but rejects nonfixture document URL ${route}`, () => {
+  const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');Object.defineProperty(globalThis, 'location', { configurable: true, value: { href: route } });
+  try { const result = bitbucketCommitLinksSnapshot();assert.equal(result.actualURL, new URL(route).href);assert.equal(result.selected, null);assert.match(result.unavailable, /route changed/); }
+  finally { Object.defineProperty(globalThis, 'location', originalLocation); }
+});
+
+test('tracks the actual original native branch-control identity and selected text without copying it', () => {
+  window.history.replaceState(null, '', MASTER_LIST);document.body.innerHTML = `<main>${masterRef()}${link()}</main>`;geometry();
+  const discovery = bitbucketCommitLinksSnapshot();const node = document.querySelector(discovery.selected.selector);const branch = document.querySelector(discovery.branch.selector);
+  globalThis.__geldCommitLinksProof = { node, parent: node.parentElement, selector: discovery.selected.selector, text: node.textContent, events: [], branch: { ...discovery.branch, node: branch, parent: branch.parentElement } };
+  assert.equal(bitbucketCommitLinkState().branch.sameNode, true);assert.equal(bitbucketCommitLinkState().branch.unique, true);
+  branch.textContent = 'development';assert.equal(bitbucketCommitLinkState().branch.text, 'development');
+  branch.replaceWith(branch.cloneNode(true));assert.equal(bitbucketCommitLinkState().branch.sameNode, false);
+});
+
+test('canonical-route pointer and real-Tab protocol stays bound to discovery.actualURL rather than requested URL', async () => {
+  const fixture = protocol({ canonical: true });assert.equal((await fixture.run()).status, 'passed');
+  assert.equal(fixture.item.commitLinks.discovery.actualURL, MASTER_LIST);assert.deepEqual(fixture.calls, ['pointer', 'keyboard']);assert.equal(fixture.cleanups(), 1);
+});
+for (const navigation of [BITBUCKET_COMMIT_LIST, `${MASTER_LIST}?changed=1`, `${MASTER_LIST}#note`, `${BITBUCKET_COMMIT_LIST}branch/other`, `${BITBUCKET_COMMIT_LIST}${OTHER}`, MASTER_LIST.replace('bitbucket.org', 'foreign.example')]) test(`after-discovery navigation to ${navigation} fails with listener cleanup`, async () => {
+  const fixture = protocol({ canonical: true, navigation });await assert.rejects(fixture.run());assert.equal(fixture.item.commitLinks.status, 'failed');assert.equal(fixture.cleanups(), 1);
+});
+for (const options of [{ canonical: true, branchReplaced: true }, { canonical: true, branchChanged: true }, { canonical: true, nativeCard: true, navigation: BITBUCKET_COMMIT_LIST }]) test(`native ref/visit drift fails even when a hover is unavailable: ${JSON.stringify(options)}`, async () => {
+  const fixture = protocol(options);await assert.rejects(fixture.run());assert.equal(fixture.item.commitLinks.status, 'failed');assert.equal(fixture.cleanups(), 1);
+});
+
+test('does not ignore a present nonmaster or ambiguous native selected ref on the original listing route', () => {
+  document.body.innerHTML = `<main>${masterRef()}${link()}</main>`;geometry();
+  document.querySelector('button').setAttribute('aria-label', 'Filter by ref: development');
+  assert.equal(bitbucketCommitLinksSnapshot().selected, null);
+  document.body.innerHTML = `<main>${masterRef()}${masterRef().replace('Filter by ref: master', 'Filter by ref: development')}${link()}</main>`;geometry();
+  assert.equal(bitbucketCommitLinksSnapshot().selected, null);
 });
