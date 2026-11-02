@@ -105,7 +105,7 @@ export function syntaxOnProbe(action = 'read', target = null, environment = {}) 
   const sameForm = form !== null && store.form !== null && form.dialog === store.form.dialog && form.form === store.form.form && form.field === store.form.field && form.save === store.form.save && form.cancel === store.form.cancel && form.fields.every((f, i) => f === store.form.fields[i]);
   if (action === 'begin-native-save') {
     const allowed = same && sameForm && form.field.checked === target && store.events.length === 3 && store.events.every((e, i) => e.trusted && e.control === 'syntax' && e.type === ['click', 'input', 'change'][i] && e.checked === target);
-    if (allowed) { store.allowReplacement = true;store.saveTarget = target ? 'on' : 'off'; }return allowed;
+    if (allowed) { store.expectedSource = s;store.allowReplacement = true;store.saveTarget = target ? 'on' : 'off'; }return allowed;
   }
   if (action === 'finish-native-restore') {
     if (!same || !sameForm || form.field.checked || store.events.length || lineModel.mode !== 'off') return null;store.expectedSource = s;store.allowReplacement = false;store.saveTarget = null;
@@ -130,7 +130,7 @@ export function syntaxOnProbe(action = 'read', target = null, environment = {}) 
     store.expectedSource = s;store.allowReplacement = false;store.saveTarget = null;store.baselineEvidence = { origin: 'fresh-native-on-form-open', id: `native-on-${++store.nextBaseline}`, formId: store.form.id, formControls: form.fields.length, url: location.href, dialogs: dialogs().length, checked: form.field.checked, ownedCount, events: [...store.events], semanticRows: s.rows.map((r) => r.semantic), originalLines: b.lineWitness, renderedLines: s.lineWitness, lineModel, vector: form.vector };
   }
   const foreignPreserved = store.foreign.every((p) => CSS.highlights?.get(p.key) === p.highlight && [...p.highlight].length === p.ranges.length && [...p.highlight].every((range, i) => range === p.ranges[i]));
-  return { same, sameScope, sameSemantic, sameCodeCharacters, lineModel, sameContainer, offPreserved: preserved(b), onBaseline: store.on !== null, onPreserved: preserved(store.on), dialogs: dialogs().length,
+  return { same, sameScope, sameSemantic, sameCodeCharacters, lineModel, sameContainer, expectedSourcePreserved: stableNodes, saveArmedOn: store.allowReplacement && store.saveTarget === 'on', saveArmedOff: store.allowReplacement && store.saveTarget === 'off', offPreserved: preserved(b), onBaseline: store.on !== null, onPreserved: preserved(store.on), dialogs: dialogs().length,
     ready: same && sameForm, formAvailable: same && form !== null && store.earlyEvents.length === 0, vector: sameForm ? form.vector : null, events: [...store.events], earlyEvents: [...store.earlyEvents], sourceRows: s.rows.length, semanticRows: s.rows.map((r) => r.semantic), originalLines: b.lineWitness, renderedLines: s.lineWitness, checked: sameForm ? form.field.checked : null, foreignPreserved, baselineEvidence: store.baselineEvidence,
     lifecycle: { originalCodeRows: s.rows.filter((r, i) => r.row === b.rows[i].row).length, originalTextNodes: s.rows.reduce((sum, r, i) => sum + r.nodes.filter((n) => b.rows[i].nodes.includes(n)).length, 0) } };
 }
