@@ -98,6 +98,7 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-breakdown { font: var(--geld-provider-font); }
 .geld-provider-breakdown summary { cursor: pointer; }
 .geld-provider-actions, .geld-provider-review__source-actions { display: inline-flex; flex-wrap: wrap; gap: var(--geld-provider-space-2); margin-inline: var(--geld-provider-space-3); }
+.geld-provider-review [data-geld-bot-command] { display: block; font-size: inherit; line-height: inherit; white-space: pre-wrap; overflow-wrap: anywhere; margin-block: var(--geld-provider-space-2); }
 
 /* Own the accordion around the native tree; provider file nodes stay in place. */
 [data-geld-provider-category-host] { display: flex; flex-direction: column; min-block-size: 0; }
