@@ -2409,3 +2409,10 @@ That mode has four concurrent reads, an eight MiB per-file cap, a sixty-four MiB
 The PR full-context acceptance also scopes All changes to the active native diff panel and keeps the original control identity through scrolling.
 A hidden sticky copy must not discard its file lease or erase the failure diagnostic.
 Its source-menu probe recognizes the same untouched passive cookie notice while rejecting any unknown dialog, and a placeholder text hint is not evidence of a native error.
+
+Provider reviewer standings use one compact identity per account, with native font, colour, spacing and focus tokens.
+An already identity-bound comment avatar may represent that reviewer, otherwise the login initial is shown.
+A known pending request remains separate from the current verdict, while an unknown request stays explicitly unavailable.
+Conversation comment and started-thread counts are labelled as activity in this conversation, with observed counts for incomplete sources, never as one grouped review.
+GitLab reviewer links use only the unique newest matching native system verdict note with the exact account ID and a supplied same-MR note URL.
+Ordinary comments, ambiguous timestamps and missing or foreign note URLs cannot supply that link, and Bitbucket standings remain non-links while its activity source lacks an event permalink.

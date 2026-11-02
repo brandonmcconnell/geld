@@ -32,6 +32,29 @@ function json(value: unknown, status = 200, headers: Readonly<Record<string, str
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = ''; });
 
 describe('GitLab discussion normalization', () => {
+  it.each(['valid', 'foreign', 'wrong-review', 'missing-anchor', 'ambiguous'] as const)('binds only a unique latest matching native verdict note: %s', async change => {
+    const date = (hour: number): string => `2026-11-01T${hour}:00:00Z`;
+    const newestUrl = change === 'foreign' ? 'https://other.example/note_3' : change === 'wrong-review' ? `${page.url}0#note_3` : change === 'missing-anchor' ? page.url : `${page.url}#note_3`;
+    const native = [
+      note(3, 'approved this merge request', { system: true, created_at: date(12), noteable_note_url: newestUrl }),
+      note(1, 'approved this merge request', { system: true, created_at: date(10) }),
+      note(2, 'requested changes', { system: true, created_at: date(11) }),
+      note(5, 'approved this merge request', { system: false, created_at: date(14) }),
+      ...(change === 'ambiguous' ? [note(4, 'approved this merge request', { system: true, created_at: date(12) })] : []),
+    ];
+    vi.stubGlobal('fetch', vi.fn(async (value: string | URL | Request) => {
+      const url = new URL(typeof value === 'string' ? value : value instanceof URL ? value.href : value.url);
+      if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user: { id: 23, username: 'reviewer' } }] });
+      if (url.pathname.endsWith('/reviewers')) return json([{ user: { id: 23, username: 'reviewer' }, state: 'unreviewed' }]);
+      if (url.pathname.endsWith('/discussions.json')) return json([discussion('a'.repeat(40), native, { resolvable: false })]);
+      if (url.pathname.endsWith('/pipelines')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1 });
+    }));
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.input.reviewers?.[0]).toMatchObject({ state: 'approved', reviewRequest: 'pending' });
+    expect(snapshot.input.reviewers?.[0]?.anchor).toBe(change === 'valid' ? 'note_3' : undefined);
+    expect(snapshot.input.reviewers?.[0]?.url).toBe(change === 'valid' ? `${page.url}#note_3` : undefined);
+  });
   it('keeps resolvable ordinary discussions, top-level comments and system activity distinct', () => {
     const parsed = parseGitLabDiscussions([
       discussion('a'.repeat(40), [note(11), note(12, 'Yes, I will fix it.')]),
@@ -525,7 +548,7 @@ describe('review availability from independent native endpoints', () => {
     const host = document.createElement('div'); document.body.append(host);
     const panel = renderProviderReviewPanel(host, snapshot.input, { unavailable: snapshot.unavailable, complete: snapshot.complete, approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
-    expect(section?.querySelector('summary')?.textContent).toBe(summary);
+    expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe(summary);
     if (!complete) {
       expect(section?.textContent).not.toContain('0 approvals');
       expect(section?.textContent).not.toContain('No reviewer standings.');
