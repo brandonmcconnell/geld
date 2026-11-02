@@ -1,12 +1,13 @@
 import { repositoryKey } from '@geld/core';
-import type { ProviderReviewReference } from '../providers/references';
+import type { GitLabReferenceTarget, ProviderReviewReference } from '../providers/references';
 import type { ProviderReviewPanelEvent } from '../providers/review-panel';
 import type { ProviderReviewPage } from '../providers/types';
 import { isProviderReviewPage } from '../providers/types';
 import { gitLabDescriptionHost } from './conversation';
 import { describeGitLabPage } from './page';
 
-interface ReferenceAnchor { readonly reference: ProviderReviewReference; readonly anchor: HTMLAnchorElement }
+type GitLabReviewReference = Omit<ProviderReviewReference, 'target'> & { readonly target: GitLabReferenceTarget };
+interface ReferenceAnchor { readonly reference: GitLabReviewReference; readonly anchor: HTMLAnchorElement }
 const ID = /^[1-9]\d*$/;
 const MAX_REFERENCES = 200;
 
@@ -16,7 +17,7 @@ function currentPage(page: ProviderReviewPage, doc: Document): boolean {
     && repositoryKey(active.repository) === repositoryKey(page.repository) && (page.headSha === null || active.headSha === page.headSha);
 }
 
-function targetOf(anchor: HTMLAnchorElement, page: ProviderReviewPage): ProviderReviewReference['target'] | null {
+function targetOf(anchor: HTMLAnchorElement, page: ProviderReviewPage): GitLabReferenceTarget | null {
   if (anchor.closest('[data-geld-ui]') !== null || !anchor.classList.contains('gfm')) return null;
   const type = anchor.getAttribute('data-reference-type');
   if (type !== 'merge_request' && type !== 'issue' && type !== 'work_item') return null;
@@ -35,7 +36,7 @@ function targetOf(anchor: HTMLAnchorElement, page: ProviderReviewPage): Provider
   } catch { return null; }
 }
 
-function targetKey(target: ProviderReviewReference['target']): string { return JSON.stringify([target.origin, target.repository, target.projectId, target.kind, target.nativeId, target.number]); }
+function targetKey(target: GitLabReferenceTarget): string { return JSON.stringify([target.origin, target.repository, target.projectId, target.kind, target.nativeId, target.number]); }
 
 function scan(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ReferenceAnchor[] {
   if (page.provider !== 'gitlab' || page.kind !== 'overview' || !currentPage(page, doc)) return [];
@@ -89,7 +90,7 @@ function scan(page: ProviderReviewPage, doc: Document, events: readonly Provider
   return entries.filter(({ reference }) => !conflicts.has(JSON.stringify([reference.target.origin, reference.target.repository, reference.target.kind, reference.target.number])));
 }
 
-export function readGitLabReferences(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ProviderReviewReference[] {
+export function readGitLabReferences(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly GitLabReviewReference[] {
   return scan(page, doc, events).map((entry) => entry.reference);
 }
 
