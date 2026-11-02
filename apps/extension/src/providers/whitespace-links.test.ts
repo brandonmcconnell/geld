@@ -17,6 +17,16 @@ function anchor(href: string): HTMLAnchorElement {
 beforeEach(() => { document.body.replaceChildren(); document.head.querySelectorAll('base').forEach((base) => base.remove()); window.location.href = path; });
 
 describe('provider whitespace link custody', () => {
+  it('releases its old Hide link after an in-page native Show and prepares explicit Show only on the unchanged original destination', () => {
+    const planner = new ProviderWhitespace(settings, {}, () => undefined);const links = new ProviderWhitespaceLinks(planner);
+    const current = new URL(`${path}?w=1`);planner.navigation(current);
+    const original = `${path}?diff_id=812#note_12`;const link = anchor(original);const external = anchor(original);
+    links.prepare(link);links.prepare(external);external.href = `${path}?w=1&diff_id=913`;
+    planner.nativeChoice(current, true);links.refresh();
+    expect(link.getAttribute('href')).toBe(original);expect(external.href).toBe(`${path}?w=1&diff_id=913`);
+    links.prepare(link);expect(link.href).toBe(`${path}?diff_id=812&w=0#note_12`);
+    expect(planner.navigation(current)).toBeNull();links.dispose();expect(link.getAttribute('href')).toBe(original);
+  });
   it('restores its exact original href after an opt-out instead of creating a false opt-in', () => {
     const save = vi.fn();
     const planner = new ProviderWhitespace(settings, {}, save);
@@ -28,11 +38,12 @@ describe('provider whitespace link custody', () => {
     planner.navigation(new URL(`${path}?w=0`));
     links.refresh();
     for (let intent = 0; intent < 3; intent++) links.prepare(link);
-    expect(link.getAttribute('href')).toBe(original);
+    expect(link.getAttribute('href')).toBe(`https://gitlab.com${original.replace('#', '&w=0#')}`);
     expect(planner.navigation(new URL(link.href))).toBeNull();
     expect(save).toHaveBeenCalledTimes(1);
     expect(Object.keys(save.mock.calls[0]?.[0] ?? {})).toHaveLength(1);
     links.dispose();
+    expect(link.getAttribute('href')).toBe(original);
   });
 
   it.each(['0', '1'])('preserves native explicit w=%s, including later retirement', (w) => {
@@ -145,7 +156,7 @@ describe('provider whitespace link custody', () => {
     planner.navigation(new URL(`${path}?w=0`));
     document.body.append(link);
     links.prepare(link);
-    expect(link.getAttribute('href')).toBe(path);
+    expect(link.getAttribute('href')).toBe(`${path}?w=0`);
     links.dispose();
   });
 

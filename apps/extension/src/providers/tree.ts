@@ -230,6 +230,8 @@ export class ProviderCategoryTree {
     }
   }
 
+  suspend(): void { this.releaseProjection(); }
+
   clear(): void {
     this.releaseProjection();
     this.collapsed.clear(); this.paths.clear();

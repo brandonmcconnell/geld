@@ -43,6 +43,8 @@ export class ProviderWhitespace {
   private settings: GeldSettings;
   private optOuts: Record<string, number>;
   private readonly handled = new Set<string>();
+  private observedLocation: string | null = null;
+  private intent: { readonly location: string; readonly show: boolean } | null = null;
 
   constructor(settings: GeldSettings, optOuts: Readonly<Record<string, number>>, private readonly save: (value: Readonly<Record<string, number>>) => void, private readonly environment: WhitespaceEnvironment = {}) {
     this.settings = settings;
@@ -51,22 +53,38 @@ export class ProviderWhitespace {
 
   update(settings: GeldSettings): void { this.settings = settings; }
 
-  navigation(url: URL): string | null {
-    if (!this.allowed(url)) return null;
+  nativeChoice(url: URL, show: boolean): void {
+    if (!diffPage(url)) return;
+    const location = new URL(url);location.hash = '';
+    this.intent = { location: location.href, show };
+    this.observedLocation = location.href;
+    if (this.allowed(url)) this.rememberChoice(url, show);
+  }
+
+  private rememberChoice(url: URL, show: boolean): void {
     const key = visitKey(url);
+    if (show === (this.optOuts[key] !== undefined)) return;
+    if (show) {
+      this.optOuts[key] = this.now();
+      this.optOuts = Object.fromEntries(Object.entries(this.optOuts).sort((a, b) => b[1] - a[1]).slice(0, MAX_OPT_OUTS));
+    } else delete this.optOuts[key];
+    this.save({ ...this.optOuts });
+  }
+
+  navigation(url: URL): string | null {
+    const location = new URL(url);location.hash = '';
+    if (this.intent !== null && this.intent.location !== location.href) this.intent = null;
+    if (!this.allowed(url)) { if (this.observedLocation !== location.href) this.observedLocation = null;return null; }
+    if (this.intent?.location === location.href) { this.rememberChoice(url, this.intent.show);return null; }
+    const key = visitKey(url);
+    const fresh = this.observedLocation !== location.href;
+    this.observedLocation = location.href;
     if (url.searchParams.get('w') === '1') {
-      if (this.optOuts[key] !== undefined) {
-        delete this.optOuts[key];
-        this.save({ ...this.optOuts });
-      }
+      if (fresh) this.rememberChoice(url, false);
       return null;
     }
     if (url.searchParams.get('w') === '0') {
-      if (this.optOuts[key] === undefined) {
-        this.optOuts[key] = this.now();
-        this.optOuts = Object.fromEntries(Object.entries(this.optOuts).sort((a, b) => b[1] - a[1]).slice(0, MAX_OPT_OUTS));
-        this.save({ ...this.optOuts });
-      }
+      if (fresh) this.rememberChoice(url, true);
       return null;
     }
     const result = this.link(url);
@@ -99,9 +117,9 @@ export class ProviderWhitespace {
   }
 
   link(url: URL): string {
-    if (!this.allowed(url) || url.searchParams.has('w') || this.optOuts[visitKey(url)] !== undefined) return url.href;
+    if (!this.allowed(url) || url.searchParams.has('w')) return url.href;
     const rewritten = new URL(url);
-    rewritten.searchParams.set('w', '1');
+    rewritten.searchParams.set('w', this.optOuts[visitKey(url)] === undefined ? '1' : '0');
     return rewritten.href;
   }
 

@@ -323,11 +323,38 @@ describe('provider runtime whitespace link custody', () => {
       await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
       expect(Object.keys(save.mock.calls[0]?.[0] ?? {})).toHaveLength(1);
       prepare(link, type);
-      expect(link.getAttribute('href')).toBe(original);
+      expect(link.href).toBe(`${diff}?diff_id=812&w=0#note_12`);
       window.history.replaceState(null, '', link.href);
       window.dispatchEvent(new Event('wxt:locationchange'));
       await Promise.resolve();
       expect(save).toHaveBeenCalledTimes(1);
+      ctx.notifyInvalidated();expect(link.getAttribute('href')).toBe(original);
+    } finally { ctx.notifyInvalidated(); }
+  });
+
+  it('connects qualified native intent to storage and link custody without turning the unchanged URL into opt-in', async () => {
+    vi.spyOn(ProviderController.prototype, 'start').mockImplementation(() => undefined);
+    vi.spyOn(ProviderController.prototype, 'updateSettings').mockImplementation(() => undefined);
+    vi.spyOn(whitespaceOptOutsItem, 'getValue').mockResolvedValue({});
+    const save = vi.spyOn(whitespaceOptOutsItem, 'setValue');
+    const watchers: Array<(settings: GeldSettings) => void> = [];
+    vi.spyOn(settingsItem, 'watch').mockImplementation((callback) => { watchers.push(callback);return () => undefined; });
+    const enabled = { ...DEFAULT_SETTINGS, hideWhitespace: true };await settingsItem.setValue(enabled);
+    document.body.replaceChildren();window.location.href = `${diff}?w=1`;
+    const choices: Array<(url: URL, show: boolean) => void> = [];
+    const nativeAdapter: ProviderAdapter = { ...adapter, createNativeView: (_doc, _changed, record) => {
+      choices.push(record);return { update: () => undefined, suspended: () => false, sourceUnavailable: () => false, stop: () => undefined };
+    } };
+    const ctx = new ContentScriptContext('provider-native-intent', { noScriptStartedPostMessage: true });
+    try {
+      await startProvider(ctx, nativeAdapter);const link = makeLink();const original = link.getAttribute('href');prepare(link, 'pointerover');
+      expect(new URL(link.href).searchParams.get('w')).toBe('1');
+      // Adapter protocol callback only. Native trusted-event qualification runs in its own DOM tests.
+      const record = choices[0];if (record === undefined) throw new Error('Missing native view callback');
+      record(new URL(window.location.href), true);await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(link.getAttribute('href')).toBe(original);watchers[0]?.(structuredClone(enabled));
+      prepare(link, 'focusin');expect(new URL(link.href).searchParams.get('w')).toBe('0');expect(save).toHaveBeenCalledTimes(1);
+      ctx.notifyInvalidated();expect(link.getAttribute('href')).toBe(original);
     } finally { ctx.notifyInvalidated(); }
   });
 

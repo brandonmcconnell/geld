@@ -35,6 +35,7 @@ export interface ProviderDiffSourceFacts {
 }
 
 export type ProviderNativeComparison =
+  | { readonly kind: 'gitlab-native-reload'; readonly sourceId: string; readonly sourceHeadSha: string; readonly baseSha: string; readonly startSha: string; readonly nativeViewKey: string }
   | { readonly kind: 'gitlab-review'; readonly sourceId: string; readonly sourceHeadSha: string; readonly baseSha: string; readonly startSha: string; readonly target: ProviderGitLabTarget }
   | { readonly kind: 'gitlab-standalone' | 'bitbucket-commit' };
 
@@ -182,13 +183,13 @@ function commentCoordinatesMismatch(page: ProviderPage, facts: ProviderDiffSourc
   const acquired = facts.comparison;
   const native = witness.comparison;
   // Negative new-side evidence does not require authority for an unseen whole file or its old side.
-  return acquired.kind === 'gitlab-review' && native.kind === 'gitlab-review'
+  return acquired.kind === 'gitlab-review' && (native.kind === 'gitlab-review' || native.kind === 'gitlab-native-reload')
     && acquired.commitId === null && acquired.diffId !== null && acquired.projectPath === page.repository.path
     && repositoryKey(witness.repository) === repositoryKey(page.repository)
     && native.sourceId === acquired.diffId && native.sourceHeadSha === acquired.headSha
     && providerFullSha(native.baseSha) && providerFullSha(native.startSha)
-    && parseProviderGitLabTarget(native.target) !== null && native.startSha === native.target.startSha
-    && witness.headSha === native.target.headSha && witness.headSha !== acquired.headSha;
+    && (native.kind === 'gitlab-native-reload' ? native.nativeViewKey.length > 0 : parseProviderGitLabTarget(native.target) !== null && native.startSha === native.target.startSha && witness.headSha === native.target.headSha)
+    && witness.headSha !== acquired.headSha;
 }
 
 function bind(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: string, witness: ProviderNativeNewSource): ProviderNewFileRevision | null {
@@ -196,9 +197,14 @@ function bind(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: strin
   const comparison = facts.comparison;
   if (comparison.kind === 'gitlab-review') {
     const native = witness.comparison;
-    if (native.kind !== 'gitlab-review' || comparison.commitId !== null || comparison.diffId === null || comparison.projectPath !== page.repository.path || repositoryKey(witness.repository) !== repositoryKey(page.repository) || native.sourceId !== comparison.diffId || native.sourceHeadSha !== comparison.headSha || comparison.target === null || witness.headSha !== native.target.headSha) return null;
-    const exactNativeSource = native.target.id === native.sourceId && native.target.headSha === native.sourceHeadSha && witness.headSha === comparison.headSha && native.target.mergeHead === false && providerFullSha(native.startSha) && native.startSha === native.target.startSha;
-    if (!exactNativeSource && ((native.target.id !== comparison.target.id || native.target.headSha !== comparison.target.headSha || native.target.startSha !== comparison.target.startSha || native.target.mergeHead !== comparison.target.mergeHead) || native.startSha !== comparison.target.startSha)) return null;
+    if ((native.kind !== 'gitlab-review' && native.kind !== 'gitlab-native-reload') || comparison.commitId !== null || comparison.diffId === null || comparison.projectPath !== page.repository.path || repositoryKey(witness.repository) !== repositoryKey(page.repository) || native.sourceId !== comparison.diffId || native.sourceHeadSha !== comparison.headSha) return null;
+    if (native.kind === 'gitlab-native-reload') {
+      if (!providerFullSha(native.baseSha) || !providerFullSha(native.startSha) || native.nativeViewKey.length === 0) return null;
+    } else {
+      if (comparison.target === null || witness.headSha !== native.target.headSha) return null;
+      const exactNativeSource = native.target.id === native.sourceId && native.target.headSha === native.sourceHeadSha && witness.headSha === comparison.headSha && native.target.mergeHead === false && providerFullSha(native.startSha) && native.startSha === native.target.startSha;
+      if (!exactNativeSource && ((native.target.id !== comparison.target.id || native.target.headSha !== comparison.target.headSha || native.target.startSha !== comparison.target.startSha || native.target.mergeHead !== comparison.target.mergeHead) || native.startSha !== comparison.target.startSha)) return null;
+    }
   } else if (comparison.kind === 'gitlab-commit' || comparison.kind === 'gitlab-compare') {
     if (witness.comparison.kind !== 'gitlab-standalone' || witness.headSha !== comparison.headSha || repositoryKey(witness.repository) !== repositoryKey(page.repository)) return null;
   } else if (comparison.kind === 'bitbucket-commit') {

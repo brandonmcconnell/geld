@@ -18,7 +18,7 @@ import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHA
 import { immutableProviderPage, isProviderReviewPage } from './types';
 import { providerOutlineContext } from './source-facts';
 import { ProviderWholeTestContext } from './whole-test-context';
-import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
+import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderNativeView, ProviderPage } from './types';
 import type { ProviderRepoConfigSource } from './repo-config';
 import type { RepoConfigChoices } from '../lib/local-state';
 
@@ -93,6 +93,7 @@ export class ProviderController {
   private readonly flowWrappers = new Map<HTMLElement, string | null>();
   private signature = '';
   private readonly wholeTests: ProviderWholeTestContext | null;
+  private readonly nativeView: ProviderNativeView | null;
   private readonly touched = new Set<HTMLElement>();
   private readonly chips = new Set<HTMLElement>();
   private readonly collapsed = new Map<string, ProviderDiffEntry>();
@@ -112,8 +113,10 @@ export class ProviderController {
     private readonly configs: ProviderRepoConfigSource | null = null,
     private choices: RepoConfigChoices = {},
     services: ProviderConversationServices = {},
+    nativeWhitespaceChoice: (url: URL, show: boolean) => void = () => undefined,
   ) {
     this.settings = settings;
+    this.nativeView = adapter.createNativeView?.(document, () => this.requestRefresh(), nativeWhitespaceChoice) ?? null;
     this.wholeTests = adapter.wholeTests === undefined ? null : new ProviderWholeTestContext(adapter, adapter.wholeTests, () => this.requestRefresh());
     this.catalog = catalog;
     this.expanded = settings.expandedByDefault;
@@ -283,6 +286,7 @@ export class ProviderController {
     document.removeEventListener('DiffFileMounted', this.refreshEvent);
     document.removeEventListener(PROVIDER_LINE_FOLDS_CHANGED, this.refreshEvent);
     this.wholeTests?.destroy();
+    this.nativeView?.stop();
     this.hover.stop();
     this.reveal.stop();
     this.source.stop();
@@ -295,7 +299,7 @@ export class ProviderController {
     this.state = PROVIDER_IDLE_STATE;
   }
 
-  private restorePage(preserveHeaderHover = false, preserveDiffSyntax = false): void {
+  private restorePage(preserveHeaderHover = false, preserveDiffSyntax = false, preserveTree = false): void {
     this.wholeTests?.retire();
     this.settledHeader = null;
     this.effectiveSettings = null;
@@ -317,10 +321,10 @@ export class ProviderController {
     this.collapsed.clear();
     this.shownInline = new WeakMap();
     this.section?.remove();
-    this.categoryTree.clear();
+    if (preserveTree) this.categoryTree.suspend();else this.categoryTree.clear();
     this.inlineTree.clear();
     this.headerHints.clear();
-    this.activeCategory = null;
+    if (!preserveTree) this.activeCategory = null;
     this.section = null;
     this.signature = '';
     for (const chip of this.chips) chip.remove();
@@ -335,6 +339,7 @@ export class ProviderController {
   private applyPage(): void {
     if (this.stopped || document.hidden) return;
     const page = this.adapter.describe(new URL(window.location.href), document);
+    this.nativeView?.update(page, null);
     const key = page === null ? window.location.href : providerDiffKey(page);
     if (key !== this.pageKey) {
       this.listAuthors.clear();
@@ -391,8 +396,9 @@ export class ProviderController {
       return;
     }
     const result = this.source.get(page, true, true, true);
+    this.nativeView?.update(page, result.status === 'ready' ? result.result : null);
     if (result.status !== 'ready' || config?.status === 'loading') {
-      this.restorePage(true, true);
+      this.restorePage(true, true, this.nativeView?.suspended() === true);
       this.bindHeaders(targets, {
         stats: null,
         status: result.status === 'loading' || config?.status === 'loading' ? 'loading' : 'unavailable',
@@ -406,8 +412,11 @@ export class ProviderController {
       return;
     }
     const files = result.result.files;
-    const { all, hidden } = breakdownFromFiles(files, matcher, effective.hideCommentLines, view?.filteredPaths);
-    if (view !== null) {
+    const nativeSuspended = this.nativeView?.suspended() === true;
+    const nativeSourceUnavailable = this.nativeView?.sourceUnavailable() === true;
+    if (nativeSuspended) this.restorePage(true, true, true);
+    const { all, hidden } = breakdownFromFiles(files, matcher, effective.hideCommentLines, nativeSuspended ? undefined : view?.filteredPaths);
+    if (view !== null && !nativeSuspended && !nativeSourceUnavailable) {
       const outline = effective.enabled && (effective.hideCommentLines || effective.testOutline) ? providerOutlineContext(page, result.result, view) : undefined;
       if (outline !== undefined) this.wholeTests?.update(page, result.result, view, effective, outline);else this.wholeTests?.retire();
       applyProviderLineFolds(view, files.map((file) => {
@@ -416,7 +425,7 @@ export class ProviderController {
         void commentLines;
         return withoutComments;
       }), effective, outline, this.wholeTests ?? undefined);
-    } else this.wholeTests?.retire();
+    } else { this.wholeTests?.retire();clearProviderLineFolds(); }
     const visible = subtractTotals(subtractTotals(all, hidden.totals), hidden.filtered);
     const expansionKey = JSON.stringify([key, result.result.revision]);
     if (this.expansionKey !== expansionKey) this.activeCategory = null;
@@ -424,13 +433,13 @@ export class ProviderController {
     this.setExpanded(this.expansionChoices.get(expansionKey) ?? (effective.groupHidden && hidden.totals.files > 0 && visible.files === 0 || effective.expandedByDefault), false);
     const activeCategories = allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id));
     const hintLabel = activeCategories.length === 0 ? null : hiddenLabel(hidden, activeCategories);
-    this.headerHints.update(targets, hintLabel);
+    if (!nativeSuspended) this.headerHints.update(targets, hintLabel);
     this.bindHeaders(targets, {
       stats: statsBreakdown(all, hidden, hiddenNounPlural(activeCategories, hidden), activeCategories),
       status: result.provisional === true ? 'provisional' : 'ready',
     });
-    this.writeHeaderCounts(targets, visible);
-    if (view !== null) this.applyFiles(page, view, hidden, all, files, effective, result.result.revision);
+    if (!nativeSuspended) this.writeHeaderCounts(targets, visible);
+    if (view !== null && !nativeSuspended) this.applyFiles(page, view, hidden, all, files, effective, result.result.revision);
     this.state = {
       repository: page.repository, repo: page.repository.path, repoConfig: config?.tab ?? null, allowed: true, rule: null,
       hasDiff: true, hiddenCount: hidden.totals.files, all, visible,
@@ -440,7 +449,7 @@ export class ProviderController {
       })),
       expanded: this.expanded, diffPageUrl: page.diffPageUrl, onDiffPage: page.kind === 'diff' || page.kind === 'commit' || page.kind === 'compare',
     };
-    this.settledHeader = immutableProviderPage(page) && result.result.complete && result.provisional !== true ? {
+    this.settledHeader = !nativeSuspended && immutableProviderPage(page) && result.result.complete && result.provisional !== true ? {
       key, settings: this.settings, effective, catalog: this.catalog, choices: this.choices,
       config: this.state.repoConfig, visible, filtered: view === null ? null : JSON.stringify([...view.filteredPaths].sort()),
       headers: this.snapshotHeaders(targets),

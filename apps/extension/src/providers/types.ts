@@ -183,7 +183,15 @@ export interface ProviderDiffSyntax {
   clear(): void;
 }
 
+export interface ProviderNativeView {
+  update(page: ProviderPage | null, result: ProviderDiffResult | null): void;
+  suspended(): boolean;
+  sourceUnavailable(): boolean;
+  stop(): void;
+}
+
 export interface ProviderAdapter {
+  createNativeView?(doc: Document, changed: () => void, choice: (url: URL, showWhitespace: boolean) => void): ProviderNativeView;
   readonly wholeTests?: ProviderWholeTestAdapter;
   readonly id: ReviewProvider;
   readonly diffSyntax?: ProviderDiffSyntax;
