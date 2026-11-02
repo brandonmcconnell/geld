@@ -7,7 +7,7 @@ import { BITBUCKET_MODULE_FILES, BITBUCKET_MAX_SOURCE_LIMIT, extractBitbucketMod
 export const BITBUCKET_WHITESPACE_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
 export const BITBUCKET_WHITESPACE_BODY_LIMIT = BITBUCKET_MAX_SOURCE_LIMIT;
 export const BITBUCKET_WHITESPACE_WORKER_DEADLINE = 10_000;
-const reasons = new Set(['aborted', 'body_size', 'worker_deadline', 'worker_failed', 'worker_exit', 'worker_result', 'syntax', 'registration', 'snippet_size', 'utf8', 'module_id', 'source_limit']);
+const reasons = new Set(['aborted', 'body_size', 'worker_deadline', 'worker_failed', 'worker_memory', 'parser_depth', 'worker_exit', 'worker_result', 'syntax', 'registration', 'snippet_size', 'utf8', 'module_id', 'source_limit']);
 
 /** Exactly one fixed public CDN GET; parsed factories are data and are never executed. */
 export async function collectBitbucketWhitespaceFactories({ fetcher = fetch, extractModule = extractBitbucketModule, writeArtifact, timeoutMs = 30_000, now = () => new Date().toISOString() } = {}) {

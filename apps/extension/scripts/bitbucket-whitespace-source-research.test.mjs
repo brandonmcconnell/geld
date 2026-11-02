@@ -56,3 +56,8 @@ test('an overflowing chunk records only the capped threshold, not an oversized b
 test('unsafe declared byte length is not rounded into a valid diagnostic',async()=>{
   const f=setup({response:{headers:new Headers({'content-type':'application/javascript','content-length':'9007199254740993'})}});const r=await f.run();assert.equal(r.reason,'body_contract');assert.equal(r.request.declaredLength,null);assert.equal(r.request.declaredLengthStatus,'invalid');assert.equal(r.request.bytesSeen,0);assert.equal(f.reads,0);
 });
+
+test('static reports distinguish known worker memory and parser depth without raw exceptions',async()=>{
+  const f=setup({collect:{extractModule:async(_bytes,{moduleId})=>({status:'unavailable',reason:moduleId==='fozrM'?'worker_memory':'parser_depth'})}}),r=await f.run();
+  assert.deepEqual(r.modules,{fozrM:{status:'unavailable',reason:'worker_memory'},h43l2:{status:'unavailable',reason:'parser_depth'}});assert.equal(r.status,'unavailable');assert.equal(f.writes.length,0);assert.equal(r.executed,false);
+});
