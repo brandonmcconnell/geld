@@ -25,7 +25,8 @@ import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
 import type { RevisionView } from './edit-times';
-import { absoluteTimeText, relativeTimeElement } from './time';
+import { editedMark } from './edited-mark';
+import { relativeTimeElement } from './time';
 import { stickyHeaderBottomAt } from './sticky';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
@@ -239,6 +240,8 @@ export interface ChatByline {
   readonly edited?: string;
   /** When the comment was first posted (ISO), for that clock; `time` is its relative wording as the page says it. */
   readonly postedAt?: string;
+  /** The comment's edit-history log: the clock then opens GitHub's edit history (`editedMark`). */
+  readonly editLog?: string;
 }
 
 /** An older word of a review bot's: the control that leads to its current one. */
@@ -382,42 +385,6 @@ function latestControl(latest: ChatLatest): HTMLElement {
   return createElement('span', { class: 'geld-review__rerun-wrap' }, [button]);
 }
 
-let editedIds = 0;
-
-/**
- * A comment edited after it was posted: a clock beside the byline's time.
- * The byline says the edit's time, since the bubble is the comment as it
- * reads now; the clock's words say when it was first posted ("Originally
- * posted Oct 8, 2026, 5:08 PM"), or, when the page has not said that, when
- * it was edited. The moment is absolute only: a relative age would need
- * re-wording while the chat stays open, and with the date beside it the
- * tooltip ran to two lines. The words come up in GitHub's own tooltip
- * (`tool-tip`, instant and styled like the page's; where the page does not
- * define it they are the title) and are read aloud as the mark's label.
- */
-function editedMark(editedAt: string, postedAt: string | null): HTMLElement {
-  editedIds += 1;
-  const id = `geld-edited-${editedIds}`;
-  const words = editedWords(editedAt, postedAt);
-  const mark = createElement('span', { id, class: 'geld-review__edited', role: 'img', 'aria-label': words }, [icon(ICON_HISTORY)]);
-  // The content script's world has no `customElements` to ask (Chrome leaves it null there); a page that defines
-  // `tool-tip` has rendered some of its own by now (the header's), so their presence stands for the definition.
-  if (document.querySelector('tool-tip') === null) {
-    mark.setAttribute('title', words);
-    return mark;
-  }
-  const tip = document.createElement('tool-tip');
-  for (const [name, value] of Object.entries({ for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
-  tip.textContent = words;
-  return createElement('span', { class: 'geld-review__edited-wrap' }, [mark, tip]);
-}
-
-/** "Originally posted Oct 8, 2026, 5:08 PM"; "Edited Oct 8, 2026, 5:08 PM" when the posting time is not known. */
-function editedWords(editedAt: string, postedAt: string | null): string {
-  const absolute = absoluteTimeText(postedAt ?? editedAt);
-  return `${postedAt === null ? 'Edited' : 'Originally posted'}${absolute === '' ? '' : ` ${absolute}`}`;
-}
-
 /**
  * GitHub's own small dialog (Primer's `Overlay`, as the page's "Verified"
  * and saved-replies dialogs are built), asking whether to trigger a bot that
@@ -505,7 +472,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
       // The bubble is the comment as it reads now, so the time beside the name is the edit's (GitHub's own live
       // element, which keeps it current); the clock says when the comment was first posted. The created time is
       // not refreshed into this cell (no `ATTR_TIME_FOR`).
-      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null));
+      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null, byline.editLog ?? null));
     } else if (byline.time !== '') {
       line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
     }
