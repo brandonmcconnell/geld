@@ -98,9 +98,19 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
   const fileRoots = [...root.querySelectorAll('diff-file[data-file-data]')].filter(native);
   if (fileRoots.length !== fixture.paths.length) return fail('FILE_INVENTORY_UNQUALIFIED');
   const files = [];const boxes = [];let bytes = 0;
+  const fileFailure = (reason, data, file) => {
+    const slot = fixture.paths.indexOf(data?.new_path);const head = data?.diff_refs?.head_sha;const validHead = sha(head);
+    return { ...fail('FILE_DATA_UNQUALIFIED'), fileData: { reason, pathSlot: slot < 0 ? null : slot, knownPath: slot >= 0,
+      refPresent: record(data?.diff_refs) && Object.hasOwn(data.diff_refs, 'head_sha'), headValid: validHead, headMatchesTarget: validHead && head === target.head_sha, anchorValid: sha(file.id),
+      ...(slot >= 0 && validHead ? { candidateHead: head } : {}) } };
+  };
   for (const file of fileRoots) {
-    let data;try { data = JSON.parse(file.getAttribute('data-file-data')); } catch { return fail('FILE_DATA_UNQUALIFIED'); }
-    if (!fixture.paths.includes(data?.new_path) || !sha(data?.diff_refs?.head_sha) || data.diff_refs.head_sha !== target.head_sha || !sha(file.id)) return fail('FILE_DATA_UNQUALIFIED');
+    let data;try { data = JSON.parse(file.getAttribute('data-file-data')); } catch { return fileFailure('FILE_JSON_UNREADABLE', null, file); }
+    if (!fixture.paths.includes(data?.new_path)) return fileFailure('FILE_PATH_UNEXPECTED', data, file);
+    if (!record(data?.diff_refs) || !Object.hasOwn(data.diff_refs, 'head_sha')) return fileFailure('FILE_REF_MISSING', data, file);
+    if (!sha(data.diff_refs.head_sha)) return fileFailure('FILE_HEAD_INVALID', data, file);
+    if (data.diff_refs.head_sha !== target.head_sha) return fileFailure('FILE_HEAD_MISMATCH', data, file);
+    if (!sha(file.id)) return fileFailure('FILE_ANCHOR_INVALID', data, file);
     const inputs = [...file.querySelectorAll('input[data-viewed-checkbox][type="checkbox"]')].filter(native);
     if (inputs.length !== 1) return fail('VIEWED_UNQUALIFIED');
     boxes.push(inputs[0]);
