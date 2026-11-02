@@ -122,6 +122,10 @@ export function AiProviders() {
       setBusy(false);
     }
   }
+  function openProvider() {
+    measure('flow', { feature: 'connections', stage: 'started' });
+    setOpen(true);
+  }
   async function saveGeld(enabled: boolean, fallback = safety) {
     const previousSafety = safety;
     const previousRows = rows;
@@ -177,7 +181,7 @@ export function AiProviders() {
         <div className="provider-section-heading">
           <h2 id="other-providers">Other providers</h2>
           {customProviders.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Button size="sm" variant="outline" onClick={openProvider}>
               <Plus size={14} />
               Add a provider
             </Button>
@@ -186,7 +190,7 @@ export function AiProviders() {
         {customProviders.length === 0 && (
           <div className="provider-empty">
             <p>No custom providers currently set</p>
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button size="sm" onClick={openProvider}>
               <Plus size={14} />
               Add a provider
             </Button>
