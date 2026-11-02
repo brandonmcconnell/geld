@@ -125,6 +125,24 @@ it('keeps a still-loading stream box intact, then groups when all eleven unique 
   expect(document.querySelector('.geld-provider-hidden')).not.toBeNull();
 });
 
+it('restores grouped hiding when a reload replaces the initial holder with a direct native stream', async () => {
+  const controller = start();await settle();
+  const list = node('[data-diffs-list]');
+  const stream = document.createElement('streaming-element');
+  stream.innerHTML = PATHS.map(image).join('');list.replaceChildren(stream);nativeControls(stream);
+  const hidden = node('#native-image-5');const control = node('#native-image-5 button[aria-label="Hide file contents"]');const clicks = vi.fn();control.addEventListener('click', clicks);
+  controller.requestRefresh();await settle();
+  expect(readGitLabDiff(document)?.virtualized).toBe(false);
+  expect(list.classList.contains('geld-provider-diffs')).toBe(true);
+  expect(stream.getAttribute('data-geld-provider-flow-wrapper')).toBe('');
+  expect(controller.getTabState().visible).toEqual({ files: 9, additions: 0, deletions: 0 });
+  expect(hidden.getAttribute('data-geld-provider-hidden')).toBe('closed');expect(getComputedStyle(hidden).display).toBe('none');
+  controller.toggleHidden();expect(getComputedStyle(hidden).display).not.toBe('none');
+  controller.toggleHidden();expect(getComputedStyle(hidden).display).toBe('none');
+  expect(hidden.parentElement).toBe(stream);expect(node('#native-image-5 button[aria-label="Hide file contents"]')).toBe(control);
+  controller.toggleHidden();control.click();expect(clicks).toHaveBeenCalledOnce();
+});
+
 it('waits for the final native component mount marker even when all eleven file metadata tags already exist', async () => {
   const controller = start();
   const last = node('#native-image-10');

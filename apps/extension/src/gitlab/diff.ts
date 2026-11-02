@@ -86,6 +86,11 @@ function entry(root: HTMLElement, rapid: boolean): ProviderDiffEntry | null {
 function streamWrappers(container: HTMLElement, entries: readonly ProviderDiffEntry[]): readonly HTMLElement[] | null {
   const holders = [...container.querySelectorAll<HTMLElement>(':scope > div[data-stream-remaining-diffs]')];
   const wrappers: HTMLElement[] = [];
+  for (const stream of container.querySelectorAll<HTMLElement>(':scope > streaming-element')) {
+    if ([...stream.childNodes].some((node) => node.nodeType === 3 && (node.textContent?.trim() ?? '') !== '')) return null;
+    if ([...stream.children].some((child) => !child.matches('diff-file[data-file-data], server-timings'))) return null;
+    wrappers.push(stream);
+  }
   for (const holder of holders) {
     const stream = holder.querySelector<HTMLElement>(':scope > streaming-element');
     if (stream === null || holder.children.length !== 1) return null;

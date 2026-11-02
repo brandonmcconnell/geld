@@ -259,6 +259,36 @@ it.each(['position', 'transform', 'hidden', 'unknown child', 'file by file'] as 
   expect(readGitLabDiff(document)?.virtualized).toBe(true);
 });
 
+it('recognizes the direct native stream used after a Rapid reload without moving its files', () => {
+  rapid();
+  const container = document.querySelector<HTMLElement>('[data-diffs-list]');
+  const file = container?.querySelector<HTMLElement>('diff-file');
+  if (container === null || file === null || file === undefined) throw new Error('Missing rapid fixture');
+  const stream = document.createElement('streaming-element');
+  file.append(document.createElement('diff-file-mounted'));
+  stream.append(file, document.createElement('server-timings'));container.append(stream);
+  const view = readGitLabDiff(document);
+  expect(view?.virtualized).toBe(false);
+  expect(view?.groupingReady).toBe(true);
+  expect(view?.groupingWrappers).toEqual([stream]);
+  expect(view?.entries[0]?.root).toBe(file);
+  expect(file.parentElement).toBe(stream);
+});
+
+it.each(['unknown child', 'text', 'position', 'transform', 'hidden'] as const)('rejects direct stream %s without broadening native layout eligibility', (kind) => {
+  rapid();
+  const container = document.querySelector<HTMLElement>('[data-diffs-list]');
+  const file = container?.querySelector<HTMLElement>('diff-file');
+  if (container === null || file === null || file === undefined) throw new Error('Missing rapid fixture');
+  const stream = document.createElement('streaming-element');stream.append(file);container.append(stream);
+  if (kind === 'unknown child') stream.append(document.createElement('section'));
+  if (kind === 'text') stream.append(document.createTextNode('unexpected native content'));
+  if (kind === 'position') stream.style.position = 'absolute';
+  if (kind === 'transform') stream.style.transform = 'translateY(10px)';
+  if (kind === 'hidden') stream.hidden = true;
+  expect(readGitLabDiff(document)?.virtualized).toBe(true);
+});
+
 it('exposes the entire observed native file row and ignores Geld category clones', () => {
   rapid();
   document.body.insertAdjacentHTML('beforeend', '<section data-testid="file-tree-container"><input aria-label="Search files"><nav class="mr-tree-list" aria-label="File tree"><div data-testid="file-row-container" data-file-row="bab0cb834"><a data-testid="file-row" data-file-row="bab0cb834" href="?file_path=src%2Fone.rb">one.rb</a><button data-testid="file-unresolved-threads-count">1</button><span data-testid="file-added-lines">+2</span></div></nav><div data-geld-ui><div data-testid="file-row-container"><a data-testid="file-row" data-file-row="clone" href="?file_path=spec%2Fclone_spec.rb">clone</a></div></div></section>');
