@@ -49,6 +49,44 @@ function nativeSortableHeader(button: Element, source: HTMLElement): Element | n
       || child.matches('svg[data-sort-icon][aria-hidden="true"]') && !child.textContent?.trim())) ? label : null;
 }
 
+/** Observed native table hydration can replace a Vue placeholder with this source-bound height control. */
+function nativeTableHeightWrapper(wrapper: Element, source: HTMLElement): boolean {
+  if (wrapper.localName !== 'div' || wrapper.namespaceURI !== 'http://www.w3.org/1999/xhtml'
+    || wrapper.attributes.length !== 1 || wrapper.getAttribute('class') !== 'gl-order-1 gl-mt-2 gl-flex gl-justify-center print:gl-hidden') return false;
+  const contents = [...wrapper.childNodes].filter((child) => child.nodeType !== Node.TEXT_NODE || child.textContent?.trim());
+  const button = contents[0];
+  if (contents.length !== 1 || !(button instanceof Element) || button.localName !== 'button'
+    || button.namespaceURI !== 'http://www.w3.org/1999/xhtml' || button.getAttribute('type') !== 'button'
+    || button.getAttribute('class') !== 'btn gl-button btn-default btn-sm btn-default-tertiary'
+    || button.getAttribute('data-testid') !== 'markdown-table-height-toggle' || button.getAttribute('aria-expanded') !== 'false'
+    || [...button.attributes].some((attribute) => !['type', 'class', 'data-testid', 'aria-expanded', 'aria-controls'].includes(attribute.name))) return false;
+  const controls = button.getAttribute('aria-controls');
+  if (controls === null || !/^markdown-table-[1-9]\d*-scroll$/.test(controls)
+    || source.ownerDocument.querySelectorAll(`[id="${controls}"]`).length !== 1
+    || source.querySelectorAll(`button[data-testid="markdown-table-height-toggle"][aria-controls="${controls}"]`).length !== 1) return false;
+  const scroll = source.querySelector(`[id="${controls}"]`);
+  const shadow = scroll?.parentElement;
+  const table = scroll?.querySelector(':scope > table[data-markdown-table-applied="true"]');
+  if (scroll?.localName !== 'div' || scroll.getAttribute('class') !== 'gl-max-h-[70vh] gl-w-fit gl-max-w-full gl-overflow-x-auto gl-overflow-y-auto print:gl-max-h-none'
+    || scroll.getAttribute('data-sticky-header') !== '' || scroll.getAttribute('data-print-scale-container') !== ''
+    || [...scroll.attributes].some((attribute) => !['id', 'class', 'data-sticky-header', 'data-print-scale-container'].includes(attribute.name))
+    || scroll.children.length !== 1 || table === null || table === undefined
+    || shadow?.localName !== 'div' || shadow.getAttribute('class') !== 'gl-table-shadow-overlay'
+    || shadow.getAttribute('data-testid') !== 'table-shadow-overlay' || shadow.children.length !== 1
+    || shadow.parentElement !== wrapper.parentElement || wrapper.previousElementSibling !== shadow || !source.contains(wrapper)) return false;
+  const icon = button.children[0];
+  const label = button.children[1];
+  const decoration = icon === undefined ? [] : [icon, ...icon.querySelectorAll('*')];
+  if (button.children.length !== 2 || icon?.localName !== 'svg' || icon.namespaceURI !== 'http://www.w3.org/2000/svg'
+    || icon.getAttribute('aria-hidden') !== 'true' || icon.textContent?.trim()
+    || decoration.some((node) => node.namespaceURI !== 'http://www.w3.org/2000/svg' || !['svg', 'g', 'path', 'use'].includes(node.localName)
+      || [...node.attributes].some((attribute) => attribute.name.startsWith('on') || ['tabindex', 'contenteditable'].includes(attribute.name)))
+    || label?.localName !== 'span' || label.getAttribute('class') !== 'gl-button-text' || label.attributes.length !== 1
+    || label.textContent?.trim() !== 'Show full table' || [...label.childNodes].some((child) => child.nodeType !== Node.TEXT_NODE && child.nodeType !== Node.COMMENT_NODE)) return false;
+  return [...button.childNodes].every((child) => child === icon || child === label || child.nodeType === Node.COMMENT_NODE
+    || child.nodeType === Node.TEXT_NODE && !child.textContent?.trim());
+}
+
 export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document): boolean {
   const source = nativeBody(comment, doc);
   const commentUrl = safeUrl(comment.url, doc.URL);
@@ -64,6 +102,8 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
     if (node.nodeType === Node.TEXT_NODE) return doc.createTextNode(node.textContent ?? '');
     if (!(node instanceof Element)) return null;
     const tag = node.localName.toLowerCase();
+    // Its live button is already dropped; omit only the verified generated wrapper as well.
+    if (tag === 'div' && nativeTableHeightWrapper(node, source)) return null;
     // GitLab wraps Markdown TH labels in generated sort buttons; keep their typography without the live control.
     const headerLabel = tag === 'button' && !node.hasAttribute('contenteditable') ? nativeSortableHeader(node, source) : null;
     if (headerLabel !== null) {

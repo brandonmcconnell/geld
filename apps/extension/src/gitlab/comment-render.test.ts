@@ -153,6 +153,89 @@ describe('GitLab native Markdown cloning', () => {
     expect(source?.outerHTML).toBe(before);
   });
 
+  // Reduced native control/wrapper shape from CodeRabbit note3436654383 in run41369261628; no bot body copied.
+  const heightWrapperClass = 'gl-order-1 gl-mt-2 gl-flex gl-justify-center print:gl-hidden';
+  const heightControl = `<div class="${heightWrapperClass}"><button aria-expanded="false" aria-controls="markdown-table-176-scroll" data-testid="markdown-table-height-toggle" type="button" class="btn gl-button btn-default btn-sm btn-default-tertiary"><!----> <svg data-testid="expand-icon" role="img" aria-hidden="true" class="gl-button-icon gl-icon s16 gl-fill-current"><use href="/assets/icons-9e15b4326314733309933b50748c4a8bd745613ff01a7aa1136499f9228ffcf6.svg#expand"></use></svg>  <span class="gl-button-text">
+      Show full table
+     <!----></span></button></div>`;
+  const tableBody = (hydrated: boolean): string => `<p>Authored introduction</p><div class="gl-my-5 gl-flex gl-w-fit gl-max-w-full gl-flex-col"><div data-testid="table-shadow-overlay" class="gl-table-shadow-overlay"><div id="markdown-table-176-scroll" data-sticky-header="" data-print-scale-container="" class="gl-max-h-[70vh] gl-w-fit gl-max-w-full gl-overflow-x-auto gl-overflow-y-auto print:gl-max-h-none"><table data-markdown-table-applied="true" class="gl-min-w-full gl-overflow-y-hidden"><thead><tr><th scope="col">File</th><th scope="col">Summary</th></tr></thead><tbody><tr><td>first.rs</td><td>First row</td></tr><tr><td>last.rs</td><td>Last row</td></tr></tbody></table></div></div>${hydrated ? heightControl : '<!---->'}<div role="status" aria-live="polite" aria-atomic="true" class="gl-sr-only"><span></span></div></div><p>Authored conclusion</p>`;
+
+  it('keeps exact owned HTML across native table-height hydration without changing the source, height classes or rows', () => {
+    const initialHost = fixture(tableBody(false));
+    expect(renderGitLabComment(comment, initialHost)).toBe(true);
+    const beforeHydration = initialHost.innerHTML;
+    const host = fixture(tableBody(true));
+    const source = document.getElementById('note_11');
+    const original = source?.outerHTML;
+    const nativeControl = source?.querySelector('button');
+    const nativeScroll = source?.querySelector('#markdown-table-176-scroll');
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.innerHTML).toBe(beforeHydration);
+    expect([...host.querySelectorAll('tbody td')].map((cell) => cell.textContent)).toEqual(['first.rs', 'First row', 'last.rs', 'Last row']);
+    expect(host.querySelector('[class~="gl-overflow-y-auto"]')?.className).toBe(nativeScroll?.className);
+    expect(host.querySelector('[class~="gl-overflow-y-auto"]')?.classList.contains('gl-max-h-[70vh]')).toBe(true);
+    expect(host.querySelector('[class~="gl-order-1"],button,svg,[id],[aria-controls],[data-testid],[data-sticky-header]')).toBeNull();
+    expect(source?.outerHTML).toBe(original);
+    expect(source?.querySelector('button')).toBe(nativeControl);
+    expect(source?.querySelector('#markdown-table-176-scroll')).toBe(nativeScroll);
+  });
+
+  it('does not depend on the incidental icon asset hash or decoration classes', () => {
+    const host = fixture(tableBody(true));
+    const source = document.querySelector('#note_11 .note-text');
+    const icon = source?.querySelector('svg');
+    const use = icon?.querySelector('use');
+    if (icon === null || icon === undefined || use === null || use === undefined) throw new Error('Missing inert native icon');
+    icon.setAttribute('class', 'updated-native-icon');icon.removeAttribute('data-testid');icon.setAttribute('viewBox', '0 0 16 16');
+    use.setAttribute('href', '/assets/new-native-icon-bundle.svg#expand');
+    const original = source?.outerHTML;
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.querySelector('[class~="gl-order-1"]')).toBeNull();
+    expect(host.querySelector('button,svg,[id],[aria-controls]')).toBeNull();
+    expect(source?.outerHTML).toBe(original);
+  });
+
+  const heightVariants: readonly { readonly label: string; readonly edit: (source: HTMLElement, wrapper: HTMLElement) => void }[] = [
+    { label: 'authored text', edit: (_source, wrapper) => wrapper.prepend(document.createTextNode('Preserve authored text')) },
+    { label: 'another element child', edit: (_source, wrapper) => { const note = document.createElement('p');note.textContent = 'Preserve authored paragraph';wrapper.append(note); } },
+    { label: 'empty wrapper with no button', edit: (_source, wrapper) => wrapper.replaceChildren() },
+    { label: 'missing binding', edit: (_source, wrapper) => wrapper.querySelector('button')?.removeAttribute('aria-controls') },
+    { label: 'malformed binding', edit: (_source, wrapper) => wrapper.querySelector('button')?.setAttribute('aria-controls', 'markdown-table-0176-scroll') },
+    { label: 'duplicate target ID', edit: (source) => { const target = source.querySelector('#markdown-table-176-scroll');if (target !== null) source.append(target.cloneNode(true)); } },
+    { label: 'duplicate control binding', edit: (_source, wrapper) => wrapper.parentElement?.append(wrapper.cloneNode(true)) },
+    { label: 'target outside this source', edit: (source) => { const target = source.querySelector('#markdown-table-176-scroll');if (target !== null) document.body.append(target); } },
+    { label: 'target outside the sibling shadow wrapper', edit: (source) => { const shadow = source.querySelector('[data-testid="table-shadow-overlay"]');if (shadow !== null) source.append(shadow); } },
+    { label: 'missing native scroll marker', edit: (source) => source.querySelector('#markdown-table-176-scroll')?.removeAttribute('data-sticky-header') },
+    { label: 'extra authored scroll child', edit: (source) => { const child = document.createElement('p');child.textContent = 'Additional authored content';source.querySelector('#markdown-table-176-scroll')?.append(child); } },
+    { label: 'provider action attribute', edit: (_source, wrapper) => wrapper.querySelector('button')?.setAttribute('data-method', 'delete') },
+    { label: 'unobserved button label', edit: (_source, wrapper) => { const label = wrapper.querySelector('.gl-button-text');if (label !== null) label.textContent = 'Another action'; } },
+    { label: 'unobserved expanded state', edit: (_source, wrapper) => wrapper.querySelector('button')?.setAttribute('aria-expanded', 'true') },
+    { label: 'authored wrapper attribute', edit: (_source, wrapper) => wrapper.setAttribute('title', 'Authored title') },
+    { label: 'nondecorative icon', edit: (_source, wrapper) => wrapper.querySelector('svg')?.setAttribute('aria-hidden', 'false') },
+    { label: 'interactive icon', edit: (_source, wrapper) => wrapper.querySelector('svg')?.setAttribute('tabindex', '0') },
+  ];
+  it.each(heightVariants)('preserves the table presentation wrapper with $label', ({ edit, label }) => {
+    const host = fixture(tableBody(true));
+    const source = document.querySelector<HTMLElement>('#note_11 .note-text');
+    const wrapper = source?.querySelector<HTMLElement>('[class~="gl-order-1"]');
+    if (source === null || source === undefined || wrapper === null || wrapper === undefined) throw new Error('Missing reduced native table fixture');
+    edit(source, wrapper);
+    const original = source.outerHTML;
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.querySelector('[class~="gl-order-1"]')).not.toBeNull();
+    if (label === 'authored text') expect(host.textContent).toContain('Preserve authored text');
+    if (label === 'another element child') expect(host.textContent).toContain('Preserve authored paragraph');
+    if (label === 'extra authored scroll child') expect(host.textContent).toContain('Additional authored content');
+    expect(host.querySelector('button,svg,[id],[aria-controls],[data-method],[onclick]')).toBeNull();
+    expect(source.outerHTML).toBe(original);
+  });
+
+  it('retains generic authored empty DIVs rather than pruning presentation-looking empties', () => {
+    const host = fixture('<div></div><div class="gl-my-5"></div><p>Authored text</p>');
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.querySelector('.note-text')?.innerHTML).toBe('<div></div><div class="gl-my-5"></div><p>Authored text</p>');
+  });
+
   it('removes event and provider-action attributes and validates link protocols', () => {
     const host = fixture('<p id="paragraph" onclick="steal()" style="color:red"><a class="gfm js-user-link" href="/group/repo/-/issues/2" data-method="delete" data-user-id="23" target="_top">Issue</a><a href="javascript:steal()">Bad</a><a href="https://outside.example/docs" onmouseover="steal()">Docs</a><a href="#source-heading">Heading</a></p>');
     expect(renderGitLabComment(comment, host)).toBe(true);

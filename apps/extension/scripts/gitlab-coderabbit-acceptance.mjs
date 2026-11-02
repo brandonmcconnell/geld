@@ -125,6 +125,7 @@ export function codeRabbitDomProbe(fixture) {
   const panel = document.querySelector('.geld-provider-review');if (panel === null) return null;
   const native = document.getElementById(`note_${fixture.note}`);
   const nativeAuthor = native?.querySelector(':scope > .timeline-entry-inner > .timeline-content > .note-header > .note-header-info > a.author-name-link[data-user-id][data-username]');
+  const nativeBody = native?.querySelector('.note-body .note-text');
   const source = panel.querySelector(`[data-geld-source="note_${fixture.note}"]`);
   const requests = [...panel.querySelectorAll('details[data-geld-bot-request]')].map((root) => ({ summary: root.querySelector(':scope > summary')?.textContent, preview: root.querySelector('code[data-geld-bot-command]')?.textContent,
     source: root.querySelector('a[href]')?.href, modes: [...root.querySelectorAll('[role="group"][aria-label="Review command mode"] button')].map((button) => ({ text: button.textContent, pressed: button.getAttribute('aria-pressed') })),
@@ -170,7 +171,7 @@ export function codeRabbitDomProbe(fixture) {
     sameNode: commandHeld === undefined ? null : commandRoot === commandHeld.node && commandRoot?.parentElement === commandHeld.parent };
   return { url: location.href.split('#')[0], state: panel.dataset.state, head: panel.dataset.geldReviewHead, nativeHead, nativeScope, nativeVersion,
     source: { anchor: source?.getAttribute('data-geld-source'), body: source?.querySelector(':scope > .geld-provider-review__body')?.innerHTML ?? null, links: [...source?.querySelectorAll(':scope > .geld-provider-review__byline a[href]') ?? []].map((link) => link.href) },
-    native: { exists: native !== null, body: native?.querySelector('.note-body .note-text')?.innerHTML ?? null, authorId: nativeAuthor?.dataset.userId, login: nativeAuthor?.dataset.username, href: nativeAuthor?.getAttribute('href'),
+    native: { exists: native !== null, body: nativeBody?.innerHTML ?? null, sourceContent: [...nativeBody?.querySelectorAll('[data-sourcepos]') ?? []].map((node) => ({ tag: node.tagName, position: node.getAttribute('data-sourcepos'), text: node.textContent, href: node.getAttribute('href'), src: node.getAttribute('src') })), authorId: nativeAuthor?.dataset.userId, login: nativeAuthor?.dataset.username, href: nativeAuthor?.getAttribute('href'),
       sameNode: held === undefined ? null : native === held.node && native?.parentElement === held.parent },
     requests, requestNative, items: [...panel.querySelectorAll('[data-geld-item]')].map((root) => ({ id: root.dataset.geldItem, state: root.dataset.state, sources: [...root.querySelectorAll('[data-geld-source]')].map((source) => source.dataset.geldSource) })).sort((a, b) => a.id.localeCompare(b.id)), bots: [...panel.querySelectorAll('[data-geld-review-bot]')].map((root) => {
       const verdict = root.cloneNode(true);for (const request of verdict.querySelectorAll('details[data-geld-bot-request]')) request.remove();
@@ -235,9 +236,24 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
       try { await link.evaluate((node) => node.scrollIntoView({ block: 'center' }));await link.click(); } finally { await link.dispose(); }
       before = await poll(read, (value) => value?.native.exists && value.native.body !== null, 'Actual native permalink reveals the original CodeRabbit source');
     }
-    assertCodeRabbitSource(before, snapshot);assert.deepEqual(before.bots, []);assert.deepEqual(before.requests, []);proof.beforeTrust = before;
-    proof.headVerification = { freshMetadataHead: snapshot.metadata.sha, installedPanelHead: before.head, nativeNoteableHead: before.nativeHead, nativeNoteableStatus: before.nativeHead === null ? 'absent/unknown' : 'observed', nativeHeadSource: 'Rapid Diffs selected/latest source version', nativeVersion: before.nativeVersion.selected[0] };
+    assertCodeRabbitSource(before, snapshot);assert.deepEqual(before.bots, []);assert.deepEqual(before.requests, []);
+    const initialNative = before;
+    proof.readiness = { status: 'running', before: initialNative, apiFingerprintBefore: snapshot.sourceSignature, samples: [], observations: 0, scope: 'Native presentation readiness only; owned table-height/scroll accessibility remains unverified.' };
     await page.evaluate((anchor) => { const node = document.getElementById(anchor);globalThis.__geldCodeRabbitNative = { node, parent: node?.parentElement }; }, `note_${CODERABBIT_FIXTURE.note}`);
+    proof.readiness.artifacts = await capture(page, 'gitlab-coderabbit-readiness');
+    let previousSample;
+    const settled = await poll(async () => {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
+      const sample = await read();assertCodeRabbitSource(sample, snapshot);assert.equal(sample.native.sameNode, true);
+      assert.deepEqual(sample.source, initialNative.source);assert.deepEqual({ ...sample.native, body: null, sameNode: null }, { ...initialNative.native, body: null, sameNode: null });
+      assert.deepEqual(sample.items, initialNative.items);assert.deepEqual(sample.bots, []);assert.deepEqual(sample.requests, []);
+      const api = fixture.snapshot();assert.equal(api.status, 'ready');assert.equal(api.metadata.sha, snapshot.metadata.sha);assert.equal(api.sourceSignature, snapshot.sourceSignature);
+      proof.readiness.observations += 1;proof.readiness.samples.push(sample);if (proof.readiness.samples.length > 4) proof.readiness.samples.shift();
+      const stable = previousSample !== undefined && hash(previousSample) === hash(sample);previousSample = sample;
+      return { sample, stable, apiFingerprint: api.sourceSignature };
+    }, (value) => value.stable, 'Two frame-separated byte-stable native CodeRabbit readiness samples');
+    before = settled.sample;proof.readiness.after = before;proof.readiness.apiFingerprintAfter = settled.apiFingerprint;proof.readiness.nativeHtmlChanged = before.native.body !== initialNative.native.body;proof.readiness.status = 'ready';proof.beforeTrust = before;
+    proof.headVerification = { freshMetadataHead: snapshot.metadata.sha, installedPanelHead: before.head, nativeNoteableHead: before.nativeHead, nativeNoteableStatus: before.nativeHead === null ? 'absent/unknown' : 'observed', nativeHeadSource: 'Rapid Diffs selected/latest source version', nativeVersion: before.nativeVersion.selected[0] };
     const identity = `[data-geld-source="note_${CODERABBIT_FIXTURE.note}"] .geld-provider-reviewer-identity`;
     proof.identityOpened = await openReviewAncestors(page, `${identity} .geld-provider-reviewer-identity__choices button`);
     proof.identity = await page.$eval(identity, (root) => ({ summary: root.querySelector(':scope > summary')?.textContent, metadata: root.querySelector('dl')?.textContent }));
@@ -276,7 +292,7 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
     proof.withdrawal = await withdrawTrust(binding);await page.bringToFront();await unchangedSettings([]);
     proof.withdrawn = await poll(read, (value) => value !== null && value.requests.length === 0 && value.bots.length === 0, 'Actual UI trust withdrawal removes CodeRabbit preparation/classification');assertCodeRabbitSource(proof.withdrawn, snapshot, before);
     assert.deepEqual(fixture.evidence.providerMutations, []);assert.deepEqual(fixture.evidence.aiRequests, []);assert.deepEqual(fixture.evidence.errors, []);assert.equal(fixture.snapshot().sourceSignature, snapshot.sourceSignature);assert.equal(proof.actions.length, 2);assert.ok(proof.actions.every((action) => action.completed === true));completed = true;
-  } catch (error) { proof.status = acquiringFixture ? 'unavailable' : 'failed';proof.error = error instanceof Error ? error.message : String(error);if (!acquiringFixture) throw error; }
+  } catch (error) { proof.status = acquiringFixture ? 'unavailable' : 'failed';proof.error = error instanceof Error ? error.message : String(error);if (proof.readiness?.status === 'running') { proof.readiness.status = 'failed';proof.readiness.error = proof.error; }if (!acquiringFixture) throw error; }
   finally {
     const errors = [];try { fixture?.copyPhase(false); } catch (error) { errors.push(error); }
     try { await restoreTrust(original);const restored = await unchangedSettings(original.trustedReviewAccounts ?? [], 'cleanup');assert.equal(Object.hasOwn(restored, 'trustedReviewAccounts'), Object.hasOwn(original, 'trustedReviewAccounts'));if (Object.hasOwn(original, 'trustedReviewAccounts')) assert.deepEqual(restored.trustedReviewAccounts, original.trustedReviewAccounts);proof.rawTrustRestored = true;proof.settingsRestored = true; } catch (error) { errors.push(error); }
