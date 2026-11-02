@@ -1447,6 +1447,9 @@ Provider-specific surfaces translate settings and sources into shared review and
   Observed native-disabled settings cannot earn a syntax pass when Geld-owned colors appear after genuine native context expansion, and that contradiction retains its actual source/ranges and screenshot.
   Dialog reads share the parent visit and existing `active + 4 < 40` rolling-request guard, which requires at least five free slots and makes no assumption that native actions generate zero requests.
   Public anonymous fixtures can verify preview, copy and unavailable composer behavior but do not establish authenticated writer persistence or an actual bot run.
+  Running or loading provider bot rows open that bot's newest eligible top-level native summary by creation time, following GitHub PRs #20 and #22, and have no View review link when no report qualifies.
+  Summary targets require the same unambiguous native account binding, verified provider format and canonical review source as verdict parsing, excluding threads, status notes, refusals, commands and acknowledgements.
+  The presentation target never replaces a running verdict's request provenance or a settled finding or refusal's own source.
 - **Provider diff caching and throttling have their own boundaries.**
   Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.
   Unknown-head cache entries are provisional until refreshed, and an exact revision's cached result must not leak into a different comparison or whitespace mode.
