@@ -11821,6 +11821,13 @@ var init_bounded_body = __esm({
 });
 
 // ../../packages/github/src/client.ts
+async function loadAccess(source, force) {
+  try {
+    return await source.get({ force });
+  } catch {
+    return { status: "unavailable", message: "Provider credentials are unavailable" };
+  }
+}
 function createApiTransport(options) {
   const base = new URL(options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`);
   if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash)
@@ -11829,7 +11836,8 @@ function createApiTransport(options) {
   const now = options.now ?? Date.now;
   return {
     async request(path, init = {}) {
-      if (path.startsWith("/") || path.includes("\\") || path.split(/[?#]/, 1)[0]?.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) return { ok: false, reason: "invalid_response" };
+      if (path.startsWith("/") || path.includes("\\") || path.split(/[?#]/, 1)[0]?.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment)))
+        return { ok: false, reason: "invalid_response" };
       const url2 = new URL(path, base);
       if (url2.origin !== base.origin || !url2.pathname.startsWith(base.pathname))
         return { ok: false, reason: "invalid_response" };
@@ -11841,7 +11849,7 @@ function createApiTransport(options) {
         if (!source) continue;
         const moreSources = index < sources.length - 1;
         for (let attempt = 0; attempt < 2; attempt += 1) {
-          const access = await source.get({ force: attempt === 1 });
+          const access = await loadAccess(source, attempt === 1);
           if (access.status !== "ok" && moreSources) continue candidates;
           if (access.status === "unavailable") return { ok: false, reason: "unavailable" };
           if (access.status === "signed-out" && !(options.anonymousReads === true && method === "GET") && !(options.anonymousWrites === true && method === "POST"))
@@ -11943,20 +11951,32 @@ function serializeQuery(tokens) {
   return tokens.map((token) => `${token.key === null ? "" : `${token.key}:`}${quote(token.value, token.quoted === true)}`).join(" ");
 }
 function setQualifier(query, key, value) {
-  const roles = [["pr", "issue"], ["open", "closed"], ["merged", "unmerged"], ["locked", "unlocked"], ["public", "private"]];
+  const roles = [
+    ["pr", "issue"],
+    ["open", "closed"],
+    ["merged", "unmerged"],
+    ["locked", "unlocked"],
+    ["public", "private", "internal"]
+  ];
   const values = key === "is" ? roles.find((role) => role.includes((value ?? "open").toLowerCase())) ?? [value?.toLowerCase()] : null;
-  const tokens = parseQuery(query).filter((token) => token.key !== key || values !== null && !values.includes(token.value.toLowerCase()));
+  const tokens = parseQuery(query).filter(
+    (token) => token.key !== key || values !== null && !values.includes(token.value.toLowerCase())
+  );
   return serializeQuery(value === null ? tokens : [...tokens, { key, value }]);
 }
 function withRepos(query, repositories) {
-  return serializeQuery([...parseQuery(query).filter((token) => token.key !== "repo"), ...Array.from(new Set(repositories)).map((value) => ({ key: "repo", value }))]);
+  return serializeQuery([
+    ...parseQuery(query).filter((token) => token.key !== "repo"),
+    ...Array.from(new Set(repositories)).map((value) => ({ key: "repo", value }))
+  ]);
 }
 function parseRepositoryInput(input3) {
   let path = input3.trim();
   if (path.startsWith("https://github.com/")) path = path.slice("https://github.com/".length);
   path = path.replace(/\/$/, "");
   const [owner, repo, ...rest] = path.split("/");
-  if (!owner || rest.length || !/^[a-z\d][a-z\d-]*$/i.test(owner) || repo !== void 0 && !/^[a-z\d_.-]+$/i.test(repo)) return null;
+  if (!owner || rest.length || !/^[a-z\d][a-z\d-]*$/i.test(owner) || repo !== void 0 && !/^[a-z\d_.-]+$/i.test(repo))
+    return null;
   return { owner, repo: repo ?? null };
 }
 var init_query = __esm({
