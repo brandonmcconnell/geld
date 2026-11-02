@@ -1,17 +1,40 @@
 import type { Capability, Permission, Visibility } from './models';
 
-const ranks: Readonly<Record<Permission, number>> = { none: 0, read: 1, triage: 2, write: 3, maintain: 4, admin: 5 };
+const ranks: Readonly<Record<Permission, number>> = {
+  none: 0,
+  read: 1,
+  triage: 2,
+  write: 3,
+  maintain: 4,
+  admin: 5,
+};
 
 export function effectivePermission(entitlement: Permission, providerPermission: Permission): Permission {
   return ranks[entitlement] <= ranks[providerPermission] ? entitlement : providerPermission;
 }
 
-export function mayAct(entitled: boolean, providerCapabilities: readonly Capability[], appCapabilities: readonly Capability[], action: Capability): boolean {
+export function mayAct(
+  entitled: boolean,
+  providerCapabilities: readonly Capability[],
+  appCapabilities: readonly Capability[],
+  action: Capability,
+): boolean {
   return entitled && providerCapabilities.includes(action) && appCapabilities.includes(action);
 }
 
-export function hiddenRepositoryView(mode: Visibility, count: number): { readonly names: boolean; readonly request: boolean; readonly count: number | null } {
-  return { names: mode === 'names' || mode === 'request', request: mode === 'request', count: mode === 'count' ? count : null };
+export function hiddenRepositoryView(
+  mode: Visibility,
+  count: number,
+): {
+  readonly names: boolean;
+  readonly request: boolean;
+  readonly count: number | null;
+} {
+  return {
+    names: mode === 'names' || mode === 'request',
+    request: mode === 'request',
+    count: mode === 'count' ? count : null,
+  };
 }
 
 export interface Grant {
@@ -27,11 +50,18 @@ export interface Grant {
 }
 
 export type RevocationDecision =
-  | { readonly action: 'none'; readonly reason: 'not_owned' | 'drifted' | 'already_revoked' }
+  | {
+      readonly action: 'none';
+      readonly reason: 'not_owned' | 'drifted' | 'already_revoked';
+    }
   | { readonly action: 'restore'; readonly permission: Permission }
   | { readonly action: 'remove' };
 
-export function revocationFor(grant: Grant, current: Permission, otherTeamPermission: Permission = 'none'): RevocationDecision {
+export function revocationFor(
+  grant: Grant,
+  current: Permission,
+  otherTeamPermission: Permission = 'none',
+): RevocationDecision {
   if (grant.state === 'revoked') return { action: 'none', reason: 'already_revoked' };
   if (grant.providerGrantId === null || grant.state === 'pending') return { action: 'none', reason: 'not_owned' };
   if (grant.state === 'drifted' || current !== grant.permission) return { action: 'none', reason: 'drifted' };

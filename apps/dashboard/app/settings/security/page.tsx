@@ -1,2 +1,4 @@
 import { SecurityLog } from '@/components/security-log';
-export default function SecurityPage(){return <SecurityLog/>;}
+export default function SecurityPage() {
+  return <SecurityLog />;
+}

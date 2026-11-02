@@ -10,7 +10,7 @@ pnpm --filter @geld/companion start login
 pnpm --filter @geld/companion start serve
 ```
 
-Delete the downloaded pairing file after importing it. The imported file is stored under `~/.config/geld/companion.json` with mode 0600. Its secret authorizes Geld relay requests only. Pairing again revokes the earlier connection. Removing the provider or deleting the Geld account revokes its relay channel. Stop the process to stop accepting work. A running request has a 90-second local deadline.
+Delete the downloaded pairing file after importing it. The imported file is stored under `~/.config/geld/companion.json` with mode 0600. Its secret authorizes Geld relay requests only. Pairing again revokes the earlier connection. Removing the provider or deleting the Geld account revokes its relay channel. Stop the process to stop accepting work. A running request has a 90-second local deadline and a one-dollar SDK estimated-cost ceiling. This is a local guard, not a statement of Claude subscription pricing.
 
 The companion opens no inbound port. It polls the operator's relay over HTTPS. The relay pins only the model catalog and completion operations, signs request and response bodies and keeps work in memory. It never receives a Claude login credential. Repository prompts and generated responses pass through the relay transiently. Login connections return the complete assistant response after generation; API-key connections support incremental streaming.
 

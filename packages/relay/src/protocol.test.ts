@@ -1,10 +1,65 @@
-import {once} from 'node:events';
-import {describe,expect,it} from 'vitest';
-import {ReplayGuard,signRelay,allowedRelayUrl} from './protocol';
-import {createRelayBroker} from './broker';
-import {relayFetch,pollConnector} from './client';
-describe('outbound relay isolation',()=>{
- it('binds signatures to method, path and body and rejects replay',()=>{const key=crypto.randomUUID();const headers=new Headers(signRelay(key,'POST','/channel','payload'));const guard=new ReplayGuard();expect(guard.verify(key,'POST','/other','payload',headers)).toBe(false);expect(guard.verify(key,'POST','/channel','changed',headers)).toBe(false);expect(guard.verify(key,'POST','/channel','payload',headers)).toBe(true);expect(guard.verify(key,'POST','/channel','payload',headers)).toBe(false);});
- it('pins the instance and API paths, including Enterprise Cloud API subdomains',()=>{expect(allowedRelayUrl('https://ghe.example.com/api/v3/repos/o/r','ghe.example.com')).toBe(true);expect(allowedRelayUrl('https://ghe.example.com/api/graphql','ghe.example.com')).toBe(true);expect(allowedRelayUrl('https://api.acme.ghe.com/repos/o/r','acme.ghe.com')).toBe(true);for(const url of ['http://ghe.example.com/api/v3/repos','https://evil.example/api/v3/repos','https://ghe.example.com/admin','https://ghe.example.com/api/v3/../../admin','https://user:secret@ghe.example.com/api/v3/repos'])expect(allowedRelayUrl(url,'ghe.example.com')).toBe(false);});
- it('round-trips a provider response through an outbound connector and drops transient work',async()=>{const secret=crypto.randomUUID();const broker=createRelayBroker([{id:'customer',host:'ghe.example.com',secret}]);broker.server.listen(0,'127.0.0.1');await once(broker.server,'listening');const address=broker.server.address();if(!address||typeof address==='string')throw new Error('No local broker address');const endpoint={url:`http://127.0.0.1:${address.port}`,channel:'customer',secret,allowHttp:true};const abort=new AbortController();const connector=pollConnector(endpoint,'ghe.example.com',async request=>{expect(request.url).toBe('https://ghe.example.com/api/v3/user');expect(request.headers.authorization).toBe('Bearer scoped-test');return Response.json({login:'reviewer'});},abort.signal);try{const response=await relayFetch(endpoint,'ghe.example.com')('https://ghe.example.com/api/v3/user',{headers:{Authorization:'Bearer scoped-test'}});expect(await response.json()).toEqual({login:'reviewer'});expect(broker.pendingCount()).toBe(0);}finally{abort.abort();broker.close();await connector;}});
+import { once } from 'node:events';
+import { describe, expect, it } from 'vitest';
+import { ReplayGuard, signRelay, allowedRelayUrl } from './protocol';
+import { createRelayBroker } from './broker';
+import { relayFetch, pollConnector } from './client';
+describe('outbound relay isolation', () => {
+  it('binds signatures to method, path and body and rejects replay', () => {
+    const key = crypto.randomUUID();
+    const headers = new Headers(signRelay(key, 'POST', '/channel', 'payload'));
+    const guard = new ReplayGuard();
+    expect(guard.verify(key, 'POST', '/other', 'payload', headers)).toBe(false);
+    expect(guard.verify(key, 'POST', '/channel', 'changed', headers)).toBe(false);
+    expect(guard.verify(key, 'POST', '/channel', 'payload', headers)).toBe(true);
+    expect(guard.verify(key, 'POST', '/channel', 'payload', headers)).toBe(false);
+  });
+  it('pins the instance and API paths, including Enterprise Cloud API subdomains', () => {
+    expect(allowedRelayUrl('https://ghe.example.com/api/v3/repos/o/r', 'ghe.example.com')).toBe(true);
+    expect(allowedRelayUrl('https://ghe.example.com/api/graphql', 'ghe.example.com')).toBe(true);
+    expect(allowedRelayUrl('https://api.acme.ghe.com/repos/o/r', 'acme.ghe.com')).toBe(true);
+    for (const url of [
+      'http://ghe.example.com/api/v3/repos',
+      'https://evil.example/api/v3/repos',
+      'https://ghe.example.com/admin',
+      'https://ghe.example.com/api/v3/../../admin',
+      'https://user:secret@ghe.example.com/api/v3/repos',
+    ])
+      expect(allowedRelayUrl(url, 'ghe.example.com')).toBe(false);
+  });
+  it('round-trips a provider response through an outbound connector and drops transient work', async () => {
+    const secret = crypto.randomUUID();
+    const broker = createRelayBroker([{ id: 'customer', host: 'ghe.example.com', secret }]);
+    broker.server.listen(0, '127.0.0.1');
+    await once(broker.server, 'listening');
+    const address = broker.server.address();
+    if (!address || typeof address === 'string') throw new Error('No local broker address');
+    const endpoint = {
+      url: `http://127.0.0.1:${address.port}`,
+      channel: 'customer',
+      secret,
+      allowHttp: true,
+    };
+    const abort = new AbortController();
+    const connector = pollConnector(
+      endpoint,
+      'ghe.example.com',
+      async (request) => {
+        expect(request.url).toBe('https://ghe.example.com/api/v3/user');
+        expect(request.headers.authorization).toBe('Bearer scoped-test');
+        return Response.json({ login: 'reviewer' });
+      },
+      abort.signal,
+    );
+    try {
+      const response = await relayFetch(endpoint, 'ghe.example.com')('https://ghe.example.com/api/v3/user', {
+        headers: { Authorization: 'Bearer scoped-test' },
+      });
+      expect(await response.json()).toEqual({ login: 'reviewer' });
+      expect(broker.pendingCount()).toBe(0);
+    } finally {
+      abort.abort();
+      broker.close();
+      await connector;
+    }
+  });
 });

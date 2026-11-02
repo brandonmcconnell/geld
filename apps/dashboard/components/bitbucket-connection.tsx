@@ -2,4 +2,95 @@
 import { useState } from 'react';
 import { z } from 'zod';
 import { Button } from '@geld/ui';
-export function BitbucketConnection({teamId}:{readonly teamId:string}){const[path,setPath]=useState('direct_users');const[organisationId,setOrganisationId]=useState('');const[directoryId,setDirectoryId]=useState('');const[key,setKey]=useState('');const[message,setMessage]=useState('');return <section className="settings-card"><details><summary>Bitbucket access adapter</summary><p>Migrated workspaces use direct user permissions by default. Select legacy groups only if this workspace has not moved to Atlassian Administration.</p><form className="form-stack max-w-lg" onSubmit={async e=>{e.preventDefault();try{const r=await fetch(`/api/teams/${teamId}/provider-connection`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,...(path==='atlassian_groups'?{organisationId,directoryId,adminKey:key}:{})})});const value:unknown=await r.json();const error=z.object({error:z.string()}).safeParse(value);setMessage(r.ok?'Adapter saved.':error.success?error.data.error:'The adapter could not be saved.');if(r.ok)setKey('');}catch{setMessage('Connection settings could not connect.');}}}><label>Adapter<select className="field" value={path} onChange={e=>setPath(e.target.value)}><option value="direct_users">2.0 direct users</option><option value="legacy_groups">1.0 groups, workspace not migrated</option><option value="atlassian_groups">Atlassian Admin groups and 2.0 permissions</option></select></label>{path==='atlassian_groups'&&<><label>Organisation ID<input className="field" required value={organisationId} onChange={e=>setOrganisationId(e.target.value)}/></label><label>Directory ID<input className="field" required value={directoryId} onChange={e=>setDirectoryId(e.target.value)}/></label><label>Customer organisation admin API key<input className="field" type="password" autoComplete="off" required value={key} onChange={e=>setKey(e.target.value)}/></label><p>The encrypted key is used only for managed groups and membership. Provider privileges are still checked for each repository action.</p></>}<Button variant="outline">Save adapter</Button></form><p role="status">{message}</p></details></section>;}
+export function BitbucketConnection({ teamId }: { readonly teamId: string }) {
+  const [path, setPath] = useState('direct_users');
+  const [organisationId, setOrganisationId] = useState('');
+  const [directoryId, setDirectoryId] = useState('');
+  const [key, setKey] = useState('');
+  const [message, setMessage] = useState('');
+  return (
+    <section className="settings-card">
+      <details>
+        <summary>Bitbucket access adapter</summary>
+        <p>
+          Migrated workspaces use direct user permissions by default. Select legacy groups only if this workspace has
+          not moved to Atlassian Administration.
+        </p>
+        <form
+          className="form-stack max-w-lg"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              const r = await fetch(`/api/teams/${teamId}/provider-connection`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  path,
+                  ...(path === 'atlassian_groups' ? { organisationId, directoryId, adminKey: key } : {}),
+                }),
+              });
+              const value: unknown = await r.json();
+              const error = z.object({ error: z.string() }).safeParse(value);
+              setMessage(
+                r.ok ? 'Adapter saved.' : error.success ? error.data.error : 'The adapter could not be saved.',
+              );
+              if (r.ok) setKey('');
+            } catch {
+              setMessage('Connection settings could not connect.');
+            }
+          }}
+        >
+          <label>
+            Adapter
+            <select className="field" value={path} onChange={(e) => setPath(e.target.value)}>
+              <option value="direct_users">2.0 direct users</option>
+              <option value="legacy_groups">1.0 groups, workspace not migrated</option>
+              <option value="atlassian_groups">Atlassian Admin groups and 2.0 permissions</option>
+            </select>
+          </label>
+          {path === 'atlassian_groups' && (
+            <>
+              <label>
+                Organisation ID
+                <input
+                  className="field"
+                  required
+                  value={organisationId}
+                  onChange={(e) => setOrganisationId(e.target.value)}
+                />
+              </label>
+              <label>
+                Directory ID
+                <input
+                  className="field"
+                  required
+                  value={directoryId}
+                  onChange={(e) => setDirectoryId(e.target.value)}
+                />
+              </label>
+              <label>
+                Customer organisation admin API key
+                <input
+                  className="field"
+                  type="password"
+                  autoComplete="off"
+                  required
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                />
+              </label>
+              <p>
+                The encrypted key is used only for managed groups and membership. Provider privileges are still checked
+                for each repository action.
+              </p>
+            </>
+          )}
+          <Button type="submit" variant="outline">
+            Save adapter
+          </Button>
+        </form>
+        <p role="status">{message}</p>
+      </details>
+    </section>
+  );
+}

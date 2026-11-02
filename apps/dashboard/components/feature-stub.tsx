@@ -1,1 +1,11 @@
-export function FeatureStub({title}:{readonly title:string}){return <div className="page"><p className="eyebrow">EARLY PREVIEW</p><h1>{title}</h1><p className="muted mt-3">This workspace feature is being prepared. Repository reviews and team access are available now.</p></div>;}
+export function FeatureStub({ title }: { readonly title: string }) {
+  return (
+    <div className="page">
+      <p className="eyebrow">EARLY PREVIEW</p>
+      <h1>{title}</h1>
+      <p className="muted mt-3">
+        This workspace feature is being prepared. Repository reviews and team access are available now.
+      </p>
+    </div>
+  );
+}

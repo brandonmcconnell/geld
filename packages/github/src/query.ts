@@ -17,22 +17,44 @@ function quote(value: string, force = false): string {
   return force || /[\s"\\]/.test(value) ? `"${value.replace(/["\\]/g, '\\$&')}"` : value;
 }
 export function serializeQuery(tokens: readonly QueryToken[]): string {
-  return tokens.map((token) => `${token.key === null ? '' : `${token.key}:`}${quote(token.value, token.quoted === true)}`).join(' ');
+  return tokens
+    .map((token) => `${token.key === null ? '' : `${token.key}:`}${quote(token.value, token.quoted === true)}`)
+    .join(' ');
 }
 export function setQualifier(query: string, key: string, value: string | null): string {
-  const roles = [['pr', 'issue'], ['open', 'closed'], ['merged', 'unmerged'], ['locked', 'unlocked'], ['public', 'private', 'internal']];
-  const values = key === 'is' ? roles.find(role => role.includes((value ?? 'open').toLowerCase())) ?? [value?.toLowerCase()] : null;
-  const tokens = parseQuery(query).filter((token) => token.key !== key || (values !== null && !values.includes(token.value.toLowerCase())));
+  const roles = [
+    ['pr', 'issue'],
+    ['open', 'closed'],
+    ['merged', 'unmerged'],
+    ['locked', 'unlocked'],
+    ['public', 'private', 'internal'],
+  ];
+  const values =
+    key === 'is'
+      ? (roles.find((role) => role.includes((value ?? 'open').toLowerCase())) ?? [value?.toLowerCase()])
+      : null;
+  const tokens = parseQuery(query).filter(
+    (token) => token.key !== key || (values !== null && !values.includes(token.value.toLowerCase())),
+  );
   return serializeQuery(value === null ? tokens : [...tokens, { key, value }]);
 }
 export function withRepos(query: string, repositories: readonly string[]): string {
-  return serializeQuery([...parseQuery(query).filter((token) => token.key !== 'repo'), ...Array.from(new Set(repositories)).map((value) => ({ key: 'repo', value }))]);
+  return serializeQuery([
+    ...parseQuery(query).filter((token) => token.key !== 'repo'),
+    ...Array.from(new Set(repositories)).map((value) => ({ key: 'repo', value })),
+  ]);
 }
 export function parseRepositoryInput(input: string): { readonly owner: string; readonly repo: string | null } | null {
   let path = input.trim();
   if (path.startsWith('https://github.com/')) path = path.slice('https://github.com/'.length);
   path = path.replace(/\/$/, '');
   const [owner, repo, ...rest] = path.split('/');
-  if (!owner || rest.length || !/^[a-z\d][a-z\d-]*$/i.test(owner) || (repo !== undefined && !/^[a-z\d_.-]+$/i.test(repo))) return null;
+  if (
+    !owner ||
+    rest.length ||
+    !/^[a-z\d][a-z\d-]*$/i.test(owner) ||
+    (repo !== undefined && !/^[a-z\d_.-]+$/i.test(repo))
+  )
+    return null;
   return { owner, repo: repo ?? null };
 }

@@ -1,10 +1,222 @@
 'use client';
-import {useEffect,useState} from 'react';
-import {z} from 'zod';
-import {Button} from '@geld/ui';
-const schema=z.object({providers:z.array(z.object({providerId:z.string(),domain:z.string(),domainVerified:z.boolean().nullable(),issuer:z.string(),canManage:z.boolean()}))});
-export function SsoSettings({teamId}:{readonly teamId:string}){const[dns,setDns]=useState<{name:string;value:string;callback:string|null}|null>(null);const[rows,setRows]=useState<z.infer<typeof schema>['providers']>([]);const[domain,setDomain]=useState('');const[issuer,setIssuer]=useState('');const[clientId,setClientId]=useState('');const[secret,setSecret]=useState('');const[revision,setRevision]=useState(0);const[busy,setBusy]=useState(false);const[message,setMessage]=useState('');
- useEffect(()=>{const abort=new AbortController();void fetch(`/api/teams/${teamId}/sso`,{signal:abort.signal}).then(r=>r.json()).then(raw=>{const parsed=schema.safeParse(raw);if(parsed.success)setRows(parsed.data.providers);}).catch(()=>undefined);return()=>abort.abort();},[teamId,revision]);
- async function action(value:unknown){setBusy(true);try{const response=await fetch(`/api/teams/${teamId}/sso`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});const raw:unknown=await response.json();const error=z.object({error:z.string()}).safeParse(raw);if(!response.ok){setMessage(error.success?error.data.error:'SSO could not be updated.');return;}const result=z.object({token:z.string().optional(),providerId:z.string().optional(),domainVerificationToken:z.string().optional(),redirectURI:z.string().optional()}).parse(raw);const input=z.object({providerId:z.string().optional()}).parse(value);const id=result.providerId??input.providerId;const row=rows.find(row=>row.providerId===id);const token=result.token??result.domainVerificationToken;const name=`_geld-sso-${id}`;if(token&&id){setDns({name:`${name}.${row?.domain??domain}`,value:`${name}=${token}`,callback:result.redirectURI??null});setMessage('Add the DNS TXT record below, then verify it.');}else{setDns(null);setMessage('SSO configuration updated.');}setSecret('');setRevision(revision=>revision+1);}catch{setMessage('SSO could not connect.');}finally{setBusy(false);}}
- return <section className="settings-card"><h2>Single sign-on</h2><p>Business and Enterprise teams can connect an OIDC provider. Domain ownership must be verified through DNS before sign-in works. SSO does not grant team membership or repository access.</p>{rows.map(row=><div className="settings-row" key={row.providerId}><div><h3>{row.domain}</h3><p>{row.issuer} · {row.domainVerified?'Domain verified':'Domain verification required'}</p></div>{row.canManage&&<div className="flex gap-2 flex-wrap">{!row.domainVerified&&<><Button size="sm" variant="outline" disabled={busy} onClick={()=>action({action:'token',providerId:row.providerId})}>Show DNS record</Button><Button size="sm" variant="outline" disabled={busy} onClick={()=>action({action:'verify',providerId:row.providerId})}>Verify DNS</Button></>}<Button size="sm" variant="ghost" disabled={busy} onClick={()=>action({action:'delete',providerId:row.providerId})}>Disconnect</Button></div>}</div>)}<details className="mt-4"><summary>Connect an OIDC provider</summary><form className="form-stack mt-4 max-w-lg" onSubmit={event=>{event.preventDefault();void action({action:'register',domain,issuer,clientId,clientSecret:secret});}}><label>Work email domain<input className="field" required value={domain} onChange={event=>setDomain(event.target.value.toLowerCase())} placeholder="company.com"/></label><label>OIDC issuer<input className="field" type="url" required value={issuer} onChange={event=>setIssuer(event.target.value)} placeholder="https://company.identity.example"/></label><label>Client ID<input className="field" required value={clientId} onChange={event=>setClientId(event.target.value)} autoComplete="off"/></label><label>Client secret<input className="field" required type="password" value={secret} onChange={event=>setSecret(event.target.value)} autoComplete="off"/></label><Button type="submit" disabled={busy}>Create encrypted SSO connection</Button></form></details>{dns&&<div className="notice mt-4 break-words"><p>TXT record name</p><code>{dns.name}</code><p className="mt-3">TXT record value</p><code>{dns.value}</code>{dns.callback&&<><p className="mt-3">OIDC callback URL</p><code>{dns.callback}</code></>}<Button variant="outline" size="sm" className="mt-3" onClick={()=>navigator.clipboard.writeText(dns.value)}>Copy TXT value</Button></div>}{message&&<p role="status" className="status-message break-words">{message}</p>}</section>;
+import { useEffect, useState } from 'react';
+import { z } from 'zod';
+import { Button } from '@geld/ui';
+const schema = z.object({
+  providers: z.array(
+    z.object({
+      providerId: z.string(),
+      domain: z.string(),
+      domainVerified: z.boolean().nullable(),
+      issuer: z.string(),
+      canManage: z.boolean(),
+    }),
+  ),
+});
+export function SsoSettings({ teamId }: { readonly teamId: string }) {
+  const [dns, setDns] = useState<{
+    name: string;
+    value: string;
+    callback: string | null;
+  } | null>(null);
+  const [rows, setRows] = useState<z.infer<typeof schema>['providers']>([]);
+  const [domain, setDomain] = useState('');
+  const [issuer, setIssuer] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    const abort = new AbortController();
+    void fetch(`/api/teams/${teamId}/sso`, { signal: abort.signal })
+      .then((r) => r.json())
+      .then((raw) => {
+        const parsed = schema.safeParse(raw);
+        if (parsed.success) setRows(parsed.data.providers);
+      })
+      .catch(() => undefined);
+    return () => abort.abort();
+  }, [teamId, revision]);
+  async function action(value: unknown) {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/teams/${teamId}/sso`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(value),
+      });
+      const raw: unknown = await response.json();
+      const error = z.object({ error: z.string() }).safeParse(raw);
+      if (!response.ok) {
+        setMessage(error.success ? error.data.error : 'SSO could not be updated.');
+        return;
+      }
+      const result = z
+        .object({
+          token: z.string().optional(),
+          providerId: z.string().optional(),
+          domainVerificationToken: z.string().optional(),
+          redirectURI: z.string().optional(),
+        })
+        .parse(raw);
+      const input = z.object({ providerId: z.string().optional() }).parse(value);
+      const id = result.providerId ?? input.providerId;
+      const row = rows.find((row) => row.providerId === id);
+      const token = result.token ?? result.domainVerificationToken;
+      const name = `_geld-sso-${id}`;
+      if (token && id) {
+        setDns({
+          name: `${name}.${row?.domain ?? domain}`,
+          value: `${name}=${token}`,
+          callback: result.redirectURI ?? null,
+        });
+        setMessage('Add the DNS TXT record below, then verify it.');
+      } else {
+        setDns(null);
+        setMessage('SSO configuration updated.');
+      }
+      setSecret('');
+      setRevision((revision) => revision + 1);
+    } catch {
+      setMessage('SSO could not connect.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="settings-card">
+      <h2>Single sign-on</h2>
+      <p>
+        Business and Enterprise teams can connect an OIDC provider. Domain ownership must be verified through DNS before
+        sign-in works. SSO does not grant team membership or repository access.
+      </p>
+      {rows.map((row) => (
+        <div className="settings-row" key={row.providerId}>
+          <div>
+            <h3>{row.domain}</h3>
+            <p>
+              {row.issuer} · {row.domainVerified ? 'Domain verified' : 'Domain verification required'}
+            </p>
+          </div>
+          {row.canManage && (
+            <div className="flex gap-2 flex-wrap">
+              {!row.domainVerified && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => action({ action: 'token', providerId: row.providerId })}
+                  >
+                    Show DNS record
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => action({ action: 'verify', providerId: row.providerId })}
+                  >
+                    Verify DNS
+                  </Button>
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => action({ action: 'delete', providerId: row.providerId })}
+              >
+                Disconnect
+              </Button>
+            </div>
+          )}
+        </div>
+      ))}
+      <details className="mt-4">
+        <summary>Connect an OIDC provider</summary>
+        <form
+          className="form-stack mt-4 max-w-lg"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void action({
+              action: 'register',
+              domain,
+              issuer,
+              clientId,
+              clientSecret: secret,
+            });
+          }}
+        >
+          <label>
+            Work email domain
+            <input
+              className="field"
+              required
+              value={domain}
+              onChange={(event) => setDomain(event.target.value.toLowerCase())}
+              placeholder="company.com"
+            />
+          </label>
+          <label>
+            OIDC issuer
+            <input
+              className="field"
+              type="url"
+              required
+              value={issuer}
+              onChange={(event) => setIssuer(event.target.value)}
+              placeholder="https://company.identity.example"
+            />
+          </label>
+          <label>
+            Client ID
+            <input
+              className="field"
+              required
+              value={clientId}
+              onChange={(event) => setClientId(event.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          <label>
+            Client secret
+            <input
+              className="field"
+              required
+              type="password"
+              value={secret}
+              onChange={(event) => setSecret(event.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          <Button type="submit" disabled={busy}>
+            Create encrypted SSO connection
+          </Button>
+        </form>
+      </details>
+      {dns && (
+        <div className="notice mt-4 break-words">
+          <p>TXT record name</p>
+          <code>{dns.name}</code>
+          <p className="mt-3">TXT record value</p>
+          <code>{dns.value}</code>
+          {dns.callback && (
+            <>
+              <p className="mt-3">OIDC callback URL</p>
+              <code>{dns.callback}</code>
+            </>
+          )}
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => navigator.clipboard.writeText(dns.value)}>
+            Copy TXT value
+          </Button>
+        </div>
+      )}
+      {message && (
+        <p role="status" className="status-message break-words">
+          {message}
+        </p>
+      )}
+    </section>
+  );
 }

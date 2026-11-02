@@ -5,11 +5,23 @@ export type Provider = z.infer<typeof providerSchema>;
 export const resourceSchema = z.object({
   provider: providerSchema,
   host: z.string().regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/),
-  owner: z.string().min(1).refine(value=>value.split('/').every(segment=>segment&&segment!=='.'&&segment!=='..'&&!/[\\\x00-\x1f]/.test(segment))),
-  repo: z.string().min(1).refine(value=>value!=='.'&&value!=='..'&&!/[/\\\x00-\x1f]/.test(value)),
+  owner: z
+    .string()
+    .min(1)
+    .refine((value) =>
+      value
+        .split('/')
+        .every((segment) => segment && segment !== '.' && segment !== '..' && !/[\\\x00-\x1f]/.test(segment)),
+    ),
+  repo: z
+    .string()
+    .min(1)
+    .refine((value) => value !== '.' && value !== '..' && !/[/\\\x00-\x1f]/.test(value)),
 });
 export type RepositoryRef = z.infer<typeof resourceSchema>;
-export const pullRefSchema = resourceSchema.extend({ number: z.number().int().positive() });
+export const pullRefSchema = resourceSchema.extend({
+  number: z.number().int().positive(),
+});
 export type PullRef = z.infer<typeof pullRefSchema>;
 export const capabilitySchema = z.enum(['read', 'comment', 'review', 'merge', 'settings', 'manage_access', 'delete']);
 export type Capability = z.infer<typeof capabilitySchema>;
@@ -51,12 +63,24 @@ export interface Page<T> {
 
 export type ProviderResult<T> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly reason: 'signed_out' | 'unavailable' | 'invalid_response' | 'not_found' | 'unsupported' }
-  | { readonly ok: false; readonly reason: 'permission'; readonly required: string | null; readonly url: string | null }
-  | { readonly ok: false; readonly reason: 'rate_limit'; readonly retryAt: number | null };
+  | {
+      readonly ok: false;
+      readonly reason: 'signed_out' | 'unavailable' | 'invalid_response' | 'not_found' | 'unsupported';
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'permission';
+      readonly required: string | null;
+      readonly url: string | null;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'rate_limit';
+      readonly retryAt: number | null;
+    };
 
 export interface RepositorySummary {
-  readonly ownerKind?:'person'|'organisation'|'unknown';
+  readonly ownerKind?: 'person' | 'organisation' | 'unknown';
   readonly ref: RepositoryRef;
   readonly id: string;
   readonly private: boolean;
@@ -66,8 +90,8 @@ export interface RepositorySummary {
 
 export interface ProviderComment {
   readonly id: string;
-  readonly databaseId?:number|undefined;
-  readonly createdAt?:string|undefined;
+  readonly databaseId?: number | undefined;
+  readonly createdAt?: string | undefined;
   readonly author: string;
   readonly body: string;
   readonly path: string | null;

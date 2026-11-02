@@ -1,4 +1,5 @@
-import {auditedRoute} from '@/lib/request-audit';
+import { readJson } from '@/lib/http';
+import { auditedRoute } from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { currentActor } from '@/lib/session';
@@ -32,7 +33,7 @@ const safeRows = z.array(
     settings: z.unknown(),
   }),
 );
-export async function GET(): Promise<Response> {
+async function readGET(): Promise<Response> {
   await connection();
   const actor = await currentActor();
   if (!actor) return json({ error: 'Sign in to manage providers' }, 401);
@@ -56,7 +57,7 @@ async function handlePOST(request: Request): Promise<Response> {
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
   if (!actor) return json({ error: 'Sign in to manage providers' }, 401);
-  const value: unknown = await request.json().catch(() => null);
+  const value: unknown = await readJson(request);
   const parsed = inputSchema.safeParse(value);
   if (!parsed.success) return json({ error: 'Invalid provider settings' }, 400);
   const input = parsed.data;
@@ -131,7 +132,7 @@ async function handleDELETE(request: Request): Promise<Response> {
   const db = database();
   if (!actor) return json({ error: 'Sign in to remove a provider' }, 401);
   if (!db) return json({ error: 'Provider storage is not configured' }, 503);
-  const input = z.object({ id: z.string().uuid() }).safeParse(await request.json().catch(() => null));
+  const input = z.object({ id: z.string().uuid() }).safeParse(await readJson(request));
   if (!input.success) return json({ error: 'Invalid provider' }, 400);
   await db.query(
     'UPDATE relay_channels SET enabled=false WHERE user_id=$2 AND id IN(SELECT relay_channel FROM ai_providers WHERE id=$1 AND user_id=$2)',
@@ -144,6 +145,8 @@ async function handleDELETE(request: Request): Promise<Response> {
   return json({ removed: true });
 }
 
-export const POST=auditedRoute(handlePOST,'ai.providers.post');
+export const POST = auditedRoute(handlePOST, 'ai.providers.post');
 
-export const DELETE=auditedRoute(handleDELETE,'ai.providers.delete');
+export const DELETE = auditedRoute(handleDELETE, 'ai.providers.delete');
+
+export const GET = auditedRoute(readGET, 'ai.providers.get');

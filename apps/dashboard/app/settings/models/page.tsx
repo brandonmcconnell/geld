@@ -1,2 +1,4 @@
 import { Models } from '@/components/models';
-export default function ModelsPage() { return <Models/>; }
+export default function ModelsPage() {
+  return <Models />;
+}
