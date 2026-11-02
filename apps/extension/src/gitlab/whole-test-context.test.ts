@@ -44,3 +44,34 @@ it('reads through injected admission, checks its live lease, and refuses redirec
   const response = new Response('other', { headers: { 'content-type': 'text/plain' } });Object.defineProperty(response, 'url', { value: `https://gitlab.com/group/repo/-/raw/${'b'.repeat(40)}/spec/file.test.ts` });fetcher.mockResolvedValueOnce(response);
   await expect(feature.readSource(revision(), new AbortController().signal, () => true)).rejects.toThrow('redirected');
 });
+
+function insertedFocusFixture() {
+  const entry = fixture(), step = gitLabNextTestContext(entry, [96, 97, 98, 99])!, holder = document.createElement('tbody');holder.className = 'rd-text-view-content';holder.innerHTML = '<tr class="rd-hunk-lines-inline"><td class="rd-line-number" data-position="old"><a class="rd-line-link" data-line-number="99" href="#line"></a></td><td class="rd-line-number" data-position="new"><a class="rd-line-link" data-line-number="99" href="#line"></a></td><td class="rd-line-content"><pre class="rd-line-text">new-side text\n</pre></td></tr>';
+  const anchor = holder.querySelector<HTMLAnchorElement>('a')!, row = anchor.closest('tr')!;return { entry, step, holder, anchor, row, insert: () => entry.root.querySelector('tbody')!.before(holder) };
+}
+it('recognizes an activated-gap newly inserted OLD99 focus only by its physical NEW99 row projection', () => { const f = insertedFocusFixture();expect(f.step.insertedFocus?.(f.anchor)).toBeNull();f.step.activate();f.insert();expect(f.step.insertedFocus?.(f.anchor)).toEqual({ row: f.row, newLine: 99, newText: 'new-side text' }); });
+for (const mode of ['existing row', 'wrong gap', 'missing new', 'ambiguous new', 'bad number', 'nested anchor', 'owned', 'authored', 'other table', 'detached table', 'duplicate code', 'hidden', 'inert', 'aria-hidden', 'popover', 'tooltip', 'source description'] as const) it(`rejects inserted focus candidate with ${mode}`, () => {
+  const f = insertedFocusFixture();f.step.activate();f.insert();let target = f.anchor;
+  if (mode === 'existing row') { target = f.entry.root.querySelector<HTMLAnchorElement>('a[data-line-number="100"]')!;target.className = 'rd-line-link'; }
+  if (mode === 'wrong gap') f.row.querySelector('[data-position="new"] a')!.setAttribute('data-line-number', '131');
+  if (mode === 'missing new') f.row.querySelector('[data-position="new"]')!.remove();
+  if (mode === 'ambiguous new') { const cell = f.row.querySelector('[data-position="new"]')!;cell.after(cell.cloneNode(true)); }
+  if (mode === 'bad number') f.anchor.dataset.lineNumber = '099';
+  if (mode === 'nested anchor') { const wrap = document.createElement('span');f.anchor.replaceWith(wrap);wrap.append(f.anchor); }
+  if (mode === 'owned') f.row.dataset.geldUi = '';if (mode === 'authored') f.row.classList.add('md');
+  if (mode === 'other table') { const table = document.createElement('table');f.entry.root.append(table);table.append(f.holder); }
+  if (mode === 'detached table') f.entry.root.querySelector('table')!.remove();
+  if (mode === 'duplicate code') { const code = f.row.querySelector('.rd-line-content')!;code.after(code.cloneNode(true)); }
+  if (mode === 'hidden' || mode === 'inert' || mode === 'popover') f.row.setAttribute(mode, '');
+  if (mode === 'aria-hidden') f.row.setAttribute('aria-hidden', 'true');
+  if (mode === 'tooltip') f.row.setAttribute('role', 'tooltip');
+  if (mode === 'source description') f.row.setAttribute('data-testid', 'description-content');
+  expect(f.step.insertedFocus?.(target)).toBeNull();
+});
+
+it('does not mistake a previously present opaque native row filled later for a newly inserted row', () => {
+  const entry = fixture(), row = document.createElement('tr');row.className = 'rd-hunk-lines-inline';entry.root.querySelector('tbody')!.append(row);const step = gitLabNextTestContext(entry, [99])!;step.activate();row.innerHTML = '<td class="rd-line-number" data-position="old"><a class="rd-line-link" data-line-number="99"></a></td><td class="rd-line-number" data-position="new"><a class="rd-line-link" data-line-number="99"></a></td><td class="rd-line-content"><pre class="rd-line-text">later native text\n</pre></td>';expect(step.insertedFocus?.(row.querySelector('a')!)).toBeNull();
+});
+
+it('snapshots every physical row immediately before activation rather than accepting a row already inserted since step selection', () => { const f = insertedFocusFixture();f.insert();f.step.activate();expect(f.step.insertedFocus?.(f.anchor)).toBeNull(); });
+it('rejects a matching new-line number inserted beyond the original activated physical gap', () => { const f = insertedFocusFixture();f.step.activate();f.entry.root.querySelector('table')!.append(f.holder);expect(f.step.insertedFocus?.(f.anchor)).toBeNull(); });

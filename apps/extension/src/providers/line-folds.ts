@@ -347,7 +347,14 @@ function paint(state: Painted, reading: Reading, runs: readonly CommentRun[]): {
       repaint();
       if (opening && trusted && document.activeElement === note.button) state.focus = { key: `test:${fold.id}`, button: note.button };
       if (!opening) state.focus = null;
-      if (opening && trusted) state.whole?.reveal(state.entry, fold, () => painted.get(state.root) === state && state.visit.opened.has(fold.id));
+      if (opening && trusted) {
+        const pending = state.focus, token = state.wholeToken, doc = document, url = doc.URL;
+        state.whole?.reveal(state.entry, fold, () => painted.get(state.root) === state && state.visit.opened.has(fold.id), {
+          current: () => pending !== null && state.focus === pending && painted.get(state.root) === state && state.wholeToken === token
+            && doc === document && doc.URL === url && state.visit.opened.has(fold.id) && state.notes.get(pending.key) === note
+            && note.button.isConnected && state.root.contains(note.root) && note.root.contains(note.button) ? note.button : null,
+        });
+      }
     });
     kept.add(`test:${fold.id}`);
     testRow(note, fold, state.visit.opened.has(fold.id), isPartial(fold, reading));
