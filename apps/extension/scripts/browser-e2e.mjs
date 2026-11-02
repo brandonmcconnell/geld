@@ -810,7 +810,10 @@ async function runBitbucketWhitespaceCase() {
       read: () => options.evaluate(async () => { const v = await chrome.storage.sync.get('settings');return Object.hasOwn(v, 'settings') ? { present: true, value: v.settings } : { present: false }; }),
       write: saved => options.evaluate(async v => { if (v.present) await chrome.storage.sync.set({ settings: v.value });else await chrome.storage.sync.remove('settings'); }, saved),
     });await scope.prepare();
-    page = await browser.newPage();observeBitbucketBudget(page, item, abort);
+    page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+    await page.bringToFront();
+    observeBitbucketBudget(page, item, abort);
     page.on('response', response => { if (providerOf(response.url()) !== 'bitbucket' || response.status() !== 429) return;const until = Date.now() + retryAfter(response.headers()['retry-after'], 'bitbucket');cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));item.rateLimitedUntil = new Date(until).toISOString();abort.abort(new Error('RATE_LIMIT'));void page.close().catch(() => {}); });
     observer = observeBitbucketWhitespace(page, item.traffic, extensionId, abort);
     const response = await page.goto(BITBUCKET_WHITESPACE_URL, { waitUntil: 'domcontentloaded', timeout: WAIT_MS });
