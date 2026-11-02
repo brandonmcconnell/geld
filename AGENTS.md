@@ -23,6 +23,11 @@ apps/action/         @geld/action — GitHub Action that upserts one review-summ
                      (`pull_request_target`, GraphQL, never checks out PR code). `dist/` is a
                      committed esbuild bundle; Actions require built JS.
 apps/site/           @geld/site — Next.js site for geld.sh (see "Website" below).
+apps/dashboard/      @geld/dashboard — independent Next.js review workspace, Better Auth accounts
+                     and Postgres team metadata. Provider authority and privacy are mandatory.
+packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
+packages/providers/  @geld/providers — provider clients behind token sources.
+packages/ui/         @geld/ui — shared Base UI presentation primitives.
 assets/brand/        Logo + logomark SVGs (black and white variants). Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated
                      catalog and its signature are current) and `pnpm zip:all` artifacts.

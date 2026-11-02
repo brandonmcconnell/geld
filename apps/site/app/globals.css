@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../packages/ui/src";
 
 /*
  * Theme follows the OS by default and can be pinned to light or dark from the
