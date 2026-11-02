@@ -1,13 +1,13 @@
 export async function gitLabWhitespaceProbe(action = 'read', fixture) {
   const key = '__geldWhitespaceProof';
-  if (!['read', 'cleanup', 'frame', 'bind', 'arm-opener', 'opener', 'toggle-target'].includes(action)) return { qualified: false, code: 'UNKNOWN_PROBE_ACTION' };
+  if (!['read', 'cleanup', 'frame', 'bind', 'arm-opener', 'opener', 'toggle-target', 'mark-toggle', 'mark-restore'].includes(action)) return { qualified: false, code: 'UNKNOWN_PROBE_ACTION' };
   if (action === 'cleanup') {
     const proof = globalThis[key];
     if (proof) for (const type of ['click', 'input', 'change']) document.removeEventListener(type, proof.listen, true);
-    delete globalThis[key];return { released: true };
+    const lifecycle = proof?.stopLifecycle?.();delete globalThis[key];return { released: true, ...(lifecycle === undefined ? {} : { lifecycle }) };
   }
   if (action === 'frame') { await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));action = 'read'; }
-  const fail = (code) => ({ qualified: false, code });
+  const fail = (code) => ({ qualified: false, code, ...(globalThis[key]?.readLifecycle === undefined ? {} : { lifecycle: globalThis[key].readLifecycle() }) });
   const excluded = '[data-geld-ui], .note, .note-body, .note-text, .md, [data-testid="description-content"], [data-testid="noteable-note-container"], [contenteditable]';
   const native = (node) => node?.isConnected === true && node.closest(excluded) === null;
   const shown = (node) => {
@@ -146,18 +146,82 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
       const kind = event.target === references.field || references.label.contains(event.target) ? 'whitespace' : event.target === references.other ? 'file-by-file'
         : event.target === opener || opener.contains(event.target) ? 'opener' : boxes.includes(event.target) ? 'viewed' : null;
       if (kind === null) return;
+      if (kind === 'whitespace') proof.lifecycleInput?.(event);
       if (proof.events.length >= 40) { proof.overflow = true;return; }
       proof.events.push({ kind, type: event.type, trusted: event.isTrusted === true, ...(kind === 'whitespace' ? { checked: references.field.checked } : {}) });
       };
       for (const type of ['click', 'input', 'change']) document.addEventListener(type, proof.listen, true);
       globalThis[key] = proof;
     }
-    if (action === 'bind') proof.bound = true;
+    if (action === 'bind') {
+      proof.bound = true;
+      const history = [];const limit = 128;let phase = 'baseline';let status = 'observing';let diagnosticCode = 'OBSERVING';let overflow = false;let closed = false;let observer;
+      const one = (selector) => { const nodes = [...root.querySelectorAll(selector)].filter(native);return nodes.length === 1 ? nodes[0] : null; };
+      const list = one('[data-diffs-list]');const overlay = one('[data-diffs-overlay]');const loading = one('[data-list-loading]');const alert = one('[data-diffs-list-alert]');
+      const owners = [root, owner, opener, menu, references.field, references.label, references.other, list, overlay, loading, alert];const parents = owners.map((node) => node?.parentNode);
+      let originals = [...fileRoots];let originalAnchors = originals.map((node) => node.id);let originalParents = originals.map((node) => node.parentNode);
+      const currentOwners = () => owners.every((node, index) => native(node) && node.parentNode === parents[index] && (node === root || root.contains(node))) && [[list, '[data-diffs-list]'], [overlay, '[data-diffs-overlay]'], [loading, '[data-list-loading]'], [alert, '[data-diffs-list-alert]']].every(([node, selector]) => one(selector) === node);
+      const contained = (node, file) => node === file || node.nodeType === 1 && node.contains(file);
+      const bounded = (value) => Math.min(value, fixture.paths.length + 1);
+      const state = () => {
+        const current = list ? [...list.querySelectorAll('diff-file[data-file-data]')].filter(native) : [];
+        return { ownersCurrent: currentOwners(), overlayLoading: overlay === null ? 'unknown' : !overlay.hasAttribute('data-loading') ? 'idle' : overlay.getAttribute('data-loading') === 'true' ? 'loading' : 'unknown',
+          loadingHidden: loading?.hidden === true, alertEmpty: alert?.childNodes.length === 0,
+          originalConnected: originals.filter((node) => node.isConnected).length, originalInRoot: originals.filter((node) => root.contains(node)).length,
+          originalInList: originals.filter((node) => list?.contains(node)).length, originalParentsSame: originals.filter((node, index) => node.parentNode === originalParents[index]).length,
+          nativeFilesInList: bounded(current.length), freshFilesInList: bounded(current.filter((node) => !originals.includes(node)).length) };
+      };
+      const record = (kind, detail = {}) => {
+        if (closed || overflow) return;
+        if (history.length >= limit) { overflow = true;status = 'incomplete';diagnosticCode = 'HISTORY_BOUND';return; }
+        history.push({ seq: history.length + 1, phase, kind, ...state(), ...detail });
+      };
+      const process = (records) => {
+        for (let index = 0; index < records.length && !overflow; index++) {
+          const mutation = records[index];
+          if (mutation.type === 'attributes' && (mutation.target === overlay && mutation.attributeName === 'data-loading' || mutation.target === loading && mutation.attributeName === 'hidden')) {
+            const next = records.slice(index + 1).find((entry) => entry.type === 'attributes' && entry.target === mutation.target && entry.attributeName === mutation.attributeName);
+            const after = next ? next.oldValue : mutation.target.getAttribute(mutation.attributeName);
+            const token = (value) => value === null ? 'absent' : mutation.attributeName === 'hidden' ? 'present' : value === 'true' ? 'true' : 'unknown';
+            record(mutation.target === overlay ? 'overlay' : 'loading', { before: token(mutation.oldValue), after: token(after) });
+          } else if (mutation.type === 'childList') {
+            const removedOwners = owners.filter((owner) => owner !== null && [...mutation.removedNodes].some((node) => contained(node, owner))).length;const addedOwners = owners.filter((owner) => owner !== null && [...mutation.addedNodes].some((node) => contained(node, owner))).length;
+            if (removedOwners || addedOwners) record('owner_structure', { removedOwnerRefs: removedOwners, addedOwnerRefs: addedOwners });
+            if ([...mutation.addedNodes, ...mutation.removedNodes].some((node) => node.nodeType === 1 && (node.matches('[data-diffs-list],[data-diffs-overlay],[data-list-loading],[data-diffs-list-alert]') || node.querySelector('[data-diffs-list],[data-diffs-overlay],[data-list-loading],[data-diffs-list-alert]') !== null))) record('marker_structure', { addedNodes: bounded(mutation.addedNodes.length), removedNodes: bounded(mutation.removedNodes.length) });
+            if (mutation.target === alert || alert?.contains(mutation.target)) record('alert', { addedNodes: bounded(mutation.addedNodes.length), removedNodes: bounded(mutation.removedNodes.length) });
+            const removed = originals.filter((file) => [...mutation.removedNodes].some((node) => contained(node, file))).length;
+            const structural = [...mutation.addedNodes, ...mutation.removedNodes].some((node) => node.nodeType === 1 && (node.matches('diff-file,diff-file-mounted') || node.querySelector('diff-file,diff-file-mounted') !== null));
+            if (mutation.target === list || removed > 0 || structural && list?.contains(mutation.target)) record('list_structure', { removedOriginalRefs: removed, addedNodes: bounded(mutation.addedNodes.length), removedNodes: bounded(mutation.removedNodes.length) });
+          }
+        }
+      };
+      const drain = () => { try { if (observer) process(observer.takeRecords());if (!closed && status === 'observing' && !currentOwners() && !history.some((entry) => entry.kind === 'owner_lost')) record('owner_lost'); } catch { status = 'unavailable';diagnosticCode = 'OBSERVER_FAILED'; } };
+      const report = () => { drain();return { status, code: diagnosticCode, stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit, overflow, stopped: closed, history }; };
+      const mounted = (event) => {
+        if (event.target?.nodeType !== 1 || !native(event.target) || event.target.tagName !== 'DIFF-FILE' || !list?.contains(event.target)) return;
+        drain();record('file_mounted', { originalFile: originals.includes(event.target), knownAnchorSlot: originalAnchors.indexOf(event.target.id), trusted: event.isTrusted === true });
+      };
+      if ([list, overlay, loading, alert].some((node) => node === null)) { status = 'unavailable';diagnosticCode = 'MARKER_SCHEMA_UNAVAILABLE'; }
+      else if (typeof document.defaultView?.MutationObserver !== 'function') { status = 'unavailable';diagnosticCode = 'OBSERVER_UNAVAILABLE'; }
+      else {
+        try {
+          observer = new document.defaultView.MutationObserver((records) => { try { process(records); } catch { status = 'unavailable';diagnosticCode = 'OBSERVER_FAILED'; } });
+          observer.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'data-loading'], childList: true, subtree: true });
+          if (root.parentNode) observer.observe(root.parentNode, { childList: true });
+          root.addEventListener('DiffFileMounted', mounted);record('baseline');
+        } catch { status = 'unavailable';diagnosticCode = 'OBSERVER_FAILED'; }
+      }
+      proof.readLifecycle = report;
+      proof.markLifecycle = (value, currentFiles) => { drain();phase = value;originals = [...currentFiles];originalAnchors = originals.map((node) => node.id);originalParents = originals.map((node) => node.parentNode);record('phase'); };
+      proof.lifecycleInput = (event) => { drain();record('native_input', { inputType: event.type, trusted: event.isTrusted === true, checked: references.field.checked }); };
+      proof.stopLifecycle = () => { drain();try { observer?.disconnect(); } catch { status = 'unavailable';diagnosticCode = 'OBSERVER_FAILED'; }try { root.removeEventListener('DiffFileMounted', mounted); } catch { status = 'unavailable';diagnosticCode = 'OBSERVER_FAILED'; }closed = true;if (status === 'observing') { status = 'closed';diagnosticCode = 'CLOSED'; }return report(); };
+    }
   }
+  if (action === 'mark-toggle' || action === 'mark-restore') proof?.markLifecycle?.(action === 'mark-toggle' ? 'toggle' : 'restore', fileRoots);
   if (action === 'opener') return opener.getAttribute('aria-expanded') === 'false' ? opener : null;
   if (action === 'toggle-target') return proof && opener.getAttribute('aria-expanded') === 'true' && shown(menu) && shown(references.label) ? references.label : null;
   const number = (selector) => { const text = root.querySelector(selector)?.textContent?.trim() ?? '';return /^[+−\-]?[\d,]+$/.test(text) ? Number(text.replace(/[+,−\-]/g, '')) : null; };
   return { qualified: true, anonymous: true, url: url.href, app: { path: app.mr_path, iid: app.iid, fileByFileMode: false, sourceVersions, targetVersions },
     initialShowWhitespace: app.show_whitespace, nativeStream, checked: references.field.checked, other: { fileByFile: references.other.checked }, open: opener.getAttribute('aria-expanded') === 'true' && shown(menu),
-    files, displayedCounts: { additions: number('[data-testid="js-file-addition-line"]'), deletions: number('[data-testid="js-file-deletion-line"]') }, armed: proof !== undefined, bound: proof?.bound === true, events: proof?.events ?? [], eventOverflow: proof?.overflow ?? false };
+    ...(proof?.readLifecycle === undefined ? {} : { lifecycle: proof.readLifecycle() }), files, displayedCounts: { additions: number('[data-testid="js-file-addition-line"]'), deletions: number('[data-testid="js-file-deletion-line"]') }, armed: proof !== undefined, bound: proof?.bound === true, events: proof?.events ?? [], eventOverflow: proof?.overflow ?? false };
 }

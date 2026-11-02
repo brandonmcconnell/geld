@@ -20,6 +20,28 @@ function retainedBaseline(value) {
     events: value.events.map(({ kind, type, trusted, checked }) => ({ kind, type, trusted, ...(kind === 'whitespace' ? { checked } : {}) })), eventOverflow: value.eventOverflow };
 }
 
+function retainedLifecycle(value) {
+  if (value === undefined) return undefined;
+  const invalid = { status: 'unavailable', code: 'DIAGNOSTIC_SCHEMA_UNQUALIFIED', stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit: 128, overflow: false, stopped: false, history: [] };
+  if (!['observing', 'unavailable', 'closed', 'incomplete'].includes(value?.status) || !['OBSERVING', 'MARKER_SCHEMA_UNAVAILABLE', 'OBSERVER_UNAVAILABLE', 'OBSERVER_FAILED', 'HISTORY_BOUND', 'CLOSED'].includes(value.code)
+    || value.stateTiming !== 'observation_drain' || value.fileReferenceBasis !== 'phase_native_files' || value.limit !== 128 || typeof value.overflow !== 'boolean' || typeof value.stopped !== 'boolean' || !Array.isArray(value.history) || value.history.length > 128) return invalid;
+  const history = [];
+  for (const entry of value.history) {
+    if (entry?.seq !== history.length + 1 || !['baseline', 'toggle', 'restore'].includes(entry.phase) || !['baseline', 'phase', 'overlay', 'loading', 'alert', 'list_structure', 'marker_structure', 'owner_structure', 'file_mounted', 'native_input', 'owner_lost'].includes(entry.kind)
+      || !['idle', 'loading', 'unknown'].includes(entry.overlayLoading) || !['ownersCurrent', 'loadingHidden', 'alertEmpty'].every((field) => typeof entry[field] === 'boolean')
+      || !['originalConnected', 'originalInRoot', 'originalInList', 'originalParentsSame', 'nativeFilesInList', 'freshFilesInList'].every((field) => Number.isInteger(entry[field]) && entry[field] >= 0 && entry[field] <= GITLAB_WHITESPACE.paths.length + 1)) return invalid;
+    const safe = Object.fromEntries(['seq', 'phase', 'kind', 'ownersCurrent', 'overlayLoading', 'loadingHidden', 'alertEmpty', 'originalConnected', 'originalInRoot', 'originalInList', 'originalParentsSame', 'nativeFilesInList', 'freshFilesInList'].map((field) => [field, entry[field]]));
+    for (const field of ['before', 'after']) if (entry[field] !== undefined) { if (!['absent', 'present', 'true', 'unknown'].includes(entry[field])) return invalid;safe[field] = entry[field]; }
+    for (const field of ['addedNodes', 'removedNodes', 'removedOriginalRefs']) if (entry[field] !== undefined) { if (!Number.isInteger(entry[field]) || entry[field] < 0 || entry[field] > GITLAB_WHITESPACE.paths.length + 1) return invalid;safe[field] = entry[field]; }
+    for (const field of ['removedOwnerRefs', 'addedOwnerRefs']) if (entry[field] !== undefined) { if (!Number.isInteger(entry[field]) || entry[field] < 0 || entry[field] > 11) return invalid;safe[field] = entry[field]; }
+    for (const field of ['originalFile', 'trusted', 'checked']) if (entry[field] !== undefined) { if (typeof entry[field] !== 'boolean') return invalid;safe[field] = entry[field]; }
+    if (entry.knownAnchorSlot !== undefined) { if (!Number.isInteger(entry.knownAnchorSlot) || entry.knownAnchorSlot < -1 || entry.knownAnchorSlot >= GITLAB_WHITESPACE.paths.length) return invalid;safe.knownAnchorSlot = entry.knownAnchorSlot; }
+    if (entry.inputType !== undefined) { if (!['click', 'input', 'change'].includes(entry.inputType)) return invalid;safe.inputType = entry.inputType; }
+    history.push(safe);
+  }
+  return { status: value.status, code: value.code, stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit: 128, overflow: value.overflow, stopped: value.stopped, history };
+}
+
 export function whitespaceReceiptURL(value) {
   try { const url = new URL(value);return ['http:', 'https:'].includes(url.protocol) ? `${url.origin}${url.pathname.replace(/\/(?:token|secret|password|authorization|signature|nonce|key)\/[^/]+/gi, '/[redacted]')}` : 'NON_HTTP_RESOURCE'; }
   catch { return 'UNAVAILABLE_RESOURCE'; }
@@ -167,6 +189,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
   const observed = async (action) => {
     try {
       const value = await page.evaluate(gitLabWhitespaceProbe, action, GITLAB_WHITESPACE);
+      const lifecycle = retainedLifecycle(value?.lifecycle);if (lifecycle !== undefined) p.lifecycle = lifecycle;
       p.lastProbe = value?.qualified === true ? { qualified: true, anonymous: value.anonymous === true, armed: value.armed === true, bound: value.bound === true, open: value.open === true,
         mountedFiles: Array.isArray(value.files) ? Math.min(GITLAB_WHITESPACE.paths.length, value.files.filter((file) => file.mounted === true).length) : 0 }
         : { qualified: false, code: probeCodes.has(value?.code) ? value.code : 'NATIVE_PROBE_UNQUALIFIED' };
@@ -178,13 +201,13 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
         p.lastProbe.fileData = { reason: detail.reason, pathSlot: detail.pathSlot, knownPath: detail.knownPath, refPresent: detail.refPresent, headValid: detail.headValid, headMatchesTarget: detail.headMatchesTarget, anchorValid: detail.anchorValid,
           ...(candidate === null ? {} : { candidateHead: candidate }), candidateMatchesEndpointTarget: candidate !== null && typeof p.acquisitionMatch?.endpointTarget?.head === 'string' ? candidate === p.acquisitionMatch.endpointTarget.head : null };
       }
-      return value;
+      return lifecycle === undefined ? value : { ...value, lifecycle };
     } catch (failure) { p.lastProbe = { qualified: false, code: 'PROBE_OPERATION_FAILED' };throw failure; }
   };
   const read = () => observed('read');
-  const current = async () => {
+  const current = async (action = 'read') => {
     try {
-      await settings.current();const value = await read();const chosen = selection(value);
+      await settings.current();const value = await observed(action);const chosen = selection(value);
       if (baseline) { check(value.bound === true, 'ORIGINAL_OWNER_CHANGED');check(isDeepStrictEqual(chosen, selection(baseline)), 'SELECTED_TARGET_CHANGED');check(value.url === baseline.url && value.initialShowWhitespace === baseline.initialShowWhitespace, 'NATIVE_ROUTE_OR_BOOTSTRAP_CHANGED'); }
       p.lastCurrentCheck = 'QUALIFIED';return value;
     } catch (failure) {
@@ -202,7 +225,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     finally { await handle.dispose(); }
   };
   const transition = async (desired, phase) => {
-    observer.phase(phase);let before = await current();
+    observer.phase(phase);let before = await current(phase === 'toggle' ? 'mark-toggle' : 'mark-restore');
     if (phase === 'toggle') check(before.checked === baseline.checked, 'NATIVE_PROPERTY_CHANGED_BEFORE_TOGGLE');
     if (before.checked === desired) return { status: 'property_already_matches', snapshot: before };
     if (phase === 'restore' && before.open === false) {
@@ -283,7 +306,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     p.status = modes.length > 0 ? 'bounded_anonymous_characterization' : 'partial';
     p.setupPhase = 'COMPLETE';
     p.counts = 'No whitespace-only delta or wrong Geld counts inferred from this additive fixture.';
-  } catch (failure) { primary = error(code(failure));p.primaryFailure = code(failure);p.failurePhase = p.setupPhase;p.failureProbe = p.lastProbe;p.failureCurrentCheck = p.lastCurrentCheck;p.status = baseline ? 'failed' : 'unavailable'; }
+  } catch (failure) { primary = error(code(failure));p.primaryFailure = code(failure);p.failurePhase = p.setupPhase;p.failureProbe = p.lastProbe;p.failureCurrentCheck = p.lastCurrentCheck;p.failureLifecycle = p.lifecycle;p.status = baseline ? 'failed' : 'unavailable'; }
   finally {
     if (baseline && bound && toggleAttempted && !page.isClosed()) {
       try {
@@ -306,7 +329,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
       } catch (failure) { cleanupErrors.push(code(failure));p.nativeRestored = false; }
     }
     if (baseline && page.isClosed()) { p.nativeRestored = false;cleanupErrors.push('NATIVE_RESTORE_PAGE_CLOSED'); }
-    if (installed && !page.isClosed()) try { check((await page.evaluate(gitLabWhitespaceProbe, 'cleanup', GITLAB_WHITESPACE))?.released === true, 'PROBE_CLEANUP_FAILED'); } catch { cleanupErrors.push('PROBE_CLEANUP_FAILED'); }
+    if (installed && !page.isClosed()) try { const released = await page.evaluate(gitLabWhitespaceProbe, 'cleanup', GITLAB_WHITESPACE);const lifecycle = retainedLifecycle(released?.lifecycle);if (lifecycle !== undefined) p.lifecycle = lifecycle;check(released?.released === true, 'PROBE_CLEANUP_FAILED'); } catch { cleanupErrors.push('PROBE_CLEANUP_FAILED'); }
     p.nativeCleanupCodes = [...cleanupErrors];
     const cleanup = await cleanupGitLabWhitespace(page, { settings, observer, comparisons, progress: p });
     cleanupErrors.splice(0, cleanupErrors.length, ...cleanup.codes);
