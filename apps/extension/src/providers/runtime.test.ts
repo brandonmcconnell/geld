@@ -7,7 +7,7 @@ import type { GeldSettings, RepositoryIdentity } from '@geld/core';
 import { buildProviderReviewItems, createNativePublication, META_VERSION, readProviderPublication, renderProviderSummary } from '@geld/review';
 import type { GeldPrMeta, ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import { settingsItem } from '../lib/storage';
-import { providerReviewedItemsItem } from '../lib/local-state';
+import { providerReviewedItemsItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { ProviderReviewedRecord, ProviderReviewedStorage } from '../lib/local-state';
 import { createProviderBotTrust, createProviderReviewedServices, startProvider } from './runtime';
 import { providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
@@ -290,5 +290,106 @@ describe('provider runtime cache routing', () => {
       expect(clear).toHaveBeenCalledTimes(1);
       expect(oldResponse).not.toHaveBeenCalled();
     } finally { first.notifyInvalidated(); second.notifyInvalidated(); }
+  });
+});
+
+describe('provider runtime whitespace link custody', () => {
+  const diff = `${url}/diffs`;
+  const adapter: ProviderAdapter = { id: 'gitlab', describe: () => null, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], complete: true, revision: sha }) };
+  const prepare = (link: HTMLAnchorElement, type: string): void => { link.dispatchEvent(new Event(type, { bubbles: true })); };
+  const makeLink = (href = `${diff}?diff_id=812#note_12`): HTMLAnchorElement => {
+    const link = document.createElement('a');
+    link.setAttribute('href', href);
+    document.body.append(link);
+    return link;
+  };
+
+  it.each(['pointerover', 'focusin', 'click'])('keeps a saved URL opt-out after a previously prepared link receives %s', async (type) => {
+    vi.spyOn(ProviderController.prototype, 'start').mockImplementation(() => undefined);
+    vi.spyOn(whitespaceOptOutsItem, 'getValue').mockResolvedValue({});
+    const save = vi.spyOn(whitespaceOptOutsItem, 'setValue');
+    await settingsItem.setValue({ ...DEFAULT_SETTINGS, hideWhitespace: true });
+    document.body.replaceChildren();
+    window.location.href = `${diff}?w=1`;
+    const ctx = new ContentScriptContext(`provider-links-${type}`, { noScriptStartedPostMessage: true });
+    try {
+      await startProvider(ctx, adapter);
+      const link = makeLink();
+      const original = link.getAttribute('href');
+      prepare(link, type);
+      expect(new URL(link.href).searchParams.get('w')).toBe('1');
+      window.history.replaceState(null, '', `${diff}?w=0`);
+      window.dispatchEvent(new Event('wxt:locationchange'));
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(Object.keys(save.mock.calls[0]?.[0] ?? {})).toHaveLength(1);
+      prepare(link, type);
+      expect(link.getAttribute('href')).toBe(original);
+      window.history.replaceState(null, '', link.href);
+      window.dispatchEvent(new Event('wxt:locationchange'));
+      await Promise.resolve();
+      expect(save).toHaveBeenCalledTimes(1);
+    } finally { ctx.notifyInvalidated(); }
+  });
+
+  it('restores only exact owned hrefs when settings disable or runtime retirement ends custody', async () => {
+    vi.spyOn(ProviderController.prototype, 'start').mockImplementation(() => undefined);
+    vi.spyOn(ProviderController.prototype, 'updateSettings').mockImplementation(() => undefined);
+    vi.spyOn(whitespaceOptOutsItem, 'getValue').mockResolvedValue({});
+    const watchers: Array<(settings: GeldSettings) => void> = [];
+    vi.spyOn(settingsItem, 'watch').mockImplementation((callback) => { watchers.push(callback); return () => undefined; });
+    const enabled = { ...DEFAULT_SETTINGS, hideWhitespace: true };
+    await settingsItem.setValue(enabled);
+    document.body.replaceChildren();
+    window.location.href = `${diff}?w=1`;
+    const ctx = new ContentScriptContext('provider-link-retirement', { noScriptStartedPostMessage: true });
+    try {
+      await startProvider(ctx, adapter);
+      const unchanged = makeLink();
+      const changed = makeLink();
+      const native = makeLink(`${diff}?w=1&diff_id=913#note_14`);
+      prepare(unchanged, 'pointerover');
+      prepare(changed, 'focusin');
+      prepare(native, 'click');
+      const concurrent = `${diff}?w=1&diff_id=999#native-change`;
+      changed.setAttribute('href', concurrent);
+      watchers[0]?.({ ...enabled, enabled: false });
+      expect(unchanged.href).toBe(`${diff}?diff_id=812#note_12`);
+      expect(changed.getAttribute('href')).toBe(concurrent);
+      expect(native.href).toBe(`${diff}?w=1&diff_id=913#note_14`);
+      watchers[0]?.(enabled);
+      prepare(unchanged, 'focusin');
+      expect(new URL(unchanged.href).searchParams.get('w')).toBe('1');
+      ctx.notifyInvalidated();
+      expect(unchanged.href).toBe(`${diff}?diff_id=812#note_12`);
+      expect(changed.getAttribute('href')).toBe(concurrent);
+      expect(native.href).toBe(`${diff}?w=1&diff_id=913#note_14`);
+      prepare(unchanged, 'click');
+      expect(unchanged.href).toBe(`${diff}?diff_id=812#note_12`);
+    } finally { ctx.notifyInvalidated(); }
+  });
+
+  it('releases a surviving native relative href on an actual SPA route event before preparing the new destination', async () => {
+    vi.spyOn(ProviderController.prototype, 'start').mockImplementation(() => undefined);
+    vi.spyOn(whitespaceOptOutsItem, 'getValue').mockResolvedValue({});
+    await settingsItem.setValue({ ...DEFAULT_SETTINGS, hideWhitespace: true });
+    document.body.replaceChildren();
+    window.location.href = `${diff}?w=1`;
+    const ctx = new ContentScriptContext('provider-link-route', { noScriptStartedPostMessage: true });
+    try {
+      await startProvider(ctx, adapter);
+      const original = '?diff_id=812#note_12';
+      const link = makeLink(original);
+      prepare(link, 'pointerover');
+      expect(new URL(link.href).pathname).toContain('/42/');
+      window.history.replaceState(null, '', `${diff.replace('/42/', '/43/')}?w=1`);
+      window.dispatchEvent(new Event('wxt:locationchange'));
+      expect(link.getAttribute('href')).toBe(original);
+      expect(new URL(link.href).pathname).toContain('/43/');
+      prepare(link, 'focusin');
+      expect(new URL(link.href).pathname).toContain('/43/');
+      expect(new URL(link.href).searchParams.get('diff_id')).toBe('812');
+      expect(new URL(link.href).searchParams.get('w')).toBe('1');
+      expect(new URL(link.href).hash).toBe('#note_12');
+    } finally { ctx.notifyInvalidated(); }
   });
 });

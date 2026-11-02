@@ -22,6 +22,7 @@ import type { ProviderReviewedStorage } from '../lib/local-state';
 import { whitespaceOptOutsItem } from '../lib/local-state';
 import { persist } from '../lib/context';
 import { mergeWhitespaceOptOuts, ProviderWhitespace } from './whitespace';
+import { ProviderWhitespaceLinks } from './whitespace-links';
 
 interface ProviderBotTrustEnvironment {
   readonly page: () => ProviderPage | null;
@@ -133,6 +134,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
   let unwatchSettings: (() => void) | null = null;
   let unwatchCatalog: (() => void) | null = null;
   let unwatchChoices: (() => void) | null = null;
+  let whitespaceLinks: ProviderWhitespaceLinks | null = null;
   let observedReview: ProviderReviewSnapshot | null = null;
   let reviewGeneration = 0;
   const fetchReview = adapter.fetchReview?.bind(adapter);
@@ -156,6 +158,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     if (unwatchSettings !== null) quiet(unwatchSettings);
     if (unwatchCatalog !== null) quiet(unwatchCatalog);
     if (unwatchChoices !== null) quiet(unwatchChoices);
+    whitespaceLinks?.dispose();
     controller?.stop();
     publish(PROVIDER_IDLE_STATE);
   };
@@ -205,19 +208,21 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
   });
   const redirect = whitespace.navigation(new URL(window.location.href));
   if (redirect !== null) { mark('redirect-early'); window.location.replace(redirect); return; }
+  const links = new ProviderWhitespaceLinks(whitespace);
+  whitespaceLinks = links;
   let badge = settings.showBadge;
   const configs = adapter.fetchConfig === undefined ? null : new ProviderRepoConfigSource(adapter.fetchConfig, () => controller?.requestRefresh(), catalog);
   const saveTrustedBot = createProviderBotTrust({
     page: () => sourceAdapter.describe(new URL(window.location.href), document),
     snapshot: () => observedReview,
     retired: () => retired,
-    updated: (value) => { badge = value.showBadge; whitespace.update(value); controller?.updateSettings(value); },
+    updated: (value) => { badge = value.showBadge; whitespace.update(value); links.refresh(); controller?.updateSettings(value); },
   });
   const saveTrustedPublisher = createProviderPublisherTrust({
     page: () => sourceAdapter.describe(new URL(window.location.href), document),
     snapshot: () => observedReview,
     retired: () => retired,
-    updated: (value) => { badge = value.showBadge; whitespace.update(value); controller?.updateSettings(value); },
+    updated: (value) => { badge = value.showBadge; whitespace.update(value); links.refresh(); controller?.updateSettings(value); },
     settings: settingsItem,
     eligible: (input, comment) => providerPublicationCandidate(input, comment) !== null,
   });
@@ -232,6 +237,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     badge = value.showBadge;
     whitespace.update(value);
     const destination = whitespace.navigation(new URL(window.location.href));
+    links.refresh();
     if (destination !== null) window.location.replace(destination);
     else started.updateSettings(value);
   });
@@ -240,6 +246,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
   ctx.addEventListener(window, 'wxt:locationchange', () => {
     if (retired) return;
     const destination = whitespace.navigation(new URL(window.location.href));
+    links.refresh();
     if (destination !== null) window.location.replace(destination);
     else started.requestRefresh();
   });
@@ -247,10 +254,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     if (retired || !(event.target instanceof Element)) return;
     const anchor = event.target.closest('a[href]');
     if (!(anchor instanceof HTMLAnchorElement)) return;
-    let url: URL;
-    try { url = new URL(anchor.href); } catch { return; }
-    const href = whitespace.link(url);
-    if (href !== anchor.href) anchor.href = href;
+    links.prepare(anchor);
   };
   ctx.addEventListener(document, 'pointerover', prepareLink);
   ctx.addEventListener(document, 'focusin', prepareLink);

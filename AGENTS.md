@@ -1613,6 +1613,10 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Cache clearing aborts or invalidates pending work so a late response cannot repopulate a cleared visit.
   GitLab's explicit `w=1` and `w=0` choices take precedence over automatic whitespace defaults, and explicitly choosing `w=1` removes the stored opt-out.
   A session guard remembers a requested whitespace mode that the site strips from the URL so the extension does not cause a navigation loop.
+  Provider whitespace links retain the exact original and Geld-written href for each original anchor so a later URL opt-out or disabled policy restores only an unchanged Geld edit.
+  Native or reader href changes relinquish custody, disconnected anchors and the bounded oldest entries are restored before release, and runtime retirement restores only remaining exact owned values.
+  A surviving relative href also releases its exact Geld edit when the document route or native base URI changes its original destination, before any new intent prepares that destination.
+  An earlier Geld-added `w=1` must not become a false explicit opt-in after the reader chooses `w=0`.
 - **Bitbucket PR metadata can abbreviate commit hashes.**
   A public PR's source and destination can carry twelve-character hashes even though the native commit endpoint returns the full SHA.
   Resolve abbreviated refs in the explicitly identified source or destination repository, including source forks, and require the returned full hash to match the prefix before treating it as immutable.
