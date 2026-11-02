@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { completeChat, joinUrl, listModels } from './ai-client';
 
 describe('ai-client', () => {
@@ -33,4 +33,18 @@ describe('ai-client', () => {
       models: [{ id: 'gpt-4.1-mini' }],
     });
   });
+});
+
+it('bounds an unavailable model catalog while a healthy catalog returns normally',async()=>{
+ const abort=new AbortController();const timeout=vi.spyOn(AbortSignal,'timeout').mockReturnValue(abort.signal);
+ try{
+  const offline=listModels(async(_url,init)=>new Promise<Response>((_resolve,reject)=>{init?.signal?.addEventListener('abort',()=>reject(new Error('Discovery timed out')),{once:true});}),'https://offline.example','synthetic');
+  expect(await listModels(async()=>Response.json({data:[{id:'working'}]}),'https://healthy.example','synthetic')).toEqual({ok:true,models:[{id:'working'}]});
+  expect(timeout).toHaveBeenCalledWith(15000);abort.abort();expect((await offline).ok).toBe(false);
+ }finally{timeout.mockRestore();}
+});
+it('combines caller cancellation with the completion deadline',async()=>{
+ const abort=new AbortController();let entered:()=>void=()=>undefined;const ready=new Promise<void>(resolve=>{entered=resolve;});
+ const result=completeChat({apiKey:'synthetic',baseUrl:'https://companion.example',model:'fixture',messages:[{role:'user',content:'Fixture'}],timeoutMs:120000,signal:abort.signal,fetch:async(_url,init)=>{entered();return new Promise<Response>((_resolve,reject)=>{init?.signal?.addEventListener('abort',()=>reject(new Error('Caller canceled')),{once:true});});}});
+ await ready;abort.abort();expect(await result).toEqual({ok:false,reason:'Caller canceled'});
 });
