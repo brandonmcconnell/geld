@@ -128,7 +128,8 @@ export async function gitLabWhitespaceSessionProbe(action, fixture) {
   const key = '__geldNativeWhitespaceSessionProof';
   if (action === 'cleanup') { const prior = globalThis[key];prior?.stop?.();delete globalThis[key];return { released: true }; }
   if (action === 'frame') { await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));action = 'read'; }
-  const bad = (code) => ({ qualified: false, code, ...(code === 'SESSION_HISTORY_BOUND' ? { history: { observed: Math.min(globalThis[key]?.records ?? 0, 4097), limit: 4096 } } : {}) });
+  const bad = (code) => ({ qualified: false, code, ...(code === 'SESSION_HISTORY_BOUND' ? { history: { observed: Math.min(globalThis[key]?.records ?? 0, 4097), limit: 4096 } } : {}),
+    ...(code === 'ANONYMOUS_WITNESS_MUTATED' && globalThis[key]?.witnessMutation ? { witnessMutation: globalThis[key].witnessMutation } : {}) });
   const excluded = '[data-geld-ui],.note,.md,[data-testid="noteable-note-container"],[data-testid="description-content"],form,[contenteditable],dialog,[role="dialog"]';
   const native = (node) => node?.isConnected === true && node.closest(excluded) === null;
   const sha = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
@@ -216,7 +217,20 @@ export async function gitLabWhitespaceSessionProbe(action, fixture) {
       const mutation = records[index];if (++p.records > 4096) { invalidate('SESSION_HISTORY_BOUND');break; }
       if (mutation.type === 'attributes' && (mutation.target === p.root && mutation.attributeName === 'data-app-data' || mutation.target === p.actor && mutation.attributeName === 'data-current-user-data'
         || mutation.target === document.body && ['data-project-id', 'data-project-full-path'].includes(mutation.attributeName))) { invalidate('SESSION_IDENTITY_MUTATED');break; }
-      if (mutation.type === 'attributes' && p.signInAncestors.includes(mutation.target) && ['href', 'data-testid', 'hidden', 'inert', 'aria-hidden', 'style', 'class'].includes(mutation.attributeName)) { invalidate('ANONYMOUS_WITNESS_MUTATED');break; }
+      let concealedWitness = false;
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style' && p.signInAncestors.includes(mutation.target)) {
+        const previous = document.createElement('span').style;previous.cssText = mutation.oldValue ?? '';
+        concealedWitness = previous.display === 'none' || ['hidden', 'collapse'].includes(previous.visibility) || previous.opacity === '0';
+      }
+      const changedDestination = mutation.type === 'attributes' && mutation.target === p.signIn
+        && (mutation.attributeName === 'href' && mutation.oldValue !== p.signInHref
+          || mutation.attributeName === 'data-testid' && mutation.oldValue !== 'topbar-signin-button');
+      const hiddenWitness = mutation.type === 'attributes' && p.signInAncestors.includes(mutation.target) && (['hidden', 'inert'].includes(mutation.attributeName)
+        || mutation.attributeName === 'aria-hidden' && (mutation.oldValue === 'true' || mutation.target.getAttribute('aria-hidden') === 'true'));
+      if (concealedWitness || changedDestination || hiddenWitness) {
+        p.witnessMutation = { attribute: mutation.attributeName, target: mutation.target === p.signIn ? 'sign_in' : 'ancestor', currentlyVisible: shown(p.signIn), oldValueMatchesCurrent: mutation.oldValue === mutation.target.getAttribute(mutation.attributeName) };
+        invalidate('ANONYMOUS_WITNESS_MUTATED');break;
+      }
       if (mutation.type === 'childList' && mutation.target.closest?.(excluded) === null && [...mutation.addedNodes, ...mutation.removedNodes].some(contradictory)
         || mutation.type === 'attributes' && mutation.target.closest(excluded) === null && (mutation.attributeName === 'data-is-signed-in' && mutation.target.classList.contains('js-mr-title-actions')
           || mutation.attributeName === 'class' && mutation.target.getAttribute('data-is-signed-in') === 'true')) { invalidate('ANONYMOUS_ACTOR_CONTRADICTION');break; }

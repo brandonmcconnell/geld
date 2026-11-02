@@ -172,6 +172,16 @@ test('owned and untrusted header changes cannot impersonate a competing original
   p.listen({ type: 'change', target: document.querySelector('#fb'), isTrusted: false });
   const owned = document.createElement('input');owned.setAttribute('data-geld-ui', '');root.querySelector('header').append(owned);p.listen({ type: 'change', target: owned, isTrusted: true });assert.equal((await probe('read', F)).qualified, true);
 }));
+test('unrelated ancestor classes and styles preserve the current anonymous witness and native frame', async () => dom(async ({ install, input, cycle }) => {
+  await install();await probe('mark-toggle', F);input(true);cycle();assert.equal((await probe('read', F)).completed, 1);
+  document.body.classList.add('native-scroll-state');document.body.style.position = 'relative';document.documentElement.style.setProperty('--native-color', 'DO_NOT_RETAIN');
+  const signIn = document.querySelector('a[data-testid=topbar-signin-button]');signIn.setAttribute('href', signIn.getAttribute('href'));signIn.setAttribute('data-testid', 'topbar-signin-button');
+  const result = await probe('read', F);assert.equal(result.qualified, true);assert.equal(result.preservedNativeNodes, true);assert.doesNotMatch(JSON.stringify(result), /DO_NOT_RETAIN/);
+}));
+test('reverted sign-in destination changes retain only fixed mutation diagnostics', async () => dom(async ({ install }) => {
+  await install();const link = document.querySelector('a[data-testid=topbar-signin-button]');const before = link.getAttribute('href');link.setAttribute('href', '/DO_NOT_RETAIN');link.setAttribute('href', before);
+  const result = await probe('read', F);assert.equal(result.code, 'ANONYMOUS_WITNESS_MUTATED');assert.deepEqual(result.witnessMutation, { attribute: 'href', target: 'sign_in', currentlyVisible: true, oldValueMatchesCurrent: false });assert.doesNotMatch(JSON.stringify(result), /DO_NOT_RETAIN/);
+}));
 for (const [name, mutate] of [
   ['original sign-in removal', (node) => node.remove()],
   ['original sign-in removal and reinsertion', (node) => { const parent = node.parentNode;node.remove();parent.append(node); }],
