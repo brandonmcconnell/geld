@@ -126,7 +126,35 @@ export function codeRabbitDomProbe(fixture) {
     source: root.querySelector('a[href]')?.href, modes: [...root.querySelectorAll('[role="group"][aria-label="Review command mode"] button')].map((button) => ({ text: button.textContent, pressed: button.getAttribute('aria-pressed') })),
     copyDisabled: root.querySelector('[data-geld-bot-request-action="copy"]')?.disabled, commentDisabled: root.querySelector('[data-geld-bot-request-action="comment"]')?.disabled, commentTitle: root.querySelector('[data-geld-bot-request-action="comment"]')?.title,
     status: root.querySelector('[role="status"]')?.textContent }));
-  let nativeHead = null;try { nativeHead = JSON.parse(document.querySelector('[data-noteable-type="MergeRequest"][data-noteable-data]')?.getAttribute('data-noteable-data') ?? 'null')?.diff_head_sha ?? null; } catch { /* Missing native head stays unknown. */ }
+  const nativeOnly = (node) => node.closest('[data-geld-ui], .note-body, .description') === null;
+  const reviewRoots = [...document.querySelectorAll('.merge-request[data-project-path][data-url]')].filter(nativeOnly);
+  const review = reviewRoots[0];
+  const nativeScope = { count: reviewRoots.length, project: review?.getAttribute('data-project-path'), path: review?.getAttribute('data-url'), action: review?.getAttribute('data-mr-action') };
+  let nativeHead = null;
+  for (const node of [...document.querySelectorAll('[data-noteable-type="MergeRequest"][data-noteable-data]')].filter(nativeOnly)) {
+    try {
+      const data = JSON.parse(node.getAttribute('data-noteable-data'));
+      if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('Malformed native noteable data');
+      if (Object.hasOwn(data, 'diff_head_sha')) {
+        const head = data.diff_head_sha;
+        if (typeof head !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(head) || nativeHead !== null && nativeHead !== head) throw new Error('Malformed or conflicting native noteable head');
+        nativeHead = head;
+      }
+    } catch { nativeHead = 'invalid';break; }
+  }
+  const rapidRoots = [...document.querySelectorAll('[data-rapid-diffs][data-app-data]')].filter(nativeOnly);
+  let nativeVersion = { status: 'absent', count: rapidRoots.length };
+  if (rapidRoots.length > 0) {
+    nativeVersion = { status: 'invalid', count: rapidRoots.length };
+    try {
+      const app = rapidRoots.length === 1 ? JSON.parse(rapidRoots[0].getAttribute('data-app-data')) : null;
+      const versions = app?.versions?.source_versions;
+      if (!Array.isArray(versions) || versions.length === 0 || versions.length > 500 || versions.some((version) => version === null || typeof version !== 'object' || typeof version.selected !== 'boolean' || typeof version.latest !== 'boolean' || !Number.isSafeInteger(version.id) || version.id <= 0 || typeof version.head_sha !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(version.head_sha))) throw new Error('Malformed native Rapid Diff versions');
+      const versionOf = (version) => ({ id: version.id, head: version.head_sha, selected: version.selected, latest: version.latest, href: version.href });
+      nativeVersion = { status: 'observed', count: rapidRoots.length, project: app.project_path, path: app.mr_path, iid: String(app.iid), type: app.noteable_type,
+        selected: versions.filter((version) => version.selected).map(versionOf), latest: versions.filter((version) => version.latest).map(versionOf) };
+    } catch { /* A present malformed/ambiguous Rapid record remains invalid, never absent. */ }
+  }
   const held = globalThis.__geldCodeRabbitNative;
   const commandUrl = requests[0]?.source;
   let commandAnchor = '';try { commandAnchor = decodeURIComponent(new URL(commandUrl).hash.slice(1)); } catch { /* Unavailable command source stays unknown. */ }
@@ -136,7 +164,7 @@ export function codeRabbitDomProbe(fixture) {
   const requestNative = { anchor: commandAnchor, exists: commandRoot !== null, body: commandRoot?.querySelector('.note-body .note-text')?.innerHTML ?? null,
     authorId: commandAuthor?.dataset.userId, login: commandAuthor?.dataset.username,
     sameNode: commandHeld === undefined ? null : commandRoot === commandHeld.node && commandRoot?.parentElement === commandHeld.parent };
-  return { url: location.href.split('#')[0], state: panel.dataset.state, head: panel.dataset.geldReviewHead, nativeHead,
+  return { url: location.href.split('#')[0], state: panel.dataset.state, head: panel.dataset.geldReviewHead, nativeHead, nativeScope, nativeVersion,
     source: { anchor: source?.getAttribute('data-geld-source'), body: source?.querySelector(':scope > .geld-provider-review__body')?.innerHTML ?? null, links: [...source?.querySelectorAll(':scope > .geld-provider-review__byline a[href]') ?? []].map((link) => link.href) },
     native: { exists: native !== null, body: native?.querySelector('.note-body .note-text')?.innerHTML ?? null, authorId: nativeAuthor?.dataset.userId, login: nativeAuthor?.dataset.username, href: nativeAuthor?.getAttribute('href'),
       sameNode: held === undefined ? null : native === held.node && native?.parentElement === held.parent },
@@ -146,7 +174,14 @@ export function codeRabbitDomProbe(fixture) {
 
 export function assertCodeRabbitSource(value, snapshot, baseline) {
   assert.ok(value !== null && ['ready', 'partial'].includes(value.state));assert.equal(value.url, CODERABBIT_FIXTURE.url);
-  assert.equal(value.head, snapshot.metadata.sha);assert.equal(value.nativeHead, snapshot.metadata.sha);assert.equal(value.aiRunControls, 0);
+  assert.equal(value.head, snapshot.metadata.sha);if (value.nativeHead !== null) assert.equal(value.nativeHead, snapshot.metadata.sha);assert.equal(value.aiRunControls, 0);
+  const reviewPath = new URL(CODERABBIT_FIXTURE.url).pathname;
+  assert.deepEqual(value.nativeScope, { count: 1, project: CODERABBIT_FIXTURE.project, path: reviewPath + '.json', action: 'show' });
+  const rapid = value.nativeVersion;
+  assert.equal(rapid?.status, 'observed');assert.equal(rapid.count, 1);assert.equal(rapid.project, CODERABBIT_FIXTURE.project);assert.equal(rapid.path, reviewPath);assert.equal(rapid.iid, CODERABBIT_FIXTURE.id);assert.equal(rapid.type, 'MergeRequest');
+  assert.equal(rapid.selected.length, 1);assert.equal(rapid.latest.length, 1);assert.deepEqual(rapid.selected, rapid.latest);
+  const selected = rapid.selected[0];assert.ok(Number.isSafeInteger(selected.id) && selected.id > 0);assert.equal(selected.selected, true);assert.equal(selected.latest, true);assert.equal(selected.head, snapshot.metadata.sha);
+  assert.equal(selected.href, `${reviewPath}/diffs?diff_id=${selected.id}`);
   assert.equal(value.source.anchor, `note_${CODERABBIT_FIXTURE.note}`);assert.equal(typeof value.source.body, 'string');assert.ok(value.source.links.includes(`${CODERABBIT_FIXTURE.url}#note_${CODERABBIT_FIXTURE.note}`));
   assert.equal(value.native.exists, true);assert.equal(typeof value.native.body, 'string');assert.equal(value.native.authorId, CODERABBIT_FIXTURE.author);assert.equal(value.native.login, CODERABBIT_FIXTURE.login);
   if (baseline !== undefined) { assert.deepEqual(value.source, baseline.source);assert.deepEqual({ ...value.native, sameNode: null }, { ...baseline.native, sameNode: null });assert.equal(value.native.sameNode, true); }
@@ -179,6 +214,7 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
       before = await poll(read, (value) => value?.native.exists && value.native.body !== null, 'Actual native permalink reveals the original CodeRabbit source');
     }
     assertCodeRabbitSource(before, snapshot);assert.deepEqual(before.bots, []);assert.deepEqual(before.requests, []);proof.beforeTrust = before;
+    proof.headVerification = { freshMetadataHead: snapshot.metadata.sha, installedPanelHead: before.head, nativeNoteableHead: before.nativeHead, nativeNoteableStatus: before.nativeHead === null ? 'absent/unknown' : 'observed', nativeHeadSource: 'Rapid Diffs selected/latest source version', nativeVersion: before.nativeVersion.selected[0] };
     await page.evaluate((anchor) => { const node = document.getElementById(anchor);globalThis.__geldCodeRabbitNative = { node, parent: node?.parentElement }; }, `note_${CODERABBIT_FIXTURE.note}`);
     const identity = `[data-geld-source="note_${CODERABBIT_FIXTURE.note}"] .geld-provider-reviewer-identity`;
     proof.identityOpened = await openReviewAncestors(page, `${identity} .geld-provider-reviewer-identity__choices button`);
