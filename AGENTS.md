@@ -2323,6 +2323,8 @@ Keep provider code-link evidence guards when sharing the refusal parser, and ret
 GitLab pipeline jobs do not provide an equivalent free-text check description;
 do not substitute job names or failure enums.
 
+### Bitbucket whitespace acceptance
+
 The literal installed `bitbucket-whitespace-session` focus uses one public PR22 visit and observes native and extension diff requests independently of the product bridge acknowledgement.
 Its bounded public sequence starts with Geld disabled and activates Geld with its synchronized whitespace setting, reads the original native Settings checkbox after a genuine opener click, and closes the page before restoring exact raw settings;
 it never clicks Save or changes a native form field.
@@ -2332,3 +2334,10 @@ The complete Cancel and disable sequence remains offline protocol coverage until
 A Bitbucket whitespace acceptance transition may adopt replaced native file nodes only after independent fresh mode-matched diff and diffstat responses, with the original page frame, source references, file paths and Viewed values preserved.
 After that bounded rebind, another unannounced native node or row-text change fails the settled-phase check rather than being silently adopted.
 Fixed native readiness counts and the last source-qualification code are retained on failure without reading a private application store or treating the bridge acknowledgement as proof.
+
+### Browser cooldown attribution
+
+Browser verification keeps observed request-budget holds separate from actual provider cooldowns.
+An unclassified429 does not acquire the containing page's provider, and imported Bitbucket timestamps remain in the global ledger without blocking unrelated provider cases.
+An explicit retained provider deadline, including an expired one, takes precedence over the legacy missing-Retry-After fallback so redacted source receipts cannot extend or revive it.
+A real provider429 retains its rate-limited classification even when the same request reached an internal40- or47-request cap.

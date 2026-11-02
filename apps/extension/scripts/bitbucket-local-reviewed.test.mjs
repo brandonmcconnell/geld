@@ -228,7 +228,7 @@ test('actual runCase redacts unknown failures and console data while restoring p
     close: async () => { events.push('close');closed = true; },
     goto: async () => { for (const fn of handlers.get('console') ?? []) fn({ type: () => 'log', text: () => canary });for (const fn of handlers.get('pageerror') ?? []) fn(new Error(canary));return { status: () => 200 }; }, url: () => BITBUCKET_LOCAL_REVIEW };
   const report = { cases: [], infrastructureErrors: [], quotaPolicy: { conservativeObservedRequestBudget: 40 } };
-  const context = {
+  const context = { bitbucketBudgetHold: vm.runInNewContext('(' + source.slice(source.indexOf('function bitbucketBudgetHold('), source.indexOf('async function inheritCooldowns(')) + ')'),
     assert, AbortController, Date, Set, Map, WeakMap, focus: 'bitbucket-local-reviewed', FOCUSED_CASES: { 'bitbucket-local-reviewed': ['bitbucket-local-reviewed'] }, report, cooldowns: new Map(), bitbucketRequestTimes: [], localReviewCases: new WeakMap(), currentCaseAbort: undefined,
     providerOf: () => 'bitbucket', options: { evaluate: async (_fn, value) => { if (value === undefined) return structuredClone(storage);events.push(closed ? 'restore' : 'prepare');storage = structuredClone(value); } },
     localReviewStorageScope, observeLocalReview, browser: { newPage: async () => page }, observeBitbucketBudget: () => undefined,

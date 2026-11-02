@@ -165,10 +165,11 @@ test('additional extension-attributed Bitbucket source demand aborts immediately
 });
 
 test('the existing rolling40 guard counts main and counterpart traffic together and stops exactly at the unchanged limit', () => {
+  const helper = harness.slice(harness.indexOf('function bitbucketBudgetHold('), harness.indexOf('async function inheritCooldowns('));
   const budgetFunction = harness.slice(harness.indexOf('function observeBitbucketBudget('), harness.indexOf('async function runCase('));
   const requestTimes = [Date.now() - 61 * 60 * 1000]; const abort = new AbortController(); const cooldowns = new Map(); const item = {}; const report = { quotaPolicy: { conservativeObservedRequestBudget: 40 } };
   const deps = { bitbucketApi: (url) => url.startsWith('https://bitbucket.org/!api/2.0/'), bitbucketApiRequests: 0, bitbucketRequestTimes: requestTimes, report, BITBUCKET_ANONYMOUS_COOLDOWN_MS: 62 * 60 * 1000, cooldowns };
-  const observe = new Function(...Object.keys(deps), `return (${budgetFunction});`)(...Object.values(deps));
+  const observe = new Function(...Object.keys(deps), `${helper} return (${budgetFunction});`)(...Object.values(deps));
   class Page extends EventEmitter { closed = false; async close() { this.closed = true; } }
   const main = new Page(); const counterpart = new Page(); const stopMain = observe(main, item, abort); const stopCounterpart = observe(counterpart, item, abort);
   const request = { url: () => REQUEST_URL };
@@ -177,6 +178,6 @@ test('the existing rolling40 guard counts main and counterpart traffic together 
   counterpart.emit('request', request);
   assert.equal(item.observedBitbucketApiRequests, 40); assert.equal(report.observedBitbucketApiRequests, 40); assert.equal(requestTimes.length, 40);
   assert.equal(abort.signal.aborted, true); assert.equal(counterpart.closed, true); assert.equal(main.closed, false);
-  assert.equal(item.holdReason, 'conservative_anonymous_api_budget'); assert.ok(cooldowns.get('bitbucket') > Date.now() + 60 * 60 * 1000);
+  assert.equal(item.holdReason, 'conservative_anonymous_api_budget'); assert.equal(cooldowns.size, 0); assert.equal(item.budgetHold.observedLimit, 40); assert.equal(item.rateLimitedUntil, undefined);
   stopMain(); stopCounterpart(); assert.equal(main.listenerCount('request'), 0); assert.equal(counterpart.listenerCount('request'), 0);
 });
