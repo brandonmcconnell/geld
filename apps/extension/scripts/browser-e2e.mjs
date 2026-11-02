@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -713,7 +714,7 @@ async function countA11y(page) {
     ownedDescriptions: document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]').length,
   }));
 }
-async function installedHover(page, selector, interaction, artifactName, anchorSelector, { preserveNativeCard = false, verifyUnobscured = false, onVisibility } = {}) {
+async function installedHover(page, selector, interaction, artifactName, anchorSelector, { preserveNativeCard = false, verifyUnobscured = false, onVisibility, expectedRows } = {}) {
   if (!preserveNativeCard) {
     await page.keyboard.press('Escape');
     await page.mouse.move(1, 1);
@@ -774,7 +775,7 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
       rows: [...tip.querySelectorAll('.geld-provider-hover__row')].map((row) => ({ label: row.querySelector('.geld-provider-hover__label')?.textContent, files: row.querySelector('.geld-provider-hover__files')?.textContent, additions: row.querySelector('.geld-provider-hover__add')?.textContent, deletions: row.querySelector('.geld-provider-hover__del')?.textContent })),
       described: [...document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]')].some((owner) => owner === host || host?.contains(owner)),
       bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
-  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text), 'Installed native count hover breakdown and accessible owner', 12_000);
+  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text) && (expectedRows === undefined || isDeepStrictEqual(value.rows, expectedRows)), 'Installed native count hover breakdown and accessible owner', 12_000);
   assert.ok(snapshot.bounds.left >= 0 && snapshot.bounds.right <= snapshot.viewport.width + 1 && snapshot.bounds.top >= 0 && snapshot.bounds.bottom <= snapshot.viewport.height + 1, 'Count tooltip escapes the tested viewport');
   if (anchorSelector !== undefined) {
     assert.ok(snapshot.anchor !== null && Number.isFinite(snapshot.caret), 'Header group hover must expose its real owned hint anchor and caret');
@@ -2753,6 +2754,9 @@ try {
 
   await runCase('bitbucket-commit-links', BITBUCKET_COMMIT_LIST, async (page, item) => verifyBitbucketCommitLinks(page, item, {
     oracle: commitSources.get(page), poll, installedHover,
+    extensionId,
+    readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
+    writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
     guardBudget: () => {
       currentCaseAbort?.signal.throwIfAborted();
       assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Commit-link intent suppressed by carried Bitbucket cooldown');
