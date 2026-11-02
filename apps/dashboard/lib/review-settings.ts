@@ -5,6 +5,8 @@ import type { IssueTrackerConfig, GeldSettings, RepoConfig } from '@geld/core';
 import type { TokenSource } from '@geld/github';
 import { createApiTransport } from '@geld/github';
 import { REVIEW_BOTS } from '@geld/review/bots';
+import { githubEndpoints } from '@geld/domain';
+import { enterpriseFetch } from './enterprise';
 import type { RepositoryRef } from '@geld/domain';
 import { currentActor, providerTokenSource } from './session';
 import { database } from './db';
@@ -26,9 +28,9 @@ export async function reviewSettings(ref: RepositoryRef, background?: {readonly 
   }
   let issueTracker=settings.issueTracker;
   let aiAllowed = true;
-  const source = background?.source ?? await providerTokenSource(ref.provider,ref.owner);
-  const api = createApiTransport({ baseUrl: ref.provider === 'github' ? 'https://api.github.com/' : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source, anonymousReads: true });
-  const organisationApi = createApiTransport({ baseUrl: ref.provider === 'github' ? 'https://api.github.com/' : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: background?.organisationSource ?? source });
+  const source = background?.source ?? await providerTokenSource(ref.provider,ref.owner,false,ref.host);
+  const api = createApiTransport({ baseUrl: ref.provider === 'github' ? githubEndpoints(ref.host).api : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source, anonymousReads: true,...(ref.provider==='github'&&ref.host!=='github.com'?{fetch:await enterpriseFetch(ref.host)}:{}) });
+  const organisationApi = createApiTransport({ baseUrl: ref.provider === 'github' ? githubEndpoints(ref.host).api : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: background?.organisationSource ?? source,...(ref.provider==='github'&&ref.host!=='github.com'?{fetch:await enterpriseFetch(ref.host)}:{}) });
   const pausePolicy = () => { warning = 'Some repository rules could not be loaded. AI processing is paused until their policy can be read.'; aiAllowed = false; };
   const readFile = async (owner: string, repo: string, path: string, organisation = false): Promise<string | null> => {
     const endpoint = ref.provider === 'github' ? `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}` : ref.provider === 'gitlab' ? `projects/${encodeURIComponent(`${owner}/${repo}`)}/repository/files/${encodeURIComponent(path)}/raw?ref=HEAD` : `repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/src/HEAD/${path}`;

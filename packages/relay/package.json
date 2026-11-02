@@ -1,0 +1,27 @@
+{
+  "name": "@geld/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.mjs --legal-comments=inline",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.1.12",
+    "ipaddr.js": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0",
+    "esbuild": "^0.28.2"
+  }
+}

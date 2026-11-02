@@ -24,14 +24,14 @@ export function planFor(tier: Tier): Plan {
   return plan;
 }
 export type SpendDecision = { readonly allowed: true; readonly overageCents: number } | { readonly allowed: false; readonly reason: 'upgrade' | 'cap' | 'card' | 'quote' };
-export function canSpend(input: { readonly tier: Tier; readonly seats: number; readonly used: number; readonly requested: number; readonly capCents: number; readonly spentCents: number; readonly card: boolean }): SpendDecision {
+export function canSpend(input: { readonly tier: Tier; readonly seats: number; readonly used: number; readonly requested: number; readonly capCents: number; readonly spentCents: number; readonly card: boolean;readonly negotiated?:{readonly included:number;readonly overageCents:number} }): SpendDecision {
   if (![input.seats, input.used, input.requested, input.capCents, input.spentCents].every((value) => Number.isSafeInteger(value) && value >= 0) || input.requested < 1 || input.seats < 1) return { allowed: false, reason: 'cap' };
   const plan = planFor(input.tier);
   if (input.tier === 'free') return { allowed: false, reason: 'upgrade' };
-  if (input.tier === 'enterprise') return { allowed: false, reason: 'quote' };
-  const included = plan.creditsPerSeat * input.seats;
+  if(input.tier==='enterprise'&&(!input.negotiated||![input.negotiated.included,input.negotiated.overageCents].every(n=>Number.isSafeInteger(n)&&n>=0)))return {allowed:false,reason:'quote'};
+  const included = input.tier==='enterprise' ? input.negotiated?.included??0 : plan.creditsPerSeat * input.seats;
   const newOverage = Math.max(0, input.used + input.requested - included) - Math.max(0, input.used - included);
-  const cost = newOverage * (plan.overageCents ?? 0);
+  const cost = newOverage * (input.tier==='enterprise'?input.negotiated?.overageCents??0:plan.overageCents??0);
   if (cost > 0 && !input.card) return { allowed: false, reason: 'card' };
   if (cost > 0 && input.spentCents + cost > input.capCents) return { allowed: false, reason: 'cap' };
   return { allowed: true, overageCents: cost };

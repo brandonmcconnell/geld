@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!current.ok || current.value.headSha !== input.headSha) { await db.query('UPDATE review_receipts SET outcome = \'denied\' WHERE id = $1', [id]); return json({ error: 'The pull request changed or could not be verified. Reload before posting.' }, 409); }
     const guardedClient:ProviderClient={...client,review:(ref,review)=>write(()=>client.review(ref,review))};
     const result: ProviderResult<string | void> | { readonly ok: false; readonly reason: 'stale' | 'own_review' } = input.kind === 'review' && input.event
-      ? await submitProviderReview({ client:guardedClient, ref: input.ref, review: { event: input.event, body: input.body, headSha: input.headSha }, viewer: await providerViewer(input.ref.provider) })
+      ? await submitProviderReview({ client:guardedClient, ref: input.ref, review: { event: input.event, body: input.body, headSha: input.headSha }, viewer: await providerViewer(input.ref.provider,input.ref.host,input.ref.owner) })
       : input.kind === 'reply' && input.threadId
         ? await write(()=>client.reply(input.ref, input.threadId ?? '', input.body))
         : input.kind === 'resolve' && input.threadId && input.resolved !== undefined

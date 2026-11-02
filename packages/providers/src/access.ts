@@ -1,3 +1,4 @@
+import { githubEndpoints } from '@geld/domain';
 import { z } from 'zod';
 import { createApiTransport } from '@geld/github';
 import type { ApiTransport, FetchLike, TokenSource } from '@geld/github';
@@ -17,7 +18,7 @@ export interface ManagedAccessAdapter {
   groupMember(organisation: string, group: string, user: AccessUser, remove?: boolean): Promise<ProviderResult<void>>;
   share(ref: RepositoryRef, group: string, permission: Permission, remove?: boolean): Promise<ProviderResult<void>>;
 }
-export interface AccessOptions { readonly provider: Provider; readonly source: TokenSource; readonly fetch?: FetchLike; readonly bitbucket?: { readonly path: 'legacy_groups' | 'atlassian_groups' | 'direct_users'; readonly organisationId?: string; readonly directoryId?: string; readonly adminSource?: TokenSource } }
+export interface AccessOptions { readonly provider: Provider; readonly host?:string; readonly source: TokenSource; readonly fetch?: FetchLike; readonly bitbucket?: { readonly path: 'legacy_groups' | 'atlassian_groups' | 'direct_users'; readonly organisationId?: string; readonly directoryId?: string; readonly adminSource?: TokenSource } }
 function level(p: Permission): number { return p === 'admin' ? 50 : p === 'maintain' ? 40 : p === 'write' ? 30 : 20; }
 function glPermission(n: number): Permission { return n >= 50 ? 'admin' : n >= 40 ? 'maintain' : n >= 30 ? 'write' : n >= 20 ? 'read' : 'none'; }
 function simple(p: Permission): 'read' | 'write' | 'admin' { return p === 'admin' ? 'admin' : p === 'write' || p === 'maintain' ? 'write' : 'read'; }
@@ -26,7 +27,7 @@ function bad<T>(): ProviderResult<T> { return { ok: false, reason: 'invalid_resp
 function identifier(data: unknown): string | null { const p = z.object({ id: z.union([z.string(),z.number()]).optional(), slug: z.string().optional(), uuid: z.string().optional(), groupId: z.string().optional(), data: z.object({ id: z.string() }).optional() }).safeParse(data); return p.success ? String(p.data.slug ?? p.data.id ?? p.data.uuid ?? p.data.groupId ?? p.data.data?.id ?? '') || null : null; }
 export function managedAccessAdapter(options: AccessOptions): ManagedAccessAdapter {
   const p = options.provider;
-  const api = createApiTransport({ baseUrl: p === 'github' ? 'https://api.github.com/' : p === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) });
+  const api = createApiTransport({ baseUrl: p === 'github' ? githubEndpoints(options.host).api : p === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) });
   const legacy = createApiTransport({ baseUrl: 'https://api.bitbucket.org/1.0/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) });
   const admin = options.bitbucket?.adminSource ? createApiTransport({ baseUrl: 'https://api.atlassian.com/admin/', source: options.bitbucket.adminSource, ...(options.fetch ? { fetch: options.fetch } : {}) }) : null;
   const repo = (r: RepositoryRef) => p === 'github' ? `repos/${e(r.owner)}/${e(r.repo)}` : p === 'gitlab' ? `projects/${e(`${r.owner}/${r.repo}`)}` : `repositories/${e(r.owner)}/${e(r.repo)}`;

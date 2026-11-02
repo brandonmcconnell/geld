@@ -12,7 +12,7 @@ export function threadOperations(api: ApiTransport, graphql: ApiTransport, provi
   async function threads(ref: PullRef): Promise<ProviderResult<readonly ProviderThread[]>> {
     if (!owns(ref)) return { ok: false, reason: 'invalid_response' };
     if (provider === 'github') {
-      const result = await api.request('graphql', { method: 'POST', body: { query: 'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id path line isResolved isOutdated comments(first:100){nodes{id body url author{login}}}}}}}}', variables: { owner: ref.owner, repo: ref.repo, number: ref.number } } });
+      const result = await graphql.request('graphql', { method: 'POST', body: { query: 'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id path line isResolved isOutdated comments(first:100){nodes{id body url author{login}}}}}}}}', variables: { owner: ref.owner, repo: ref.repo, number: ref.number } } });
       if (!result.ok) return result;
       const parsed = z.object({ data: z.object({ repository: z.object({ pullRequest: z.object({ reviewThreads: z.object({ nodes: z.array(ghThread) }) }) }) }) }).safeParse(result.value);
       if (!parsed.success) return { ok: false, reason: 'invalid_response' };

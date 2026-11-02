@@ -1,3 +1,4 @@
+import { githubEndpoints } from '@geld/domain';
 import { createApiTransport } from '@geld/github';
 import type { ApiTransport, FetchLike, TokenSource } from '@geld/github';
 import type { ProviderResult, PullRef, RepositoryRef } from '@geld/domain';
@@ -53,7 +54,7 @@ export function githubAccessAdapter(options: { readonly source: TokenSource; rea
 }
 
 export async function providerAction(options: { readonly provider: 'github'|'gitlab'|'bitbucket'; readonly source: TokenSource; readonly fetch?: FetchLike }, ref: PullRef, action: RepositoryAction): Promise<ProviderResult<void>> {
-  const api=createApiTransport({baseUrl:options.provider==='github'?'https://api.github.com/':options.provider==='gitlab'?'https://gitlab.com/api/v4/':'https://api.bitbucket.org/2.0/',source:options.source,...(options.fetch?{fetch:options.fetch}:{})});
+  const api=createApiTransport({baseUrl:options.provider==='github'?githubEndpoints(ref.host).api:options.provider==='gitlab'?'https://gitlab.com/api/v4/':'https://api.bitbucket.org/2.0/',source:options.source,...(options.fetch?{fetch:options.fetch}:{})});
   if(options.provider==='github')return githubAction(api,ref,action);
   const e=encodeURIComponent;const repo=options.provider==='gitlab'?`projects/${e(`${ref.owner}/${ref.repo}`)}`:`repositories/${e(ref.owner)}/${e(ref.repo)}`;const pull=`${repo}/${options.provider==='gitlab'?'merge_requests':'pullrequests'}/${ref.number}`;
   if(action.kind==='delete'&&action.confirmation!==`${ref.owner}/${ref.repo}`)return{ok:false,reason:'invalid_response'};

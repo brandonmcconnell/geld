@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Capability, LineComment, Provider, ProviderClient, ProviderComment, ProviderResult, PullDetail, PullRef, PullSummary, RepositoryRef, RepositorySummary, ReviewSubmission } from '@geld/domain';
-import { validEnterpriseHost } from '@geld/domain';
+import { githubEndpoints, validEnterpriseHost } from '@geld/domain';
 import { createApiTransport } from '@geld/github';
 import type { ApiTransport, FetchLike, TokenSource } from '@geld/github';
 import { threadOperations } from './threads';
@@ -41,9 +41,9 @@ export function createProviderClient(options: ProviderClientOptions): ProviderCl
   if (provider === 'github' && host !== 'github.com' && !validEnterpriseHost(host)) throw new Error('Invalid Enterprise host');
   if (provider === 'gitlab' && host !== 'gitlab.com') throw new Error('GitLab host is not registered');
   if (provider === 'bitbucket' && host !== 'bitbucket.org') throw new Error('Bitbucket host is not registered');
-  const baseUrl = provider === 'github' ? host === 'github.com' ? 'https://api.github.com/' : host.endsWith('.ghe.com') ? `https://api.${host}/` : `https://${host}/api/v3/` : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
+  const baseUrl = provider === 'github' ? githubEndpoints(host).api : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
   const api = createApiTransport({ baseUrl, source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.anonymousReads === undefined ? {} : { anonymousReads: options.anonymousReads }) });
-  const graphql = provider === 'gitlab' ? createApiTransport({ baseUrl: 'https://gitlab.com/api/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) }) : api;
+  const graphql = provider === 'github' && host !== 'github.com' ? createApiTransport({baseUrl:githubEndpoints(host).graphql,source:options.source,...(options.fetch?{fetch:options.fetch}:{})}) : provider === 'gitlab' ? createApiTransport({ baseUrl: 'https://gitlab.com/api/', source: options.source, ...(options.fetch ? { fetch: options.fetch } : {}) }) : api;
   return clientFor(api, provider, host, graphql);
 }
 

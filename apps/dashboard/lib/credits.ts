@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { canSpend } from '@geld/domain';
 import type { SqlExecutor } from './transactions';
-const subscriptionSchema = z.object({ tier: z.enum(['free','starter','team','business','enterprise']), seats: z.number().int(), used_credits: z.number().int(), cap_cents: z.number().int(), spent_cents: z.number().int(), card_on_file: z.boolean(), status: z.string(), period_start: z.date(), stripe_subscription_id: z.string().nullable() });
+const subscriptionSchema = z.object({ tier: z.enum(['free','starter','team','business','enterprise']), seats: z.number().int(), used_credits: z.number().int(), cap_cents: z.number().int(), spent_cents: z.number().int(), card_on_file: z.boolean(), status: z.string(), period_start: z.date(), stripe_subscription_id: z.string().nullable(),included_credits:z.number().int(),negotiated_overage_cents:z.number().int().nullable(),contract_verified:z.boolean() });
 export type CreditReservation = { readonly ok: true; readonly id: string } | { readonly ok: false; readonly reason: 'upgrade' | 'cap' | 'card' | 'quote' | 'forbidden' | 'duplicate' | 'unavailable' };
 export async function reserveCredits(sql: SqlExecutor, input: { readonly teamId: string; readonly actorId: string; readonly credits: number; readonly key: string }): Promise<CreditReservation> {
   const subscription = await sql.query('SELECT s.* FROM subscriptions s JOIN team_members m ON m.team_id = s.team_id WHERE s.team_id = $1 AND m.user_id = $2 FOR UPDATE OF s', [input.teamId, input.actorId]);
@@ -12,7 +12,7 @@ export async function reserveCredits(sql: SqlExecutor, input: { readonly teamId:
   if (!['active','trialing'].includes(s.status)) return { ok: false, reason: 'upgrade' };
   const prior = await sql.query('SELECT id FROM credit_reservations WHERE team_id = $1 AND idempotency_key = $2', [input.teamId, input.key]);
   if (prior.rows.length) return { ok: false, reason: 'duplicate' };
-  const decision = canSpend({ tier: s.tier, seats: s.seats, used: s.used_credits, requested: input.credits, capCents: s.cap_cents, spentCents: s.spent_cents, card: s.card_on_file });
+  const decision = canSpend({ tier: s.tier, seats: s.seats, used: s.used_credits, requested: input.credits, capCents: s.cap_cents, spentCents: s.spent_cents, card: s.card_on_file,...(s.tier==='enterprise'&&s.contract_verified&&s.negotiated_overage_cents!==null?{negotiated:{included:s.included_credits,overageCents:s.negotiated_overage_cents}}:{}) });
   if (!decision.allowed) return { ok: false, reason: decision.reason };
   const id = crypto.randomUUID();
   await sql.query('INSERT INTO credit_reservations(id,team_id,actor_id,idempotency_key,credits,overage_cents,period_start,billing_subscription_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [id, input.teamId, input.actorId, input.key, input.credits, decision.overageCents, s.period_start, s.stripe_subscription_id]);

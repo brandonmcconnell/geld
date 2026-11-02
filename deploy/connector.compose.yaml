@@ -1,0 +1,14 @@
+services:
+  connector:
+    image: geld-relay:local
+    command: [node, cli.mjs, connector]
+    environment:
+      RELAY_BROKER_URL: ${RELAY_BROKER_URL:?Set the broker HTTPS URL}
+      RELAY_CHANNEL_ID: ${RELAY_CHANNEL_ID:?Set the registered channel}
+      RELAY_SECRET: ${RELAY_SECRET:?Set the connector secret}
+      ENTERPRISE_HOST: ${ENTERPRISE_HOST:?Set the pinned instance hostname}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
