@@ -171,14 +171,14 @@ export async function verifyGitLabShell(page,{settings,observer,poll,progress,ca
     if(capture){progress.artifacts=await capture(page);const after=await read();check(paintOK(after)&&after.selected===selected.selected,'POST_CAPTURE_CHANGED');}
     if(painted.palette.themes.some(theme=>theme.light)&&painted.palette.themes.some(theme=>theme.dark)){
       progress.phase='NATIVE_DARK_MEDIA';await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:originalDark?'light':'dark'}]);mediaChanged=true;const dark=await poll(read,value=>value.palette.dark!==originalDark&&paintOK(value)&&value.palette.palette.keyword!==painted.palette.palette.keyword,'Actual native media and token color change');progress.alternateTheme=dark;
-      await page.emulateMediaFeatures(null);mediaChanged=false;await poll(read,value=>value.palette.dark===originalDark&&paintOK(value),'Native media restoration');
+      await page.emulateMediaFeatures([]);mediaChanged=false;await poll(read,value=>value.palette.dark===originalDark&&paintOK(value),'Native media restoration');
     }else progress.alternateTheme={status:'unavailable_native_stylesheet_pair'};
     progress.phase='DISABLE';await settings.enabled(false);enabled=false;progress.disabled=await poll(read,value=>value.ownedGroups===0&&value.ownedStyles===0&&value.ranges.length===0,'Owned shell ranges removed');
     progress.phase='REENABLE';await settings.enabled(true);enabled=true;progress.reenabled=await poll(read,paintOK,'Owned shell ranges restored');
     check(!observer.evidence.overflow&&observer.evidence.featureSourceRequests===0,'UNEXPECTED_FEATURE_SOURCE_REQUEST');progress.status='passed';
   }catch(error){primary=failureCode(error);progress.primaryFailure=primary;progress.failurePhase=progress.phase;progress.status=bound?'failed':'unavailable';}
   finally{
-    const errors=[];if(mediaChanged&&!page.isClosed())try{await page.emulateMediaFeatures(null);}catch{errors.push('MEDIA_RESTORE_FAILED');}
+    const errors=[];if(mediaChanged&&!page.isClosed())try{await page.emulateMediaFeatures([]);}catch{errors.push('MEDIA_RESTORE_FAILED');}
     if(enabled&&!page.isClosed())try{await settings.enabled(false);enabled=false;if(bound)await poll(read,value=>value.ownedGroups===0&&value.ownedStyles===0&&value.ranges.length===0,'Final owned cleanup');}catch{errors.push('OWNED_CLEANUP_FAILED');}
     if(bound&&!page.isClosed())try{check((await page.evaluate(gitLabShellProbe,'restore-selection',GITLAB_SHELL)).restored,'SELECTION_RESTORE_FAILED');}catch{errors.push('SELECTION_RESTORE_FAILED');}
     if(!page.isClosed())try{check((await page.evaluate(gitLabShellProbe,'cleanup',GITLAB_SHELL)).released,'PROBE_RELEASE_FAILED');}catch{errors.push('PROBE_RELEASE_FAILED');}

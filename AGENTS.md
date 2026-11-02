@@ -2274,3 +2274,6 @@ Native GitLab target-version metadata may omit `base_sha` while retaining exact 
 source-version and file diff refs still provide the required full base.
 The shell acceptance permits that missing target field but rejects any contradictory present target base.
 Its single initial native URL includes the known unchanged `file_path`, matching retained native file links, so an unmounted virtual tree entry is not a prerequisite for loading that file.
+
+Puppeteer25 passes media-feature reset values to Chromium CDP, which requires an empty array rather than null.
+The shell acceptance uses `emulateMediaFeatures([])` on both normal and failure cleanup paths to restore the browser's baseline light or dark media.
