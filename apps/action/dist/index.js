@@ -32350,14 +32350,14 @@ function isStatusLineComment(body) {
 }
 var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
 var RERUN_EDIT_GAP_MS = 5 * 60 * 1e3;
-function checkRefusal(check2) {
+function checkRefusalReason(check2, options = {}) {
   if (check2.status !== "completed") return null;
   if (check2.conclusion === "skipped") return "Check skipped";
   if (check2.conclusion !== "neutral" && check2.conclusion !== "success") return null;
-  const words = (check2.description ?? "").replace(/^.*?\s[\u2014\u2013-]\s+/, "").trim();
+  const words = (check2.description ?? "").replace(/^(?:Completed|Successful) in \d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?)(?:\s*\d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?))*\s+[\u2014\u2013-]\s+/i, "").trim();
   if (words === "") return null;
   if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, "");
-  return refusalReason(words);
+  return refusalReason(words, options);
 }
 function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now(), options = {}) {
   const byId = /* @__PURE__ */ new Map();
@@ -32373,7 +32373,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const login = bot.logins[0] ?? bot.id;
     const running = check2.status !== "completed";
     const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale";
-    const refused = running ? null : checkRefusal(check2);
+    const refused = running ? null : checkRefusalReason(check2, options);
     const skipped = refused !== null;
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
     const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
@@ -32633,7 +32633,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
       continue;
     }
-    if (checkRefusal(check2) !== null) {
+    if (checkRefusalReason(check2, options) !== null) {
       const pending = statusOnly.get(bot.id);
       const askedAt = pending === void 0 ? void 0 : pending.askedAt ?? pending.at;
       const thisRun = askedAt === void 0 || askedAt === null || started >= askedAt;

@@ -395,6 +395,18 @@ describe('Bitbucket authenticated protocol fixture', () => {
     expect(meta.value.items[0]).toMatchObject({ path: 'src/a.ts', status: 'open', sources: [{ sourceId: '11', anchor: 'comment-11' }] });
   });
 
+  it('retains the native current-head status description without claiming a bot publisher', async () => {
+    const root = '/2.0/repositories/workspace/project/pullrequests/42';
+    const t = transport((url) => {
+      if (url.pathname === root) return json({ id: 42, source: { commit: { hash: HEAD } }, destination: { commit: { hash: NEXT } }, participants: [] });
+      if (url.pathname === `${root}/statuses`) return json({ values: [{ key: 'ci', name: 'CI', description: 'Review rate limited', state: 'SUCCESSFUL', created_on: DATE, updated_on: DATE, links: { self: { href: `https://api.bitbucket.org/2.0/repositories/workspace/project/commit/${HEAD}/statuses/build/ci` } } }] });
+      return json({ values: [] });
+    });
+    const review = await new BitbucketCiAdapter(new ProviderHttp(config('bitbucket'), t.fetcher)).load();
+    expect(review.input.checks).toEqual([expect.objectContaining({ description: 'Review rate limited', sha: HEAD, conclusion: 'success' })]);
+    expect(review.input.checks?.[0]).not.toHaveProperty('authorId');
+  });
+
   it('creates an owned comment without adopting a participant marker and keeps tasks separate', async () => {
     const root = '/2.0/repositories/workspace/project/pullrequests/42';
     const review = 'https://bitbucket.org/workspace/project/pull-requests/42';

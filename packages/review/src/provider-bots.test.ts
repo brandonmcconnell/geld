@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseGeldPrMeta } from './model';
 import { buildProviderBotVerdicts, providerCodeSourceLink, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from './provider-bots';
-import { refusalReason } from './bots';
+import { checkRefusalReason, refusalReason } from './bots';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewSubject, ProviderReviewThread } from './provider-review';
 
 const SHA = 'a'.repeat(40);
@@ -54,6 +54,19 @@ describe('native source evidence in a bot refusal', () => {
     const url = `https://bitbucket.org${path}`;
     expect(providerCodeSourceLink(url, bitbucket)).toBe(true);
     expect(refusalReason(`Cannot access repository. See ${url} for the broken check.`, nativeOptions(bitbucket))).toBeNull();
+  });
+
+  it('preserves native code evidence before a dash while stripping only actual completed timing prefixes', () => {
+    const check = { name: 'CodeRabbit', sha: SHA, status: 'completed', conclusion: 'neutral' } as const;
+    for (const [value, path] of [
+      [gitlab, '/group/sub/project/-/blob/main/src/auth.ts#L42'],
+      [bitbucket, '/workspace/repo/src/main/src/auth.ts#lines-42'],
+    ] as const) {
+      expect(checkRefusalReason({ ...check, description: `See ${value.origin}${path} — Review rate limited` }, nativeOptions(value))).toBeNull();
+    }
+    for (const timing of ['Completed in 1s', 'Completed in 1m2s', 'Completed in 1m 2s', 'Successful in 4m', 'Completed in 2 minutes']) {
+      expect(checkRefusalReason({ ...check, description: `${timing} — Review rate limited` })).toBe('Review rate limited');
+    }
   });
 
   it('reads relative Markdown and HTML links through the same native evidence predicate', () => {
@@ -181,6 +194,24 @@ describe('provider checks and run provenance', () => {
     expect(buildProviderBotVerdicts(checked({ conclusion: 'neutral' }), [])[0]).toMatchObject({ verdict: 'unknown', reviewedSha: SHA, checkSha: MERGE_SHA });
     expect(buildProviderBotVerdicts(checked({ conclusion: null }), [])[0]?.verdict).toBe('unknown');
     expect(buildProviderBotVerdicts(checked({ status: 'in_progress', conclusion: null }), [])[0]?.verdict).toBe('running');
+  });
+
+  it('reads a refused current check without making neutral checks clean or relaxing native attribution', () => {
+    const refusal = { conclusion: 'neutral', description: 'Review rate limited' };
+    expect(buildProviderBotVerdicts(checked(refusal), [])[0]).toMatchObject({ verdict: 'failed', reason: 'Review rate limited', reviewedSha: SHA, checkSha: MERGE_SHA });
+    expect(buildProviderBotVerdicts(checked({ ...refusal, authorId: 'someone-else' }), [])).toEqual([]);
+    expect(buildProviderBotVerdicts(checked({ ...refusal, key: 'cursor-bugbot-autofix' }), [])).toEqual([]);
+    expect(buildProviderBotVerdicts(checked({ ...refusal, reviewHeadSha: 'c'.repeat(40) }), [])).toEqual([]);
+    const codeFinding = `Cannot access repository. See https://bitbucket.org/workspace/repo/src/main/src/auth.ts#lines-42 for the broken check.`;
+    expect(buildProviderBotVerdicts(checked({ conclusion: 'neutral', description: codeFinding }), [])[0]?.verdict).toBe('unknown');
+  });
+
+  it('recognizes a bound GitLab quota warning and preserves its earlier real finding', () => {
+    const warning = note('4', 'Warning\nReview limit reached\n' + 'The free review quota is exhausted. '.repeat(30), { createdAt: '2026-11-01T12:00:01Z' });
+    expect(buildProviderBotVerdicts(input(), [warning])[0]).toMatchObject({ verdict: 'failed', reason: 'Review limit reached', sourceId: 'note_4' });
+    expect(buildProviderBotVerdicts(input({ bots: [] }), [warning])).toEqual([]);
+    const finding = note('2', 'An unresolved native finding.', { createdAt: '2026-11-01T11:00:00Z' });
+    expect(buildProviderBotVerdicts(input({ threads: [thread(finding, false)] }), [warning])[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'note_2' });
   });
 
   it('keeps comments-only Sourcery free of invented check results or failures', () => {
