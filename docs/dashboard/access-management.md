@@ -21,3 +21,19 @@ References checked November 1, 2026:
 - [Atlassian Admin group creation](https://developer.atlassian.com/cloud/admin/organization/create-group/)
 
 Provider credentials were unavailable during implementation. Fetch fixtures cover endpoint shapes and the no-organisation-invitation guard. Do not report a grant, revocation, installation migration or email delivery as complete merely because it was queued.
+
+## Reader setup and repository selection
+
+GitHub identity sign-in continues into repository App user authorization. This reader flow verifies the user and stores an encrypted App token without requiring organisation installation administration. Installing or migrating a team installation remains an administrator flow with permission and coverage checks. An explicitly configured existing repository App can be imported after its signed App metadata is verified; the identity and repository client IDs must differ. Every repository starts visible. Per-user visibility choices affect the personal queue and sidebar, and loaded selections can be changed later on Connections. Team access is separate from personal visibility.
+
+## Outside collaborators and approvals
+
+The audit lists outside collaborators across loaded provider pages. Include all starts unchecked and is unavailable until every page is loaded. Individuals can be selected separately. A fresh preview verifies the origin collaborator, every target repository's current provider administrator permission, existing access and the grant ledger. Confirmation queues only missing direct invitations. Non-Geld collaborators have a nullable Geld-user reference and do not become team members or provider-organisation members. Already-present permissions and pending grants are preserved. Provider restrictions are surfaced as failed/pending work and are never bypassed.
+
+Repository administrators who are ordinary Geld members can see and decide requests for repositories they administer, with in-product and email notifications. Geld team-admin status alone does not approve repository access.
+
+## Team destruction and concurrent changes
+
+Deletion previews recorded grant and provider-group counts and requires the team name. Personal repositories, and repositories whose ownership kind cannot be established, require an explicit Remove access or Skip choice. The list of skipped access can be downloaded locally. Remove affects Geld-owned grants; repository owners, earlier rights, outside changes and other teams' access are protected. Unknown ownership takes the conservative personal-repository path.
+
+Confirmed deletion pauses sync, blocks other team changes and runs through a durable job. The team and grant ledger remain until provider cleanup, subscription cancellation and generated-content removal succeed. A shared operation lease serializes grants, group creation, destruction and erasure without holding a Postgres connection across network calls. It expires after ten minutes to recover abandoned work. Successful batches do not exhaust failure retries. A revoked provider-group membership reconciles all corresponding ledger rows in that team and organisation. An unavailable provider leaves visible retryable work; it never results in a false success. Account erasure still removes identity credentials and uses its bounded encrypted cleanup path, with a brief retry needed if an access mutation is currently finishing.

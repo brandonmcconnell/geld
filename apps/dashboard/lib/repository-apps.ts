@@ -26,7 +26,7 @@ export async function storedAppUserSource(userId: string, owner?: string, hostOr
   const db = dependencies?.sql ?? pool;
   if (!db) return null;
   const run = dependencies?.run ?? (<T>(work: (sql: SqlExecutor) => Promise<T>) => { if (!pool) throw new Error('App storage is unavailable'); return transaction(pool,work); });
-  const ids = z.array(z.object({ app_id: z.string() })).parse((await db.query(`SELECT t.app_id FROM app_user_tokens t JOIN repository_apps a ON a.id=t.app_id WHERE t.user_id=$1 AND a.host=$3 AND ($4::text IS NULL OR t.app_id=$4) AND EXISTS(SELECT 1 FROM app_installations i WHERE i.registry_id=a.id AND ($2::text IS NULL OR lower(i.account_slug)=lower($2)) AND i.state='verified') ORDER BY t.expires_at DESC NULLS FIRST,t.app_id`, [userId, owner ?? null,host,appId??null])).rows);
+  const ids = z.array(z.object({ app_id: z.string() })).parse((await db.query(`SELECT t.app_id FROM app_user_tokens t JOIN repository_apps a ON a.id=t.app_id WHERE t.user_id=$1 AND a.host=$3 AND ($4::text IS NULL OR t.app_id=$4) AND (t.reader_authorized OR EXISTS(SELECT 1 FROM app_installations i WHERE i.registry_id=a.id AND ($2::text IS NULL OR lower(i.account_slug)=lower($2)) AND i.state='verified')) ORDER BY t.expires_at DESC NULLS FIRST,t.app_id`, [userId, owner ?? null,host,appId??null])).rows);
   const sources: TokenSource[] = ids.map(({ app_id: appId }) => ({
     async get(options = {}) {
       try {

@@ -9,7 +9,7 @@ beforeEach(() => vi.stubEnv('TOKEN_ENCRYPTION_KEY','test-security-signing-key-at
 afterEach(() => vi.unstubAllEnvs());
 async function fixture(group = false) {
   const db = new PGlite();
-  for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url),'utf8'));
+  for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql','0011_companion.sql','0012_privacy.sql','0013_access_flows.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url),'utf8'));
   await db.exec("INSERT INTO users(id,name,email) VALUES('admin','Admin','admin@example.test'),('u','User','user@example.test'); INSERT INTO teams(id,name,managed_access,sync_enabled) VALUES('t','Team',true,true); INSERT INTO team_members(team_id,user_id,role) VALUES('t','admin','admin'),('t','u','member'); INSERT INTO team_repos(id,team_id,provider,host,external_id,owner,name) VALUES('a','t','github','github.com','a','org','a'),('b','t','github','github.com','b','org','b'),('c','t','github','github.com','c','org','c'); INSERT INTO provider_orgs(id,provider,host,external_id,slug) VALUES('org','github','github.com','org','org'); INSERT INTO provider_teams(id,team_id,org_id,provider,external_id,state) VALUES('pt','t','org','github','group','active')");
   const direct = new Map<string, Permission>();
   const shared = new Set(group ? ['a','b'] : []);

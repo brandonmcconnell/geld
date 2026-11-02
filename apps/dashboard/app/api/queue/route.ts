@@ -52,6 +52,8 @@ export async function GET(request: Request): Promise<Response> {
     return { provider: client.provider, repositories: repositories.value.items, pulls, more: !!repositories.value.cursor || repositories.value.items.length > offset+8 || pages.some((p) => p.ok && !!p.value.cursor), error: pages.some((p) => !p.ok) ? 'Some repositories could not be loaded' : null };
   }));
   const pulls: PullSummary[] = [...new Map(results.flatMap(result=>result.pulls).map(pull=>[JSON.stringify(pull.ref),pull])).values()];
-  const repositories: RepositorySummary[] = [...new Map(results.flatMap(result=>result.repositories).map(repo=>[JSON.stringify(repo.ref),repo])).values()];
-  return json({ pulls, repositories, sources: results.map(({ provider, error, more },index) => ({ provider:`${provider}:${index}`, error, more })) });
+  const repositories: RepositorySummary[] = [...new Map(results.flatMap(result=>result.repositories).map(repo=>[[repo.ref.provider,repo.ref.host,repo.ref.owner,repo.ref.repo].join('\0'),repo])).values()];
+  const hidden=db&&url.searchParams.get('includeHidden')!=='true'?z.array(z.object({provider:z.string(),host:z.string(),external_id:z.string()})).parse((await db.query('SELECT provider,host,external_id FROM repository_visibility WHERE user_id=$1 AND visible=false',[actor.id])).rows):[];
+  const visible=repositories.filter(repo=>!hidden.some(row=>row.provider===repo.ref.provider&&row.host===repo.ref.host&&row.external_id===repo.id));const visibleRefs=new Set(visible.map(repo=>[repo.ref.provider,repo.ref.host,repo.ref.owner,repo.ref.repo].join('\0')));
+  return json({pulls:pulls.filter(pull=>visibleRefs.has([pull.ref.provider,pull.ref.host,pull.ref.owner,pull.ref.repo].join('\0'))),repositories:visible,sources:results.map(({provider,error,more})=>({provider:provider==='github'?'GitHub':provider==='gitlab'?'GitLab':'Bitbucket',error,more}))});
 }

@@ -9,11 +9,12 @@ import { json, sameOrigin } from '@/lib/http';
 import { transaction } from '@/lib/transactions';
 import { appendAudit } from '@/lib/audit';
 import { teamCheckout } from '@/lib/billing-checkouts';
-export async function GET(): Promise<Response> {
+export async function GET(request:Request): Promise<Response> {
   await connection();
   const actor = await currentActor();
   if (!actor) return json({ teams: [], configured: false }, 401);
-  return json({ teams: await listTeams(actor.id), configured: billingGateway() !== null, testMode: true });
+  const checkout=new URL(request.url).searchParams.get('session_id');const db=database();const converted=!!db&&!!checkout&&/^cs_test_[A-Za-z0-9_]{1,190}$/.test(checkout)&&(await db.query("SELECT id FROM billing_checkouts WHERE id=$1 AND actor_id=$2 AND state='completed' AND created_at>now()-interval '1 day'",[checkout,actor.id])).rows.length>0;
+  return json({ converted, teams: await listTeams(actor.id), configured: billingGateway() !== null, testMode: true });
 }
 const inputSchema = z.object({ teamId: z.string(), action: z.enum(['checkout','portal','cap']), tier: z.enum(['starter','team','business']).optional(), capCents: z.number().int().min(0).max(10000000).optional(), key: z.string().uuid() });
 async function handlePOST(request: Request): Promise<Response> {

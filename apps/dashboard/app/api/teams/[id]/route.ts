@@ -1,4 +1,5 @@
 import {auditedRoute} from '@/lib/request-audit';
+import {destructionPreview,prepareTeamDestruction,finishTeamDestruction} from '@/lib/team-destruction';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { registeredEnterpriseHost } from '@/lib/enterprise';
@@ -8,7 +9,7 @@ import { database } from '@/lib/db';
 import { transaction } from '@/lib/transactions';
 import { appendAudit } from '@/lib/audit';
 import { teamMembership, listTeams } from '@/lib/workspaces';
-import { accessAdapter, providerAdmin, repoRowSchema, refFor, queueGrant, processGrant } from '@/lib/team-access';
+import { accessAdapter, providerAdmin, repoRowSchema, refFor, queueGrant, processGrant, providerApprovers } from '@/lib/team-access';
 import { json, sameOrigin } from '@/lib/http';
 import { claimAccessJobs,finishAccessJob } from '@/lib/access-jobs';
 import { addTeamRepository, approveTeamRepository } from '@/lib/team-repositories';
@@ -19,7 +20,7 @@ const inputSchema = z.discriminatedUnion('action',[
   z.object({action:z.literal('invite'),email:z.email()}),z.object({action:z.literal('remove_member'),userId:z.string()}),
   z.object({action:z.literal('request_access'),repoId:z.string()}),z.object({action:z.literal('decide'),requestId:z.string(),approve:z.boolean()}),
   z.object({action:z.literal('withdraw'),grantId:z.string()}),z.object({action:z.literal('run_jobs')}),
-  z.object({action:z.literal('accept_invite')}),z.object({action:z.literal('destroy'),confirmation:z.string(),personal:z.enum(['remove','skip'])}),
+  z.object({action:z.literal('accept_invite')}),z.object({action:z.literal('destroy'),confirmation:z.string(),personal:z.enum(['remove','skip']),preview:z.string()}),
 ]);
 const memberSchema=z.object({id:z.string(),name:z.string(),role:z.enum(['admin','member'])});
 async function preview(teamId:string) {
@@ -36,14 +37,15 @@ export async function GET(request:Request,{params}:{readonly params:Promise<{id:
     if(!await teamMembership(actor.id,id))return json({error:'This team is not available'},404);
     const team=(await listTeams(actor.id)).find(t=>t.id===id);if(!team)return json({error:'Team not found'},404);
     if(new URL(request.url).searchParams.get('preview')==='sync'){if(team.role!=='admin')return json({error:'Only team admins can preview sync'},403);return json(await preview(id));}
+    if(new URL(request.url).searchParams.get('preview')==='destroy'){if(team.role!=='admin')return json({error:'Team admin permission is required'},403);return json(await destructionPreview(id,actor.id));}
     await db.query("UPDATE access_requests SET state='expired' WHERE team_id=$1 AND state='pending' AND expires_at<=now()",[id]);
     const repos=z.array(repoRowSchema).parse((await db.query('SELECT * FROM team_repos WHERE team_id=$1 AND removed_at IS NULL ORDER BY owner,name',[id])).rows);
-    const visible=[];let hiddenCount=0;
-    for(const repo of repos){const r=await(await accessAdapter(repo.provider,id,repo.owner,undefined,repo.host)).repository(refFor(repo));if(r.ok&&r.value.permission!=='none')visible.push({...repo,accessible:true,url:repositoryPath(refFor(repo)),permission:r.value.permission});else{hiddenCount++;if(team.visibility==='names'||team.visibility==='request')visible.push({id:repo.id,owner:repo.owner,name:repo.name,provider:repo.provider,accessible:false,canRequest:team.managed_access&&team.visibility==='request',url:`https://${repo.host}/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`});}}
+    const visible=[];const providerAdmins:string[]=[];let hiddenCount=0;
+    for(const repo of repos){const r=await(await accessAdapter(repo.provider,id,repo.owner,undefined,repo.host)).repository(refFor(repo));if(r.ok&&r.value.permission==='admin')providerAdmins.push(repo.id);if(r.ok&&r.value.permission!=='none')visible.push({...repo,accessible:true,url:repositoryPath(refFor(repo)),permission:r.value.permission});else{hiddenCount++;if(team.visibility==='names'||team.visibility==='request')visible.push({id:repo.id,owner:repo.owner,name:repo.name,provider:repo.provider,accessible:false,canRequest:team.managed_access&&team.visibility==='request',url:`https://${repo.host}/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`});}}
     const members=z.array(memberSchema).parse((await db.query('SELECT u.id,u.name,m.role FROM team_members m JOIN users u ON u.id=m.user_id WHERE m.team_id=$1 ORDER BY u.name',[id])).rows);
-    const requests=team.role==='admin'?(await db.query('SELECT id,repo_id,requester_id,kind,state,expires_at FROM access_requests WHERE team_id=$1 ORDER BY created_at DESC LIMIT 100',[id])).rows:(await db.query('SELECT id,repo_id,requester_id,kind,state,expires_at FROM access_requests WHERE team_id=$1 AND requester_id=$2 ORDER BY created_at DESC LIMIT 100',[id,actor.id])).rows;
+    const requests=team.role==='admin'?(await db.query('SELECT id,repo_id,requester_id,kind,state,expires_at FROM access_requests WHERE team_id=$1 ORDER BY created_at DESC LIMIT 100',[id])).rows:(await db.query("SELECT id,repo_id,requester_id,kind,state,expires_at FROM access_requests WHERE team_id=$1 AND(requester_id=$2 OR(kind='repository_access' AND repo_id=ANY($3::text[]))) ORDER BY created_at DESC LIMIT 100",[id,actor.id,providerAdmins])).rows;
     const grants=team.role==='admin'?(await db.query('SELECT id,user_id,repo_id,mechanism,permission,previous_permission,source,state,created_at FROM grants WHERE team_id=$1 ORDER BY created_at DESC LIMIT 100',[id])).rows:[];
-    return json({team,repositories:visible,hiddenCount:team.visibility==='count'?hiddenCount:null,members,requests,grants,jobs:team.role==='admin'?(await db.query('SELECT id,kind,state,attempts FROM outbox_jobs WHERE team_id=$1 ORDER BY created_at DESC LIMIT 50',[id])).rows:[]});
+    return json({team,repositories:visible,hiddenCount:team.visibility==='count'?hiddenCount:null,members,requests:z.array(z.object({id:z.string(),repo_id:z.string().nullable(),requester_id:z.string(),kind:z.string(),state:z.string(),expires_at:z.date()})).parse(requests).map(row=>({...row,canDecide:row.kind==='add_repository'?team.role==='admin':!!row.repo_id&&providerAdmins.includes(row.repo_id)})),grants,jobs:team.role==='admin'?(await db.query('SELECT id,kind,state,attempts FROM outbox_jobs WHERE team_id=$1 ORDER BY created_at DESC LIMIT 50',[id])).rows:[]});
   }catch{return json({error:'This team could not be loaded'},503);}
 }
 async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response>{
@@ -56,6 +58,7 @@ async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:
     if(!await teamMembership(actor.id,id))return json({error:'Team not found'},404);
     const team=(await listTeams(actor.id)).find(t=>t.id===id);if(!team)return json({error:'Team not found'},404);
     const admin=team.role==='admin';
+    if(!['run_jobs','destroy'].includes(input.action)&&(await db.query('SELECT id FROM teams WHERE id=$1 AND deleting_at IS NOT NULL',[id])).rows.length)return json({error:'Team deletion is in progress. Existing provider cleanup must finish first.'},409);
     if(['settings','invite','remove_member','remove_repository','destroy'].includes(input.action)&&!admin)return json({error:'Only team admins can change team membership or settings'},403);
     const audit=async(action:string,resourceId:string,outcome:'success'|'pending'='success')=>transaction(db,sql=>appendAudit(sql,{teamId:id,actorId:actor.id,action,resourceType:'team',resourceId,outcome}));
     if(input.action==='add'){
@@ -85,7 +88,7 @@ async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:
       const repo=repoRowSchema.parse((await db.query('SELECT * FROM team_repos WHERE id=$1 AND team_id=$2 AND approved AND removed_at IS NULL',[input.repoId,id])).rows[0]);
       if(!team.managed_access)return json({error:'Request repository access on the provider',url:`https://${repo.host}/${repo.owner}/${repo.name}`},409);
       if(!['team','business','enterprise'].includes(team.tier))return json({error:'Self-serve access needs Team or above'},402);
-      const requestId=crypto.randomUUID();await transaction(db,async sql=>{await sql.query("INSERT INTO access_requests(id,team_id,repo_id,requester_id,kind) VALUES($1,$2,$3,$4,'repository_access') ON CONFLICT DO NOTHING",[requestId,id,repo.id,actor.id]);await sql.query("INSERT INTO notifications(id,user_id,team_id,kind,resource_id) SELECT gen_random_uuid()::text,user_id,$1,'access_request',$2 FROM team_members WHERE team_id=$1 AND role='admin'",[id,requestId]);await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES($1,$2,'email_access',$3,$4) ON CONFLICT DO NOTHING",[crypto.randomUUID(),id,requestId,`access-email:${requestId}`]);await appendAudit(sql,{teamId:id,actorId:actor.id,action:'access.request',resourceType:'repository',resourceId:repo.id,outcome:'pending'});});return json({saved:true,pending:true});
+      const approvers=await providerApprovers(repo);const requestId=crypto.randomUUID();await transaction(db,async sql=>{await sql.query("INSERT INTO access_requests(id,team_id,repo_id,requester_id,kind) VALUES($1,$2,$3,$4,'repository_access') ON CONFLICT DO NOTHING",[requestId,id,repo.id,actor.id]);await sql.query("INSERT INTO notifications(id,user_id,team_id,kind,resource_id) SELECT gen_random_uuid()::text,user_id,$1,'access_request',$2 FROM team_members WHERE team_id=$1 AND(role='admin' OR user_id=ANY($3::text[]))",[id,requestId,approvers]);await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES($1,$2,'email_access',$3,$4) ON CONFLICT DO NOTHING",[crypto.randomUUID(),id,requestId,`access-email:${requestId}`]);await appendAudit(sql,{teamId:id,actorId:actor.id,action:'access.request',resourceType:'repository',resourceId:repo.id,outcome:'pending'});});return json({saved:true,pending:true});
     }
     if(input.action==='decide'){
       const req=z.object({repo_id:z.string(),requester_id:z.string(),kind:z.enum(['repository_access','add_repository'])}).safeParse((await db.query("SELECT * FROM access_requests WHERE id=$1 AND team_id=$2 AND state='pending' AND expires_at>now()",[input.requestId,id])).rows[0]);if(!req.success)return json({error:'This request is no longer pending'},409);
@@ -98,13 +101,14 @@ async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:
     }
     if(input.action==='run_jobs'){
       const jobs=await claimAccessJobs(db,id);let completed=0;
-      for(const job of jobs){let ok=false;try{ok=await processGrant(job.resource_id,actor.id);}catch{}const owned=await finishAccessJob(db,job,ok);if(owned&&ok)completed++;}return json({saved:true,completed,pending:jobs.length-completed});
+      for(const job of jobs){let ok=false;try{ok=job.kind==='destroy_team'?await finishTeamDestruction(id,job.payload):await processGrant(job.resource_id,actor.id);}catch{}const owned=await finishAccessJob(db,job,ok);if(ok&&(owned||job.kind==='destroy_team'))completed++;}return json({saved:true,completed,pending:jobs.length-completed});
     }
     if(input.action==='destroy'){
+      if((await db.query('SELECT id FROM teams WHERE id=$1 AND deleting_at IS NOT NULL',[id])).rows.length)return json({error:'Deletion is already queued. Retry provider cleanup to continue.'},409);
       if(input.confirmation!==team.name)return json({error:'Type the team name to confirm'},400);
-      // Keep the team and its ledger until provider cleanup is confirmed. Never cascade away active grants.
-      await db.query('UPDATE teams SET sync_enabled=false WHERE id=$1',[id]);const grants=await db.query("SELECT id FROM grants WHERE team_id=$1 AND state<>'revoked' AND provider_grant_id IS NOT NULL",[id]);if(grants.rows.length)return json({error:`Withdraw and confirm all ${grants.rows.length} grants before deleting this team. Personal repository access is removed entirely only with explicit Remove access.`},409);
-      const groups=z.array(z.object({external_id:z.string(),provider:z.enum(['github','gitlab','bitbucket']),slug:z.string(),host:z.string()})).parse((await db.query("SELECT pt.external_id,pt.provider,o.slug,o.host FROM provider_teams pt JOIN provider_orgs o ON o.id=pt.org_id WHERE pt.team_id=$1 AND pt.state<>'deleted'",[id])).rows);for(const group of groups){const r=await(await accessAdapter(group.provider,id,group.slug,undefined,group.host)).deleteGroup(group.slug,group.external_id);if(!r.ok)return json({error:'Provider group cleanup is not confirmed. The team was kept.'},409);}await db.query('DELETE FROM teams WHERE id=$1',[id]);return json({deleted:true});
+      const prepared=await prepareTeamDestruction({teamId:id,actorId:actor.id,confirmation:input.preview,personal:input.personal});
+      if(!prepared.ok)return json({error:prepared.reason==='busy'?'An access update is finishing. Refresh the deletion preview shortly.':'Provider access changed or could not be verified. Refresh the deletion preview.'},409);
+      return json({saved:true,deleting:true,skipped:prepared.skipped});
     }
     return json({error:'Unsupported team action'},400);
   }catch{return json({error:'This team action could not be completed. Check its current state before retrying.'},503);}
