@@ -1128,20 +1128,23 @@ function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
 }
 
 /**
- * Whether a held ⌘ (Ctrl) makes the pill a 1-click merge: an approved pull
- * request (an approval standing, no request for changes) that GitHub would
- * merge now with its default method. A merge only past the rules (an
- * admin's bypass) never goes in one click: its box asks for GitHub's checkbox.
+ * Whether a held ⌘ (Ctrl) makes the pill a 1-click merge: GitHub would merge
+ * it now, for this reader, with its default method, and nobody's request for
+ * changes stands. GitHub's answer already holds the repository's rules as
+ * they apply to the reader: where approvals are required it is not mergeable
+ * without one, and for an admin the rules exempt (or a repository that asks
+ * for none) it is mergeable as GitHub's own merge button is. A merge only
+ * past the rules (an admin's bypass) never goes in one click: its box asks
+ * for GitHub's checkbox.
  */
 function instantMergeReady(state: Mounted): boolean {
   const actions = state.mergeActions;
   // A stacked pull request merges the stack below it too: that wants the merge box's sentence, not a 1-click merge.
   if (actions === null || actions.offer !== 'merge' || actions.box.stacked || state.sending) return false;
-  const verdicts = actions.box.verdicts;
-  return verdicts.some((verdict) => verdict.state === 'APPROVED') && !verdicts.some((verdict) => verdict.state === 'CHANGES_REQUESTED');
+  return !actions.box.verdicts.some((verdict) => verdict.state === 'CHANGES_REQUESTED');
 }
 
-/** While the key is held over an approved pull request, the pill reads "Merge" in GitHub's merge colour, outlined. */
+/** While the key is held over a pull request GitHub would merge now, the pill reads "Merge" in GitHub's merge colour, outlined. */
 function showInstantMerge(state: Mounted): void {
   const on = state.root.hasAttribute(ATTR_INSTANT) && instantMergeReady(state);
   const method = state.mergeActions?.box.methods[0] ?? 'SQUASH';
@@ -1166,7 +1169,7 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
   closePanel();
   state.statusOpener = pill;
   const pullPath = state.pullPath;
-  // What was read may be a minute old: an approval dismissed or changes requested since must not merge in one click.
+  // What was read may be a minute old: an approval dismissed, a failing check or changes requested since must not merge in one click.
   for (const each of state.pills) each.setAttribute('aria-busy', 'true');
   const fresh = await readMergeActions(pullPath);
   for (const each of state.pills) each.removeAttribute('aria-busy');
@@ -1174,7 +1177,7 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
   if (fresh !== null) state.mergeActions = fresh;
   showStatus(state);
   if (fresh === null || !instantMergeReady(state)) {
-    // No longer an approved pull request GitHub would merge (or GitHub could not say): the reader chooses from the menu.
+    // No longer a pull request GitHub would merge now (or GitHub could not say): the reader chooses from the menu.
     if (pill.isConnected) openStatusMenu(state, pill);
     return;
   }
@@ -1481,11 +1484,12 @@ function chooseStatus(state: Mounted, option: StatusOption): void {
 }
 
 /**
- * A stack's choice: this pull request alone as the flat menu's item would go; more than one only after the browser's
- * confirmation naming every one.
+ * A stack's choice: this pull request alone as the flat menu's item would go; any other, even one that changes a single
+ * pull request (the others in its scope already there), only after the browser's confirmation naming it, since the
+ * flat path acts on the pull request being read.
  */
 function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoice): void {
-  if (choice.targets.length === 1) {
+  if (choice.targets.length === 1 && choice.targets[0]?.current === true) {
     chooseStatus(state, { status: group.status, action: group.action, note: group.note });
     return;
   }
@@ -1531,7 +1535,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
         });
       return;
     }
-    steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true }, nonce) }];
+    steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true, stackEntries: choice.targets.length }, nonce) }];
   } else if (action === 'queue') steps = [{ number: choice.via.number, request: stackQueueRequest(choice.via.path, nonce) }];
   else {
     const request = STACK_REQUEST[action];
@@ -1557,6 +1561,13 @@ const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
 };
 
 type Request = (pullPath: string, nonce: string) => { readonly url: string; readonly init: RequestInit };
+
+/** How many pull requests merging this stacked one takes: it and every open one below it, when the stack was read. */
+function stackEntriesOf(state: Mounted): { readonly stackEntries?: number } {
+  const members = state.mergeActions?.stack?.members;
+  const at = members?.findIndex((member) => member.current) ?? -1;
+  return members === undefined || at < 0 ? {} : { stackEntries: members.length - at };
+}
 
 /** A place in the merge queue: through the stack's own request for a stacked pull request, as GitHub's merge box sends it. */
 function queueFor(pullPath: string, nonce: string): { readonly url: string; readonly init: RequestInit } {
@@ -2361,7 +2372,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   const send = async (): Promise<void> => {
     if (submit.disabled) return;
     error.hidden = true;
-    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked }, fetchNonce()), () => showMerged(state, pullPath));
+    const pending = sendAction(state, 'merge', mergeRequest(pullPath, { method, commitTitle: title.value, commitMessage: message.value, authorEmail: box.authorEmail, bypass: bypass && consent.checked, stacked: box.stacked, ...stackEntriesOf(state) }, fetchNonce()), () => showMerged(state, pullPath));
     submit.textContent = 'Merging…';
     refresh();
     const failed = await pending;

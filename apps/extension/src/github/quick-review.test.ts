@@ -706,6 +706,86 @@ describe('the tab bar button', () => {
     where.pathname = '/acme/widgets/pull/7';
   });
 
+  it('drafts the one other pull request a stack choice changes, not the draft being read', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: string[] = [];
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push(url);
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          // #7, the one being read, and #9 are drafts; #5 below is open.
+          const draft = !url.includes('/pull/5/');
+          const payload = JSON.parse(mergeBox('BLOCKED', true, draft ? { draft: true } : { convert: true }));
+          payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    withLabel('Draft', 'draft');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="draft"]')?.click();
+    const below = document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="below"]');
+    expect(below?.textContent).toContain('This and 1 below (1 of 2)');
+    below?.click();
+    expect(confirm).toHaveBeenCalledWith('Convert 1 of these 2 pull requests to drafts (#5)?');
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/5/page_data/convert_to_draft']);
+  });
+
+  it('squash-merges the entire stack without choosing an author email, which GitHub refuses for several pull requests', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: { url: string; body: unknown }[] = [];
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push({ url, body: JSON.parse(String(init.body)) });
+          return new Response('{"status":"merged"}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          const payload = JSON.parse(mergeBox('MERGEABLE', true));
+          payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
+          payload.mergeRequirements.possibleCommitAuthorEmails = ['me@example.com', 'me@users.noreply.github.com'];
+          payload.mergeRequirements.defaultCommitAuthorEmail = 'me@example.com';
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="merge"]')?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]')?.click();
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts.map((post) => post.url)).toEqual(['/acme/widgets/pull/9/page_data/enqueue_stack']);
+    expect(posts[0]?.body).toMatchObject({ mergeAction: 'DIRECT_MERGE', mergeMethod: 'SQUASH' });
+    expect(posts[0]?.body).not.toHaveProperty('authorEmail');
+  });
+
   it('confirms a merge only with the chosen method’s commit, whatever order GitHub answers in', async () => {
     const held: { [method: string]: (() => void) | undefined } = {};
     const slow = new Set<string>();
@@ -1184,7 +1264,7 @@ describe('the tab bar button', () => {
     expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__error')?.textContent).toBe('GitHub could not convert the pull request to a draft: Not allowed');
   });
 
-  it('is a 1-click merge while ⌘ (Ctrl) is held on an approved pull request, and turns Merged when it goes through', async () => {
+  it('is a 1-click merge while ⌘ (Ctrl) is held on a pull request GitHub would merge now, and turns Merged when it goes through', async () => {
     window.localStorage.clear();
     resetStatusHints();
     const posts: { url: string; body: string }[] = [];
@@ -1241,7 +1321,8 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     let approved = true;
-    const sent = stubBox(() => mergeBox('MERGEABLE', true, { reviews: approved ? [{ author: { login: 'ann' }, state: 'APPROVED' }] : [] }));
+    // A repository that requires the approval: dismissed, GitHub would no longer merge it.
+    const sent = stubBox(() => mergeBox(approved ? 'MERGEABLE' : 'BLOCKED', true, { reviews: approved ? [{ author: { login: 'ann' }, state: 'APPROVED' }] : [] }));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -1253,14 +1334,27 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 4; i += 1) await settle();
     expect(sent).toEqual([]);
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
-    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
+    expect(menuRows().map((row) => row[0])).toEqual(['closed']);
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
   });
 
-  it('has no 1-click merge without an approval: ⌘-click opens the menu', async () => {
+  it('is a 1-click merge without an approval when GitHub would merge it now (an admin the rules exempt, a repository that requires none)', async () => {
     window.localStorage.clear();
     resetStatusHints();
     const sent = stubBox(() => mergeBox('MERGEABLE', true));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+    expect(sent).toEqual([]);
+  });
+
+  it('has no 1-click merge where approvals are required and none stands: ⌘-click opens the menu', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent = stubBox(() => mergeBox('BLOCKED', true));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -1269,7 +1363,47 @@ describe('the tab bar button', () => {
     pill()?.dispatchEvent(new MouseEvent('click', instant));
     await settle();
     expect(sent).toEqual([]);
-    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+  });
+
+  it('has no 1-click merge over a request for changes, even where GitHub would merge it', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent = stubBox(() => mergeBox('MERGEABLE', true, { reviews: [{ author: { login: 'ann' }, state: 'CHANGES_REQUESTED' }] }));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    pill()?.dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    expect(sent).toEqual([]);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+  });
+
+  it('has no 1-click merge for an admin who could merge only past the rules', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') sent.push(url);
+        if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        const payload = JSON.parse(mergeBox(url.includes('bypass_requirements=true') ? 'MERGEABLE' : 'BLOCKED', true));
+        payload.pullRequest.viewerCanAdminBypassMergeRequirements = true;
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    pill()?.dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    expect(sent).toEqual([]);
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
   });
 
