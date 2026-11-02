@@ -5,6 +5,7 @@ import type { Provider } from '@geld/domain';
 import type { TokenSource } from '@geld/github';
 import { getAuth } from './auth';
 import { demoEnabled } from './env';
+import { ensurePersonalWorkspace } from './workspaces';
 
 const userSchema = z.object({ id: z.string(), name: z.string(), email: z.string(), image: z.string().nullable().optional() });
 export type Actor = z.infer<typeof userSchema>;
@@ -14,7 +15,9 @@ export async function currentActor(): Promise<Actor | null> {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     const parsed = userSchema.safeParse(session?.user);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+    await ensurePersonalWorkspace(parsed.data);
+    return parsed.data;
   } catch {
     return null;
   }
