@@ -195,3 +195,23 @@ export function readGitLabActions(doc: Document, ceiling: GitLabReviewCapabiliti
     };
   });
 }
+
+/** Bot commands belong in the existing main writer, never a review summary or thread. */
+export function readGitLabMainCommentAction(doc: Document, signedIn: boolean, visit: GitLabActionVisit): GitLabActionDescriptor {
+  const candidate = signedIn && visit.user?.startsWith('user:') === true && sameVisit(doc, visit) ? mainComposer(doc) : null;
+  const field = candidate?.closest('[contenteditable]:not([contenteditable="false"])') === null ? candidate : null;
+  const current = (): boolean => signedIn && sameVisit(doc, visit) && field !== null && mainComposer(doc) === field && field.closest('[contenteditable]:not([contenteditable="false"])') === null;
+  return {
+    kind: 'comment', available: field !== null,
+    ...(field === null ? { reason: !signedIn ? 'Sign in to GitLab to open the native comment writer.' : 'An existing native top-level comment writer is unavailable.' } : {}),
+    async activate() {
+      if (!current() || field === null) return false;
+      const value = field.value;
+      const selection = [field.selectionStart, field.selectionEnd, field.selectionDirection] as const;
+      field.focus();
+      if (!current() || field.value !== value || doc.activeElement !== field) return false;
+      field.setSelectionRange(...selection);
+      return current() && field.value === value && doc.activeElement === field;
+    },
+  };
+}

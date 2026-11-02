@@ -1429,6 +1429,15 @@ Provider-specific surfaces translate settings and sources into shared review and
   User-selected PAT, group-token and service accounts have per-install identities, so GitHub logins, display names, comment markers and configuration files never establish account trust on another provider.
   The Identify reviewer disclosure shows the actual account ID, original comment and repository scope before its separate Trust action saves shared settings.
   Provider support, trusted account identity, verified verdict syntax and native write capabilities remain separate requirements for bot controls.
+  CodeRabbit's GitLab command preview offers only the documented `@coderabbitai review` and `@coderabbitai full review`, also observed in native note3436654383, without deriving an alias from its opaque project-bot username.
+  Incremental review considers changes since the last review, while full review asks CodeRabbit to review all changes again, as its command documentation specifies.
+  Copy command requires a current explicit repository-scoped account binding, exact original native note author and full known head, while sign-in is required only for the separate Open native comment action.
+  A copied command is a draft aid, never an observed request, running bot, new review round, pending timestamp or server acknowledgement.
+  Open native comment focuses only the captured unique editable main `textarea#note-body`, preserving its draft and selection instead of substituting a review-summary or thread writer.
+  Account, route, selected comparison, head, binding, original-note remount and lifecycle changes invalidate retained command controls before clipboard or focus work.
+  GitLab's thread `note_form.append` and `quoteReply` handlers do not establish a top-level arbitrary insertion contract, so command preparation never appends or submits text.
+  Other services and Bitbucket command preparation stay unavailable until their provider-specific command, native identity and writer evidence are separately verified.
+  Public anonymous fixtures can verify preview, copy and unavailable composer behavior but do not establish authenticated writer persistence or an actual bot run.
 - **Provider diff caching and throttling have their own boundaries.**
   Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.
   Unknown-head cache entries are provisional until refreshed, and an exact revision's cached result must not leak into a different comparison or whitespace mode.

@@ -65,6 +65,8 @@ html[data-geld-provider="gitlab"] {
 
 html[data-geld-provider="gitlab"] .geld-provider-review [data-geld-author-profile] { color: var(--gl-text-color-default); }
 
+html[data-geld-provider="gitlab"] .geld-provider-review [data-geld-bot-command] { font-family: var(--font-family-monospace); }
+
 /* Rapid diff code-theme variables are inherited inside the file, not on html. */
 html[data-geld-provider="gitlab"] .geld-provider-line-fold {
   color: var(--code-diff-hunk-header-color);
