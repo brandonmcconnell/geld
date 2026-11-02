@@ -1,4 +1,5 @@
-import {auditedRoute} from '@/lib/request-audit';
+import { auditedRoute } from '@/lib/request-audit';
+import { readJson } from '@/lib/http';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { currentActor } from '@/lib/session';
@@ -6,14 +7,99 @@ import { database } from '@/lib/db';
 import { teamMembership } from '@/lib/workspaces';
 import { readableRepositoryDefaults } from '@/lib/review-defaults';
 import { guidePolicySchema } from '@/lib/guide-policy';
-import { repoRowSchema,accessAdapter,refFor } from '@/lib/team-access';
+import { repoRowSchema, accessAdapter, refFor } from '@/lib/team-access';
 import { transaction } from '@/lib/transactions';
 import { appendAudit } from '@/lib/audit';
-import { json,sameOrigin } from '@/lib/http';
-export async function GET(_request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response>{await connection();const actor=await currentActor();const{id}=await params;if(!actor||!await teamMembership(actor.id,id))return json({error:'Team membership is required'},403);const db=database();if(!db)return json({error:'Team storage is unavailable'},503);return json({team:(await db.query('SELECT guide_policy FROM teams WHERE id=$1',[id])).rows[0],repositories:await readableRepositoryDefaults(db,id,repo=>accessAdapter(repo.provider,id,repo.owner,undefined,repo.host)),members:(await db.query('SELECT u.id,u.name FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1',[id])).rows});}
-async function handlePOST(request:Request,{params}:{readonly params:Promise<{id:string}>}):Promise<Response>{await connection();if(!sameOrigin(request))return json({error:'Invalid request origin'},403);const actor=await currentActor();const{id}=await params;if(!actor||!await teamMembership(actor.id,id))return json({error:'Team membership is required'},403);const input=z.object({repoId:z.string().optional(),pullNumber:z.number().int().positive().optional(),policy:guidePolicySchema,defaultReviewers:z.array(z.string()).max(20).optional()}).safeParse(await request.json().catch(()=>null));if(!input.success)return json({error:'Invalid review defaults'},400);const db=database();if(!db)return json({error:'Team storage is unavailable'},503);
-  if(!input.data.repoId){if(!await teamMembership(actor.id,id,true))return json({error:'Only team admins set team defaults'},403);}else{const repo=repoRowSchema.safeParse((await db.query('SELECT * FROM team_repos WHERE team_id=$1 AND id=$2',[id,input.data.repoId])).rows[0]);if(!repo.success)return json({error:'Repository not found'},404);const current=await(await accessAdapter(repo.data.provider,id,repo.data.owner,undefined,repo.data.host)).repository(refFor(repo.data));if(!current.ok||!['write','maintain','admin'].includes(current.value.permission))return json({error:'Provider write permission is required'},403);const parent=z.object({guide_policy:guidePolicySchema}).parse((await db.query('SELECT guide_policy FROM teams WHERE id=$1',[id])).rows[0]);const repoPolicy=guidePolicySchema.safeParse(repo.data.settings.guidePolicy);if(parent.guide_policy.locked||(input.data.pullNumber&&repoPolicy.success&&repoPolicy.data.locked))return json({error:'A parent policy is locked'},409);}
-  const reviewers=input.data.defaultReviewers??[];for(const reviewer of reviewers)if(!await teamMembership(reviewer,id))return json({error:'Default reviewers must belong to this team'},400);
-  await transaction(db,async sql=>{if(!input.data.repoId)await sql.query('UPDATE teams SET guide_policy=$2 WHERE id=$1',[id,JSON.stringify(input.data.policy)]);else if(input.data.pullNumber)await sql.query('INSERT INTO guide_overrides(repo_id,pull_number,policy) VALUES($1,$2,$3) ON CONFLICT(repo_id,pull_number) DO UPDATE SET policy=EXCLUDED.policy',[input.data.repoId,input.data.pullNumber,JSON.stringify(input.data.policy)]);else await sql.query('UPDATE team_repos SET settings=settings||$2::jsonb WHERE id=$1',[input.data.repoId,JSON.stringify({guidePolicy:input.data.policy,...(input.data.defaultReviewers?{defaultReviewers:reviewers}:{})})]);await appendAudit(sql,{teamId:id,actorId:actor.id,action:'review.defaults',resourceType:input.data.repoId?'repository':'team',resourceId:input.data.repoId??id,outcome:'success',after:{trigger:input.data.policy.trigger,drafts:input.data.policy.drafts,locked:input.data.policy.locked}});});return json({saved:true});}
+import { json, sameOrigin } from '@/lib/http';
+async function readGET(_request: Request, { params }: { readonly params: Promise<{ id: string }> }): Promise<Response> {
+  await connection();
+  const actor = await currentActor();
+  const { id } = await params;
+  if (!actor || !(await teamMembership(actor.id, id))) return json({ error: 'Team membership is required' }, 403);
+  const db = database();
+  if (!db) return json({ error: 'Team storage is unavailable' }, 503);
+  return json({
+    team: (await db.query('SELECT guide_policy FROM teams WHERE id=$1', [id])).rows[0],
+    repositories: await readableRepositoryDefaults(db, id, (repo) =>
+      accessAdapter(repo.provider, id, repo.owner, undefined, repo.host),
+    ),
+    members: (
+      await db.query('SELECT u.id,u.name FROM users u JOIN team_members m ON m.user_id=u.id WHERE m.team_id=$1', [id])
+    ).rows,
+  });
+}
+async function handlePOST(
+  request: Request,
+  { params }: { readonly params: Promise<{ id: string }> },
+): Promise<Response> {
+  await connection();
+  if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
+  const actor = await currentActor();
+  const { id } = await params;
+  if (!actor || !(await teamMembership(actor.id, id))) return json({ error: 'Team membership is required' }, 403);
+  const input = z
+    .object({
+      repoId: z.string().optional(),
+      pullNumber: z.number().int().positive().optional(),
+      policy: guidePolicySchema,
+      defaultReviewers: z.array(z.string()).max(20).optional(),
+    })
+    .safeParse(await readJson(request).catch(() => null));
+  if (!input.success) return json({ error: 'Invalid review defaults' }, 400);
+  const db = database();
+  if (!db) return json({ error: 'Team storage is unavailable' }, 503);
+  if (!input.data.repoId) {
+    if (!(await teamMembership(actor.id, id, true))) return json({ error: 'Only team admins set team defaults' }, 403);
+  } else {
+    const repo = repoRowSchema.safeParse(
+      (await db.query('SELECT * FROM team_repos WHERE team_id=$1 AND id=$2', [id, input.data.repoId])).rows[0],
+    );
+    if (!repo.success) return json({ error: 'Repository not found' }, 404);
+    const current = await (
+      await accessAdapter(repo.data.provider, id, repo.data.owner, undefined, repo.data.host)
+    ).repository(refFor(repo.data));
+    if (!current.ok || !['write', 'maintain', 'admin'].includes(current.value.permission))
+      return json({ error: 'Provider write permission is required' }, 403);
+    const parent = z
+      .object({ guide_policy: guidePolicySchema })
+      .parse((await db.query('SELECT guide_policy FROM teams WHERE id=$1', [id])).rows[0]);
+    const repoPolicy = guidePolicySchema.safeParse(repo.data.settings.guidePolicy);
+    if (parent.guide_policy.locked || (input.data.pullNumber && repoPolicy.success && repoPolicy.data.locked))
+      return json({ error: 'A parent policy is locked' }, 409);
+  }
+  const reviewers = input.data.defaultReviewers ?? [];
+  for (const reviewer of reviewers)
+    if (!(await teamMembership(reviewer, id)))
+      return json({ error: 'Default reviewers must belong to this team' }, 400);
+  await transaction(db, async (sql) => {
+    if (!input.data.repoId)
+      await sql.query('UPDATE teams SET guide_policy=$2 WHERE id=$1', [id, JSON.stringify(input.data.policy)]);
+    else if (input.data.pullNumber)
+      await sql.query(
+        'INSERT INTO guide_overrides(repo_id,pull_number,policy) VALUES($1,$2,$3) ON CONFLICT(repo_id,pull_number) DO UPDATE SET policy=EXCLUDED.policy',
+        [input.data.repoId, input.data.pullNumber, JSON.stringify(input.data.policy)],
+      );
+    else
+      await sql.query('UPDATE team_repos SET settings=settings||$2::jsonb WHERE id=$1', [
+        input.data.repoId,
+        JSON.stringify({
+          guidePolicy: input.data.policy,
+          ...(input.data.defaultReviewers ? { defaultReviewers: reviewers } : {}),
+        }),
+      ]);
+    await appendAudit(sql, {
+      teamId: id,
+      actorId: actor.id,
+      action: 'review.defaults',
+      resourceType: input.data.repoId ? 'repository' : 'team',
+      resourceId: input.data.repoId ?? id,
+      outcome: 'success',
+      after: { trigger: input.data.policy.trigger, drafts: input.data.policy.drafts, locked: input.data.policy.locked },
+    });
+  });
+  return json({ saved: true });
+}
 
-export const POST=auditedRoute(handlePOST,'teams.team.review-defaults.post');
+export const POST = auditedRoute(handlePOST, 'teams.team.review-defaults.post');
+
+export const GET = auditedRoute(readGET, 'teams.team.review-defaults.get');

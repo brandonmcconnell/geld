@@ -18,7 +18,10 @@ services:
       dockerfile: deploy/Dockerfile
       target: dashboard
     image: geld-dashboard:local
-    ports: ["127.0.0.1:3001:3001"]
+    ports: ['127.0.0.1:3001:3001']
+    env_file:
+      - path: ${GELD_ENV_FILE:-.env}
+        required: false
     environment:
       DATABASE_URL: postgresql://geld:${POSTGRES_PASSWORD}@database:5432/geld
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set the public dashboard HTTPS origin}
@@ -26,7 +29,7 @@ services:
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set an encryption key}
       CRON_SECRET: ${CRON_SECRET:?Set a private worker secret}
       RELAY_BROKER_URL: http://relay-broker:8080
-      RELAY_ALLOW_HTTP: "true"
+      RELAY_ALLOW_HTTP: 'true'
       RELAY_PUBLIC_BROKER_URL: ${RELAY_PUBLIC_BROKER_URL:-}
     depends_on:
       database:

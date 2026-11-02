@@ -1,13 +1,92 @@
-import {connection} from 'next/server';
-import {z} from 'zod';
-import {pullRefSchema} from '@geld/domain';
-import {currentActor} from '@/lib/session';
-import {database} from '@/lib/db';
-import {registeredEnterpriseHost} from '@/lib/enterprise';
-import {accessAdapter} from '@/lib/team-access';
-import {registrySchema,installationTokenSource} from '@/lib/repository-apps';
-import {reviewSettings} from '@/lib/review-settings';
-import {appendAudit} from '@/lib/audit';
-import {transaction} from '@/lib/transactions';
-import {json} from '@/lib/http';
-export async function GET(request:Request):Promise<Response>{await connection();const actor=await currentActor();if(!actor)return json({error:'Sign in first'},401);const query=Object.fromEntries(new URL(request.url).searchParams);const input=pullRefSchema.safeParse({...query,number:Number(query.number)});if(!input.success||input.data.provider!=='github'||input.data.host==='github.com'||!await registeredEnterpriseHost(input.data.host,actor.id))return json({error:'Registered Enterprise access is required'},403);const ref=input.data;const db=database();if(!db)return json({error:'Enterprise storage is unavailable'},503);const repository=await(await accessAdapter('github','',ref.owner,undefined,ref.host)).repository(ref);if(!repository.ok||repository.value.permission==='none'||!/^\d+$/.test(repository.value.id))return json({error:'Your own provider account must have repository access'},403);const install=z.object({external_id:z.string(),registry_id:z.string(),team_id:z.string()}).safeParse((await db.query("SELECT i.external_id,i.registry_id,t.team_id FROM app_installations i JOIN team_app_installations t ON t.installation_id=i.id JOIN team_members m ON m.team_id=t.team_id WHERE m.user_id=$1 AND i.host=$2 AND i.account_slug=$3 AND i.state='verified'",[actor.id,ref.host,ref.owner])).rows[0]);if(!install.success)return json({error:'Verify the instance repository App first'},409);const app=registrySchema.parse((await db.query('SELECT * FROM repository_apps WHERE id=$1',[install.data.registry_id])).rows[0]);const source=await installationTokenSource(app,install.data.external_id,[Number(repository.value.id)],{contents:'read',metadata:'read',pull_requests:'read',issues:'read'});const access=await source.get();if(access.status!=='ok')return json({error:'Scoped browser access could not be issued'},503);const settings=await reviewSettings(ref);const permission=repository.value.permission;const capabilities=permission==='admin'?['read','comment','review','merge','settings','manage_access','delete']:permission==='maintain'?['read','comment','review','merge','settings']:permission==='write'?['read','comment','review','merge']:['read','comment','review'];await transaction(db,sql=>appendAudit(sql,{teamId:install.data.team_id,actorId:actor.id,action:'enterprise.reader_token',resourceType:'repository',resourceId:repository.value.id,outcome:'success',after:{scope:'read',repositories:1}}));return json({token:access.token,settings:settings.settings,warning:settings.warning,aiAllowed:settings.aiAllowed,capabilities});}
+import { auditedRoute } from '@/lib/request-audit';
+import { connection } from 'next/server';
+import { z } from 'zod';
+import { pullRefSchema } from '@geld/domain';
+import { currentActor } from '@/lib/session';
+import { database } from '@/lib/db';
+import { registeredEnterpriseHost } from '@/lib/enterprise';
+import { accessAdapter } from '@/lib/team-access';
+import { registrySchema, installationTokenSource } from '@/lib/repository-apps';
+import { reviewSettings } from '@/lib/review-settings';
+import { appendAudit } from '@/lib/audit';
+import { transaction } from '@/lib/transactions';
+import { json } from '@/lib/http';
+async function readGET(request: Request): Promise<Response> {
+  await connection();
+  const actor = await currentActor();
+  if (!actor) return json({ error: 'Sign in first' }, 401);
+  const query = Object.fromEntries(new URL(request.url).searchParams);
+  const input = pullRefSchema.safeParse({
+    ...query,
+    number: Number(query.number),
+  });
+  if (
+    !input.success ||
+    input.data.provider !== 'github' ||
+    input.data.host === 'github.com' ||
+    !(await registeredEnterpriseHost(input.data.host, actor.id))
+  )
+    return json({ error: 'Registered Enterprise access is required' }, 403);
+  const ref = input.data;
+  const db = database();
+  if (!db) return json({ error: 'Enterprise storage is unavailable' }, 503);
+  const repository = await (await accessAdapter('github', '', ref.owner, undefined, ref.host)).repository(ref);
+  if (!repository.ok || repository.value.permission === 'none' || !/^\d+$/.test(repository.value.id))
+    return json({ error: 'Your own provider account must have repository access' }, 403);
+  const install = z
+    .object({
+      external_id: z.string(),
+      registry_id: z.string(),
+      team_id: z.string(),
+    })
+    .safeParse(
+      (
+        await db.query(
+          "SELECT i.external_id,i.registry_id,t.team_id FROM app_installations i JOIN team_app_installations t ON t.installation_id=i.id JOIN team_members m ON m.team_id=t.team_id WHERE m.user_id=$1 AND i.host=$2 AND i.account_slug=$3 AND i.state='verified'",
+          [actor.id, ref.host, ref.owner],
+        )
+      ).rows[0],
+    );
+  if (!install.success) return json({ error: 'Verify the instance repository App first' }, 409);
+  const app = registrySchema.parse(
+    (await db.query('SELECT * FROM repository_apps WHERE id=$1', [install.data.registry_id])).rows[0],
+  );
+  const source = await installationTokenSource(app, install.data.external_id, [Number(repository.value.id)], {
+    contents: 'read',
+    metadata: 'read',
+    pull_requests: 'read',
+    issues: 'read',
+  });
+  const access = await source.get();
+  if (access.status !== 'ok') return json({ error: 'Scoped browser access could not be issued' }, 503);
+  const settings = await reviewSettings(ref);
+  const permission = repository.value.permission;
+  const capabilities =
+    permission === 'admin'
+      ? ['read', 'comment', 'review', 'merge', 'settings', 'manage_access', 'delete']
+      : permission === 'maintain'
+        ? ['read', 'comment', 'review', 'merge', 'settings']
+        : permission === 'write'
+          ? ['read', 'comment', 'review', 'merge']
+          : ['read', 'comment', 'review'];
+  await transaction(db, (sql) =>
+    appendAudit(sql, {
+      teamId: install.data.team_id,
+      actorId: actor.id,
+      action: 'enterprise.reader_token',
+      resourceType: 'repository',
+      resourceId: repository.value.id,
+      outcome: 'success',
+      after: { scope: 'read', repositories: 1 },
+    }),
+  );
+  return json({
+    token: access.token,
+    settings: settings.settings,
+    warning: settings.warning,
+    aiAllowed: settings.aiAllowed,
+    capabilities,
+  });
+}
+
+export const GET = auditedRoute(readGET, 'enterprise.reader.get');

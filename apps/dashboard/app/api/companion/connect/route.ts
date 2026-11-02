@@ -1,3 +1,4 @@
+import { readJson } from '@/lib/http';
 import { auditedRoute } from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
@@ -12,7 +13,7 @@ async function handlePOST(request: Request): Promise<Response> {
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
   if (!actor) return json({ error: 'Sign in to pair your companion' }, 401);
-  const input = z.object({ id: z.string().uuid() }).safeParse(await request.json().catch(() => null));
+  const input = z.object({ id: z.string().uuid() }).safeParse(await readJson(request));
   if (!input.success) return json({ error: 'Choose a Claude connection' }, 400);
   const raw = configured(process.env.RELAY_PUBLIC_BROKER_URL);
   const broker = z.url().safeParse(raw);

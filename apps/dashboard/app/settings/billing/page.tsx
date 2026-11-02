@@ -1,2 +1,4 @@
 import { Billing } from '@/components/billing';
-export default function BillingPage() { return <Billing/>; }
+export default function BillingPage() {
+  return <Billing />;
+}

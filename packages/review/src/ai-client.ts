@@ -43,11 +43,23 @@ export interface ModelInfo {
 
 function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
   if (typeof entry.id !== 'string' || entry.id === '') return null;
-  const info: { -readonly [K in keyof ModelInfo]: ModelInfo[K] } = { id: entry.id };
+  const info: { -readonly [K in keyof ModelInfo]: ModelInfo[K] } = {
+    id: entry.id,
+  };
   if (typeof entry.name === 'string' && entry.name !== '') info.name = entry.name;
-  const provider = typeof entry.owned_by === 'string' ? entry.owned_by : entry.id.includes('/') ? entry.id.slice(0, entry.id.indexOf('/')) : undefined;
+  const provider =
+    typeof entry.owned_by === 'string'
+      ? entry.owned_by
+      : entry.id.includes('/')
+        ? entry.id.slice(0, entry.id.indexOf('/'))
+        : undefined;
   if (provider !== undefined && provider !== '') info.provider = provider;
-  const context = typeof entry.context_window === 'number' ? entry.context_window : typeof entry.context_length === 'number' ? entry.context_length : undefined;
+  const context =
+    typeof entry.context_window === 'number'
+      ? entry.context_window
+      : typeof entry.context_length === 'number'
+        ? entry.context_length
+        : undefined;
   if (context !== undefined) info.context = context;
   if (typeof entry.type === 'string') info.type = entry.type;
   if (Array.isArray(entry.tags)) info.tags = entry.tags.filter((tag): tag is string => typeof tag === 'string');
@@ -76,14 +88,27 @@ function contentOf(value: unknown): string | null {
   return joined === '' ? null : joined;
 }
 
-export async function listModels(fetchImpl: FetchLike, baseUrl: string, apiKey: string): Promise<{ readonly ok: true; readonly models: readonly ModelInfo[] } | { readonly ok: false; readonly reason: string }> {
+export async function listModels(
+  fetchImpl: FetchLike,
+  baseUrl: string,
+  apiKey: string,
+): Promise<
+  { readonly ok: true; readonly models: readonly ModelInfo[] } | { readonly ok: false; readonly reason: string }
+> {
   if (apiKey === '') return { ok: false, reason: 'No API key.' };
   try {
     const response = await fetchImpl(joinUrl(baseUrl, '/v1/models'), {
-      headers: { authorization: `Bearer ${apiKey}`, accept: 'application/json' },
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        accept: 'application/json',
+      },
       signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) return { ok: false, reason: `Models request failed (${response.status}).` };
+    if (!response.ok)
+      return {
+        ok: false,
+        reason: `Models request failed (${response.status}).`,
+      };
     const body: unknown = await response.json();
     const data = isRecord(body) && Array.isArray(body.data) ? body.data : [];
     const models: ModelInfo[] = [];
@@ -92,8 +117,8 @@ export async function listModels(fetchImpl: FetchLike, baseUrl: string, apiKey: 
       if (info !== null) models.push(info);
     }
     return { ok: true, models };
-  } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : 'Models request failed.' };
+  } catch {
+    return { ok: false, reason: 'The provider model catalog is unavailable.' };
   }
 }
 
@@ -115,7 +140,14 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
     };
   }
   const controller = options.timeoutMs === undefined ? null : new AbortController();
-  const timer = controller === null || options.timeoutMs === undefined ? null : setTimeout(() => controller.abort(), options.timeoutMs);
+  const timer =
+    controller === null || options.timeoutMs === undefined
+      ? null
+      : setTimeout(() => controller.abort(), options.timeoutMs);
+  const signal =
+    options.signal && controller
+      ? AbortSignal.any([options.signal, controller.signal])
+      : (options.signal ?? controller?.signal ?? null);
   try {
     const response = await options.fetch(joinUrl(options.baseUrl, '/v1/chat/completions'), {
       method: 'POST',
@@ -125,19 +157,23 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
         accept: 'application/json',
       },
       body: JSON.stringify(body),
-      ...((options.signal || controller) ? { signal: AbortSignal.any([...(options.signal ? [options.signal] : []), ...(controller ? [controller.signal] : [])]) } : {}),
+      ...(signal ? { signal } : {}),
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload: unknown = await response.json();
-    if (!isRecord(payload) || !Array.isArray(payload.choices)) return { ok: false, reason: 'Completion response was empty.' };
+    if (!isRecord(payload) || !Array.isArray(payload.choices))
+      return { ok: false, reason: 'Completion response was empty.' };
     const first = payload.choices[0];
     const message = isRecord(first) && isRecord(first.message) ? first.message : null;
     const text = message === null ? null : contentOf(message.content);
     if (text === null) return { ok: false, reason: 'Completion response had no text.' };
     const model = typeof payload.model === 'string' ? payload.model : options.model;
     return { ok: true, text, model };
-  } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : 'Completion failed.' };
+  } catch {
+    return {
+      ok: false,
+      reason: 'The AI provider could not complete the request.',
+    };
   } finally {
     if (timer !== null) clearTimeout(timer);
   }

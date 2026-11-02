@@ -3,8 +3,86 @@ import { z } from 'zod';
 import { database } from '@/lib/db';
 import { configured } from '@/lib/env';
 import { decryptCredential } from '@/lib/crypto';
-import { verifyWebhook,consumePullEvent } from '@/lib/webhooks';
-import { json } from '@/lib/http';
-const payloadSchema=z.object({action:z.string().optional(),installation:z.object({id:z.number()}).optional(),repository:z.object({id:z.number()}),number:z.number().optional(),pull_request:z.object({number:z.number(),state:z.enum(['open','closed']),merged:z.boolean().optional(),draft:z.boolean().optional(),head:z.object({sha:z.string()})}).optional(),requested_reviewer:z.object({login:z.string()}).optional(),review:z.object({user:z.object({login:z.string()})}).optional()});
-export async function POST(request:Request):Promise<Response>{await connection();const db=database();if(!db)return json({error:'Webhook storage is not configured'},503);if(Number(request.headers.get('content-length'))>2_000_000)return json({error:'Webhook is too large'},413);const text=await request.text();if(text.length>2_000_000)return json({error:'Webhook is too large'},413);const host=new URL(request.url).searchParams.get('host')??'github.com';const appId=request.headers.get('x-github-hook-installation-target-id');const app=z.object({encrypted_webhook_secret:z.string()}).safeParse((await db.query('SELECT encrypted_webhook_secret FROM repository_apps WHERE app_id=$1 AND host=$2',[appId??'',host])).rows[0]);const secret=app.success?await decryptCredential(app.data.encrypted_webhook_secret):configured(process.env.GITHUB_REPOSITORY_WEBHOOK_SECRET);if(!secret||!verifyWebhook(text,request.headers.get('x-hub-signature-256'),secret))return json({error:'Invalid webhook signature'},401);const delivery=request.headers.get('x-github-delivery');if(!delivery||delivery.length>200)return json({error:'Missing delivery ID'},400);
-  try{const p=payloadSchema.safeParse(JSON.parse(text));if(!p.success)return json({received:true,ignored:true});const d=p.data;const pr=d.pull_request;if(!pr)return json({received:true,ignored:true});const event=d.action==='opened'||d.action==='ready_for_review'?'created':d.action==='synchronize'?'push':d.action==='review_requested'?'review_requested':d.action==='review_request_removed'?'review_request_removed':d.action==='closed'?'closed':request.headers.get('x-github-event')==='pull_request_review'?'reviewed':'other';const reviewer=d.requested_reviewer?.login??d.review?.user.login;const result=await consumePullEvent(delivery,{provider:'github',host,repositoryId:String(d.repository.id),number:pr.number,headSha:pr.head.sha,state:pr.merged?'merged':pr.state,draft:pr.draft??false,event,...(reviewer?{reviewer}:{}),...(d.installation?{installationId:String(d.installation.id)}:{})});return result?json({received:true}):json({error:'Webhook will be retried'},503);}catch{return json({error:'Webhook processing will be retried'},503);}}
+import { verifyWebhook, consumePullEvent } from '@/lib/webhooks';
+import { json, readText } from '@/lib/http';
+const payloadSchema = z.object({
+  action: z.string().optional(),
+  installation: z.object({ id: z.number() }).optional(),
+  repository: z.object({ id: z.number() }),
+  number: z.number().optional(),
+  pull_request: z
+    .object({
+      number: z.number(),
+      state: z.enum(['open', 'closed']),
+      merged: z.boolean().optional(),
+      draft: z.boolean().optional(),
+      head: z.object({ sha: z.string() }),
+    })
+    .optional(),
+  requested_reviewer: z.object({ login: z.string() }).optional(),
+  review: z.object({ user: z.object({ login: z.string() }) }).optional(),
+});
+export async function POST(request: Request): Promise<Response> {
+  await connection();
+  const db = database();
+  if (!db) return json({ error: 'Webhook storage is not configured' }, 503);
+  if (Number(request.headers.get('content-length')) > 2_000_000) return json({ error: 'Webhook is too large' }, 413);
+  const text = await readText(request, 2_000_000);
+  if (text === null) return json({ error: 'The webhook body is too large or incomplete' }, 413);
+  const host = new URL(request.url).searchParams.get('host') ?? 'github.com';
+  const appId = request.headers.get('x-github-hook-installation-target-id');
+  const app = z
+    .object({ encrypted_webhook_secret: z.string() })
+    .safeParse(
+      (
+        await db.query('SELECT encrypted_webhook_secret FROM repository_apps WHERE app_id=$1 AND host=$2', [
+          appId ?? '',
+          host,
+        ])
+      ).rows[0],
+    );
+  const secret = app.success
+    ? await decryptCredential(app.data.encrypted_webhook_secret)
+    : configured(process.env.GITHUB_REPOSITORY_WEBHOOK_SECRET);
+  if (!secret || !verifyWebhook(text, request.headers.get('x-hub-signature-256'), secret))
+    return json({ error: 'Invalid webhook signature' }, 401);
+  const delivery = request.headers.get('x-github-delivery');
+  if (!delivery || delivery.length > 200) return json({ error: 'Missing delivery ID' }, 400);
+  try {
+    const p = payloadSchema.safeParse(JSON.parse(text));
+    if (!p.success) return json({ received: true, ignored: true });
+    const d = p.data;
+    const pr = d.pull_request;
+    if (!pr) return json({ received: true, ignored: true });
+    const event =
+      d.action === 'opened' || d.action === 'ready_for_review'
+        ? 'created'
+        : d.action === 'synchronize'
+          ? 'push'
+          : d.action === 'review_requested'
+            ? 'review_requested'
+            : d.action === 'review_request_removed'
+              ? 'review_request_removed'
+              : d.action === 'closed'
+                ? 'closed'
+                : request.headers.get('x-github-event') === 'pull_request_review'
+                  ? 'reviewed'
+                  : 'other';
+    const reviewer = d.requested_reviewer?.login ?? d.review?.user.login;
+    const result = await consumePullEvent(delivery, {
+      provider: 'github',
+      host,
+      repositoryId: String(d.repository.id),
+      number: pr.number,
+      headSha: pr.head.sha,
+      state: pr.merged ? 'merged' : pr.state,
+      draft: pr.draft ?? false,
+      event,
+      ...(reviewer ? { reviewer } : {}),
+      ...(d.installation ? { installationId: String(d.installation.id) } : {}),
+    });
+    return result ? json({ received: true }) : json({ error: 'Webhook will be retried' }, 503);
+  } catch {
+    return json({ error: 'Webhook processing will be retried' }, 503);
+  }
+}

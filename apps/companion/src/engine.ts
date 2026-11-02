@@ -72,6 +72,7 @@ export function restrictedOptions(executable: string, cwd: string, abortControll
     strictMcpConfig: true,
     persistSession: false,
     maxTurns: 1,
+    maxBudgetUsd: 1,
     abortController,
     stderr: () => undefined,
     systemPrompt:
