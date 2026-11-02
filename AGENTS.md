@@ -1418,7 +1418,7 @@ Declared anchor source is colored in its own declared/default context;
 later aliases or runner overrides at callsites are never resolved or claimed as execution proof.
 `after-script` is a separate program.
 Pipe/variables mappings, quoted/folded YAML, aliases, unrelated YAML/README files and missing context stay native;
-GitLab runner context remains unsupported in this slice.
+GitLab classic runner context remains unsupported by this Bitbucket slice.
 The retained default public PR27 projection has an incomplete first step and later gap-tainted declarations, so all of it deliberately stays native.
 Its new30–37 declaration source is reused only in a self-contained synthetic-context grammar test;
 actual eligibility requires genuine native context expansion, with no automatic fetch/reveal by this feature.
@@ -1472,6 +1472,30 @@ It saves the real shared master setting disabled before creating its guarded nat
 Native Bash style probes match original Git-proven new-side text and record both DOM span styles and intersecting CSS Custom Highlight ranges, priorities and pseudo-colors, since plain-looking source DOM can still be colored by native highlights.
 Missing styles, unsupported or truncated range coverage and offscreen measurements remain explicit unknowns rather than guessed token mappings or a feature pass.
 A failed discovery master restoration records its failed readback/error and per-case unavailable state before saving the report, while native parent references retain their actual full/prefix precision against Git provenance without claiming native resolution or relaxing the exact main commit hash.
+
+### GitLab native-run shell coloring (bounded cosmetic slice)
+
+`src/gitlab/workflow-syntax.ts` recognizes explicit local native `run[].script` declarations in files whose basename is `.gitlab-ci.yml`, including nested configs and hidden jobs.
+GitLab reverse-deep-merges job keys without merging array values, so a local `run` array supplies its own commands even when `extends` cannot be resolved.
+This is cosmetic shell syntax recognition, not proof that the config is included, valid for the current runner, executed or successful.
+The ordinary job `script` field can use another runner shell and remains native.
+The complete contiguous native prefix must start at line1, parse as one mapping and show a following top-level boundary after the complete job.
+An apparent final hunk/row is not a proven end of file.
+Only native run entry shapes are accepted, with a name and exactly one script or external step.
+External steps are never resolved or painted, and malformed sibling entries, aliases/merges, conflicting classic script fields and arbitrary YAML run keys cannot supply commands.
+Explicit anchor declarations keep their own local source context, but alias callsites are never expanded.
+Only exact plain strings and mapped literal blocks are colored, with expressions, quoted/folded scalars and unknown mappings left native.
+Old and new source sides have independent programs over the original Text nodes, with common context owned by the new side.
+A current GitLab source frame, full native revision tuple, exact path/side and unchanged source offsets are required before and after palette measurement.
+The Rapid Diff renderer may append one terminal LF, which is excluded from all owned ranges without rewriting the original node.
+`src/gitlab/shell-palette.ts` measures the already-loaded same-origin GitLab highlight theme, its active link and effective CSSStyleSheet media and actual Rouge-class cascade.
+The native `--code-text-color` is the code foreground even when the table or enclosing YAML token has another color.
+A strictly owned temporary tbody carries the probes, with no native line-text or hunk selectors, and is always removed even when styles cannot be read.
+Probes must leave native source snapshots, whitespace frames and whole-context witnesses unchanged.
+Missing, disabled, inaccessible or unmatched native theme rules yield no paint, without fetching CSS or substituting a literal palette.
+Native theme load and media changes refresh colors, while cleanup removes only owned CSS highlights/listeners/styles.
+Only color is overlaid: fonts, typography, source nodes, line markers and native controls remain owned by GitLab.
+Retained public MR253 source supplies the positive lexical fixture, but offline tests alone do not establish installed public highlighting or execution.
 
 ## GitLab and Bitbucket provider adapters
 
