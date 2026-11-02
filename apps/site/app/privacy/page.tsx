@@ -64,8 +64,8 @@ export default function PrivacyPage() {
             confirm it on github.com, and GitHub issues a user access token for the App. There is no Geld server in this exchange and no client
             secret. The App&apos;s permissions are shown on GitHub&apos;s consent screen; sign-in itself only uses the <em>gists</em> permission. Geld then
             reads your public profile (login and avatar, shown in the popup) and keeps your settings in a{' '}
-            <strong>secret gist on your own GitHub account</strong> named <code>geld-settings.json</code>. Only you and Geld running in your signed-in
-            browsers can read or change it. The token expires after eight hours and is renewed by the extension on the device that signed in; it is
+            <strong>secret gist on your own GitHub account</strong> named <code>geld-settings.json</code>. Only you, and Geld running in your signed-in
+            browsers, can change it. A secret gist is unlisted rather than private, so anyone you share its link with can read it. The token expires after eight hours and is renewed by the extension on the device that signed in; it is
             stored in <code>browser.storage.local</code> there and is never synced or sent anywhere except to <code>github.com</code> and{' '}
             <code>api.github.com</code>. Signing out deletes the token; deleting the gist from GitHub removes the synced copy. You can uninstall or
             revoke the App at any time from your GitHub settings.

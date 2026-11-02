@@ -3513,6 +3513,19 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   padding: 5px 0;
 }
 
+/*
+ * Content that opens on a pill is pulled left by the pill's inner padding, so the mark inside it stands where another
+ * row's first glyph or word starts, 1px in. The content moves rather than the first pill, so the pills after it and a
+ * wrapped line move with it. 5px is `--geld-bot-pad` (the border is the 1px left in), 6px the reviewers pill's 7px.
+ */
+.geld-review__status-content:has(> .geld-review__bot:first-child) {
+  margin-left: -5px;
+}
+
+.geld-review__status-content:has(> .geld-review__reviewers:first-child) {
+  margin-left: -6px;
+}
+
 .geld-review__status-text {
   color: var(--geld-review-muted);
   line-height: 20px;
