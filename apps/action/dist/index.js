@@ -11781,7 +11781,7 @@ function createApiTransport(options) {
   const now = options.now ?? Date.now;
   return {
     async request(path, init = {}) {
-      if (path.startsWith("/") || path.includes("\\")) return { ok: false, reason: "invalid_response" };
+      if (path.startsWith("/") || path.includes("\\") || path.split(/[?#]/, 1)[0]?.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) return { ok: false, reason: "invalid_response" };
       const url2 = new URL(path, base);
       if (url2.origin !== base.origin || !url2.pathname.startsWith(base.pathname)) return { ok: false, reason: "invalid_response" };
       const method = init.method ?? "GET";
@@ -11871,7 +11871,9 @@ function serializeQuery(tokens) {
   return tokens.map((token) => `${token.key === null ? "" : `${token.key}:`}${quote(token.value, token.quoted === true)}`).join(" ");
 }
 function setQualifier(query, key, value) {
-  const tokens = parseQuery(query).filter((token) => token.key !== key);
+  const roles = [["pr", "issue"], ["open", "closed"], ["merged", "unmerged"], ["locked", "unlocked"], ["public", "private"]];
+  const values = key === "is" ? roles.find((role) => role.includes((value ?? "open").toLowerCase())) ?? [value?.toLowerCase()] : null;
+  const tokens = parseQuery(query).filter((token) => token.key !== key || values !== null && !values.includes(token.value.toLowerCase()));
   return serializeQuery(value === null ? tokens : [...tokens, { key, value }]);
 }
 function withRepos(query, repositories) {
@@ -32894,7 +32896,7 @@ async function completeChat(options) {
         accept: "application/json"
       },
       body: JSON.stringify(body),
-      ...controller === null ? {} : { signal: controller.signal }
+      ...options.signal || controller ? { signal: AbortSignal.any([...options.signal ? [options.signal] : [], ...controller ? [controller.signal] : []]) } : {}
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload = await response.json();

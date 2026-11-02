@@ -23,8 +23,8 @@ CMD ["node", "apps/dashboard/server.js"]
 FROM node:24-bookworm-slim AS relay
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=builder --chown=node:node /src/packages/relay/dist/cli.mjs ./cli.mjs
+COPY --from=builder --chown=node:node /src/packages/relay/dist/cli.cjs ./cli.cjs
 COPY --from=builder --chown=node:node /src/LICENSE ./LICENSE
 USER node
 EXPOSE 8080
-CMD ["node", "cli.mjs", "broker"]
+CMD ["node", "cli.cjs", "broker"]

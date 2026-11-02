@@ -11,17 +11,19 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.mjs --legal-comments=inline",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=cjs --external:pg-native --outfile=dist/cli.cjs --legal-comments=inline",
     "check": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "zod": "^4.1.12",
-    "ipaddr.js": "^2.2.0"
+    "ipaddr.js": "^2.2.0",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.0",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "@types/pg": "^8.15.6"
   }
 }

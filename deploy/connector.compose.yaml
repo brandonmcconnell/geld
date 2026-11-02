@@ -1,7 +1,7 @@
 services:
   connector:
     image: geld-relay:local
-    command: [node, cli.mjs, connector]
+    command: [node, cli.cjs, connector]
     environment:
       RELAY_BROKER_URL: ${RELAY_BROKER_URL:?Set the broker HTTPS URL}
       RELAY_CHANNEL_ID: ${RELAY_CHANNEL_ID:?Set the registered channel}
