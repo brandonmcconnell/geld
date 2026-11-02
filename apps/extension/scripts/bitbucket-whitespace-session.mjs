@@ -6,10 +6,25 @@ const { parseUnifiedDiff } = await tsImport('@geld/core', import.meta.url);
 
 export const BITBUCKET_WHITESPACE_URL = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff';
 const REPO = 'atlassian/bitbucket-upload-file';
-const RESPONSE_CODES = new Set(['RESPONSE_SIZE', 'CACHE_PROVENANCE', 'DIFF_TYPE', 'PR_SOURCE', 'PR_REF', 'COMMIT_REF', 'STAT_COMPLETE', 'STAT_FILE', 'FILE_SET']);
+const RESPONSE_CODES = new Set(['RESPONSE_SIZE', 'CACHE_PROVENANCE', 'DIFF_TYPE', 'PR_SOURCE', 'PR_REF', 'COMMIT_REF', 'STAT_COMPLETE', 'STAT_FILE', 'FILE_SET', 'RESPONSE_BUFFER_TIMEOUT', 'RESPONSE_BUFFER_ABORTED', 'RESPONSE_RELEASED']);
 const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const REF = /^[a-f0-9]{7,64}$/;
 const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { code }); };
+
+/** Local finite wait; the losing operation may finish but cannot resume this caller. */
+export async function bitbucketWhitespaceAwait(operation, { ms = 5000, code = 'WHITESPACE_OPERATION_TIMEOUT', signal, abortCode = 'WHITESPACE_CASE_ABORTED' } = {}) {
+  check(Number.isSafeInteger(ms) && ms > 0 && ms <= 120000, 'WAIT_BOUND');
+  let timer, onAbort;
+  const rejectWith = (reject, reason) => reject(Object.assign(new Error(reason), { code: reason }));
+  const interrupted = new Promise((_, reject) => {
+    timer = setTimeout(() => rejectWith(reject, code), ms);
+    if (signal) { onAbort = () => rejectWith(reject, abortCode);signal.addEventListener('abort', onAbort, { once: true }); }
+  });
+  try {
+    if (signal?.aborted) check(false, abortCode);
+    return await Promise.race([Promise.resolve().then(() => { if (signal?.aborted) check(false, abortCode);return operation(); }), interrupted]);
+  } finally { clearTimeout(timer);if (onAbort) signal.removeEventListener('abort', onAbort); }
+}
 
 /** Forecast, not a measured mode-reload cost. No cache discount and no ledger reset. */
 export function bitbucketWhitespaceBudget(active, { fullCycle = false } = {}) {
@@ -26,17 +41,23 @@ export function bitbucketWhitespaceBudget(active, { fullCycle = false } = {}) {
 }
 
 export function bitbucketWhitespaceSettings({ read, write, progress }) {
-  let original, expected;
+  let original, expected;const pendingWrites = new Set();
+  const readBounded = () => bitbucketWhitespaceAwait(read, { code: 'SETTINGS_READ_TIMEOUT' });
+  const writeBounded = value => {
+    const pending = Promise.resolve().then(() => write(value));pendingWrites.add(pending);
+    void pending.then(() => pendingWrites.delete(pending), () => pendingWrites.delete(pending));
+    return bitbucketWhitespaceAwait(() => pending, { code: 'SETTINGS_WRITE_TIMEOUT' });
+  };
   return {
     async prepare() {
-      original = structuredClone(await read());
+      original = structuredClone(await readBounded());
       check(original && typeof original.present === 'boolean' && (!original.present || original.value && typeof original.value === 'object' && !Array.isArray(original.value)), 'SETTINGS_SCHEMA');
       expected = { present: true, value: { ...(original.present ? original.value : {}), enabled: false, hideWhitespace: false, prOverview: false, quickReview: false, showListStats: false, aiEnabled: false, repoConfigs: 'never', autoViewed: {}, testOutline: false, hideCommentLines: false, hideLargeDiffs: false, groupHidden: true, expandedByDefault: false, categories: { tests: true }, customCategories: [], categoryPatterns: {}, customPatterns: [], repoRules: [], hiddenAuthors: [] } };
-      await write(expected);check(isDeepStrictEqual(await read(), expected), 'SETTINGS_PREPARE');progress.prepared = true;
+      await writeBounded(expected);check(isDeepStrictEqual(await readBounded(), expected), 'SETTINGS_PREPARE');progress.prepared = true;
     },
-    async current() { const value = await read();check(isDeepStrictEqual(value, expected), 'SETTINGS_CHANGED');return value.value; },
-    async hide(value) { check(typeof value === 'boolean', 'SETTINGS_HIDE');await this.current();expected = { present: true, value: { ...expected.value, enabled: true, hideWhitespace: value } };await write(expected);await this.current(); },
-    async restore(closed) { check(closed, 'CLOSE_BEFORE_RESTORE');if (!original) return;await write(original);check(isDeepStrictEqual(await read(), original), 'SETTINGS_RESTORE');progress.restored = true;progress.pageClosedBeforeRestore = true; },
+    async current() { const value = await readBounded();check(isDeepStrictEqual(value, expected), 'SETTINGS_CHANGED');return value.value; },
+    async hide(value) { check(typeof value === 'boolean', 'SETTINGS_HIDE');await this.current();expected = { present: true, value: { ...expected.value, enabled: true, hideWhitespace: value } };await writeBounded(expected);await this.current(); },
+    async restore(closed) { check(closed, 'CLOSE_BEFORE_RESTORE');if (!original) return;await bitbucketWhitespaceAwait(() => Promise.allSettled([...pendingWrites]), { code: 'SETTINGS_PENDING_TIMEOUT' });await writeBounded(original);check(isDeepStrictEqual(await readBounded(), original), 'SETTINGS_RESTORE');progress.restored = true;progress.pageClosedBeforeRestore = true; },
   };
 }
 
@@ -152,7 +173,7 @@ export function bitbucketNativeReadPost(request) {
 const totals = files => ({ files: files.length, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) });
 
 /** Passive already-issued traffic only. Response bodies stay private in the observer, receipts are bounded. */
-export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
+export function observeBitbucketWhitespace(page, progress, extensionId, abort, { checkpoint = async () => {} } = {}) {
   const pending = new Set(), records = [], requests = new WeakMap();let released = false, phase = 'baseline', responseSequence = 0;
   Object.assign(progress, { requests: [], failures: [], providerWrites: 0, blockedWrites: [], nativeReadPosts: [], overflow: false });
   const request = r => {
@@ -185,7 +206,7 @@ export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
       let failureCode = 'RESPONSE_READ_FAILED';
       try {
         const declared = r.headers()['content-length'];check(declared === undefined || /^\d+$/.test(declared) && Number(declared) <= 512 * 1024, 'RESPONSE_SIZE');
-        failureCode = 'RESPONSE_BUFFER_FAILED';const body = await r.buffer();check(body.length > 0 && body.length <= 512 * 1024, 'RESPONSE_SIZE');
+        failureCode = 'RESPONSE_BUFFER_FAILED';const body = await bitbucketWhitespaceAwait(() => r.buffer(), { code: 'RESPONSE_BUFFER_TIMEOUT', signal: abort.signal, abortCode: 'RESPONSE_BUFFER_ABORTED' });check(!released, 'RESPONSE_RELEASED');check(body.length > 0 && body.length <= 512 * 1024, 'RESPONSE_SIZE');
         record.bytes = body.length;record.sha256 = createHash('sha256').update(body).digest('hex');
         if (record.status === 304) { check(records.some(prior => prior.sequence < record.sequence && prior.responseSequence < record.responseSequence && prior.status === 200 && prior.qualified && prior.owner === record.owner && prior.requestKey === record.requestKey && prior.sha256 === record.sha256), 'CACHE_PROVENANCE');record.cacheBasis = 'same_key_prior200_same_body'; }
         failureCode = 'RESPONSE_UTF8_FAILED';const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
@@ -200,13 +221,13 @@ export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
         }
         if (record.files) { check(record.files.length > 0 && record.files.length <= 100 && new Set(record.files.map(f => f.path)).size === record.files.length, 'FILE_SET');record.totals = totals(record.files); }
         record.qualified = true;
-      } catch (failure) { record.error = RESPONSE_CODES.has(failure?.code) ? failure.code : failureCode;progress.failures.push({ phase: record.phase, kind: record.kind, code: record.error }); }
+      } catch (failure) { record.error = RESPONSE_CODES.has(failure?.code) ? failure.code : failureCode;progress.failures.push({ phase: record.phase, kind: record.kind, code: record.error });void checkpoint('response_failure').catch(() => {}); }
     })();pending.add(task);void task.finally(() => pending.delete(task));
   };
   page.on('request', request);page.on('response', response);
-  return { evidence: progress, phase(value) { check(['baseline', 'hide', 'open', 'cancel', 'show'].includes(value), 'PHASE');phase = value; }, async flush() { await Promise.all([...pending]); },
+  return { evidence: progress, phase(value) { check(['baseline', 'hide', 'open', 'cancel', 'show'].includes(value), 'PHASE');phase = value; }, async flush() { await bitbucketWhitespaceAwait(() => Promise.all([...pending]), { ms: 5500, code: 'RESPONSE_FLUSH_TIMEOUT' }); },
     records: () => records, idle: () => ({ pending: pending.size, observed: records.length }),
-    async dispose() { released = true;page.off('request', request);page.off('response', response);await Promise.all([...pending]);progress.released = true; },
+    async dispose() { released = true;page.off('request', request);page.off('response', response);try { await bitbucketWhitespaceAwait(() => Promise.all([...pending]), { ms: 5500, code: 'RESPONSE_DISPOSE_TIMEOUT' }); } finally { progress.released = true; } },
   };
 }
 
@@ -346,9 +367,11 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
 }
 
 /** Public scope intentionally ends with Settings open; Cancel/re-disable is unit-only until separately budgeted. */
-export async function verifyBitbucketWhitespace(page, { settings, observer, progress, poll, readState, guardBudget, fullCycle = false }) {
+export async function verifyBitbucketWhitespace(page, { settings, observer, progress, poll, readState, guardBudget, fullCycle = false, signal, checkpoint = async () => {} }) {
   let installed = false, error, transition = null, expected = null;
-  const read = () => page.evaluate(bitbucketWhitespaceProbe);
+  const run = (operation, code = 'NATIVE_OPERATION_TIMEOUT', ms = 5000, cleanup = false) => bitbucketWhitespaceAwait(operation, { code, ms, signal: cleanup ? undefined : signal });
+  const stage = async name => { progress.stage = name;await run(() => checkpoint(name), 'CHECKPOINT_TIMEOUT', 5000, true); };
+  const read = () => run(() => page.evaluate(bitbucketWhitespaceProbe));
   const current = async () => {
     await settings.current();const value = await read();
     progress.lastNative = value === null ? { available: false } : Object.fromEntries(['originalPage', 'generation', 'transition', 'samePaths', 'viewedSemanticsPreserved', 'settledMounted', 'busy', 'originalsPreserved', 'rowsPreserved', 'viewedPreserved', 'dialogCount', 'forbiddenInputs', 'overflow'].map(key => [key, value[key]]));
@@ -357,19 +380,19 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
     return value;
   };
   const begin = async phase => {
-    await current();const value = await page.evaluate(bitbucketWhitespaceProbe, 'begin', phase);
+    await current();const value = await run(() => page.evaluate(bitbucketWhitespaceProbe, 'begin', phase));
     check(value?.begun === true, 'TRANSITION_BEGIN');transition = { phase, generation: value.generation };
   };
   const input = async which => {
-    guardBudget(which);const handle = await page.evaluateHandle(bitbucketWhitespaceProbe, 'target', which);
+    guardBudget(which);const handle = await run(() => page.evaluateHandle(bitbucketWhitespaceProbe, 'target', which));
     try {
       const element = handle.asElement();check(element, 'NATIVE_INPUT_UNAVAILABLE');
-      await element.evaluate(n => n.scrollIntoView({ block: 'center', behavior: 'instant' }));
-      check(await element.evaluate(n => { const r = n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }), 'NATIVE_INPUT_OCCLUDED');
-      const before = (await current()).events.length;await element.click();
+      await run(() => element.evaluate(n => n.scrollIntoView({ block: 'center', behavior: 'instant' })));
+      check(await run(() => element.evaluate(n => { const r = n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); })), 'NATIVE_INPUT_OCCLUDED');
+      const before = (await current()).events.length;await run(() => element.click());
       const after = await current();check(after.events.length === before + 1 && after.events.at(-1).trusted && after.events.at(-1).control === which, 'NATIVE_TRUSTED_INPUT');
       return after;
-    } finally { await handle.dispose(); }
+    } finally { await run(() => handle.dispose(), 'HANDLE_DISPOSE_TIMEOUT', 2000, true); }
   };
   const proof = async (phase, mode, own) => poll(async () => {
     await observer.flush();try { const value = qualifyBitbucketWhitespace(observer.records(), phase, mode, { own, expected });progress.lastProof = { phase, mode, own, qualified: true };return value; }
@@ -379,34 +402,35 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
     check(transition !== null, 'TRANSITION_MISSING');
     await poll(async () => {
       await current();
-      const painted = await page.evaluate(() => new Promise(resolve => {
+      const painted = await run(() => page.evaluate(() => new Promise(resolve => {
         let done = false;const finish = value => { if (!done) { done = true;clearTimeout(timer);resolve(value); } };
         const timer = setTimeout(() => finish(false), 1000);requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
-      }));check(painted === true, 'NATIVE_RENDER_TICKS');
-      return page.evaluate(bitbucketWhitespaceProbe, 'candidate');
+      })));check(painted === true, 'NATIVE_RENDER_TICKS');
+      return run(() => page.evaluate(bitbucketWhitespaceProbe, 'candidate'));
     }, value => value?.stable === true, 'Two stable native mode DOM samples after fresh responses', 5000);
-    const rebound = await page.evaluate(bitbucketWhitespaceProbe, 'rebind', { ...transition, paths: result.paths });
+    const rebound = await run(() => page.evaluate(bitbucketWhitespaceProbe, 'rebind', { ...transition, paths: result.paths }));
     check(rebound?.rebound === true, 'TRANSITION_REBIND');(progress.generations ??= []).push({ phase: transition.phase, ...rebound });transition = null;await current();
   };
   const counts = async result => {
-    const state = await poll(readState, v => v?.hasDiff && isDeepStrictEqual(v.all, result.totals), 'Geld totals match independent current response', 10000);
+    const state = await poll(() => run(readState, 'TAB_STATE_TIMEOUT'), v => v?.hasDiff && isDeepStrictEqual(v.all, result.totals), 'Geld totals match independent current response', 10000);
     const value = await current();check(isDeepStrictEqual(value.totals, state.visible), 'NATIVE_COUNTS');return { all: state.all, visible: state.visible, native: value.totals };
   };
   progress.stage = 'baseline';progress.status = 'running';progress.scope = fullCycle ? 'unit_full_cycle' : 'first_activation_and_native_settings_restore';progress.phases = [];
   try {
-    await poll(() => page.evaluate(bitbucketWhitespaceProbe, 'bind'), v => v?.originalPage, 'Original public PR22 source', 10000);installed = true;
+    await stage('baseline');
+    await poll(() => run(() => page.evaluate(bitbucketWhitespaceProbe, 'bind')), v => v?.originalPage, 'Original public PR22 source', 10000);installed = true;
     progress.baseline = await current();
     progress.nativeBaseline = await proof('baseline', false, false);
     check(isDeepStrictEqual(progress.baseline.totals, progress.nativeBaseline.totals), 'NATIVE_BASELINE_COUNTS');
-    progress.stage = 'baseline_settings';await input('opener');const baseline = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null && v.cancelAvailable, 'Native initial whitespace checkbox', 4000);
+    await stage('baseline_settings');await input('opener');const baseline = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null && v.cancelAvailable, 'Native initial whitespace checkbox', 4000);
     check(baseline.checkbox.checked === true, 'NATIVE_BASELINE_NOT_SHOW');progress.baselineCheckbox = baseline.checkbox;
     await input('cancel');await poll(current, v => v.dialogCount === 0, 'Native baseline Cancel', 4000);
-    progress.stage = 'activation';let previousIdle = null;
+    await stage('activation');let previousIdle = null;
     await poll(async () => { await observer.flush();const state = observer.idle();const stable = state.pending === 0 && previousIdle === state.observed;previousIdle = state.observed;return stable; }, value => value === true, 'Current native baseline idle', 4000);
     check(!observer.records().some(r => r.owner === 'extension'), 'OWN_REQUEST_BEFORE_ACTIVATION');
     progress.activationBudget = guardBudget('hide');await begin('hide');observer.phase('hide');await settings.hide(true);
-    progress.stage = 'hidden_responses';const hidden = await proof('hide', true, true);expected = { head: hidden.head, base: hidden.base };await settle(hidden);progress.phases.push({ phase: 'hide', ...hidden, counts: await counts(hidden) });
-    progress.stage = 'settings_restore';await begin('open');observer.phase('open');await input('opener');const opened = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null, 'Native original checkbox after override restoration', 4000);
+    await stage('hidden_responses');const hidden = await proof('hide', true, true);expected = { head: hidden.head, base: hidden.base };await settle(hidden);progress.phases.push({ phase: 'hide', ...hidden, counts: await counts(hidden) });
+    await stage('settings_restore');await begin('open');observer.phase('open');await input('opener');const opened = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null, 'Native original checkbox after override restoration', 4000);
     check(opened.checkbox.checked === baseline.checkbox.checked, 'NATIVE_CHECKBOX_OVERRIDE_LEAK');progress.opened = opened;
     const restored = await proof('open', false, false);await settle(restored);progress.phases.push({ phase: 'open', ...restored });
     if (fullCycle) {
@@ -415,18 +439,20 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
       await begin('show');observer.phase('show');guardBudget('show');await settings.hide(false);
       const shown = await proof('show', false, true);await settle(shown);progress.phases.push({ phase: 'show', ...shown, counts: await counts(shown) });
     }
-    progress.stage = 'final';progress.final = await current();check(observer.evidence.providerWrites === 0 && !observer.evidence.overflow, 'TRAFFIC_UNQUALIFIED');
+    await stage('final');progress.final = await current();check(observer.evidence.providerWrites === 0 && !observer.evidence.overflow, 'TRAFFIC_UNQUALIFIED');
     progress.status = 'passed';
     progress.limitations = ['Actual fixture may contain no whitespace-only hunk; request mode, initial native checkbox and current-response counts are proven independently.', ...(fullCycle ? [] : ['Cancel/reapply and disabling are unit-tested only; this public case closes the page while Settings remains open and baseline native mode is restored.'])];
-  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = observer.evidence.blockedWrites?.length ? 'BLOCKED_PROVIDER_WRITE' : error;try { if (!page.isClosed()) progress.readiness = await page.evaluate(bitbucketWhitespaceProbe, 'diagnostic'); } catch { progress.readiness = { unavailable: 'DIAGNOSTIC_READ_FAILED' }; } }
+  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = observer.evidence.blockedWrites?.length ? 'BLOCKED_PROVIDER_WRITE' : error;progress.failureStage = progress.stage;try { if (!page.isClosed()) progress.readiness = await run(() => page.evaluate(bitbucketWhitespaceProbe, 'diagnostic'), 'DIAGNOSTIC_TIMEOUT', 2000, true); } catch { progress.readiness = { unavailable: 'DIAGNOSTIC_READ_FAILED' }; } }
   finally {
-    const failures = [];
-    if (installed && !page.isClosed()) try { progress.beforeClose = await current();check((await page.evaluate(bitbucketWhitespaceProbe, 'dispose')).released, 'PROBE_DISPOSE'); } catch { failures.push('PROBE_CLEANUP'); }
-    try { if (!page.isClosed()) await page.close(); } catch { if (!page.isClosed()) failures.push('PAGE_CLOSE'); }
-    try { await observer.dispose(); } catch { failures.push('OBSERVER_RELEASE'); }
-    try { await settings.restore(page.isClosed()); } catch { failures.push('SETTINGS_RESTORE'); }
+    const failures = [];try { await stage('cleanup'); } catch { failures.push('CHECKPOINT_TIMEOUT'); }
+    if (installed && !page.isClosed()) try { progress.beforeClose = await current();check((await run(() => page.evaluate(bitbucketWhitespaceProbe, 'dispose'), 'PROBE_DISPOSE_TIMEOUT', 2000, true)).released, 'PROBE_DISPOSE'); } catch { failures.push('PROBE_CLEANUP'); }
+    try { if (!page.isClosed()) await run(() => page.close(), 'PAGE_CLOSE_TIMEOUT', 5000, true); } catch { if (!page.isClosed()) failures.push('PAGE_CLOSE'); }
+    try { await run(() => observer.dispose(), 'OBSERVER_RELEASE_TIMEOUT', 6000, true); } catch { failures.push('OBSERVER_RELEASE'); }
+    try { await run(() => settings.restore(page.isClosed()), 'SETTINGS_RESTORE_TIMEOUT', 16000, true); } catch { failures.push('SETTINGS_RESTORE'); }
     progress.cleanup = { failures, pageClosed: page.isClosed() };if (failures.length) { progress.status = 'failed';error ??= 'CLEANUP_FAILED'; }
   }
+  try { await run(() => checkpoint('complete'), 'CHECKPOINT_TIMEOUT', 5000, true); }
+  catch { progress.status = 'failed';progress.failure ??= 'CHECKPOINT_TIMEOUT';progress.cleanup.failures.push('CHECKPOINT_TIMEOUT');error ??= 'CHECKPOINT_TIMEOUT'; }
   if (error) check(false, error);
   return { status: 'passed', verified: 'First activation native whitespace requests and independent checkbox baseline restoration, matching current-response counts; exact raw settings restored after page closure.' };
 }

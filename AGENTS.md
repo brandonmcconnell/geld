@@ -2373,3 +2373,7 @@ A concurrent page-close error is harmless only when the provider page is actuall
 
 The four native startup POST exceptions require the exact audited app source, fixed public paths and bounded endpoint-specific read payloads;
 any other payload records only known schema facts and counts before the existing abort.
+The Bitbucket whitespace acceptance bounds each observed response-body read to five seconds and refuses late qualification after timeout or disposal.
+Its phase checkpoints preserve the current private report before awaited stages, and a separate two-minute case deadline records a local test timeout without inventing a provider cooldown or changing the request cap.
+Cleanup remains bounded and restores raw settings only after confirmed page closure and completion of any earlier settings write;
+an unconfirmed write or restoration is reported as failure.

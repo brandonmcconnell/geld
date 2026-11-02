@@ -323,7 +323,7 @@ test('whitespace first activation declines before page creation when its carried
   const body = harness.slice(start, end);assert.ok(body.includes('scope.prepare()'));
   for (const scenario of ['not-selected', 'held', 'budget']) {
     let created = 0, writes = 0;const report = { cases: [] };
-    const globals = { assert, report, focus: scenario === 'not-selected' ? 'regression' : 'bitbucket-whitespace-session', BITBUCKET_WHITESPACE_URL: 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff',
+    const globals = { assert, report, setTimeout, clearTimeout, bitbucketWhitespaceAwait: async operation => operation(), focus: scenario === 'not-selected' ? 'regression' : 'bitbucket-whitespace-session', BITBUCKET_WHITESPACE_URL: 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff',
       AbortController, Date, cooldowns: new Map(scenario === 'held' ? [['bitbucket', Date.now() + 10000]] : []), bitbucketRequestTimes: [],
       bitbucketWhitespaceBudget: () => ({ available: false }), currentCaseAbort: undefined, saveReport: async () => {},
       browser: { newPage: async () => { created++;throw Error('Unexpected page'); } }, options: { evaluate: async () => { writes++; } },
@@ -331,5 +331,29 @@ test('whitespace first activation declines before page creation when its carried
     await new vm.Script(body + ';runBitbucketWhitespaceCase()').runInNewContext(globals);
     assert.equal(created, 0);assert.equal(writes, 0);assert.equal(report.cases[0].status, scenario === 'not-selected' ? 'not_selected' : 'unavailable');
     if (scenario === 'budget') assert.equal(report.cases[0].navigationSuppressedByBudget, true);
+  }
+});
+
+test('whitespace wall deadline checkpoints and closes without provider cooldown or late success', async () => {
+  const start = harness.indexOf('async function runBitbucketWhitespaceCase()'), end = harness.indexOf('\nasync function crossSettingsDom(', start), body = harness.slice(start, end);
+  for (const latePass of [false, true]) {
+    let entered = false, closed = false, restored = false;const saves = [], timers = [], report = { cases: [] }, cooldowns = new Map();
+    const page = { setViewport: async () => {}, bringToFront: async () => {}, on() {}, goto: async () => ({ status: () => 200 }), url: () => 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff', isClosed: () => closed, close: async () => { closed = true; } };
+    const observer = { evidence: { released: false, requests: [] }, dispose: async () => { observer.evidence.released = true; } };
+    const globals = { assert, report, focus: 'bitbucket-whitespace-session', BITBUCKET_WHITESPACE_URL: page.url(), AbortController, Date, cooldowns, bitbucketRequestTimes: [], currentCaseAbort: undefined, extensionId: 'installed', options: {}, WAIT_MS: 90000,
+      setTimeout: (callback, ms) => { const timer = { callback, ms };timers.push(timer);return timer; }, clearTimeout: timer => { if (timer) timer.cleared = true; },
+      bitbucketWhitespaceAwait: async operation => operation(), bitbucketWhitespaceBudget: () => ({ available: true }),
+      saveReport: async () => { saves.push(structuredClone(report.cases[0])); }, browser: { newPage: async () => page },
+      bitbucketWhitespaceSettings: () => ({ prepare: async () => {}, restore: async value => { assert.equal(value, true);restored = true;report.cases[0].settings.restored = true; } }),
+      observeBitbucketBudget: (_page, item) => { item.observedBitbucketApiRequests = 3; }, observeBitbucketWhitespace: () => observer,
+      providerOf: () => 'bitbucket', retryAfter: () => 0, poll: async () => {}, tabState: async () => {},
+      verifyBitbucketWhitespace: async (_page, { signal, progress }) => { progress.stage = 'waiting_for_native';entered = true;return new Promise((resolve, reject) => signal.addEventListener('abort', () => latePass ? resolve({ status: 'passed' }) : reject(signal.reason), { once: true })); },
+    };
+    const run = new vm.Script(body + ';runBitbucketWhitespaceCase()').runInNewContext(globals);
+    for (let n = 0; n < 100 && !entered; n++) await Promise.resolve();assert.equal(entered, true);
+    const timer = timers.find(value => value.ms === 120000);assert.ok(timer);timer.callback();await run;
+    assert.equal(report.cases[0].status, 'failed');assert.equal(report.cases[0].timeout.code, 'WHITESPACE_CASE_TIMEOUT');assert.equal(report.cases[0].timeout.observedRequests, 3);
+    assert.equal(saves.some(value => value.lastCheckpoint.stage === 'case_timeout'), true);assert.equal(closed, true);assert.equal(restored, true);
+    assert.equal(cooldowns.size, 0);assert.equal(report.cases[0].rateLimitedUntil, undefined);assert.equal(report.cases[0].budgetHold, undefined);
   }
 });
