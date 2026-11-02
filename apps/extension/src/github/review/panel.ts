@@ -568,26 +568,6 @@ function avatarStack(avatars: readonly Avatar[], fallback: string, bot: boolean,
   return stack;
 }
 
-/** Avatars a verdict pill shows before the rest go behind an ellipsis. */
-const PILL_AVATARS = 5;
-/** Avatars at the stack's usual overlap; more are squeezed into the width these take. */
-const PILL_ROOMY = 3;
-
-/**
- * A verdict pill's faces: up to three at the usual overlap, four or five squeezed into the width of three, and more
- * as five plus an ellipsis circle in that same width, so a long list never wraps the row.
- */
-function pillAvatars(reviewers: readonly Avatar[]): HTMLElement {
-  const shown = reviewers.filter((reviewer) => reviewer.src !== '');
-  const faces = shown.length > PILL_AVATARS ? shown.slice(0, PILL_AVATARS) : shown;
-  const items: HTMLElement[] = faces.map(avatarImg);
-  if (shown.length > PILL_AVATARS) items.push(createElement('span', { class: `${PANEL_CLASS}__avatar ${PANEL_CLASS}__avatar--more` }, [icon(ICON_KEBAB_HORIZONTAL)]));
-  const stack = createElement('span', { class: `${PANEL_CLASS}__avatars ${PANEL_CLASS}__avatars--pill`, 'aria-hidden': 'true' }, items);
-  // The stack's width at three faces, shared out among however many stand in it (CSS turns the step into the overlap).
-  if (items.length > PILL_ROOMY) stack.style.setProperty('--geld-avatar-steps', String(items.length - 1));
-  return stack;
-}
-
 /** The row's chevron. A real button so a click on it opens the row; `tabindex=-1` because the main button is the keyboard stop. */
 function chevron(open: boolean, onToggle: () => void): HTMLElement {
   const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__chevron`, 'data-open': String(open), tabindex: '-1', 'aria-label': open ? 'Collapse' : 'Expand', 'aria-expanded': String(open) }, [icon(ICON_CHEVRON_DOWN)]);
@@ -1286,6 +1266,39 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   return createElement('span', { class: `${PANEL_CLASS}__bot`, ...who, ...(current ? {} : { 'data-current': 'false' }) }, children);
 }
 
+const REVIEWER_ORDER: readonly Exclude<ReviewerGroupState, 'awaiting'>[] = ['approved', 'changes_requested', 'commented'];
+
+function reviewerRank(status: ReviewerStatus): number {
+  return status.verdict === null ? REVIEWER_ORDER.length : REVIEWER_ORDER.indexOf(status.verdict);
+}
+
+const REVIEWER_HEALTH: Readonly<Record<ReviewerGroupState, Health>> = {
+  approved: 'good',
+  changes_requested: 'bad',
+  commented: 'pending',
+  awaiting: 'warn',
+};
+
+/**
+ * One person on the Reviews row, shaped like a bot's pill: their picture (GitHub's hovercard on the pill), their
+ * login, which goes first when the row is short of room (`fitChips`), then their verdict's glyph, and the awaiting dot
+ * too when they were asked again. It opens their review where it sits; someone only awaited has nothing to open.
+ */
+function reviewerPill(status: ReviewerStatus, handlers: PanelHandlers): HTMLElement {
+  const { words } = statusWords(status);
+  const label = `${status.login}: ${words}`;
+  const children: Node[] = [];
+  if (status.avatar.src !== '') children.push(markImg(status.avatar.src, true));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [status.login]));
+  const states: ReviewerGroupState[] = [];
+  if (status.verdict !== null) states.push(status.verdict);
+  if (status.awaiting) states.push('awaiting');
+  for (const state of states) children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': REVIEWER_HEALTH[state], 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[state])]));
+  const who = whoAttributes(status.login, false);
+  if (status.verdict !== null && status.anchor !== null) return anchorLink(status.anchor, label, handlers, children, who);
+  return createElement('span', { class: `${PANEL_CLASS}__bot`, role: 'img', 'aria-label': label, ...who }, children);
+}
+
 /** What a bot's line in the request menu says about its last run here, and whether it is ticked to begin with. */
 export interface BotRunState {
   readonly health: Health | null;
@@ -1756,26 +1769,12 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         ]),
       );
     }
-    // Every reviewer, grouped by their latest verdict, as a pill: the state's glyph, how many, their avatars, tinted
-    // by the verdict (the words are the label's and the title's).
-    const verdictOf = new Map(model.reviewerGroups.filter((group) => group.state !== 'awaiting').flatMap((group) => group.reviewers.map((reviewer) => [reviewer.login.toLowerCase(), REVIEWER_GROUP_WORD[group.state]] as const)));
-    for (const group of model.reviewerGroups) {
-      // Someone awaited who already gave a verdict was asked again; their verdict still stands in its own group.
-      const names = group.reviewers
-        .map((reviewer) => {
-          const verdict = group.state === 'awaiting' ? verdictOf.get(reviewer.login.toLowerCase()) : undefined;
-          return verdict === undefined ? reviewer.login : `${reviewer.login} (asked again; ${verdict})`;
-        })
-        .join(', ');
-      const label = `${group.reviewers.length} ${REVIEWER_GROUP_WORD[group.state]}`;
-      content.push(
-        createElement('span', { class: `${PANEL_CLASS}__reviewers`, 'data-state': group.state, title: `${REVIEWER_GROUP_TITLE[group.state]}: ${names}`, role: 'img', 'aria-label': `${label}: ${names}` }, [
-          createElement('span', { class: `${PANEL_CLASS}__reviewers-glyph`, 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[group.state])]),
-          createElement('span', { class: `${PANEL_CLASS}__reviewers-count`, 'aria-hidden': 'true' }, [String(group.reviewers.length)]),
-          pillAvatars(group.reviewers),
-        ]),
-      );
-    }
+    // Every reviewer, one pill each in the bots' shape, by verdict and then those only awaited.
+    const pills = model.reviewerStatuses
+      .filter((status) => status.verdict !== null || status.awaiting)
+      .sort((a, b) => reviewerRank(a) - reviewerRank(b))
+      .map((status) => reviewerPill(status, handlers));
+    content.push(...pills);
     const open = model.openKey === REVIEWS_KEY;
     if (content.length === 0) content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet']));
     // Only comments count here; a bare verdict is already in the approvals.
@@ -1784,7 +1783,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     // The verdicts above are whole (the sidebar's); the comments are still arriving from the timeline.
     if (model.ingesting) content.push(ingestingMark('Still reading the timeline: review comments are on their way'));
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
-      createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+      createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(pills.length > 0 ? { [ATTR_FIT]: '' } : {}) }, content),
     ]);
     mainClickToggles(main, () => handlers.onToggle(REVIEWS_KEY));
     const right: Node[] = [];
@@ -2247,13 +2246,6 @@ const REVIEWER_GROUP_WORD: Readonly<Record<ReviewerGroupState, string>> = {
   changes_requested: 'requested changes',
   commented: 'commented',
   awaiting: 'awaiting',
-};
-
-const REVIEWER_GROUP_TITLE: Readonly<Record<ReviewerGroupState, string>> = {
-  approved: 'Approved',
-  changes_requested: 'Changes requested',
-  commented: 'Reviewed with comments',
-  awaiting: 'Awaiting review',
 };
 
 const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
