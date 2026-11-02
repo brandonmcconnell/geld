@@ -2,6 +2,7 @@
 import { BUNDLED_CATALOG } from '@geld/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { surfacesOf } from './list-surfaces';
+import { findRows } from './pr-list';
 import type { ListSurface } from './list-surfaces';
 
 /**
@@ -61,6 +62,14 @@ function checksSection(shape: Shape): string {
   </section>`;
 }
 
+/** A row of the React commits list (garrytan/gstack/commits/main, Nov 2026): a ListView item too, its title linking the PR it came from. */
+function commitRow(): string {
+  return `<ul class="ul__5IxUHb" role="list"><li id="_R_5ej6l85_-list-view-node-_R_87tej6l85_" class="listItem__X41oTe" data-testid="commit-row-item">
+    <span class="prc-Text-Text-9mHv3" data-component="Text"><a data-pjax="true" href="/garrytan/gstack/commit/1a2b3c">v1.92.51.0 ci: windows-smoke is the required Windows check (</a><a class="issue-link js-issue-link" data-hovercard-url="/garrytan/gstack/pull/3806/hovercard" href="/garrytan/gstack/pull/3806">#3806</a><a data-pjax="true" href="/garrytan/gstack/commit/1a2b3c">)</a></span>
+    <a data-testid="author-link" href="/garrytan">garrytan</a>
+  </li></ul>`;
+}
+
 function ownerOf(surfaces: readonly ListSurface[], link: HTMLAnchorElement): { id: string; row: HTMLElement } | null {
   for (const surface of surfaces) {
     const row = surface.rowOf(link);
@@ -74,6 +83,12 @@ describe('bundled list surfaces under both shapes of GitHub\u2019s class names',
 
   beforeEach(() => {
     document.body.innerHTML = '';
+  });
+
+  it('takes a reference linked inside a commit title for nobody\u2019s row, so no chip rewrites the title', () => {
+    document.body.innerHTML = `${commitRow()}${reactListRow(SHAPES.new)}`;
+    const rows = findRows(surfaces);
+    expect(rows.map((row) => row.key)).toEqual(['mintlify/mint#12934']);
   });
 
   for (const [name, shape] of Object.entries(SHAPES)) {
