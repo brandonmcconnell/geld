@@ -3,18 +3,66 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'">
-
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-
     <link rel="stylesheet" href="../Style.css">
     <script src="../Script.js" defer></script>
 </head>
 <body>
-    <img src="../Icon.png" width="128" height="128" alt="Geld Icon">
-    <p class="platform-ios">You can turn on Geld’s Safari extension in Settings.</p>
-    <p class="platform-mac state-unknown">You can turn on Geld’s extension in Safari Extensions preferences.</p>
-    <p class="platform-mac state-on">Geld’s extension is currently on. You can turn it off in Safari Extensions preferences.</p>
-    <p class="platform-mac state-off">Geld’s extension is currently off. You can turn it on in Safari Extensions preferences.</p>
-    <button class="platform-mac open-preferences">Quit and Open Safari Extensions Preferences…</button>
+    <main class="shell">
+        <header class="brand">
+            <img src="../Icon.png" width="80" height="80" alt="">
+            <div>
+                <p class="eyebrow">Safari extension</p>
+                <h1>Geld</h1>
+                <p class="tagline">Review the code, not the tests.</p>
+            </div>
+        </header>
+
+        <section class="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+                <p class="status-label">Extension status</p>
+                <p class="status-value state-unknown">Checking Safari…</p>
+                <p class="status-value state-on">Enabled in Safari</p>
+                <p class="status-value state-off">Not enabled yet</p>
+            </div>
+        </section>
+
+        <section class="intro">
+            <h2>See the change that needs review.</h2>
+            <p>
+                Geld hides test files and other optional review noise from GitHub diffs,
+                fixes the visible file and line counts, and keeps every hidden file one click away.
+            </p>
+        </section>
+
+        <ol class="steps">
+            <li>
+                <span>1</span>
+                <div><strong>Enable Geld</strong><small>Open Safari Settings → Extensions and turn Geld on.</small></div>
+            </li>
+            <li>
+                <span>2</span>
+                <div><strong>Allow GitHub access</strong><small>Choose Always Allow on github.com when Safari asks.</small></div>
+            </li>
+            <li>
+                <span>3</span>
+                <div><strong>Open a pull request</strong><small>Test files move to a tidy section below the code changes.</small></div>
+            </li>
+        </ol>
+
+        <div class="actions">
+            <button type="button" class="primary platform-mac" data-action="open-preferences">
+                Open Safari Settings
+            </button>
+            <button type="button" data-action="open-demo">Try on a public pull request</button>
+        </div>
+
+        <footer>
+            <button type="button" class="link" data-action="open-help">How it works</button>
+            <button type="button" class="link" data-action="open-privacy">Privacy</button>
+            <span>No account required</span>
+        </footer>
+    </main>
 </body>
 </html>

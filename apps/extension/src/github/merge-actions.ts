@@ -184,6 +184,20 @@ export interface MergeSubmission {
   readonly authorEmail: string | null;
   readonly bypass: boolean;
   readonly stacked: boolean;
+  /** How many pull requests a stacked merge takes (it and every one below it), when known. */
+  readonly stackEntries?: number;
+}
+
+/**
+ * Whether the merge names its commit's author, as GitHub's merge box decides: only where it offered emails to pick
+ * from (`authorEmail` is null otherwise), never for a rebase, which writes no commit of its own, and never for a squash
+ * of more than one stacked pull request, which writes one commit per pull request ("Choosing author email is not
+ * allowed"). A stack whose size is not known is taken to be several: leaving the email out costs nothing.
+ */
+function authorEmailFor(submission: Pick<MergeSubmission, 'authorEmail' | 'method'> & Partial<Pick<MergeSubmission, 'stacked' | 'stackEntries'>>): string | null {
+  if (submission.method === 'REBASE') return null;
+  if (submission.stacked === true && submission.method === 'SQUASH' && (submission.stackEntries ?? 2) > 1) return null;
+  return submission.authorEmail;
 }
 
 function headers(nonce: string, json: boolean): Record<string, string> {
@@ -210,7 +224,8 @@ export function mergeRequest(pullPath: string, submission: MergeSubmission, nonc
     body.commitTitle = submission.commitTitle;
     body.commitMessage = submission.commitMessage;
   }
-  if (submission.authorEmail !== null) body.authorEmail = submission.authorEmail;
+  const email = authorEmailFor(submission);
+  if (email !== null) body.authorEmail = email;
   return { url: `${pullPath}/page_data/${submission.stacked ? 'enqueue_stack' : 'merge'}`, init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, true), body: JSON.stringify(body) } };
 }
 
@@ -245,7 +260,8 @@ export function queueRequest(pullPath: string, nonce: string): { readonly url: s
  */
 export function autoMergeRequest(pullPath: string, submission: Pick<MergeSubmission, 'method' | 'commitTitle' | 'commitMessage' | 'authorEmail'>, nonce: string): { readonly url: string; readonly init: RequestInit } {
   const body: Record<string, string> = { mergeMethod: submission.method, commitTitle: submission.commitTitle, commitMessage: submission.commitMessage };
-  if (submission.authorEmail !== null) body.authorEmail = submission.authorEmail;
+  const email = authorEmailFor(submission);
+  if (email !== null) body.authorEmail = email;
   return { url: `${pullPath}/page_data/enable_auto_merge`, init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, true), body: JSON.stringify(body) } };
 }
 
