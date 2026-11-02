@@ -300,8 +300,8 @@ export function reviewerStatuses(entries: readonly ReviewEntry[], sidebar: reado
       continue;
     }
     if (record.settled) {
-      // The sidebar said the verdict; the timeline still names where it is.
-      if (record.verdict === entry.state && record.anchor === null && !isProvisionalAnchor(entry.anchor)) record.anchor = entry.anchor;
+      // The sidebar said the verdict; the timeline still names where it is, its latest review of that verdict.
+      if (record.verdict === entry.state && !isProvisionalAnchor(entry.anchor)) record.anchor = entry.anchor;
       continue;
     }
     if (entry.state === 'commented' && record.verdict !== null && record.verdict !== 'commented') continue;
@@ -1294,7 +1294,8 @@ function reviewerPill(status: ReviewerStatus, review: ReviewEntry | undefined, h
   else if (commented && status.verdict !== 'commented') words.push('with a comment');
   const label = `${status.login}: ${words.join(' · ')}`;
   const children: Node[] = [];
-  if (status.avatar.src !== '') children.push(markImg(status.avatar.src, true));
+  // Without a picture the login's first letter stands in, so a pill whose name the row has dropped still says who.
+  children.push(status.avatar.src !== '' ? markImg(status.avatar.src, true) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--letter`, 'data-shape': 'round', 'aria-hidden': 'true' }, [status.login.charAt(0).toUpperCase() || '?']));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [status.login]));
   const glyph = (health: Health, glyphIcon: string, count?: number): HTMLElement =>
     createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, 'aria-hidden': 'true' }, [icon(glyphIcon), ...(count === undefined ? [] : [createElement('span', { class: `${PANEL_CLASS}__reviewer-threads` }, [String(count)])])]);

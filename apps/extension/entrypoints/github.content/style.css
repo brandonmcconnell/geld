@@ -3524,6 +3524,15 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   border-radius: 50%;
 }
 
+.geld-review__bot-icon--letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--geld-review-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 .geld-review__bot-name {
   padding-left: 1px;
 }
