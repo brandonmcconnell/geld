@@ -1719,6 +1719,8 @@ The retained CodeRabbit corpus spans a 100-discussion page and a 12-discussion c
 a native 20-discussion preview or the first 100-page body alone cannot prove complete source coverage.
 CodeRabbit's command-copy acceptance is an explicit `gitlab-coderabbit` slice, excluded from default and `all` navigation, and must confirm the actual native account/source before real personal trust and clipboard input.
 Missing or invalid fresh fixture data returns an explicit unavailable case after successful cleanup, while confirmed-fixture product invariants and cleanup failures still fail acceptance.
+The native CodeRabbit MR overview can omit `data-noteable-data`, leaving its head unknown;
+bind the exact native MR wrapper and well-formed Rapid Diffs selected/latest source version to the fresh API and installed panel head instead, and reject any present conflicting or malformed head record.
 
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
