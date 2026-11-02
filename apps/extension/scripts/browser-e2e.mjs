@@ -16,6 +16,7 @@ import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
+import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
@@ -40,6 +41,7 @@ const FOCUSED_CASES = {
   'bitbucket-list-commit': ['bitbucket-list-counts', 'bitbucket-commit-counts'],
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
+  'gitlab-file-search': ['gitlab-file-search'],
   'gitlab-review': ['gitlab-overview-digest'],
   'gitlab-bot': ['gitlab-bot-digest'],
   'gitlab-coderabbit': ['gitlab-coderabbit-digest'],
@@ -325,6 +327,9 @@ async function runCase(name, url, body, discovery = false) {
       item.status = 'not_selected';
       item.reason = 'Native Bash discovery requires its explicit literal focus, including exclusion from all. No navigation or feature pass.';
       return;
+    }
+    if (name === 'gitlab-file-search' && focus !== 'gitlab-file-search') {
+      item.status = 'not_selected';item.reason = 'Native file-search acceptance requires its explicit literal focus, excluding all and default. No navigation or browser Ctrl+F claim.';return;
     }
     if (name === 'gitlab-coderabbit-digest' && focus === 'all') {
       item.status = 'not_selected';item.reason = 'CodeRabbit native-source and clipboard acceptance is explicit-focus only; no extra corpus navigation in all/default slices.';return;
@@ -2564,6 +2569,18 @@ try {
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
   report.settings = await patchSettings({ enabled: true, categories: { tests: true }, groupHidden: true, expandedByDefault: false, hideCommentLines: false, testOutline: false, hideLargeDiffs: false, hideWhitespace: false, repoRules: [], hiddenAuthors: [], repoConfigs: 'never', aiEnabled: false, autoViewed: {}, autoUpdatePatterns: false });
+
+  await runCase('gitlab-file-search', GITLAB_FILE_SEARCH.url, async (page, item) => {
+    item.fileSearch = {};
+    item.initialTotals = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
+    assert.deepEqual(item.initialTotals.categories.find((category) => category.id === 'tests')?.paths, [GITLAB_FILE_SEARCH.path], 'Native search requires the exact retained test path');
+    item.initialNativeHeader = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0), 'Native file-search initial corrected header counts');
+    await verifyGitLabFileSearch(page, { poll, capture, progress: item.fileSearch, totals: async () => {
+      const state = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
+      assert.deepEqual(state.categories.find((category) => category.id === 'tests')?.paths, [GITLAB_FILE_SEARCH.path]);
+      const native = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0), 'Native file-search restored corrected header counts');return { state, native };
+    } });
+  });
 
   await runCase('gitlab-mixed', GL_MIXED, async (page, item) => {
     item.enabledState = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
