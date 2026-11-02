@@ -128,7 +128,7 @@ export async function gitLabWhitespaceSessionProbe(action, fixture) {
   const key = '__geldNativeWhitespaceSessionProof';
   if (action === 'cleanup') { const prior = globalThis[key];prior?.stop?.();delete globalThis[key];return { released: true }; }
   if (action === 'frame') { await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));action = 'read'; }
-  const bad = (code) => ({ qualified: false, code, ...(code === 'SESSION_HISTORY_BOUND' ? { history: { observed: Math.min(globalThis[key]?.records ?? 0, 4097), limit: 4096 } } : {}),
+  const bad = (code) => ({ qualified: false, code, ...(code === 'SESSION_HISTORY_BOUND' ? { history: { observed: Math.min(globalThis[key]?.records ?? 0, 4097), limit: 4096, phase: globalThis[key]?.budgetPhase ?? 'baseline' } } : {}),
     ...(code === 'ANONYMOUS_WITNESS_MUTATED' && globalThis[key]?.witnessMutation ? { witnessMutation: globalThis[key].witnessMutation } : {}) });
   const excluded = '[data-geld-ui],.note,.md,[data-testid="noteable-note-container"],[data-testid="description-content"],form,[contenteditable],dialog,[role="dialog"]';
   const native = (node) => node?.isConnected === true && node.closest(excluded) === null;
@@ -267,7 +267,8 @@ export async function gitLabWhitespaceSessionProbe(action, fixture) {
       if (event.type === 'click' && (target === p.r.field || label.contains(target))) { drain();clearTimeout(p.gestureTimer);p.gesture = event.isTrusted === true;p.gestureTimer = setTimeout(() => { p.gesture = false; }, 0);return; }
       if (event.type !== 'change' || target !== p.r.field) return;
       drain();if (!p.gesture || event.isTrusted !== true || p.epoch !== null || !idle() || !invariant(p.ready ?? p.baseline) || p.events.length >= 2) { invalidate('NATIVE_INPUT_UNQUALIFIED');return; }
-      p.gesture = false;clearTimeout(p.gestureTimer);p.events.push({ phase: p.phase, trusted: true, checked: p.r.field.checked });p.epoch = { stage: 'input', desired: p.r.field.checked, original: p.ready ?? p.baseline, removed: new Set(), overlayCleared: false };p.ready = null;
+      p.gesture = false;clearTimeout(p.gestureTimer);p.events.push({ phase: p.phase, trusted: true, checked: p.r.field.checked });p.records = 0;p.budgetPhase = p.phase;
+      p.epoch = { stage: 'input', desired: p.r.field.checked, original: p.ready ?? p.baseline, removed: new Set(), overlayCleared: false };p.ready = null;
     };
     p.observer = new document.defaultView.MutationObserver(process);p.observer.observe(document, { subtree: true, childList: true, attributes: true, attributeOldValue: true });
     document.addEventListener('click', p.listen, true);document.addEventListener('change', p.listen, true);
