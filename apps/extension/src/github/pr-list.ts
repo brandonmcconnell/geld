@@ -57,6 +57,9 @@ export function findRows(surfaces: readonly ListSurface[]): ListRow[] {
     if (url.searchParams.has('check_run_id')) continue;
     // Only title links: they carry visible text and live in a list row.
     if ((link.textContent ?? '').trim() === '') continue;
+    // A reference GitHub linked inside written text ("(#3806)" in a commit title on the commits list, whose rows are
+    // ListView items too) names a pull request but is nobody's title: a chip there rewrote the commit's words.
+    if (link.matches('.issue-link, .js-issue-link')) continue;
     const owner = surfaceOf(surfaces, link);
     if (owner === null || rows.has(owner.row)) continue;
     // Skip links that are clearly not the row's title (comments count, etc.).
