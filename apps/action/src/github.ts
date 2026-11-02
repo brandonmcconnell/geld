@@ -87,8 +87,8 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion startedAt completedAt }
-                  ... on StatusContext { context state createdAt }
+                  ... on CheckRun { name status conclusion startedAt completedAt title }
+                  ... on StatusContext { context state createdAt description }
                 }
               }
             }
@@ -193,9 +193,12 @@ interface GqlCheckContext {
   readonly conclusion?: string | null;
   readonly startedAt?: string | null;
   readonly completedAt?: string | null;
+  /** A check run's title, the line GitHub shows beside it ("Review rate limited"). */
+  readonly title?: string | null;
   readonly context?: string;
   readonly state?: string;
   readonly createdAt?: string | null;
+  readonly description?: string | null;
 }
 
 interface GqlCheckContexts {
@@ -235,8 +238,8 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
             pageInfo { hasNextPage endCursor }
             nodes {
               __typename
-              ... on CheckRun { name status conclusion startedAt completedAt }
-              ... on StatusContext { context state createdAt }
+              ... on CheckRun { name status conclusion startedAt completedAt title }
+              ... on StatusContext { context state createdAt description }
             }
           }
         }
@@ -279,6 +282,7 @@ function checkRunOf(node: GqlCheckContext, sha: string): RawCheckRun | null {
       sha,
       ...(typeof node.startedAt === 'string' ? { startedAt: node.startedAt } : {}),
       ...(typeof node.completedAt === 'string' ? { completedAt: node.completedAt } : {}),
+      ...(typeof node.title === 'string' && node.title !== '' ? { description: node.title } : {}),
     };
   }
   if (node.__typename === 'StatusContext' && node.context !== undefined && node.state !== undefined) {
@@ -287,7 +291,8 @@ function checkRunOf(node: GqlCheckContext, sha: string): RawCheckRun | null {
     // A status is set in one moment: its creation is the run's start while pending and its finish once it is not.
     const at = typeof node.createdAt === 'string' ? node.createdAt : undefined;
     const when = at === undefined ? {} : state === 'pending' ? { startedAt: at } : { completedAt: at };
-    return { name: node.context, status: state === 'pending' ? 'in_progress' : 'completed', conclusion, sha, ...when };
+    const description = typeof node.description === 'string' && node.description !== '' ? { description: node.description } : {};
+    return { name: node.context, status: state === 'pending' ? 'in_progress' : 'completed', conclusion, sha, ...when, ...description };
   }
   return null;
 }
