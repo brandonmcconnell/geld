@@ -4048,3 +4048,53 @@ a.inbox-item:hover {
     grid-row: 1;
   }
 }
+
+.queue-digest-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.queue-digest-link {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+.queue-digest-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.queue-digest-link[data-tone='success'] {
+  color: var(--green);
+}
+.queue-digest-link[data-tone='attention'] {
+  color: light-dark(#946200, #e1b568);
+}
+.queue-digest-link > svg {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .queue-digest-summary {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+.queue-digest-more-mobile {
+  display: none;
+}
+@media (max-width: 700px) {
+  .queue-digest-summary [data-mobile-secondary] {
+    display: none;
+  }
+  .queue-digest-more-mobile {
+    display: inline;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+}

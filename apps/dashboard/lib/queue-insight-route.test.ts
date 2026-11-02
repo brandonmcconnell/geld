@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderClient, PullDetail } from '@geld/domain';
 import { DEFAULT_SETTINGS } from '@geld/core';
-const fixture = vi.hoisted((): { signedIn: boolean; changed: boolean; reads: number } => ({
+const fixture = vi.hoisted((): { signedIn: boolean; changed: boolean; reads: number; commentsFail: boolean } => ({
   signedIn: true,
   changed: false,
   reads: 0,
+  commentsFail: false,
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('next/server', () => ({ connection: async () => undefined }));
@@ -65,7 +66,10 @@ const client: ProviderClient = {
       { reviewer: 'no-longer-requested', requester: 'morgan' },
     ],
   }),
-  comments: unsupported,
+  comments: async () => {
+    if (fixture.commentsFail) throw new Error('Unavailable');
+    return unsupported();
+  },
   comment: unsupported,
   lineComment: unsupported,
   review: unsupported,
@@ -80,6 +84,7 @@ beforeEach(() => {
   fixture.signedIn = true;
   fixture.changed = false;
   fixture.reads = 0;
+  fixture.commentsFail = false;
 });
 describe('queue change counts', () => {
   it('uses the actual matcher and current pending requests without sharing a public cache', async () => {
@@ -93,6 +98,12 @@ describe('queue change counts', () => {
       categories: [{ id: 'tests', label: 'Tests', files: 1 }],
       requesters: ['alex'],
     });
+  });
+  it('keeps change counts when Digest comments cannot be read', async () => {
+    fixture.commentsFail = true;
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ digest: null, essential: { files: 1 }, hidden: { files: 1 } });
   });
   it('discards counts if a push races the diff, and never reads provider data for a signed-out actor', async () => {
     fixture.changed = true;

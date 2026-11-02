@@ -21,7 +21,7 @@ import { Button, buttonVariants } from '@/components/button';
 import { useStarredPulls } from '@/lib/local-preferences';
 import { readyForReview } from '@/lib/queue';
 import { EmptyState, useDashboard } from './app-shell';
-import { ChangeCounts, useQueueInsights } from './queue-insights';
+import { ChangeCounts, QueueDigestSummary, useQueueInsights } from './queue-insights';
 const tabs = [
   { id: 'all', title: 'All', shortTitle: 'All' },
   { id: 'incoming', title: 'Requested from me', shortTitle: 'For me' },
@@ -322,6 +322,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
                         {label}
                       </span>
                     ))}
+                    <QueueDigestSummary digest={insights[path]?.digest} href={path} />
                   </div>
                 </div>
                 <ChangeCounts insight={insights[path]} />

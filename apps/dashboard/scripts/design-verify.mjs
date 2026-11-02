@@ -37,6 +37,29 @@ async function privacy(page) {
   await page.getByRole('dialog', { name: 'Privacy settings', exact: true }).waitFor();
 }
 try {
+  const digestQueue = await open();
+  await digestQueue.page.getByRole('link', { name: 'Greptile 5/5', exact: true }).first().waitFor();
+  assert.equal(await digestQueue.page.getByRole('link', { name: 'Greptile earlier', exact: true }).count(), 1);
+  await digestQueue.page.getByRole('link', { name: 'Greptile 5/5', exact: true }).first().click();
+  await digestQueue.page.waitForURL('**' + pull);
+  assert.equal(
+    await digestQueue.page.getByRole('tab', { name: 'Digest', exact: true }).getAttribute('aria-selected'),
+    'true',
+  );
+  await digestQueue.context.close();
+  for (const [state, text] of [
+    [{ queueDigestStale: true }, 'Digest outdated'],
+    [{ queueDigestPartial: true }, '≥2 open'],
+    [{ queueDigestMissing: true }, null],
+  ]) {
+    const digestState = await open(state, 390);
+    if (text) await digestState.page.getByRole('link').filter({ hasText: text }).first().waitFor();
+    if (state.queueDigestStale || state.queueDigestMissing)
+      assert.equal(await digestState.page.getByRole('link', { name: 'Greptile 5/5', exact: true }).count(), 0);
+    if (state.queueDigestMissing) assert.equal(await digestState.page.locator('.queue-digest-summary').count(), 0);
+    await digestState.context.close();
+  }
+  console.log('PASS current, stale, partial and missing queue Digests and direct review navigation');
   const q = await open();
   assert.equal(await q.page.getByRole('button', { name: 'Collapse sidebar', exact: true }).count(), 0);
   const handle = q.page.getByRole('separator', { name: 'Resize sidebar', exact: true });
@@ -325,10 +348,13 @@ try {
   await missing.context.close();
   const controls = await open({}, 1440, '/settings/providers');
   assert.equal(await controls.page.locator('.workspace-header-title:visible').innerText(), 'AI providers');
-  const providerToggles = controls.page.getByRole('checkbox', { name: 'Enabled', exact: true });
-  await providerToggles.nth(1).uncheck();
+  const gatewayToggle = controls.page
+    .locator('.provider-row')
+    .filter({ hasText: 'Team gateway' })
+    .getByRole('checkbox', { name: 'Enabled', exact: true });
+  await gatewayToggle.uncheck();
   await controls.page.getByRole('status').filter({ hasText: 'Provider settings saved.' }).waitFor();
-  assert.equal(await providerToggles.nth(1).isChecked(), false);
+  assert.equal(await gatewayToggle.isChecked(), false);
   await controls.page.getByRole('checkbox', { name: 'Geld fallback', exact: true }).check();
   await controls.page.waitForFunction(() => document.querySelector('input[name="safety"]')?.checked === true);
   assert.equal(

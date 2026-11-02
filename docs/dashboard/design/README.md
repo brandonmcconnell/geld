@@ -13,6 +13,8 @@ Controls, panels and navigation states use square corners. Brand buttons retain 
 
 Compare the unchanged icon set with [three alternatives](./icon-options.html), or view the [comparison image](./icon-options.png).
 
+Queue rows show current Digest findings, replies needed, approvals and bot results. Earlier summaries are marked outdated, and partial summaries use lower-bound counts.
+
 ## Screenshots
 
 | View | Route | Desktop | Mobile | Dark |
@@ -44,6 +46,9 @@ Compare the unchanged icon set with [three alternatives](./icon-options.html), o
 | Review preferences | `/settings/review` | [View](./screenshots/desktop/preferences.png) | [View](./screenshots/mobile/preferences.png) | — |
 | Privacy information | `/privacy` | [View](./screenshots/desktop/privacy.png) | [View](./screenshots/mobile/privacy.png) | — |
 | Page not found | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found.png) | [View](./screenshots/mobile/not-found.png) | [View](./screenshots/dark/not-found.png) |
+| queue digest stale | `/` | [View](./screenshots/desktop/queue-digest-stale.png) | [View](./screenshots/mobile/queue-digest-stale.png) | — |
+| queue digest missing | `/` | [View](./screenshots/desktop/queue-digest-missing.png) | [View](./screenshots/mobile/queue-digest-missing.png) | — |
+| queue digest partial | `/` | [View](./screenshots/desktop/queue-digest-partial.png) | [View](./screenshots/mobile/queue-digest-partial.png) | — |
 | Page not found on a short screen | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found-short.png) | [View](./screenshots/mobile/not-found-short.png) | — |
 | Wider workspace navigation | `/` | [View](./screenshots/desktop/sidebar-resized.png) | — | — |
 | Collapsed workspace navigation | `/` | [View](./screenshots/desktop/sidebar-collapsed.png) | — | — |
