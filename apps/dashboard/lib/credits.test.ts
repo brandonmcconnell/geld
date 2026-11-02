@@ -5,7 +5,7 @@ import { reserveCredits, finishCredits } from './credits';
 describe('credit reservation transactions', () => {
   it('prevents duplicate billing and refunds a failed request only once', async () => {
     const db = new PGlite();
-    for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
+    for (const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql']) await db.exec(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
     await db.exec("INSERT INTO users(id,name,email) VALUES ('u','Reviewer','reviewer@example.test'); INSERT INTO teams(id,name) VALUES ('t','Team'); INSERT INTO team_members(team_id,user_id,role) VALUES ('t','u','admin'); INSERT INTO subscriptions(team_id,tier,seats,used_credits,cap_cents,card_on_file) VALUES ('t','starter',1,39,25,true)");
     const sql = { query: async (text: string, values?: unknown[]) => db.query(text, values) };
     const input = { teamId: 't', actorId: 'u', credits: 2, key: crypto.randomUUID() };

@@ -2,6 +2,8 @@ import 'server-only';
 import { z } from 'zod';
 import { effectivePermission, revocationFor } from '@geld/domain';
 import type { Permission, Provider, RepositoryRef } from '@geld/domain';
+import { backgroundUserTokenSource } from './background-tokens';
+import type { TokenSource } from '@geld/github';
 import { managedAccessAdapter } from '@geld/providers';
 import { database } from './db';
 import { withGrantLocks } from './grant-locks';
@@ -13,11 +15,11 @@ import { decryptCredential } from './crypto';
 export const repoRowSchema = z.object({ id: z.string(), team_id: z.string(), provider: z.enum(['github','gitlab','bitbucket']), host: z.string(), owner: z.string(), name: z.string(), external_id: z.string(), approved: z.boolean(), removed_at: z.date().nullable(), settings: z.record(z.string(),z.unknown()) });
 export type TeamRepository = z.infer<typeof repoRowSchema>;
 export const refFor = (r: TeamRepository): RepositoryRef => ({ provider: r.provider, host: r.host, owner: r.owner, repo: r.name });
-export async function accessAdapter(provider: Provider, teamId: string, owner?: string) {
+export async function accessAdapter(provider: Provider, teamId: string, owner?: string, overrideSource?:TokenSource) {
   const db = database();
   const config = db ? z.object({ settings: z.object({ path: z.enum(['legacy_groups','atlassian_groups','direct_users']).default('direct_users'), organisationId: z.string().optional(), directoryId: z.string().optional() }), encrypted_credential: z.string().nullable() }).safeParse((await db.query('SELECT settings,encrypted_credential FROM provider_connections WHERE team_id = $1 AND provider = $2', [teamId,provider])).rows[0]) : null;
   const key = config?.success && config.data.encrypted_credential ? await decryptCredential(config.data.encrypted_credential) : null;
-  return managedAccessAdapter({ provider, source: await providerTokenSource(provider,owner), ...(provider === 'bitbucket' ? { bitbucket: { path: config?.success ? config.data.settings.path : 'direct_users', ...(config?.success && config.data.settings.organisationId ? { organisationId: config.data.settings.organisationId } : {}), ...(config?.success && config.data.settings.directoryId ? { directoryId: config.data.settings.directoryId } : {}), ...(key ? { adminSource: { get: async () => ({ status: 'ok', token: key, refreshed: false }) } } : {}) } } : {}) });
+  return managedAccessAdapter({ provider, source: overrideSource ?? await providerTokenSource(provider,owner), ...(provider === 'bitbucket' ? { bitbucket: { path: config?.success ? config.data.settings.path : 'direct_users', ...(config?.success && config.data.settings.organisationId ? { organisationId: config.data.settings.organisationId } : {}), ...(config?.success && config.data.settings.directoryId ? { directoryId: config.data.settings.directoryId } : {}), ...(key ? { adminSource: { get: async () => ({ status: 'ok', token: key, refreshed: false }) } } : {}) } } : {}) });
 }
 export async function providerAdmin(repo: TeamRepository): Promise<boolean> {
   const current = await (await accessAdapter(repo.provider, repo.team_id,repo.owner)).repository(refFor(repo));
@@ -37,13 +39,13 @@ export interface GrantDependencies {
   readonly run: <T>(work: (sql: SqlExecutor) => Promise<T>) => Promise<T>;
   readonly adapter: (repo: TeamRepository) => Promise<ManagedAccessAdapter>;
 }
-export async function processGrant(id: string, actorId: string): Promise<boolean> {
+export async function processGrant(id: string, actorId: string, background = false): Promise<boolean> {
   const db = database();
   if (!db) return false;
   const scope = z.object({ team_id: z.string(), provider: z.string(), host: z.string(), owner: z.string(), provider_user_id: z.string() }).safeParse((await db.query('SELECT g.team_id,g.provider,r.host,r.owner,g.provider_user_id FROM grants g JOIN team_repos r ON r.id=g.repo_id WHERE g.id=$1', [id])).rows[0]);
   if (!scope.success) return false;
   const keys = [`grant-team:${scope.data.team_id}`, `grant-user:${JSON.stringify([scope.data.provider,scope.data.host,scope.data.owner,scope.data.provider_user_id])}`];
-  const result=await withGrantLocks(keys,()=>processGrantRecord(id,actorId,{sql:db,run:work=>transaction(db,work),adapter:repo=>accessAdapter(repo.provider,repo.team_id,repo.owner)}));
+  const result=await withGrantLocks(keys,()=>processGrantRecord(id,actorId,{sql:db,run:work=>transaction(db,work),adapter:async repo=>accessAdapter(repo.provider,repo.team_id,repo.owner,background?await backgroundUserTokenSource(actorId,repo.provider,repo.owner):undefined)}));
   return result.acquired ? result.value : false;
 }
 
