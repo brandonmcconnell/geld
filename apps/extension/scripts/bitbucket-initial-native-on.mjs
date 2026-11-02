@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { nativeSettingsReadinessProbe, waitNativeSettingsCandidate } from './native-settings-readiness.mjs';
 import { isDeepStrictEqual } from 'node:util';
 import { bitbucketShellProbe, flushObservedBitbucketShell, observedBitbucketShellIdentity, verifyBitbucketShellContext, verifyBitbucketShellSource } from './bitbucket-shell-acceptance.mjs';
 import { assertBitbucketPipelineURL, bitbucketPipelineVisitProbe, prepareBitbucketPipelineVisit } from './bitbucket-pipeline-visit.mjs';
@@ -109,12 +110,15 @@ export async function verifyInitialNativeOn(page, item, deps) {
   const counts = async () => { await current();p.counts = { native: await bitbucketDom(page), state: await tabState(page), masterEnabled: active };assertInitialNativeOnState(p.counts.native, p.counts.state, active); };
   const click = async (kind) => {
     assert.equal(active, false, 'All native Settings interactions must occur with Geld disabled');const budget = guardBudget();await current();const handle = await page.evaluateHandle(syntaxOnProbe, kind);
-    try { const control = handle.asElement();assert.ok(control, `Original native ${kind} unavailable`);await control.evaluate((n) => n.scrollIntoView({ block: 'center', behavior: 'instant' }));assert.equal(await page.evaluate(syntaxOnProbe, `arm-${kind}`, control), true);assert.equal(await page.evaluate(syntaxOnProbe, 'hit', control), true);await current();const immediateBudget = guardBudget();if (kind === 'save') { p.writes.at(-1).immediateBudget = immediateBudget;assert.ok(40 - immediateBudget.observedWithinRollingHour >= 8, 'Eight free immediately before native Save'); }await control.click();const event = await page.evaluate(syntaxOnProbe, 'event');assert.equal(event?.trusted, true);p.actions.push({ kind, masterEnabled: active, budget, immediateBudget, event });await current();return event; } finally { await handle.dispose(); }
+    try { const control = handle.asElement();assert.ok(control, `Original native ${kind} unavailable`);await control.evaluate((n) => n.scrollIntoView({ block: 'center', behavior: 'instant' }));assert.equal(await page.evaluate(syntaxOnProbe, `arm-${kind}`, control), true);assert.equal(await page.evaluate(syntaxOnProbe, 'hit', control), true);await current();if (kind === 'opener') assert.equal((await page.evaluate(nativeSettingsReadinessProbe, 'begin', 'pipeline', control))?.started, true);const immediateBudget = guardBudget();if (kind === 'save') { p.writes.at(-1).immediateBudget = immediateBudget;assert.ok(40 - immediateBudget.observedWithinRollingHour >= 8, 'Eight free immediately before native Save'); }await control.click();const event = await page.evaluate(syntaxOnProbe, 'event');assert.equal(event?.trusted, true);p.actions.push({ kind, masterEnabled: active, budget, immediateBudget, event });await current();return event; } finally { await handle.dispose(); }
   };
   const open = async () => {
-    await click('opener');const v = await poll(read, (value) => value?.same && value.dialogs === 1, 'One original native Settings dialog', 4000);
-    if (!v.formAvailable) { p.unknownForm = await page.evaluate(initialNativeOnFormShape);return null; }
-    const vector = await page.evaluate(syntaxOnProbe, 'bind');assert.ok(vector?.length === 13);return vector;
+    const progress = { status: 'opening' };(p.formReadiness ??= []).push(progress);
+    try {
+      await click('opener');const bound = await waitNativeSettingsCandidate(page, { readCurrent: current, read, bind: async () => ({ vector: await page.evaluate(syntaxOnProbe, 'bind') }), pause, progress });p.lastForm = progress.samples.at(-1);
+      if (bound === null) { p.readinessBlocked = true;p.unknownForm = p.lastForm?.diagnostics ?? { fields: [] };return null; }
+      p.readinessBlocked = false;assert.ok(bound.vector?.length === 13);return bound.vector;
+    } catch (error) { p.readinessBlocked = true;throw error; }
   };
   const close = async () => { const event = await click('cancel');await poll(read, (v) => v?.same && v.dialogs === 0, 'Original native Cancel removes form', 4000);return event; };
   const save = async (checked) => {
@@ -149,14 +153,14 @@ export async function verifyInitialNativeOn(page, item, deps) {
       traffic.setPhase('firstuse_disable_before_native_restore');await settings.disable();active = false;
       if (installed && initial !== undefined) {
         await poll(async () => ({ state: await tabState(page), source: await page.evaluate(bitbucketShellProbe) }), (v) => v.state?.allowed === false && v.state.hasDiff === false && v.source?.ownedCount === 0, 'Geld disabled before native Off restoration', 10_000);
-        await current();let state = await read();if (state.dialogs > 0) { assert.equal(state.ready, true, 'Unknown replacement form must not be operated');await close(); }
+        await current();let state = await read();if (state.dialogs > 0) { assert.notEqual(p.readinessBlocked, true, 'Readiness-invalid form remains untouched');assert.equal(state.ready, true, 'Unknown replacement form must not be operated');await close(); }
         const vector = await open();assert.ok(vector, 'Native restoration form unknown');const checked = vector.find((f) => f.id === SYNTAX)?.checked;assertSyntaxOnlyVector(initial, vector, checked);if (checked) await save(false);else await close();
         const off = await open();assertSyntaxOnlyVector(initial, off, false);p.restoration.readback = off;assert.equal((await page.evaluate(syntaxOnProbe, 'finish-native-restore'))?.same, true);p.restoration.cancel = await close();await counts();p.restoration.source = await page.evaluate(bitbucketShellProbe);assert.equal(p.restoration.source.ownedCount, 0);p.restoration.status = 'restored';p.restoration.modificationAttempted = modified;p.restoration.scope = 'Native exact-Off restore while masteroff. This is not new Off-observer acceptance.';
       } else p.restoration = { status: 'not_modified', unknownFormUntouched: p.unknownForm !== undefined };
     } catch (error) { cleanupFailure = error;p.restoration.status = 'failed';p.restoration.error = String(error);p.status = 'failed'; }
     try { await poll(() => traffic.pending(), (v) => v === 0, 'Native Save-window traffic settled', 3000);assertInitialNativeOnTraffic(item.syntaxOnTraffic, item.shellNativeSources.mutations); }
     catch (error) { cleanupFailure ??= error;p.trafficError = String(error);p.status = 'failed'; }
-    if (!page.isClosed()) for (const probe of [syntaxOnProbe, bitbucketShellProbe, bitbucketPipelineVisitProbe]) try { await page.evaluate(probe, 'cleanup'); } catch (error) { cleanupFailure ??= error;p.cleanupError = String(error);p.status = 'failed'; }
+    if (!page.isClosed()) for (const probe of [syntaxOnProbe, bitbucketShellProbe, bitbucketPipelineVisitProbe, nativeSettingsReadinessProbe]) try { await page.evaluate(probe, 'cleanup'); } catch (error) { cleanupFailure ??= error;p.cleanupError = String(error);p.status = 'failed'; }
     if (failure && cleanupFailure) throw new AggregateError([failure, cleanupFailure], 'First-use acceptance and cleanup both failed');if (cleanupFailure) throw cleanupFailure;
   }
   if (failure) throw failure;return p;
