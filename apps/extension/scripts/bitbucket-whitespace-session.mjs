@@ -72,14 +72,18 @@ const requestOwner = (request, id) => {
 const AUDITED_CONNECT_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
 const CONNECT_PATH = '/!api/internal/workspaces/{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}/connect/modules';
 
+function auditedNativeRequest(request) {
+  let stack = request.initiator?.()?.stack, audited = false, extension = false;
+  for (let depth = 0; stack && depth < 8; depth++, stack = stack.parent) for (const frame of (stack.callFrames ?? []).slice(0, 256)) { audited ||= frame.url === AUDITED_CONNECT_ASSET;extension ||= typeof frame.url === 'string' && frame.url.startsWith('chrome-extension://'); }
+  return audited && !extension && requestOwner(request, '__no_extension_id__') === 'native';
+}
+
 /** The audited native Connect bulk lookup is a POST read, not a preference or review mutation. */
 export function bitbucketConnectRead(request) {
   let url;try { url = new URL(request.url()); } catch { return { allowed: false, code: 'CONNECT_URL' }; }
   if (url.origin !== 'https://bitbucket.org' || url.username || url.password || url.hash || request.method() !== 'POST') return { allowed: false, code: 'CONNECT_TRANSPORT' };
   try { if (decodeURIComponent(url.pathname).toLowerCase() !== CONNECT_PATH) return { allowed: false, code: 'CONNECT_PATH' }; } catch { return { allowed: false, code: 'CONNECT_PATH' }; }
-  let stack = request.initiator?.()?.stack, audited = false, extension = false;
-  for (let depth = 0; stack && depth < 8; depth++, stack = stack.parent) for (const frame of (stack.callFrames ?? []).slice(0, 256)) { audited ||= frame.url === AUDITED_CONNECT_ASSET;extension ||= typeof frame.url === 'string' && frame.url.startsWith('chrome-extension://'); }
-  if (!audited || extension || requestOwner(request, '__no_extension_id__') !== 'native') return { allowed: false, code: 'CONNECT_INITIATOR' };
+  if (!auditedNativeRequest(request)) return { allowed: false, code: 'CONNECT_INITIATOR' };
   const query = [...url.searchParams];
   if (query.length > 32 || query.some(([key, value]) => !/^(?:app_key|module_key)(?:\[\d{1,2}\])?$/.test(key) || !/^[a-zA-Z0-9_.:-]{1,200}$/.test(value))) return { allowed: false, code: 'CONNECT_QUERY' };
   const headers = request.headers?.() ?? {};
@@ -110,6 +114,41 @@ export function bitbucketConnectRead(request) {
   return { allowed: true, code: 'AUDITED_CONNECT_METADATA_READ', entries: body.length, moduleCount };
 }
 
+/** Four source-proven native startup metadata reads; every other non-GET stays blocked. */
+export function bitbucketNativeReadPost(request) {
+  let url;try { url = new URL(request.url()); } catch { return { allowed: false, code: 'NATIVE_POST_URL' }; }
+  let path;try { path = decodeURIComponent(url.pathname); } catch { return { allowed: false, code: 'NATIVE_POST_PATH' }; }
+  if (path.toLowerCase() === CONNECT_PATH) return bitbucketConnectRead(request);
+  const kind = path === `/!api/internal/${REPO}/signature-statuses/` ? 'signature'
+    : path === `/!api/internal/repositories/${REPO}/commits/statuses/` ? 'commit_status'
+    : path.toLowerCase() === '/!api/internal/repositories/{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}/{e763018c-1ab1-4d2d-ae2b-9feb70af3997}/pipelines-config/run-eligibility' ? 'run_eligibility' : null;
+  if (kind === null) return { allowed: false, code: 'NATIVE_POST_PATH' };
+  if (url.origin !== 'https://bitbucket.org' || url.username || url.password || url.hash || request.method() !== 'POST') return { allowed: false, code: 'NATIVE_POST_TRANSPORT' };
+  if (!auditedNativeRequest(request)) return { allowed: false, code: 'NATIVE_POST_INITIATOR' };
+  const headers = request.headers?.() ?? {}, contentType = headers['content-type'] ?? '';
+  if (headers['x-requested-with'] !== 'XMLHttpRequest' || headers['x-bitbucket-frontend'] !== 'frontbucket') return { allowed: false, code: 'NATIVE_POST_HEADERS' };
+  const fields = '+*.commit_status.updated_on,+*.commit_status.description,+*.commit_status.name';
+  if (kind === 'commit_status' ? [...url.searchParams].length !== 1 || url.searchParams.get('fields') !== fields : url.search !== '') return { allowed: false, code: 'NATIVE_POST_QUERY' };
+  const raw = request.postData?.();if (typeof raw !== 'string' || Buffer.byteLength(raw) > 128 * 1024) return { allowed: false, code: 'NATIVE_POST_BODY_SIZE' };
+  if (kind === 'commit_status') {
+    if (!/^(?:text\/plain|application\/x-www-form-urlencoded)(?:;\s*charset=utf-8)?$/i.test(contentType)) return { allowed: false, code: 'NATIVE_POST_HEADERS' };
+    const pairs = [...new URLSearchParams(raw)], valid = pairs.filter(([key, value]) => key === 'commits' && REF.test(value));
+    if (pairs.length > 100 || pairs.length !== valid.length || raw !== pairs.map(([key, value]) => `${key}=${value}`).join('&')) return { allowed: false, code: 'COMMIT_STATUS_BODY', diagnostic: { pairCount: Math.min(pairs.length, 101), validHashCount: Math.min(valid.length, 101), hasOtherFields: pairs.some(([key]) => key !== 'commits') } };
+    return { allowed: true, code: 'AUDITED_COMMIT_STATUS_READ', hashCount: pairs.length };
+  }
+  if (!/^application\/json(?:;\s*charset=utf-8)?$/i.test(contentType) || headers.accept !== 'application/json') return { allowed: false, code: 'NATIVE_POST_HEADERS' };
+  let body;try { body = JSON.parse(raw); } catch { return { allowed: false, code: 'NATIVE_POST_JSON', diagnostic: { bodyKind: 'invalid_json' } }; }
+  const object = body !== null && typeof body === 'object' && !Array.isArray(body), keys = object ? Object.keys(body) : [];
+  const bodyKind = object ? 'object' : Array.isArray(body) ? 'array' : body === null ? 'null' : typeof body;
+  if (kind === 'run_eligibility') {
+    if (!object || keys.length !== 0) return { allowed: false, code: 'RUN_ELIGIBILITY_BODY', diagnostic: { bodyKind, keyCount: Math.min(keys.length, 101), emptyObject: object && keys.length === 0 } };
+    return { allowed: true, code: 'AUDITED_RUN_ELIGIBILITY_READ' };
+  }
+  const hashes = Array.isArray(body?.hashes) ? body.hashes : [], validHashCount = hashes.filter(value => typeof value === 'string' && REF.test(value)).length;
+  if (!object || keys.length !== 1 || keys[0] !== 'hashes' || !Array.isArray(body.hashes) || hashes.length > 100 || validHashCount !== hashes.length) return { allowed: false, code: 'SIGNATURE_BODY', diagnostic: { bodyKind, keyCount: Math.min(keys.length, 101), hashesArray: Array.isArray(body?.hashes), hashCount: Math.min(hashes.length, 101), validHashCount: Math.min(validHashCount, 101) } };
+  return { allowed: true, code: 'AUDITED_SIGNATURE_READ', hashCount: hashes.length };
+}
+
 const totals = files => ({ files: files.length, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) });
 
 /** Passive already-issued traffic only. Response bodies stay private in the observer, receipts are bounded. */
@@ -120,9 +159,9 @@ export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
     let url;try { url = new URL(r.url()); } catch { return; }
     const api = url.origin === 'https://api.bitbucket.org' && url.pathname.startsWith('/2.0/') || url.origin === 'https://bitbucket.org' && url.pathname.startsWith('/!api/');
     if (api && !['GET', 'HEAD', 'OPTIONS'].includes(r.method())) {
-      const read = bitbucketConnectRead(r), owner = requestOwner(r, extensionId);
+      const read = bitbucketNativeReadPost(r), owner = requestOwner(r, extensionId);
       if (read.allowed && owner === 'native') {
-        if (progress.nativeReadPosts.length < 8) progress.nativeReadPosts.push({ origin: url.origin, path: url.pathname.slice(0, 256), method: 'POST', owner, phase, ...read });
+        if (progress.nativeReadPosts.length < 32) progress.nativeReadPosts.push({ origin: url.origin, path: url.pathname.slice(0, 256), method: 'POST', owner, phase, ...read });
         else { progress.overflow = true;abort.abort(new Error('TRAFFIC_BOUND'));void page.close().catch(() => {}); }
       } else {
         progress.providerWrites++;if (progress.blockedWrites.length < 8) progress.blockedWrites.push({ origin: url.origin, path: url.pathname.slice(0, 256), method: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method()) ? r.method() : 'OTHER', owner, phase, code: read.code, ...(read.diagnostic ? { diagnostic: read.diagnostic } : {}) });
