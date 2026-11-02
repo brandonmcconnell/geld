@@ -2127,3 +2127,6 @@ A captured registration-shaped source slice does not establish loader binding, r
   The installed shell and standalone declared-model oracles select the same primary host variable or absent-property fallback, rejecting present empty or invalid colors instead of treating them as absent.
   Native ADS variables and YAML token spans are never reassigned, and comment, grammar, plain and initial-On eligibility remain unchanged.
   Selected-light source/style characterization does not establish enabled embedded-shell palette equivalence, native dark, comment-variable availability or complete classifier equivalence.
+
+Optional module-only research on the explicit native-Bash and initial-On visits selects one already-issued script at the exact public CDN origin and app.<40lowerhex>.js path, retaining its actual URL and body SHA without relaxing frame, redirect, response, size, worker or cleanup guards.
+The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
