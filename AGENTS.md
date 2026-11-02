@@ -1273,6 +1273,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **Repositories can configure Geld for everyone reviewing them** (`@geld/core/repo-config.ts`, `src/github/repo-config-source.ts`).
   A committed `.github/geld.yml` (and an org's defaults in `owner/.github`, `geld.yml` at the root or under `.github/`) uses the settings vocabulary — `categories`, `groups`, `categoryPatterns`, `customCategories` — and is checked by the same strict validator plus `collectRepoConfigIssues` (personal keys such as `enabled`/`repoRules` are rejected, unknown keys ignored).
   `.gitattributes` `linguist-generated` lines feed the Generated category via `generatedConfigFrom`.
+  Unresolved YAML aliases return a validation issue instead of escaping the parser, including for provider repository configs.
   **A sign-in page at a repository URL gets nothing** (`isSignInInterstitial`, `page.ts`: GitHub marks its login, organisation SSO and 2FA pages with `session-authentication` on `<body>`;
   `runPass` and the pre-paint header path stand down there, since every request for the repository's data would answer 401 in the console).
   **No lookup may 404 in the page** — the browser prints every failed `fetch` as a red console error attributed to Geld, and most repositories have none of these files.
