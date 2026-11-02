@@ -2157,3 +2157,10 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   Standard no-newline EOF annotations follow actual hunk content without adding code rows or advancing line coordinates, and orphan or duplicate annotations decline.
   Only this case redacts passive response-parser failures to fixed text while retaining error entries and the unchanged identity refusal.
   These API facts never authorize product PR whole-file source, promote an abbreviated native ref or substitute for the installed product's own counts, source demand and paint.
+
+
+- **Native Bitbucket file-menu research is one opener-only literal**: bitbucket-native-file-menu disables master before its fixed public PR27 page and binds an already-mounted original Pipeline header, source/actor/comparison/count/Viewed lifetime and native Diff actions popup button.
+  It may scroll that original control once, then rechecks source, hit ownership and the minimum-five budget immediately before its sole trusted opener click, without file selection, context, consent, menu-item, source-link, Escape or Viewed input.
+  The eight-request navigation forecast plus reserve is not a future cost bound, and the global40/429 guards and independent root admission remain authoritative.
+  Reports contain only bounded relation/count primitives, fixed label enums and exact same-provider/repository known-file source candidates with explicit abbreviated or full hexadecimal precision, with no native full-head or whole-source authority, arbitrary text/URLs/queries, field values, HTML, AX or PNG.
+  Unknown popups are closed only by page closure before exact raw extension settings restoration, while native prefs and product source bindings remain untouched.
