@@ -13,6 +13,7 @@ import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-li
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
+import { observeBitbucketPipelineMainAsset } from './bitbucket-pipeline-main-asset.mjs';
 import { bitbucketPipelineAssetMetadata, pipelineBudgetPreflight, pipelineSettingsScope } from './bitbucket-pipeline-visit.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
@@ -324,6 +325,7 @@ async function runCase(name, url, body, discovery = false) {
   let nativeSettings;
   let commitLinkSettings;
   let pipelineSettings;
+  let pipelineMainAsset;
   const abort = new AbortController();
   try {
     if (name === 'bitbucket-pipeline-shell' && focus !== 'bitbucket-pipeline-shell') {
@@ -368,7 +370,7 @@ async function runCase(name, url, body, discovery = false) {
     if (name === 'bitbucket-pipeline-shell') {
       const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
       item.pipelinePreflight = pipelineBudgetPreflight(active, report.quotaPolicy.conservativeObservedRequestBudget);
-      if (!item.pipelinePreflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Pipeline budget hold:26 observed acquisition allowance plus five free are required before any navigation. No cheaper cost is presumed.'); }
+      if (!item.pipelinePreflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Pipeline budget hold:16 measured focused navigation requests plus five free are required before any navigation. Later consent, Settings and selection costs remain unmeasured.'); }
       item.pipelineSettings = {};
       pipelineSettings = pipelineSettingsScope({
         readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
@@ -431,6 +433,9 @@ async function runCase(name, url, body, discovery = false) {
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     if (name === 'gitlab-coderabbit-digest') codeRabbitSources.set(page, observeCodeRabbitFixture(page, item, extensionId));
+    if (name === 'bitbucket-pipeline-shell') {
+      item.nativeMainAsset = {};pipelineMainAsset = observeBitbucketPipelineMainAsset(page, item.nativeMainAsset, { writeArtifact: (file, bytes, signal) => writeFile(resolve(artifacts, file), bytes, { signal }) });
+    }
     if (['bitbucket-diff', 'bitbucket-pipeline-shell'].includes(name)) observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
@@ -457,6 +462,10 @@ async function runCase(name, url, body, discovery = false) {
   } finally {
     currentCaseAbort = undefined;
     if (listSettings !== undefined) await patchSettings({ showListStats: listSettings.showListStats ?? true });
+    if (pipelineMainAsset !== undefined) {
+      try { await pipelineMainAsset.dispose(); }
+      catch (error) { item.nativeMainAsset.status = 'unavailable';item.nativeMainAsset.cleanup = { ...item.nativeMainAsset.cleanup, status: 'failed', error: errorText(error) }; }
+    }
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
       catch (error) {
@@ -2796,7 +2805,7 @@ try {
     item.state = await waitTotals(page, { files: 5, additions: 46, deletions: 29 }, { files: 5, additions: 46, deletions: 29 }, 0);
     item.baselineDom = await poll(() => bitbucketDom(page), (value) => value.files === 5 && value.additions === 46 && value.deletions === 29, 'Focused actual native complete pipeline comparison counts');
     item.nativeStaticAssetMetadata = await page.evaluate(bitbucketPipelineAssetMetadata);
-    await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture: (target, name) => capture(target, name, { fullPage: false }), guardBudget: guardBitbucketShellBudget });
+    await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture: (target, name) => capture(target, name, { fullPage: false }), guardBudget: guardBitbucketShellBudget, prepareConsent: true, freshAnonymousProfile: true });
     item.featureParity = 'partial';
     return { status: 'passed', verified: item.shellSyntax?.status === 'native_disabled'
       ? 'Focused native Settings observation and genuine context mechanics with no owned colors while native syntax is disabled. No positive syntax or palette acceptance.'
