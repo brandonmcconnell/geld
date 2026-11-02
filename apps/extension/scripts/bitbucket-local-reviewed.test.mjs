@@ -219,7 +219,7 @@ test('the literal local-reviewed focus is isolated and cleanup follows page clos
 
 test('actual runCase redacts unknown failures and console data while restoring private raw values after closure', async () => {
   const source = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');
-  const code = source.slice(source.indexOf('async function runCase('), source.indexOf('\nasync function crossSettingsDom('));
+  const code = source.slice(source.indexOf('async function runCase('), source.indexOf('\nasync function runBitbucketWhitespaceCase('));
   const canary = 'UNTRUSTED_PRIVATE_CANARY';const events = [];const handlers = new Map();let closed = false;
   let storage = { ...stored(true), marks: { present: true, value: { untouched: canary } } };const original = structuredClone(storage);
   const page = { on: (key, fn) => { const values = handlers.get(key) ?? [];values.push(fn);handlers.set(key, values); },

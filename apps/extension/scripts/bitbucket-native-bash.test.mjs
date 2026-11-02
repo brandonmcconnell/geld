@@ -96,7 +96,7 @@ test('retains contradictory or malformed existing metadata as errors instead of 
 });
 
 const harness = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');
-const runCaseBody = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function crossSettingsDom('));
+const runCaseBody = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function runBitbucketWhitespaceCase('));
 const budgetObserverBody = harness.slice(harness.indexOf('function observeBitbucketBudget('), harness.indexOf('async function runCase('));
 function runner({ focus = 'bitbucket-native-bash', closeFailure = false, navigationFailure = false, held = false, restoreFailure = false, restoreMismatch = false } = {}) {
   const order = [];let enabled = true;let closed = false;let reportSaves = 0;const savedReports = [];const itemReport = { cases: [], infrastructureErrors: [], quotaPolicy: { conservativeObservedRequestBudget: 40 } };

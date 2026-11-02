@@ -291,7 +291,7 @@ test('native alert refuses further input and still closes before exact raw resto
 });
 
 for (const scenario of ['success', 'unknown', 'failure', 'close-failure', 'restore-failure', 'not-selected', 'held']) test(`actual runCase keeps session privacy and close-first raw custody: ${scenario}`, async () => {
-  const source = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');const body = source.slice(source.indexOf('async function runCase('), source.indexOf('\nasync function crossSettingsDom('));
+  const source = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');const body = source.slice(source.indexOf('async function runCase('), source.indexOf('\nasync function runBitbucketWhitespaceCase('));
   const original = { sync: { present: false }, local: { present: false } };let storage = structuredClone(original);let closed = false;let captures = 0;let auth = 0;let saves = 0;let created = 0;let restored = false;const order = [];
   const page = new EventEmitter();Object.assign(page, { setViewport: async () => {}, bringToFront: async () => {}, isClosed: () => closed, url: () => F.url, close: async () => { order.push('close');if (scenario === 'close-failure') throw Error('DO_NOT_RETAIN_CLOSE');closed = true; }, goto: async () => {
     assert.equal(storage.sync.value.hideWhitespace, true);assert.equal(storage.sync.value.quickReview, false);order.push('navigate');

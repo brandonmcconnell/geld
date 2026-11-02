@@ -46,7 +46,7 @@ test('native Settings source setup binds the expected selected URL', () => { fix
 test('native Settings setup refuses a different expected URL before storing evidence', () => { fixture();location.hash = '#chg-bitbucket-pipelines.yml';assert.equal(bitbucketSyntaxSettingsProbe('setup', REVIEW), null);assert.equal(bitbucketSyntaxSettingsProbe(), null); });
 
 const harness = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');
-const runCaseBody = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function crossSettingsDom('));
+const runCaseBody = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function runBitbucketWhitespaceCase('));
 function runner({ focus = 'bitbucket-pipeline-shell', active = 0, closeFailure = false, restoreFailure = false, bodyFailure = false, assetCleanupFailure = false } = {}) {
  const order = [];let value = { enabled: true, future: { retained: true } };const original = structuredClone(value);let closed = false;const report = { cases: [], infrastructureErrors: [], quotaPolicy: { conservativeObservedRequestBudget: 40 } };
  const page = { setViewport: async () => {}, bringToFront: async () => {}, on: () => {}, once: () => {}, url: () => SELECTED, isClosed: () => closed, goto: async () => { order.push('navigate');assert.equal(value.prOverview, false);assert.equal(value.quickReview, false);assert.ok(order.includes('asset-observe'));return { status: () => 200 }; }, close: async () => { order.push('close');if (closeFailure) throw Error('Synthetic close failure');closed = true; } };
