@@ -2286,3 +2286,16 @@ Its single initial native URL includes the known unchanged `file_path`, matching
 
 Puppeteer25 passes media-feature reset values to Chromium CDP, which requires an empty array rather than null.
 The shell acceptance uses `emulateMediaFeatures([])` on both normal and failure cleanup paths to restore the browser's baseline light or dark media.
+
+
+### Read-only Bitbucket PR context admission
+
+The literal `bitbucket-pr-whole-context` case disables both `prOverview` and `quickReview` before navigation so its source-only test does not start the unrelated conversation reader.
+Only that case reserves three external requests and stops at47 observed requests, for50 total planned requests below the documented60/hour ceiling.
+The external reservation is a policy margin for reads accounted outside the browser runner, not synthesized events in the observed browser timestamps.
+All other cases retain the existing40-request policy and native preference preflights.
+A read-only cap hit aborts and records a budget hold with the first actual expiry, without manufacturing a provider429 cooldown.
+Actual provider429 handling and inherited server cooldowns remain unchanged.
+Native context inputs require three remaining observed slots for at most two concurrent expansion requests.
+A cached owned fold may omit that request reserve only after a fresh qualified source snapshot proves every leaf line already mounted and source-equal, with the exact closed fold still present.
+The after-request hard stop remains active during cached toggles and every other phase.

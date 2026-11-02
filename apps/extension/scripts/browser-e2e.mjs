@@ -15,6 +15,7 @@ import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from '
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { assertSyntaxOnTraffic, characterizeBitbucketSyntaxOn, createSyntaxOnRequestIdentity, observeSyntaxOnTraffic, syntaxOnBudgetPreflight } from './bitbucket-syntax-on.mjs';
+import { bitbucketPrContextPolicy, bitbucketPrContextInputBudget } from './bitbucket-pr-context-budget.mjs';
 import { observeBitbucketPipelineMainAsset } from './bitbucket-pipeline-main-asset.mjs';
 import { bitbucketPipelineAssetMetadata, pipelineBudgetPreflight, pipelineSettingsScope } from './bitbucket-pipeline-visit.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
@@ -134,7 +135,7 @@ const report = {
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
   limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
   installation: null, cases: [], infrastructureErrors: [],
-  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false },
+  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false, ...bitbucketPrContextPolicy(focus) },
 };
 const cooldowns = new Map();
 const capturedNativeResources = new Set();
@@ -230,7 +231,7 @@ async function inheritCooldowns() {
       inherit('bitbucket', new Date(at + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
     }
   }
-  if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget) inherit('bitbucket', new Date(bitbucketRequestTimes.at(-1) + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
+  if (focus !== 'bitbucket-pr-whole-context' && bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget) inherit('bitbucket', new Date(bitbucketRequestTimes.at(-1) + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
   report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedAnonymousRequestsWithinRollingHour: bitbucketRequestTimes.length, inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
 }
 function closedTarget(error) { return /Target closed|Target\.closeTarget|Session closed|Connection closed|targetgone|No target with given id/i.test(errorText(error)); }
@@ -348,9 +349,13 @@ function observeBitbucketBudget(page, item, abort) {
     report.observedBitbucketApiRequests = bitbucketApiRequests;
     report.observedAnonymousRequestsWithinRollingHour = bitbucketRequestTimes.length;
     if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget && !abort.signal.aborted) {
-      const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
-      cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));
-      item.rateLimitedUntil = new Date(cooldowns.get('bitbucket')).toISOString();
+      if (item.name === 'bitbucket-pr-whole-context') item.budgetHold = { reason: 'read_only_observed_limit', observedLimit: 47, externalReserve: 3,
+        firstExpiry: new Date(bitbucketRequestTimes[0] + 60 * 60 * 1000 + 1).toISOString() };
+      else {
+        const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
+        cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));
+        item.rateLimitedUntil = new Date(cooldowns.get('bitbucket')).toISOString();
+      }
       item.holdReason = 'conservative_anonymous_api_budget';
       abort.abort(new Error('Conservative anonymous Bitbucket API request budget reached; demand stopped before continuing the verification slice'));
       void page.close().catch(() => undefined);
@@ -446,6 +451,9 @@ async function runCase(name, url, body, discovery = false) {
       item.rateLimitedUntil = new Date(cooldown).toISOString();
       item.navigationSuppressedByCooldown = true;
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
+    }
+    if (prWhole && bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length >= 47) {
+      item.navigationSuppressedByBudget = true;throw new Error('Read-only PR context observed request budget is full; no navigation attempted');
     }
     currentCaseAbort = abort;
     if (localReviewOnly) {
@@ -1302,6 +1310,15 @@ function guardBitbucketShellBudget() {
   const budget = report.quotaPolicy.conservativeObservedRequestBudget;
   assert.ok(active + 4 < budget, 'Insufficient carried rolling request buffer for bounded native context input');
   return { observedWithinRollingHour: active, budget, buffer: 4, basis: 'A conservative buffer, not a claim about native expansion request cost. Existing global request/429 aborts remain authoritative.' };
+}
+
+function guardBitbucketPrContextBudget(options) {
+  currentCaseAbort?.signal.throwIfAborted();
+  assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Native context expansion suppressed by carried Bitbucket cooldown');
+  const active = bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length;
+  const decision = bitbucketPrContextInputBudget(active, options);
+  assert.ok(decision.available, 'Read-only PR context needs three free observed requests for at most two native context requests');
+  return { observedWithinRollingHour: active, observedLimit: 47, externalReserve: 3, ...decision };
 }
 
 async function bitbucketFiltering(page, item) {
@@ -2928,7 +2945,7 @@ try {
 
   await runCase('bitbucket-pr-whole-context', bitbucketPrWholeURL, async (page,item) => {
     const context=bitbucketWholeCases.get(page);assert.ok(context,'Dedicated PR whole-context scope unavailable');
-    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketShellBudget,readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)})});
+    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketPrContextBudget,readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)})});
   }, true);
 
   await runCase('bitbucket-whole-context', bitbucketWholeURL, async (page,item) => {
