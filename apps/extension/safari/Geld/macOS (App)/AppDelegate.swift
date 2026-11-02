@@ -14,6 +14,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Override point for customization after application launch.
     }
 
+    @IBAction func showGeldHelp(_ sender: Any?) {
+        guard let url = URL(string: "https://www.geld.sh/how-it-works") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }

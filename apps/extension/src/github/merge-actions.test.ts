@@ -166,11 +166,21 @@ describe('the requests', () => {
     expect(plain.url).toBe('/o/r/pull/7/page_data/merge');
     expect(plain.init.method).toBe('POST');
     expect(JSON.parse(String(plain.init.body))).toEqual({ bypassBranchProtections: false, mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: 'Body', authorEmail: 'a@b.c' });
-    const stacked = mergeRequest('/o/r/pull/7', { ...commit, stacked: true, bypass: true }, 'n1');
-    expect(stacked.url).toBe('/o/r/pull/7/page_data/enqueue_stack');
-    expect(JSON.parse(String(stacked.init.body))).toEqual({ mergeAction: 'DIRECT_MERGE', bypassRules: 'true', mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: 'Body', authorEmail: 'a@b.c' });
-    // A rebase writes no commit of its own.
-    expect(JSON.parse(String(mergeRequest('/o/r/pull/7', { ...commit, method: 'REBASE' }, '').init.body))).toEqual({ bypassBranchProtections: false, mergeMethod: 'REBASE', authorEmail: 'a@b.c' });
+    // The foot of a stack merges alone and names its author as a plain merge does.
+    const foot = mergeRequest('/o/r/pull/7', { ...commit, stacked: true, bypass: true, stackEntries: 1 }, 'n1');
+    expect(foot.url).toBe('/o/r/pull/7/page_data/enqueue_stack');
+    expect(JSON.parse(String(foot.init.body))).toEqual({ mergeAction: 'DIRECT_MERGE', bypassRules: 'true', mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: 'Body', authorEmail: 'a@b.c' });
+    // A rebase writes no commit of its own, and names no author either.
+    expect(JSON.parse(String(mergeRequest('/o/r/pull/7', { ...commit, method: 'REBASE' }, '').init.body))).toEqual({ bypassBranchProtections: false, mergeMethod: 'REBASE' });
+  });
+
+  it('names no author for a squash of several stacked pull requests, which GitHub refuses ("Choosing author email is not allowed")', () => {
+    const body = (submission: MergeSubmission): unknown => JSON.parse(String(mergeRequest('/o/r/pull/157', submission, 'n1').init.body));
+    expect(body({ ...commit, stacked: true, stackEntries: 11 })).toEqual({ mergeAction: 'DIRECT_MERGE', bypassRules: 'false', mergeMethod: 'SQUASH', commitTitle: 'Title (#7)', commitMessage: 'Body' });
+    // A stack whose size is not known is taken to be several.
+    expect(body({ ...commit, stacked: true })).not.toHaveProperty('authorEmail');
+    // A merge commit for the stack is one commit, and names its author as GitHub's merge box does.
+    expect(body({ ...commit, method: 'MERGE', stacked: true, stackEntries: 11 })).toHaveProperty('authorEmail', 'a@b.c');
   });
 
   it('takes a draft out of draft with nothing but the request', () => {
