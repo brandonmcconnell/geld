@@ -7,7 +7,7 @@ import { fetchGitLabDiff } from './source';
 import { fetchGitLabStandaloneDiff } from './standalone-source';
 import { fetchGitLabReview } from './review';
 import type { GitLabNativeThreadCapabilities } from './review';
-import { readGitLabActions } from './actions';
+import { gitLabActionVisit, readGitLabActions } from './actions';
 import type { ProviderReviewComment } from '@geld/review';
 import { readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-actions';
 import { fetchGitLabConfig } from './config';
@@ -31,6 +31,7 @@ export const gitlabAdapter: ProviderAdapter = {
   reviewHost: (doc) => doc.querySelector<HTMLElement>('.issuable-discussion .detail-page-description'),
   actionHost: (doc) => doc.querySelector('button[data-testid="review-drawer-toggle"]')?.parentElement ?? null,
   fetchReview: async (page, signal, doc) => {
+    const actionVisit = gitLabActionVisit(doc);
     const snapshot = await fetchGitLabReview(page, signal, doc);
     const permissionsForNote = new Map<string, GitLabNativeThreadCapabilities>();
     for (const thread of snapshot.threadCapabilities.values()) {
@@ -39,7 +40,7 @@ export const gitlabAdapter: ProviderAdapter = {
     return {
       ...snapshot,
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
-      actions: readGitLabActions(doc, snapshot.capabilities),
+      get actions() { return readGitLabActions(doc, snapshot.capabilities, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url }); },
       renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc),
       authorPresentation: (comment: ProviderReviewComment) => gitLabAuthorPresentation(comment, doc),
       sourceActions: (comment: ProviderReviewComment) => {
