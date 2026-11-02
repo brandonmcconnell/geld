@@ -21,6 +21,7 @@ import { captureGitLabRenderedNote, verifyGitLabRenderedNotes } from './gitlab-r
 import { verifyGitLabAuthorReuse } from './gitlab-author-reuse-acceptance.mjs';
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
+import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
@@ -2644,6 +2645,12 @@ try {
     const categorizedPath = item.enabledState.categories.find((category) => category.id === 'tests')?.paths[0];
     assert.ok(typeof categorizedPath === 'string', 'Mixed GitLab fixture needs a real categorized path');
     item.categoryInteraction = await categoryInteraction(page, categorizedPath, 'gitlab', 'gitlab-category', false);
+    item.displayedOutline = {};
+    await verifyGitLabDisplayedOutline(page, { progress: item.displayedOutline, poll, pollStable, capture, safeUrl, extensionId,
+      readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
+      writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
+      readState: async () => ({ runtime: await tabState(page), native: await gitLabDom(page) }),
+    });
     item.theme = await themeProbe(page);
     item.spokenEnabled = await countA11y(page);
     assert.match(item.spokenEnabled.additions ?? '', /\b4\b/, 'Spoken additions must match the rewritten4 visible lines');

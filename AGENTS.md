@@ -1441,6 +1441,14 @@ The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants
 Repository identity includes the provider, origin and full repository path, so nested GitLab groups and equally named repositories on different hosts remain separate.
 One synchronized Geld settings object follows the user across providers, with the same core matcher and category definitions.
 Provider-specific surfaces translate settings and sources into shared review and diff models rather than importing GitHub's DOM adapters or Primer styles.
+GitLab Rapid test outlines retain native `expandLines` header rows and Bitbucket outlines retain verified above/below context controls in their native chunk headers as ordered hunk records.
+These boundaries split changed runs before test rename pairing and disclose `shown lines` when a test reaches omitted terminal context.
+Multiple controls in one native header represent one boundary, and owned controls, unknown layouts, no-newline annotations and Bitbucket dummy-chunk controls alone supply no missing-context proof.
+Boundary structure participates in the fold cache signature even when every displayed source line is unchanged.
+This folding reads only displayed source and neither fetches whole files nor activates native context expansion.
+Installed GitLab mixed-file acceptance toggles the real test-outline setting on retained native suite declarations, verifies original row/text/control/Viewed identities and corrected counts, opens one outline with trusted input and restores settings and category state.
+That displayed-outline phase retains an unknown source head explicitly and does not establish whole-file extents or native context expansion.
+
 
 - **Selected GitLab diffs require immutable comparisons.**
   An MR's `.diff` endpoint ignores `diff_id` and `start_sha`, so obtain the selected version metadata and request `/-/compare/{base}...{head}?format=diff&straight=true` with its immutable refs.
