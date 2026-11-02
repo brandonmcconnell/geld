@@ -2661,7 +2661,8 @@ function subjectOf(): MarkdownSubject | null {
 function pageChecks(headSha: string): readonly RawCheckRun[] {
   const fromPage = crawlCheckRuns(document, headSha);
   const subject = subjectOf();
-  if (subject === null || headSha === '') return fromPage;
+  // ZERO_SHA stands for a head not read yet: there is no such commit to ask GitHub about.
+  if (subject === null || headSha === '' || headSha === ZERO_SHA) return fromPage;
   const checkSubject = { origin: subject.origin, owner: subject.owner, repo: subject.repo };
   const fetched = headChecks(checkSubject, headSha, mergeBoxText(), reapplySoon);
   const next = nextCheckRefresh(checkSubject, headSha);
