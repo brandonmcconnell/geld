@@ -1484,11 +1484,12 @@ function chooseStatus(state: Mounted, option: StatusOption): void {
 }
 
 /**
- * A stack's choice: this pull request alone as the flat menu's item would go; more than one only after the browser's
- * confirmation naming every one.
+ * A stack's choice: this pull request alone as the flat menu's item would go; any other, even one that changes a single
+ * pull request (the others in its scope already there), only after the browser's confirmation naming it, since the
+ * flat path acts on the pull request being read.
  */
 function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoice): void {
-  if (choice.targets.length === 1) {
+  if (choice.targets.length === 1 && choice.targets[0]?.current === true) {
     chooseStatus(state, { status: group.status, action: group.action, note: group.note });
     return;
   }
