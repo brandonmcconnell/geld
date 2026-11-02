@@ -1,8 +1,9 @@
 /**
  * User authorization for the Geld **GitHub App**.
  *
- * Geld never acts as the app itself (no private key, no installation tokens);
- * everything happens on behalf of a signed-in user with a *user access token*
+ * Interactive identity authorization uses a signed-in user access token.
+ * Repository installation authentication is separate from these identity flows.
+ * This module works with a *user access token*
  * (`ghu_…`). Two ways to get one, both implemented here without any Geld
  * server in the loop:
  *

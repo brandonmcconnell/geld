@@ -6,3 +6,6 @@
  * and, in tests, `fetch`.
  */
 export * from './auth';
+
+export * from './client';
+export * from './query';
