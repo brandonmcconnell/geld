@@ -220,8 +220,9 @@ export function bitbucketShellProbe(action = 'read', expected = null) {
     return { text: range.toString(), x1: rect.left + 0.1, x2: rect.right - 0.1, y: rect.top + rect.height / 2, visible: rect.width > 0 && rect.top >= 0 && rect.bottom <= innerHeight && hit !== null && row34.code.contains(hit) };
   }
   const normalizeColor = (value) => { if (typeof OffscreenCanvas === 'undefined' || !CSS.supports('color', value)) return null;const context = new OffscreenCanvas(1, 1).getContext('2d');if (context === null) return null;context.fillStyle = value;return context.fillStyle; };
-  const colors = row34 === undefined ? {} : Object.fromEntries([['keyword', '--ds-text-code-keywords'], ['built_in', '--ds-text-code-functions'], ['string', '--ds-text-code-strings']].map(([scope, token]) => {
-    const native = getComputedStyle(row34.code).getPropertyValue(token).trim();const pseudo = getComputedStyle(row34.code, `::highlight(geld-bitbucket-shell-${scope})`).color;
+  const colors = row34 === undefined ? {} : Object.fromEntries([['keyword', '--ds-text-code-keywords'], ['built_in', '--ds-text-accent-blue-bolder', '--ds-text-code-functions'], ['string', '--ds-text-accent-orange', '--ds-text-code-strings']].map(([scope, primary, fallback]) => {
+    const style = getComputedStyle(row34.code);const present = style.getPropertyValue(primary) !== '' || Array.from({ length: style.length }, (_, i) => style.item(i)).includes(primary);const token = present || fallback === undefined ? primary : fallback;
+    const native = style.getPropertyValue(token).trim();const pseudo = getComputedStyle(row34.code, `::highlight(geld-bitbucket-shell-${scope})`).color;
     return [scope, { token, native, pseudo, nativeNormalized: normalizeColor(native), pseudoNormalized: normalizeColor(pseudo) }];
   }));
   const selection = getSelection();

@@ -101,12 +101,13 @@ html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> di
   flex: 0 0 auto;
 }
 
-/* Embedded Pipelines shell: native ADS code tokens, no font/DOM overrides. */
+/* Owned Pipelines shell uses provider Bash role colors with native ADS fallbacks. */
 ::highlight(geld-bitbucket-shell-plain), ::highlight(geld-bitbucket-shell-subst) { color: var(--ds-text-code-default); }
 ::highlight(geld-bitbucket-shell-keyword) { color: var(--ds-text-code-keywords); }
-::highlight(geld-bitbucket-shell-built_in), ::highlight(geld-bitbucket-shell-title) { color: var(--ds-text-code-functions); }
+::highlight(geld-bitbucket-shell-built_in) { color: var(--ds-text-accent-blue-bolder, var(--ds-text-code-functions)); }
+::highlight(geld-bitbucket-shell-title) { color: var(--ds-text-code-functions); }
 ::highlight(geld-bitbucket-shell-number), ::highlight(geld-bitbucket-shell-literal) { color: var(--ds-text-code-numbers); }
-::highlight(geld-bitbucket-shell-string) { color: var(--ds-text-code-strings); }
+::highlight(geld-bitbucket-shell-string) { color: var(--ds-text-accent-orange, var(--ds-text-code-strings)); }
 ::highlight(geld-bitbucket-shell-comment), ::highlight(geld-bitbucket-shell-meta) { color: var(--ds-text-code-comments); }
-::highlight(geld-bitbucket-shell-variable) { color: var(--ds-text-code-accent-1); }
+::highlight(geld-bitbucket-shell-variable) { color: var(--ds-text-accent-blue-bolder, var(--ds-text-code-accent-1)); }
 ::highlight(geld-bitbucket-shell-attr) { color: var(--ds-text-code-tags); }
