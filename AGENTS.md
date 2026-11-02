@@ -2393,3 +2393,9 @@ It never records arbitrary stack URLs, function names or request bodies.
 The native Atlassian cookie notice uses `role="dialog"` while remaining a passive layout banner.
 Whitespace acceptance excludes only the retained native cookie shape and ownership from its active-dialog guard, preserving every notice node and never choosing consent.
 Unknown dialogs, changed notices and dialogs containing fields remain blockers, and the report separates passive notice counts from actionable Settings matches.
+
+A hydrated anonymous Bitbucket page can have its own `globalShouldIgnoreWhitespace` property set to `undefined` when the bootstrap omits the preference.
+Native controls and requests treat that as Off, so the bridge exposes an effective boolean while retaining the exact raw baseline for internal restoration.
+Only a present data property with boolean or undefined value is accepted after the existing hydration checks, and the external bridge protocol remains boolean-only.
+Bitbucket also retains a hidden sticky-header copy of All changes.
+Whitespace qualification uses the one visible original control in the current diff panel, excluding hidden, inert and Geld-owned copies.

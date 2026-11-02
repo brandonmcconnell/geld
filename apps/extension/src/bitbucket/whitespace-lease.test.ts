@@ -1,14 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { BitbucketWhitespaceLease } from './whitespace-lease';
 import type { NativeWhitespaceSnapshot } from './whitespace-lease';
-function fixture(value = false) {
+function fixture(raw: boolean | 'unset' = false) {
+  const value = raw === true;
   let now = 0;
-  let state: NativeWhitespaceSnapshot = { owner: {}, settings: { globalShouldIgnoreWhitespace: value }, subject: 'acme/repo!1:a', current: true, detached: false, value, open: false, loading: false, busy: false, failed: false, diffLoading: false, statsLoading: false, diff: [], stats: [] };
-  const values: boolean[] = [];
-  const lease = new BitbucketWhitespaceLease(() => state, value => { values.push(value);state = { ...state, settings: { ...state.settings, globalShouldIgnoreWhitespace: value }, value }; }, () => undefined, () => now);
-  return { lease, values, patch: (patch: Partial<NativeWhitespaceSnapshot>) => { now += 250;state = { ...state, ...patch };lease.tick(); }, settle: () => { now += 250;state = { ...state, diffLoading: true, statsLoading: true, busy: true };lease.tick();state = { ...state, diffLoading: false, statsLoading: false, diff: [], stats: [], busy: false };lease.tick(); } };
+  let state: NativeWhitespaceSnapshot = { owner: {}, settings: { globalShouldIgnoreWhitespace: raw === 'unset' ? undefined : raw }, subject: 'acme/repo!1:a', current: true, detached: false, value, unset: raw === 'unset', open: false, loading: false, busy: false, failed: false, diffLoading: false, statsLoading: false, diff: [], stats: [] };
+  const values: (boolean | undefined)[] = [];
+  const lease = new BitbucketWhitespaceLease(() => state, value => { values.push(value);state = { ...state, settings: { ...state.settings, globalShouldIgnoreWhitespace: value }, value: value === true, unset: value === undefined }; }, () => undefined, () => now);
+  return { lease, values, raw: () => Reflect.get(state.settings, 'globalShouldIgnoreWhitespace'), patch: (patch: Partial<NativeWhitespaceSnapshot>) => { now += 250;state = { ...state, ...patch };lease.tick(); }, settle: () => { now += 250;state = { ...state, diffLoading: true, statsLoading: true, busy: true };lease.tick();state = { ...state, diffLoading: false, statsLoading: false, diff: [], stats: [], busy: false };lease.tick(); } };
 }
 describe('Bitbucket native in-memory whitespace lease', () => {
+  it('restores own undefined before Settings and re-acquires only after Cancel', () => {
+    const f = fixture('unset');f.lease.update(true);f.settle();expect(f.values).toEqual([true]);
+    expect(f.lease.beforePreferences()).toBe(true);expect(f.values).toEqual([true, undefined]);expect(f.raw()).toBeUndefined();
+    f.patch({ open: true });f.patch({ open: false });expect(f.values).toEqual([true, undefined, true]);f.settle();
+    f.lease.stop();expect(f.values).toEqual([true, undefined, true, undefined]);expect(f.raw()).toBeUndefined();
+  });
+  it('observes undefined Off as false without changing the native field when forcing is disabled', () => {
+    const f = fixture('unset');f.lease.update(true, false);f.patch({});expect(f.lease.state()).toMatchObject({ status: 'ready', value: false });expect(f.values).toEqual([]);expect(f.raw()).toBeUndefined();
+  });
+  it('does not restore an undefined baseline over an independent same-value native replacement', () => {
+    const f = fixture('unset');f.lease.update(true);f.settle();f.patch({ settings: { globalShouldIgnoreWhitespace: true } });f.lease.stop();expect(f.values).toEqual([true]);
+  });
+  it('requires exact unset restoration rather than accepting a distinct false field as restored', () => {
+    const f = fixture('unset');f.lease.update(true);f.settle();f.lease.update(false);
+    f.patch({ value: false, unset: false, settings: { globalShouldIgnoreWhitespace: false } });f.settle();expect(f.lease.state().status).toBe('pending');
+    f.patch({ value: false, unset: true, settings: { globalShouldIgnoreWhitespace: undefined } });f.settle();expect(f.lease.state().status).toBe('legacy');
+  });
+
   it('waits for both replacement native sources, then restores only its field after unrelated settings changed', () => {
     const f = fixture();f.lease.update(true);expect(f.values).toEqual([true]);expect(f.lease.state().status).toBe('pending');
     f.patch({ diff: [] });expect(f.lease.state().status).toBe('pending');f.patch({ stats: [] });expect(f.lease.state().status).toBe('pending');f.settle();expect(f.lease.state()).toMatchObject({ status: 'ready', value: true });

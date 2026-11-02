@@ -7,7 +7,7 @@ const TAKEOVER = 'geld:bitbucket-whitespace-takeover';
 const ACTION = 'diffSettings/UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS';
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function field(value: unknown, name: string): unknown { return object(value) ? value[name] : undefined; }
-interface Binding { readonly owner: object; current(): boolean; read(): unknown; dispatch(value: boolean): void; subscribe(callback: () => void): () => void; select(name: string, state: unknown): unknown }
+interface Binding { readonly owner: object; current(): boolean; read(): unknown; dispatch(value: boolean | undefined): void; subscribe(callback: () => void): () => void; select(name: string, state: unknown): unknown }
 function binding(host: Window): Binding | null {
   const loader: unknown = Reflect.get(host, 'parcelRequirecbf3');if (typeof loader !== 'function') return null;
   try {
@@ -23,6 +23,12 @@ function binding(host: Window): Binding | null {
       select: (name, state) => { const fn = selectors[name];return typeof fn === 'function' ? fn.call(selectors, state) : undefined; } };
   } catch { return null; }
 }
+function nativeValue(settings: unknown): { readonly value: boolean; readonly unset: boolean } | null {
+  if (!object(settings)) return null;
+  const property = Object.getOwnPropertyDescriptor(settings, 'globalShouldIgnoreWhitespace');
+  if (property === undefined || !('value' in property) || property.value !== undefined && typeof property.value !== 'boolean') return null;
+  return { value: property.value === true, unset: property.value === undefined };
+}
 function route(doc: Document): { readonly repository: string; readonly number: string; readonly href: string } | null {
   try { const url = new URL(doc.URL), match = /^\/([^/]+\/[^/]+)\/pull-requests\/([1-9]\d*)\/diff\/?$/.exec(url.pathname);
     return url.origin === 'https://bitbucket.org' && !url.username && !url.password && url.search === '' && match?.[1] !== undefined && match[2] !== undefined ? { repository: match[1], number: match[2], href: url.origin + url.pathname } : null;
@@ -32,6 +38,20 @@ function opener(doc: Document): HTMLButtonElement | null {
   const candidates = [...doc.querySelectorAll<HTMLButtonElement>('#pull-request-tabs-1-tab[role="tabpanel"] button[aria-live="polite"][type="button"]')]
     .filter(node => node.isConnected && !node.disabled && node.closest('[data-geld-ui],[hidden],[inert],form') === null && ['Global diff settings', 'Global diff view settings'].includes(node.textContent?.trim() ?? ''));
   return candidates.length === 1 ? candidates[0] ?? null : null;
+}
+function allChanges(doc: Document): boolean {
+  const panels = doc.querySelectorAll('#pull-request-tabs-1-tab[role="tabpanel"]');
+  const panel = panels.length === 1 ? panels[0] : null;if (panel === null || panel === undefined) return false;
+  const candidates = [...panel.querySelectorAll('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter(node => {
+    if (node.textContent?.trim() !== 'All changes' || node.getAttribute('aria-expanded') !== 'false'
+      || node.closest('[data-geld-ui],[hidden],[inert],[aria-hidden="true"]') !== null) return false;
+    for (let parent: Element | null = node; parent !== null; parent = parent.parentElement) {
+      const style = doc.defaultView?.getComputedStyle(parent);
+      if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse' || style?.opacity === '0') return false;
+    }
+    return true;
+  });
+  return candidates.length === 1;
 }
 function nativeAlert(doc: Document, target?: Element): boolean {
   const alerts = target === undefined ? [...doc.querySelectorAll('[role="alert"]')] : [target.closest('[role="alert"]')];
@@ -56,18 +76,18 @@ export function startBitbucketNativeWhitespace(doc: Document, host: Window): () 
         native = binding(host);if (native !== null) off = native.subscribe(() => tick());
       }
       if (native === null) return null;
-      const state = native.read(), global = field(state, 'global'), settings = field(state, 'diffSettings'), slice = field(field(state, 'repository'), 'pullRequest');
-      if (lastQualified !== null && object(settings) && typeof settings.globalShouldIgnoreWhitespace === 'boolean') fallback = { ...lastQualified, owner: native.owner, settings, current: false, detached: true, value: settings.globalShouldIgnoreWhitespace, busy: true };
+      const state = native.read(), global = field(state, 'global'), settings = field(state, 'diffSettings'), slice = field(field(state, 'repository'), 'pullRequest'), mode = nativeValue(settings);
+      if (lastQualified !== null && object(settings) && mode !== null) fallback = { ...lastQualified, owner: native.owner, settings, current: false, detached: true, ...mode, busy: true };
       const pieces = native.select('getCurrentPullRequestUrlPieces', state), number = native.select('getCurrentPullRequestId', state), head = native.select('getPullRequestSourceHash', state), base = native.select('getPullRequestDestinationHash', state), sourceRepo = native.select('getPullRequestSourceRepo', state);
       if (!object(global) || typeof global.locale !== 'string' || !global.locale || !object(sourceRepo) || typeof sourceRepo.full_name !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(sourceRepo.full_name) || !object(settings) || !object(slice) || !object(pieces) || typeof pieces.owner !== 'string' || typeof pieces.slug !== 'string' || !Number.isSafeInteger(number)
-        || typeof head !== 'string' || !/^(?:[a-f0-9]{7,40}|[a-f0-9]{64})$/i.test(head) || typeof base !== 'string' || !/^(?:[a-f0-9]{7,40}|[a-f0-9]{64})$/i.test(base) || typeof settings.globalShouldIgnoreWhitespace !== 'boolean' || typeof settings.isDialogOpen !== 'boolean'
+        || typeof head !== 'string' || !/^(?:[a-f0-9]{7,40}|[a-f0-9]{64})$/i.test(head) || typeof base !== 'string' || !/^(?:[a-f0-9]{7,40}|[a-f0-9]{64})$/i.test(base) || mode === null || typeof settings.isDialogOpen !== 'boolean'
         || typeof settings.isDialogLoading !== 'boolean' || typeof slice.isDiffsLoading !== 'boolean' || typeof slice.isDiffStatLoading !== 'boolean' || !Array.isArray(slice.diff) || !Array.isArray(slice.diffStat)) return fallback;
       const repository = `${pieces.owner}/${pieces.slug}`, source = JSON.stringify([repository, String(number), sourceRepo.full_name, head.toLowerCase(), base.toLowerCase()]);
       const current = !nativeAlert(doc) && page !== null && page.repository === repository && page.number === String(number) && opener(doc) !== null
         && doc.querySelectorAll('[role="region"][aria-label="Diff"]').length === 1
         && [...doc.querySelectorAll('[data-testid="pr-header"]')].some(node => new RegExp(`^#${page.number}\\s*•`).test(node.querySelector('[data-qa="pr-branches-and-state-styles"]')?.nextElementSibling?.textContent?.trim() ?? ''))
-        && [...doc.querySelectorAll('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter(node => node.textContent?.trim() === 'All changes' && node.getAttribute('aria-expanded') === 'false').length === 1;
-      const snapshot = { owner: native.owner, settings, subject: source, current, detached: page === null, value: settings.globalShouldIgnoreWhitespace, open: settings.isDialogOpen, loading: settings.isDialogLoading,
+        && allChanges(doc);
+      const snapshot = { owner: native.owner, settings, subject: source, current, detached: page === null, ...mode, open: settings.isDialogOpen, loading: settings.isDialogLoading,
         failed: slice.diffErrorCode !== null || slice.diffStatErrorCode !== null, diffLoading: slice.isDiffsLoading, statsLoading: slice.isDiffStatLoading, busy: slice.isDiffsLoading || slice.isDiffStatLoading || slice.diffErrorCode !== null || slice.diffStatErrorCode !== null, diff: slice.diff, stats: slice.diffStat };
       if (current) lastQualified = snapshot;
       return snapshot;

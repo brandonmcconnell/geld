@@ -337,7 +337,7 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
       placeholderCount: bounded('[data-testid="pr-diff-placeholder-wrapper"]'), progressCount: bounded('[role="progressbar"]'),
       busy: document.querySelector('#pull-request-tabs-1-tab[aria-busy="true"]') !== null,
       dialogCount: dialogs.counts.actionable, dialogCounts: dialogs.counts, checkboxCount: bounded('input#diff-settings-ignore-whitespace-toggle'),
-      bound: saved !== undefined, generation: saved?.generation ?? null, transition: saved?.transition?.phase ?? null };
+      bound: saved !== undefined, generation: saved?.generation ?? null, transition: saved?.transition?.phase ?? null, bridge: saved?.bridge ?? null };
   }
   if (location.href !== 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff') return null;
   const panels = [...document.querySelectorAll('#pull-request-tabs-1-tab[role="tabpanel"]')].filter(native);
@@ -359,7 +359,18 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
   if (action === 'bind' && !files.some(f => f.article !== null)) return null;
   if (action === 'bind') {
     if (saved) return null;
-    saved = { panel, actor: actors[0], actorValue: actors[0].getAttribute('data-current-user'), opener, files, originalSemantics: files.map(f => ({ path: f.path, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })), generation: 0, transition: null, events: [], forbiddenInputs: 0, expected: null, overflow: false };
+    saved = { panel, actor: actors[0], actorValue: actors[0].getAttribute('data-current-user'), opener, files, originalSemantics: files.map(f => ({ path: f.path, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })), generation: 0, transition: null, events: [], forbiddenInputs: 0, expected: null, overflow: false, bridge: { requests: [], responses: [], truncated: false } };
+    saved.bridgeListener = event => {
+      if (!(event instanceof document.defaultView.CustomEvent) || typeof event.detail !== 'string' || event.detail.length > 1024) return;
+      try {
+        const value = JSON.parse(event.detail);let record, target;
+        if (event.type === 'geld:bitbucket-whitespace-request' && typeof value?.active === 'boolean' && typeof value.hide === 'boolean') { record = { active: value.active, hide: value.hide };target = saved.bridge.requests; }
+        if (event.type === 'geld:bitbucket-whitespace-response' && value?.route === location.href && ['legacy', 'pending', 'ready'].includes(value.status) && Number.isSafeInteger(value.epoch) && value.epoch >= 0 && value.epoch <= 1000000 && (value.value === null || typeof value.value === 'boolean') && typeof value.comparison === 'string' && value.comparison.length <= 500) { record = { status: value.status, value: value.value, epoch: value.epoch, hasComparison: value.comparison.length > 0 };target = saved.bridge.responses; }
+        if (!target || JSON.stringify(target.at(-1)) === JSON.stringify(record)) return;
+        if (target.length < 16) target.push(record);else saved.bridge.truncated = true;
+      } catch { /* Diagnostic receipts never qualify a source or accept arbitrary message fields. */ }
+    };
+    for (const type of ['geld:bitbucket-whitespace-request', 'geld:bitbucket-whitespace-response']) document.addEventListener(type, saved.bridgeListener);
     saved.listen = event => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -370,7 +381,7 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
       if (['input', 'change', 'submit'].includes(event.type) && target.closest('[role="dialog"]')) saved.forbiddenInputs++;
     };
     for (const type of ['click', 'input', 'change', 'submit']) document.addEventListener(type, saved.listen, true);
-    saved.stop = () => { for (const type of ['click', 'input', 'change', 'submit']) document.removeEventListener(type, saved.listen, true); };
+    saved.stop = () => { for (const type of ['click', 'input', 'change', 'submit']) document.removeEventListener(type, saved.listen, true);for (const type of ['geld:bitbucket-whitespace-request', 'geld:bitbucket-whitespace-response']) document.removeEventListener(type, saved.bridgeListener); };
     globalThis[KEY] = saved;
   }
   if (!saved || saved.panel !== panel || saved.actor !== actors[0] || saved.actorValue !== actors[0].getAttribute('data-current-user') || saved.opener !== opener) return null;
@@ -420,7 +431,7 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
   const leaves = [...(heading?.parentElement?.parentElement?.querySelectorAll('span') ?? [])].filter(n => n.children.length === 0);
   return { anonymous, originalPage: true, generation: saved.generation, transition: saved.transition?.phase ?? null, samePaths, viewedSemanticsPreserved, settledMounted, busy: panel.getAttribute('aria-busy') === 'true', originalsPreserved, rowsPreserved, viewedPreserved, files: files.map(f => ({ path: f.path, mounted: f.article !== null, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })),
     totals: { files: number(tab?.querySelector(':scope > div > span > span')), additions: number(leaves.find(n => /^\+\s*[\d,]+$/.test(n.textContent.trim()))), deletions: number(leaves.find(n => /^[-−]\s*[\d,]+$/.test(n.textContent.trim()))) },
-    dialogCount: dialogs.length, dialogCounts: inspected.counts, checkbox, cancelAvailable: cancels.length === 1, events: [...saved.events], forbiddenInputs: saved.forbiddenInputs, overflow: saved.overflow };
+    dialogCount: dialogs.length, dialogCounts: inspected.counts, checkbox, cancelAvailable: cancels.length === 1, events: [...saved.events], forbiddenInputs: saved.forbiddenInputs, overflow: saved.overflow, bridge: structuredClone(saved.bridge) };
 }
 
 /** Public scope intentionally ends with Settings open; Cancel/re-disable is unit-only until separately budgeted. */
@@ -431,7 +442,7 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
   const read = () => run(() => page.evaluate(bitbucketWhitespaceProbe));
   const current = async () => {
     await settings.current();const value = await read();
-    progress.lastNative = value === null ? { available: false } : Object.fromEntries(['originalPage', 'generation', 'transition', 'samePaths', 'viewedSemanticsPreserved', 'settledMounted', 'busy', 'originalsPreserved', 'rowsPreserved', 'viewedPreserved', 'dialogCount', 'dialogCounts', 'forbiddenInputs', 'overflow'].map(key => [key, value[key]]));
+    progress.lastNative = value === null ? { available: false } : Object.fromEntries(['originalPage', 'generation', 'transition', 'samePaths', 'viewedSemanticsPreserved', 'settledMounted', 'busy', 'originalsPreserved', 'rowsPreserved', 'viewedPreserved', 'dialogCount', 'dialogCounts', 'forbiddenInputs', 'overflow', 'bridge'].map(key => [key, value[key]]));
     check(value?.originalPage && !value.forbiddenInputs && !value.overflow, 'NATIVE_SOURCE_CHANGED');
     if (transition === null) check(value.viewedPreserved && value.originalsPreserved && value.rowsPreserved, 'SETTLED_NATIVE_CHANGED');
     return value;
