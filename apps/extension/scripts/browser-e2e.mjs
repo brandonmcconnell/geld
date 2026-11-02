@@ -32,6 +32,7 @@ import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands 
 import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
+import { observeInitialOnSource } from './bitbucket-initial-on-source.mjs';
 import { assertInitialNativeOnTraffic, initialNativeOnPreflight, initialNativeOnSettings, verifyInitialNativeOn } from './bitbucket-initial-native-on.mjs';
 import { diagnoseNativeSettings, nativeSettingsDiagnosticPreflight } from './bitbucket-native-settings-diagnostic.mjs';
 import { characterizeNativeBashOn, nativeBashMasterScope, nativeBashOnPreflight } from './bitbucket-native-bash-on.mjs';
@@ -540,7 +541,8 @@ async function runCase(name, url, body, discovery = false) {
     if (['bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on'].includes(name)) {
       item.purpose = 'Dedicated reversible anonymous native Syntax preference characterization. Original checkbox/Save/Cancel only, no authenticated or server-persistence claim.';
       const identifyRequest = createSyntaxOnRequestIdentity();item.syntaxOnTraffic = {};syntaxOnTraffic = observeSyntaxOnTraffic(page, item.syntaxOnTraffic, extensionId, identifyRequest);syntaxOnObservers.set(page, syntaxOnTraffic);
-      observeBitbucketShellFixture(page, item, { safeUrl, extensionId, identifyRequest });
+      observeBitbucketShellFixture(page, item, { safeUrl, extensionId, identifyRequest, redactErrors: name === 'bitbucket-pipeline-initial-on' });
+      if (name === 'bitbucket-pipeline-initial-on') observeInitialOnSource(page, item, { identifyRequest, extensionId });
     }
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
@@ -2986,7 +2988,7 @@ try {
   });
 
   await runCase('bitbucket-pipeline-initial-on', `${BB_PR}/diff`, async (page, item) => {
-    const proof = await verifyInitialNativeOn(page, item, { poll, pause, tabState, bitbucketDom, settings: initialOnSettingsScopes.get(page),
+    const proof = await verifyInitialNativeOn(page, item, { poll, pause, tabState, bitbucketDom, settings: initialOnSettingsScopes.get(page), signal: currentCaseAbort?.signal,
       capture: (target, name) => capture(target, name, { fullPage: false }), guardBudget: guardBitbucketShellBudget,
       freshAnonymousProfile: report.auth.freshTemporaryBrowserProfile, traffic: syntaxOnObservers.get(page) });
     item.featureParity = 'partial';return { status: proof.status === 'passed' ? 'passed' : 'unsupported', verified: proof.status === 'passed'

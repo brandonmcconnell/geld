@@ -5,6 +5,7 @@ import { bitbucketShellProbe, flushObservedBitbucketShell, observedBitbucketShel
 import { assertBitbucketPipelineURL, bitbucketPipelineVisitProbe, prepareBitbucketPipelineVisit } from './bitbucket-pipeline-visit.mjs';
 import { prepareBitbucketPipelineConsent } from './bitbucket-pipeline-consent.mjs';
 import { assertNativeSaveEvents, assertSyntaxOnlyVector, assertSyntaxOnTraffic, syntaxOnSafeURL } from './bitbucket-syntax-on.mjs';
+import { createInitialOnSourceQualifier, initialOnActorProbe } from './bitbucket-initial-on-source.mjs';
 import { syntaxOnProbe } from './bitbucket-syntax-on-probe.mjs';
 
 const SYNTAX = 'diff-settings-syntax-highlighting-toggle';
@@ -71,14 +72,16 @@ export function initialNativeOnFormShape() {
   return { dialogs: dialogs.length, fields: dialogs.slice(0, 2).flatMap((d) => [...d.querySelectorAll('input,select,textarea')].slice(0, 30).map((f) => ({ name: safe(f.name), type: safe(f.type) }))) };
 }
 
-export async function prepareInitialNativeOnSource(page, item, { poll, guardBudget, tabState, bitbucketDom, freshAnonymousProfile, settings }) {
+export async function prepareInitialNativeOnSource(page, item, { poll, guardBudget, tabState, bitbucketDom, freshAnonymousProfile, settings, sourceQualifier }) {
   const evidence = item.shellNativeSources;const proof = { status: 'preparing', clicks: [] };item.initialNativeOn.preparation = proof;
-  const current = async () => { await settings.current(false);await flushObservedBitbucketShell(page);const head = observedBitbucketShellIdentity(evidence);if (proof.head) assert.deepEqual(comparison(head), comparison(proof.head));const state = await tabState(page);assert.equal(state.allowed, false);assert.equal(state.hasDiff, false);return head; };
-  proof.head = await poll(current, (v) => v !== null, 'Already-issued immutable native comparison and inactive extension');evidence.phase = 'firstuse_native_pipeline_selection';proof.visit = {};
-  const url = await prepareBitbucketPipelineVisit(page, { poll, progress: proof.visit, guardBudget, assertHead: () => { const head = observedBitbucketShellIdentity(evidence);assert.deepEqual(comparison(head), comparison(proof.head));return head; } });
+  const current = async () => { await settings.current(false);await flushObservedBitbucketShell(page);const head = sourceQualifier ? sourceQualifier.current() : observedBitbucketShellIdentity(evidence);if (proof.head) assert.deepEqual(comparison(head), comparison(proof.head));const state = await tabState(page);assert.equal(state.allowed, false);assert.equal(state.hasDiff, false);return head; };
+  if (sourceQualifier) { proof.head = await sourceQualifier.qualify();await current(); }
+  else { proof.head = await poll(current, (v) => v !== null, 'Already-issued immutable native comparison and inactive extension'); }
+  evidence.phase = 'firstuse_native_pipeline_selection';proof.visit = {};
+  const url = await prepareBitbucketPipelineVisit(page, { poll, progress: proof.visit, guardBudget, assertHead: () => { const head = sourceQualifier ? sourceQualifier.current() : observedBitbucketShellIdentity(evidence);assert.deepEqual(comparison(head), comparison(proof.head));return head; } });
   proof.consent = {};
   await prepareBitbucketPipelineConsent(page, { progress: proof.consent, poll, guardBudget, flush: () => flushObservedBitbucketShell(page), freshAnonymousProfile, safeUrl: (value) => syntaxOnSafeURL(value) ?? '[omitted malformed HTTP URL]',
-    assertCurrent: () => { assertBitbucketPipelineURL(page.url(), url);const h = observedBitbucketShellIdentity(evidence);assert.deepEqual(comparison(h), comparison(proof.head));return h; },
+    assertCurrent: () => { assertBitbucketPipelineURL(page.url(), url);const h = sourceQualifier ? sourceQualifier.current() : observedBitbucketShellIdentity(evidence);assert.deepEqual(comparison(h), comparison(proof.head));return h; },
     readState: async () => ({ counts: await bitbucketDom(page), state: await tabState(page), visit: await page.evaluate(bitbucketPipelineVisitProbe) }),
     assertState: (before, after) => { for (const s of [before, after]) { assertInitialNativeOnState(s.counts, s.state, false);assert.ok(s.visit?.sameSource && s.visit.selected); }assert.deepEqual(after, before); },
   });
@@ -96,7 +99,7 @@ export async function prepareInitialNativeOnSource(page, item, { poll, guardBudg
     const event = await page.evaluate(bitbucketShellProbe, 'click-result');assert.equal(event.trusted, true);assert.equal(event.qa, 'pr-diff-show-more-lines-below');assert.equal(event.aria, 'Show more lines below');assertBitbucketPipelineURL(event.url, url);assert.deepEqual(event.previous, bounds.previous);assert.deepEqual(event.next, bounds.next);proof.clicks.push({ budget, immediateBudget, armed, event });
     const prefix = expanded.prefixNext;expanded = await poll(() => page.evaluate(bitbucketShellProbe), (v) => v.prefixNext > prefix, 'Actual native context progresses', 20_000);await current();assert.equal(expanded.ownedCount, 0);
   }
-  verifyBitbucketShellContext(expanded, url);assert.equal(expanded.rows.length, 55, 'Known complete native source vector required');proof.expanded = expanded;
+  verifyBitbucketShellContext(expanded, url);assert.equal(expanded.rows.length, 55, 'Known complete native source vector required');proof.expanded = expanded;if (sourceQualifier) sourceQualifier.reconcile(expanded);
   assertInitialNativeOnState(await bitbucketDom(page), await tabState(page), false);proof.status = 'prepared';return { url, head: proof.head };
 }
 
@@ -105,8 +108,10 @@ export async function verifyInitialNativeOn(page, item, deps) {
   const p = { status: 'running', actions: [], writes: [], restoration: { status: 'pending' }, ordering: { boundary: 'Source-audited master-off control flow', privateCapabilityRead: false, internalGlobalCapability: 'Not read or instrumented' }, limitations: ['One same-visit initial file-local native On Pipeline, not global preference, native Bash palette, dark, authenticated or server-persistence acceptance.'] };item.initialNativeOn = p;
   let installed = false;let initial;let failure;let visit;let active = false;let modified = false;
   const flush = deps.unitOnly?.flush ?? flushObservedBitbucketShell;
+  const sourceQualifier = deps.unitOnly ? deps.unitOnly.sourceQualifier : createInitialOnSourceQualifier(page, item, { guardBudget, settings, tabState, flush, signal: deps.signal, poll });
+  const sourceHead = () => sourceQualifier ? sourceQualifier.current() : observedBitbucketShellIdentity(item.shellNativeSources);
   const read = () => page.evaluate(syntaxOnProbe);
-  const current = async () => { assert.equal(page.isClosed(), false);await settings.current(active);await flush(page);assertBitbucketPipelineURL(page.url(), visit.url);const head = observedBitbucketShellIdentity(item.shellNativeSources);assert.deepEqual(comparison(head), comparison(visit.head));const v = await read();assert.equal(v?.same, true, 'Current native actor/source/head/Viewed owner changed');if (!active) assert.equal((await page.evaluate(bitbucketShellProbe)).ownedCount, 0);return v; };
+  const current = async () => { assert.equal(page.isClosed(), false);await settings.current(active);await flush(page);assertBitbucketPipelineURL(page.url(), visit.url);const head = sourceHead();assert.deepEqual(comparison(head), comparison(visit.head));const v = await read();assert.equal(v?.same, true, 'Current native actor/source/head/Viewed owner changed');if (!active) assert.equal((await page.evaluate(bitbucketShellProbe)).ownedCount, 0);return v; };
   const counts = async () => { await current();p.counts = { native: await bitbucketDom(page), state: await tabState(page), masterEnabled: active };assertInitialNativeOnState(p.counts.native, p.counts.state, active); };
   const click = async (kind) => {
     assert.equal(active, false, 'All native Settings interactions must occur with Geld disabled');const budget = guardBudget();await current();const handle = await page.evaluateHandle(syntaxOnProbe, kind);
@@ -130,7 +135,7 @@ export async function verifyInitialNativeOn(page, item, deps) {
   };
   try {
     assert.equal(deps.freshAnonymousProfile, true);await settings.current(false);
-    visit = await (deps.unitOnly?.prepareNative ?? prepareInitialNativeOnSource)(page, item, deps);p.visit = visit;
+    visit = await (deps.unitOnly?.prepareNative ?? prepareInitialNativeOnSource)(page, item, { ...deps, sourceQualifier });p.visit = visit;
     const setup = await page.evaluate(syntaxOnProbe, 'setup');assert.ok(setup?.same && setup.offPreserved);installed = true;p.setup = setup;
     const vector = await open();if (vector === null) { p.status = 'unavailable';p.reason = 'Unknown native Settings form is untouched';return p; }
     assertSyntaxOnlyVector(vector, vector, vector.find((f) => f.id === SYNTAX)?.checked);
@@ -138,10 +143,11 @@ export async function verifyInitialNativeOn(page, item, deps) {
     initial = vector;p.initialVector = initial;await save(true);const on = await open();assertSyntaxOnlyVector(initial, on, true);p.onReadiness = await page.evaluate(syntaxOnProbe, 'ready-frames');assert.equal(p.onReadiness?.frames, 2);
     p.nativeOnBeforeCancel = await page.evaluate(syntaxOnProbe, 'baseline-on');assert.ok(p.nativeOnBeforeCancel?.onBaseline && p.nativeOnBeforeCancel.onPreserved);assert.equal(p.nativeOnBeforeCancel.sourceRows, 55);assert.deepEqual(p.nativeOnBeforeCancel.events, []);assert.equal(p.nativeOnBeforeCancel.baselineEvidence.lineModel.valid, true);assert.deepEqual(p.nativeOnBeforeCancel.baselineEvidence.lineModel.groups.map((g) => g.length), [43, 12]);
     p.onCancel = await close();p.closedBeforeEnable = await current();assert.equal(p.closedBeforeEnable.dialogs, 0);assert.ok(p.closedBeforeEnable.onPreserved && p.closedBeforeEnable.foreignPreserved);await counts();p.zeroOwnedBeforeEnable = await page.evaluate(bitbucketShellProbe);assert.equal(p.zeroOwnedBeforeEnable.ownedCount, 0);p.ordering.preEnableNativeActionCount = p.actions.length;
+    if (sourceQualifier) { await sourceQualifier.beforeEnable();await current();sourceQualifier.assertEnableReserve(); }
     traffic.setPhase('firstuse_enable_master');await settings.enable();active = true;
     const joined = async () => ({ source: await page.evaluate(bitbucketShellProbe), native: await read(), state: await tabState(page) });
     const painted = await poll(joined, (v) => v.source?.ownedCount > 0 && v.native?.onPreserved && v.native.dialogs === 0 && v.state?.hasDiff === true, 'First enabled application paints original native On file', 30_000);
-    const validate = async (v) => { p.lastPaintSample = v;await counts();assert.equal(v.native?.dialogs, 0);assert.equal(v.source.ownedCount, 47, 'Exact55-row native source must yield47 physical Text ranges');assert.equal(p.actions.length, p.ordering.preEnableNativeActionCount, 'No native Settings action while enabled');return (deps.unitOnly?.verifySource ?? verifyBitbucketShellSource)(v.source, visit.url, { origin: 'fresh-native-on-form-open', record: p.nativeOnBeforeCancel.baselineEvidence, currentNative: v.native, subject: visit.head, currentSubject: observedBitbucketShellIdentity(item.shellNativeSources) }); };
+    const validate = async (v) => { p.lastPaintSample = v;await counts();assert.equal(v.native?.dialogs, 0);assert.equal(v.source.ownedCount, 47, 'Exact55-row native source must yield47 physical Text ranges');assert.equal(p.actions.length, p.ordering.preEnableNativeActionCount, 'No native Settings action while enabled');return (deps.unitOnly?.verifySource ?? verifyBitbucketShellSource)(v.source, visit.url, { origin: 'fresh-native-on-form-open', record: p.nativeOnBeforeCancel.baselineEvidence, currentNative: v.native, subject: visit.head, currentSubject: sourceHead() }); };
     p.painted = painted;p.paint = await validate(painted);p.ordering.firstUse = 'Native On was present before the sole master enable. No active Settings qualification was performed. Product source ordering, not a private getter, separates the local witness from global learning.';
     guardBudget();const target = await page.evaluate(bitbucketShellProbe, 'selection-target');assert.ok(target?.visible);assert.equal(target.text, 'if [');await page.mouse.move(target.x1, target.y);await page.mouse.down();await page.mouse.move(target.x2, target.y, { steps: 6 });await page.mouse.up();
     const selected = await poll(joined, (v) => v.source?.selection?.text === 'if [', 'Real first-use source text selection');await validate(selected);await pause(350);const stable = await joined();await validate(stable);assert.deepEqual(stable.source.selection, selected.source.selection);p.selection = { before: selected.source.selection, after: stable.source.selection };
@@ -160,7 +166,7 @@ export async function verifyInitialNativeOn(page, item, deps) {
     } catch (error) { cleanupFailure = error;p.restoration.status = 'failed';p.restoration.error = String(error);p.status = 'failed'; }
     try { await poll(() => traffic.pending(), (v) => v === 0, 'Native Save-window traffic settled', 3000);assertInitialNativeOnTraffic(item.syntaxOnTraffic, item.shellNativeSources.mutations); }
     catch (error) { cleanupFailure ??= error;p.trafficError = String(error);p.status = 'failed'; }
-    if (!page.isClosed()) for (const probe of [syntaxOnProbe, bitbucketShellProbe, bitbucketPipelineVisitProbe, nativeSettingsReadinessProbe]) try { await page.evaluate(probe, 'cleanup'); } catch (error) { cleanupFailure ??= error;p.cleanupError = String(error);p.status = 'failed'; }
+    if (!page.isClosed()) for (const probe of [syntaxOnProbe, bitbucketShellProbe, bitbucketPipelineVisitProbe, nativeSettingsReadinessProbe, initialOnActorProbe]) try { await page.evaluate(probe, 'cleanup'); } catch (error) { cleanupFailure ??= error;p.cleanupError = String(error);p.status = 'failed'; }
     if (failure && cleanupFailure) throw new AggregateError([failure, cleanupFailure], 'First-use acceptance and cleanup both failed');if (cleanupFailure) throw cleanupFailure;
   }
   if (failure) throw failure;return p;

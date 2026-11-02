@@ -58,7 +58,7 @@ export function parseObservedBitbucketShellMetadata(body) {
 }
 
 /** Observe existing browser demand only. No page/API/raw/source fetch is issued by this helper. */
-export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId, identifyRequest }) {
+export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId, identifyRequest, redactErrors = false }) {
   const evidence = { metadata: [], partialMetadata: [], commits: [], pins: [], requests: [], mutations: [], errors: [], phase: 'native_navigation' };
   const pending = new Set();
   const request = (value) => {
@@ -95,7 +95,7 @@ export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId,
           assert.ok(typeof body?.hash === 'string' && agreesWithHead(commit[2].toLowerCase(), body.hash.toLowerCase()), 'Observed commit response disagrees with its requested hash/ref');
           evidence.commits.push({ repo: commit[1], ref: commit[2].toLowerCase(), hash: body.hash.toLowerCase(), url: safeUrl(value.url()), status: 200 });
         }
-      } catch (error) { evidence.errors.push({ url: safeUrl(value.url()), error: error instanceof Error ? error.message : String(error) }); }
+      } catch (error) { evidence.errors.push({ url: safeUrl(value.url()), error: redactErrors ? 'Observed source response validation failed' : error instanceof Error ? error.message : String(error) }); }
     })();
     pending.add(task);void task.finally(() => pending.delete(task));
   };
