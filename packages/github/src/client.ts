@@ -1,4 +1,4 @@
-import type { FetchLike, TokenSource } from './auth';
+import type { FetchLike, TokenSource, TokenAccess } from './auth';
 
 export type ApiResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -8,6 +8,11 @@ export type ApiResult<T> =
 
 export interface ApiTransport {
   request(path: string, options?: { readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; readonly body?: unknown; readonly text?: boolean; readonly accept?: string }): Promise<ApiResult<unknown>>;
+}
+
+async function loadAccess(source: TokenSource, force: boolean): Promise<TokenAccess> {
+  try { return await source.get({ force }); }
+  catch { return { status: 'unavailable', message: 'Provider credentials are unavailable' }; }
 }
 
 export function createApiTransport(options: { readonly baseUrl: string; readonly source: TokenSource; readonly fetch?: FetchLike; readonly anonymousReads?: boolean; readonly now?: () => number }): ApiTransport {
@@ -22,7 +27,7 @@ export function createApiTransport(options: { readonly baseUrl: string; readonly
       if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) return { ok: false, reason: 'invalid_response' };
       const method = init.method ?? 'GET';
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const access = await options.source.get({ force: attempt === 1 });
+        const access = await loadAccess(options.source, attempt === 1);
         if (access.status === 'unavailable') return { ok: false, reason: 'unavailable' };
         if (access.status === 'signed-out' && !(options.anonymousReads === true && method === 'GET')) return { ok: false, reason: 'signed_out' };
         const headers: Record<string, string> = { Accept: init.accept ?? 'application/json' };
