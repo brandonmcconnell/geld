@@ -50,6 +50,7 @@ describe('exact rendered new-side binding', () => {
     expect(file.result.sourceFacts?.comparison.headSha).toBe(HEAD);
     expect(context.newSources.get(file.root)).toMatchObject({ repository: file.page.repository, path: PATH, headSha: head });
     expect(context.newSources.get(file.root)?.key).toContain(head);
+    expect(context.commentCoordinateMismatches?.has(file.root)).toBe(head !== HEAD);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -145,6 +146,7 @@ describe('exact rendered new-side binding', () => {
     const parse = vi.spyOn(JSON, 'parse');const scan = vi.spyOn(document, 'querySelectorAll');
     const context = providerOutlineContext(file.page, result, view);
     expect(context.newSources.size).toBe(2);
+    expect(context.commentCoordinateMismatches?.size).toBe(2);
     expect(parse.mock.calls.filter(([value]) => value === serialized)).toHaveLength(1);
     expect(scan.mock.calls.filter(([selector]) => selector === '[data-rapid-diffs][data-app-data]')).toHaveLength(1);
     other.setAttribute('data-file-data', JSON.stringify({ ...otherData, diff_refs: { ...otherData.diff_refs, head_sha: HEAD } }));
@@ -159,7 +161,9 @@ describe('exact rendered new-side binding', () => {
     const interrupted = { ...view, readNewSourceFrame: () => ({ ...frame, current, read: (entry: typeof view.entries[number]) => {
       const witness = frame.read(entry);file.app.setAttribute('data-app-data', JSON.stringify({ ...file.appData, file_by_file_mode: true }));return witness;
     } }) };
-    expect(providerOutlineContext(file.page, result, interrupted).newSources.size).toBe(0);
+    const interruptedContext = providerOutlineContext(file.page, result, interrupted);
+    expect(interruptedContext.newSources.size).toBe(0);
+    expect(interruptedContext.commentCoordinateMismatches?.size).toBe(0);
     expect(current).toHaveBeenCalledTimes(2);
     expect(frame.current()).toBe(false);
   });
