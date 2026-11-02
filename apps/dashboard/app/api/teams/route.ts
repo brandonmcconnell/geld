@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { planFor } from '@geld/domain';
@@ -15,7 +16,7 @@ export async function GET(): Promise<Response> {
   if (demoEnabled()) return json({ teams: [{ id: 'demo-team', name: 'Personal workspace', role: 'admin', managed_access: false, sync_enabled: false, add_approval: true, visibility: 'request', tier: 'team', seats: 1, used_credits: 12, cap_cents: 0, spent_cents: 0, card_on_file: false }], demo: true });
   try { return json({ teams: await listTeams(actor.id) }); } catch { return json({ error: 'Teams could not be loaded' }, 503); }
 }
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -42,3 +43,5 @@ export async function POST(request: Request): Promise<Response> {
     return json({ id }, 201);
   } catch { return json({ error: 'This team could not be created' }, 503); }
 }
+
+export const POST=auditedRoute(handlePOST,'teams.post');

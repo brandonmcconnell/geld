@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { currentActor } from '@/lib/session';
@@ -50,7 +51,7 @@ export async function GET(): Promise<Response> {
     return json({ error: 'Provider settings could not be loaded' }, 503);
   }
 }
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -123,7 +124,7 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'Provider settings could not be saved. Check encryption configuration and try again.' }, 503);
   }
 }
-export async function DELETE(request: Request): Promise<Response> {
+async function handleDELETE(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -142,3 +143,7 @@ export async function DELETE(request: Request): Promise<Response> {
   ]);
   return json({ removed: true });
 }
+
+export const POST=auditedRoute(handlePOST,'ai.providers.post');
+
+export const DELETE=auditedRoute(handleDELETE,'ai.providers.delete');

@@ -15,3 +15,8 @@ CREATE TABLE IF NOT EXISTS geld_generated_content_receipts (
  repo_id text NOT NULL,
  expires_at timestamptz NOT NULL DEFAULT now()+interval '30 days'
 );
+
+CREATE TABLE IF NOT EXISTS geld_content_teams (
+ team_id text PRIMARY KEY,
+ erased boolean NOT NULL DEFAULT false
+);

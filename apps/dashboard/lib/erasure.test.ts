@@ -1,0 +1,34 @@
+import {readFile,readdir} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
+import {describe,expect,it,vi} from 'vitest';
+vi.mock('server-only',()=>({}));
+let engine:PGlite;
+const sql={query:async(text:string,values?:unknown[])=>engine.query(text,values)};
+vi.mock('./db',()=>({database:()=>({...sql,connect:async()=>({...sql,release:()=>undefined})})}));
+vi.mock('./team-access',async original=>({...await original<typeof import('./team-access')>(),processGrant:async()=>false}));
+import {decryptCredential} from './crypto';
+import {prepareAccountErasure,cleanupSchema} from './erasure';
+describe('account erasure boundaries',()=>{
+ it('removes personal content and credentials while retaining only bounded encrypted external cleanup',async()=>{
+  engine=new PGlite();vi.stubEnv('TOKEN_ENCRYPTION_KEY','synthetic-verification-key-at-least-32-characters');
+  const dir=new URL('../db/migrations/',import.meta.url);for(const name of(await readdir(dir)).filter(name=>name.endsWith('.sql')).sort())await engine.exec(await readFile(new URL(name,dir),'utf8'));
+  await engine.exec(`INSERT INTO users(id,name,email) VALUES('u','Deleted','deleted@example.test'),('other','Other','other@example.test');
+   INSERT INTO teams(id,name,personal_owner_id) VALUES('personal','Personal','u'),('shared','Shared',NULL);
+   INSERT INTO team_members(team_id,user_id,role) VALUES('personal','u','admin'),('shared','u','member'),('shared','other','admin');
+   INSERT INTO subscriptions(team_id,tier,seats) VALUES('personal','starter',1),('shared','team',2);
+   INSERT INTO team_repos(id,team_id,provider,host,external_id,owner,name) VALUES('repo','personal','github','github.com','1','owner','repo');
+   INSERT INTO grants(id,team_id,repo_id,user_id,provider,provider_user_id,provider_login,mechanism,provider_grant_id,permission,previous_permission,source,actor_id,state) VALUES('grant','personal','repo','u','github','123','deleted-user','collaborator','collaborator:123','read','none','sync','u','active');
+   INSERT INTO generated_content(id,team_id,repo_id,pull_number,head_sha,encrypted_content) VALUES('content','personal','repo',1,'sha','encrypted');
+   INSERT INTO ai_providers(id,user_id,provider,label,enabled,settings) VALUES('ai','u','claude','Claude',true,'{"mode":"login"}');
+   INSERT INTO relay_channels(id,kind,host,encrypted_secret,user_id) VALUES('channel','claude','claude.local.geld.invalid','encrypted','u');
+   UPDATE ai_providers SET relay_channel='channel' WHERE id='ai';`);
+  await engine.exec("UPDATE team_repos SET removed_at='2026-10-31T12:00:00Z'; INSERT INTO generated_content_receipts(reservation_id,team_id,repo_id) VALUES('receipt','personal','repo')");
+  await prepareAccountErasure('u');
+  expect((await engine.query('SELECT * FROM generated_content')).rows).toHaveLength(0);expect((await engine.query('SELECT * FROM generated_content_receipts')).rows).toHaveLength(0);
+  const pending=await engine.query<{kind:string;encrypted_payload:string|null}>("SELECT kind,encrypted_payload FROM erasure_jobs WHERE state='pending'");expect(pending.rows).toHaveLength(1);expect(pending.rows[0]?.kind).toBe('provider_access');expect(pending.rows[0]?.encrypted_payload).toMatch(/^v1\./);expect(JSON.stringify(pending.rows)).not.toContain('deleted-user');
+  const encrypted=pending.rows[0]?.encrypted_payload;const text=encrypted?await decryptCredential(encrypted):null;if(!text)throw new Error('Cleanup snapshot missing');const restored=cleanupSchema.parse(JSON.parse(text));expect(restored.repo.removed_at).toEqual(new Date('2026-10-31T12:00:00Z'));
+  await engine.exec("DELETE FROM users WHERE id='u'");
+  expect((await engine.query('SELECT * FROM teams WHERE id=\'personal\'')).rows).toHaveLength(0);expect((await engine.query('SELECT * FROM ai_providers')).rows).toHaveLength(0);expect((await engine.query('SELECT * FROM relay_channels')).rows).toHaveLength(0);expect((await engine.query('SELECT seats FROM subscriptions WHERE team_id=\'shared\'')).rows).toEqual([{seats:1}]);expect((await engine.query('SELECT * FROM teams WHERE id=\'shared\'')).rows).toHaveLength(1);
+  await engine.close();vi.unstubAllEnvs();
+ });
+});

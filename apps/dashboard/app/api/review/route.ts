@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import type { ProviderClient, ProviderResult } from '@geld/domain';
@@ -12,7 +13,7 @@ import { appendAudit } from '@/lib/audit';
 import { transaction } from '@/lib/transactions';
 import { demoEnabled } from '@/lib/env';
 const requestSchema = z.object({ ref: pullRefSchema, key:z.string().uuid(), kind: z.enum(['review','comment','line_comment','reply','resolve']), event: z.enum(['comment','approve','request_changes']).optional(), body: z.string().max(60000), headSha: z.string().min(1).max(100), path: z.string().max(1000).optional(), oldPath: z.string().max(1000).optional(), line: z.number().int().positive().optional(), side: z.enum(['old','new']).optional(), threadId: z.string().max(200).optional(), resolved: z.boolean().optional() });
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -64,3 +65,5 @@ export async function POST(request: Request): Promise<Response> {
   } catch { return json({ error: 'This review could not be posted. Check the provider before trying again.' }, 503); }
   finally { if(ownsKey&&!writeStarted) await db.query('DELETE FROM mutation_keys WHERE user_id=$1 AND key=$2 AND claim_id=$3',[actor.id,input.key,claimId]); }
 }
+
+export const POST=auditedRoute(handlePOST,'review.post');

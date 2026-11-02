@@ -1,3 +1,4 @@
+import {auditedRoute} from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { guideCredits, pullRefSchema } from '@geld/domain';
@@ -6,7 +7,7 @@ import { currentActor } from '@/lib/session';
 import { json, sameOrigin } from '@/lib/http';
 import { database } from '@/lib/db';
 import { aiConfigurations, completeConfigured } from '@/lib/ai-config';
-import { reserveCredits, finishCredits } from '@/lib/credits';
+import { reserveCredits, finishCredits, creditError } from '@/lib/credits';
 import { transaction } from '@/lib/transactions';
 import { reviewContext } from '@/lib/review-context';
 import { demoEnabled } from '@/lib/env';
@@ -14,7 +15,7 @@ import { normalizeReviewPlan } from '@geld/review/plan';
 import { contentStore } from '@/lib/content-store';
 import { resourceDigest } from '@/lib/resource-digest';
 const inputSchema = z.object({ ref: pullRefSchema, teamId: z.string().min(1).max(200).optional(), headSha: z.string().min(1), previousHeadSha: z.string().optional(), key: z.string().uuid(), sample: z.boolean().optional() });
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -45,26 +46,25 @@ export async function POST(request: Request): Promise<Response> {
     const priorGuide = await db.query("SELECT id FROM credit_reservations WHERE team_id = $1 AND resource_fingerprint = $2 AND state = 'settled' AND head_sha <> $3 LIMIT 1", [team, fingerprint, context.pull.headSha]);
     const credits = guideCredits(changedLines, priorGuide.rows.length > 0);
     const reservation = await transaction(db, (sql) => reserveCredits(sql, { teamId: team, actorId: actor.id, credits, key: input.data.key }));
-    if (!reservation.ok) return json({ error: reservation.reason, action: '/settings/billing' }, reservation.reason === 'forbidden' ? 403 : reservation.reason === 'duplicate' ? 409 : 402);
-    let succeeded = false;
+    if (!reservation.ok) return json({ error: creditError(reservation.reason), action: '/settings/billing' }, reservation.reason === 'forbidden' ? 403 : reservation.reason === 'duplicate' ? 409 : 402);
+    let succeeded = false;let usedFallback=false;
     try {
       for (const config of configurations) {
         const plan = await planReview({ files: context.files, title: context.pull.title, body: context.pull.body, headSha: context.pull.headSha, gateway: { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.model, fetch }, complete: (options) => completeConfigured(config, options) });
         if (plan.ok) {
-          if (config.fallback) await transaction(db, async (sql) => {
-            const notice = await sql.query("UPDATE subscriptions SET first_fallback_at = now() WHERE team_id = $1 AND first_fallback_at IS NULL AND EXISTS(SELECT 1 FROM credit_reservations WHERE id = $2 AND overage_cents > 0) RETURNING team_id", [team, reservation.id]);
-            if (notice.rows.length) await sql.query("INSERT INTO outbox_jobs(id,team_id,kind,resource_id,idempotency_key) VALUES ($1,$2,'fallback_email',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING", [crypto.randomUUID(), team, reservation.id, `fallback:${team}`]);
-          });
+          usedFallback=config.fallback;
           succeeded = true;
           await db.query('UPDATE credit_reservations SET resource_fingerprint = $2,head_sha = $3 WHERE id = $1', [reservation.id, fingerprint, context.pull.headSha]);
           return json({ plan: plan.plan, credits });
         }
       }
       return json({ error: 'Your AI providers could not create a guide. Check provider settings and try again.' }, 503);
-    } finally { await transaction(db, (sql) => finishCredits(sql, reservation.id, succeeded)); }
+    } finally { await transaction(db, (sql) => finishCredits(sql, reservation.id, succeeded,usedFallback)); }
   } catch { return json({ error: 'The guide could not be created. Try again.' }, 503); }
 }
 
 export async function GET(request:Request):Promise<Response>{
   await connection();const actor=await currentActor();if(!actor)return json({plan:null},401);const db=database();if(!db)return json({plan:null},503);const url=new URL(request.url);const query=Object.fromEntries(url.searchParams);const ref=pullRefSchema.safeParse({...query,number:Number(query.number)});if(!ref.success)return json({error:'Invalid pull request'},400);const team=url.searchParams.get('teamId');if(!team)return json({plan:null});const repo=z.object({id:z.string()}).safeParse((await db.query('SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id=r.team_id WHERE r.team_id=$1 AND m.user_id=$2 AND r.provider=$3 AND r.host=$4 AND r.owner=$5 AND r.name=$6 AND r.approved AND r.removed_at IS NULL',[team,actor.id,ref.data.provider,ref.data.host,ref.data.owner,ref.data.repo])).rows[0]);if(!repo.success)return json({plan:null},403);const context=await reviewContext(ref.data);if(!context.ok)return json({plan:null},403);return json({plan:await contentStore().get(team,repo.data.id,ref.data.number,context.value.pull.headSha)});
 }
+
+export const POST=auditedRoute(handlePOST,'guides.post');

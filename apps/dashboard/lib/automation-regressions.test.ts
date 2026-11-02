@@ -13,7 +13,7 @@ beforeEach(()=>vi.stubEnv('TOKEN_ENCRYPTION_KEY','test-security-signing-key-at-l
 afterEach(()=>vi.unstubAllEnvs());
 async function fixture() {
   const db=new PGlite();
-  for(const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql'])await db.exec(await readFile(new URL(`../db/migrations/${name}`,import.meta.url),'utf8'));
+  for(const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql','0011_companion.sql','0012_privacy.sql'])await db.exec(await readFile(new URL(`../db/migrations/${name}`,import.meta.url),'utf8'));
   await db.exec("INSERT INTO users(id,name,email) VALUES('u','Reviewer','reviewer@example.test'); INSERT INTO teams(id,name) VALUES('t','Team'),('other','Other'); INSERT INTO team_members(team_id,user_id,role) VALUES('t','u','admin'); INSERT INTO team_repos(id,team_id,provider,host,external_id,owner,name,settings) VALUES('r','t','github','github.com','1','org','visible','{}'),('hidden','t','github','github.com','2','org','secret-name','{\"guidePolicy\":{\"trigger\":\"push\"}}'); INSERT INTO subscriptions(team_id,tier,seats,used_credits,cap_cents,card_on_file,stripe_subscription_id) VALUES('t','starter',1,39,100,true,'sub')");
   const sql:SqlExecutor={query:(text,values)=>db.query(text,values)};
   const run=<T>(work:(sql:SqlExecutor)=>Promise<T>)=>db.transaction(tx=>work({query:(text,values)=>tx.query(text,values)}));

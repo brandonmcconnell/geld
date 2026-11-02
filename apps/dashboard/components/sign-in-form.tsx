@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, Mail } from 'lucide-react';
 import { Button } from '@geld/ui';
+import {measure} from '@/lib/measurement';
 import { authClient } from '@/lib/auth-client';
 import { Brand } from './brand';
 import { useDashboard } from './app-shell';
@@ -22,6 +23,8 @@ export function SignInForm() {
     setMethod(next); setSent(false); setPassword(''); setOtp(''); setMessage('');
   }
   async function social(provider: string) {
+    const source=provider==='github'||provider==='gitlab'||provider==='bitbucket'?provider:undefined;
+    measure('provider_setup',{feature:'connections',stage:'started',...(source?{provider:source}:{})});
     setBusy(true); setMessage('');
     try { const result = await authClient.signIn.social({ provider, callbackURL: '/connect' }); if (result.error) setMessage('This provider is not configured or could not connect.'); } catch { setMessage('Sign-in could not connect. Try again.'); }
     setBusy(false);
@@ -56,7 +59,7 @@ export function SignInForm() {
   }
   return <div className="page"><div className="form-card"><Brand/><h1>Your next review starts here.</h1><p>Bring your repositories together. Keep the change in focus.</p>
     {!session.configured && <div className="status-message" role="status">Sign-in is not configured in this environment.</div>}
-    <div className="form-stack">{['github','gitlab','bitbucket'].map((provider) => <Button variant="outline" key={provider} disabled={busy || !session.configured} onClick={() => social(provider)}>Continue with {provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}<ArrowRight size={15}/></Button>)}</div><div className="form-divider">or use your email</div>
+    <div className="form-stack">{['github','gitlab','bitbucket'].map((provider) => <Button variant="outline" key={provider} disabled={busy || !session.configured} data-measure="provider-connect" onClick={() => social(provider)}>Continue with {provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}<ArrowRight size={15}/></Button>)}</div><div className="form-divider">or use your email</div>
     <form className="form-stack" onSubmit={submit}>
       <label>Email address<input name="email" className="field" type="email" autoComplete={method === 'password' ? 'username' : 'email'} value={email} required onChange={(event) => setEmail(event.target.value)} disabled={sent}/></label>
       {method === 'password' && <label>Password<input className="field" type="password" autoComplete="current-password" value={password} required onChange={(event) => setPassword(event.target.value)}/></label>}

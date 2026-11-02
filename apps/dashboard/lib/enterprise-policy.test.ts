@@ -1,5 +1,6 @@
 import { beforeEach,describe,expect,it,vi } from 'vitest';
 const state=vi.hoisted(():{hosts:string[];writes:number}=>({hosts:[],writes:0}));
+vi.mock('./request-audit',()=>({auditedRoute:<T extends unknown[]>(handler:(request:Request,...rest:T)=>Promise<Response>)=>handler}));
 vi.mock('server-only',()=>({}));
 vi.mock('next/server',()=>({connection:async()=>undefined}));
 vi.mock('./session',()=>({currentActor:async()=>({id:'u'})}));

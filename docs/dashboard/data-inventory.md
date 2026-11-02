@@ -26,7 +26,7 @@ Data subjects are account holders, team members and provider collaborators refer
 | subscriptions | Stripe customer/subscription references, tier, seats and spend cap | Contract | Active contract plus statutory billing obligations |
 | review_receipts | Actor, keyed resource fingerprint, review action and outcome, no review body | Legitimate interests in security | 365 days, erase identifying references on erasure |
 | credit_reservations | Idempotency key, credit amount, state and settlement | Contract | Billing period plus dispute window, no PR content |
-| webhook_deliveries | Delivery identifier, provider and processing outcome | Legitimate interests in reliable security processing | 30 days, no raw event payload |
+| webhook_deliveries | Delivery identifier, provider and processing outcome | Legitimate interests in reliable security processing | 90 days, no raw event payload |
 | outbox_jobs | Typed action references, attempts and retry status | Contract | 30 days after completion, no raw PR payload |
 | tracker_connections | Team tracker type, allowed keys, encrypted read-only credential | Contract | Until disconnect or erasure |
 | projects, project_repos, roadmap_items | Disabled feature shell metadata only | Contract when enabled | No writes while feature disabled |
@@ -34,7 +34,7 @@ Data subjects are account holders, team members and provider collaborators refer
 | consent_records | User choice categories and policy version, local first | Consent and evidence of choice | Until superseded or erasure |
 
 No raw diff, PR body, conversation text, assistant prompt or provider API response is stored in these tables.
-Generated review content is held on the device or in the customer's selected storage, with explicit retention.
+Generated review content is held on the device or encrypted in the configured hosted/customer content store with a 30-day retention.
 Audit before/after fields accept only an allowlisted structural schema.
 Passwords are hashed by Better Auth and OAuth tokens are encrypted at rest.
 Secrets live in deployment secret stores or ignored local files.
@@ -61,3 +61,7 @@ Tracker settings hold a provider, an allowed key/scope list and one encrypted re
 `enterprise_hosts` holds registered hostname, public-reachability policy and an encrypted connector secret. `enterprise_host_teams` scopes each host to teams. Relay request and response bodies remain in process memory for active calls only and are never written to a database or log. Browser reader tokens are read-only and repository-scoped, delivered with `private, no-store` and kept only in a request closure. `contract_verified` and negotiated Enterprise pool/rate values are operator-controlled subscription metadata.
 
 Companion additions: `relay_channels` stores a host/kind, encrypted Geld relay secret and owning user or Enterprise host. These are not Claude credentials. Account deletion cascades user channels, provider removal revokes them, and re-pairing revokes the prior channel. The local companion stores only the Geld pairing in a mode-0600 file. Anthropic's own CLI handles sign-in. Prompts and completions pass through the signed relay in memory, with a 90-second local generation deadline and no persisted CLI session. The broker reads encrypted channel records with a deployment-scoped database credential.
+
+Erasure additions: `erasure_jobs` holds only encrypted references needed to revoke Geld-owned grants or remove generated content from temporarily unavailable customer storage. It has no foreign key to the erased account and stores no OAuth credentials, email, raw PR content or name. Payloads are removed on completion or after seven days. Anonymous job outcomes expire after 30 days. The deleted user's direct identifiers are scrubbed from retained shared-team grant records; security actor digests remain pseudonymous and subject to the 365-day security purpose. Normal provider outages cannot block account erasure.
+
+Consented dashboard measurement accepts fixed event names, fixed selector tokens and bounded structural counts. It never accepts arbitrary text, URLs, credentials, file paths, usernames, account/team/repository identifiers or SDK automatic properties. Selector heat maps use a 4-by-4 cell inside known controls. Routes normalize resource segments. Provider setup, navigation, repeated-click signals, form abandonment, feature use and checkout starts are optional. Session replay and autocapture remain off. Release flags evaluate a global identity on the server or an operator snapshot, emit no flag-called events, and are independent of measurement choice. Projects and roadmaps default off; initiatives remain deferred.

@@ -1,3 +1,4 @@
+import { auditedRoute } from '@/lib/request-audit';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { currentActor } from '@/lib/session';
@@ -6,7 +7,7 @@ import { encryptCredential } from '@/lib/crypto';
 import { transaction } from '@/lib/transactions';
 import { configured } from '@/lib/env';
 import { json, sameOrigin } from '@/lib/http';
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   await connection();
   if (!sameOrigin(request)) return json({ error: 'Invalid request origin' }, 403);
   const actor = await currentActor();
@@ -67,3 +68,5 @@ export async function POST(request: Request): Promise<Response> {
       })
     : json({ error: 'Claude login connection not found' }, 404);
 }
+
+export const POST = auditedRoute(handlePOST, 'companion.connect.post');
