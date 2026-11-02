@@ -176,3 +176,15 @@ test('repository commit-link acceptance is explicit only, observes before naviga
   assert.match(cleanup, /item.status = 'failed';item.cleanupError/);
   assert.match(harness, /remaining >= 8/);assert.match(harness, /conservativeObservedRequestBudget: 40/);
 });
+
+
+test('native GitLab file search selects one explicit immutable MR case without broadening all/default or diff', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['gitlab-file-search']), ['gitlab-file-search']);
+  assert.equal(cases.regression.includes('gitlab-file-search'), false);
+  assert.equal(cases['gitlab-diff'].includes('gitlab-file-search'), false);
+  assert.match(harness, /name === 'gitlab-file-search' && focus !== 'gitlab-file-search'/);
+  assert.match(harness, /runCase\('gitlab-file-search', GITLAB_FILE_SEARCH.url/);
+  assert.deepEqual(select({ body: marker('gitlab-file-search'), from: marker('github') }), { focus: 'gitlab-file-search', run: 'true', failures: [] });
+});

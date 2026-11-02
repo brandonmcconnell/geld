@@ -1536,6 +1536,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   Native rows, search controls, file comments and source controls stay in their original framework ownership, with IDs in visual copies remapped and original actions relayed to connected native controls.
   A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
   Temporary search or an absent native tree host releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
+  The explicit `gitlab-file-search` installed slice uses GitLab's original file-tree search, trusted typing and native result activation on the immutable mixed MR, requiring custom collapsed-folder and current-file recovery after clearing the query.
+  It is excluded from default and `all` demand, preserves original source/input/list/checkbox identity, allows native recycler result rows to change, and makes no browser Ctrl+F or zero-native-hydration claim.
   A verified native file reveal during search updates that remembered selection against the complete same-subject inventory, so clearing search cannot restore an older file over the reader's choice.
   Search suspension still discards removed source paths and folder keys, and a changed subject or provider, explicit teardown or disable clears all remembered choices even with no live owned host.
   Bitbucket's normal-flow diff wrappers include unloaded placeholders, so a complete file inventory must include those wrappers rather than only mounted articles.
