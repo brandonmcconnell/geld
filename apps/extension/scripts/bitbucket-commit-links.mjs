@@ -1,9 +1,27 @@
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { commitHoverTotal } from './bitbucket-commit-oracle.mjs';
+import { restoreCategoryPatterns, settingsRequestEvidence } from './three-provider-settings.mjs';
 
 export const BITBUCKET_COMMIT_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/commits/';
 export const BITBUCKET_COMMIT_LINK_SETTINGS = { enabled: true, showListStats: true, repoConfigs: 'never', aiEnabled: false };
+
+export function commitLinkFilteredRows(oracle) {
+  assert.equal(oracle.status, 'ready', 'Filtered hover requires a complete immutable oracle');
+  assert.equal(new Set(oracle.files.map((file) => file.path)).size, oracle.files.length, 'Oracle paths must be unique');
+  assert.equal(oracle.files.length, oracle.totals.files);
+  for (const key of ['additions', 'deletions']) {
+    assert.ok(oracle.files.every((file) => Number.isSafeInteger(file[key]) && file[key] >= 0));
+    assert.equal(oracle.files.reduce((sum, file) => sum + file[key], 0), oracle.totals[key]);
+  }
+  const readme = oracle.files.filter((file) => file.path === 'README.md');
+  assert.equal(readme.length, 1, 'Positive category subtraction requires exactly observed README.md');
+  assert.ok(readme[0].additions > 0 && readme[0].deletions > 0, 'README must remove both nonzero additions and deletions from Essential');
+  const hidden = { files: 1, additions: readme[0].additions, deletions: readme[0].deletions };
+  const visible = Object.fromEntries(['files', 'additions', 'deletions'].map((key) => [key, oracle.totals[key] - hidden[key]]));
+  const row = (label, totals) => ({ label, files: `${totals.files} ${totals.files === 1 ? 'file' : 'files'}`, additions: `+${totals.additions.toLocaleString('en-US')}`, deletions: `−${totals.deletions.toLocaleString('en-US')}` });
+  return [row('Essential', visible), row('Tests', hidden), row('Total', oracle.totals)];
+}
 
 export function bitbucketCommitLinksSnapshot() {
   const current = new URL(location.href);
@@ -98,7 +116,7 @@ export function commitLinkSettingsScope({ readSettings, writeSettings, progress 
   };
 }
 
-export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, installedHover, guardBudget }) {
+export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, installedHover, guardBudget, readSettings, writeSettings, extensionId }) {
   const proof = { status: 'pending', scope: 'Actual original repository commit-list link. Global settings, no repository configuration, AI or provider writes. Metadata and complete diffstat are observed responses only.', nativeCards: 'Independently sampled native ARIA associations are not a native card feature pass.' };
   item.commitLinks = proof;
   let discovery;
@@ -164,9 +182,69 @@ export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, ins
     assert.ok(proof.after?.events.some((event) => event.type === 'focusin' && event.trusted), 'Original commit link requires trusted native keyboard focus');
     assert.deepEqual(commitHoverTotal(proof.keyboard.rows), proof.oracle.totals, 'Original commit-link keyboard counts disagree with its own complete diffstat');
     assert.deepEqual(proof.pointer.rows, proof.keyboard.rows, 'Pointer and real Tab breakdowns disagree');
+    const filteredRows = commitLinkFilteredRows(proof.oracle);
+    const original = await readSettings();
+    const pattern = { status: 'running', scope: 'Pattern-only real chrome.storage.sync override, derived from the already-issued immutable per-file oracle. No explicit source or oracle fetch.', path: 'README.md', expectedRows: filteredRows, requests: [], extensionRequests: [], nativeOrUnattributedRequests: [], sourceGetCount: 0, originalSettings: original, restoration: 'pending' };
+    proof.categorySubtraction = pattern;
+    const request = (value) => {
+      if (value.method() !== 'GET') return;
+      const observed = settingsRequestEvidence({ url: value.url(), method: value.method(), initiator: value.initiator?.() }, extensionId);
+      if (observed !== null) {
+        if (pattern.requests.length < 100) pattern.requests.push({ ...observed, observedAt: new Date().toISOString() });
+        else pattern.requestEvidenceOverflow = true;
+        pattern.extensionRequests = pattern.requests.filter((request) => request.extensionInitiator);
+        pattern.nativeOrUnattributedRequests = pattern.requests.filter((request) => !request.extensionInitiator);
+        pattern.sourceGetCount = pattern.requests.length;
+      }
+    };
+    const check = async (rows, phase) => {
+      nativeUnchanged(await page.evaluate(bitbucketCommitLinkState));
+      assert.deepEqual(oracle.snapshot(selected.ref), proof.oracle, 'Pattern change altered the immutable source oracle');
+      const result = {};
+      pattern[phase] = result;
+      for (const input of ['pointer', 'keyboard']) {
+        const reserve = guardBudget();assert.equal(reserve.available, true, 'Eight observed requests must remain before each filtered/restored hover intent');
+        await page.evaluate(() => { globalThis.__geldCommitLinksProof.events.length = 0; });
+        result[input] = await installedHover(page, selected.selector, input, `bitbucket-commit-link-${phase}-${input}`, undefined, { verifyUnobscured: true, expectedRows: rows });
+        accessibleHover(result[input]);assert.deepEqual(result[input].rows, rows, `${phase} ${input} category rows disagree with the per-file oracle`);
+        if (input === 'keyboard') { assert.equal(result[input].keyboardNavigation?.started, true);assert.equal(result[input].keyboardNavigation?.stops.at(-1)?.target, true); }
+        result.after = await page.evaluate(bitbucketCommitLinkState);nativeUnchanged(result.after);
+        assert.ok(result.after.events.some((event) => event.type === (input === 'pointer' ? 'mouseover' : 'focusin') && event.trusted));
+        assert.deepEqual(oracle.snapshot(selected.ref), proof.oracle, 'Hover altered the immutable source oracle');
+        assert.notEqual(pattern.requestEvidenceOverflow, true, 'Pattern-phase source request evidence exceeded its bounded capacity');
+      }
+    };
+    page.on('request', request);
+    try {
+      const expected = { ...original, categoryPatterns: { ...original.categoryPatterns, tests: ['README.md'] } };
+      await writeSettings(expected);
+      pattern.filteredSettings = await readSettings();assert.deepEqual(pattern.filteredSettings, expected, 'Only categoryPatterns may change for filtered commit hover');
+      await check(filteredRows, 'filtered');
+    } finally {
+      try {
+        const latest = await readSettings();
+        const restored = restoreCategoryPatterns(latest, original);
+        await writeSettings(restored);
+        pattern.restoredSettings = await readSettings();
+        assert.deepEqual(pattern.restoredSettings, original, 'Original scoped settings and categoryPatterns presence must be restored exactly');
+        pattern.restoration = 'restored';
+      } catch (error) { pattern.restoration = 'failed';pattern.cleanupError = error instanceof Error ? error.message : String(error);throw error; }
+      finally { page.off('request', request); }
+    }
+    // Include restored hover requests in the same evidence scope too.
+    page.on('request', request);
+    try {
+      await check(proof.pointer.rows, 'restored');
+      pattern.extensionRequests = pattern.requests.filter((request) => request.extensionInitiator);
+      pattern.nativeOrUnattributedRequests = pattern.requests.filter((request) => !request.extensionInitiator);
+      pattern.sourceGetCount = pattern.requests.length;
+      assert.deepEqual(pattern.extensionRequests, [], 'Pattern-only commit hover caused another positively extension-attributed source GET');
+      assert.deepEqual(await readSettings(), original, 'Restored hover changed the real shared settings');
+      pattern.status = 'passed';
+    } finally { page.off('request', request); }
     proof.status = 'passed';
-    return { status: 'passed', verified: 'The genuine native repository-list commit link keeps its original identity and shows its own observed immutable diffstat through trusted pointer and real Tab, with accessible ownership, Escape and unobscured cell assertions.' };
-  } catch (error) { proof.status = 'failed';proof.reason = error instanceof Error ? error.message : String(error);throw error; }
+    return { status: 'passed', verified: 'The genuine native repository-list commit link retains its source/ref identity through baseline, nonzero README category subtraction and restoration, each by trusted pointer and real Tab against its own complete immutable diffstat with accessible ownership, Escape and unobscured cell assertions.' };
+  } catch (error) { proof.status = 'failed';if (proof.categorySubtraction !== undefined) proof.categorySubtraction.status = 'failed';proof.reason = error instanceof Error ? error.message : String(error);throw error; }
   finally {
     if (!page.isClosed()) await page.evaluate(() => {
       const saved = globalThis.__geldCommitLinksProof;
