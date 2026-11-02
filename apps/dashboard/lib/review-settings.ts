@@ -24,7 +24,7 @@ export async function reviewSettings(ref: RepositoryRef): Promise<{ readonly set
     }
   }
   let aiAllowed = true;
-  const source = await providerTokenSource(ref.provider);
+  const source = await providerTokenSource(ref.provider,ref.owner);
   const api = createApiTransport({ baseUrl: ref.provider === 'github' ? 'https://api.github.com/' : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source, anonymousReads: true });
   const readFile = async (owner: string, repo: string, path: string): Promise<string | null> => {
     const endpoint = ref.provider === 'github' ? `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}` : ref.provider === 'gitlab' ? `projects/${encodeURIComponent(`${owner}/${repo}`)}/repository/files/${encodeURIComponent(path)}/raw?ref=HEAD` : `repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/src/HEAD/${path}`;
