@@ -1,3 +1,5 @@
+import { parseIssueTracker } from './trackers';
+import type { IssueTrackerConfig } from './trackers';
 import type { AnyCategoryId, Catalog, CategoryId, CustomCategory, GroupKey, HiddenCategory } from './categories';
 import { BUNDLED_CATALOG, CATEGORY_IDS, categoryById, groupKey, hiddenCategoryFromCustom, isCategoryId, isCustomCategoryId, isWellFormedGroupKey } from './categories';
 import { isCategoryIconName } from './category-icons';
@@ -146,6 +148,7 @@ export interface GeldSettings {
   readonly aiBaseUrl: string;
   /** Model id at that gateway for the prose work (consolidation, TL;DR, fixes). Never an evaluation model. */
   readonly aiModel: string;
+  readonly issueTracker:IssueTrackerConfig|null;
   /**
    * Use TypeSafe's Jev (a System One evaluation model: typed, probabilistic
    * answers, no prose) for the decisions in front of the prose model - which
@@ -221,6 +224,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
+  issueTracker:null,
   aiJev: false,
   suggestedFixes: 'bots',
 };
@@ -461,6 +465,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
+    issueTracker:parseIssueTracker(record.issueTracker),
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
@@ -547,4 +552,8 @@ export function withCustomCategory(settings: GeldSettings, custom: CustomCategor
   const customCategories =
     index === -1 ? [...settings.customCategories, custom] : settings.customCategories.map((existing, position) => (position === index ? custom : existing));
   return { ...settings, customCategories };
+}
+
+export function withCategoryEnabled(settings: GeldSettings, id: AnyCategoryId, enabled: boolean): GeldSettings {
+  return id === 'large' ? {...settings,hideLargeDiffs:enabled} : {...settings,categories:{...settings.categories,[id]:enabled}};
 }

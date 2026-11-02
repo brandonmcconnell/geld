@@ -1,3 +1,4 @@
+import { DASHBOARD_ORIGIN } from '@/lib/dashboard';
 import { authorizeUrl } from '@geld/github';
 import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
@@ -16,6 +17,7 @@ import { writeOAuthState } from '@/lib/auth/session';
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Always request-time: nothing here may be prerendered, even when sign-in is unconfigured.
   await connection();
+  if(process.env.GELD_LEGACY_SITE_AUTH!=='true')return NextResponse.redirect(new URL('/sign-in',DASHBOARD_ORIGIN),303);
   const config = authConfig();
   const next = safeNextPath(request.nextUrl.searchParams.get('next'));
   if (config === null) {

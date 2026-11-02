@@ -1,3 +1,5 @@
+import type { TrackerReference } from '@geld/core';
+import { TRACKER_LABELS } from '@geld/core';
 /**
  * GeldPrMeta → the one PR comment body. Deterministic; snapshot-tested.
  * The JSON rides in the footer as an empty `<span title="geld:…">`
@@ -150,7 +152,7 @@ function headerLine(meta: GeldPrMeta): string {
  */
 export function renderSummary(
   meta: GeldPrMeta,
-  subject?: { readonly owner: string; readonly repo: string; readonly number: number },
+  subject?: { readonly owner: string; readonly repo: string; readonly number: number;readonly links?:readonly TrackerReference[] },
 ): string {
   const { open, done } = groupItems(meta.items);
   const lines: string[] = [
@@ -159,6 +161,7 @@ export function renderSummary(
     headerLine(meta),
     '',
   ];
+  if(subject?.links?.length){lines.push('**Links** '+subject.links.map(link=>`<img src="https://www.geld.sh/tracker-icons/${link.provider}.svg" width="16" height="16" alt=""/> [${TRACKER_LABELS[link.provider]} ${escapeMd(link.id)}${link.status?` · ${escapeMd(link.status)}`:''}](${link.url.replace(/[()]/g,encodeURIComponent)})`).join(' · '),'');}
   if (meta.summary !== undefined) {
     lines.push(meta.summary.tldr, '');
   }

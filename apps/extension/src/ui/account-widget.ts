@@ -1,3 +1,5 @@
+import { connectDashboard,selectDashboardTeam,dashboardSessionItem,dashboardTeamItem,refreshDashboardSession,DASHBOARD_ORIGIN } from '../lib/dashboard-session';
+import type { DashboardSession } from '../lib/dashboard-session';
 import { CORRUPTED_SETTINGS_COPY } from '@geld/core';
 import { RECONNECT_COPY } from '@geld/github';
 import { browser } from 'wxt/browser';
@@ -56,10 +58,13 @@ function svg(markup: string): Element {
 
 export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOptions): () => void {
   const promptHost = options.promptHost ?? host;
+  let dashboard:DashboardSession={user:null,teams:[]};
+  let teamId='';
   let account: GitHubAccount | null = null;
   let flow: AuthFlowState = { status: 'idle' };
   let sync: SyncState = EMPTY_SYNC_STATE;
   let localError: string | null = null;
+  let closed=false;
   let syncClock: ReturnType<typeof setInterval> | null = null;
 
   const stopSyncClock = (): void => {
@@ -86,11 +91,16 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   };
 
   function render(): void {
+    if(closed)return;
     stopSyncClock();
     host.replaceChildren();
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
 
     renderDialog();
+    const shared=el('div','geld-account__shared');
+    if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',()=>{void browser.tabs.create({url:`${DASHBOARD_ORIGIN}/settings/account`});}));if(options.variant==='full'){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void selectDashboardTeam(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
+    else shared.append(button(['Sign in to Geld'],'geld-button--small geld-button--primary',()=>{void connectDashboard().catch(()=>{localError='The Geld connection could not be opened.';render();});}));
+    host.append(shared);
 
     if (account === null) {
       if (flow.status === 'pending') {
@@ -102,7 +112,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
         );
         return;
       }
-      const label = options.variant === 'compact' ? 'Sign in' : 'Sign in with GitHub';
+      const label = options.variant === 'compact' ? 'GitHub sync' : 'Sync settings with GitHub';
       const signIn = button([svg(GITHUB_MARK), label], 'geld-button--small geld-account__signin', () => {
         dialogWanted = true;
         void act('sign-in');
@@ -290,7 +300,13 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     if (!node.open) node.showModal();
   }
 
+  const refreshOnFocus=()=>{if(!closed)void refreshDashboardSession().catch(()=>undefined);};
+  const refreshOnVisible=()=>{if(document.visibilityState==='visible')refreshOnFocus();};
+  window.addEventListener('focus',refreshOnFocus);
+  document.addEventListener('visibilitychange',refreshOnVisible);
   const unwatchers = [
+    dashboardSessionItem.watch(value=>{dashboard=value;render();}),
+    dashboardTeamItem.watch(value=>{teamId=value;render();}),
     accountItem.watch((value) => {
       account = value;
       render();
@@ -304,7 +320,9 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       render();
     }),
   ];
+  void Promise.all([dashboardSessionItem.getValue(),dashboardTeamItem.getValue()]).then(([value,selected])=>{if(closed)return;dashboard=value;teamId=selected;render();void refreshDashboardSession();});
   void Promise.all([accountItem.getValue(), authFlowItem.getValue(), syncStateItem.getValue()]).then(([a, f, s]) => {
+    if(closed)return;
     account = a;
     flow = f;
     // State saved by an older version may lack newer fields.
@@ -316,6 +334,10 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   });
 
   return () => {
+    closed=true;
+    window.removeEventListener('focus',refreshOnFocus);
+    document.removeEventListener('visibilitychange',refreshOnVisible);
+    dialog?.remove();
     stopSyncClock();
     unwatchers.forEach((unwatch) => unwatch());
   };

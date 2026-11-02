@@ -1,3 +1,4 @@
+import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-service';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
@@ -516,6 +517,7 @@ export default defineBackground(() => {
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+    if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
       return undefined;
