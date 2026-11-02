@@ -826,13 +826,13 @@ async function runBitbucketWhitespaceCase() {
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
     await page.bringToFront();
     observeBitbucketBudget(page, item, abort);
-    page.on('response', response => { if (providerOf(response.url()) !== 'bitbucket' || response.status() !== 429) return;const until = Date.now() + retryAfter(response.headers()['retry-after'], 'bitbucket');cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));item.rateLimitedUntil = new Date(until).toISOString();abort.abort(new Error('RATE_LIMIT'));void page.close().catch(() => {}); });
+    page.on('response', response => { if (providerOf(response.url()) !== 'bitbucket' || response.status() !== 429) return;const until = Date.now() + retryAfter(response.headers()['retry-after'], 'bitbucket');cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));item.rateLimitedUntil = new Date(until).toISOString();item.holdReason = 'provider_http429';item.cooldownProvider = 'bitbucket';abort.abort(new Error('RATE_LIMIT'));void page.close().catch(() => {}); });
     observer = observeBitbucketWhitespace(page, item.traffic, extensionId, abort);
     const response = await page.goto(BITBUCKET_WHITESPACE_URL, { waitUntil: 'domcontentloaded', timeout: WAIT_MS });
     assert.equal(response?.status(), 200);assert.equal(page.url(), BITBUCKET_WHITESPACE_URL);
     const guardBudget = action => { abort.signal.throwIfAborted();assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now());const remaining = 47 - active();const required = action === 'hide' ? 27 : action === 'opener' && item.traffic.requests.some(r => r.phase === 'hide') ? 12 : 5;assert.ok(remaining >= required, 'Native whitespace input exceeds remaining phase forecast');return { remaining, required, observedAtCheckpoint: active(), actualCaseRequests: item.observedBitbucketApiRequests ?? 0 }; };
     const result = await verifyBitbucketWhitespace(page, { settings: scope, observer, progress: item.whitespace, poll, readState: () => tabState(page), guardBudget });Object.assign(item, result);
-  } catch { item.status = item.whitespace?.status === 'failed' ? 'failed' : item.rateLimitedUntil ? 'rate_limited' : 'unavailable';item.error = 'Bounded native whitespace acceptance unavailable; see fixed phase/budget evidence.'; }
+  } catch { item.status = item.rateLimitedUntil ? 'rate_limited' : item.whitespace?.status === 'failed' ? 'failed' : 'unavailable';item.error = 'Bounded native whitespace acceptance unavailable; see fixed phase/budget evidence.'; }
   finally {
     if (page && !page.isClosed()) await page.close().catch(() => {});
     if (observer && !observer.evidence.released) await observer.dispose().catch(() => {});

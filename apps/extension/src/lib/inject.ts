@@ -56,7 +56,7 @@ export async function injectContentScript(tabId: number, provider: ProviderId, m
       try {
         await browser.scripting.executeScript({ target: { tabId }, files: [provider === 'github' ? PORTAL_JS : '/content-scripts/bitbucket-whitespace.js'], world: 'MAIN' });
       } catch {
-        // No MAIN-world injection here (older Firefox): quick view still works, React's own controls inside it do not.
+        // Older browsers keep the isolated features when page-world integration is unavailable.
       }
     }
     return;
