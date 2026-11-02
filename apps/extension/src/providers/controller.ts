@@ -236,6 +236,8 @@ export class ProviderController {
   }
 
   revealPath(path: string): void {
+    const current = this.adapter.describe(new URL(window.location.href), document);
+    if (current !== null && providerDiffKey(current) === this.pageKey) this.categoryTree.selectPath(path, this.expansionKey);
     const category = this.state.categories.find((item) => item.paths.includes(path));
     if (!this.grouped) {
       if ((this.effectiveSettings ?? this.settings).groupHidden) this.setExpanded(category !== undefined);
