@@ -2077,7 +2077,7 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
 
 - **An ARIA-blocked tab field is not automatically a read-only combobox**: opener-only diagnostics split self and ancestor aria-disabled/aria-readonly booleans and exact tab id/name/type/role/inputmode/listbox matches without relaxing any eligibility guard.
   Fixed label association and hidden-companion ancestry checks contain only booleans/counts, with no arbitrary attributes, label text, field values or checkbox state.
-  Historical native13-field PR captures show a self aria-readonly non-searchable tab combobox, but the later12-field standalone rejection reports only a combined ARIA blocker until its own precise diagnostics are observed.
+  Historical native13-field PR captures show a self aria-readonly non-searchable tab combobox, while the first12-field standalone diagnostic recorded only a combined ARIA blocker before its later precise diagnostic.
 
 Provider runner image contexts are generated offline from one full reviewed commit, with an independently verified Git commit object/tree, byte-identical esbuild output and an explicit reviewed official Node base digest.
 Never send a full working tree to Docker: only the allowlisted bundle, unchanged license/notice bytes, corresponding-source archives, commit object and provenance are copied under `/geld`.
@@ -2093,3 +2093,16 @@ Provider context source verification must agree with actual extraction: accept o
 A PAX size override previously let the verifier hash34523 LICENSE bytes while GNU tar extracted34522, and a V7 prefix previously let the verifier retain a Git path while tar listed a root basename.
 Explicit repository reads use `--no-lazy-fetch`, `GIT_NO_LAZY_FETCH=1`, disabled remote protocols, fixed `tar.umask=0022` and no host `core.attributesFile`, so missing promised objects fail locally and host umasks do not vary accepted context bytes.
 The preparer does not copy host credential/config files or serialize environment values, rather than claiming that Git never reads host configuration.
+
+
+- **The untouched native Tab-size combobox has a narrow read-only witness**: the actual standalone diagnostic verifies self aria-readonly on its unique original text combobox, with no actual disabled/readOnly, ancestor ARIA blocker or disabled fieldset.
+  Only the exact native id/name/type/role/inputmode/listbox structure, associated Tab size label and same-parent hidden tabSize companion qualify this untouched-field exception, while Syntax, Save and Cancel retain their original enabled checks.
+  Serialized field vectors are unchanged, and every mode rejects an unknown structural family before reading checkbox or radio values.
+  Captured readiness controls also recheck id/name/type before any later value read, so same-node structural drift cannot expose an unknown getter through progress errors.
+  A private identity witness detects relevant attribute, label and reparent mutations including touched-and-reverted changes through readiness, binding, input hit and exact trusted submit, while unrelated visual classes and loading cosmetics do not invalidate it.
+  The document-root observer filters only relevant witness and fixed ancestor ownership or eligibility mutations for the candidate/action lifetime, rather than treating unrelated document updates as field changes.
+  The witness releases on known Cancel, failed readiness, pagehide and cleanup, and only the exact trusted native submit permits pending loading or formatter remount before an independently qualified fresh On or Off form.
+  Fresh forms must retain the known12/13 semantic family and expected full vector without reusing generated placeholder identities, and the report-only diagnostic never acquires this witness or new form actions.
+
+- **Browser workflow path filters can exclude packaging-only pull requests**: apps/action-only packaging, root package and scripts changes may run normal CI and local image checks without matching the installed-browser pull_request paths.
+  Such a boundary has no expected installed Test start or artifact and must not be reported as either native acceptance or an installed-test failure.

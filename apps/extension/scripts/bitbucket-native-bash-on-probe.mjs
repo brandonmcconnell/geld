@@ -1,6 +1,7 @@
 /** Native references only. Original controls are operated through trusted browser handles. */
 export function nativeBashOnProbe(action = 'read', target = null, fixture = null, environment = {}) {
   const KEY = '__geldNativeBashOn';let store = globalThis[KEY];
+  if (action === 'release-tab-witness') { store?.tabObserver?.disconnect();if(store){store.tabObserver=null;store.tabLease=null;}return { released: true }; }
   const source = fixture ?? store?.fixture;if (!source) return null;
   const native = (n) => n !== null && n.isConnected && n.closest('[data-geld-ui],[data-testid="comment"],[data-qa="pr-activity"],[data-qa="pull-request-description"]') === null;
   const visible = (n) => {
@@ -51,6 +52,39 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
   };
   const cookieNotices = () => [...document.querySelectorAll('[role="dialog"][aria-labelledby="cookiesTrackingNoticeLink"]')].filter((n) => native(n) && n.querySelector('input,select,textarea,form') === null && n.querySelector('a[id="cookiesTrackingNoticeLink"][href="https://www.atlassian.com/legal/cookies"]') !== null);
   const dialogs = () => { const passive = cookieNotices();return [...document.querySelectorAll('[role="dialog"]')].filter((n) => native(n) && !passive.includes(n)); };
+  const tabWitness = (form, dialog) => {
+    try {
+      const inputs = [...form.querySelectorAll('input[id="tab-size-pref"]')];const hiddenInputs = [...form.querySelectorAll('input[type="hidden"][name="tabSize"]')];const labels = [...form.querySelectorAll('label[for="tab-size-pref"]')];
+      if (inputs.length !== 1 || hiddenInputs.length !== 1 || labels.length !== 1 || document.querySelectorAll('[id="tab-size-pref"]').length !== 1) return null;
+      const input = inputs[0];const hidden = hiddenInputs[0];const label = labels[0];const associated = [...input.labels ?? []];
+      if (!native(input) || !native(hidden) || !native(label) || !dialog.contains(label) || associated.length !== 1 || associated[0] !== label || label.textContent.trim() !== 'Tab size' || label.closest('[hidden],[inert],[aria-hidden="true"]') !== null) return null;
+      if (input.name !== '' || input.type !== 'text' || input.getAttribute('role') !== 'combobox' || input.getAttribute('inputmode') !== 'none' || input.getAttribute('aria-haspopup') !== 'listbox' || input.getAttribute('aria-readonly') !== 'true') return null;
+      if (input.disabled || input.readOnly || input.closest('[aria-disabled="true"],fieldset[disabled],[hidden],[inert],[aria-hidden="true"]') !== null || input.parentElement?.closest('[aria-readonly="true"]') !== null || !enabled(hidden)) return null;
+      const name = input.getAttribute('name');const type = input.getAttribute('type');const disabled = input.getAttribute('aria-disabled');const hiddenDisabled = hidden.getAttribute('aria-disabled');const hiddenReadonly = hidden.getAttribute('aria-readonly');
+      if (![null, ''].includes(name) || ![null, 'text'].includes(type) || ![null, 'false'].includes(disabled) || ![null, 'false'].includes(hiddenDisabled) || ![null, 'false'].includes(hiddenReadonly) || hidden.getAttribute('name') !== 'tabSize' || hidden.getAttribute('type') !== 'hidden') return null;
+      if (input.parentElement === null || label.parentElement === null || hidden.parentElement === null || hidden.parentElement === form || !native(hidden.parentElement) || !hidden.parentElement.contains(input)) return null;
+      return { input, inputParent: input.parentElement, hidden, hiddenParent: hidden.parentElement, label, labelParent: label.parentElement, signature: JSON.stringify(['readonly_combobox', name, type, disabled, hiddenDisabled, hiddenReadonly]) };
+    } catch { return null; }
+  };
+  const sameTab = (a, b) => a === null ? b === null : b !== null && a.input === b.input && a.inputParent === b.inputParent && a.hidden === b.hidden && a.hiddenParent === b.hiddenParent && a.label === b.label && a.labelParent === b.labelParent && a.signature === b.signature;
+  const contract = (form) => ({ family: form.candidate, tab: form.tabWitness === null ? 'ordinary_enabled' : 'readonly_combobox' });
+  const checkTabLease = (records = []) => {
+    const lease = store?.tabLease;if (!lease || lease.closed || store.transition?.form === lease.form) return;
+    const w = lease.witness;const targets = [w.input, w.hidden, w.label];
+    const ownershipChanged = (r) => r.attributeName === 'data-testid' ? [r.oldValue, r.target.getAttribute(r.attributeName)].includes('comment') : r.attributeName === 'data-qa' ? [r.oldValue, r.target.getAttribute(r.attributeName)].some((v) => ['pr-activity', 'pull-request-description'].includes(v)) : true;
+    const touched = records.some((record) => record.type === 'attributes' ? ownershipChanged(record) && (targets.some((n) => record.target === n) || ['aria-disabled','aria-readonly','disabled','hidden','inert','aria-hidden','data-geld-ui','data-testid','data-qa'].includes(record.attributeName) && targets.some((n) => record.target.contains(n)))
+      : record.type === 'characterData' ? w.label.contains(record.target)
+        : w.label === record.target || w.label.contains(record.target) || [...record.addedNodes, ...record.removedNodes].some((node) => targets.some((n) => node === n || node.contains(n))));
+    if (touched || !native(lease.form) || !native(lease.dialog) || !sameTab(w, tabWitness(lease.form, lease.dialog))) store.tabLeaseInvalid = true;
+  };
+  const captureTabLease = (form) => {
+    store.tabObserver?.disconnect();store.tabObserver = null;store.tabLease = null;
+    if (form.tabWitness !== null) {
+      store.tabLease = { form: form.form, dialog: form.dialog, witness: form.tabWitness, closed: false };
+      store.tabObserver = new MutationObserver(checkTabLease);
+      store.tabObserver.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ['id','name','type','role','inputmode','aria-haspopup','aria-disabled','aria-readonly','disabled','readonly','for','hidden','inert','aria-hidden','value','data-geld-ui','data-testid','data-qa'] });
+    }
+  };
   const formRead = () => {
     const ds = dialogs();const diagnostics = { dialogs: ds.length, fields: [] };
     const inspection = action === 'diagnose-form' ? { recognized: false, firstRefusal: null, checks: { dialogCount: ds.length, presentationEligible: null, heading: null, formCount: null, containment: null, enabled: null, tabStructure: null, shape: null, tab: null, radios: null, labels: null, syntaxLabel: null, buttons: null } } : null;
@@ -66,12 +100,6 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
     if (inspection) { inspection.checks.heading = { present: title !== null, contained: title !== null && dialog.contains(title), phrase: title === null ? 'missing' : phrase(title.textContent.trim()), requiredPhrase: title !== null && title.textContent.trim() === 'Global diff view settings' };inspection.checks.formCount = forms.length; }
     if (!title || !dialog.contains(title) || title.textContent.trim() !== 'Global diff view settings' || forms.length !== 1) return refuse(!title ? 'title_missing' : !dialog.contains(title) ? 'title_outside_dialog' : title.textContent.trim() !== 'Global diff view settings' ? 'title_phrase' : 'form_count');
     const form = forms[0];const fields = [...form.querySelectorAll('input,select,textarea')];
-    if (inspection) { inspection.checks.containment = { dialogFieldCount: controls.length, formFieldCount: fields.length, equal: fields.length === controls.length };inspection.checks.enabled = fields.slice(0, 40).map((f, index) => ({ index, native: native(f), disabled: f.disabled === true, readOnly: f.readOnly === true, ariaBlocked: f.closest('[aria-disabled="true"],[aria-readonly="true"]') !== null, selfAriaDisabled: f.getAttribute('aria-disabled') === 'true', selfAriaReadonly: f.getAttribute('aria-readonly') === 'true', ancestorAriaDisabled: f.parentElement !== null && f.parentElement.closest('[aria-disabled="true"]') !== null, ancestorAriaReadonly: f.parentElement !== null && f.parentElement.closest('[aria-readonly="true"]') !== null, fieldsetBlocked: f.closest('fieldset[disabled]') !== null, enabled: enabled(f) })); }
-    if (inspection) {
-      const tabInputs = [...form.querySelectorAll('input[id="tab-size-pref"]')];const hiddenTabs = [...form.querySelectorAll('input[type="hidden"][name="tabSize"]')];const forLabels = [...form.querySelectorAll('label[for="tab-size-pref"]')];
-      inspection.checks.tabStructure = { candidates: fields.slice(0, 40).map((f, index) => ({ index, idMatches: f.id === 'tab-size-pref', emptyName: f.name === '', textType: f.tagName === 'INPUT' && f.type === 'text', comboboxRole: f.getAttribute('role') === 'combobox', inputModeNone: f.getAttribute('inputmode') === 'none', listboxPopup: f.getAttribute('aria-haspopup') === 'listbox' })), uniqueId: document.querySelectorAll('[id="tab-size-pref"]').length === 1, formInputCount: tabInputs.length, labelCount: forLabels.length, labelNative: forLabels.length > 0 && forLabels.every(native), labelWithinDialog: forLabels.length > 0 && forLabels.every((n) => dialog.contains(n)), associatedLabelWithinForm: tabInputs.length === 1 && [...tabInputs[0].labels ?? []].some((n) => native(n) && form.contains(n) && n.getAttribute('for') === 'tab-size-pref'), hiddenCompanionCount: hiddenTabs.length, hiddenCompanionNative: hiddenTabs.length === 1 && native(hiddenTabs[0]), hiddenParentIsForm: hiddenTabs.length === 1 && hiddenTabs[0].parentElement === form, hiddenParentContainsInput: hiddenTabs.length === 1 && tabInputs.length === 1 && hiddenTabs[0].parentElement?.contains(tabInputs[0]) === true };
-    }
-    if (fields.length !== controls.length || fields.some((f) => !native(f) || !enabled(f))) return refuse(fields.length !== controls.length ? 'controls_outside_form' : 'field_not_native_or_enabled');
     const expected = [
       ['', 'diffViewMode', 'radio', 'UNIFIED'], ['', 'diffViewMode', 'radio', 'SIDE_BY_SIDE'],
       ['diff-settings-syntax-highlighting-toggle', 'enableSyntaxHighlighting', 'checkbox', 'enableSyntaxHighlighting'],
@@ -83,11 +111,18 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
       ['tab-size-pref', '', 'text', null], ['', 'tabSize', 'hidden', null], ['', 'fileViewMode', 'radio', 'TREE'], ['', 'fileViewMode', 'radio', 'LIST'],
     ];
     const without = expected.filter((f) => f[1] !== 'enableAnnotations');
+    const families = [expected, without];const structural = families.find((family) => family.length === fields.length && fields.every((f, i) => f.id === family[i][0] && f.name === family[i][1] && f.type === family[i][2]));
+    const untouchedTab = structural === undefined ? null : tabWitness(form, dialog);
+    if (inspection) { inspection.checks.containment = { dialogFieldCount: controls.length, formFieldCount: fields.length, equal: fields.length === controls.length };inspection.checks.enabled = fields.slice(0, 40).map((f, index) => ({ index, native: native(f), disabled: f.disabled === true, readOnly: f.readOnly === true, ariaBlocked: f.closest('[aria-disabled="true"],[aria-readonly="true"]') !== null, selfAriaDisabled: f.getAttribute('aria-disabled') === 'true', selfAriaReadonly: f.getAttribute('aria-readonly') === 'true', ancestorAriaDisabled: f.parentElement !== null && f.parentElement.closest('[aria-disabled="true"]') !== null, ancestorAriaReadonly: f.parentElement !== null && f.parentElement.closest('[aria-readonly="true"]') !== null, fieldsetBlocked: f.closest('fieldset[disabled]') !== null, enabled: enabled(f), eligibleForForm: enabled(f) || f === untouchedTab?.input })); }
     if (inspection) {
-      const families = [expected, without];const structural = families.find((family) => family.length === fields.length && fields.every((f, i) => f.id === family[i][0] && f.name === family[i][1] && f.type === family[i][2]));
-      inspection.checks.shape = families.map((family) => ({ family: family.length === 13 ? 'standalone_13' : 'standalone_12', countMatches: fields.length === family.length, fields: fields.slice(0, 40).map((f, index) => ({ index, idMatches: family[index] !== undefined && f.id === family[index][0], nameMatches: family[index] !== undefined && f.name === family[index][1], typeMatches: family[index] !== undefined && f.type === family[index][2], enumValueMatches: null })) }));
-      if (structural === undefined) return refuse('shape_mismatch');
+      const tabInputs = [...form.querySelectorAll('input[id="tab-size-pref"]')];const hiddenTabs = [...form.querySelectorAll('input[type="hidden"][name="tabSize"]')];const forLabels = [...form.querySelectorAll('label[for="tab-size-pref"]')];
+      inspection.checks.tabStructure = { candidates: fields.slice(0, 40).map((f, index) => ({ index, idMatches: f.id === 'tab-size-pref', emptyName: f.name === '', textType: f.tagName === 'INPUT' && f.type === 'text', comboboxRole: f.getAttribute('role') === 'combobox', inputModeNone: f.getAttribute('inputmode') === 'none', listboxPopup: f.getAttribute('aria-haspopup') === 'listbox' })), uniqueId: document.querySelectorAll('[id="tab-size-pref"]').length === 1, formInputCount: tabInputs.length, labelCount: forLabels.length, labelNative: forLabels.length > 0 && forLabels.every(native), labelWithinDialog: forLabels.length > 0 && forLabels.every((n) => dialog.contains(n)), associatedLabelWithinForm: tabInputs.length === 1 && [...tabInputs[0].labels ?? []].some((n) => native(n) && form.contains(n) && n.getAttribute('for') === 'tab-size-pref'), hiddenCompanionCount: hiddenTabs.length, hiddenCompanionNative: hiddenTabs.length === 1 && native(hiddenTabs[0]), hiddenParentIsForm: hiddenTabs.length === 1 && hiddenTabs[0].parentElement === form, hiddenParentContainsInput: hiddenTabs.length === 1 && tabInputs.length === 1 && hiddenTabs[0].parentElement?.contains(tabInputs[0]) === true };
     }
+    if (fields.length !== controls.length || fields.some((f) => !native(f) || !enabled(f) && f !== untouchedTab?.input)) return refuse(fields.length !== controls.length ? 'controls_outside_form' : 'field_not_native_or_enabled');
+    if (inspection) {
+      inspection.checks.shape = families.map((family) => ({ family: family.length === 13 ? 'standalone_13' : 'standalone_12', countMatches: fields.length === family.length, fields: fields.slice(0, 40).map((f, index) => ({ index, idMatches: family[index] !== undefined && f.id === family[index][0], nameMatches: family[index] !== undefined && f.name === family[index][1], typeMatches: family[index] !== undefined && f.type === family[index][2], enumValueMatches: null })) }));
+    }
+    if (structural === undefined) return refuse('shape_mismatch');
     const shape = fields.map((f) => [f.id, f.name, f.type, ['radio', 'checkbox'].includes(f.type) ? f.value : null]);
     if (inspection) for (const entry of inspection.checks.shape) { const family = entry.family === 'standalone_13' ? expected : without;if (entry.countMatches && fields.every((f, i) => f.id === family[i][0] && f.name === family[i][1] && f.type === family[i][2])) for (const check of entry.fields) check.enumValueMatches = ['radio', 'checkbox'].includes(fields[check.index].type) ? shape[check.index][3] === family[check.index][3] : null; }
     const annotations = equal(shape, expected);if (!annotations && !equal(shape, without)) return refuse('shape_mismatch');
@@ -109,29 +144,32 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
     if (buttons.length !== 2 || saves.length !== 1 || cancels.length !== 1) return refuse(buttons.length !== 2 ? 'button_count' : saves.length !== 1 ? 'save_count' : 'cancel_count');
     if (inspection) inspection.recognized = true;
     const vector = fields.map((f) => ({ id: f.id, name: f.name, type: f.type, value: f.value, checked: f.checked, disabled: f.disabled, readOnly: f.readOnly }));
-    return { form: { dialog, form, fields, field, save: saves[0], cancel: cancels[0], vector, candidate: annotations ? 'source-backed-standalone-13' : 'source-backed-standalone-12-without-annotations' }, diagnostics };
+    return { form: { dialog, form, fields, field, tabWitness: untouchedTab, save: saves[0], cancel: cancels[0], vector, candidate: annotations ? 'source-backed-standalone-13' : 'source-backed-standalone-12-without-annotations' }, diagnostics };
   };
-  if (action === 'cleanup') { if (store) for (const type of ['click', 'input', 'change', 'submit']) document.removeEventListener(type, store.listen, true);delete globalThis[KEY];return null; }
+  if (action === 'cleanup') { if (store) store.tabObserver?.disconnect();if(store)document.defaultView?.removeEventListener('pagehide',store.pagehide);if (store) for (const type of ['click', 'input', 'change', 'submit']) document.removeEventListener(type, store.listen, true);delete globalThis[KEY];return null; }
   const a = actor();const s = readSource();
   if (action === 'setup') {
     if (store || !a || !s || dialogs().length) return null;
-    store = { fixture: source, url: location.href, theme:[document.documentElement.getAttribute('data-color-mode'),document.documentElement.getAttribute('data-theme')], actor: a, original: s, expectedSource: s, cookieNotices: cookieNotices().map((node)=>({node,parent:node.parentElement})), saveArm: null, transition: null, baseline: null, form: null, opener: null, events: [], early: [], expected: null, last: null, trust: environment.unitOnly?.trusted };
+    store = { fixture: source, url: location.href, theme:[document.documentElement.getAttribute('data-color-mode'),document.documentElement.getAttribute('data-theme')], actor: a, original: s, expectedSource: s, cookieNotices: cookieNotices().map((node)=>({node,parent:node.parentElement})), saveArm: null, transition: null, tabLease: null, tabObserver: null, tabLeaseInvalid: false, formContract: null, baseline: null, form: null, opener: null, events: [], early: [], expected: null, last: null, trust: environment.unitOnly?.trusted };
+    store.pagehide=()=>{store.tabObserver?.disconnect();store.tabObserver=null;store.tabLease=null;store.tabLeaseInvalid=true;};document.defaultView?.addEventListener('pagehide',store.pagehide);
     store.listen = (e) => {
       if (!(e.target instanceof Element)) return;const f = store.form;const trusted = store.trust?.(e) ?? e.isTrusted === true;
       if (e.type === 'click' && store.expected?.contains(e.target)) store.last = { trusted, url: location.href, type: e.type };
       if (!f || !f.form.contains(e.target)) { if (e.target.closest('[role="dialog"]')) store.early.push({ type: e.type, trusted });return; }
       const b = e.target.closest('button');const control = e.target === f.field ? 'syntax' : b === f.save ? 'save' : b === f.cancel ? 'cancel' : e.type === 'submit' && e.target === f.form ? 'form' : 'other';
       store.events.push({ type: e.type, trusted, control, ...(control === 'syntax' ? { checked: f.field.checked } : {}), ...(e.type === 'submit' ? { sameForm: e.target === f.form, sameSubmitter: e.submitter === f.save } : {}) });
+      if(e.type==='click'&&control==='cancel'&&trusted&&store.expected===f.cancel&&nativeBashOnProbe()?.ready&&store.tabLease?.form===f.form){store.tabLease.closed=true;store.tabObserver?.disconnect();store.tabObserver=null;}
       if(e.type==='submit'&&control==='form'&&store.saveArm!==null&&store.transition===null){
         const arm=store.saveArm;const expectedEvents=[['click','syntax'],['input','syntax'],['change','syntax'],['click','save'],['submit','form']];
         const sequence=store.events.length===5&&store.events.every((v,i)=>v.trusted&&v.type===expectedEvents[i][0]&&v.control===expectedEvents[i][1]&&(i>=3||v.checked===arm.target));
         const snapshot=nativeBashOnProbe();
-        if(sequence&&e.submitter===f.save&&store.expected===f.save&&arm.form===f.form&&snapshot?.same&&snapshot.stable&&snapshot.ready&&equal(snapshot.vector,arm.vector))store.transition={target:arm.target,vector:arm.vector,authorization:'trusted-original-native-save-submit'};
+        if(sequence&&e.submitter===f.save&&store.expected===f.save&&arm.form===f.form&&snapshot?.same&&snapshot.stable&&snapshot.ready&&equal(snapshot.vector,arm.vector)){store.transition={target:arm.target,vector:arm.vector,form:f.form,authorization:'trusted-original-native-save-submit'};store.tabObserver?.disconnect();store.tabObserver=null;}
       }
     };
     for (const type of ['click', 'input', 'change', 'submit']) document.addEventListener(type, store.listen, true);globalThis[KEY] = store;
   }
   if (!store || !a || !s) return null;
+  checkTabLease(store.tabObserver?.takeRecords() ?? []);
   const base = store.original;const expected = store.expectedSource;
   const sameSemantic = equal(s.records.map((r) => [r.old, r.next, r.kind, r.text, r.aria, r.group, r.ids.map(([, id]) => id), r.links.map(([, href, label]) => [href, label])]), base.records.map((r) => [r.old, r.next, r.kind, r.text, r.aria, r.group, r.ids.map(([, id]) => id), r.links.map(([, href, label]) => [href, label])]));
   const sameOwner = s.anchor === base.anchor && s.root === base.root && s.parent === base.parent && s.article === base.article && s.articleParent === base.articleParent && s.header === base.header && s.viewed === base.viewed && s.checked === base.checked && s.disabled === base.disabled
@@ -142,15 +180,19 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
       && r.spans.length === old.spans.length && r.spans.every((n, j) => n === old.spans[j]) && r.nodes.length === old.nodes.length && r.nodes.every((n, j) => n === old.nodes[j] && n.data === old.values[j]);
   });
   const cookies = cookieNotices();const sameCookies = cookies.length === store.cookieNotices.length && cookies.every((node,i)=>node===store.cookieNotices[i].node&&node.parentElement===store.cookieNotices[i].parent);
-  const same = sameCookies && equal(store.theme,[document.documentElement.getAttribute('data-color-mode'),document.documentElement.getAttribute('data-theme')]) && currentURL() && location.href === store.url && a.node === store.actor.node && a.bytes === store.actor.bytes && a.workspace === store.actor.workspace && sameOwner && sameSemantic && (stable || store.transition!==null);
+  const same = !store.tabLeaseInvalid && sameCookies && equal(store.theme,[document.documentElement.getAttribute('data-color-mode'),document.documentElement.getAttribute('data-theme')]) && currentURL() && location.href === store.url && a.node === store.actor.node && a.bytes === store.actor.bytes && a.workspace === store.actor.workspace && sameOwner && sameSemantic && (stable || store.transition!==null);
   let state;
   if (action === 'diagnose-form') { try { state = formRead(); } catch { state = { form: null, diagnostics: { inspection: { recognized: false, firstRefusal: 'inspection_unavailable', checks: null } } }; } }else state = formRead();
   const f = state.form;
-  const sameForm = f !== null && store.form !== null && f.dialog === store.form.dialog && f.form === store.form.form && f.field === store.form.field && f.save === store.form.save && f.cancel === store.form.cancel && f.fields.length===store.form.fields.length&&f.fields.every((n, i) => n === store.form.fields[i]);
+  const sameForm = f !== null && store.form !== null && f.dialog === store.form.dialog && f.form === store.form.form && f.field === store.form.field && f.save === store.form.save && f.cancel === store.form.cancel && f.fields.length===store.form.fields.length&&f.fields.every((n, i) => n === store.form.fields[i]) && sameTab(f.tabWitness, store.form.tabWitness);
   const canSave=same&&stable&&sameForm&&store.transition===null&&store.saveArm!==null&&store.saveArm.form===f.form&&equal(f.vector,store.saveArm.vector)&&store.events.length===3&&store.events.every((e,i)=>e.trusted&&e.control==='syntax'&&e.type===['click','input','change'][i]&&e.checked===store.saveArm.target);
+  if (action === 'capture-tab-witness') {
+    if (!same || !f || store.early.length || store.formContract !== null && !equal(contract(f),store.formContract) || store.transition !== null && !equal(f.vector,store.transition.vector)) return null;
+    captureTabLease(f);return { current: true };
+  }
   if (action === 'bind') {
-    if (!same || !f || store.early.length || store.form?.dialog === f.dialog || store.transition!==null&&!equal(f.vector,store.transition.vector)) return null;
-    store.form = f;store.saveArm=null;store.events = [];store.last = null;return { vector: f.vector, candidate: f.candidate };
+    if (!same || !f || store.early.length || store.form?.dialog === f.dialog || store.transition!==null&&!equal(f.vector,store.transition.vector) || store.formContract !== null && !equal(contract(f),store.formContract)) return null;
+    if (store.tabLease?.form !== f.form) captureTabLease(f);store.formContract ??= contract(f);store.form = f;store.saveArm=null;store.events = [];store.last = null;return { vector: f.vector, candidate: f.candidate };
   }
   if (action === 'begin-save') {
     const allowed = same && stable && store.transition===null && sameForm && f.field.checked === target && equal(f.vector,store.form.vector.map((v)=>v.id==='diff-settings-syntax-highlighting-toggle'?{...v,checked:target}:v))
