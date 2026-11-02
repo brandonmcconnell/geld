@@ -20,7 +20,7 @@ export function serializeQuery(tokens: readonly QueryToken[]): string {
   return tokens.map((token) => `${token.key === null ? '' : `${token.key}:`}${quote(token.value, token.quoted === true)}`).join(' ');
 }
 export function setQualifier(query: string, key: string, value: string | null): string {
-  const roles = [['pr', 'issue'], ['open', 'closed'], ['merged', 'unmerged'], ['locked', 'unlocked'], ['public', 'private']];
+  const roles = [['pr', 'issue'], ['open', 'closed'], ['merged', 'unmerged'], ['locked', 'unlocked'], ['public', 'private', 'internal']];
   const values = key === 'is' ? roles.find(role => role.includes((value ?? 'open').toLowerCase())) ?? [value?.toLowerCase()] : null;
   const tokens = parseQuery(query).filter((token) => token.key !== key || (values !== null && !values.includes(token.value.toLowerCase())));
   return serializeQuery(value === null ? tokens : [...tokens, { key, value }]);
