@@ -22,7 +22,7 @@ test('PR preparation disables both review consumers and default and real429 guar
   assert.match(code,/preparePatch:prWhole\?\{prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false\}/);
   assert.match(code,/conservativeObservedRequestBudget: 40/);assert.match(code,/active \+ 4 < budget/);
   assert.match(code,/response\.status\(\) === 429/);assert.match(code,/holdReason = 'provider_http429'/);
-  assert.match(code,/focus !== 'bitbucket-pr-whole-context' && bitbucketRequestTimes.length >=/);
+  assert.match(code,/!\['bitbucket-pr-whole-context', 'bitbucket-whitespace-session'\]\.includes\(focus\) && bitbucketRequestTimes.length >=/);
   assert.match(code,/guardBudget:guardBitbucketPrContextBudget/);
 });
 test('cached request exemption comes from complete qualified leaf rows, never boundary source acquisition',()=>{

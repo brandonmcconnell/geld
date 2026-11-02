@@ -2322,3 +2322,10 @@ a description does not supply identity.
 Keep provider code-link evidence guards when sharing the refusal parser, and retain Bitbucket build-status descriptions in both extension and CI normalization without inventing a bot author.
 GitLab pipeline jobs do not provide an equivalent free-text check description;
 do not substitute job names or failure enums.
+
+The literal installed `bitbucket-whitespace-session` focus uses one public PR22 visit and observes native and extension diff requests independently of the product bridge acknowledgement.
+Its bounded public sequence starts with Geld disabled and activates Geld with its synchronized whitespace setting, reads the original native Settings checkbox after a genuine opener click, and closes the page before restoring exact raw settings;
+it never clicks Save or changes a native form field.
+The eight-request own snapshot and sixteen-request PR22 baseline are retained observations;
+subtracting them to forecast eight requests with Geld disabled is an inference, so the harness measures that baseline and checks remaining room before activation.
+The complete Cancel and disable sequence remains offline protocol coverage until separately admitted within the existing rolling request cap.

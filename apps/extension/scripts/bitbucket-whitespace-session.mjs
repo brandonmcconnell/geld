@@ -1,0 +1,275 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { tsImport } from 'tsx/esm/api';
+const { parseUnifiedDiff } = await tsImport('@geld/core', import.meta.url);
+
+export const BITBUCKET_WHITESPACE_URL = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff';
+const REPO = 'atlassian/bitbucket-upload-file';
+const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+const REF = /^[a-f0-9]{7,64}$/;
+const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { code }); };
+
+/** Forecast, not a measured mode-reload cost. No cache discount and no ledger reset. */
+export function bitbucketWhitespaceBudget(active, { fullCycle = false } = {}) {
+  check(Number.isSafeInteger(active) && active >= 0, 'BUDGET_INPUT');
+  const baseline = 8; // Inferred non-own share of actual PR22 run41504744981:16 total minus eight identified own reads.
+  const ownModeAcquisitions = fullCycle ? 3 : 1; // True, then optional reapply and false; assume eight each.
+  const nativeTransitions = fullCycle ? 4 : 2;
+  const nativePerTransition = 7; // Diff + diffstat + conservative one context read for each of five files.
+  const demand = baseline + ownModeAcquisitions * 8 + nativeTransitions * nativePerTransition;
+  const buffer = 5;const limit = 47;
+  return { available: active + demand + buffer <= limit, active, limit, externalReserve: 3, demand, buffer,
+    baseline, ownModeAcquisitions, nativeTransitions, nativePerTransition, fullCycle,
+    basis: 'PR22 actual16 includes eight identified own reads; disabled baseline8 is an inference. Forecast eight own reads per mode and seven native reads per transition; measure actual baseline before enabling.' };
+}
+
+export function bitbucketWhitespaceSettings({ read, write, progress }) {
+  let original, expected;
+  return {
+    async prepare() {
+      original = structuredClone(await read());
+      check(original && typeof original.present === 'boolean' && (!original.present || original.value && typeof original.value === 'object' && !Array.isArray(original.value)), 'SETTINGS_SCHEMA');
+      expected = { present: true, value: { ...(original.present ? original.value : {}), enabled: false, hideWhitespace: false, prOverview: false, quickReview: false, showListStats: false, aiEnabled: false, repoConfigs: 'never', autoViewed: {}, testOutline: false, hideCommentLines: false, hideLargeDiffs: false, groupHidden: true, expandedByDefault: false, categories: { tests: true }, customCategories: [], categoryPatterns: {}, customPatterns: [], repoRules: [], hiddenAuthors: [] } };
+      await write(expected);check(isDeepStrictEqual(await read(), expected), 'SETTINGS_PREPARE');progress.prepared = true;
+    },
+    async current() { const value = await read();check(isDeepStrictEqual(value, expected), 'SETTINGS_CHANGED');return value.value; },
+    async hide(value) { check(typeof value === 'boolean', 'SETTINGS_HIDE');await this.current();expected = { present: true, value: { ...expected.value, enabled: true, hideWhitespace: value } };await write(expected);await this.current(); },
+    async restore(closed) { check(closed, 'CLOSE_BEFORE_RESTORE');if (!original) return;await write(original);check(isDeepStrictEqual(await read(), original), 'SETTINGS_RESTORE');progress.restored = true;progress.pageClosedBeforeRestore = true; },
+  };
+}
+
+export function bitbucketWhitespaceResource(value) {
+  try {
+    const u = new URL(value);if (u.username || u.password || u.hash) return null;
+    const path = u.origin === 'https://bitbucket.org' && u.pathname.startsWith('/!api/') ? u.pathname.slice(5) : u.origin === 'https://api.bitbucket.org' ? u.pathname : '';
+    const prefix = `/2.0/repositories/${REPO}/`;if (!path.startsWith(prefix)) return null;
+    const tail = decodeURIComponent(path.slice(prefix.length));
+    if (tail === 'pullrequests/22' && [...u.searchParams.keys()].every(k => k === 'fields')) return { kind: 'pr' };
+    const commit = /^commit\/([a-f0-9]{7,64})$/.exec(tail);if (commit && [...u.searchParams.keys()].every(k => k === 'fields')) return { kind: 'resolve', ref: commit[1] };
+    const native = /^pullrequests\/22\/(diff|diffstat)$/.exec(tail);
+    const pair = /^(diff|diffstat)\/(?:atlassian\/bitbucket-upload-file:)?([a-f0-9]{7,64})\r([a-f0-9]{7,64})$/.exec(tail);
+    if (!native && !pair) return null;
+    const topics = u.searchParams.getAll('topic'), pullRequests = u.searchParams.getAll('from_pullrequest_id');
+    if (topics.length > 1 || topics.some(value => !['true', 'false'].includes(value)) || pullRequests.length > 1 || pullRequests.some(value => !/^[1-9]\d*$/.test(value))) return null;
+    const values = u.searchParams.getAll('ignore_whitespace');if (values.length > 1 || values.length === 1 && !['true', 'false'].includes(values[0])) return null;
+    return { routeKey: createHash('sha256').update(path).digest('hex'), kind: (native ?? pair)[1], topic: topics[0] ?? null, pullRequest: pullRequests[0] ?? (native ? '22' : null), mode: values[0] === 'true', head: pair?.[2] ?? null, base: pair?.[3] ?? null, nativeRoute: native !== null };
+  } catch { return null; }
+}
+const sameComparison = (a, b) => !!a && !!b && (a.topic == null || b.topic == null || a.topic === b.topic) && (a.pullRequest == null || b.pullRequest == null || a.pullRequest === b.pullRequest);
+const requestOwner = (request, id) => {
+  let stack = request.initiator?.()?.stack, native = false;
+  for (let depth = 0; stack && depth < 8; depth++, stack = stack.parent) {
+    for (const frame of (stack.callFrames ?? []).slice(0, 256)) {
+      if (typeof frame.url !== 'string') continue;
+      if (frame.url.startsWith(`chrome-extension://${id}/`)) return 'extension';
+      try { const u = new URL(frame.url);if (!u.username && !u.password && (u.origin === 'https://bitbucket.org' || u.origin === 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net' && u.pathname.startsWith('/assets/') && u.pathname.endsWith('.js'))) native = true; } catch { /* Unknown initiator is not native proof. */ }
+    }
+  }
+  return native ? 'native' : 'unknown';
+};
+const totals = files => ({ files: files.length, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) });
+
+/** Passive already-issued traffic only. Response bodies stay private in the observer, receipts are bounded. */
+export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
+  const pending = new Set(), records = [], requests = new WeakMap();let released = false, phase = 'baseline', responseSequence = 0;
+  Object.assign(progress, { requests: [], failures: [], providerWrites: 0, overflow: false });
+  const request = r => {
+    let url;try { url = new URL(r.url()); } catch { return; }
+    const api = url.origin === 'https://api.bitbucket.org' && url.pathname.startsWith('/2.0/') || url.origin === 'https://bitbucket.org' && url.pathname.startsWith('/!api/');
+    if (api && !['GET', 'HEAD', 'OPTIONS'].includes(r.method())) { progress.providerWrites++;abort.abort(new Error('NATIVE_WRITE'));void page.close().catch(() => {}); }
+    const resource = bitbucketWhitespaceResource(r.url());if (!resource) return;
+    if (records.length >= 80) { progress.overflow = true;abort.abort(new Error('TRAFFIC_BOUND'));return; }
+    const chain = r.redirectChain?.() ?? [];const first = chain[0] ?? r;
+    const firstSource = bitbucketWhitespaceResource(first.url());
+    const record = { ...resource, requestKey: createHash('sha256').update(r.url()).digest('hex'), sequence: records.length, phase, requestedAt: new Date().toISOString(), owner: requestOwner(first, extensionId), method: r.method(), redirected: chain.length > 0,
+      validChain: chain.length <= 3 && chain.every(v => v.method() === 'GET' && bitbucketWhitespaceResource(v.url())?.mode === resource.mode && sameComparison(bitbucketWhitespaceResource(v.url()), resource)), firstNativeRoute: firstSource?.nativeRoute === true };
+    requests.set(r, record);records.push(record);progress.requests.push(record);
+    if (phase === 'hide' && record.owner === 'extension' && ['diff', 'diffstat'].includes(record.kind) && !record.mode) { record.error = 'WRONG_MODE_STARTUP';abort.abort(new Error('WRONG_MODE_STARTUP'));void page.close().catch(() => {}); }
+  };
+  const response = r => {
+    const record = requests.get(r.request());if (!record || released) return;
+    record.status = r.status();record.responseSequence = responseSequence++;if (r.status() === 429) { abort.abort(new Error('RATE_LIMIT'));return; }
+    if (![200, 304].includes(r.status())) return;
+    const task = (async () => {
+      try {
+        const declared = r.headers()['content-length'];check(declared === undefined || /^\d+$/.test(declared) && Number(declared) <= 512 * 1024, 'RESPONSE_SIZE');
+        const body = await r.buffer();check(body.length > 0 && body.length <= 512 * 1024, 'RESPONSE_SIZE');
+        record.bytes = body.length;record.sha256 = createHash('sha256').update(body).digest('hex');
+        if (record.status === 304) { check(records.some(prior => prior.sequence < record.sequence && prior.responseSequence < record.responseSequence && prior.status === 200 && prior.qualified && prior.owner === record.owner && prior.requestKey === record.requestKey && prior.sha256 === record.sha256), 'CACHE_PROVENANCE');record.cacheBasis = 'same_key_prior200_same_body'; }
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+        if (record.kind === 'diff') {
+          check(/^(?:text\/(?!html\b)[^;]+|application\/octet-stream)(?:;|$)/i.test(r.headers()['content-type'] ?? ''), 'DIFF_TYPE');
+          record.files = parseUnifiedDiff(text).map(f => ({ path: f.path, additions: f.additions, deletions: f.deletions }));
+        } else {
+          const value = JSON.parse(text);
+          if (record.kind === 'pr') { check(value.id === 22 && value.source?.repository?.full_name === REPO && value.destination?.repository?.full_name === REPO, 'PR_SOURCE');record.sourceRef = value.source.commit.hash;record.baseRef = value.destination.commit.hash;check(REF.test(record.sourceRef) && REF.test(record.baseRef), 'PR_REF');record.nativeLinks = ['diff', 'diffstat'].map(kind => { const link = bitbucketWhitespaceResource(value.links?.[kind]?.href ?? '');return link?.kind === kind ? { kind, routeKey: link.routeKey, topic: link.topic, pullRequest: link.pullRequest } : null; }).filter(Boolean); }
+          if (record.kind === 'resolve') { check(HASH.test(value.hash) && value.hash.startsWith(record.ref), 'COMMIT_REF');record.hash = value.hash; }
+          if (record.kind === 'diffstat') { check(Array.isArray(value.values) && value.values.length <= 100 && value.next == null, 'STAT_COMPLETE');record.files = value.values.map(f => { const path = f.new?.path ?? f.old?.path;check(typeof path === 'string' && path.length <= 1024 && Number.isSafeInteger(f.lines_added) && f.lines_added >= 0 && Number.isSafeInteger(f.lines_removed) && f.lines_removed >= 0, 'STAT_FILE');return { path, additions: f.lines_added, deletions: f.lines_removed }; }); }
+        }
+        if (record.files) { check(record.files.length > 0 && record.files.length <= 100 && new Set(record.files.map(f => f.path)).size === record.files.length, 'FILE_SET');record.totals = totals(record.files); }
+        record.qualified = true;
+      } catch { record.error = 'RESPONSE_UNQUALIFIED';progress.failures.push({ phase: record.phase, kind: record.kind }); }
+    })();pending.add(task);void task.finally(() => pending.delete(task));
+  };
+  page.on('request', request);page.on('response', response);
+  return { evidence: progress, phase(value) { check(['baseline', 'hide', 'open', 'cancel', 'show'].includes(value), 'PHASE');phase = value; }, async flush() { await Promise.all([...pending]); },
+    records: () => records, idle: () => ({ pending: pending.size, observed: records.length }),
+    async dispose() { released = true;page.off('request', request);page.off('response', response);await Promise.all([...pending]);progress.released = true; },
+  };
+}
+
+export function qualifyBitbucketWhitespace(records, phase, mode, { own = true } = {}) {
+  const good = records.filter(r => r.qualified && r.method === 'GET' && [200, 304].includes(r.status) && r.validChain);
+  check(!records.some(r => r.error), 'RESPONSE_FAILURE');
+  const pair = owner => ['diff', 'diffstat'].map(kind => good.findLast(r => r.phase === phase && r.owner === owner && r.kind === kind && r.mode === mode));
+  const native = pair('native');check(native.every(Boolean), 'NATIVE_PAIR');
+  const nativeMetadata = good.filter(r => r.kind === 'pr' && r.owner === 'native');
+  check(native.every(r => r.firstNativeRoute || nativeMetadata.some(m => m.sequence < r.sequence && m.nativeLinks?.some(link => link.kind === r.kind && link.routeKey === r.routeKey && sameComparison(link, r)))), 'NATIVE_ADVERTISED_PAIR');
+  check(sameComparison(native[0], native[1]) && native.every(r => r.pullRequest == null || r.pullRequest === '22'), 'NATIVE_COMPARISON');
+  check(isDeepStrictEqual(native[0].files, native[1].files), 'NATIVE_FILES');
+  const result = { native: native.map(({ sequence, sha256, mode, totals }) => ({ sequence, sha256, mode, totals })), totals: native[0].totals };
+  if (!own) return result;
+  const ext = pair('extension');check(ext.every(Boolean) && ext.every(r => HASH.test(r.head ?? '') && HASH.test(r.base ?? '') && !r.redirected), 'OWN_PAIR');
+  check(ext.every(r => (r.pullRequest == null || r.pullRequest === '22') && native.every(n => sameComparison(n, r))) && sameComparison(ext[0], ext[1]), 'OWN_COMPARISON');
+  check(ext[0].head === ext[1].head && ext[0].base === ext[1].base && isDeepStrictEqual(ext[0].files, ext[1].files) && isDeepStrictEqual(ext[0].files, native[0].files), 'OWN_FILES');
+  const resolves = good.filter(r => r.kind === 'resolve');
+  const resolved = new Map();
+  for (const value of resolves) { check(HASH.test(value.hash ?? '') && value.hash.startsWith(value.ref) && (!resolved.has(value.ref) || resolved.get(value.ref) === value.hash), 'RESOLUTION_CONFLICT');resolved.set(value.ref, value.hash); }
+  const full = ref => HASH.test(ref ?? '') ? ref : resolved.get(ref);
+  const metadata = good.filter(r => r.phase === phase && r.owner === 'extension' && r.kind === 'pr' && full(r.sourceRef) === ext[0].head && full(r.baseRef) === ext[0].base);
+  check(good.filter(r => r.kind === 'pr').every(r => full(r.sourceRef) === ext[0].head && full(r.baseRef) === ext[0].base), 'METADATA_CHANGED');
+  check(!records.some(r => r.phase === phase && r.owner === 'extension' && ['diff', 'diffstat'].includes(r.kind) && r.mode !== mode), 'OWN_WRONG_MODE');
+  check(metadata.some(r => r.sequence < ext[0].sequence) && metadata.some(r => r.sequence > ext[1].sequence), 'OWN_BEFORE_AFTER');
+  check(native.every(r => r.head === null || ext[0].head.startsWith(r.head) && ext[0].base.startsWith(r.base)), 'NATIVE_REFS');
+  return { ...result, head: ext[0].head, base: ext[0].base, own: ext.map(({ sequence, sha256, mode, totals }) => ({ sequence, sha256, mode, totals })) };
+}
+
+/** Browser-side original-node and native-input evidence; never reads a private app store. */
+export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
+  const KEY = '__geldBitbucketWhitespaceAcceptance';let saved = globalThis[KEY];
+  if (action === 'dispose') { saved?.stop();delete globalThis[KEY];return { released: true }; }
+  if (location.href !== 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff') return null;
+  const native = node => node instanceof Element && node.isConnected && !node.closest('[data-geld-ui],.ak-renderer-document,[contenteditable]');
+  const visible = node => { if (!native(node) || node.closest('[hidden],[inert],[aria-hidden="true"]')) return false;const r = node.getBoundingClientRect();return r.width > 0 && r.height > 0 && getComputedStyle(node).display !== 'none'; };
+  const panels = [...document.querySelectorAll('#pull-request-tabs-1-tab[role="tabpanel"]')].filter(native);
+  const actors = [...document.head.querySelectorAll('meta#bb-bootstrap[data-current-user]')].filter(native);
+  if (panels.length !== 1 || actors.length !== 1) return null;
+  let anonymous = false;try { const raw = actors[0].getAttribute('data-current-user');anonymous = raw.length <= 16384 && JSON.parse(raw).isAuthenticated === false; } catch { return null; }
+  if (!anonymous) return null;
+  const panel = panels[0];const openers = [...panel.querySelectorAll('button[aria-live="polite"][type="button"]')].filter(n => native(n) && ['Global diff settings', 'Global diff view settings'].includes(n.textContent.trim()));
+  if (openers.length !== 1) return null;
+  const opener = openers[0];
+  const anchors = [...panel.querySelectorAll('[role="region"][aria-label="Diff"] > div > div[id^="chg-"]')].filter(native);
+  if (!anchors.length || anchors.length > 10 || new Set(anchors.map(n => n.id)).size !== anchors.length) return null;
+  const files = anchors.map(anchor => {
+    const root = anchor.parentElement, article = root.querySelector('article[data-qa="branch-diff-file"]');
+    const viewed = article ? [...article.querySelectorAll('label')].filter(n => n.textContent.trim() === 'Viewed').flatMap(n => [...n.querySelectorAll('input[type="checkbox"]')]) : [];
+    const rows = article ? [...article.querySelectorAll('[data-qa="code-line"]')].slice(0, 1000) : [];
+    return { anchor, root, article, viewed: viewed.map(n => ({ node: n, checked: n.checked, disabled: n.disabled })), rows, path: anchor.id.slice(4) };
+  });
+  if (!files.some(f => f.article !== null)) return null;
+  if (action === 'bind') {
+    if (saved) return null;
+    saved = { panel, actor: actors[0], actorValue: actors[0].getAttribute('data-current-user'), opener, files, events: [], forbiddenInputs: 0, expected: null, overflow: false };
+    saved.listen = event => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (event.type === 'click' && saved.expected?.contains(target)) {
+        if (saved.events.length >= 8) saved.overflow = true;
+        else saved.events.push({ control: saved.expected === saved.opener ? 'opener' : 'cancel', trusted: event.isTrusted, focused: document.activeElement === saved.expected });
+      }
+      if (['input', 'change', 'submit'].includes(event.type) && target.closest('[role="dialog"]')) saved.forbiddenInputs++;
+    };
+    for (const type of ['click', 'input', 'change', 'submit']) document.addEventListener(type, saved.listen, true);
+    saved.stop = () => { for (const type of ['click', 'input', 'change', 'submit']) document.removeEventListener(type, saved.listen, true); };
+    globalThis[KEY] = saved;
+  }
+  if (!saved || saved.panel !== panel || saved.actor !== actors[0] || saved.actorValue !== actors[0].getAttribute('data-current-user') || saved.opener !== opener) return null;
+  const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter(visible);
+  const dialog = dialogs.length === 1 ? dialogs[0] : null;
+  const fields = dialog ? [...dialog.querySelectorAll('input#diff-settings-ignore-whitespace-toggle')].filter(native) : [];
+  const field = fields.length === 1 ? fields[0] : null;
+  const labels = field ? [...new Set(field.labels ?? [])] : [];
+  const checkbox = field && field.type === 'checkbox' && field.name === 'shouldIgnoreWhitespace' && field.getAttribute('value') === 'shouldIgnoreWhitespace' && !field.disabled && labels.length === 1 && labels[0].id === 'diff-settings-ignore-whitespace-toggle-label' && labels[0].textContent.trim() === 'Whitespace changes' && visible(labels[0]) ? { checked: field.checked, defaultChecked: field.defaultChecked, type: field.type, id: field.id } : null;
+  const cancels = dialog ? [...dialog.querySelectorAll('button[type="button"]')].filter(n => visible(n) && !n.disabled && n.textContent.trim() === 'Cancel') : [];
+  if (action === 'target') {
+    const target = argument === 'opener' && dialogs.length === 0 ? opener : argument === 'cancel' && cancels.length === 1 ? cancels[0] : null;
+    if (!target || !visible(target)) return null;saved.expected = target;return target;
+  }
+  const viewedPreserved = saved.files.every(old => {
+    const file = files.find(f => f.path === old.path);
+    return file && (old.article === null || old.viewed.length === file.viewed.length) && old.viewed.every((v, i) => v.node === file.viewed[i].node && v.checked === file.viewed[i].checked && v.disabled === file.viewed[i].disabled);
+  });
+  const originalsPreserved = saved.files.every(old => { const file = files.find(f => f.path === old.path);return file && file.anchor === old.anchor && file.root === old.root && (old.article === null || file.article === old.article); });
+  const rowsPreserved = saved.files.every(old => { const file = files.find(f => f.path === old.path);return file && old.rows.length === file.rows.length && old.rows.every((r, i) => r === file.rows[i]); });
+  const number = node => { const text = node?.textContent.trim().replaceAll(',', '') ?? '';return /^[+−-]?\d+$/.test(text) ? Math.abs(Number(text.replace('−', '-'))) : null; };
+  const tab = document.querySelector('a#pull-request-tabs-1[role="tab"]');
+  const heading = [...document.querySelectorAll('#file-tree h5')].find(n => n.textContent.trim() === 'Lines updated');
+  const leaves = [...(heading?.parentElement?.parentElement?.querySelectorAll('span') ?? [])].filter(n => n.children.length === 0);
+  return { anonymous, originalPage: true, originalsPreserved, rowsPreserved, viewedPreserved, files: files.map(f => ({ path: f.path, mounted: f.article !== null, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })),
+    totals: { files: number(tab?.querySelector(':scope > div > span > span')), additions: number(leaves.find(n => /^\+\s*[\d,]+$/.test(n.textContent.trim()))), deletions: number(leaves.find(n => /^[-−]\s*[\d,]+$/.test(n.textContent.trim()))) },
+    dialogCount: dialogs.length, checkbox, cancelAvailable: cancels.length === 1, events: [...saved.events], forbiddenInputs: saved.forbiddenInputs, overflow: saved.overflow };
+}
+
+/** Public scope intentionally ends with Settings open; Cancel/re-disable is unit-only until separately budgeted. */
+export async function verifyBitbucketWhitespace(page, { settings, observer, progress, poll, readState, guardBudget, fullCycle = false }) {
+  let installed = false;let error;
+  const read = () => page.evaluate(bitbucketWhitespaceProbe);
+  const current = async () => {
+    await settings.current();const value = await read();check(value?.originalPage && value.viewedPreserved && value.originalsPreserved && !value.forbiddenInputs && !value.overflow, 'NATIVE_SOURCE_CHANGED');return value;
+  };
+  const input = async which => {
+    guardBudget(which);const handle = await page.evaluateHandle(bitbucketWhitespaceProbe, 'target', which);
+    try {
+      const element = handle.asElement();check(element, 'NATIVE_INPUT_UNAVAILABLE');
+      await element.evaluate(n => n.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      check(await element.evaluate(n => { const r = n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }), 'NATIVE_INPUT_OCCLUDED');
+      const before = (await current()).events.length;await element.click();
+      const after = await current();check(after.events.length === before + 1 && after.events.at(-1).trusted && after.events.at(-1).control === which, 'NATIVE_TRUSTED_INPUT');
+      return after;
+    } finally { await handle.dispose(); }
+  };
+  const proof = async (phase, mode, own) => poll(async () => { await observer.flush();try { return qualifyBitbucketWhitespace(observer.records(), phase, mode, { own }); } catch { return null; } }, v => v !== null, `Independent ${phase} native response pair`, 10000);
+  const counts = async result => {
+    const state = await poll(readState, v => v?.hasDiff && isDeepStrictEqual(v.all, result.totals), 'Geld totals match independent current response', 10000);
+    const value = await current();check(isDeepStrictEqual(value.totals, state.visible), 'NATIVE_COUNTS');return { all: state.all, visible: state.visible, native: value.totals };
+  };
+  progress.stage = 'baseline';progress.status = 'running';progress.scope = fullCycle ? 'unit_full_cycle' : 'first_activation_and_native_settings_restore';progress.phases = [];
+  try {
+    await poll(() => page.evaluate(bitbucketWhitespaceProbe, 'bind'), v => v?.originalPage, 'Original public PR22 source', 10000);installed = true;
+    progress.baseline = await current();
+    progress.nativeBaseline = await proof('baseline', false, false);
+    check(isDeepStrictEqual(progress.baseline.totals, progress.nativeBaseline.totals), 'NATIVE_BASELINE_COUNTS');
+    progress.stage = 'baseline_settings';await input('opener');const baseline = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null && v.cancelAvailable, 'Native initial whitespace checkbox', 4000);
+    check(baseline.checkbox.checked === true, 'NATIVE_BASELINE_NOT_SHOW');progress.baselineCheckbox = baseline.checkbox;
+    await input('cancel');await poll(current, v => v.dialogCount === 0, 'Native baseline Cancel', 4000);
+    progress.stage = 'activation';let previousIdle = null;
+    await poll(async () => { await observer.flush();const state = observer.idle();const stable = state.pending === 0 && previousIdle === state.observed;previousIdle = state.observed;return stable; }, value => value === true, 'Current native baseline idle', 4000);
+    check(!observer.records().some(r => r.owner === 'extension'), 'OWN_REQUEST_BEFORE_ACTIVATION');
+    progress.activationBudget = guardBudget('hide');observer.phase('hide');await settings.hide(true);
+    progress.stage = 'hidden_responses';const hidden = await proof('hide', true, true);progress.phases.push({ phase: 'hide', ...hidden, counts: await counts(hidden) });
+    progress.stage = 'settings_restore';observer.phase('open');await input('opener');const opened = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null, 'Native original checkbox after override restoration', 4000);
+    check(opened.checkbox.checked === baseline.checkbox.checked, 'NATIVE_CHECKBOX_OVERRIDE_LEAK');progress.opened = opened;
+    const restored = await proof('open', false, false);progress.phases.push({ phase: 'open', ...restored });
+    if (fullCycle) {
+      observer.phase('cancel');await input('cancel');await poll(current, v => v.dialogCount === 0, 'Native Cancel reapply', 4000);
+      progress.phases.push({ phase: 'cancel', ...(await proof('cancel', true, false)) });
+      observer.phase('show');guardBudget('show');await settings.hide(false);
+      const shown = await proof('show', false, true);progress.phases.push({ phase: 'show', ...shown, counts: await counts(shown) });
+    }
+    progress.stage = 'final';progress.final = await current();check(observer.evidence.providerWrites === 0 && !observer.evidence.overflow, 'TRAFFIC_UNQUALIFIED');
+    progress.status = 'passed';
+    progress.limitations = ['Actual fixture may contain no whitespace-only hunk; request mode, initial native checkbox and current-response counts are proven independently.', ...(fullCycle ? [] : ['Cancel/reapply and disabling are unit-tested only; this public case closes the page while Settings remains open and baseline native mode is restored.'])];
+  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = error; }
+  finally {
+    const failures = [];
+    if (installed && !page.isClosed()) try { progress.beforeClose = await current();check((await page.evaluate(bitbucketWhitespaceProbe, 'dispose')).released, 'PROBE_DISPOSE'); } catch { failures.push('PROBE_CLEANUP'); }
+    try { if (!page.isClosed()) await page.close(); } catch { failures.push('PAGE_CLOSE'); }
+    try { await observer.dispose(); } catch { failures.push('OBSERVER_RELEASE'); }
+    try { await settings.restore(page.isClosed()); } catch { failures.push('SETTINGS_RESTORE'); }
+    progress.cleanup = { failures, pageClosed: page.isClosed() };if (failures.length) { progress.status = 'failed';error ??= 'CLEANUP_FAILED'; }
+  }
+  if (error) check(false, error);
+  return { status: 'passed', verified: 'First activation native whitespace requests and independent checkbox baseline restoration, matching current-response counts; exact raw settings restored after page closure.' };
+}

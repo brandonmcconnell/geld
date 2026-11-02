@@ -15,6 +15,7 @@ import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from '
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { assertSyntaxOnTraffic, characterizeBitbucketSyntaxOn, createSyntaxOnRequestIdentity, observeSyntaxOnTraffic, syntaxOnBudgetPreflight } from './bitbucket-syntax-on.mjs';
+import { BITBUCKET_WHITESPACE_URL, bitbucketWhitespaceBudget, bitbucketWhitespaceSettings, observeBitbucketWhitespace, verifyBitbucketWhitespace } from './bitbucket-whitespace-session.mjs';
 import { bitbucketPrContextPolicy, bitbucketPrContextInputBudget } from './bitbucket-pr-context-budget.mjs';
 import { observeBitbucketPipelineMainAsset } from './bitbucket-pipeline-main-asset.mjs';
 import { bitbucketPipelineAssetMetadata, pipelineBudgetPreflight, pipelineSettingsScope } from './bitbucket-pipeline-visit.mjs';
@@ -55,6 +56,7 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
+  'bitbucket-whitespace-session': ['bitbucket-whitespace-session'],
   'bitbucket-pipeline-shell': ['bitbucket-pipeline-shell'],
   'bitbucket-pipeline-syntax-on': ['bitbucket-pipeline-syntax-on'],
   'bitbucket-pipeline-initial-on': ['bitbucket-pipeline-initial-on'],
@@ -135,7 +137,7 @@ const report = {
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
   limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
   installation: null, cases: [], infrastructureErrors: [],
-  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false, ...bitbucketPrContextPolicy(focus) },
+  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false, ...bitbucketPrContextPolicy(focus === 'bitbucket-whitespace-session' ? 'bitbucket-pr-whole-context' : focus) },
 };
 const cooldowns = new Map();
 const capturedNativeResources = new Set();
@@ -231,7 +233,7 @@ async function inheritCooldowns() {
       inherit('bitbucket', new Date(at + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
     }
   }
-  if (focus !== 'bitbucket-pr-whole-context' && bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget) inherit('bitbucket', new Date(bitbucketRequestTimes.at(-1) + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
+  if (!['bitbucket-pr-whole-context', 'bitbucket-whitespace-session'].includes(focus) && bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget) inherit('bitbucket', new Date(bitbucketRequestTimes.at(-1) + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
   report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedAnonymousRequestsWithinRollingHour: bitbucketRequestTimes.length, inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
 }
 function closedTarget(error) { return /Target closed|Target\.closeTarget|Session closed|Connection closed|targetgone|No target with given id/i.test(errorText(error)); }
@@ -349,7 +351,7 @@ function observeBitbucketBudget(page, item, abort) {
     report.observedBitbucketApiRequests = bitbucketApiRequests;
     report.observedAnonymousRequestsWithinRollingHour = bitbucketRequestTimes.length;
     if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget && !abort.signal.aborted) {
-      if (item.name === 'bitbucket-pr-whole-context') item.budgetHold = { reason: 'read_only_observed_limit', observedLimit: 47, externalReserve: 3,
+      if (['bitbucket-pr-whole-context', 'bitbucket-whitespace-session'].includes(item.name)) item.budgetHold = { reason: 'read_only_observed_limit', observedLimit: 47, externalReserve: 3,
         firstExpiry: new Date(bitbucketRequestTimes[0] + 60 * 60 * 1000 + 1).toISOString() };
       else {
         const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
@@ -794,6 +796,37 @@ async function runCase(name, url, body, discovery = false) {
     console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
   }
 }
+async function runBitbucketWhitespaceCase() {
+  const item = { name: 'bitbucket-whitespace-session', url: BITBUCKET_WHITESPACE_URL, startedAt: new Date().toISOString(), status: 'not_selected' };report.cases.push(item);
+  if (focus !== item.name) { item.reason = 'Literal-only native whitespace acceptance; no navigation or settings change.';return; }
+  const abort = new AbortController();let page, scope, observer;
+  const active = () => bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length;
+  try {
+    assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Carried Bitbucket cooldown');
+    item.preflight = bitbucketWhitespaceBudget(active());
+    if (!item.preflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Whitespace forecast does not fit carried47 cap; schedule after sufficient expiry.'); }
+    currentCaseAbort = abort;item.settings = {};item.whitespace = {};item.traffic = {};
+    scope = bitbucketWhitespaceSettings({ progress: item.settings,
+      read: () => options.evaluate(async () => { const v = await chrome.storage.sync.get('settings');return Object.hasOwn(v, 'settings') ? { present: true, value: v.settings } : { present: false }; }),
+      write: saved => options.evaluate(async v => { if (v.present) await chrome.storage.sync.set({ settings: v.value });else await chrome.storage.sync.remove('settings'); }, saved),
+    });await scope.prepare();
+    page = await browser.newPage();observeBitbucketBudget(page, item, abort);
+    page.on('response', response => { if (providerOf(response.url()) !== 'bitbucket' || response.status() !== 429) return;const until = Date.now() + retryAfter(response.headers()['retry-after'], 'bitbucket');cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));item.rateLimitedUntil = new Date(until).toISOString();abort.abort(new Error('RATE_LIMIT'));void page.close().catch(() => {}); });
+    observer = observeBitbucketWhitespace(page, item.traffic, extensionId, abort);
+    const response = await page.goto(BITBUCKET_WHITESPACE_URL, { waitUntil: 'domcontentloaded', timeout: WAIT_MS });
+    assert.equal(response?.status(), 200);assert.equal(page.url(), BITBUCKET_WHITESPACE_URL);
+    const guardBudget = action => { abort.signal.throwIfAborted();assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now());const remaining = 47 - active();const required = action === 'hide' ? 27 : action === 'opener' && item.traffic.requests.some(r => r.phase === 'hide') ? 12 : 5;assert.ok(remaining >= required, 'Native whitespace input exceeds remaining phase forecast');return { remaining, required, observedAtCheckpoint: active(), actualCaseRequests: item.observedBitbucketApiRequests ?? 0 }; };
+    const result = await verifyBitbucketWhitespace(page, { settings: scope, observer, progress: item.whitespace, poll, readState: () => tabState(page), guardBudget });Object.assign(item, result);
+  } catch { item.status = item.whitespace?.status === 'failed' ? 'failed' : item.rateLimitedUntil ? 'rate_limited' : 'unavailable';item.error = 'Bounded native whitespace acceptance unavailable; see fixed phase/budget evidence.'; }
+  finally {
+    if (page && !page.isClosed()) await page.close().catch(() => {});
+    if (observer && !observer.evidence.released) await observer.dispose().catch(() => {});
+    if (scope && !item.settings.restored) try { await scope.restore(page === undefined || page.isClosed()); } catch { item.status = 'failed';item.cleanupError = 'RAW_SETTINGS_RESTORE_FAILED'; }
+    item.artifacts = { suppressed: 'Report-only native source, known checkbox and bounded request receipts; no HTML, AX, screenshots or arbitrary form values.' };
+    item.finishedAt = new Date().toISOString();currentCaseAbort = undefined;await saveReport();
+  }
+}
+
 async function crossSettingsDom(page, provider) {
   return page.evaluate((site) => {
     const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const value = node.textContent?.replace(/[,\s]/g, '').match(/\d+/)?.[0]; return value === undefined ? null : Number(value); };
@@ -2930,6 +2963,8 @@ try {
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
   report.settings = await patchSettings({ enabled: true, categories: { tests: true }, groupHidden: true, expandedByDefault: false, hideCommentLines: false, testOutline: false, hideLargeDiffs: false, hideWhitespace: false, repoRules: [], hiddenAuthors: [], repoConfigs: 'never', aiEnabled: false, autoViewed: {}, autoUpdatePatterns: false });
+
+  await runBitbucketWhitespaceCase();
 
   await runCase('gitlab-whitespace-viewed', GL_MIXED, async (page, item) => {
     const context = gitLabWhitespaceCases.get(page);
