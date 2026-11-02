@@ -1,0 +1,40 @@
+name: CLA
+
+# Every author of a pull request's commits signs CLA.md once, by comment
+# (scripts/cla.mjs). pull_request_target so a fork's pull request gets a token
+# that can set the status and comment; nothing from the pull request is checked
+# out or run, only the default branch's script, which reads the commits through
+# the API. Signatures are kept on the cla-signatures branch, which the main
+# ruleset does not cover.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, closed]
+  issue_comment:
+    types: [created, edited]
+
+permissions: {}
+
+jobs:
+  cla:
+    if: github.event_name == 'pull_request_target' || contains(github.event.comment.body, 'Geld CLA')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      statuses: write
+    concurrency:
+      group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/cla.mjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/cla.mjs`);
+            await run({ github, context, core });
