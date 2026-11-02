@@ -59,7 +59,7 @@ async function protocol(options = {}) {
       if (options.pairingTargetDrift && acquisitionReads) { live.app.targetVersions[0].head_sha = 'b'.repeat(40);live.files.forEach((file) => { file.head = 'b'.repeat(40); }); }
       if (options.fileDataAfterToggle && action === 'read') {
         if (phase === 'toggle' && live.events.some((event) => event.kind === 'whitespace') && ++afterChangeReads >= 2) fileFailureActive = true;
-        if (fileFailureActive) return { qualified: false, code: 'FILE_DATA_UNQUALIFIED', fileData: options.fileDataAfterToggle, secret: 'DO_NOT_RETAIN_FILE_FAILURE' };
+        if (fileFailureActive) return { qualified: false, code: 'FILE_DATA_UNQUALIFIED', fileData: options.fileDataAfterToggle, ...(options.nativeFilesEvidence ? { nativeFilesDiagnostic: options.nativeFilesEvidence } : {}), secret: 'DO_NOT_RETAIN_FILE_FAILURE' };
       }
       if (options.unknown) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED' };
       return structuredClone(live);
@@ -208,6 +208,22 @@ test('diagnostic failure history and cleanup do not replace the original failure
   const trace = { status: 'observing', code: 'OBSERVING', stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit: 128, overflow: false, stopped: false, history: [] };
   const f = await protocol({ lifecycleEvidence: trace, unknownAfterToggle: true, observerFailure: true });await assert.rejects(f.run(), AggregateError);
   assert.equal(f.progress.primaryFailure, 'MENU_SCHEMA_UNQUALIFIED');assert.equal(f.progress.failureLifecycle.status, 'observing');assert.equal(f.progress.lifecycle.stopped, true);assert.ok(f.progress.cleanup.codes.includes('OBSERVER_CLEANUP_FAILED'));assert.equal(f.clicks(), 2);assert.deepEqual(f.storage(), f.original);
+});
+
+
+test('Node whitelist keeps current candidate heads and endpoint equality observational while native restoration still fails', async () => {
+  const head = observed285().responses[0].projection.target.values[0].headSha;
+  const nativeFilesEvidence = { state: 'observed', bootstrapAttributeEqualToBinding: true, currentSelection: { source: { id: F.version, head: F.head }, target: { id: F.version, head: F.head, mergeHead: false } }, slots: [0, 1, 2].map((slot) => ({ slot, state: 'valid_candidate', anchorValid: true, mounted: true, refs: { base: NATIVE_BASE, start: NATIVE_START, head }, rawPathPresent: true, rawAtOwnHead: true, contextPathPresent: true, contextAtOwnHead: true, secret: 'DO_NOT_RETAIN_URL' })), secret: 'DO_NOT_RETAIN_JSON' };
+  const fileDataAfterToggle = { reason: 'FILE_HEAD_MISMATCH', pathSlot: 0, knownPath: true, refPresent: true, headValid: true, headMatchesTarget: false, anchorValid: true, candidateHead: head };
+  const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: observed285(), nativeFilesEvidence, fileDataAfterToggle });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.primaryFailure, 'FILE_DATA_UNQUALIFIED');const detail = f.progress.failureProbe.nativeFilesDiagnostic;assert.ok(detail.slots.every((entry) => entry.headMatchesEndpointDefault && !entry.headMatchesCurrentTarget && !entry.headMatchesBoundTarget));assert.equal(f.progress.selection.target.head, F.head);assert.equal(f.progress.nativeRestored, false);assert.equal(f.clicks(), 2);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+
+
+test('Node unknown-path projection drops even valid-looking refs and arbitrary URLs while keeping failure and cleanup', async () => {
+  const nativeFilesEvidence = { state: 'observed', bootstrapAttributeEqualToBinding: true, currentSelection: { source: { id: F.version, head: F.head }, target: { id: F.version, head: F.head, mergeHead: false } }, slots: [0, 1, 2].map(() => ({ slot: null, state: 'unknown_path', anchorValid: true, mounted: true, refs: { head: NATIVE_NEW }, url: 'DO_NOT_RETAIN_URL' })) };
+  const detail = { reason: 'FILE_PATH_UNEXPECTED', pathSlot: null, knownPath: false, refPresent: true, headValid: true, headMatchesTarget: false, anchorValid: true };
+  const f = await protocol({ nativeFilesEvidence, fileDataAfterToggle: detail });await assert.rejects(f.run(), AggregateError);assert.ok(f.progress.failureProbe.nativeFilesDiagnostic.slots.every((entry) => entry.refs === undefined));assert.equal(f.clicks(), 2);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
 
 test('pairing timeout retains the qualified original baseline and finite setup diagnostics before any toggle', async () => {
@@ -444,6 +460,79 @@ test('diagnostic observer shutdown failure is reported without changing original
   await probe('bind', F);const stop = w.MutationObserver.prototype.disconnect;w.MutationObserver.prototype.disconnect = () => { throw Error('DO_NOT_RETAIN_OBSERVER'); };
   try { const result = await probe('cleanup', F);assert.equal(result.released, true);assert.equal(result.lifecycle.stopped, true);assert.equal(result.lifecycle.code, 'OBSERVER_FAILED');assert.doesNotMatch(JSON.stringify(result), /DO_NOT_RETAIN/); }
   finally { w.MutationObserver.prototype.disconnect = stop; }
+}));
+
+
+const NATIVE_BASE = 'd'.repeat(40);const NATIVE_START = 'e'.repeat(40);const NATIVE_NEW = 'a'.repeat(40);
+function completeNativeFiles(head = T) {
+  for (const file of document.querySelectorAll('diff-file')) {
+    const data = JSON.parse(file.getAttribute('data-file-data'));data.diff_refs = { base_sha: NATIVE_BASE, start_sha: NATIVE_START, head_sha: head };
+    data.blob_raw_path = `/gitlab-org/gitlab/-/raw/${head}/${data.new_path}`;data.diff_lines_path = `/gitlab-org/gitlab/-/blob/${head}/${data.new_path}/diff_lines`;file.setAttribute('data-file-data', JSON.stringify(data));
+  }
+}
+test('baseline binding and fresh native files retain coherent known tuples while frozen bootstrap still rejects the new head', async () => withDOM(async () => {
+  completeNativeFiles();const baseline = await probe('bind', F);assert.equal(baseline.nativeFilesDiagnostic.bootstrapAttributeEqualToBinding, true);assert.ok(baseline.nativeFilesDiagnostic.slots.every((entry) => entry.state === 'valid_candidate'));
+  const list = marker('diffs-list');list.replaceChildren(...[...list.children].map((node) => node.cloneNode(true)));completeNativeFiles(NATIVE_NEW);const value = await probe('read', F);
+  assert.equal(value.qualified, false);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');const detail = value.nativeFilesDiagnostic;assert.equal(detail.state, 'observed');assert.equal(detail.bootstrapAttributeEqualToBinding, true);assert.equal(detail.currentSelection.target.head, T);
+  assert.deepEqual(detail.slots.map((entry) => entry.slot), [0, 1, 2]);assert.ok(detail.slots.every((entry) => entry.refs.base === NATIVE_BASE && entry.refs.start === NATIVE_START && entry.refs.head === NATIVE_NEW && entry.rawAtOwnHead && entry.contextAtOwnHead && !entry.headMatchesCurrentTarget && !entry.headMatchesBoundTarget));
+}));
+test('mutated native bootstrap is distinguished without accepting its changed source scope', async () => withDOM(async ({ app }) => {
+  completeNativeFiles();await probe('bind', F);const data = JSON.parse(app.getAttribute('data-app-data'));data.versions.target_versions[0].head_sha = NATIVE_NEW;app.setAttribute('data-app-data', JSON.stringify(data));completeNativeFiles(NATIVE_NEW);
+  const value = await probe('read', F);assert.equal(value.qualified, false);assert.equal(value.code, 'ORIGINAL_OWNER_CHANGED');assert.equal(value.nativeFilesDiagnostic.bootstrapAttributeEqualToBinding, false);assert.equal(value.nativeFilesDiagnostic.currentSelection.target.head, NATIVE_NEW);assert.ok(value.nativeFilesDiagnostic.slots.every((entry) => entry.headMatchesCurrentTarget && !entry.headMatchesBoundTarget));
+}));
+for (const [name, mutate, expected] of [
+  ['missing refs', (data) => { delete data.diff_refs.base_sha; }, 'missing_refs'],
+  ['malformed refs', (data) => { data.diff_refs.start_sha = 'DO_NOT_RETAIN_REF'; }, 'malformed_refs'],
+  ['unknown path', (data) => { data.new_path = 'DO_NOT_RETAIN_PATH'; }, 'unknown_path'],
+  ['oversize attr', (data) => { data.secret = 'DO_NOT_RETAIN'.repeat(2000); }, 'oversize_attr'],
+  ['oversize UTF8 attr', (data) => { data.secret = '\u{1f512}'.repeat(5000); }, 'oversize_attr'],
+]) test(`native candidate ${name} stays incomplete and retains no unknown refs or field text`, async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);const file = document.querySelector('diff-file');const data = JSON.parse(file.getAttribute('data-file-data'));mutate(data);file.setAttribute('data-file-data', JSON.stringify(data));const value = await probe('read', F);const detail = value.nativeFilesDiagnostic;
+  assert.equal(detail.slots[0].state, expected);assert.doesNotMatch(JSON.stringify(detail), /DO_NOT_RETAIN/);
+  if (['unknown_path', 'oversize_attr'].includes(expected)) { assert.equal(detail.slots[0].slot, null);assert.equal(detail.slots[0].refs, undefined); }
+  else { assert.equal(detail.slots[0].refs.head, T);assert.equal(detail.slots[0].state === 'valid_candidate', false);assert.equal(value.qualified, true); }
+}));
+for (const [name, change] of [
+  ['different repository', (data) => { data.blob_raw_path = data.blob_raw_path.replace('/gitlab-org/gitlab/', '/other/repo/'); }],
+  ['wrong own head', (data) => { data.blob_raw_path = data.blob_raw_path.replace(T, NATIVE_NEW); }],
+  ['wrong context path', (data) => { data.diff_lines_path += '/DO_NOT_RETAIN_PATH'; }],
+  ['query-bearing context', (data) => { data.diff_lines_path += '?token=DO_NOT_RETAIN'; }],
+]) test(`${name} produces only false canonical resource observations and never alters qualification`, async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);const file = document.querySelector('diff-file');const data = JSON.parse(file.getAttribute('data-file-data'));change(data);file.setAttribute('data-file-data', JSON.stringify(data));const value = await probe('read', F);
+  assert.equal(value.qualified, true);assert.equal(value.nativeFilesDiagnostic.slots[0].rawAtOwnHead && value.nativeFilesDiagnostic.slots[0].contextAtOwnHead, false);assert.doesNotMatch(JSON.stringify(value.nativeFilesDiagnostic), /DO_NOT_RETAIN/);
+}));
+test('current native candidates refuse replacement original controls even before the failfast file check', async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);completeNativeFiles(NATIVE_NEW);const opener = document.querySelector('button');opener.replaceWith(opener.cloneNode(true));const value = await probe('read', F);
+  assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.deepEqual(value.nativeFilesDiagnostic, { state: 'owner_changed', bootstrapAttributeEqualToBinding: null, slots: [] });
+}));
+test('file attr mutation during candidate collection is reported inconsistent rather than coherent', async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);completeNativeFiles(NATIVE_NEW);const file = document.querySelector('diff-file');const original = file.getAttribute.bind(file);let reads = 0;file.getAttribute = (name) => { const value = original(name);if (name === 'data-file-data' && ++reads === 2) file.setAttribute(name, value.replace(NATIVE_START, 'b'.repeat(40)));return value; };
+  const value = await probe('read', F);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.equal(value.nativeFilesDiagnostic.state, 'snapshot_changed');
+}));
+test('bootstrap mutation during candidate collection is separately observable without raw JSON', async () => withDOM(async ({ app }) => {
+  completeNativeFiles();await probe('bind', F);completeNativeFiles(NATIVE_NEW);const file = document.querySelector('diff-file');const original = file.getAttribute.bind(file);let reads = 0;file.getAttribute = (name) => { const value = original(name);if (name === 'data-file-data' && ++reads === 2) { const data = JSON.parse(app.getAttribute('data-app-data'));data.secret = 'DO_NOT_RETAIN_BOOTSTRAP';app.setAttribute('data-app-data', JSON.stringify(data)); }return value; };
+  const value = await probe('read', F);assert.equal(value.nativeFilesDiagnostic.state, 'snapshot_changed');assert.doesNotMatch(JSON.stringify(value.nativeFilesDiagnostic), /DO_NOT_RETAIN/);
+}));
+
+
+test('a parent lease change during snapshot makes native candidates inconsistent without changing file rejection', async () => withDOM(async ({ app }) => {
+  completeNativeFiles();await probe('bind', F);completeNativeFiles(NATIVE_NEW);const file = document.querySelector('diff-file');const original = file.getAttribute.bind(file);let reads = 0;file.getAttribute = (name) => { const value = original(name);if (name === 'data-file-data' && ++reads === 2) app.append(document.querySelector('button'));return value; };
+  const value = await probe('read', F);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.equal(value.nativeFilesDiagnostic.state, 'snapshot_changed');
+}));
+test('malformed JSON is a bounded unavailable slot without affecting the other known candidates', async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);document.querySelector('diff-file').setAttribute('data-file-data', '{DO_NOT_RETAIN');const value = await probe('read', F);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.equal(value.nativeFilesDiagnostic.slots[0].state, 'json_unreadable');assert.equal(value.nativeFilesDiagnostic.slots[0].refs, undefined);assert.equal(value.nativeFilesDiagnostic.slots[1].state, 'valid_candidate');assert.doesNotMatch(JSON.stringify(value.nativeFilesDiagnostic), /DO_NOT_RETAIN/);
+}));
+test('duplicate known slots stay observations and do not waive the original inventory rule', async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);const files = [...document.querySelectorAll('diff-file')];const first = JSON.parse(files[0].getAttribute('data-file-data'));const second = JSON.parse(files[1].getAttribute('data-file-data'));second.new_path = first.new_path;second.diff_refs.head_sha = NATIVE_NEW;files[1].setAttribute('data-file-data', JSON.stringify(second));const value = await probe('read', F);assert.equal(value.qualified, false);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.deepEqual(value.nativeFilesDiagnostic.slots.map((entry) => entry.slot), [0, 0, 2]);
+}));
+
+
+test('different known native heads remain individual candidates and cannot waive the first head rejection', async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);const file = document.querySelector('diff-file');const data = JSON.parse(file.getAttribute('data-file-data'));data.diff_refs.head_sha = NATIVE_NEW;file.setAttribute('data-file-data', JSON.stringify(data));const value = await probe('read', F);
+  assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.deepEqual(value.nativeFilesDiagnostic.slots.map((entry) => entry.refs.head), [NATIVE_NEW, T, T]);assert.equal(value.nativeFilesDiagnostic.slots[0].rawAtOwnHead, false);
+}));
+test('an invalid native anchor is only a boolean and keeps the original anchor rejection', async () => withDOM(async () => {
+  completeNativeFiles();await probe('bind', F);document.querySelector('diff-file').id = 'DO_NOT_RETAIN_ANCHOR';const value = await probe('read', F);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.equal(value.fileData.reason, 'FILE_ANCHOR_INVALID');assert.equal(value.nativeFilesDiagnostic.slots[0].anchorValid, false);assert.doesNotMatch(JSON.stringify(value.nativeFilesDiagnostic), /DO_NOT_RETAIN/);
 }));
 
 test('actual DOM probe reads current checked property rather than absent HTML attribute and never exposes code text', async () => withDOM(async ({ checkbox }) => {
