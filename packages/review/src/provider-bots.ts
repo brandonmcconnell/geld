@@ -98,6 +98,46 @@ function triggerFor(comment: ProviderReviewComment, commands: ReadonlySet<string
   return lines.length > 0 && lines.every((line) => commands.has(line));
 }
 
+function nativeBotAccounts(input: ProviderReviewInput): { readonly bindings: ReadonlyMap<string, readonly ProviderReviewBot[]>; readonly owners: ReadonlySet<string> } {
+  const candidates = new Map<string, ProviderReviewBot[]>();
+  const owner = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const binding of input.bots ?? []) {
+    const previous = owner.get(binding.authorId);
+    if (previous !== undefined && previous !== binding.id) ambiguous.add(binding.authorId);
+    owner.set(binding.authorId, binding.id);
+    candidates.set(binding.id, [...(candidates.get(binding.id) ?? []), binding]);
+  }
+  const bindings = new Map<string, readonly ProviderReviewBot[]>();
+  for (const [id, entries] of candidates) bindings.set(id, entries.filter((binding) => !ambiguous.has(binding.authorId) && binding.authorId.trim() !== ''));
+  return { bindings, owners: new Set(owner.keys()) };
+}
+
+function summaryBody(body: string, id: string, support: ProviderBotCapability): boolean {
+  const summaryShape = id !== 'greptile' || /\bconfidence score\s*:\s*\d(?:\.\d+)?\s*\/\s*5\b/i.test(body);
+  return support.formatVerified && summaryShape && isReviewShaped(parseBotBody(body, id));
+}
+
+export function newestProviderBotSummary(input: ProviderReviewInput, ordinaryComments: readonly ProviderReviewComment[], botId: string): ProviderReviewComment | null {
+  providerReviewKey(input.subject);
+  const registered = nativeBotAccounts(input).bindings.get(botId) ?? [];
+  const support = providerBotSupport(input.subject.provider, botId);
+  if (registered.length === 0 || support?.support !== 'supported' || !support.formatVerified || botById(botId) === null) return null;
+  const ids = new Set(registered.map((binding) => binding.authorId));
+  const commands = new Set(support.triggers.map((trigger) => trigger.toLowerCase()));
+  const threadAnchors = new Set(input.threads.flatMap((thread) => thread.comments.map((comment) => comment.anchor)));
+  const refusalOptions = { isSourceLink: (href: string): boolean => providerCodeSourceLink(href, input.subject) };
+  let newest: ProviderReviewComment | null = null;
+  for (const comment of ordinaryComments) {
+    if (!ids.has(comment.author.id) || threadAnchors.has(comment.anchor) || !validComment(comment, input)) continue;
+    const body = parserBody(comment, input);
+    if (!summaryBody(body, botId, support) || isStatusLineComment(body) || triggerFor(comment, commands)
+      || refusalReason(body, refusalOptions) !== null || (botId === 'coderabbit' && commandReply(body) !== null)) continue;
+    if (newest === null || Date.parse(comment.createdAt) > Date.parse(newest.createdAt)) newest = comment;
+  }
+  return newest;
+}
+
 /** Code links are evidence only within this native repository and review. */
 export function providerCodeSourceLink(href: string, subject: ProviderReviewSubject): boolean {
   try {
@@ -125,25 +165,16 @@ export function providerCodeSourceLink(href: string, subject: ProviderReviewSubj
 export function buildProviderBotVerdicts(input: ProviderReviewInput, ordinaryComments: readonly ProviderReviewComment[]): BotVerdictRecord[] {
   providerReviewKey(input.subject);
   const refusalOptions = { isSourceLink: (href: string): boolean => providerCodeSourceLink(href, input.subject) };
-  const bindings = new Map<string, ProviderReviewBot[]>();
-  const owner = new Map<string, string>();
-  const ambiguous = new Set<string>();
-  for (const binding of input.bots ?? []) {
-    const previous = owner.get(binding.authorId);
-    if (previous !== undefined && previous !== binding.id) ambiguous.add(binding.authorId);
-    owner.set(binding.authorId, binding.id);
-    bindings.set(binding.id, [...(bindings.get(binding.id) ?? []), binding]);
-  }
+  const { bindings, owners } = nativeBotAccounts(input);
   const out: BotVerdictRecord[] = [];
-  for (const [id, candidates] of bindings) {
-    const registered = candidates.filter((binding) => !ambiguous.has(binding.authorId) && binding.authorId.trim() !== '');
+  for (const [id, registered] of bindings) {
     const support = providerBotSupport(input.subject.provider, id);
     const parser = botById(id);
     const login = parser?.logins[0];
     if (registered.length === 0 || support?.support !== 'supported' || parser === null || login === undefined) continue;
     const ids = new Set(registered.map((binding) => binding.authorId));
     const commands = new Set(support.triggers.map((trigger) => trigger.toLowerCase()));
-    const requests = ordinaryComments.filter((comment) => comment.author.automated !== true && !owner.has(comment.author.id) && validComment(comment, input) && triggerFor(comment, commands));
+    const requests = ordinaryComments.filter((comment) => comment.author.automated !== true && !owners.has(comment.author.id) && validComment(comment, input) && triggerFor(comment, commands));
     const native = new Map<string, ProviderReviewComment>();
     const comments: BotComment[] = [];
     const threadAnchors = new Set(input.threads.flatMap((thread) => thread.comments.map((comment) => comment.anchor)));
@@ -161,9 +192,7 @@ export function buildProviderBotVerdicts(input: ProviderReviewInput, ordinaryCom
       const status = isStatusLineComment(body);
       const refused = refusalReason(body, refusalOptions);
       const command = id === 'coderabbit' ? commandReply(body) : null;
-      const parsed = parseBotBody(body, id);
-      const summaryShape = id !== 'greptile' || /\bconfidence score\s*:\s*\d(?:\.\d+)?\s*\/\s*5\b/i.test(body);
-      const summary = support.formatVerified && summaryShape && isReviewShaped(parsed);
+      const summary = summaryBody(body, id, support);
       if (!status && !(support.formatVerified && (summary || refused !== null || command !== null))) continue;
       native.set(comment.anchor, comment);
       if (summary || refused !== null || command === 'done') meaningful.push(commentAt(comment));
