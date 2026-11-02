@@ -1869,6 +1869,16 @@ This readiness gate does not establish owned table-height/scroll accessibility o
 When cloning GitLab Markdown, omit the height-control wrapper only when its sole nonwhitespace child is the observed native button bound uniquely to its sibling native table scroll wrapper in the same source;
 preserve authored text, extra children, malformed or duplicate bindings and generic empty DIVs.
 This avoids an empty presentation wrapper appearing on trust-triggered rerenders after native table hydration without copying native controls or changing height/expansion behavior.
+The same narrow canonicalization also recognizes the source-proven expanded native label/class variant, without pruning unknown authored wrappers.
+Owned GitLab table expansion is local to a validated mounted native source and requires actual presented native and owned 70vh overflow before a control appears.
+API-rendered note HTML never gains live height controls, even if it imitates native table attributes.
+Use the comment render owner's mount/dispose/current namespace and exact comment/head/native-table identity for frames, size observations, state and unique owned ARIA targets.
+The owned button changes only its own height cap and restores its exact class order, never native table nodes, native global expansion events, provider preferences, rows or sorting.
+The CodeRabbit height phase uses genuine owned pointer and keyboard input, records actual height and last-row reachability, and restores owned body bytes and disclosures before freezing the command baseline.
+Expanded acceptance requires an absent computed cap, client height covering table and scroll height, and an unobscured actual last cell inside the owned scroll clip, ancestor clips and viewport.
+Recheck exact source/head/control ownership and the actual visible center hit chain before pointer inputs, require the same focused button before keyboard inputs, and retain all phase HTTP GETs with recognized source/extension reads separated from other traffic.
+A visit without measured native and owned clipping is explicitly unavailable for height acceptance, while command preparation retains its separate scope.
+
 
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.

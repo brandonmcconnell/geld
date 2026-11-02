@@ -180,6 +180,13 @@ describe('GitLab native Markdown cloning', () => {
     expect(source?.querySelector('#markdown-table-176-scroll')).toBe(nativeScroll);
   });
 
+  it('keeps exact sanitized HTML across the known expanded native placeholder/control hydration', () => {
+    const expanded = (hydrated: boolean): string => tableBody(hydrated).replace('gl-max-h-[70vh] ', '').replace('aria-expanded="false"', 'aria-expanded="true"').replace('Show full table', 'Collapse table');
+    const first = fixture(expanded(false));expect(renderGitLabComment(comment, first)).toBe(true);const before = first.innerHTML;
+    const next = fixture(expanded(true));const source = document.getElementById('note_11');const original = source?.outerHTML;
+    expect(renderGitLabComment(comment, next)).toBe(true);expect(next.innerHTML).toBe(before);expect(next.querySelector('button,[id],[class~="gl-order-1"]')).toBeNull();expect(source?.outerHTML).toBe(original);
+  });
+
   it('does not depend on the incidental icon asset hash or decoration classes', () => {
     const host = fixture(tableBody(true));
     const source = document.querySelector('#note_11 .note-text');

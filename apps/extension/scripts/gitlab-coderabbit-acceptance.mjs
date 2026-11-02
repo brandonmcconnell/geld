@@ -220,7 +220,7 @@ export function assertCodeRabbitSettings(current, original, trusted) {
 }
 
 /** Real installed UI only; no runtime injection, source replacement, bot post or oracle GET. */
-export async function verifyCodeRabbitCommands(page, item, { fixture, context, poll, openReviewAncestors, clickReviewButton, readSettings, withdrawTrust, restoreTrust, capture }) {
+export async function verifyCodeRabbitCommands(page, item, { fixture, context, poll, openReviewAncestors, clickReviewButton, readSettings, withdrawTrust, restoreTrust, capture, tableHeights }) {
   const proof = { status: 'running', actions: [], scope: 'Explicit personal account trust and anonymous command clipboard preparation; no posting or authenticated writer proof.' };item.codeRabbitCommands = proof;
   const original = await readSettings();let permissionAttempted = false;let originalClipboard;let completed = false;let acquiringFixture = false;
   const read = () => page.evaluate(codeRabbitDomProbe, CODERABBIT_FIXTURE);
@@ -252,6 +252,11 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
       const stable = previousSample !== undefined && hash(previousSample) === hash(sample);previousSample = sample;
       return { sample, stable, apiFingerprint: api.sourceSignature };
     }, (value) => value.stable, 'Two frame-separated byte-stable native CodeRabbit readiness samples');
+    if (tableHeights !== undefined) {
+      await tableHeights(page, proof, { anchor: `note_${CODERABBIT_FIXTURE.note}`, head: snapshot.metadata.sha, poll, openReviewAncestors, capture });
+      assert.equal(fixture.snapshot().sourceSignature, snapshot.sourceSignature);
+      const restored = await read();assertCodeRabbitSource(restored, snapshot, settled.sample);settled.sample = restored;
+    }
     before = settled.sample;proof.readiness.after = before;proof.readiness.apiFingerprintAfter = settled.apiFingerprint;proof.readiness.nativeHtmlChanged = before.native.body !== initialNative.native.body;proof.readiness.status = 'ready';proof.beforeTrust = before;
     proof.headVerification = { freshMetadataHead: snapshot.metadata.sha, installedPanelHead: before.head, nativeNoteableHead: before.nativeHead, nativeNoteableStatus: before.nativeHead === null ? 'absent/unknown' : 'observed', nativeHeadSource: 'Rapid Diffs selected/latest source version', nativeVersion: before.nativeVersion.selected[0] };
     const identity = `[data-geld-source="note_${CODERABBIT_FIXTURE.note}"] .geld-provider-reviewer-identity`;
