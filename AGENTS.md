@@ -1722,6 +1722,8 @@ CodeRabbit's command-copy acceptance is an explicit `gitlab-coderabbit` slice, e
 Missing or invalid fresh fixture data returns an explicit unavailable case after successful cleanup, while confirmed-fixture product invariants and cleanup failures still fail acceptance.
 The native CodeRabbit MR overview can omit `data-noteable-data`, leaving its head unknown;
 bind the exact native MR wrapper and well-formed Rapid Diffs selected/latest source version to the fresh API and installed panel head instead, and reject any present conflicting or malformed head record.
+The first real reviewer-trust save can materialize defaults into a sparse raw settings object;
+compare effective preferences with production `normalizeSettings`, retain unknown raw-key guards, record normalization separately and restore the original trust field's exact raw presence/value without claiming byte-identical settings.
 
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
