@@ -2,25 +2,34 @@ import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 import { EventEmitter } from 'node:events';
 import { Window } from 'happy-dom';
+import { readFileSync } from 'node:fs';
 import { assertNativeSaveEvents, assertSyntaxOnlyVector, assertSyntaxOnTraffic, characterizeBitbucketSyntaxOn, createSyntaxOnRequestIdentity, observeSyntaxOnTraffic, syntaxOnBudgetPreflight, syntaxOnProbe, syntaxOnSafeBody, syntaxOnSafeURL } from './bitbucket-syntax-on.mjs';
 import { bitbucketShellProbe, currentBitbucketShellHead, observeBitbucketShellFixture, observedBitbucketShellIdentity, parseObservedBitbucketShellMetadata, verifyBitbucketShellSource } from './bitbucket-shell-acceptance.mjs';
+import { classifySyntaxOnLines } from './bitbucket-syntax-on-probe.mjs';
 
 const URL = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff#chg-bitbucket-pipelines.yml';
 const REPO = 'atlassian/bitbucket-upload-file';const HEAD = 'a'.repeat(40);const BASE = 'b'.repeat(40);
 const syntax = 'diff-settings-syntax-highlighting-toggle';
+const recordedRows = JSON.parse(readFileSync(new globalThis.URL('./fixtures/bitbucket-native-syntax-rows.json', import.meta.url), 'utf8'));
 const controls = '<input name="diffViewMode" type="radio" value="UNIFIED" checked><input name="diffViewMode" type="radio" value="SIDE_BY_SIDE"><label for="'+syntax+'">Syntax highlighting</label><input type="checkbox" id="'+syntax+'" name="enableSyntaxHighlighting" value="enableSyntaxHighlighting"><input id="diff-settings-ignore-whitespace-toggle" name="shouldIgnoreWhitespace" type="checkbox" value="shouldIgnoreWhitespace" checked><input id="diff-settings-word-diff-toggle" name="enableWordDiff" type="checkbox" value="enableWordDiff"><input id="diff-settings-color-blind-mode-toggle" name="enableColorBlindMode" type="checkbox" value="enableColorBlindMode"><input id="diff-settings-annotations-toggle" name="enableAnnotations" type="checkbox" value="enableAnnotations"><input name="isSingleFileModeEnabled" type="radio" value="ALL_FILES_MODE" checked><input name="isSingleFileModeEnabled" type="radio" value="SINGLE_FILE_MODE"><input id="tab-size-pref" type="text"><input name="tabSize" type="hidden" value="4"><input name="fileViewMode" type="radio" value="TREE" checked><input name="fileViewMode" type="radio" value="LIST">';
 const globals = ['document', 'location', 'Element', 'Text', 'NodeFilter', 'getComputedStyle', 'getSelection', 'innerHeight', 'CSS', 'requestAnimationFrame', 'cancelAnimationFrame'];
-const originals = new Map(globals.map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));let window;
+const originals = new Map(globals.map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));let window;let unitEvents;
 beforeEach(() => {
   window = new Window({ url: URL });
+  unitEvents = new WeakSet();
   for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'getComputedStyle' ? window.getComputedStyle.bind(window) : key === 'getSelection' ? window.getSelection.bind(window) : key === 'CSS' ? { highlights: new Map() } : window[key] });
 });
 afterEach(() => { syntaxOnProbe('cleanup');for (const [key, value] of originals) if (value) Object.defineProperty(globalThis, key, value);else delete globalThis[key];window.happyDOM.abort(); });
-function fixture() {
+function fixture(unitTrust = false) {
   document.head.innerHTML = '<meta id="bb-bootstrap" data-current-user=\'{"isAuthenticated":false}\' data-target-workspace-uuid="unit-workspace">';
-  document.body.innerHTML = '<section role="tabpanel" id="pull-request-tabs-1-tab"><button type="button" aria-live="polite">Global diff settings</button><div><div id="chg-bitbucket-pipelines.yml"></div><article data-qa="branch-diff-file"><h2 data-qa="bk-filepath">bitbucket-pipelines.yml</h2><label>Viewed<input type="checkbox"></label><div data-qa="code-line"><span data-key="code-line-number" data-old-line-number="1" data-new-line-number="1"></span><span data-line-type=" "><span>echo</span> hello</span><a id="line1" href="#line1" aria-label="To line1">line1</a></div></article></div></section>';
+  document.body.innerHTML = '<section role="tabpanel" id="pull-request-tabs-1-tab"><button type="button" aria-live="polite">Global diff settings</button><div><div id="chg-bitbucket-pipelines.yml"></div><article data-qa="branch-diff-file"><h2 data-qa="bk-filepath">bitbucket-pipelines.yml</h2><label>Viewed<input type="checkbox"></label><div role="rowgroup"><div role="row"><div data-qa="code-line"><span data-key="code-line-number" data-old-line-number="1" data-new-line-number="1"></span><span class="code-diff" role="gridcell" aria-label="Unchanged: echo hello" data-line-type=" "><span>echo hello</span></span><a id="line1" href="#line1" aria-label="To line1">line1</a></div></div></div></article></div></section>';
   for (const node of document.querySelectorAll('*')) node.getBoundingClientRect = () => ({ left: 1, top: 1, width: 100, height: 20 });
-  assert.equal(syntaxOnProbe('setup')?.same, true);
+  assert.equal(syntaxOnProbe('setup', null, unitTrust ? { unitOnly: { trusted: (event) => unitEvents.has(event) } } : {})?.same, true);
+}
+function unitEvent(node, type) { const event = new window.Event(type, { bubbles: true });unitEvents.add(event);node.dispatchEvent(event); }
+function unitOnTransition() {
+  open(false);const field=document.getElementById(syntax);field.checked=true;for(const type of ['click','input','change'])unitEvent(field,type);assert.equal(syntaxOnProbe('begin-native-save',true),true);document.querySelector('[role="dialog"]').remove();
+  const codes=[...document.querySelectorAll('[data-line-type]')];for(const code of codes){const text=code.textContent;code.className='code-diff syntax-highlighted __rbb_syntax_highlight';const wrapper=document.createElement('span');wrapper.className='unit-native-wrapper';const token=document.createElement('span');token.className='token key atrule';token.textContent=text;wrapper.append(token);code.replaceChildren(wrapper);}open(true);
 }
 function open(checked = false) {
   document.body.insertAdjacentHTML('beforeend', '<section role="dialog" aria-labelledby="settings-title"><h1 id="settings-title">Global diff view settings</h1><form>'+controls+'<button type="button">Cancel</button><button type="submit">Save</button></form></section>');
@@ -31,6 +40,17 @@ function nativeEvidence() {
   return { metadata: [parseObservedBitbucketShellMetadata({ id: 27, state: 'MERGED', source: { repository: { full_name: REPO }, commit: { hash: HEAD } }, destination: { repository: { full_name: REPO }, commit: { hash: BASE } } })], partialMetadata: [], pins: [{ sourceRepo: REPO, head: HEAD, base: BASE, resource: 'diff', status: 200 }], commits: [], errors: [], mutations: [] };
 }
 function events(checked) { return [{ type: 'click', control: 'syntax', trusted: true, checked }, { type: 'input', control: 'syntax', trusted: true, checked }, { type: 'change', control: 'syntax', trusted: true, checked }, { type: 'click', control: 'save', trusted: true }, { type: 'submit', control: 'form', trusted: true, sameForm: true, sameSubmitter: true }]; }
+
+test('actual retained55-row transition preserves raw strings and permits exactly53 non-final rowgroup LFs',()=>{
+  const before=structuredClone(recordedRows);const result=classifySyntaxOnLines(recordedRows.original,recordedRows.on,'on');assert.equal(result.valid,true);assert.deepEqual(result.groups.map(g=>g.length),[43,12]);assert.equal(result.rows.filter(r=>r.rendererLF==='\n').length,53);assert.deepEqual(result.rows.filter(r=>r.groupEnd).map(r=>r.index),[42,54]);assert.deepEqual(recordedRows,before);assert.equal(classifySyntaxOnLines(recordedRows.original,recordedRows.original,'off').valid,true);
+});
+for(const fault of ['interior-space','trailing-space','two-LF','missing-LF','final-LF','CRLF','missing-row','extra-blank-row','reorder','group-boundary','group-reorder','numbers','kind','IDs','links','aria','role','unknown-wrapper','unknown-descendant','span-attribute'])test(`retained native transition rejects ${fault}`,()=>{
+  const original=structuredClone(recordedRows.original);const current=structuredClone(recordedRows.on);
+  if(fault==='interior-space')current[0].semantic.text='ima ge:\n';if(fault==='trailing-space')current[0].semantic.text='image: \n';if(fault==='two-LF')current[0].semantic.text+='\n';if(fault==='missing-LF')current[0].semantic.text=original[0].semantic.text;if(fault==='final-LF')current[42].semantic.text+='\n';if(fault==='CRLF')current[0].semantic.text=original[0].semantic.text+'\r\n';if(fault==='missing-row')current.pop();if(fault==='extra-blank-row')current.splice(4,0,structuredClone(current[2]));if(fault==='reorder')[current[0],current[1]]=[current[1],current[0]];if(fault==='group-boundary')current[42].render.group=1;if(fault==='group-reorder')current[0].render.group=1;if(fault==='numbers')current[0].semantic.numbers=[[null,'1']];if(fault==='kind')current[0].semantic.kind='+';if(fault==='IDs')current[0].semantic.ids.push('new');if(fault==='links')current[0].semantic.links[0][0]='#different';if(fault==='aria')current[0].render.ariaLabel+='changed';if(fault==='role')current[0].render.role='cell';if(fault==='unknown-wrapper')current[0].render.classes=['code-diff'];if(fault==='unknown-descendant')current[0].render.spans[1].tag='DIV';if(fault==='span-attribute')current[0].render.spans[1].attrs.push('data-geld-ui');assert.equal(classifySyntaxOnLines(original,current,'on').valid,false,fault);
+});
+test('inverse Off requires original exact plain text and wrapper, never a syntax row or arbitrary trimmed result',()=>{
+  assert.equal(classifySyntaxOnLines(recordedRows.original,recordedRows.on,'off').valid,false);const current=structuredClone(recordedRows.original);current[0].semantic.text+=' ';assert.equal(classifySyntaxOnLines(recordedRows.original,current,'off').valid,false);current[0].semantic.text=recordedRows.original[0].semantic.text;current[0].render.spans[0].classes=['token'];assert.equal(classifySyntaxOnLines(recordedRows.original,current,'off').valid,false);
+});
 
 test('full rolling window is required; the measured16 is not a promise about Save/restore', () => {
   assert.equal(syntaxOnBudgetPreflight(0, 40).available, true);for (const active of [1, 16, 32, 40]) assert.equal(syntaxOnBudgetPreflight(active, 40).available, false);assert.match(syntaxOnBudgetPreflight(0, 40).basis, /unmeasured/);assert.throws(() => syntaxOnBudgetPreflight(0, 41));
@@ -82,13 +102,13 @@ test('same-text source replacement is rejected outside a real native Save transi
   fixture();open(true);const code = document.querySelector('[data-line-type]');code.replaceChildren(document.createTextNode('echo hello'));assert.equal(syntaxOnProbe().same, false);assert.equal(syntaxOnProbe().offPreserved, false);assert.equal(syntaxOnProbe('baseline-on'), null);assert.equal(syntaxOnProbe('begin-native-save', true), false);
 });
 test('the pristine On baseline retains exact native Text boundaries and detects later source edits',()=>{
-  fixture();open(true);const code=document.querySelector('[data-line-type]');assert.equal(syntaxOnProbe('baseline-on').onPreserved,true);const text=code.firstChild.firstChild;text.data='different';assert.equal(syntaxOnProbe().sameSemantic,false);assert.equal(syntaxOnProbe().onPreserved,false);
+  fixture(true);unitOnTransition();const code=document.querySelector('[data-line-type]');assert.equal(syntaxOnProbe('baseline-on').onPreserved,true);const text=code.firstChild.firstChild.firstChild;text.data='different';assert.equal(syntaxOnProbe().sameSemantic,false);assert.equal(syntaxOnProbe().onPreserved,false);
 });
 test('the On baseline requires zero owned ranges and refuses dirty or synthetic checkbox events', () => {
-  fixture();open(true);CSS.highlights.set('geld-bitbucket-shell-plain', new Set());assert.equal(syntaxOnProbe('baseline-on'), null);CSS.highlights.clear();document.getElementById(syntax).dispatchEvent(new window.Event('change', { bubbles: true }));assert.equal(syntaxOnProbe('baseline-on'), null);assert.equal(syntaxOnProbe().events[0].trusted, false);assert.deepEqual(syntaxOnProbe('events'), syntaxOnProbe().events);
+  fixture(true);unitOnTransition();CSS.highlights.set('geld-bitbucket-shell-plain', new Set());assert.equal(syntaxOnProbe('baseline-on'), null);CSS.highlights.clear();document.getElementById(syntax).dispatchEvent(new window.Event('change', { bubbles: true }));assert.equal(syntaxOnProbe('baseline-on'), null);assert.equal(syntaxOnProbe().events[0].trusted, false);assert.deepEqual(syntaxOnProbe('events'), syntaxOnProbe().events);
 });
 test('native-On preservation keeps link/ID nodes and foreign highlights even when serialized source matches', () => {
-  fixture();open(true);const foreign = new Set([{}]);CSS.highlights.set('native-find', foreign);syntaxOnProbe('baseline-on');assert.equal(syntaxOnProbe().foreignPreserved, true);
+  fixture(true);unitOnTransition();const foreign = new Set([{}]);CSS.highlights.set('native-find', foreign);syntaxOnProbe('baseline-on');assert.equal(syntaxOnProbe().foreignPreserved, true);
   CSS.highlights.set('geld-bitbucket-shell-keyword', new Set());assert.equal(syntaxOnProbe().foreignPreserved, true);foreign.add({});assert.equal(syntaxOnProbe().foreignPreserved, false);
   const link = document.getElementById('line1');link.replaceWith(link.cloneNode(true));assert.equal(syntaxOnProbe().sameSemantic, true);assert.equal(syntaxOnProbe().onPreserved, false);
 });
@@ -120,32 +140,37 @@ test('opener must be original, unique, closed, enabled and in the actual native 
 // Explicit deterministic unit-only orchestration. These are not browser colors, native
 // trusted events, public commits or persisted preferences, and no browser/network is used.
 const COMMAND = `if [ ! -d ".changes/next-release" ]; then echo "Next release file missing, make sure to run 'semversioner add-change'"; exit 1; fi`;
-function sourceProbe(painted) {
-  const lines = [...Array.from({ length: 30 }, (_, i) => '# unit prefix '+i), 'check-next-release: &check-next-release', '  step:', '    script:', '    - '+COMMAND, '', 'following:', '  script: []'];
-  const rows = lines.map((text, i) => ({ old: i+1, next: i+1, text, kind:' ', rowId: 'row'+i, ids:i===33?['Lbitbucket-pipelines.ymlT34']:[], links: i === 33 ? [['#Lbitbucket-pipelines.ymlT34', 'To line 34']] : [] }));
-  const ranges = [['keyword','if',0],['keyword','then',COMMAND.indexOf('then')],['keyword','fi',COMMAND.length-2],['built_in','echo',COMMAND.indexOf('echo')],['built_in','exit',COMMAND.indexOf('exit')],['string','".changes/next-release"',COMMAND.indexOf('"')]].map(([scope, word, start]) => ({ scope,rowId:rows[33].rowId,start:6+start,end:6+start+word.length }));
-  return { url: URL, file: 'chg-bitbucket-pipelines.yml', heading: 'bitbucket-pipelines.yml', actualStep: true, prefixOld: 37, prefixNext: 37, oldSource: rows, newSource: rows, rows, ranges: painted ? ranges : [], ownedCount: painted ? 6 : 0, invalidRanges: [], nativeIds: ['Lbitbucket-pipelines.ymlT34'], viewed: [{ checked:false,disabled:false }], colors: Object.fromEntries(['keyword','built_in','string'].map((scope) => [scope,{native:'unit-token',nativeNormalized:scope,pseudoNormalized:scope}])) };
+function sourceProbe(painted, renderedOn = false) {
+  const lines = [...Array.from({ length: 29 }, (_, i) => '# unit prefix '+i), 'check-next-release: &check-next-release', '  step:', '    name: Check next release', '    script:', '    - '+COMMAND, '', '', 'release-dev: &release-dev'];
+  const rows = lines.map((text, i) => ({ old: i+1, next: i+1, text: text + (renderedOn && i < lines.length - 1 ? '\n' : ''), kind:' ', rowId: 'row'+i, ids:i===33?['Lbitbucket-pipelines.ymlT34']:[], links: i === 33 ? [['#Lbitbucket-pipelines.ymlT34', 'To line 34']] : [] }));
+  const ranges = [['keyword','if',0],['keyword','then',COMMAND.indexOf('then')],['keyword','fi',COMMAND.length-2],['built_in','echo',COMMAND.indexOf('echo')],['built_in','exit',COMMAND.indexOf('exit')],['string','".changes/next-release"',COMMAND.indexOf('"')]].map(([scope, word, start]) => ({ scope,rowId:rows[33].rowId,start:6+start,end:6+start+word.length,text:word }));
+  return { url: URL, file: 'chg-bitbucket-pipelines.yml', heading: 'bitbucket-pipelines.yml', actualStep: !renderedOn, prefixOld: 37, prefixNext: 37, oldSource: rows, newSource: rows, rows, ranges: painted ? ranges : [], ownedCount: painted ? 6 : 0, invalidRanges: [], nativeIds: ['Lbitbucket-pipelines.ymlT34'], viewed: [{ checked:false,disabled:false }], colors: Object.fromEntries(['keyword','built_in','string'].map((scope) => [scope,{native:'unit-token',nativeNormalized:scope,pseudoNormalized:scope}])) };
 }
 function semanticRows(source) { return source.rows.map((r)=>({text:r.text,kind:r.kind,numbers:[[String(r.old),String(r.next)]],ids:r.ids,links:r.links})); }
+function lineWitness(mode) {
+  const original = sourceProbe(false);return semanticRows(sourceProbe(false, mode === 'on')).map((semantic, i) => ({ semantic,
+    render: { group:0,tag:'SPAN',role:'gridcell',rowRole:'row',ariaLabel:'Unchanged: '+original.rows[i].text,classes:mode==='on'?['code-diff','syntax-highlighted','__rbb_syntax_highlight']:['code-diff'],attrs:['aria-label','class','data-line-type','role'],directText:'',childNodeTypes:[1],children:['SPAN'],spans:mode==='on'?[{tag:'SPAN',attrs:['class'],classes:['unit-wrapper']}]:[{tag:'SPAN',attrs:[],classes:[]}] } }));
+}
 function onBaseline(source) {
-  const record={origin:'fresh-native-on-form-open',id:'native-on-1',formId:'native-form-2',formControls:13,url:URL,dialogs:1,checked:true,ownedCount:0,events:[],semanticRows:semanticRows(source)};
-  return {origin:record.origin,record,currentNative:{same:true,sameScope:true,sameSemantic:true,sameContainer:true,onBaseline:true,onPreserved:true,foreignPreserved:true,semanticRows:record.semanticRows,baselineEvidence:record},subject:{sourceRepo:REPO,head:HEAD,base:BASE},currentSubject:{sourceRepo:REPO,head:HEAD,base:BASE}};
+  const originalLines=lineWitness('off');const renderedLines=lineWitness('on');const lineModel=classifySyntaxOnLines(originalLines,renderedLines,'on');assert.equal(lineModel.valid,true);
+  const record={origin:'fresh-native-on-form-open',id:'native-on-1',formId:'native-form-2',formControls:13,url:URL,dialogs:1,checked:true,ownedCount:0,events:[],semanticRows:semanticRows(source),originalLines,renderedLines,lineModel};
+  return {origin:record.origin,record,currentNative:{same:true,sameScope:true,sameSemantic:false,sameCodeCharacters:true,sameContainer:true,onBaseline:true,onPreserved:true,foreignPreserved:true,semanticRows:record.semanticRows,renderedLines,lineModel,baselineEvidence:record},subject:{sourceRepo:REPO,head:HEAD,base:BASE},currentSubject:{sourceRepo:REPO,head:HEAD,base:BASE}};
 }
 test('the range oracle consumes an explicit independent On baseline without overriding raw Off/prepaint fields',()=>{
-  const source=sourceProbe(true);source.prePaintSeen=false;source.preserved=null;const raw=structuredClone(source);assert.throws(()=>verifyBitbucketShellSource(source,URL));const input=onBaseline(source);const result=verifyBitbucketShellSource(source,URL,input);assert.equal(result.baselineEvidence.id,'native-on-1');assert.deepEqual(source,raw);
+  const source=sourceProbe(true,true);source.prePaintSeen=false;source.preserved=null;const raw=structuredClone(source);assert.throws(()=>verifyBitbucketShellSource(source,URL));const input=onBaseline(source);const result=verifyBitbucketShellSource(source,URL,input);assert.equal(result.baselineEvidence.id,'native-on-1');assert.equal(result.codeLineEvidence.rawActualStep,false);assert.equal(result.codeLineEvidence.originalCodeActualStep,true);assert.deepEqual(source,raw);
 });
 for(const fault of ['open','on','owned','dirty','id','scope','foreign','source','head'])test(`explicit native-On baseline refuses ${fault} drift`,()=>{
-  const source=sourceProbe(true);const input=onBaseline(source);if(fault==='open')input.record.dialogs=0;if(fault==='on')input.record.checked=false;if(fault==='owned')input.record.ownedCount=22;if(fault==='dirty')input.record.events.push({type:'input'});if(fault==='id')input.currentNative.baselineEvidence={...input.record,id:'native-on-2'};if(fault==='scope')input.currentNative.sameScope=false;if(fault==='foreign')input.currentNative.foreignPreserved=false;if(fault==='source')input.record.semanticRows[0].text='changed';if(fault==='head')input.currentSubject.head='c'.repeat(40);assert.throws(()=>verifyBitbucketShellSource(source,URL,input));
+  const source=sourceProbe(true,true);const input=onBaseline(source);if(fault==='open')input.record.dialogs=0;if(fault==='on')input.record.checked=false;if(fault==='owned')input.record.ownedCount=22;if(fault==='dirty')input.record.events.push({type:'input'});if(fault==='id')input.currentNative.baselineEvidence={...input.record,id:'native-on-2'};if(fault==='scope')input.currentNative.sameScope=false;if(fault==='foreign')input.currentNative.foreignPreserved=false;if(fault==='source')input.record.semanticRows[0].text='changed';if(fault==='head')input.currentSubject.head='c'.repeat(40);assert.throws(()=>verifyBitbucketShellSource(source,URL,input));
 });
 function protocol(fault) {
   fixture();const vector = open();document.querySelector('[role="dialog"]').remove();syntaxOnProbe('cleanup');
   const item = { shellNativeSources: nativeEvidence(),syntaxOnTraffic:{records:[],windows:[],truncated:false} };let effective = false;let draft = false;let dialog = false;let painted = false;let baseline = null;let last = null;let eventList = [];let selected = null;let captured = false;let saveCount = 0;let formReads=0;const actions = [];
   const page = { url:()=>URL,isClosed:()=>false,mouse:{move:async()=>{},down:async()=>{},up:async()=>{selected={text:'if [',anchor:'unit',focus:'unit'};}},evaluate:async(fn,action)=>{
-    if (fn === bitbucketShellProbe) { if (action === 'cleanup') return null;if (action === 'selection-target') return {x1:1,x2:10,y:8,visible:true,text:'if ['};const source = sourceProbe(painted);source.selection = selected;if (painted && captured && fault === 'range') source.invalidRanges.push({});return source; }
+    if (fn === bitbucketShellProbe) { if (action === 'cleanup') return null;if (action === 'selection-target') return {x1:1,x2:10,y:8,visible:true,text:'if ['};const source = sourceProbe(painted,effective);source.selection = selected;if (painted && captured && fault === 'range') source.invalidRanges.push({});return source; }
     assert.equal(fn,syntaxOnProbe);if (action === 'cleanup') { actions.push('cleanup');return null; }if (action === 'events') return eventList;if (action === 'hit' || action?.startsWith('arm-') || action==='begin-native-save') return true;if (action === 'event') return last;if (action === 'ready-frames') return fault==='readiness'?null:{frames:2,same:true,ready:true};
     if (action === 'bind') return fault==='initial-form'?null:structuredClone(vector.map((v)=>v.id===syntax?{...v,checked:draft}:v));
-    if(dialog && action===undefined)formReads++;const state = {same:!(captured && fault==='source'),sameScope:true,sameSemantic:true,sameContainer:true,offPreserved:!effective,onBaseline:baseline!==null,baselineEvidence:baseline,semanticRows:semanticRows(sourceProbe(false)),onPreserved:!(captured && fault==='source'),foreignPreserved:true,dialogs:dialog?1:0,ready:dialog,formAvailable:dialog && (fault!=='delayed-form' || formReads>=2),checked:draft,vector:dialog?structuredClone(vector.map((v)=>v.id===syntax?{...v,checked:draft}:v)):null,events:structuredClone(eventList)};
-    if (action === 'baseline-on') { assert.equal(painted,false);baseline=onBaseline(sourceProbe(false)).record;state.onBaseline=true;state.baselineEvidence=baseline;actions.push('native-on-baseline'); }
+    if(dialog && action===undefined)formReads++;const renderedLines=lineWitness(effective?'on':'off');const lineModel=classifySyntaxOnLines(lineWitness('off'),renderedLines,effective?'on':'off');const state = {same:!(captured && fault==='source'),sameScope:true,sameSemantic:!effective,sameCodeCharacters:true,lineModel,renderedLines,sameContainer:true,offPreserved:!effective,onBaseline:baseline!==null,baselineEvidence:baseline,semanticRows:semanticRows(sourceProbe(false,effective)),onPreserved:!(captured && fault==='source'),foreignPreserved:true,dialogs:dialog?1:0,ready:dialog,formAvailable:dialog && (fault!=='delayed-form' || formReads>=2),checked:draft,vector:dialog?structuredClone(vector.map((v)=>v.id===syntax?{...v,checked:draft}:v)):null,events:structuredClone(eventList)};
+    if (action === 'baseline-on') { assert.equal(painted,false);baseline=onBaseline(sourceProbe(false,true)).record;state.onBaseline=true;state.baselineEvidence=baseline;actions.push('native-on-baseline'); }
     return state;
   },evaluateHandle:async(_fn,action)=>({asElement(){return this;},evaluate:async()=>{},dispose:async()=>{},click:async()=>{
     actions.push(action);last={trusted:fault!=='untrusted',url:URL};
@@ -168,3 +193,38 @@ for(const fault of ['ineffective','no-paint','submitter','range','source','head'
   const p=protocol(fault);await assert.rejects(p.run());assert.equal(p.item.syntaxOn.status,'failed');assert.ok(p.item.syntaxOn.error || p.item.syntaxOn.restoration.error);if(['ineffective','no-paint','range'].includes(fault)){assert.equal(p.item.syntaxOn.restoration.status,'restored');assert.equal(p.effective(),false);}if(['source','head','restore'].includes(fault))assert.equal(p.item.syntaxOn.restoration.status,'failed');
 });
 test('no initial vector leaves an unknown form untouched and does not replace the original failure with a TypeError',async()=>{const p=protocol('initial-form');await assert.rejects(p.run(),/Original13/);assert.equal(p.item.syntaxOn.restoration.status,'not_modified');assert.equal(p.actions.includes('syntax'),false);assert.equal(p.actions.includes('cancel'),false);assert.equal(p.saves(),0);});
+
+
+test('explicit On range proof excludes renderer LF and rejects mismatched actual Text even inside original bounds', () => {
+  for (const fault of ['LF', 'wrong-text']) {
+    const source = sourceProbe(true, true);const input = onBaseline(source);const row = source.rows.find((r) => r.next === 34);
+    if (fault === 'LF') source.ranges.push({ scope: 'plain', rowId: row.rowId, start: row.text.length - 1, end: row.text.length, text: '\n' });
+    else source.ranges[0].text = 'xx';
+    assert.throws(() => verifyBitbucketShellSource(source, URL, input), fault === 'LF' ? /renderer LF/ : /exact original code/);
+  }
+});
+test('logical On coverage accepts multiple physical native Text fragments without imposing the old range count', () => {
+  const source = sourceProbe(true, true);const input = onBaseline(source);const range = source.ranges.shift();
+  source.ranges.push({ ...range, end: range.start + 1, text: range.text[0] }, { ...range, start: range.start + 1, text: range.text.slice(1) });source.ownedCount++;
+  assert.ok(verifyBitbucketShellSource(source, URL, input).rangeCount > 6);
+});
+test('fresh On baseline relocks span, Text and rowgroup identity after the bounded Save presentation replacement', () => {
+  fixture(true);unitOnTransition();assert.equal(syntaxOnProbe('baseline-on').same, true);
+  const span = document.querySelector('[data-line-type] > span');span.replaceWith(span.cloneNode(true));
+  assert.equal(syntaxOnProbe().sameCodeCharacters, true);assert.equal(syntaxOnProbe().same, false);assert.equal(syntaxOnProbe().onPreserved, false);
+});
+test('inverse Off Save accepts only the original plain source then relocks restored node identities', () => {
+  fixture(true);unitOnTransition();syntaxOnProbe('baseline-on');document.querySelector('[role="dialog"]').remove();open(true);
+  const field = document.getElementById(syntax);field.checked = false;for (const type of ['click', 'input', 'change']) unitEvent(field, type);assert.equal(syntaxOnProbe('begin-native-save', false), true);document.querySelector('[role="dialog"]').remove();
+  const code = document.querySelector('[data-line-type]');code.className = 'code-diff';const plain = document.createElement('span');plain.textContent = 'echo hello';code.replaceChildren(plain);
+  assert.equal(syntaxOnProbe().same, true);assert.equal(syntaxOnProbe().lineModel.mode, 'off');open(false);assert.equal(syntaxOnProbe('finish-native-restore').same, true);
+  plain.replaceWith(plain.cloneNode(true));assert.equal(syntaxOnProbe().sameCodeCharacters, true);assert.equal(syntaxOnProbe().same, false);
+});
+for (const fault of ['actor', 'route', 'code', 'rowgroup']) test(`bounded native Save still refuses ${fault} drift before cleanup can touch controls`, () => {
+  fixture(true);unitOnTransition();
+  if (fault === 'actor') document.getElementById('bb-bootstrap').setAttribute('data-current-user', '{"isAuthenticated":false,"changed":true}');
+  if (fault === 'route') window.location.hash = '#different';
+  if (fault === 'code') document.querySelector('[data-line-type] > span').textContent += ' ';
+  if (fault === 'rowgroup') document.querySelector('[role="rowgroup"]').removeAttribute('role');
+  assert.equal(syntaxOnProbe()?.same ?? false, false);assert.equal(syntaxOnProbe('save'), null);assert.equal(syntaxOnProbe('begin-native-save', false) ?? false, false);
+});
