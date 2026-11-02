@@ -6,7 +6,8 @@
   "license": "AGPL-3.0-only",
   "exports": {
     ".": "./src/index.ts",
-    "./*": "./src/*"
+    "./*": "./src/*",
+    "./issue-tracker-editor": "./src/issue-tracker-editor.tsx"
   },
   "scripts": {
     "check": "tsc --noEmit"
@@ -14,7 +15,8 @@
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "class-variance-authority": "^0.7.1",
-    "cn": "^0.2.5"
+    "cn": "^0.2.5",
+    "@geld/core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.2.0",

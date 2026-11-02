@@ -537,3 +537,5 @@ textarea.field { min-height: 100px; }
 .pricing-card > button { margin-top: auto; font-size: 11px; }
 @media(max-width:1100px) { .pricing-grid { grid-template-columns: repeat(2,1fr); } }
 @media(max-width:760px) { .billing-summary { grid-template-columns: 1fr; } .billing-summary > div + div { border-left: none; border-top: 1px solid var(--border); } .pricing-grid { grid-template-columns: 1fr; } }
+.tracker-links { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.tracker-link { display: inline-flex; gap: 5px; align-items: center; border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; }

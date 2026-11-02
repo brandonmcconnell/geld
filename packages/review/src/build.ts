@@ -50,6 +50,9 @@ export interface RawReview {
 }
 
 export interface RawPullRequest {
+  readonly title?:string;
+  readonly body?:string;
+  readonly headBranch?:string;
   readonly owner: string;
   readonly repo: string;
   readonly number: number;

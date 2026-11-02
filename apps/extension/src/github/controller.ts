@@ -1,3 +1,4 @@
+import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
 import type { Catalog, HiddenCategory } from '@geld/core';
 import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
@@ -1054,6 +1055,8 @@ export class GeldController {
         if (!this.stopped) phase('diffstat', () => this.applyDiffstatSurfacesNow());
       });
     }
+    const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
+    applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
     if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
 
     const effectiveHidden = headerHidden ?? hidden;
@@ -1839,6 +1842,7 @@ export class GeldController {
     this.headerDirty = true;
     this.teardownView();
     teardownReviewOverview();
+    removeTrackerLinks();
     removeQuickReview();
     removePrListStats();
     removeCommitHover();

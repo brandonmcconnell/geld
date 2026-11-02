@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { applyRepoConfigs, DEFAULT_SETTINGS, generatedConfigFrom, parseRepoConfig, validateSettingsDocument } from '@geld/core';
-import type { GeldSettings, RepoConfig } from '@geld/core';
+import type { IssueTrackerConfig, GeldSettings, RepoConfig } from '@geld/core';
 import type { TokenSource } from '@geld/github';
 import { createApiTransport } from '@geld/github';
 import { REVIEW_BOTS } from '@geld/review/bots';
@@ -9,8 +9,8 @@ import type { RepositoryRef } from '@geld/domain';
 import { currentActor, providerTokenSource } from './session';
 import { database } from './db';
 import { demoEnabled } from './env';
-export async function reviewSettings(ref: RepositoryRef, background?: {readonly source:TokenSource;readonly userId:string;readonly organisationSource?:TokenSource;readonly organisationComplete?:boolean}): Promise<{ readonly settings: GeldSettings; readonly warning: string | null; readonly aiAllowed: boolean }> {
-  if (demoEnabled()) return { settings: DEFAULT_SETTINGS, warning: null, aiAllowed: true };
+export async function reviewSettings(ref: RepositoryRef, background?: {readonly source:TokenSource;readonly userId:string;readonly organisationSource?:TokenSource;readonly organisationComplete?:boolean}): Promise<{ readonly settings: GeldSettings; readonly warning: string | null; readonly aiAllowed: boolean;readonly issueTracker:IssueTrackerConfig|null }> {
+  if (demoEnabled()) return { settings: DEFAULT_SETTINGS, warning: null, aiAllowed: true,issueTracker:null };
   let settings = DEFAULT_SETTINGS;
   let warning: string | null = null;
   const actor = background ? {id:background.userId} : await currentActor();
@@ -24,6 +24,7 @@ export async function reviewSettings(ref: RepositoryRef, background?: {readonly 
       else warning = 'Your saved review settings contain invalid values. Default rules are in use.';
     }
   }
+  let issueTracker=settings.issueTracker;
   let aiAllowed = true;
   const source = background?.source ?? await providerTokenSource(ref.provider,ref.owner);
   const api = createApiTransport({ baseUrl: ref.provider === 'github' ? 'https://api.github.com/' : ref.provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/', source, anonymousReads: true });
@@ -48,9 +49,9 @@ export async function reviewSettings(ref: RepositoryRef, background?: {readonly 
   const configs: RepoConfig[] = [];
   for (const text of [org, repo]) if (text) {
     const parsed = parseRepoConfig(text, undefined, REVIEW_BOTS.map((bot) => bot.id));
-    if (parsed.ok) { configs.push(parsed.config); if (parsed.config.review?.ai === false) aiAllowed = false; }
+    if (parsed.ok) { configs.push(parsed.config); if(settings.repoConfigs!=='never'&&parsed.config.issueTracker)issueTracker=parsed.config.issueTracker; if (parsed.config.review?.ai === false) aiAllowed = false; }
     else { warning = 'A repository configuration is invalid. AI processing is paused until it is fixed.'; aiAllowed = false; }
   }
   if (attributes) configs.push(generatedConfigFrom(attributes));
-  return { settings: settings.repoConfigs === 'never' ? settings : applyRepoConfigs(settings, configs), warning, aiAllowed };
+  return { settings: settings.repoConfigs === 'never' ? settings : applyRepoConfigs(settings, configs), warning, aiAllowed,issueTracker };
 }

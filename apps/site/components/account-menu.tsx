@@ -8,6 +8,7 @@ import { UserGlyphIcon } from '@/components/icons';
 import { buttonVariants } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DASHBOARD_ORIGIN } from '@/lib/dashboard';
 import { useAccount } from '@/lib/account';
 
 /**
@@ -25,7 +26,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
     return (
       <Tooltip>
         <TooltipTrigger
-          render={<a href="/auth/start?next=/settings" aria-label="Sign in with GitHub" />}
+          render={<a href="/auth/start?next=/settings" aria-label="Sign in to Geld" />}
           className={cn(
             buttonVariants({ variant: 'ghost', size: 'icon-sm', className: 'border-input text-muted-foreground hover:text-foreground [[data-account]_&]:hidden' }),
             className,
@@ -36,7 +37,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
             <UserGlyphIcon className="size-full" />
           </span>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Sign in with GitHub</TooltipContent>
+        <TooltipContent side="bottom">Sign in to Geld</TooltipContent>
       </Tooltip>
     );
   }
@@ -51,7 +52,7 @@ export function AccountMenu({ className }: { readonly className?: string | undef
         aria-label={`Account: ${account.login}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- avatar from GitHub, already sized */}
-        <img src={account.avatarUrl} alt="" width={26} height={26} className="geld-corners geld-cut-[6px] size-[26px]" referrerPolicy="no-referrer" />
+        {account.avatarUrl?<img src={account.avatarUrl} alt="" width={26} height={26} className="geld-corners geld-cut-[6px] size-[26px]" referrerPolicy="no-referrer" />:<UserGlyphIcon className="size-[26px]"/>}
         <span className="hidden max-w-32 truncate font-medium sm:inline">{account.login}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
@@ -59,16 +60,16 @@ export function AccountMenu({ className }: { readonly className?: string | undef
           Signed in as <span className="font-medium text-foreground">{account.login}</span>
         </p>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/settings" />}>
+        <DropdownMenuItem render={<Link href={`${DASHBOARD_ORIGIN}/settings/review`} />}>
           <SettingsIcon aria-hidden="true" className="text-muted-foreground" />
           Settings
         </DropdownMenuItem>
-        <form method="post" action="/auth/signout">
-          <DropdownMenuItem render={<button type="submit" className="w-full" />}>
+        <div>
+          <DropdownMenuItem render={<a href={`${DASHBOARD_ORIGIN}/settings/account`} className="w-full" />}>
             <LogOutIcon aria-hidden="true" className="text-muted-foreground" />
-            Sign out
+            Manage account
           </DropdownMenuItem>
-        </form>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

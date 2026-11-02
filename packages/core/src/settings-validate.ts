@@ -1,3 +1,4 @@
+import { parseIssueTracker } from './trackers';
 import type { Catalog } from './categories';
 import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustomCategoryId, isGroupKey, isWellFormedGroupKey, isWellFormedId } from './categories';
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
@@ -268,6 +269,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.aiBaseUrl !== undefined && typeof value.aiBaseUrl !== 'string') {
     issues.push({ path: `${path}.aiBaseUrl`, message: `Expected a string, got ${describeValue(value.aiBaseUrl)}.` });
   }
+  if (value.issueTracker !== undefined && value.issueTracker !== null && !parseIssueTracker(value.issueTracker)) issues.push({path:`${path}.issueTracker`,message:'Invalid issue tracker configuration.'});
   if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
   }

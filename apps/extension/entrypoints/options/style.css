@@ -735,3 +735,8 @@ body {
   font-size: 12.5px;
   text-align: center;
 }
+
+.options__tracker { display: grid; gap: 12px; margin-top: 24px; padding: 16px 0 0; border: 0; border-top: 1px solid var(--border); }
+.options__tracker-fields { display: grid; gap: 12px; }
+.options__tracker-fields[hidden], .options__tracker .options__field[hidden] { display: none; }
+.options__tracker > .geld-button { justify-self: start; }

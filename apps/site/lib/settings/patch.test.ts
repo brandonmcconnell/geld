@@ -100,3 +100,14 @@ describe('applyPatch', () => {
     expect(removed.ok && removed.settings.categories).toEqual({});
   });
 });
+
+describe('personal tracker patches',()=>{
+ it('validates a scoped tracker and preserves unrelated settings',()=>{
+  const value={provider:'jira',keys:['ENG'],baseUrl:'https://acme.atlassian.net/'};
+  expect(isSettingsPatch({kind:'issue-tracker',value})).toBe(true);
+  const result=applyPatch(DEFAULT_SETTINGS,{kind:'issue-tracker',value:{...value,provider:'jira'}});
+  expect(result).toMatchObject({ok:true,settings:{issueTracker:{provider:'jira',keys:['ENG'],baseUrl:'https://acme.atlassian.net'},enabled:DEFAULT_SETTINGS.enabled}});
+  expect(isSettingsPatch({kind:'issue-tracker',value:{...value,baseUrl:'http://insecure.example'}})).toBe(false);
+  expect(applyPatch(DEFAULT_SETTINGS,{kind:'issue-tracker',value:null})).toMatchObject({ok:true,settings:{issueTracker:null}});
+ });
+});

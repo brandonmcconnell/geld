@@ -137,3 +137,8 @@ describe('repository AI restrictions', () => {
     expect(parseRepoConfig('review: { ai: "false" }')).toMatchObject({ ok: false });
   });
 });
+
+it('returns a validation issue instead of throwing when YAML aliases cannot resolve',()=>{
+  expect(()=>parseRepoConfig('value: *missing')).not.toThrow();
+  expect(parseRepoConfig('value: *missing')).toMatchObject({ok:false,issues:[{path:'$',message:expect.stringContaining('aliases')}]});
+});

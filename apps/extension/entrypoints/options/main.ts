@@ -54,6 +54,7 @@ import type { JevSource } from '../../src/lib/local-state';
 import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
 import type { ModelInfo } from '@geld/review';
 import { isEvaluationModel, jevModelFor, TYPESAFE_API } from '@geld/review';
+import { issueTrackerEditor } from '../../src/ui/issue-tracker-editor';
 import { modelCombobox } from '../../src/ui/model-combobox';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -689,6 +690,13 @@ async function main(): Promise<void> {
     show(settings);
     choiceSetters.push(show);
     choiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
+  }
+
+  const trackerField=sections.find(section=>section.id==='repositories')?.fields.find(field=>field.kind==='issue-tracker');
+  if(trackerField){
+    const editor=issueTrackerEditor(trackerField,settings.issueTracker,async issueTracker=>{settings=await settingsItem.patch({issueTracker});return settings.issueTracker;});
+    choiceHost.append(editor.element);
+    choiceSetters.push(value=>editor.setValue(value.issueTracker));
   }
 
   /* Test files: the reader's own test declaration syntaxes. */
