@@ -158,3 +158,21 @@ test('native Bash discovery requires its explicit literal focus and does not bro
   assert.deepEqual(select({ fork: true, body: marker('bitbucket-native-bash'), from: marker('github') }), { focus: 'regression', run: 'false', failures: [] });
   assert.match(harness, /name === 'bitbucket-native-bash-style' && focus !== 'bitbucket-native-bash'/);
 });
+
+test('repository commit-link acceptance is explicit only, observes before navigation and restores settings after closure', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-commit-links']), ['bitbucket-commit-links']);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'bitbucket-commit-links') assert.equal(selected.includes('bitbucket-commit-links'), false);
+  assert.deepEqual(select({ body: marker('bitbucket-commit-links'), from: marker('github') }), { focus: 'bitbucket-commit-links', run: 'true', failures: [] });
+  assert.equal(select({ body: marker('bitbucket-commit-links') + '\nNew prose', from: marker('bitbucket-commit-links') }).run, 'false');
+  assert.deepEqual(select({ fork: true, body: marker('bitbucket-commit-links'), from: marker('github') }), { focus: 'regression', run: 'false', failures: [] });
+  const runner = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('async function crossSettingsDom('));
+  assert.match(runner, /name === 'bitbucket-commit-links' && focus !== 'bitbucket-commit-links'/);
+  assert.ok(runner.indexOf('await commitLinkSettings.prepare()') < runner.indexOf('await browser.newPage()'));
+  assert.ok(runner.indexOf("name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item))") < runner.indexOf('await page.goto(url'));
+  const cleanup = runner.slice(runner.lastIndexOf('} finally {'));
+  assert.ok(cleanup.indexOf('await page.close()') < cleanup.indexOf('await commitLinkSettings.restore('));
+  assert.match(cleanup, /item.status = 'failed';item.cleanupError/);
+  assert.match(harness, /remaining >= 8/);assert.match(harness, /conservativeObservedRequestBudget: 40/);
+});
