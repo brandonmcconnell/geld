@@ -539,3 +539,15 @@ textarea.field { min-height: 100px; }
 @media(max-width:760px) { .billing-summary { grid-template-columns: 1fr; } .billing-summary > div + div { border-left: none; border-top: 1px solid var(--border); } .pricing-grid { grid-template-columns: 1fr; } }
 .tracker-links { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .tracker-link { display: inline-flex; gap: 5px; align-items: center; border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; }
+
+.consolidated-findings { padding: 24px 28px; border-bottom: 1px solid var(--border); }
+.finding-item { padding: 20px 0; border-top: 1px solid var(--border); }
+.finding-item h3 { font-size: 14px; font-weight: 550; margin: 10px 0; }
+.finding-item p { font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.finding-item small { display: block; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.finding-badges, .finding-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 11px; color: var(--muted-foreground); }
+.finding-badges span { padding: 3px 6px; background: var(--muted); border-radius: 4px; }
+.finding-sources { margin: 12px 0; }
+.finding-sources a { text-decoration: underline; text-underline-offset: 3px; }
+.finding-item summary { font-size: 12px; cursor: pointer; }
+@media(max-width:640px) { .consolidated-findings { padding: 20px 16px; } .consolidated-findings .review-section-heading { align-items: start; flex-direction: column; gap: 14px; } }

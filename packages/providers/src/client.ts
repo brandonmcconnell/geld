@@ -1,3 +1,4 @@
+import {gitlabNoteUrl} from './comment-links';
 import { z } from 'zod';
 import type { Capability, LineComment, Provider, ProviderClient, ProviderComment, ProviderResult, PullDetail, PullRef, PullSummary, RepositoryRef, RepositorySummary, ReviewSubmission } from '@geld/domain';
 import { githubEndpoints, validEnterpriseHost } from '@geld/domain';
@@ -151,12 +152,15 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
     },
     async comments(ref) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };
-      const path = provider === 'github' ? `repos/${e(ref.owner)}/${e(ref.repo)}/issues/${ref.number}/comments?per_page=100` : `${pullBase(ref)}/${provider === 'gitlab' ? 'notes?per_page=100' : 'comments?pagelen=100'}`;
-      const result = await api.request(path);
-      if (!result.ok) return result;
-      const list = provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
-      if (!list.success) return { ok: false, reason: 'invalid_response' };
-      const data = Array.isArray(list.data) ? list.data : list.data.values;
+      const data:unknown[]=[];let complete=false;
+      for(let page=1;page<=20;page++){
+        const path=provider==='github'?`repos/${e(ref.owner)}/${e(ref.repo)}/issues/${ref.number}/comments?per_page=100&page=${page}`:`${pullBase(ref)}/${provider==='gitlab'?`notes?per_page=100&page=${page}`:`comments?pagelen=100&page=${page}`}`;
+        const result=await api.request(path);if(!result.ok)return result;
+        const list=provider==='bitbucket'?bbPageSchema.safeParse(result.value):ghRepos.safeParse(result.value);if(!list.success)return{ok:false,reason:'invalid_response'};
+        const values=Array.isArray(list.data)?list.data:list.data.values;data.push(...values);
+        if(Array.isArray(list.data)?values.length<100:!list.data.next){complete=true;break;}
+      }
+      if(!complete)return{ok:false,reason:'unavailable'};
       const items: ProviderComment[] = [];
       for (const entry of data) {
         const r = recordSchema.safeParse(entry);
@@ -164,7 +168,7 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
         const author = z.object({ login: z.string().optional(), username: z.string().optional(), display_name: z.string().optional() }).safeParse(r.data.user ?? r.data.author);
         const content = z.object({ raw: z.string() }).safeParse(r.data.content);
         if (typeof r.data.id !== 'number' && typeof r.data.id !== 'string') continue;
-        items.push({ id: String(r.data.id), author: author.success ? author.data.login ?? author.data.username ?? author.data.display_name ?? 'unknown' : 'unknown', body: typeof r.data.body === 'string' ? r.data.body : content.success ? content.data.raw : '', path: null, line: null, url: typeof r.data.html_url === 'string' ? r.data.html_url : '' });
+        items.push({ id: String(r.data.id), author: author.success ? author.data.login ?? author.data.username ?? author.data.display_name ?? 'unknown' : 'unknown', body: typeof r.data.body === 'string' ? r.data.body : content.success ? content.data.raw : '', path: null, line: null, url: provider==='gitlab'?gitlabNoteUrl(ref,r.data.id):typeof r.data.html_url === 'string' ? r.data.html_url : '',...(typeof r.data.id==='number'&&Number.isSafeInteger(r.data.id)?{databaseId:r.data.id}:{}),...(typeof r.data.created_at==='string'?{createdAt:r.data.created_at}:typeof r.data.created_on==='string'?{createdAt:r.data.created_on}:{}) });
       }
       return { ok: true, value: items };
     },

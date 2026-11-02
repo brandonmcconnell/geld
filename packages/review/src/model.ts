@@ -318,7 +318,7 @@ function reviewSourceFrom(value: z.infer<typeof reviewSourceSchema>): ReviewSour
     : { anchor: value.anchor, kind: value.kind, author: value.author, bot: value.bot };
 }
 
-function reviewItemFrom(value: z.infer<typeof reviewItemSchema>): ReviewItem {
+export function reviewItemFrom(value: z.infer<typeof reviewItemSchema>): ReviewItem {
   const item: ReviewItem = {
     id: value.id,
     title: value.title,
