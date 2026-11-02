@@ -90,6 +90,8 @@ export function bitbucketCommitLinkState() {
   }
   return { url: location.href, sameNode: document.querySelector(saved.selector) === original && original.isConnected,
     sameParent: original.parentElement === saved.parent, sameText: original.textContent === saved.text, href: original.href, raw: original.getAttribute('href'), text: original.textContent.trim().slice(0, 512),
+    focused: document.activeElement === original || original.contains(document.activeElement),
+    activeElement: document.activeElement === null ? null : { tag: document.activeElement.tagName, id: document.activeElement.id, testid: document.activeElement.getAttribute('data-testid'), href: document.activeElement.getAttribute('href'), text: document.activeElement.textContent.trim().slice(0, 120) },
     branch: saved.branch == null ? null : { unique: document.querySelectorAll(saved.branch.selector).length === 1, sameNode: document.querySelector(saved.branch.selector) === saved.branch.node && saved.branch.node.isConnected, sameParent: saved.branch.node.parentElement === saved.branch.parent, label: saved.branch.node.getAttribute('aria-label'), text: saved.branch.node.textContent.trim() },
     events: [...saved.events], nativeCards };
 }
@@ -151,7 +153,7 @@ export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, ins
       if (branch !== null && (branchNode === null || document.querySelectorAll(branch.selector).length !== 1 || branchNode.getAttribute('aria-label') !== branch.label || branchNode.textContent.trim() !== branch.text)) throw new Error('Native commit-list ref selection changed before verification');
       const saved = { node, parent: node.parentElement, selector: selected.selector, text: node.textContent, events: [], branch: branchNode === null ? null : { ...branch, node: branchNode, parent: branchNode.parentElement } };
       saved.listener = (event) => { if (saved.events.length < 12) saved.events.push({ type: event.type, trusted: event.isTrusted }); };
-      node.addEventListener('mouseover', saved.listener, true);node.addEventListener('focusin', saved.listener, true);
+      node.addEventListener('mouseover', saved.listener, true);node.addEventListener('focusin', saved.listener, true);node.addEventListener('focusout', saved.listener, true);
       globalThis.__geldCommitLinksProof = saved;
     }, selected, discovery.actualURL, discovery.branch ?? null);
     proof.before = await page.evaluate(bitbucketCommitLinkState);
@@ -205,6 +207,21 @@ export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, ins
       for (const input of ['pointer', 'keyboard']) {
         const reserve = guardBudget();assert.equal(reserve.available, true, 'Eight observed requests must remain before each filtered/restored hover intent');
         await page.evaluate(() => { globalThis.__geldCommitLinksProof.events.length = 0; });
+        if (input === 'pointer') {
+          const departure = { before: await page.evaluate(bitbucketCommitLinkState), status: 'checking' };
+          result.pointerDeparture = departure;nativeUnchanged(departure.before);
+          assert.equal(typeof departure.before.focused, 'boolean', 'Native focus evidence is required before pointer reentry');
+          if (departure.before.focused) {
+            departure.input = ['Shift down', 'Tab', 'Shift up'];
+            await page.keyboard.down('Shift');
+            try { await page.keyboard.press('Tab'); }
+            finally { await page.keyboard.up('Shift'); }
+            departure.after = await page.evaluate(bitbucketCommitLinkState);nativeUnchanged(departure.after);
+            assert.equal(departure.after.focused, false, 'Real Shift+Tab must leave the original native source before pointer reentry');
+            assert.ok(departure.after.events.some((event) => event.type === 'focusout' && event.trusted), 'Original source requires a trusted focusout from actual keyboard departure');
+            departure.status = 'departed';
+          } else departure.status = 'source_not_focused';
+        }
         result[input] = await installedHover(page, selected.selector, input, `bitbucket-commit-link-${phase}-${input}`, undefined, { verifyUnobscured: true, expectedRows: rows });
         accessibleHover(result[input]);assert.deepEqual(result[input].rows, rows, `${phase} ${input} category rows disagree with the per-file oracle`);
         if (input === 'keyboard') { assert.equal(result[input].keyboardNavigation?.started, true);assert.equal(result[input].keyboardNavigation?.stops.at(-1)?.target, true); }
@@ -248,7 +265,7 @@ export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, ins
   finally {
     if (!page.isClosed()) await page.evaluate(() => {
       const saved = globalThis.__geldCommitLinksProof;
-      if (saved !== undefined) { saved.node.removeEventListener('mouseover', saved.listener, true);saved.node.removeEventListener('focusin', saved.listener, true); }
+      if (saved !== undefined) { saved.node.removeEventListener('mouseover', saved.listener, true);saved.node.removeEventListener('focusin', saved.listener, true);saved.node.removeEventListener('focusout', saved.listener, true); }
       delete globalThis.__geldCommitLinksProof;
     });
   }
