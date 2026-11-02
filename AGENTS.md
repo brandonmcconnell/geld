@@ -1558,6 +1558,11 @@ Provider-specific surfaces translate settings and sources into shared review and
   Cache that metric for unchanged native source and typography context, invalidate it for source, context, theme and viewport changes, and leave invalid or missing native typography at the existing fallback.
   Bitbucket's native merge-check list supplies individual rule labels and observed states, including separate minimum approval and default-reviewer approval rules.
   Those sidebar rules do not establish a numeric approval threshold, complete API availability, review permission or permission to merge.
+- **Unread review sources are not zero approvals.**
+  GitLab's approval and reviewer endpoints can fail independently, so omit reviewer standings only when neither valid list was read, retain known native standings from either successful source and keep each unavailable reason.
+  A missing or malformed `approved_by` list does not prove an empty approval set.
+  The digest and copied text label review-source failures Partial or Unavailable, with positive observed counts rather than aggregate zero claims, while two valid empty lists remain a known empty result.
+  Valid required/remaining approval fractions remain independent known facts, with the existing integer, positive-required and remaining-within-required guards intact.
 - **Published summary caches need an unambiguous machine frame.**
   Suggested source code can contain payload-shaped title attributes, so machine cache readers use `parsePublishedSummaryBody` and require the renderer's marker, heading and sole final canonical footer outside source-code fences.
   Legacy parsing remains available for older rendered content, while malformed machine caches are rebuilt instead of adopted.

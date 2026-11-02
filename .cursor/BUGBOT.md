@@ -32,6 +32,8 @@ this file lists what a reviewer must check.
   purpose, once per page or head, as the page itself does on navigation: the files-tab summaries
   (`/pull/N/changes?_json=1`), the Commits tab (`/pull/N/commits` with `Accept: application/json`),
   directory listings and raw files for `.github/geld.yml`.
+- A failed or malformed GitLab review source must not become a zero-approval claim.
+  Preserve known standings from successful approval/reviewer sources, label partial coverage and keep guarded native required/remaining approval facts independent.
 - Mutable GitLab MR and Bitbucket PR identity snapshots, and symbolic or abbreviated commit resolution, explicitly revalidate with `cache: 'no-cache'`.
   Keep conditional validator/body handling, immutable payload caches, request scheduling and quota cooldowns intact;
   do not require two wire-level HTTP 200 responses or add guard reads.
