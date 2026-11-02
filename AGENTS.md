@@ -1516,6 +1516,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Bitbucket pull requests and abbreviated standalone routes still have no whole-file grant until their current native source is independently bound.
   Bitbucket Syntax-on code rows omit their renderer-added terminal LF only when original rowgroup position and exact native gridcell aria text agree, while malformed or ambiguous row text stays unavailable.
   Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
+  The literal `bitbucket-whole-context` browser case tests one full-hash public standalone commit using original native source, one observed raw response, real boundary/fold clicks and both context directions.
+  It preserves original source and Viewed/count state, restores settings after closing, and never grants Bitbucket PR source authority.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
