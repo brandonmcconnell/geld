@@ -245,6 +245,15 @@ export function verifyBitbucketShellContext(probe, expectedURL = REVIEW) {
 
 export function assertBitbucketShellPreference(preference, probe) {
   if (preference.status === 'native_disabled') assert.equal(probe.ownedCount, 0, 'Owned shell colors coexist with the observed disabled native Syntax highlighting preference');
+  if (preference.status === 'unavailable') assert.equal(probe.ownedCount, 0, 'Owned shell colors require positively observed native Syntax highlighting');
+}
+
+export function verifyBitbucketShellUnpainted(preference, probe, baseline, expectedURL = REVIEW) {
+  assert.ok(['native_disabled', 'unavailable'].includes(preference.status), 'An unpainted check cannot stand in for enabled syntax acceptance');
+  verifyBitbucketShellContext(probe, expectedURL);assertBitbucketShellPreference(preference, probe);
+  assert.deepEqual(probe.ranges, []);assert.deepEqual(probe.invalidRanges, []);assert.equal(probe.prePaintSeen, true, 'Need original prepaint source evidence before accepting zero ranges');
+  assert.equal(probe.preserved, true, 'Native-disabled or unknown syntax must preserve original source references/text/IDs/links/fonts');
+  assert.deepEqual(probe.viewed, baseline.viewed, 'Native Viewed state changed while syntax painting was withheld');
 }
 
 export function verifyBitbucketShellSource(probe, expectedURL = REVIEW) {
@@ -367,13 +376,18 @@ export async function verifyBitbucketShell(page, item, { poll, pause, tabState, 
     }
     assert.ok(expanded.prefixNext >= 37, 'Native context did not reach the real step boundary within two trusted clicks');
     verifyBitbucketShellContext(expanded, visitURL);proof.contextMechanics = { status: 'passed', prefixOld: expanded.prefixOld, prefixNext: expanded.prefixNext };
-    if (proof.nativeSettings.status === 'native_disabled') {
-      proof.disabledPreference = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.actualStep && (value.ownedCount > 0 || value.prePaintSeen), 'Observed native-disabled source after genuine context expansion');
-      proof.artifacts = await capture(page, 'bitbucket-pipeline-native-disabled');
-      assertBitbucketShellPreference(proof.nativeSettings, proof.disabledPreference);
+    if (['native_disabled', 'unavailable'].includes(proof.nativeSettings.status)) {
+      const disabled = proof.nativeSettings.status === 'native_disabled';const key = disabled ? 'disabledPreference' : 'unknownPreference';
+      proof[key] = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.actualStep && (value.ownedCount > 0 || value.prePaintSeen), 'Unpainted source with original prepaint evidence after genuine context expansion');
+      verifyBitbucketShellUnpainted(proof.nativeSettings, proof[key], baseline, visitURL);
       const closedCounts = await bitbucketDom(page);const closedState = await tabState(page);assertBitbucketShellCounts(initialCounts, initialState, closedCounts, closedState);
       await session.flush();assertHead(head);assert.deepEqual(evidence.mutations, []);
-      proof.status = 'native_disabled';proof.limitations = ['Native context mechanics and absence of owned colors while native highlighting is disabled; no positive coloring or palette pass.'];return proof;
+      proof.artifacts = await capture(page, disabled ? 'bitbucket-pipeline-native-disabled' : 'bitbucket-pipeline-native-unknown');
+      proof.unpaintedAfterCapture = await page.evaluate(bitbucketShellProbe);verifyBitbucketShellUnpainted(proof.nativeSettings, proof.unpaintedAfterCapture, baseline, visitURL);
+      const captureCounts = await bitbucketDom(page);const captureState = await tabState(page);assertBitbucketShellCounts(initialCounts, initialState, captureCounts, captureState);
+      proof.counts = { before: initialCounts, after: closedCounts, afterCapture: captureCounts, tabStateBefore: initialState, tabStateAfter: closedState, tabStateAfterCapture: captureState };
+      await session.flush();assertHead(head);assert.deepEqual(evidence.mutations, []);
+      proof.status = disabled ? 'native_disabled' : 'unavailable';proof.limitations = [disabled ? 'Native context mechanics and absence of owned colors while native highlighting is disabled; no positive coloring or palette pass.' : 'Native context and conservative absence of owned colors are verified, but native syntax preference is unavailable. This is neither native-off nor positive coloring/palette acceptance.'];return proof;
     }
     const painted = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.actualStep && value.ownedCount > 0 && value.prePaintSeen && value.preserved, 'Actual original source gets shell ranges after native context expansion');
     proof.expandedCandidate = painted;

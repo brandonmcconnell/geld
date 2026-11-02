@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { assertBitbucketShellCounts, currentBitbucketShellHead, observeBitbucketShellFixture, parseObservedBitbucketShellMetadata, verifyBitbucketShellSource, verifyBitbucketShell, bitbucketShellProbe } from './bitbucket-shell-acceptance.mjs';
+import { assertBitbucketShellCounts, currentBitbucketShellHead, observeBitbucketShellFixture, parseObservedBitbucketShellMetadata, verifyBitbucketShellSource, verifyBitbucketShellUnpainted, verifyBitbucketShell, bitbucketShellProbe } from './bitbucket-shell-acceptance.mjs';
 
 // Synthetic API evidence exercises the live harness's refusal boundary. These are neither
 // public commit IDs nor browser/provider proof; no browser or network is used by this suite.
@@ -218,7 +218,25 @@ for (const [name, change] of [
   ['actual palette mismatch', (p) => { p.colors.string.pseudoNormalized = 'different'; }],
 ]) test('full source verifier refuses ' + name, () => { const value = completeSourceProbe();change(value);assert.throws(() => verifyBitbucketShellSource(value)); });
 
-test('actual focused verifier retains its raw expanded candidate when subsequent source validation fails', async () => {
+for (const status of ['native_disabled', 'unavailable']) {
+  function unpainted() { return { ...completeSourceProbe(), ownedCount: 0, ranges: [], viewed: [{ checked: false, disabled: false }] }; }
+  test(`${status} acceptance requires preserved prepaint source and Viewed both before and after capture`, () => {
+    const baseline = unpainted();const before = unpainted();const after = structuredClone(before);
+    verifyBitbucketShellUnpainted({ status }, before, baseline);verifyBitbucketShellUnpainted({ status }, after, baseline);
+    for (const [name, mutate] of [
+      ['prepaint', (value) => { value.prePaintSeen = false; }], ['preservation', (value) => { value.preserved = false; }],
+      ['invalid range', (value) => { value.invalidRanges.push({}); }], ['actual source', (value) => { value.rows[33].text = 'changed'; }],
+      ['Viewed', (value) => { value.viewed[0].checked = true; }], ['zero count hiding real ranges', (value) => { value.ranges.push({}); }],
+      ['native-off colors', (value) => { value.ownedCount = 22; }],
+    ]) {
+      const changed = unpainted();mutate(changed);assert.throws(() => verifyBitbucketShellUnpainted({ status }, changed, baseline), name);
+      verifyBitbucketShellUnpainted({ status }, before, baseline);assert.throws(() => verifyBitbucketShellUnpainted({ status }, changed, baseline), `after capture: ${name}`);
+    }
+    assert.throws(() => verifyBitbucketShellUnpainted({ status: 'native_enabled' }, before, baseline));
+  });
+}
+
+test('actual focused verifier retains its raw expanded candidate when unknown native preference still has owned colors', async () => {
   const page = new EventEmitter();const item = {};const phases = [];let selected = false;let expanded = false;const review = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff';
   const painted = completeSourceProbe();painted.url = review + '#chg-bitbucket-pipelines.yml';painted.ownedCount = 6;painted.colors.string.pseudoNormalized = 'mismatch';
   const baseline = { ...painted, prefixOld: 18, prefixNext: 16, ownedCount: 0, rows: [...painted.rows, { old: 18, next: 16, text: '          - docker' }, { old: 29, next: 27, text: '          - pipe: atlassian/git-secrets-scan:3.0.0' }], controls: [{ visible: true, previous: [18, 16], next: [29, 27] }] };
@@ -239,8 +257,56 @@ test('actual focused verifier retains its raw expanded candidate when subsequent
   response(`${API}/pullrequests/27`, metadata());response(pinUrl(), {});
   const counts = { files: 5, additions: 46, deletions: 29 };const state = { hasDiff: true, onDiffPage: true, all: counts, visible: counts, hiddenCount: 0 };
   try {
-    await assert.rejects(verifyBitbucketShell(page, item, { poll: async (read, accept) => { const value = await read();assert.equal(accept(value), true);return value; }, bitbucketDom: async () => counts, tabState: async () => state, guardBudget: () => ({ remaining: 24 }), prepareConsent: true, freshAnonymousProfile: true }), /Actual string pseudo-highlight differs/);
-    assert.equal(item.shellSyntax.expandedCandidate, painted);assert.equal(item.shellSyntax.expanded, null);assert.equal(item.shellSyntax.status, 'failed');assert.equal(item.shellSyntax.contextMechanics.status, 'passed');assert.equal(item.shellSyntax.consent.status, 'not_present');
+    await assert.rejects(verifyBitbucketShell(page, item, { poll: async (read, accept) => { const value = await read();assert.equal(accept(value), true);return value; }, bitbucketDom: async () => counts, tabState: async () => state, guardBudget: () => ({ remaining: 24 }), prepareConsent: true, freshAnonymousProfile: true }), /positively observed native Syntax/);
+    assert.equal(item.shellSyntax.unknownPreference, painted);assert.equal(item.shellSyntax.expanded, null);assert.equal(item.shellSyntax.status, 'failed');assert.equal(item.shellSyntax.contextMechanics.status, 'passed');assert.equal(item.shellSyntax.consent.status, 'not_present');
     assert.ok(phases.indexOf('consent') < phases.indexOf('shell:undefined'));assert.ok(phases.indexOf('cleanup:bitbucketPipelineConsentProbe') < phases.indexOf('shell:undefined'));assert.equal(phases.filter((value) => value === 'settings-source:setup').length, 2);
   } finally { page.emit('close'); }
 });
+
+function unpaintedProtocol({ knownOff = false, drift = null } = {}) {
+  const page = new EventEmitter();const item = {};let selected = false;let expanded = false;let settingsOpen = false;let captured = false;
+  const review = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff';
+  const source = { ...completeSourceProbe(), url: review + '#chg-bitbucket-pipelines.yml', ownedCount: 0, ranges: [], viewed: [{ checked: false, disabled: false }] };
+  const counts = { files: 5, additions: 46, deletions: 29 };const state = { hasDiff: true, onDiffPage: true, all: counts, visible: counts, hiddenCount: 0 };
+  const baseline = { ...source, prefixOld: 18, prefixNext: 16, rows: [...source.rows, { old: 18, next: 16, text: '          - docker' }, { old: 29, next: 27, text: '          - pipe: atlassian/git-secrets-scan:3.0.0' }], controls: [{ visible: true, previous: [18, 16], next: [29, 27] }] };
+  const handle = (click) => ({ asElement() { return this; }, evaluate: async () => {}, dispose: async () => {}, click: async () => click() });
+  page.url = () => selected ? source.url : review;page.isClosed = () => false;
+  page.$$ = async () => knownOff ? [handle(() => { settingsOpen = true; })] : [];
+  page.evaluate = async (fn, action) => {
+    if (action === 'cleanup') return null;
+    if (fn === bitbucketPipelineVisitProbe) return action === 'click-result' ? { trusted: true, sameLink: true, sameParent: true, href: '#chg-bitbucket-pipelines.yml' } : { sameSource: true, heading: 'bitbucket-pipelines.yml', selected, url: page.url(), pinned: selected ? page.url() : null };
+    if (fn === bitbucketSyntaxSettingsProbe) {
+      if (['opener', 'opener-hit', 'arm'].includes(action)) return true;
+      if (action === 'click-result') return { trusted: true, url: page.url() };
+      return { sameSource: true, dialogCount: settingsOpen ? 1 : 0, ready: settingsOpen, cancelAvailable: settingsOpen, checkbox: { checked: false }, preferences: [{ name: 'enableSyntaxHighlighting', checked: false }], events: [] };
+    }
+    assert.equal(fn, bitbucketShellProbe);
+    if (action === 'scroll' || action === 'arm') return { matches: 1 };
+    if (action === 'click-result') return { trusted: true, url: page.url(), qa: 'pr-diff-show-more-lines-below', aria: 'Show more lines below', previous: [18, 16], next: [29, 27] };
+    const result = structuredClone(expanded ? source : baseline);
+    if (captured) {
+      if (drift === 'Viewed') result.viewed[0].checked = true;
+      if (drift === 'preservation') result.preserved = false;
+      if (drift === 'prepaint') result.prePaintSeen = false;
+      if (drift === 'invalidRange') result.invalidRanges.push({});
+      if (drift === 'source') result.rows[33].text = 'changed';
+      if (drift === 'owned') result.ownedCount = 22;
+    }
+    return result;
+  };
+  page.evaluateHandle = async (fn) => handle(() => { if (fn === bitbucketPipelineVisitProbe) selected = true;else if (fn === bitbucketSyntaxSettingsProbe) settingsOpen = false;else expanded = true; });
+  observeBitbucketShellFixture(page, item, { safeUrl: (value) => value, extensionId: 'synthetic' });
+  const response = (url, body) => page.emit('response', { url: () => url, request: () => ({ method: () => 'GET' }), status: () => 200, headers: () => ({}), json: async () => body });
+  response(`${API}/pullrequests/27`, metadata());response(pinUrl(), {});
+  const dependencies = { poll: async (read, accept) => { const value = await read();assert.equal(accept(value), true);return value; }, bitbucketDom: async () => ({ ...counts, ...(captured && drift === 'counts' ? { additions: 47 } : {}) }), tabState: async () => structuredClone(state), guardBudget: () => ({ remaining: 24 }), capture: async (_page, name) => { if (name.startsWith('bitbucket-pipeline-native-')) { captured = true;if (drift === 'head') item.shellNativeSources.metadata.push({ ...metadata(), sourceRepo: REPO, destinationRepo: REPO, head: BASE, base: BASE }); }return {}; } };
+  return { item, run: () => verifyBitbucketShell(page, item, dependencies), cleanup: () => page.emit('close') };
+}
+
+for (const knownOff of [true, false]) {
+  test(`whole unpainted protocol keeps ${knownOff ? 'known off' : 'unknown'} distinct with source/Viewed/count checks after capture`, async () => {
+    const p = unpaintedProtocol({ knownOff });try { const proof = await p.run();assert.equal(proof.status, knownOff ? 'native_disabled' : 'unavailable');assert.equal(proof.nativeSettings.status, knownOff ? 'native_disabled' : 'unavailable');assert.equal(proof.unpaintedAfterCapture.prePaintSeen, true);assert.equal(proof.unpaintedAfterCapture.preserved, true);assert.equal(proof.unpaintedAfterCapture.ownedCount, 0);assert.deepEqual(proof.unpaintedAfterCapture.viewed, proof.default.viewed);assert.equal(proof.selection, null);assert.equal(proof.expanded, null);assert.ok(proof.counts.afterCapture); } finally { p.cleanup(); }
+  });
+  for (const drift of ['Viewed', 'preservation', 'prepaint', 'invalidRange', 'source', 'owned', 'counts', 'head']) test(`whole ${knownOff ? 'off' : 'unknown'} protocol rejects post-capture ${drift}`, async () => {
+    const p = unpaintedProtocol({ knownOff, drift });try { await assert.rejects(p.run());assert.equal(p.item.shellSyntax.status, 'failed');assert.ok(p.item.shellSyntax.error); } finally { p.cleanup(); }
+  });
+}
