@@ -57,12 +57,38 @@ describe('transport credential boundaries', () => {
     expect(await transport.request('../user')).toMatchObject({ ok: false });
     expect(requests).toHaveLength(0);
     await transport.request('user');
-    expect(requests[0]?.redirect).toBe('error');
+    expect(requests[0]?.redirect).toBe('manual');
   });
   it('reports rate limits and suppresses exception text', async () => {
     const limited = createApiTransport({ baseUrl: 'https://api.github.com/', source, now: () => 1000, fetch: async () => new Response(null, { status: 429, headers: { 'retry-after': '5' } }) });
     expect(await limited.request('user')).toEqual({ ok: false, reason: 'rate_limit', retryAt: 6000 });
     const failed = createApiTransport({ baseUrl: 'https://api.github.com/', source, fetch: async () => { throw new Error('do not expose this'); } });
     expect(await failed.request('user')).toEqual({ ok: false, reason: 'unavailable' });
+  });
+});
+
+describe('same-provider redirects', () => {
+  it('follows Bitbucket diff redirects within its API and rejects foreign credential destinations', async () => {
+    const urls: string[] = [];
+    const transport = createApiTransport({ baseUrl: 'https://api.bitbucket.org/2.0/', source, fetch: async (url) => { urls.push(url); return urls.length === 1 ? new Response(null, { status: 302, headers: { location: '/2.0/repositories/o/r/diff/head..base' } }) : new Response('diff --git a/a b/a'); } });
+    expect(await transport.request('repositories/o/r/pullrequests/1/diff', { text: true })).toEqual({ ok: true, value: 'diff --git a/a b/a' });
+    expect(urls).toHaveLength(2);
+    let requests = 0;
+    const denied = createApiTransport({ baseUrl: 'https://api.bitbucket.org/2.0/', source, fetch: async () => { requests += 1; return new Response(null, { status: 302, headers: { location: 'https://foreign.example/diff' } }); } });
+    expect(await denied.request('repositories/o/r/pullrequests/1/diff')).toMatchObject({ ok: false, reason: 'permission' });
+    expect(requests).toBe(1);
+  });
+});
+
+describe('GitLab renamed-file line comments', () => {
+  it.each(['old', 'new'])('keeps both revision paths for a comment on the %s side', async side => {
+    if (side !== 'old' && side !== 'new') throw new Error('Invalid fixture side');
+    const requests: unknown[] = [];
+    const client = createProviderClient({ provider: 'gitlab', source, fetch: async (_url, init) => {
+      if (init?.method === 'POST') { requests.push(JSON.parse(String(init.body))); return Response.json({ id: 'discussion' }); }
+      return Response.json({ ...gitlab, diff_refs: { base_sha: 'base', start_sha: 'start', head_sha: 'head' } });
+    } });
+    expect(await client.lineComment({ provider: 'gitlab', host: 'gitlab.com', owner: 'org', repo: 'repo', number: 1 }, { body: 'Check this', path: 'new name.ts', oldPath: 'old name.ts', line: 7, side, headSha: 'head' })).toEqual({ ok: true, value: 'discussion' });
+    expect(requests).toEqual([{ body: 'Check this', position: { position_type: 'text', base_sha: 'base', start_sha: 'start', head_sha: 'head', old_path: 'old name.ts', new_path: 'new name.ts', ...(side === 'old' ? { old_line: 7 } : { new_line: 7 }) } }]);
   });
 });

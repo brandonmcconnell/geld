@@ -35,13 +35,13 @@ const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
  * Extract the post-image path from a `diff --git a/x b/y` header line.
  * Falls back to the pre-image path for deletions (`b/` is `/dev/null` then).
  */
-function pathFromGitHeader(line: string): string | null {
+export function pathFromGitHeader(line: string, side: 'old' | 'new' = 'new'): string | null {
   const rest = line.slice('diff --git '.length);
   // Quoted paths (contain spaces or special characters) look like:
   //   diff --git "a/with space.ts" "b/with space.ts"
   if (rest.startsWith('"')) {
     const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" "b\/((?:\\.|[^"\\])*)"$/);
-    if (quoted) return unescapeGitPath(quoted[2] ?? quoted[1] ?? '');
+    if (quoted) return unescapeGitPath((side === 'old' ? quoted[1] : quoted[2]) ?? '');
     return null;
   }
   // Unquoted: paths cannot contain spaces here, but be defensive about the
@@ -50,7 +50,7 @@ function pathFromGitHeader(line: string): string | null {
   if (halfway === -1) return null;
   const aPath = rest.slice('a/'.length, halfway);
   const bPath = rest.slice(halfway + ' b/'.length);
-  return bPath || aPath;
+  return side === 'old' ? aPath : bPath || aPath;
 }
 
 function unescapeGitPath(text: string): string {

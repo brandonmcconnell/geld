@@ -43,3 +43,13 @@ export async function providerTokenSource(provider: Provider): Promise<TokenSour
     },
   };
 }
+
+export async function providerViewer(provider: Provider): Promise<string | null> {
+  const { createApiTransport } = await import('@geld/github');
+  const baseUrl = provider === 'github' ? 'https://api.github.com/' : provider === 'gitlab' ? 'https://gitlab.com/api/v4/' : 'https://api.bitbucket.org/2.0/';
+  const api = createApiTransport({ baseUrl, source: await providerTokenSource(provider) });
+  const result = await api.request('user');
+  if (!result.ok) return null;
+  const parsed = z.object({ login: z.string().optional(), username: z.string().optional(), nickname: z.string().optional(), display_name: z.string().optional() }).safeParse(result.value);
+  return parsed.success ? parsed.data.login ?? parsed.data.username ?? parsed.data.nickname ?? parsed.data.display_name ?? null : null;
+}

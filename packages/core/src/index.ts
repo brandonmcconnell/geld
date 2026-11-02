@@ -25,3 +25,5 @@ export * from './settings';
 export * from './settings-schema';
 export * from './settings-validate';
 export * from './test-patterns';
+
+export * from './diff-hunks';

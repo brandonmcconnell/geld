@@ -36,6 +36,7 @@ export interface PullSummary {
 }
 
 export interface PullDetail extends PullSummary {
+  readonly startSha?: string;
   readonly body: string;
   readonly capabilities: readonly Capability[];
 }
@@ -70,6 +71,15 @@ export interface ProviderComment {
   readonly url: string;
 }
 
+export interface ProviderThread {
+  readonly id: string;
+  readonly path: string | null;
+  readonly line: number | null;
+  readonly resolved: boolean;
+  readonly outdated: boolean;
+  readonly comments: readonly ProviderComment[];
+}
+
 export interface ReviewSubmission {
   readonly event: ReviewEvent;
   readonly body: string;
@@ -77,6 +87,7 @@ export interface ReviewSubmission {
 }
 
 export interface LineComment {
+  readonly oldPath?: string;
   readonly body: string;
   readonly path: string;
   readonly line: number;
@@ -94,5 +105,8 @@ export interface ProviderClient {
   comment(ref: PullRef, body: string): Promise<ProviderResult<string>>;
   lineComment(ref: PullRef, comment: LineComment): Promise<ProviderResult<string>>;
   review(ref: PullRef, review: ReviewSubmission): Promise<ProviderResult<string>>;
+  threads(ref: PullRef): Promise<ProviderResult<readonly ProviderThread[]>>;
+  reply(ref: PullRef, threadId: string, body: string): Promise<ProviderResult<void>>;
+  resolve(ref: PullRef, threadId: string, resolved: boolean): Promise<ProviderResult<void>>;
   requestReviewers(ref: PullRef, reviewers: readonly string[]): Promise<ProviderResult<void>>;
 }
