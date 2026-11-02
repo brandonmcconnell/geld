@@ -1694,6 +1694,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   GitLab's file tree uses absolute virtualizer offsets, so hiding individual rows would leave gaps even though category counts were correct.
   The category accordion hides only the verified native file-list root and projects the complete validated file inventory into compact Essential and category panels using copies of available native row visuals.
   Native rows, search controls, file comments and source controls stay in their original framework ownership, with IDs in visual copies remapped and original actions relayed to connected native controls.
+  Native status or comment-mark updates can rebuild owned accordion rows, so retain focus only for the same subject, provider, active category and exact file, folder or original enabled native-action identity.
+  A trailing comment action never falls back to the file link, and changed subjects, categories, unrelated focus or missing, replaced or disabled actions cancel focus restoration.
   A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
   Temporary search or an absent native tree host releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
   The explicit `gitlab-file-search` installed slice uses GitLab's original file-tree search, trusted typing and native result activation on the immutable mixed MR, requiring custom collapsed-folder and current-file recovery after clearing the query.
