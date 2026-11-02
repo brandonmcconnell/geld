@@ -110,3 +110,8 @@ it.each(['opacity', 'visibility'])('treats invisible %s as hidden intent rather 
   const f = fixture(false, markup() + controlMarkup());if (property === 'opacity') f.source.style.opacity = '0';else f.source.style.visibility = 'collapse';f.geometry(f.native);f.geometry(f.owned);f.mount();expect(f.host.querySelector<HTMLElement>('[data-geld-table-height]')?.dataset.geldTableHeightAuthority).toBe('hidden-native-generated-control');f.dispose();
   const unknown = fixture();if (property === 'opacity') unknown.source.style.opacity = '0';else unknown.source.style.visibility = 'collapse';unknown.geometry(unknown.native);unknown.geometry(unknown.owned);unknown.mount();expect(unknown.host.querySelector('button')).toBeNull();unknown.dispose();
 });
+it('centers the same focused owned button after collapse instead of leaving it behind the native sticky header', () => {
+  const f = fixture();f.geometry(f.native);f.geometry(f.owned);f.mount();const button = f.host.querySelector('button');if (button === null) throw new Error('Missing owned control');const native = f.source.outerHTML;const owned = f.host.innerHTML;
+  const scroll = vi.fn();Object.defineProperty(button, 'scrollIntoView', { configurable: true, value: scroll });button.click();expect(scroll).not.toHaveBeenCalled();button.click();
+  expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'center', inline: 'nearest', behavior: 'auto' });expect(document.activeElement).toBe(button);expect(f.host.querySelector('button')).toBe(button);expect(button.getAttribute('aria-expanded')).toBe('false');expect(f.host.innerHTML).toBe(owned);expect(f.source.outerHTML).toBe(native);f.dispose();
+});
