@@ -2135,3 +2135,8 @@ A captured registration-shaped source slice does not establish loader binding, r
 
 Optional module-only research on the explicit native-Bash and initial-On visits selects one already-issued script at the exact public CDN origin and app.<40lowerhex>.js path, retaining its actual URL and body SHA without relaxing frame, redirect, response, size, worker or cleanup guards.
 The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
+
+
+- **Owned shell comments conditionally use the native comment variable**: retained first-party token.comment CSS and historical native root measurements support --ds-comment-refreshed, with the existing native code-comments token as the exact fallback when that property is absent.
+  Only the owned comment highlight and its declared-model oracle prefer this variable, while meta, native YAML styles, grammar, plain ranges and eligibility retain their prior behavior.
+  Current embedded-element availability and enabled comment equality remain unverified, and master-off native Bash evidence does not establish live YAML, dark or complete palette equivalence.
