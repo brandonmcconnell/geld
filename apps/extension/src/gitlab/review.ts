@@ -55,6 +55,20 @@ export interface GitLabReviewCheck extends ProviderReviewCheck {
   readonly reviewHeadSha?: string;
 }
 
+/** Presentation evidence from the same validated note record, never semantic review input. */
+export interface GitLabRenderedNote {
+  readonly subject: ProviderReviewSubject;
+  readonly projectId: string;
+  readonly noteableId: string;
+  readonly comment: ProviderReviewComment;
+  readonly html: string;
+}
+
+export interface GitLabRenderedNoteScope {
+  readonly projectId: string;
+  readonly noteableId: string;
+}
+
 export interface GitLabReviewSnapshot {
   readonly sourceCoverage: NonNullable<ProviderReviewSnapshot['sourceCoverage']>;
   readonly input: ProviderReviewInput;
@@ -63,6 +77,7 @@ export interface GitLabReviewSnapshot {
   readonly checks: readonly GitLabReviewCheck[];
   readonly capabilities: GitLabReviewCapabilities;
   readonly threadCapabilities: ReadonlyMap<string, GitLabNativeThreadCapabilities>;
+  readonly renderedNotes: ReadonlyMap<string, GitLabRenderedNote>;
   readonly approvalsRequired: number | null;
   readonly approvalsLeft: number | null;
   readonly state: GitLabMergeRequestState;
@@ -81,6 +96,8 @@ const MAX_JSON_BYTES = 12 * 1024 * 1024;
 const MAX_PAGES = 100;
 const MAX_RECORDS = 20_000;
 const SHA = /^[0-9a-f]{40,64}$/i;
+const MAX_RENDERED_NOTE_CHARACTERS = 256 * 1024;
+const MAX_RENDERED_SNAPSHOT_CHARACTERS = 1024 * 1024;
 
 function record(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -148,17 +165,20 @@ function noteOf(value: unknown, subject: ProviderReviewSubject): ProviderReviewC
   };
 }
 
-export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSubject): {
+export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSubject, renderedScope?: GitLabRenderedNoteScope): {
   readonly threads: readonly ProviderReviewThread[];
   readonly comments: readonly ProviderReviewComment[];
   readonly events: readonly GitLabReviewEvent[];
   readonly threadCapabilities: ReadonlyMap<string, GitLabNativeThreadCapabilities>;
+  readonly renderedNotes: ReadonlyMap<string, GitLabRenderedNote>;
 } {
   if (!Array.isArray(value) || value.length > MAX_RECORDS) throw new GitLabReviewError('GitLab returned an invalid discussion list.');
   const threads: ProviderReviewThread[] = [];
   const comments: ProviderReviewComment[] = [];
   const events: GitLabReviewEvent[] = [];
   const threadCapabilities = new Map<string, GitLabNativeThreadCapabilities>();
+  const renderedNotes = new Map<string, GitLabRenderedNote>();
+  let renderedCharacters = 0;
   const seenNotes = new Set<string>();
   const seenDiscussions = new Set<string>();
   let noteCount = 0;
@@ -193,6 +213,18 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
       if (seenNotes.has(parsed.id)) throw new GitLabReviewError('GitLab returned a duplicate note.');
       seenNotes.add(parsed.id);
       notes.push(parsed);
+      // Optional presentation is eligible only under independently fetched MR/project identity.
+      const expectedUrl = `${subject.origin}/${subject.repository}/-/merge_requests/${subject.id}#${parsed.anchor}`;
+      if (renderedScope !== undefined && nativeId(renderedScope.projectId) === renderedScope.projectId && nativeId(renderedScope.noteableId) === renderedScope.noteableId
+        && subject.provider === 'gitlab' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(subject.headSha)
+        && note.system === false && note.noteable_type === 'MergeRequest' && nativeId(note.project_id) === renderedScope.projectId
+        && nativeId(note.noteable_id) === renderedScope.noteableId && nativeId(note.noteable_iid) === subject.id
+        && note.noteable_note_url === expectedUrl && parsed.url === expectedUrl
+        && typeof note.note_html === 'string' && note.note_html.trim() !== '' && note.note_html.length <= MAX_RENDERED_NOTE_CHARACTERS
+        && renderedCharacters + note.note_html.length <= MAX_RENDERED_SNAPSHOT_CHARACTERS) {
+        renderedCharacters += note.note_html.length;
+        renderedNotes.set(parsed.id, { subject: { ...subject }, ...renderedScope, comment: { ...parsed, author: { ...parsed.author } }, html: note.note_html });
+      }
       const permissions = record(note.current_user) ? note.current_user : null;
       const capabilities: GitLabNativeNoteCapabilities = {
         noteId: parsed.id,
@@ -235,7 +267,7 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
       ...(typeof line === 'number' && Number.isSafeInteger(line) && line > 0 ? { line } : {}),
     });
   }
-  return { threads, comments, events, threadCapabilities };
+  return { threads, comments, events, threadCapabilities, renderedNotes };
 }
 
 function retryAfter(value: string | null): number | null {
@@ -392,7 +424,10 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   signal.throwIfAborted();
   const discussionResult = results[0];
   if (discussionResult?.status !== 'fulfilled') throw discussionResult?.status === 'rejected' ? discussionResult.reason : new GitLabReviewError('GitLab discussions are unavailable.');
-  const parsed = parseGitLabDiscussions(discussionResult.value, subject);
+  const projectId = nativeId(mr.project_id);
+  const noteableId = nativeId(mr.id);
+  const parsed = parseGitLabDiscussions(discussionResult.value, subject,
+    projectId !== null && noteableId !== null && mr.web_url === base ? { projectId, noteableId } : undefined);
   const unavailable: { area: string; reason: string }[] = [];
   const unknownThreadState = parsed.threads.some((thread) => thread.stateKnown !== true);
   if (unknownThreadState) unavailable.push({ area: 'thread state', reason: 'GitLab did not supply the native resolution or active state of every discussion.' });
@@ -475,6 +510,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
     checks,
     capabilities: gitLabReviewCapabilities(doc, approvals),
     threadCapabilities: parsed.threadCapabilities,
+    renderedNotes: parsed.renderedNotes,
     approvalsRequired: approvals === null ? null : nonnegative(approvals.approvals_required),
     approvalsLeft: approvals === null ? null : nonnegative(approvals.approvals_left),
     state,

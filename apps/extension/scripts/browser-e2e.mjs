@@ -16,6 +16,7 @@ import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { observeGreptileCommandRequest, verifyGreptileCommand } from './greptile-command-acceptance.mjs';
+import { captureGitLabRenderedNote, verifyGitLabRenderedNotes } from './gitlab-rendered-notes-acceptance.mjs';
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
@@ -1517,13 +1518,14 @@ function observeGitLabBotFixture(page, item) {
     if (response.status() !== 200) return;
     void response.json().then((value) => {
       if (metadata) {
-        if (evidence.metadata.length < 12) evidence.metadata.push({ url: safeUrl(url.href), iid: value.iid, state: value.state, sha: value.sha, diffHead: value.diff_refs?.head_sha, webUrl: value.web_url });
+        if (evidence.metadata.length < 12) evidence.metadata.push({ url: safeUrl(url.href), projectId: value.project_id, noteableId: value.id, iid: value.iid, state: value.state, sha: value.sha, diffHead: value.diff_refs?.head_sha, webUrl: value.web_url });
       } else if (Array.isArray(value) && evidence.discussions.length < 12) {
         const selected = value.flatMap((thread) => (thread.notes ?? []).filter((note) => GL_BOT_NOTE_IDS.includes(String(note.id))).map((note) => {
           const body = typeof note.note === 'string' ? note.note : '';
           return { id: String(note.id), discussionId: thread.id, system: note.system, author: { id: String(note.author?.id), username: note.author?.username, bot: note.author?.bot, userType: note.author?.user_type }, url: note.noteable_note_url,
             resolved: thread.resolved, active: thread.active, path: thread.position?.new_path ?? thread.position?.old_path ?? thread.diff_file?.new_path ?? thread.diff_file?.old_path, line: thread.position?.new_line ?? thread.position?.old_line,
             createdAt: note.created_at, updatedAt: note.updated_at, bodySha256: createHash('sha256').update(body).digest('hex'),
+            rendered: captureGitLabRenderedNote(note),
             suggestedFix: String(note.id) === '3381334872' ? gitLabCopyFixOf(body) : null,
             summaryHeading: body.includes('<h3>Greptile Summary</h3>'), confidenceFive: body.includes('<h3>Confidence Score: 5/5</h3>'), safeToMerge: body.includes('Safe to merge'),
             reviewedCommit: /Last reviewed commit:[\s\S]*?\]\(https:\/\/gitlab\.com\/whitebox-aero\/whitebox\/-\/commit\/([a-f0-9]{40})\)/.exec(body)?.[1] ?? null };
@@ -1722,6 +1724,9 @@ async function verifyGitLabBot(page, item) {
   for (const finding of findings) { assert.equal(finding.state, 'resolved');assert.ok(finding.metadata?.includes(finding.sources.includes('note_3384406925') ? 'backend/poetry.lock:3739' : 'backend/pyproject.toml:56')); }
   item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };
   await gitLabBotBodyEvidence(page, item);item.trustedArtifacts = item.richBody.artifacts;
+  await verifyGitLabRenderedNotes(page, item, { fixture: captured, head: GL_BOT_HEAD, extensionId,
+    readDigest: () => gitLabBotDigest(page), assertSources: assertGitLabBotSources,
+    readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), openReviewAncestors, poll, capture });
   await verifyGitLabItemCopies(page, item, { context: browser.defaultBrowserContext(), expectedFix: discussionPage.selected.find((source) => source.id === '3381334872')?.suggestedFix, expectedAuthor: discussionPage.selected.find((source) => source.id === '3381334872')?.author.username, openReviewAncestors, poll, safeUrl });
   await verifyGreptileCommand(page, item, { context: browser.defaultBrowserContext(), fixture: captured, head: GL_BOT_HEAD,
     readDigest: () => gitLabBotDigest(page), assertSources: assertGitLabBotSources,
