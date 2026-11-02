@@ -2250,3 +2250,7 @@ Qualify both native link media and effective stylesheet media through loaded rea
 Only a real mouse drag supplies selection evidence, and unsupported copy remains explicitly unverified.
 Keep the complete original raw settings vector, change only the master flag, remove owned highlighting and test selection, close the native page, then restore exact original storage presence and value.
 Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
+
+The literal Bitbucket local-reviewed acceptance uses the existing public PR22 outdated human comment and already-issued review/commit responses, with no helper request or fabricated source identity.
+A local mark on an already-outdated item preserves its native Outdated state and group while its explicit device-local notice survives a real reload and Undo removes only that mark.
+The case closes its provider page before restoring exact raw settings and local storage presence, and any observed review API write fails acceptance.
