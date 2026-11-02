@@ -1529,6 +1529,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
   PR whole-context acceptance opens Tests with actual End/Enter keyboard navigation and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
   Fixed preparation phases, boolean file/header hit checks and independent cleanup codes remain in the private receipt even if the outer runner suppresses exception text.
+  Browser-decoded PR API304 responses count as revalidation only after an earlier successful200 for the same URL/query fingerprint and body hash in that visit;
+  response-event order is preserved before reading bodies.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
