@@ -7,6 +7,9 @@ interface Actor {
   readonly workspace: string;
 }
 interface Scope extends Actor { readonly url: string }
+interface InitialRendering extends Scope { closed: boolean }
+// Observer recreation cannot rearm stale native-On markup after this document was invalidated.
+const initialRenderings = new WeakMap<Document, InitialRendering>();
 interface Candidate {
   readonly dialog: HTMLElement;
   readonly form: HTMLFormElement;
@@ -22,6 +25,8 @@ export interface NativeSyntaxPreferenceEnvironment {
 
 const UNTRUSTED = '[data-geld-ui],[data-testid="comment"],[data-testid="comment-content"],[data-qa="pr-activity"],[data-qa="pull-request-description"]';
 const BLOCKED = '[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"],[aria-readonly="true"],fieldset[disabled]';
+const SETTINGS_FIELD = 'input[id="diff-settings-syntax-highlighting-toggle"]';
+const SETTINGS_SURFACE = `dialog,[role="dialog"],${SETTINGS_FIELD}`;
 
 function native(node: Element): boolean { return node.isConnected && node.closest(UNTRUSTED) === null; }
 function visible(node: HTMLElement): boolean {
@@ -114,6 +119,7 @@ export class BitbucketNativeSyntaxPreference {
   }
 
   private invalidate(): void {
+    const initial = initialRenderings.get(this.doc);if (initial !== undefined) initial.closed = true;
     this.cancelWork();this.opener = null;this.openerParent = null;this.openerTab = null;this.candidate = null;this.capability = 'unknown';this.changed('unknown');
   }
 
@@ -140,8 +146,9 @@ export class BitbucketNativeSyntaxPreference {
 
   private check(): void {
     if (!this.current()) { this.clear();return; }
-    if (this.opener === null && this.capability === 'unknown') return;
     const dialogs = this.dialogs();const candidate = this.candidate;
+    if (dialogs.length > 0 || [...this.doc.querySelectorAll(SETTINGS_FIELD)].some(native)) { const initial = initialRenderings.get(this.doc);if (initial !== undefined && !initial.closed) { initial.closed = true;this.changed('unknown'); } }
+    if (this.opener === null && this.capability === 'unknown') return;
     if (candidate !== null) {
       if (!candidate.dialog.isConnected) {
         if (candidate.cancelled && candidate.frames >= 2 && dialogs.length === 0 && this.sameOpener()) {
@@ -158,6 +165,26 @@ export class BitbucketNativeSyntaxPreference {
       this.candidate = this.readCandidate(dialog);
       if (dialog.querySelectorAll('input[id="diff-settings-syntax-highlighting-toggle"]').length > 1 || dialog.querySelectorAll('form').length > 1) this.invalidate();
     }
+  }
+
+  private readonly mutations = (records: readonly MutationRecord[]): void => {
+    const view = this.doc.defaultView;const initial = initialRenderings.get(this.doc);
+    if (view !== null && initial !== undefined && !initial.closed && records.some((record) => {
+      if (!(record.target instanceof view.Element) || record.target.closest(UNTRUSTED) !== null) return false;
+      if (record.type === 'attributes') return record.attributeName === 'role' && (record.oldValue === 'dialog' || record.target.getAttribute('role') === 'dialog')
+        || record.attributeName === 'id' && (record.oldValue === 'diff-settings-syntax-highlighting-toggle' || record.target.matches(SETTINGS_FIELD));
+      return [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof view.Element && node.closest(UNTRUSTED) === null
+        && (node.matches(SETTINGS_SURFACE) || node.querySelector(SETTINGS_SURFACE) !== null));
+    })) {
+      initial.closed = true;if (this.capability === 'unknown') this.changed('unknown');
+    }
+    this.check();
+  };
+
+  private checkObserved(): void {
+    const records = this.observer?.takeRecords();
+    if (records !== undefined && records.length > 0) this.mutations(records);
+    else this.check();
   }
 
   private readonly listen = (event: Event): void => {
@@ -196,15 +223,23 @@ export class BitbucketNativeSyntaxPreference {
     if (page?.kind !== 'diff' || actor === null || this.doc.hidden) { this.clear();return 'unknown'; }
     if (!this.current()) {
       this.clear();this.scope = { ...actor, url: this.doc.URL };
+      if (!initialRenderings.has(this.doc)) initialRenderings.set(this.doc, { ...this.scope, closed: false });
       const view = this.doc.defaultView;
       if (view === null) { this.clear();return 'unknown'; }
       for (const event of ['click', 'input', 'change', 'submit', 'keydown']) this.doc.addEventListener(event, this.listen, true);
       this.doc.addEventListener('visibilitychange', this.navigation);
       for (const event of ['popstate', 'hashchange', 'wxt:locationchange', 'pagehide']) view.addEventListener(event, this.navigation);
-      this.observer = new view.MutationObserver(() => this.check());
-      this.observer.observe(this.doc.documentElement, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class', 'id', 'name', 'value', 'type', 'checked', 'disabled', 'readonly', 'hidden', 'inert', 'tabindex', 'aria-live', 'aria-label', 'aria-labelledby', 'aria-hidden', 'aria-disabled', 'aria-readonly', 'data-testid', 'data-current-user', 'data-target-workspace-uuid'] });
+      this.observer = new view.MutationObserver(this.mutations);
+      this.observer.observe(this.doc.documentElement, { childList: true, characterData: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'id', 'role', 'name', 'value', 'type', 'checked', 'disabled', 'readonly', 'hidden', 'inert', 'tabindex', 'aria-live', 'aria-label', 'aria-labelledby', 'aria-hidden', 'aria-disabled', 'aria-readonly', 'data-testid', 'data-current-user', 'data-target-workspace-uuid'] });
     }
-    this.check();return this.capability;
+    this.checkObserved();return this.capability;
+  }
+
+  allowsInitialRenderedOn(): boolean {
+    const initial = initialRenderings.get(this.doc);
+    this.checkObserved();
+    return this.capability === 'unknown' && this.current() && !this.doc.hidden && initial !== undefined && !initial.closed
+      && this.doc.URL === initial.url && this.scope?.bootstrap === initial.bootstrap && this.scope.user === initial.user && this.scope.workspace === initial.workspace && this.dialogs().length === 0;
   }
 
   clear(): void {
