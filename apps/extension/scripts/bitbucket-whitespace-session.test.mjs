@@ -247,6 +247,7 @@ test('missing native render ticks fail finitely and still close before raw resto
 
 const CONNECT = 'https://bitbucket.org/!api/internal/workspaces/%7B02b941e3-cfaa-40f9-9a58-cec53e20bdc3%7D/connect/modules';
 const APP = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
+const NEW_APP = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.5ff3a9b1c1755f86e976fb46708c460744f6ad56.js';
 function connectRequest(options = {}) {
   const target = options.target ?? { type: 'repository', full_name: 'atlassian/bitbucket-upload-file', name: 'bitbucket-upload-file', links: { self: { href: API.slice(0, -1) } } };
   const body = options.body ?? JSON.stringify([{ target, modules: ['webItems:org.bitbucket.repository.navigation'] }]);
@@ -336,6 +337,48 @@ function startupRequest(kind, options = {}) {
   return connectRequest({ url: STARTUP_PATHS[kind], body,
     headers: { accept: kind === 'commit_status' ? '*/*' : 'application/json', 'content-type': kind === 'commit_status' ? 'text/plain;charset=UTF-8' : 'application/json', 'x-requested-with': 'XMLHttpRequest', 'x-bitbucket-frontend': 'frontbucket' }, ...options });
 }
+for (const app of [APP, NEW_APP]) test('both exact audited native app revisions qualify all four metadata reads: ' + app.slice(-43), () => {
+  const requests = [connectRequest({ frames: [{ url: app }] }), ...['signature', 'commit_status', 'run_eligibility'].map(kind => startupRequest(kind, { frames: [{ url: app }] }))];
+  for (const request of requests) assert.equal(bitbucketNativeReadPost(request).allowed, true);
+  assert.equal(bitbucketNativeReadPost(startupRequest('run_eligibility', { frames: [{ url: app }], body: '{"run":true}' })).allowed, false);
+});
+for (const app of [APP.replace(/app\.[^.]+/, 'app.' + '0'.repeat(40)), APP.replace('https:', 'http:'), APP.replace('.net/', '.net.evil.test/'), APP.replace('https://', 'https://user:PRIVATE_PASSWORD@'), APP + '?PRIVATE_QUERY', APP + '#PRIVATE_FRAGMENT', APP + '.map', APP.replace('/assets/', '/PRIVATE_PATH/')]) test('unknown and lookalike native app URLs do not qualify read POSTs: ' + app.slice(-45), () => {
+  const result = bitbucketNativeReadPost(startupRequest('signature', { frames: [{ url: app, functionName: 'PRIVATE_FUNCTION' }] }));
+  assert.equal(result.allowed, false);assert.equal(result.code, 'NATIVE_POST_INITIATOR');assert.equal(result.diagnostic.auditedMatch, false);
+  assert.equal(JSON.stringify(result).includes('PRIVATE_'), false);
+  assert.ok(result.diagnostic.nativeAppPaths.every(path => /^\/assets\/app\.[a-f0-9]{40}\.js$/.test(path)));
+});
+test('audited app mixed with any extension frame is denied and retains only safe initiator facts', async () => {
+  for (const frames of [[{ url: NEW_APP }, { url: 'chrome-extension://other/PRIVATE_SCRIPT.js' }], [{ url: 'chrome-extension://installed/PRIVATE_SCRIPT.js' }, { url: APP }]]) {
+    const request = startupRequest('signature', { frames }), result = bitbucketNativeReadPost(request);
+    assert.equal(result.allowed, false);assert.equal(result.diagnostic.auditedMatch, true);assert.equal(result.diagnostic.extensionPresent, true);assert.equal(JSON.stringify(result).includes('PRIVATE_'), false);
+  }
+  const request = connectRequest({ frames: [{ url: NEW_APP }] });request.initiator = () => ({ stack: { callFrames: [{ url: NEW_APP }], parent: { callFrames: [{ url: 'chrome-extension://other/PRIVATE_SCRIPT.js' }] } } });
+  const page = new EventEmitter(), progress = {}, abort = new AbortController();page.close = async () => {};
+  const observer = observeBitbucketWhitespace(page, progress, 'installed', abort);page.emit('request', request);
+  assert.equal(abort.signal.aborted, true);assert.equal(progress.blockedWrites[0].code, 'CONNECT_INITIATOR');
+  assert.deepEqual(progress.blockedWrites[0].diagnostic.nativeAppPaths, ['/assets/' + NEW_APP.split('/').at(-1)]);
+  assert.equal(progress.blockedWrites[0].diagnostic.extensionPresent, true);assert.equal(JSON.stringify(progress).includes('PRIVATE_'), false);await observer.dispose();
+});
+test('truncated initiator diagnostics retain the existing bounded lookup behavior', () => {
+  const request = startupRequest('signature', { frames: [{ url: NEW_APP }, ...Array.from({ length: 255 }, () => ({ url: 'https://bitbucket.org/PRIVATE_NAME' })), { url: 'chrome-extension://other/PRIVATE_SCRIPT' }] });
+  const captured = startupRequest('signature', { frames: request.initiator().stack.callFrames });
+  captured.initiator = () => ({ stack: { ...request.initiator().stack, callFrames: [{ url: 'chrome-extension://other/PRIVATE_SCRIPT' }, ...request.initiator().stack.callFrames] } });
+  const frames = bitbucketNativeReadPost(captured);assert.equal(frames.allowed, false);assert.equal(frames.diagnostic.framesTruncated, true);assert.equal(frames.diagnostic.auditedMatch, true);
+  assert.equal(bitbucketNativeReadPost(request).allowed, true);
+  let stack = { callFrames: [{ url: 'chrome-extension://other/PRIVATE_SCRIPT' }] };
+  for (let depth = 0; depth < 8; depth++) stack = { callFrames: depth === 7 ? [{ url: APP }] : [], parent: stack };
+  request.initiator = () => ({ stack });const deep = bitbucketNativeReadPost(request);
+  assert.equal(deep.allowed, true);
+  stack.callFrames.unshift({ url: 'chrome-extension://other/PRIVATE_SCRIPT' });const rejected = bitbucketNativeReadPost(request);
+  assert.equal(rejected.allowed, false);assert.equal(rejected.diagnostic.stackTruncated, true);assert.equal(JSON.stringify(rejected).includes('PRIVATE_'), false);
+});
+test('initiator diagnostics cap native app paths without exposing arbitrary frame details', () => {
+  const unknown = Array.from({ length: 6 }, (_, index) => ({ url: APP.replace(/app\.[^.]+/, 'app.' + String(index).padStart(40, '0')) }));
+  const result = bitbucketNativeReadPost(startupRequest('signature', { frames: [...unknown, { url: NEW_APP }, { url: 'chrome-extension://installed/PRIVATE_SCRIPT', functionName: 'PRIVATE_NAME' }] }));
+  assert.equal(result.allowed, false);assert.equal(result.diagnostic.nativeAppPaths.length, 4);assert.equal(result.diagnostic.appPathsTruncated, true);
+  assert.equal(result.diagnostic.auditedMatch, true);assert.equal(result.diagnostic.extensionPresent, true);assert.equal(JSON.stringify(result).includes('PRIVATE_'), false);
+});
 for (const kind of ['signature', 'commit_status', 'run_eligibility']) test('audited native startup ' + kind + ' POST is classified as metadata read', () => {
   const value = bitbucketNativeReadPost(startupRequest(kind));assert.equal(value.allowed, true);assert.equal(value.code, `AUDITED_${kind.toUpperCase()}_READ`);
 });

@@ -90,13 +90,29 @@ const requestOwner = (request, id) => {
   }
   return native ? 'native' : 'unknown';
 };
-const AUDITED_CONNECT_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
+const AUDITED_NATIVE_ASSETS = new Set([
+  'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js',
+  'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.5ff3a9b1c1755f86e976fb46708c460744f6ad56.js',
+]);
+const NATIVE_APP_ASSET = /^https:\/\/bbc-frontbucket-static\.prod-east\.frontend\.public\.atl-paas\.net(\/assets\/app\.[a-f0-9]{40}\.js)$/;
 const CONNECT_PATH = '/!api/internal/workspaces/{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}/connect/modules';
 
 function auditedNativeRequest(request) {
-  let stack = request.initiator?.()?.stack, audited = false, extension = false;
-  for (let depth = 0; stack && depth < 8; depth++, stack = stack.parent) for (const frame of (stack.callFrames ?? []).slice(0, 256)) { audited ||= frame.url === AUDITED_CONNECT_ASSET;extension ||= typeof frame.url === 'string' && frame.url.startsWith('chrome-extension://'); }
-  return audited && !extension && requestOwner(request, '__no_extension_id__') === 'native';
+  let stack = request.initiator?.()?.stack, auditedMatch = false, extensionPresent = false, framesTruncated = false, appPathsTruncated = false;
+  const nativeAppPaths = new Set();
+  for (let depth = 0; stack && depth < 8; depth++, stack = stack.parent) {
+    const frames = stack.callFrames ?? [];framesTruncated ||= frames.length > 256;
+    for (const frame of frames.slice(0, 256)) {
+      if (typeof frame.url !== 'string') continue;
+      auditedMatch ||= AUDITED_NATIVE_ASSETS.has(frame.url);
+      extensionPresent ||= frame.url.startsWith('chrome-extension://');
+      const path = NATIVE_APP_ASSET.exec(frame.url)?.[1];
+      if (path && !nativeAppPaths.has(path)) { if (nativeAppPaths.size < 4) nativeAppPaths.add(path);else appPathsTruncated = true; }
+    }
+  }
+  const stackTruncated = !!stack;
+  return { allowed: auditedMatch && !extensionPresent && requestOwner(request, '__no_extension_id__') === 'native',
+    diagnostic: { nativeAppPaths: [...nativeAppPaths], auditedMatch, extensionPresent, stackTruncated, framesTruncated, appPathsTruncated } };
 }
 
 /** The audited native Connect bulk lookup is a POST read, not a preference or review mutation. */
@@ -104,7 +120,8 @@ export function bitbucketConnectRead(request) {
   let url;try { url = new URL(request.url()); } catch { return { allowed: false, code: 'CONNECT_URL' }; }
   if (url.origin !== 'https://bitbucket.org' || url.username || url.password || url.hash || request.method() !== 'POST') return { allowed: false, code: 'CONNECT_TRANSPORT' };
   try { if (decodeURIComponent(url.pathname).toLowerCase() !== CONNECT_PATH) return { allowed: false, code: 'CONNECT_PATH' }; } catch { return { allowed: false, code: 'CONNECT_PATH' }; }
-  if (!auditedNativeRequest(request)) return { allowed: false, code: 'CONNECT_INITIATOR' };
+  const native = auditedNativeRequest(request);
+  if (!native.allowed) return { allowed: false, code: 'CONNECT_INITIATOR', diagnostic: native.diagnostic };
   const query = [...url.searchParams];
   if (query.length > 32 || query.some(([key, value]) => !/^(?:app_key|module_key)(?:\[\d{1,2}\])?$/.test(key) || !/^[a-zA-Z0-9_.:-]{1,200}$/.test(value))) return { allowed: false, code: 'CONNECT_QUERY' };
   const headers = request.headers?.() ?? {};
@@ -145,7 +162,8 @@ export function bitbucketNativeReadPost(request) {
     : path.toLowerCase() === '/!api/internal/repositories/{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}/{e763018c-1ab1-4d2d-ae2b-9feb70af3997}/pipelines-config/run-eligibility' ? 'run_eligibility' : null;
   if (kind === null) return { allowed: false, code: 'NATIVE_POST_PATH' };
   if (url.origin !== 'https://bitbucket.org' || url.username || url.password || url.hash || request.method() !== 'POST') return { allowed: false, code: 'NATIVE_POST_TRANSPORT' };
-  if (!auditedNativeRequest(request)) return { allowed: false, code: 'NATIVE_POST_INITIATOR' };
+  const native = auditedNativeRequest(request);
+  if (!native.allowed) return { allowed: false, code: 'NATIVE_POST_INITIATOR', diagnostic: native.diagnostic };
   const headers = request.headers?.() ?? {}, contentType = headers['content-type'] ?? '';
   if (headers['x-requested-with'] !== 'XMLHttpRequest' || headers['x-bitbucket-frontend'] !== 'frontbucket') return { allowed: false, code: 'NATIVE_POST_HEADERS' };
   const fields = '+*.commit_status.updated_on,+*.commit_status.description,+*.commit_status.name';
