@@ -1,0 +1,30 @@
+import {resolveSourceThreads} from '@/lib/finding-resolution';
+import {connection} from 'next/server';
+import {z} from 'zod';
+import {pullRefSchema} from '@geld/domain';
+import {providerFindings,findingFingerprint,sourceThreads} from '@geld/review/provider-findings';
+import {currentActor} from '@/lib/session';
+import {database} from '@/lib/db';
+import {providerClient} from '@/lib/providers';
+import {json,sameOrigin} from '@/lib/http';
+import {resourceDigest} from '@/lib/resource-digest';
+import {appendAudit} from '@/lib/audit';
+import {transaction} from '@/lib/transactions';
+import {auditedRoute} from '@/lib/request-audit';
+async function handle(request:Request):Promise<Response>{
+ await connection();if(!sameOrigin(request))return json({error:'Invalid request origin'},403);const actor=await currentActor();if(!actor)return json({error:'Sign in to resolve source threads'},401);
+ const input=z.object({ref:pullRefSchema,headSha:z.string(),itemId:z.string().max(200),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),key:z.string().uuid()}).safeParse(await request.json().catch(()=>null));if(!input.success)return json({error:'Invalid finding resolution'},400);const db=database();if(!db)return json({error:'Security records are unavailable'},503);
+ const client=await providerClient(input.data.ref.provider,input.data.ref.host,input.data.ref.owner);const pull=await client.pull(input.data.ref);if(!pull.ok||pull.value.headSha!==input.data.headSha)return json({error:'Reload the pull request before resolving'},409);
+ const[threads,comments]=await Promise.all([client.threads(input.data.ref),client.comments(input.data.ref)]);if(!threads.ok||!comments.ok)return json({error:'The complete source discussion could not be verified'},409);
+ const draft=providerFindings(threads.value,comments.value);const item=draft.items.find(item=>item.id===input.data.itemId);if(!item||await findingFingerprint(draft,item)!==input.data.fingerprint)return json({error:'These source comments changed. Reload them before resolving.'},409);
+ const ids=sourceThreads(draft,item).filter(id=>threads.value.some(thread=>thread.id===id&&!thread.resolved));if(!ids.length)return json({resolved:true,completed:[],remaining:[]});
+ if(ids.length>50)return json({error:'This item has too many source threads to resolve at once. Open the provider.'},400);
+ const claimed=await db.query('INSERT INTO mutation_keys(user_id,key) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING key',[actor.id,input.data.key]);if(!claimed.rows.length)return json({error:'This resolution was already attempted. Refresh the provider state before retrying.'},409);
+ const receipt=crypto.randomUUID();await db.query("INSERT INTO review_receipts(id,user_id,provider,resource_fingerprint,action,outcome) VALUES($1,$2,$3,$4,'findings.resolve','pending')",[receipt,actor.id,input.data.ref.provider,resourceDigest(input.data.ref)]);
+ const{completed,remaining}=await resolveSourceThreads({client,ref:input.data.ref,headSha:input.data.headSha,itemId:input.data.itemId,fingerprint:input.data.fingerprint,ids,originalThreads:threads.value});
+ await db.query('UPDATE review_receipts SET outcome=$2 WHERE id=$1',[receipt,remaining.length?'failure':'success']);
+ const scopes=z.array(z.object({id:z.string(),team_id:z.string()})).parse((await db.query('SELECT r.id,r.team_id FROM team_repos r JOIN team_members m ON m.team_id=r.team_id WHERE m.user_id=$1 AND r.provider=$2 AND r.host=$3 AND r.owner=$4 AND r.name=$5',[actor.id,input.data.ref.provider,input.data.ref.host,input.data.ref.owner,input.data.ref.repo])).rows);for(const scope of scopes)await transaction(db,sql=>appendAudit(sql,{teamId:scope.team_id,actorId:actor.id,action:'findings.resolve',resourceType:'repository',resourceId:scope.id,outcome:remaining.length?'failure':'success',after:{pull:input.data.ref.number,sourceThreads:ids.length,completed:completed.length,remaining:remaining.length}}));
+ await db.query('UPDATE mutation_keys SET state=$3 WHERE user_id=$1 AND key=$2',[actor.id,input.data.key,remaining.length?'failure':'success']);
+ return json({resolved:remaining.length===0,completed,remaining,...(remaining.length?{error:`${completed.length} source threads resolved. ${remaining.length} still need attention. Refresh before retrying.`}:{})},remaining.length?409:200);
+}
+export const POST=auditedRoute(handle,'findings.resolve');

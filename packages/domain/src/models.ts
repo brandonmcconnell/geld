@@ -65,6 +65,8 @@ export interface RepositorySummary {
 
 export interface ProviderComment {
   readonly id: string;
+  readonly databaseId?:number|undefined;
+  readonly createdAt?:string|undefined;
   readonly author: string;
   readonly body: string;
   readonly path: string | null;
