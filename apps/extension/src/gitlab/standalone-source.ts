@@ -2,6 +2,7 @@ import { describeRepository, parseUnifiedDiff, repositoryKey } from '@geld/core'
 import type { ProviderDiffResult, ProviderStandalonePage } from '../providers/types';
 import { record, SHA } from './page';
 import { gitLabMetadataCount, gitLabMetadataFiles, readGitLabDiffJson, readGitLabDiffResource } from './source';
+import { providerDiffSourceFacts } from '../providers/source-facts';
 
 function whitespace(page: ProviderStandalonePage): string | null {
   const value = new URL(page.diffPageUrl).searchParams.get('w');
@@ -72,5 +73,7 @@ export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, si
     const file = parseUnifiedDiff(content)[0];
     if (file !== undefined) patches.set(file.path, content);
   }
-  return { files, complete, patches, revision: page.kind === 'commit' ? `commit:${head}:w=${w ?? '0'}` : `compare:${page.targetProjectId ?? repository.path}:${base}..${head}:${page.straight ? 'straight' : 'merge-base'}:w=${w ?? '0'}` };
+  const newPaths = Array.isArray(metadata.diff_files) ? metadata.diff_files.flatMap((file: unknown) => record(file) && typeof file.new_path === 'string' && file.deleted_file !== true && file.submodule !== true ? [{ path: file.new_path, newPath: file.new_path }] : []) : [];
+  const sourceFacts = providerDiffSourceFacts(page, { kind: page.kind === 'commit' ? 'gitlab-commit' : 'gitlab-compare', headSha: head, baseSha: base }, newPaths);
+  return { files, complete, patches, ...(sourceFacts === null ? {} : { sourceFacts }), revision: page.kind === 'commit' ? `commit:${head}:w=${w ?? '0'}` : `compare:${page.targetProjectId ?? repository.path}:${base}..${head}:${page.straight ? 'straight' : 'merge-base'}:w=${w ?? '0'}` };
 }

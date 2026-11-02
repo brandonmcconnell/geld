@@ -1,5 +1,6 @@
 import { describeRepository } from '@geld/core';
 import type { ProviderPage, ProviderStandalonePage } from '../providers/types';
+import { providerNativeSourceElement } from '../providers/source-facts';
 
 const MERGE_REQUEST = /^\/(.+)\/-\/merge_requests\/([1-9]\d*)(?:\/(diffs|commits|pipelines))?\/?$/;
 export const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
@@ -58,12 +59,12 @@ function validRef(ref: string): boolean {
   return ref.length > 0 && ref.length <= 1024 && !/[\\\s\u0000-\u001f?#]/.test(ref) && !ref.includes('..');
 }
 
-function documentReviewVersion(url: URL, doc: Document, repository: string, number: string): Record<string, unknown> | null | false {
+function documentReviewVersion(url: URL, doc: Document, repository: string, number: string, knownVersion?: Record<string, unknown> | null): Record<string, unknown> | null | false {
   let current: URL;
   try { current = new URL(doc.location.href); } catch { return false; }
   const review = MERGE_REQUEST.exec(current.pathname);
   if (current.origin !== url.origin || review?.[1] !== repository || review[2] !== number) return false;
-  const version = selectedVersion(doc);
+  const version = knownVersion === undefined ? selectedVersion(doc) : knownVersion;
   const currentParams = selection(current);
   const targetParams = selection(url);
   for (const key of ['diff_id', 'start_sha', 'commit_id', 'only_context_commits'] as const) {
@@ -115,7 +116,7 @@ function standalonePage(url: URL, doc: Document): ProviderStandalonePage | null 
   return { provider: 'gitlab', repository, kind: 'compare', from, to, straight, ...(project === null ? {} : { targetProjectId: project }), headSha, url: base, diffPageUrl: `${base}${query}`, diffUrl: diff.href, version: `compare:${from}:${to}:${straight}:${project ?? ''}|${options}` };
 }
 
-export function describeGitLabPage(url: URL, doc: Document): ProviderPage | null {
+function describePage(url: URL, doc: Document, knownVersion?: Record<string, unknown> | null): ProviderPage | null {
   if (url.protocol !== 'https:' || doc.querySelector('form#new_user[action*="sign_in"]') !== null) return null;
   const match = MERGE_REQUEST.exec(url.pathname);
   if (match === null) return standalonePage(url, doc);
@@ -124,7 +125,7 @@ export function describeGitLabPage(url: URL, doc: Document): ProviderPage | null
   if (repository === undefined || number === undefined || repository.split('/').some((part) => !part || part === '.' || part === '..')) return null;
   const base = `${url.origin}/${repository}/-/merge_requests/${number}`;
   const params = selection(url);
-  const documentVersion = documentReviewVersion(url, doc, repository, number);
+  const documentVersion = documentReviewVersion(url, doc, repository, number, knownVersion);
   const version = documentVersion === false ? null : documentVersion;
   const canReadLatestHead = documentVersion !== false && !params.has('diff_id') && !params.has('start_sha') && !params.has('commit_id');
   if (!params.has('diff_id') && !params.has('commit_id') && typeof version?.id === 'number') params.set('diff_id', String(version.id));
@@ -143,4 +144,22 @@ export function describeGitLabPage(url: URL, doc: Document): ProviderPage | null
     headSha,
     version: [params.toString(), headSha ?? 'latest'].join('|'),
   };
+}
+
+export function describeGitLabPage(url: URL, doc: Document): ProviderPage | null { return describePage(url, doc); }
+
+export function readGitLabPageFrame(doc: Document, appRoot: HTMLElement): { readonly page: ProviderPage; readonly appData: Record<string, unknown>; readonly sourceVersion: Record<string, unknown> | null; readonly url: string; readonly serialized: string | null } | null {
+  const apps = [...doc.querySelectorAll('[data-rapid-diffs][data-app-data]')].filter(providerNativeSourceElement);
+  if (apps.length !== 1 || apps[0] !== appRoot || !appRoot.isConnected) return null;
+  const serialized = appRoot.getAttribute('data-app-data');
+  const appData = jsonAttribute(appRoot, 'data-app-data');
+  if (appData === null) return null;
+  const versions = record(appData.versions) ? appData.versions : null;
+  const sources = versions !== null && Array.isArray(versions.source_versions) ? versions.source_versions.filter((entry: unknown) => record(entry) && entry.selected === true) : [];
+  const candidate: unknown = sources.length === 1 ? sources[0] : null;
+  const sourceVersion = record(candidate) ? candidate : null;
+  const url = doc.URL;
+  let page: ProviderPage | null;
+  try { page = describePage(new URL(url), doc, sourceVersion); } catch { return null; }
+  return page === null ? null : { page, appData, sourceVersion, url, serialized };
 }

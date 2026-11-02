@@ -34,6 +34,8 @@ it('counts the full public MR and uses immutable compare refs because MR .diff i
   expect(result.patches?.size).toBe(1);
   expect(String(request.mock.calls[2]?.[0])).toBe(`https://gitlab.com/gitlab-org/gitlab/-/compare/${BASE}...${HEAD}?format=diff&straight=true`);
   expect(request.mock.calls.every((call) => call[1]?.signal === signal)).toBe(true);
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(result.sourceFacts).toMatchObject({ comparison: { kind: 'gitlab-review', headSha: HEAD, baseSha: BASE, diffId: '2158495265', projectPath: 'gitlab-org/gitlab' }, newPaths: [{ path: result.files[0]?.path, newPath: result.files[0]?.path }] });
 });
 
 it('never treats a truncated patch, overflow or missing metadata as a complete zero-file change', async () => {
@@ -88,4 +90,14 @@ it('pins a selected single commit and verifies metadata identified that commit',
 it('passes GitLab Retry-After through to the shared provider queue', async () => {
   vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 429, headers: { 'retry-after': '35' } })));
   await expect(fetchGitLabDiff(page, new AbortController().signal)).rejects.toMatchObject({ retryAfter: '35' });
+});
+
+it('retains an independently selected merge target without fetching its raw file or using it as the selected source', async () => {
+  const merge = 'c'.repeat(40);
+  const request = replies(metadata, raw, { ...versions, target_versions: [{ id: 999, selected: true, head_sha: merge, start_sha: BASE, is_merge_head: true }] });
+  const result = await fetchGitLabDiff(page, new AbortController().signal);
+  expect(result.sourceFacts?.comparison).toMatchObject({ headSha: HEAD, target: { id: '999', headSha: merge, mergeHead: true } });
+  expect(result.revision).toContain(HEAD);
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(String(request.mock.calls[2]?.[0])).toBe(`https://gitlab.com/gitlab-org/gitlab/-/compare/${BASE}...${HEAD}?format=diff&straight=true`);
 });

@@ -1,5 +1,6 @@
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView, ProviderHeaderTarget, ProviderTreeEntry } from '../providers/types';
 import { describeBitbucketPage, describeBitbucketProviderPage } from './page';
+import { readBitbucketSourceFrame } from './source-witness';
 
 function native<T extends Element>(nodes: Iterable<T>): T[] {
   return [...nodes].filter((node) => node.closest('[data-geld-ui]') === null);
@@ -116,7 +117,7 @@ export function readBitbucketDiff(doc: Document): ProviderDiffView | null {
   const ownsStats = inner !== null && inner !== undefined && native(inner.querySelectorAll('h5')).some((heading) => heading.textContent?.trim() === 'Lines updated' && heading.closest('ul') === null);
   const ownsToolbar = inner !== null && inner !== undefined && native(inner.querySelectorAll('button')).some((button) => ['Filter files', 'Search changes'].includes(button.textContent?.trim() ?? '') && button.closest('ul') === null);
   const treeHost = inner?.parentElement === treeRoot && ownsStats && ownsToolbar ? inner : treeRoot;
-  return { kind: 'bitbucket-cloud', container, entries, tree, treeHost: treeHost ?? null, treeContainer, filteredPaths, virtualized: false };
+  return { kind: 'bitbucket-cloud', readNewSourceFrame: () => readBitbucketSourceFrame(doc, container), container, entries, tree, treeHost: treeHost ?? null, treeContainer, filteredPaths, virtualized: false };
 }
 
 export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTarget[] {

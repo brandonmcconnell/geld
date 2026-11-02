@@ -2,6 +2,7 @@ import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView, ProviderHea
 import { describeGitLabPage, jsonAttribute } from './page';
 import { gitLabPathNavigator } from './navigation';
 import { isProviderReviewPage } from '../providers/types';
+import { readGitLabSourceFrame } from './source-witness';
 
 export { gitLabListRows } from './list-surfaces';
 
@@ -134,6 +135,7 @@ export function readGitLabDiff(doc: Document): ProviderDiffView | null {
   const wrappers = rapid === null ? null : streamWrappers(container, entries);
   return {
     kind: rapid !== null ? 'gitlab-rapid' : 'gitlab-classic',
+    ...(rapid === null ? {} : { readNewSourceFrame: () => readGitLabSourceFrame(doc, rapid) }),
     container,
     ...(wrappers === null || wrappers.length === 0 ? {} : {
       groupingWrappers: wrappers,

@@ -2,6 +2,8 @@ import type { FileStats } from '@geld/core';
 import { parseUnifiedDiff } from '@geld/core';
 import { looksLikeHtml } from '../lib/http';
 import type { ProviderCommitPage, ProviderDiffResult, ProviderReviewPage } from '../providers/types';
+import { providerDiffSourceFacts } from '../providers/source-facts';
+import type { ProviderNewPathFact } from '../providers/source-facts';
 import { bitbucketTransport, BitbucketTransportError, canonicalBitbucketApiUrl } from './transport';
 import type { BitbucketTransport } from './transport';
 
@@ -46,6 +48,7 @@ export interface BitbucketPullRequest {
   readonly headSha: string;
   readonly baseSha: string;
   readonly sourceRepository: string;
+  readonly sourceRepositoryExplicit?: boolean;
   readonly author: BitbucketAuthor | null;
   readonly participants: readonly BitbucketParticipant[];
 }
@@ -190,7 +193,7 @@ function parsePullRequest(value: unknown, targetRepository: string): BitbucketPu
   const source = record(pr.source);
   const sourceRepository = source.repository === undefined || source.repository === null ? targetRepository : string(record(source.repository).full_name);
   apiRepositoryPath(sourceRepository);
-  return { id: integer(pr.id), title: string(pr.title), state, headSha: commit(pr.source), baseSha: commit(pr.destination), sourceRepository, author: author(pr.author), participants };
+  return { id: integer(pr.id), title: string(pr.title), state, headSha: commit(pr.source), baseSha: commit(pr.destination), sourceRepository, sourceRepositoryExplicit: source.repository !== undefined && source.repository !== null, author: author(pr.author), participants };
 }
 
 function parseDiffstat(value: unknown): FileStats {
@@ -425,11 +428,12 @@ export class BitbucketClient {
       if (resource === 'diffstat') url.searchParams.set('pagelen', '100');
       return url;
     };
-    const result = await this.diffFiles(comparison('diff'), comparison('diffstat'), signal);
+    const { newPaths, ...result } = await this.diffFiles(comparison('diff'), comparison('diffstat'), signal);
     const after = await this.pullRequest(signal);
     if (before.headSha !== after.headSha || before.baseSha !== after.baseSha || before.sourceRepository !== after.sourceRepository) throw new BitbucketApiError('changed', 'Bitbucket changed the review while its diff was loading.');
     if (page.headSha !== null && page.headSha !== before.headSha) throw new BitbucketApiError('changed', 'Bitbucket review head changed.');
-    return { ...result, revision: `${before.baseSha}..${before.headSha}` };
+    const sourceFacts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: before.headSha.toLowerCase(), baseSha: before.baseSha.toLowerCase(), sourceRepository: before.sourceRepositoryExplicit === true && after.sourceRepositoryExplicit === true ? before.sourceRepository : null, topic: true }, newPaths);
+    return { ...result, revision: `${before.baseSha}..${before.headSha}`, ...(sourceFacts === null ? {} : { sourceFacts }) };
   }
 
   private async commitDiff(page: ProviderCommitPage, signal: AbortSignal): Promise<ProviderDiffResult> {
@@ -445,14 +449,20 @@ export class BitbucketClient {
     if (page.headSha !== null && head !== page.headSha.toLowerCase()) throw new BitbucketApiError('changed', 'Bitbucket selected commit changed.');
     const stats = new URL(`${API_ORIGIN}${this.repositoryPath}/diffstat/${head}`);
     stats.searchParams.set('pagelen', '100');
-    const result = await this.diffFiles(new URL(`${API_ORIGIN}${this.repositoryPath}/diff/${head}`), stats, signal);
+    const { newPaths, ...result } = await this.diffFiles(new URL(`${API_ORIGIN}${this.repositoryPath}/diff/${head}`), stats, signal);
     if (!FULL_COMMIT.test(page.ref) && await resolve() !== head) throw new BitbucketApiError('changed', 'Bitbucket commit reference changed while its diff was loading.');
-    return { ...result, revision: `commit:${head}` };
+    const sourceFacts = providerDiffSourceFacts(page, { kind: 'bitbucket-commit', headSha: head, baseSha: null }, newPaths);
+    return { ...result, revision: `commit:${head}`, ...(sourceFacts === null ? {} : { sourceFacts }) };
   }
 
-  private async diffFiles(diff: URL, diffstat: URL, signal: AbortSignal): Promise<Omit<ProviderDiffResult, 'revision'>> {
+  private async diffFiles(diff: URL, diffstat: URL, signal: AbortSignal): Promise<Omit<ProviderDiffResult, 'revision'> & { readonly newPaths: readonly ProviderNewPathFact[] }> {
+    const newPaths: ProviderNewPathFact[] = [];
     const [stats, response] = await Promise.all([
-      this.collection('diffstat', parseDiffstat, signal, diffstat),
+      this.collection('diffstat', (value) => {
+        const file = parseDiffstat(value);
+        if (isRecord(value) && isRecord(value.new) && typeof value.new.path === 'string' && file.status !== 'deleted') newPaths.push({ path: file.path, newPath: value.new.path });
+        return file;
+      }, signal, diffstat),
       this.response(diff, signal, true),
     ]);
     const patch = await boundedText(response, MAX_DIFF_BYTES);
@@ -475,6 +485,6 @@ export class BitbucketClient {
       const file = parseUnifiedDiff(part)[0];
       if (file !== undefined && paths.has(file.path)) patches.set(file.path, part);
     }
-    return { files, complete, patches };
+    return { files, complete, patches, newPaths };
   }
 }
