@@ -6,3 +6,5 @@
 /greptile.json           @brandonmcconnell
 /.github/CODEOWNERS      @brandonmcconnell
 /.github/workflows/      @brandonmcconnell
+/CLA.md                  @brandonmcconnell
+/scripts/cla.mjs         @brandonmcconnell
