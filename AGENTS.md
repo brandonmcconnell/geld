@@ -2072,3 +2072,16 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
 - **An ARIA-blocked tab field is not automatically a read-only combobox**: opener-only diagnostics split self and ancestor aria-disabled/aria-readonly booleans and exact tab id/name/type/role/inputmode/listbox matches without relaxing any eligibility guard.
   Fixed label association and hidden-companion ancestry checks contain only booleans/counts, with no arbitrary attributes, label text, field values or checkbox state.
   Historical native13-field PR captures show a self aria-readonly non-searchable tab combobox, but the later12-field standalone rejection reports only a combined ARIA blocker until its own precise diagnostics are observed.
+
+Provider runner image contexts are generated offline from one full reviewed commit, with an independently verified Git commit object/tree, byte-identical esbuild output and an explicit reviewed official Node base digest.
+Never send a full working tree to Docker: only the allowlisted bundle, unchanged license/notice bytes, corresponding-source archives, commit object and provenance are copied under `/geld`.
+The retained Zod4.5.4 source tar is bound to the frozen-lock SHA512 and original MIT notice, and unknown bundled dependencies or versions fail until reviewed.
+Offline rebuilding still requires the declared frozen build dependencies installed or cached, rather than a claim that all build tools are shipped.
+The sole reviewed tracked alias `.cursor/skills/github-surface` has Git120000 blob `7bdab2e33869af42ef1a4d5c1a0664a37523a4bc` and target `../../.claude/skills/github-surface`: preserve it inertly in source/tree verification but never materialize or follow it, and reject other archive or selected-input/output links.
+Source-only rebuilding checks the supplied raw commit hash and reconstructed tree before using delivered source, so missing `.git` metadata cannot turn a supplied source label into authority.
+A local image ID and saved tar remain local artifacts, with no implied published registry digest or authenticated producer-write acceptance.
+
+Provider context source verification must agree with actual extraction: accept only USTAR `ustar\0`/`00`, the initial global Git comment and interpreted local PAX path, and reject global paths, size/link/sparse overrides and unknown keys.
+A PAX size override previously let the verifier hash34523 LICENSE bytes while GNU tar extracted34522, and a V7 prefix previously let the verifier retain a Git path while tar listed a root basename.
+Explicit repository reads use `--no-lazy-fetch`, `GIT_NO_LAZY_FETCH=1`, disabled remote protocols, fixed `tar.umask=0022` and no host `core.attributesFile`, so missing promised objects fail locally and host umasks do not vary accepted context bytes.
+The preparer does not copy host credential/config files or serialize environment values, rather than claiming that Git never reads host configuration.
