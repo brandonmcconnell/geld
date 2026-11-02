@@ -15,11 +15,13 @@ function state() {
     files: F.paths.map((path, i) => ({ path, anchor: String(i).repeat(40), head: T, mounted: true, rows: 1, sha256: 'a'.repeat(64), viewed: { checked: false, disabled: true } })) };
 }
 function evidence() {
-  return { responses: [{ kind: 'versions', status: 'projected', projection: { source: { selectedCount: 1, values: [{ id: F.version, headSha: F.head }] }, target: { selectedCount: 1, values: [{ id: '2159233785', headSha: T }] } } },
-    { kind: 'metadata', status: 'projected', projection: { projectPath: 'gitlab-org/gitlab', diffId: F.version, inventory: { state: 'observed', scanComplete: true, total: 3, uniqueNewPaths: 3, size: 3, realSize: 3, overflow: false, paths: F.paths.map((newPath) => ({ newPath, deleted: false, submodule: false })) } } }] };
+  return { responses: [{ id: 'r4', kind: 'versions', status: 'projected', httpStatus: 200, selectionRedacted: false, selection: { diff_id: F.version }, url: `https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/versions?diff_id=${F.version}`, projection: { source: { state: 'observed', selectedCount: 1, values: [{ id: F.version, headSha: F.head }] }, target: { state: 'observed', selectedCount: 1, values: [{ id: '2159233785', headSha: T, startSha: 'e'.repeat(40), mergeHead: true }] } } },
+    { id: 'r2', kind: 'metadata', status: 'projected', httpStatus: 200, selectionRedacted: false, selection: { diff_id: F.version }, url: `https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs_metadata.json?diff_id=${F.version}`, projection: { projectPath: 'gitlab-org/gitlab', diffId: F.version, inventory: { state: 'observed', scanComplete: true, total: 3, uniqueNewPaths: 3, size: 3, realSize: 3, overflow: false, paths: F.paths.map((newPath) => ({ newPath, deleted: false, submodule: false })) } } }] };
 }
 async function protocol(options = {}) {
   let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;let binds = 0;let acquisitionReads = 0;const order = [];const progress = {};const settingsProgress = {};
+  if (options.nativeSelection) { live.app = structuredClone(options.nativeSelection);live.files.forEach((file) => { file.head = live.app.targetVersions.find((version) => version.selected).head_sha; }); }
+  if (options.nativeMutation) options.nativeMutation(live);
   if (options.mountPending) live.files.forEach((file) => { file.mounted = false; });
   const original = { sync: { present: true, value: { enabled: false, keep: 'DO_NOT_RETAIN_SETTINGS_CANARY' } }, local: { present: false } };let storage = structuredClone(original);
   const settings = gitLabWhitespaceSettings({ progress: settingsProgress, read: async () => structuredClone(storage), write: async (value) => { writes++;storage = structuredClone(value);order.push(closed ? 'restore-after-close' : 'prepare'); } });
@@ -48,6 +50,10 @@ async function protocol(options = {}) {
       if (action === 'frame' && phase === 'toggle' && options.closedAfterToggle) live.open = false;
       if (options.snapshotExtras) { live.secret = 'DO_NOT_RETAIN_PROBE_CANARY';live.app.token = 'DO_NOT_RETAIN_BOOTSTRAP_CANARY';live.files[0].secret = 'DO_NOT_RETAIN_FILE_CANARY'; }
       if (options.pairingUnknown && acquisitionReads) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED', secret: 'DO_NOT_RETAIN_UNKNOWN_CANARY' };
+      if (options.scopeAfterMatch && acquisitionReads) {
+        if (options.scopeAfterMatch === 'target') { live.app.targetVersions[0].head_sha = 'b'.repeat(40);live.files.forEach((file) => { file.head = 'b'.repeat(40); }); }
+        else { live.qualified = false;live.code = options.scopeAfterMatch === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED'; }
+      }
       if (options.pairingTargetDrift && acquisitionReads) { live.app.targetVersions[0].head_sha = 'b'.repeat(40);live.files.forEach((file) => { file.head = 'b'.repeat(40); }); }
       if (options.unknown) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED' };
       return structuredClone(live);
@@ -62,6 +68,8 @@ async function protocol(options = {}) {
           return;
         }
         const desired = !live.checked;live.checked = desired;
+        if (options.closeImmediatelyAfterChange) live.open = false;
+        if (options.loseBindingAfterChange) live.bound = false;
         live.events.push({ kind: 'whitespace', type: 'change', trusted: !options.untrusted, checked: desired });
         observer.evidence.nonreads.push({ method: 'PUT', resource: 'https://gitlab.com/api/v4/user/preferences', status: 401, phase, provenance: 'unattributed_browser_request' });
         if (options.revert && phase === 'toggle') live.checked = !desired;
@@ -79,7 +87,7 @@ async function protocol(options = {}) {
       acquisitionReads++;
       if (options.acquisitionFailure) throw Error('DO_NOT_RETAIN_ACQUISITION_CANARY');
       if (options.noAcquisition || options.pairingUnknown || options.pairingTargetDrift) return {};
-      const value = evidence();
+      const value = options.acquisitionEvidence ? structuredClone(options.acquisitionEvidence) : evidence();
       if (options.acquisitionSourceMismatch) value.responses[0].projection.source.values[0].headSha = 'b'.repeat(40);
       if (options.acquisitionTargetMismatch) value.responses[0].projection.target.values[0].headSha = 'b'.repeat(40);
       if (options.splitVersions) { const split = structuredClone(value.responses[0]);value.responses[0].projection.target.values[0].headSha = 'b'.repeat(40);split.projection.source.values[0].headSha = 'b'.repeat(40);value.responses.push(split); }
@@ -94,12 +102,79 @@ test('actual orchestrator observes natural anonymous401 plus local transition, r
   assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
 
+function immutableNative() {
+  const app = state().app;app.targetVersions = [{ ...app.sourceVersions[0], href: F.url.replace(`?diff_id=${F.version}`, '') }];return app;
+}
+function observed285() {
+  const value = evidence();value.responses[0].projection.target.values = [{ id: '2160390432', headSha: '10a04f986a724a5e7f17a46fadba3ce5b38d8b58', startSha: 'b921bda411b49f7ce5d0a169c065f9f0d2f479c0', mergeHead: true }];return value;
+}
+test('observed285 identical native nonmerge target is independently verified through its same-response source without adopting the endpoint merge target', async () => {
+  const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: observed285() });assert.equal((await f.run()).status, 'discovery');
+  assert.deepEqual(f.progress.selection.target, { id: F.version, head: F.head, mergeHead: false });assert.equal(f.progress.baseline.files.every((file) => file.head === F.head), true);
+  assert.deepEqual(f.progress.acquisitionMatch, { attempts: 1, source: true, target: false, pairedVersions: false, immutableSourceTarget: true, metadata: true, matched: true,
+    proofMode: 'same_immutable_source_version', proofResponseId: 'r4', endpointTarget: { id: '2160390432', head: '10a04f986a724a5e7f17a46fadba3ce5b38d8b58', mergeHead: true } });
+  assert.equal(f.progress.restoredStable.app.targetVersions[0].id, Number(F.version));assert.equal(f.clicks(), 3);assert.equal(f.binds(), 1);assert.equal(f.progress.nativeRestored, true);assert.deepEqual(f.storage(), f.original);
+});
+test('observed282 exact nonmerge endpoint target keeps direct same-response proof', async () => {
+  const value = observed285();value.responses[0].projection.target.values = [{ id: F.version, headSha: F.head, startSha: 'e'.repeat(40), mergeHead: false }];
+  const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: value });assert.equal((await f.run()).status, 'discovery');
+  assert.equal(f.progress.acquisitionMatch.proofMode, 'same_response_selected_target');assert.equal(f.progress.acquisitionMatch.target, true);assert.equal(f.progress.acquisitionMatch.pairedVersions, true);assert.equal(f.progress.acquisitionMatch.immutableSourceTarget, false);
+});
+test('a distinct native merge target still needs exact same-response source, target and kind', async () => {
+  const f = await protocol();assert.equal((await f.run()).status, 'discovery');assert.equal(f.progress.acquisitionMatch.proofMode, 'same_response_selected_target');assert.equal(f.progress.acquisitionMatch.immutableSourceTarget, false);assert.equal(f.progress.selection.target.head, T);
+});
+for (const [name, mutate] of [
+  ['source wrong ID despite matching SHA', (value) => { value.responses[0].projection.source.values[0].id = '2151401827'; }],
+  ['source wrong full head', (value) => { value.responses[0].projection.source.values[0].headSha = T; }],
+  ['truncated source', (value) => { value.responses[0].projection.source.state = 'truncated'; }],
+  ['ambiguous source', (value) => { value.responses[0].projection.source.selectedCount = 2; }],
+  ['split source and default target responses', (value) => { const other = structuredClone(value.responses[0]);value.responses[0].projection.target.values = [];other.projection.source.values[0].id = '2151401827';value.responses.push(other); }],
+  ['missing default target', (value) => { delete value.responses[0].projection.target; }],
+  ['truncated default target', (value) => { value.responses[0].projection.target.state = 'truncated'; }],
+  ['ambiguous default target', (value) => { value.responses[0].projection.target.selectedCount = 2; }],
+  ['extra default target with false unique count', (value) => { value.responses[0].projection.target.values.push({ ...value.responses[0].projection.target.values[0] }); }],
+  ['invalid default target head', (value) => { value.responses[0].projection.target.values[0].headSha = 'short'; }],
+  ['invalid default target start SHA', (value) => { value.responses[0].projection.target.values[0].startSha = null; }],
+  ['missing default target kind', (value) => { delete value.responses[0].projection.target.values[0].mergeHead; }],
+  ['same source ID with conflicting API target head', (value) => { value.responses[0].projection.target.values[0].id = F.version;value.responses[0].projection.target.values[0].mergeHead = false; }],
+  ['same source ID with false API merge kind', (value) => { value.responses[0].projection.target.values[0] = { id: F.version, headSha: F.head, startSha: 'e'.repeat(40), mergeHead: true }; }],
+  ['arbitrary different nonmerge default target', (value) => { value.responses[0].projection.target.values[0].mergeHead = false; }],
+  ['versions wrong round', (value) => { value.responses[0].selection.diff_id = '2151401827'; }],
+  ['versions wrong native MR', (value) => { value.responses[0].url = value.responses[0].url.replace('266334', '266335'); }],
+  ['versions conflicting ref query', (value) => { value.responses[0].url += `&start_sha=${T}`; }],
+  ['metadata wrong round', (value) => { value.responses[1].projection.diffId = '2151401827'; }],
+  ['metadata wrong project', (value) => { value.responses[1].projection.projectPath = 'other/project'; }],
+  ['metadata missing file', (value) => { value.responses[1].projection.inventory.paths.pop(); }],
+]) test(`immutable source proof refuses ${name} before native toggle`, async () => {
+  const value = observed285();mutate(value);const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: value });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.acquisitionMatch.matched, false);assert.equal(f.progress.acquisitionMatch.proofMode === 'same_immutable_source_version' && f.progress.acquisitionMatch.metadata, false);
+  assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.equal(f.binds(), 1);assert.equal(f.progress.selection.target.head, F.head);assert.deepEqual(f.observer.evidence.nonreads, []);assert.deepEqual(f.storage(), f.original);
+});
+for (const [name, mutate] of [
+  ['native same head under wrong target ID', (live) => { live.app.targetVersions[0].id = 2151401827; }],
+  ['native false merge kind for source ID', (live) => { live.app.targetVersions[0].is_merge_head = true; }],
+  ['native wrong full target head', (live) => { live.app.targetVersions[0].head_sha = T;live.files.forEach((file) => { file.head = T; }); }],
+  ['one native file head mismatch', (live) => { live.files[0].head = T; }],
+  ['native wrong MR', (live) => { live.app.path = '/gitlab-org/gitlab/-/merge_requests/266335'; }],
+]) test(`${name} cannot enter immutable source proof`, async () => {
+  const f = await protocol({ nativeSelection: immutableNative(), nativeMutation: mutate, acquisitionEvidence: observed285() });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.clicks(), 0);assert.equal(f.binds(), 0);assert.equal(f.progress.selection, undefined);assert.deepEqual(f.storage(), f.original);
+});
+for (const field of ['id', 'mergeHead']) test(`a distinct native merge target refuses API target ${field} mismatch even with an otherwise matching response`, async () => {
+  const value = evidence();value.responses[0].projection.target.values[0][field] = field === 'id' ? '2151401827' : false;
+  const f = await protocol({ acquisitionEvidence: value });await assert.rejects(f.run(), AggregateError);assert.equal(f.progress.acquisitionMatch.target, false);assert.equal(f.progress.acquisitionMatch.immutableSourceTarget, false);assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.deepEqual(f.storage(), f.original);
+});
+for (const scope of ['target', 'owner', 'actor']) test(`native ${scope} changes after immutable matching cannot be adopted before the first toggle`, async () => {
+  const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: observed285(), scopeAfterMatch: scope });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.acquisitionMatch.immutableSourceTarget, true);assert.equal(f.progress.failurePhase, 'NATIVE_TOGGLE');assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.equal(f.progress.selection.target.head, F.head);assert.deepEqual(f.storage(), f.original);
+});
+
 test('pairing timeout retains the qualified original baseline and finite setup diagnostics before any toggle', async () => {
   const f = await protocol({ noAcquisition: true, snapshotExtras: true });await assert.rejects(f.run(), AggregateError);
   assert.equal(f.progress.failurePhase, 'INDEPENDENT_ACQUISITION');assert.equal(f.progress.primaryFailure, 'OBSERVATION_DEADLINE');
   assert.deepEqual(f.progress.selection, { source: { id: F.version, head: F.head }, target: { id: '2159233785', head: T, mergeHead: true } });
   assert.equal(f.progress.baseline.bound, true);assert.equal(f.progress.baseline.checked, false);assert.equal(f.progress.lastProbe.bound, true);assert.equal(f.progress.lastCurrentCheck, 'QUALIFIED');
-  assert.deepEqual(f.progress.acquisitionMatch, { attempts: 4, source: false, target: false, pairedVersions: false, metadata: false, matched: false });
+  assert.deepEqual(f.progress.acquisitionMatch, { attempts: 4, source: false, target: false, pairedVersions: false, immutableSourceTarget: false, metadata: false, matched: false, proofMode: 'unverified', proofResponseId: null, endpointTarget: null });
   assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.equal(f.binds(), 1);assert.deepEqual(f.observer.evidence.nonreads, []);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
 for (const [option, source, target, metadata] of [['acquisitionSourceMismatch', false, true, true], ['acquisitionTargetMismatch', true, false, true], ['splitVersions', true, true, true], ['incompleteInventory', true, true, false]]) test(`${option} reports independent pairing facts without accepting a mismatched or split response`, async () => {
@@ -119,6 +194,16 @@ for (const [option, phase] of [['checkpointFailure', 'BEFORE_INTENT_CHECKPOINT']
   assert.equal(f.progress.failurePhase, phase);assert.equal(f.progress.baseline.bound, true);assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
 
+test('immediate same-owner close after each trusted checkbox change is observed, reopened once and restored without rebinding', async () => {
+  const f = await protocol({ closeImmediatelyAfterChange: true });assert.equal((await f.run()).status, 'discovery');
+  assert.equal(f.progress.stages[0].snapshot.open, false);assert.equal(f.progress.afterToggle.open, false);assert.equal(f.progress.restoration.snapshot.open, false);
+  assert.equal(f.progress.restorationReopen.status, 'opened_original_menu');assert.equal(f.progress.restoredStable.checked, false);assert.equal(f.progress.nativeRestored, true);
+  assert.equal(f.clicks(), 4);assert.equal(f.binds(), 1);assert.deepEqual(f.storage(), f.original);
+});
+for (const option of ['loseBindingAfterChange', 'headAfterToggle']) test(`immediate menu close cannot bypass ${option} after a trusted change`, async () => {
+  const f = await protocol({ closeImmediatelyAfterChange: true, [option]: true });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.clicks(), 2);assert.equal(f.binds(), 1);assert.equal(f.progress.nativeRestored, false);assert.equal(f.progress.restorationReopen, undefined);assert.deepEqual(f.storage(), f.original);
+});
 test('same original closed menu is reopened once for restoration without rebinding or replacing the baseline', async () => {
   const f = await protocol({ closedAfterToggle: true });assert.equal((await f.run()).status, 'discovery');
   assert.equal(f.progress.afterToggle.open, false);assert.equal(f.progress.baseline.checked, false);assert.equal(f.progress.baseline.open, true);

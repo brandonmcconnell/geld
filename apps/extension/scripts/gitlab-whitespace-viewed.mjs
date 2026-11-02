@@ -126,17 +126,37 @@ function selection(snapshot) {
 
 function acquisitionMatches(snapshot, evidence) {
   const selected = selection(snapshot);const responses = evidence?.responses ?? [];
-  const source = (entry) => entry.status === 'projected' && entry.kind === 'versions' && entry.projection?.source?.selectedCount === 1
-    && entry.projection.source.values[0]?.id === selected.source.id && entry.projection.source.values[0]?.headSha === selected.source.head;
-  const target = (entry) => entry.status === 'projected' && entry.kind === 'versions' && entry.projection?.target?.selectedCount === 1
-    && entry.projection.target.values[0]?.id === selected.target.id && entry.projection.target.values[0]?.headSha === selected.target.head;
-  const versions = responses.some((entry) => source(entry) && target(entry));
-  const metadata = responses.some((entry) => entry.status === 'projected' && entry.kind === 'metadata' && entry.projection?.projectPath === 'gitlab-org/gitlab' && entry.projection.diffId === GITLAB_WHITESPACE.version
+  const fullHead = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+  const version = (value, target) => value?.state === 'observed' && value.selectedCount === 1 && Array.isArray(value.values) && value.values.length === 1
+    && typeof value.values[0]?.id === 'string' && /^[1-9]\d{0,15}$/.test(value.values[0].id) && Number.isSafeInteger(Number(value.values[0].id)) && fullHead(value.values[0].headSha)
+    && (!target || typeof value.values[0].mergeHead === 'boolean' && fullHead(value.values[0].startSha));
+  const pinned = (entry, kind) => {
+    if (entry.status !== 'projected' || entry.kind !== kind || entry.httpStatus !== 200 || entry.selectionRedacted !== false
+      || entry.selection?.diff_id !== GITLAB_WHITESPACE.version || Object.keys(entry.selection).length !== 1) return false;
+    try {
+      const url = new URL(entry.url);return url.origin === 'https://gitlab.com' && url.pathname === `/gitlab-org/gitlab/-/merge_requests/266334/${kind === 'versions' ? 'versions' : 'diffs_metadata.json'}`
+        && !url.username && !url.password && !url.hash && [...url.searchParams].length === 1 && url.searchParams.get('diff_id') === GITLAB_WHITESPACE.version;
+    } catch { return false; }
+  };
+  const source = (entry) => pinned(entry, 'versions') && version(entry.projection?.source, false)
+    && entry.projection.source.values[0].id === selected.source.id && entry.projection.source.values[0].headSha === selected.source.head;
+  const target = (entry) => pinned(entry, 'versions') && version(entry.projection?.target, true)
+    && entry.projection.target.values[0].id === selected.target.id && entry.projection.target.values[0].headSha === selected.target.head && entry.projection.target.values[0].mergeHead === selected.target.mergeHead;
+  const consistentDefault = (entry) => version(entry.projection?.target, true) && (entry.projection.target.values[0].id === selected.source.id
+    ? entry.projection.target.values[0].headSha === selected.source.head && entry.projection.target.values[0].mergeHead === false : entry.projection.target.values[0].mergeHead === true);
+  const paired = responses.find((entry) => source(entry) && target(entry) && consistentDefault(entry));
+  const immutable = paired === undefined && selected.target.mergeHead === false && selected.target.id === selected.source.id && selected.target.head === selected.source.head
+    ? responses.find((entry) => source(entry) && consistentDefault(entry)) : undefined;
+  const proof = paired ?? immutable;
+  const metadata = responses.some((entry) => pinned(entry, 'metadata') && entry.projection?.projectPath === 'gitlab-org/gitlab' && entry.projection.diffId === GITLAB_WHITESPACE.version
     && entry.projection.inventory?.state === 'observed' && entry.projection.inventory.scanComplete === true && entry.projection.inventory.total === GITLAB_WHITESPACE.paths.length
     && entry.projection.inventory.uniqueNewPaths === GITLAB_WHITESPACE.paths.length && entry.projection.inventory.paths?.length === GITLAB_WHITESPACE.paths.length
     && [3, '3'].includes(entry.projection.inventory.size) && [3, '3'].includes(entry.projection.inventory.realSize) && entry.projection.inventory.overflow === false
     && entry.projection.inventory.paths.every((file) => GITLAB_WHITESPACE.paths.includes(file.newPath) && !file.deleted && !file.submodule));
-  return { source: responses.some(source), target: responses.some(target), pairedVersions: versions, metadata, matched: versions && metadata };
+  return { source: responses.some(source), target: responses.some(target), pairedVersions: paired !== undefined, immutableSourceTarget: immutable !== undefined, metadata, matched: proof !== undefined && metadata,
+    proofMode: paired ? 'same_response_selected_target' : immutable ? 'same_immutable_source_version' : 'unverified',
+    proofResponseId: typeof proof?.id === 'string' && /^r[1-9]\d{0,8}$/.test(proof.id) ? proof.id : null,
+    endpointTarget: proof ? { id: proof.projection.target.values[0].id, head: proof.projection.target.values[0].headSha, mergeHead: proof.projection.target.values[0].mergeHead } : null };
 }
 
 export async function verifyGitLabWhitespace(page, { settings, observer, comparisons, acquisition, poll, progress }) {
@@ -197,7 +217,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     if (phase === 'toggle') { toggleAttempted = true;p.toggleAttempted = true; }
     await click('toggle-target');
     const value = await poll(current, (next) => next.events.slice(prior).some((event) => event.kind === 'whitespace' && event.type === 'change' && event.trusted === true && event.checked === desired), 'Original native whitespace property and trusted change');
-    check(value.bound && value.open, 'NATIVE_MENU_OWNER_LOST');
+    check(value.bound, 'NATIVE_MENU_OWNER_LOST');
     return { status: value.checked === desired ? 'native_property_transition_observed' : 'native_reverted', snapshot: value };
   };
   const modeWitnesses = (phase, checked) => observer.evidence.modes.filter((entry) => entry.phase === phase && entry.eligible === true && entry.nativeFrame && !entry.extensionFrame && entry.status === 200 && entry.finished === true && entry.ignoreWhitespace === !checked);
@@ -228,7 +248,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     check(value.events.some((event) => event.kind === 'opener' && event.type === 'click' && event.trusted === true) && !value.events.some((event) => event.kind !== 'opener'), 'TRUSTED_OPENER_UNVERIFIED');baseline = value;
     p.baseline = retainedBaseline(baseline);p.selection = selection(baseline);p.toggleAttempted = false;p.setupPhase = 'BEFORE_INTENT_CHECKPOINT';
     await comparisons.checkpoint('beforeIntent', {});
-    p.setupPhase = 'INDEPENDENT_ACQUISITION';p.acquisitionMatch = { attempts: 0, source: false, target: false, pairedVersions: false, metadata: false, matched: false };
+    p.setupPhase = 'INDEPENDENT_ACQUISITION';p.acquisitionMatch = { attempts: 0, source: false, target: false, pairedVersions: false, immutableSourceTarget: false, metadata: false, matched: false, proofMode: 'unverified', proofResponseId: null, endpointTarget: null };
     await poll(async () => {
       await current();
       try {
