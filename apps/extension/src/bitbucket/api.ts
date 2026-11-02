@@ -302,6 +302,10 @@ export class BitbucketClient {
     this.pullPath = page.kind === 'commit' ? '' : `${this.repositoryPath}/pullrequests/${page.number}`;
   }
 
+  private modeCurrent(): void {
+    if (this.page.diffMode !== undefined && (this.page.diffMode.ignoreWhitespace === null || !this.page.diffMode.current())) throw new BitbucketApiError('changed', 'Bitbucket whitespace mode changed while its diff was loading.');
+  }
+
   private reviewPage(): ProviderReviewPage {
     return this.page.kind === 'commit' ? invalid('A Bitbucket commit has no pull request review source.') : this.page;
   }
@@ -320,9 +324,11 @@ export class BitbucketClient {
   }
 
   private async response(url: URL, signal: AbortSignal, raw = false, cache?: RequestCache): Promise<Response> {
+    this.modeCurrent();
     let response: Response;
     try { response = await this.transport.fetch(url, { signal, headers: { Accept: raw ? 'text/plain' : 'application/json' }, ...(cache === undefined ? {} : { cache }) }, this.fetcher); }
     catch (error) { if (error instanceof BitbucketTransportError) throw new BitbucketApiError(error.reason, error.message, error.retryAfterMs); throw error; }
+    this.modeCurrent();
     if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new BitbucketApiError('invalid-response', 'Bitbucket unexpectedly redirected a pinned review source.');
     if (response.url !== '') this.trustedUrl(response.url, url);
     if (response.status === 401) throw new BitbucketApiError('authentication', 'Sign in to Bitbucket to read this review.');
@@ -335,6 +341,7 @@ export class BitbucketClient {
     const response = await this.response(url, signal, false, cache);
     const type = response.headers.get('content-type');
     const text = await boundedText(response, MAX_JSON_BYTES);
+    this.modeCurrent();
     if (looksLikeHtml(type, text) || type === null || !/^application\/(?:[\w.+-]*\+)?json\b/i.test(type)) throw new BitbucketApiError('invalid-response', 'Bitbucket did not return review data.');
     try {
       const value: unknown = JSON.parse(text);
@@ -422,11 +429,14 @@ export class BitbucketClient {
     if (this.page.kind === 'commit') return this.commitDiff(this.page, signal);
     const page = this.page;
     const before = await this.pullRequest(signal);
+    const native = page.diffMode?.comparison;
+    if (native !== undefined && (!before.headSha.toLowerCase().startsWith(native.head) || !before.baseSha.toLowerCase().startsWith(native.base) || before.sourceRepository !== native.sourceRepository)) throw new BitbucketApiError('changed', 'Bitbucket native comparison changed while its diff was loading.');
     const comparison = (resource: 'diff' | 'diffstat'): URL => {
       const source = before.sourceRepository.split('/').map(encodeURIComponent).join('/');
       const url = new URL(`${API_ORIGIN}${this.repositoryPath}/${resource}/${source}:${before.headSha}%0D${before.baseSha}`);
       url.searchParams.set('from_pullrequest_id', page.number);
       url.searchParams.set('topic', 'true');
+      if (page.diffMode?.ignoreWhitespace === true) url.searchParams.set('ignore_whitespace', 'true');
       if (resource === 'diffstat') url.searchParams.set('pagelen', '100');
       return url;
     };
@@ -468,6 +478,7 @@ export class BitbucketClient {
       this.response(diff, signal, true),
     ]);
     const patch = await boundedText(response, MAX_DIFF_BYTES);
+    this.modeCurrent();
     if (looksLikeHtml(response.headers.get('content-type'), patch)) throw new BitbucketApiError('invalid-response', 'Bitbucket did not return a unified diff.');
     if (patch.trim() !== '' && !/^diff --git /m.test(patch)) throw new BitbucketApiError('invalid-response', 'Bitbucket returned an invalid unified diff.');
     const parsed = parseUnifiedDiff(patch);

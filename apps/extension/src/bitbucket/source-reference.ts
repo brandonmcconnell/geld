@@ -32,7 +32,7 @@ function route(doc: Document): string { const url = new URL(doc.URL);url.hash = 
 
 function globalFrame(doc: Document, page: ProviderPage, epoch: number): GlobalFrame | null {
   const url = new URL(doc.URL);
-  if (page.kind !== 'diff' || page.provider !== 'bitbucket' || url.search !== '' || url.origin !== page.repository.origin) return null;
+  if (page.diffMode?.current() === false || page.kind !== 'diff' || page.provider !== 'bitbucket' || url.search !== '' || url.origin !== page.repository.origin) return null;
   const headers = [...doc.querySelectorAll<HTMLElement>('[data-testid="pr-header"]')].filter(native), header = headers[0];
   const regions = [...doc.querySelectorAll<HTMLElement>('[role="region"][aria-label="Diff"]')].filter(native), region = regions[0];
   if (headers.length !== 1 || header === undefined || regions.length !== 1 || region === undefined) return null;
@@ -52,7 +52,7 @@ function globalFrame(doc: Document, page: ProviderPage, epoch: number): GlobalFr
   const nodes = [header, region, branches, metadata, selection, ...controls, ...links];
   return {
     key: JSON.stringify([providerSourceSubjectKey(providerSourceSubject(page)), epoch]), region, watched: [branches, metadata, selection, ...links],
-    current: () => route(doc) === originalRoute && nodes.every((node, index) => native(node) && node.parentElement === parents[index])
+    current: () => page.diffMode?.current() !== false && route(doc) === originalRoute && nodes.every((node, index) => native(node) && node.parentElement === parents[index])
       && doc.querySelectorAll('[data-testid="pr-header"]').length === 1 && doc.querySelectorAll('[role="region"][aria-label="Diff"]').length === 1
       && [...doc.querySelectorAll<HTMLElement>('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter((node) => shown(node) && node.textContent?.trim() === 'All changes').length === 1
       && branches.querySelectorAll('[role="button"][aria-haspopup="true"]').length === 2

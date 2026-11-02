@@ -597,3 +597,17 @@ it('clears memory and disk together and cannot restore a pre-clear in-flight rep
   expect(source.get(page('1'), true)).toMatchObject({ status: 'ready', result: { revision: 'a'.repeat(40) } });
   expect(JSON.stringify([...store.values.values()])).not.toContain('src/old.ts');
 });
+
+
+describe('acknowledged provider source modes', () => {
+  it('does not read cached snapshots while mode is pending and discards in-flight results after its native generation changes', async () => {
+    const pending = deferred<ProviderDiffResult>();const store = cacheStore();const cache = new ProviderDiffCache(store.backend);
+    let current = true;const subject = { ...page('77'), diffMode: { ignoreWhitespace: true, current: () => current } };
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>().mockReturnValue(pending.promise);const source = sourceFor(fetchDiff, vi.fn(), cache);
+    source.get(subject);await vi.advanceTimersByTimeAsync(0);expect(fetchDiff).toHaveBeenCalledTimes(1);
+    current = false;pending.resolve(complete('stale-mode'));await vi.advanceTimersByTimeAsync(0);
+    expect(source.get(subject)).toEqual({ status: 'loading' });expect(cache.get(subject)).toBeNull();
+    cache.set(subject, complete('a'.repeat(40)));expect(source.get(subject)).toEqual({ status: 'loading' });
+    current = true;expect(source.get(subject)).toMatchObject({ status: 'ready', result: { revision: 'a'.repeat(40) } });
+  });
+});

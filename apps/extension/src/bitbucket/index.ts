@@ -17,6 +17,7 @@ import { createBitbucketDiffSyntax } from './diff-syntax';
 export { createBitbucketDiffSyntax } from './diff-syntax';
 import { bitbucketReferenceAnchor, readBitbucketReferences } from './references';
 import { createBitbucketWholeTestAdapter } from './whole-test-context';
+import { createBitbucketWhitespaceMode } from './whitespace-mode';
 import { BitbucketSourceReferences } from './source-reference';
 
 
@@ -27,6 +28,7 @@ export type { BitbucketReviewSnapshot } from './review';
 
 export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
+  createPageMode: createBitbucketWhitespaceMode,
   createNativeView: (doc, changed) => new BitbucketSourceReferences(doc, changed),
   wholeTests: createBitbucketWholeTestAdapter(),
   describe: describeBitbucketProviderPage,

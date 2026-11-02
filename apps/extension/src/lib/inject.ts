@@ -52,9 +52,9 @@ export async function injectContentScript(tabId: number, provider: ProviderId, m
   if (manifestVersion === 3) {
     await browser.scripting.insertCSS({ target: { tabId }, files: [files.css] });
     await browser.scripting.executeScript({ target: { tabId }, files: [files.js] });
-    if (provider === 'github') {
+    if (provider === 'github' || provider === 'bitbucket') {
       try {
-        await browser.scripting.executeScript({ target: { tabId }, files: [PORTAL_JS], world: 'MAIN' });
+        await browser.scripting.executeScript({ target: { tabId }, files: [provider === 'github' ? PORTAL_JS : '/content-scripts/bitbucket-whitespace.js'], world: 'MAIN' });
       } catch {
         // No MAIN-world injection here (older Firefox): quick view still works, React's own controls inside it do not.
       }

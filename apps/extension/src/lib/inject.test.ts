@@ -25,7 +25,9 @@ describe('provider content injection', () => {
   it.each(['gitlab', 'bitbucket'] as const)('injects only %s files in MV3', async (provider) => {
     await injectContentScript(7, provider, 3);
     expect(api.insertCSS).toHaveBeenCalledWith({ target: { tabId: 7 }, files: [`/content-scripts/${provider}.css`] });
-    expect(api.executeScript).toHaveBeenCalledExactlyOnceWith({ target: { tabId: 7 }, files: [`/content-scripts/${provider}.js`] });
+    expect(api.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: [`/content-scripts/${provider}.js`] });
+    if (provider === 'bitbucket') expect(api.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['/content-scripts/bitbucket-whitespace.js'], world: 'MAIN' });
+    else expect(api.executeScript).toHaveBeenCalledTimes(1);
     expect(api.legacyScript).not.toHaveBeenCalled();
   });
 

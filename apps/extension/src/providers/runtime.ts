@@ -135,10 +135,11 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
   let unwatchCatalog: (() => void) | null = null;
   let unwatchChoices: (() => void) | null = null;
   let whitespaceLinks: ProviderWhitespaceLinks | null = null;
+  const mode = adapter.createPageMode?.(document, () => controller?.requestRefresh());
   let observedReview: ProviderReviewSnapshot | null = null;
   let reviewGeneration = 0;
   const fetchReview = adapter.fetchReview?.bind(adapter);
-  const sourceAdapter: ProviderAdapter = fetchReview === undefined ? adapter : { ...adapter, fetchReview: async (page, signal, doc) => {
+  let sourceAdapter: ProviderAdapter = fetchReview === undefined ? adapter : { ...adapter, fetchReview: async (page, signal, doc) => {
     const generation = ++reviewGeneration;
     observedReview = null;
     const review = await fetchReview(page, signal, doc);
@@ -159,6 +160,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     if (unwatchCatalog !== null) quiet(unwatchCatalog);
     if (unwatchChoices !== null) quiet(unwatchChoices);
     whitespaceLinks?.dispose();
+    mode?.stop();
     controller?.stop();
     publish(PROVIDER_IDLE_STATE);
   };
@@ -191,6 +193,9 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
   });
   const [settings, catalog, choices, optOuts] = await Promise.all([settingsItem.getValue(), loadCatalog(), repoConfigChoicesItem.getValue(), whitespaceOptOutsItem.getValue()]);
   if (retired) return;
+  const describe = sourceAdapter.describe.bind(sourceAdapter);
+  if (mode !== undefined) sourceAdapter = { ...sourceAdapter, describe: (url, doc) => mode.decorate(describe(url, doc)) };
+  mode?.update(settings);
   mark('settings');
   mark('catalog');
   let whitespaceSnapshot = optOuts ?? {};
@@ -216,13 +221,13 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     page: () => sourceAdapter.describe(new URL(window.location.href), document),
     snapshot: () => observedReview,
     retired: () => retired,
-    updated: (value) => { badge = value.showBadge; whitespace.update(value); links.refresh(); controller?.updateSettings(value); },
+    updated: (value) => { badge = value.showBadge; whitespace.update(value); mode?.update(value); links.refresh(); controller?.updateSettings(value); },
   });
   const saveTrustedPublisher = createProviderPublisherTrust({
     page: () => sourceAdapter.describe(new URL(window.location.href), document),
     snapshot: () => observedReview,
     retired: () => retired,
-    updated: (value) => { badge = value.showBadge; whitespace.update(value); links.refresh(); controller?.updateSettings(value); },
+    updated: (value) => { badge = value.showBadge; whitespace.update(value); mode?.update(value); links.refresh(); controller?.updateSettings(value); },
     settings: settingsItem,
     eligible: (input, comment) => providerPublicationCandidate(input, comment) !== null,
   });
@@ -238,7 +243,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
   const started = controller;
   unwatchSettings = settingsItem.watch((value) => {
     badge = value.showBadge;
-    whitespace.update(value);
+    whitespace.update(value); mode?.update(value);
     const destination = whitespace.navigation(new URL(window.location.href));
     links.refresh();
     if (destination !== null) window.location.replace(destination);

@@ -19,7 +19,7 @@ test('only a proven cached owned fold may omit request reserve, never past hard 
 });
 test('PR preparation disables both review consumers and default and real429 guards stay intact',()=>{
   const code=readFileSync(new URL('./browser-e2e.mjs',import.meta.url),'utf8');
-  assert.match(code,/preparePatch:prWhole\?\{prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false\}/);
+  assert.match(code,/preparePatch:prWhole\?\{hideWhitespace:false,prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false\}/);
   assert.match(code,/conservativeObservedRequestBudget: 40/);assert.match(code,/active \+ 4 < budget/);
   assert.match(code,/response\.status\(\) === 429/);assert.match(code,/holdReason = 'provider_http429'/);
   assert.match(code,/const inheritedBudgetHold = bitbucketBudgetHold/);
