@@ -4,13 +4,18 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
 export const BITBUCKET_MODULE_FILES = Object.freeze({ fozrM: 'bitbucket-native-fozrM.js', h43l2: 'bitbucket-native-h43l2.js' });
 export const BITBUCKET_MODULE_FILE = BITBUCKET_MODULE_FILES.fozrM;
 export const BITBUCKET_MODULE_LIMIT = 256 * 1024;
+export const BITBUCKET_SOURCE_LIMIT = 6 * 1024 * 1024;
+export const BITBUCKET_MAX_SOURCE_LIMIT = 16 * 1024 * 1024;
 export const BITBUCKET_WORKER_LIMITS = Object.freeze({ maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 });
+export const BITBUCKET_LARGE_SOURCE_WORKER_LIMITS = Object.freeze({ maxOldGenerationSizeMb: 512, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 });
 const unavailable = (reason) => ({ status: 'unavailable', reason });
+const validSourceLimit = (value) => Number.isSafeInteger(value) && value > 0 && value <= BITBUCKET_MAX_SOURCE_LIMIT;
 
-export function extractBitbucketModule(bytes, { signal, deadlineMs = 2000, moduleId = 'fozrM', workerFactory = (options) => new Worker(new URL(import.meta.url), options) } = {}) {
+export function extractBitbucketModule(bytes, { signal, deadlineMs = 2000, moduleId = 'fozrM', sourceLimitBytes = BITBUCKET_SOURCE_LIMIT, workerFactory = (options) => new Worker(new URL(import.meta.url), options) } = {}) {
   if (typeof moduleId !== 'string' || !Object.hasOwn(BITBUCKET_MODULE_FILES, moduleId)) return Promise.resolve(unavailable('module_id'));
   if (signal?.aborted) return Promise.resolve(unavailable('aborted'));
-  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) return Promise.resolve(unavailable('body_size'));
+  if (!validSourceLimit(sourceLimitBytes)) return Promise.resolve(unavailable('source_limit'));
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > sourceLimitBytes) return Promise.resolve(unavailable('body_size'));
   return new Promise((resolve) => {
     let worker;let timer;let settled = false;
     const finish = (result) => {
@@ -20,7 +25,7 @@ export function extractBitbucketModule(bytes, { signal, deadlineMs = 2000, modul
     };
     const abort = () => finish(unavailable('aborted'));
     try {
-      worker = workerFactory({ workerData: { bytes, moduleId }, resourceLimits: BITBUCKET_WORKER_LIMITS });
+      worker = workerFactory({ workerData: { bytes, moduleId, sourceLimitBytes }, resourceLimits: sourceLimitBytes > BITBUCKET_SOURCE_LIMIT ? BITBUCKET_LARGE_SOURCE_WORKER_LIMITS : BITBUCKET_WORKER_LIMITS });
       signal?.addEventListener('abort', abort, { once: true });
       timer = setTimeout(() => finish(unavailable('worker_deadline')), deadlineMs);
       worker.once('error', () => finish(unavailable('worker_failed')));
@@ -67,6 +72,8 @@ async function parseModule(bytes, moduleId) {
 if (!isMainThread) {
   try {
     if (typeof workerData?.moduleId !== 'string' || !Object.hasOwn(BITBUCKET_MODULE_FILES, workerData.moduleId)) parentPort?.postMessage(unavailable('module_id'));
+    else if (!validSourceLimit(workerData.sourceLimitBytes)) parentPort?.postMessage(unavailable('source_limit'));
+    else if (!(workerData.bytes instanceof Uint8Array) || workerData.bytes.byteLength === 0 || workerData.bytes.byteLength > workerData.sourceLimitBytes) parentPort?.postMessage(unavailable('body_size'));
     else parentPort?.postMessage(await parseModule(workerData.bytes, workerData.moduleId));
   }
   catch { parentPort?.postMessage(unavailable('worker_failed')); }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { BITBUCKET_WHITESPACE_ASSET as URL, BITBUCKET_WHITESPACE_BODY_LIMIT as LIMIT, collectBitbucketWhitespaceFactories as collect } from './bitbucket-whitespace-source-research.mjs';
+import { BITBUCKET_WHITESPACE_ASSET as URL, BITBUCKET_WHITESPACE_BODY_LIMIT as LIMIT, BITBUCKET_WHITESPACE_WORKER_DEADLINE, collectBitbucketWhitespaceFactories as collect } from './bitbucket-whitespace-source-research.mjs';
 const first='r("fozrM",function(e,r){e.exports={getGlobalShouldIgnoreWhitespace:s=>s.settings.ignore};})';
 const second='r("h43l2",function(e,r){e.exports={DiffLoader:()=>{throw Error("never execute")}};})';
 const body=Buffer.from(first+';'+second+';throw Error("private runtime data must not execute");');
@@ -20,7 +20,7 @@ for(const [name,response] of [['redirect flag',{redirected:true}],['redirect sta
   const f=setup({response});const r=await f.run();assert.equal(r.status,'unavailable');assert.equal(f.calls.length,1);assert.equal(f.reads,0);assert.equal(f.writes.length,0);assert.equal(JSON.stringify(r).includes('PRIVATE'),false);
 });
 test('stream limit cancels rather than retaining an over-limit body',async()=>{
-  const f=setup({chunks:[new Uint8Array(LIMIT),new Uint8Array(1)]});const r=await f.run();assert.equal(r.reason,'body_size');assert.equal(f.reads,2);assert.equal(f.cancelled,1);assert.equal(f.writes.length,0);assert.equal(r.asset,undefined);
+  const f=setup({chunks:[new Uint8Array(LIMIT),new Uint8Array(1)]});const r=await f.run();assert.equal(r.reason,'body_size');assert.equal(f.reads,2);assert.equal(f.cancelled,1);assert.equal(f.writes.length,0);assert.equal(r.asset,undefined);assert.equal(r.request.bytesSeen,LIMIT+1);assert.equal(r.request.bytesSeenCapped,false);
 });
 test('captures h43l2 even when fozrM is absent, independently reporting missing factory',async()=>{
   const f=setup({chunks:[Buffer.from(second)]});const r=await f.run();assert.equal(r.status,'partial');assert.equal(r.modules.fozrM.reason,'registration');assert.equal(r.modules.h43l2.status,'captured');assert.deepEqual(f.writes.map(w=>w.file),['bitbucket-native-h43l2.js']);
@@ -37,4 +37,22 @@ test('fetch and artifact failures never retry or expose exception text',async()=
 test('fetch timeout aborts once and records a fixed failure',async()=>{
   let calls=0;const r=await collect({timeoutMs:5,fetcher:(_url,{signal})=>{calls++;return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('PRIVATE')),{once:true}));},writeArtifact:()=>{throw Error('must not write');}});
   assert.equal(calls,1);assert.equal(r.reason,'deadline');assert.equal(r.request.attempts,1);assert.equal(JSON.stringify(r).includes('PRIVATE'),false);
+});
+
+test('the static collector alone passes16MiB and10s bounds to each allowlisted parser',async()=>{
+  const options=[],bytes=Buffer.alloc(LIMIT,32);let extraction=0;
+  const f=setup({chunks:[bytes],collect:{extractModule:async(source,config)=>{options.push(config);assert.equal(source.byteLength,bytes.length);return{status:'extracted',bytes:Buffer.from(extraction++===0?first:second),start:0,end:1,byteStart:0,byteEnd:1};}}});
+  const r=await f.run();assert.equal(LIMIT,16*1024*1024);assert.equal(r.status,'captured');assert.equal(r.request.bytesSeen,bytes.length);assert.equal(r.request.bytesSeenCapped,false);
+  assert.deepEqual(options.map(({moduleId,sourceLimitBytes,deadlineMs})=>({moduleId,sourceLimitBytes,deadlineMs})),['fozrM','h43l2'].map(moduleId=>({moduleId,sourceLimitBytes:LIMIT,deadlineMs:BITBUCKET_WHITESPACE_WORKER_DEADLINE})));
+  assert.equal(BITBUCKET_WHITESPACE_WORKER_DEADLINE,10_000);assert.equal(f.calls.length,1);
+});
+test('declared oversized length is recorded exactly before body reads',async()=>{
+  const f=setup({response:{headers:new Headers({'content-type':'application/javascript','content-length':String(LIMIT+73)})}});const r=await f.run();
+  assert.equal(r.reason,'body_size');assert.equal(r.request.declaredLength,LIMIT+73);assert.equal(r.request.declaredLengthStatus,'valid');assert.equal(r.request.bytesSeen,0);assert.equal(f.reads,0);assert.equal(f.writes.length,0);
+});
+test('an overflowing chunk records only the capped threshold, not an oversized body',async()=>{
+  const f=setup({chunks:[new Uint8Array(123),new Uint8Array(LIMIT+100)]});const r=await f.run();assert.equal(r.reason,'body_size');assert.equal(r.request.bytesSeen,LIMIT+1);assert.equal(r.request.bytesSeenCapped,true);assert.equal(r.asset,undefined);assert.equal(f.writes.length,0);assert.equal(f.cancelled,1);
+});
+test('unsafe declared byte length is not rounded into a valid diagnostic',async()=>{
+  const f=setup({response:{headers:new Headers({'content-type':'application/javascript','content-length':'9007199254740993'})}});const r=await f.run();assert.equal(r.reason,'body_contract');assert.equal(r.request.declaredLength,null);assert.equal(r.request.declaredLengthStatus,'invalid');assert.equal(r.request.bytesSeen,0);assert.equal(f.reads,0);
 });
