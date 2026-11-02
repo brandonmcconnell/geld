@@ -1537,6 +1537,8 @@ Provider-specific surfaces translate settings and sources into shared review and
   A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
   Temporary search or an absent native tree host releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
   The explicit `gitlab-file-search` installed slice uses GitLab's original file-tree search, trusted typing and native result activation on the immutable mixed MR, requiring custom collapsed-folder and current-file recovery after clearing the query.
+  Its pinned source version and rendered native target are independent GitLab facts: a selected merge-result target can have a different head from `source_versions`, so bind both full native selections separately and reject any change during the interaction.
+  PR 220's first installed search attempt failed on the obsolete rendered-head fixture gate before any search action, establishing neither a search pass nor a product defect.
   It is excluded from default and `all` demand, preserves original source/input/list/checkbox identity, allows native recycler result rows to change, and makes no browser Ctrl+F or zero-native-hydration claim.
   A verified native file reveal during search updates that remembered selection against the complete same-subject inventory, so clearing search cannot restore an older file over the reader's choice.
   Search suspension still discards removed source paths and folder keys, and a changed subject or provider, explicit teardown or disable clears all remembered choices even with no live owned host.

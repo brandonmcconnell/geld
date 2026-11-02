@@ -4,13 +4,21 @@ export const GITLAB_FILE_SEARCH = Object.freeze({
   url: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123',
   path: 'spec/graphql/mutations/boards/issues/issue_move_list_spec.rb',
   anchor: '1368db605e5982dfe6a6596a37b7cb054d48d61d',
-  head: '13215ca460cd4f75d3765a882ef486aa2dacf549',
+  head: 'd03aadd2c95a94ecbe229896b29c9dcda009a916',
   version: '2158520123',
   review: '019271d5e9aaae129d85f3585c16c1acf7a767cd',
   query: 'issue_move_list_spec.rb',
 });
 
 export function gitLabFileSearchSnapshot(fixture) {
+  let app = null;
+  try {
+    const nodes = [...document.querySelectorAll('[data-rapid-diffs][data-app-data]')];
+    if (nodes.length === 1) {
+      const native = JSON.parse(nodes[0].getAttribute('data-app-data'));
+      app = { path: native.mr_path, iid: native.iid, sourceVersions: native.versions?.source_versions, targetVersions: native.versions?.target_versions };
+    }
+  } catch { /* Malformed native versions cannot establish the selected source or target. */ }
   const host = document.querySelector('[data-testid="file-tree-container"]');
   const input = host?.querySelector('input[type="search"][data-testid="diff-tree-search"]');
   const nav = host?.querySelector('nav.mr-tree-list[aria-label="File tree"]');
@@ -41,7 +49,7 @@ export function gitLabFileSearchSnapshot(fixture) {
   const boxes = [...root?.querySelectorAll('input[type="checkbox"]') ?? []];
   const rect = code?.getBoundingClientRect();
   return {
-    url: location.href,
+    url: location.href, app,
     unique: { host: document.querySelectorAll('[data-testid="file-tree-container"]').length, input: host?.querySelectorAll('input[type="search"][data-testid="diff-tree-search"]').length ?? 0, nav: host?.querySelectorAll('nav.mr-tree-list[aria-label="File tree"]').length ?? 0, roots: roots.length },
     search: input == null ? null : { attributes: ['type', 'id', 'data-testid', 'aria-label', 'placeholder'].map((name) => [name, input.getAttribute(name)]), value: input.value, label: input.getAttribute('aria-label'), visible: visible(input), focused: document.activeElement === input },
     native: { paths: [...nav?.querySelectorAll('a[data-testid="file-row"][data-file-row]') ?? []].filter((link) => link.closest('[data-geld-ui]') === null && visible(link)).map((link) => { try { return new URL(link.href).searchParams.get('file_path'); } catch { return null; } }), resultCount: original.length, visible: visible(original[0]), href: original[0]?.href ?? null, anchor: original[0]?.getAttribute('data-file-row') ?? null, ariaCurrent: original[0]?.getAttribute('aria-current') ?? null, className: original[0]?.className ?? null, listMarker: nav?.getAttribute('data-geld-provider-category-body') ?? null },
@@ -52,6 +60,49 @@ export function gitLabFileSearchSnapshot(fixture) {
   };
 }
 
+export function gitLabFileSearchSelection(snapshot, fixture = GITLAB_FILE_SEARCH) {
+  const app = snapshot.app;
+  const expected = new URL(fixture.url);
+  const mrPath = expected.pathname.replace(/\/diffs$/, '');
+  assert.equal(app?.path, mrPath, 'Native versions belong to another MR');
+  const id = (value) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : typeof value === 'string' && /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value)) ? value : null;
+  assert.equal(id(app?.iid), mrPath.split('/').at(-1));
+  const selected = (versions, kind) => {
+    assert.ok(Array.isArray(versions) && versions.length > 0, `Missing native ${kind} versions`);
+    const seen = new Set();
+    for (const version of versions) {
+      assert.ok(version !== null && typeof version === 'object' && !Array.isArray(version) && id(version.id) !== null && typeof version.selected === 'boolean', `Malformed native ${kind} version`);
+      assert.equal(seen.has(id(version.id)), false, `Duplicate native ${kind} version ID`);seen.add(id(version.id));
+      assert.equal(typeof version.is_merge_head, 'boolean', `Malformed native ${kind} kind`);
+      if (kind === 'source' || version.head_sha !== undefined) assert.match(version.head_sha ?? '', /^[0-9a-f]{40}$/, `Malformed native ${kind} head`);
+    }
+    const chosen = versions.filter((version) => version.selected);
+    assert.equal(chosen.length, 1, `Ambiguous native selected ${kind} version`);
+    const version = chosen[0];assert.match(version.head_sha ?? '', /^[0-9a-f]{40}$/, `Missing native selected ${kind} head`);
+    const link = new URL(version.href, expected.origin);
+    assert.equal(link.username, '');assert.equal(link.password, '');assert.equal(link.hash, '');
+    assert.equal(link.origin, expected.origin);assert.equal(link.pathname, expected.pathname);
+    if (link.searchParams.has('diff_id')) assert.equal(link.searchParams.get('diff_id'), fixture.version);
+    return version;
+  };
+  const source = selected(app.sourceVersions, 'source');const target = selected(app.targetVersions, 'target');
+  for (const version of app.targetVersions) {
+    const matching = app.sourceVersions.find((candidate) => id(candidate.id) === id(version.id));
+    if (matching !== undefined) {
+      assert.equal(version.is_merge_head, matching.is_merge_head, 'One native version ID has conflicting source and target kinds');
+      if (version.head_sha !== undefined) assert.equal(version.head_sha, matching.head_sha, 'One native version ID has conflicting source and target heads');
+    }
+  }
+  assert.equal(id(source.id), fixture.version, 'Pinned source version changed');
+  assert.equal(source.head_sha, fixture.head, 'Pinned source head changed');
+  assert.equal(source.is_merge_head, false, 'Pinned source is not a native source revision');
+  assert.equal(new URL(source.href, expected.origin).searchParams.get('diff_id'), fixture.version, 'Native source link does not pin the selected revision');
+  assert.equal(typeof target.is_merge_head, 'boolean', 'Unknown native target kind');
+  if (id(target.id) === id(source.id)) assert.equal(target.head_sha, source.head_sha, 'One native version ID has conflicting source and target heads');
+  else assert.equal(target.is_merge_head, true, 'Unexpected native target revision for the pinned source');
+  return { source, target };
+}
+
 export function assertGitLabFileSearchScope(snapshot, fixture = GITLAB_FILE_SEARCH) {
   const url = new URL(snapshot.url);const expected = new URL(fixture.url);
   assert.equal(url.origin, expected.origin, 'Native search left the original provider');
@@ -60,7 +111,8 @@ export function assertGitLabFileSearchScope(snapshot, fixture = GITLAB_FILE_SEAR
   assert.deepEqual(snapshot.unique, { host: 1, input: 1, nav: 1, roots: 1 }, 'Search needs unique original native surfaces');
   assert.equal(snapshot.source.id, fixture.anchor);
   assert.equal(snapshot.source.path, fixture.path);
-  assert.equal(snapshot.source.head, fixture.head);
+  const selection = gitLabFileSearchSelection(snapshot, fixture);
+  assert.equal(snapshot.source.head, selection.target.head_sha, 'Rendered native file head conflicts with selected target version');
   assert.equal(snapshot.source.review, fixture.review);
   assert.ok(snapshot.search?.label && snapshot.search.visible, 'Original accessible native search input is missing');
   if (snapshot.identity !== null) assert.ok(Object.values(snapshot.identity).every(Boolean), 'Original native nodes, parents or checkboxes changed');
@@ -83,6 +135,7 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
   };
   const unchanged = (value, baseline) => {
     assertGitLabFileSearchScope(value);
+    assert.deepEqual(gitLabFileSearchSelection(value), gitLabFileSearchSelection(baseline), 'Native selected source or target changed during file search');
     assert.equal(value.source.raw, baseline.source.raw, 'Native immutable file payload changed');
     assert.deepEqual(value.source.boxes, baseline.source.boxes, 'Native checkbox state or attributes changed');
     assert.deepEqual(value.search.attributes, baseline.search.attributes, 'Original native search semantics changed');
