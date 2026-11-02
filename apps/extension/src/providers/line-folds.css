@@ -1,6 +1,8 @@
 [data-geld-provider-line-hidden] { display: none !important; }
 .geld-provider-line-fold { color: var(--geld-provider-text); background: var(--geld-provider-bg-subtle); }
 .geld-provider-line-fold__cell { padding: 0 !important; }
+table.rd-text-view-root > tbody.rd-text-view-content > tr.geld-provider-line-fold[data-geld-ui],
+table.rd-text-view-root > tbody.rd-text-view-content > tr.geld-provider-line-fold[data-geld-ui] > td.geld-provider-line-fold__cell[data-geld-ui] { display: block; width: 100%; box-sizing: border-box; }
 .geld-provider-line-fold__toggle { display: flex; align-items: center; gap: var(--geld-provider-space-3); width: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); color: inherit; font: inherit; text-align: start; border: 0; background: transparent; cursor: pointer; }
 .geld-provider-line-fold__toggle:hover { background: var(--geld-provider-button-hover-bg); }
 .geld-provider-line-fold__toggle:focus-visible { box-shadow: var(--geld-provider-focus-ring); outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); }

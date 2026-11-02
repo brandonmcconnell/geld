@@ -31,7 +31,11 @@ test('native context actions are observed and never automatically activated', ()
 test('no source, duplicate native source, changed selected version and changed URL are unavailable', () => { assert.equal(probe('setup'), null);const root = fixture();root.after(root.cloneNode(true));assert.equal(probe('setup'), null);root.nextElementSibling.remove();probe('setup');location.href = URL + '#different';assert.equal(probe().sameSource, false);location.href = URL.replace('2158520123', '2158520124');assert.equal(probe(), null); });
 test('test declaration inspection uses actual new-side text in split rows', () => { fixture();const row = document.querySelector('tr');row.className = 'rd-hunk-lines-parallel';const old = row.querySelector('.rd-line-content');old.dataset.position = 'old';const next = old.cloneNode(true);next.dataset.position = 'new';next.textContent = 'different new-side source';row.append(next);const initial = probe('setup');assert.equal(initial.sourceRows[0].newText, 'different new-side source'); });
 
-function sample() { return { sameSource: true, visible: true, events: [], controls: [{}, {}, {}], folds: GITLAB_DISPLAYED_OUTLINE.declarations.map((d) => ({ title: d.title, sourceLine: String(d.line), kind: 'suite', status: 'added', label: `Show ${d.title}, from line ${d.line}, added, +${d.additions}`, expanded: 'false', control: { inViewport: true, unobscured: true } })) }; }
+function fullSpan() {
+ const rect = { left: 598, right: 1403, width: 805 };
+ return { sourceBound: true, table: { bounds: { ...rect }, display: 'block' }, body: { bounds: { ...rect }, display: 'block' }, row: { bounds: { ...rect }, display: 'block' }, cell: { bounds: { ...rect }, display: 'block' }, hunk: { bounds: { ...rect }, display: 'grid' } };
+}
+function sample() { return { sameSource: true, visible: true, events: [], controls: [{}, {}, {}], folds: GITLAB_DISPLAYED_OUTLINE.declarations.map((d) => ({ title: d.title, sourceLine: String(d.line), kind: 'suite', status: 'added', label: `Show ${d.title}, from line ${d.line}, added, +${d.additions}`, expanded: 'false', control: { inViewport: true, unobscured: true, bounds: { left: 598, right: 1403, width: 805 }, nativeSpan: fullSpan() } })) }; }
 test('known displayed outlines require all three source-bound suite labels and counts', () => { assert.doesNotThrow(() => assertDisplayedOutlineRows(sample())); });
 for (const [name, mutate] of [
  ['missing original source', (v) => { v.sameSource = false; }], ['hidden source', (v) => { v.visible = false; }], ['missing outline', (v) => { v.folds.pop(); }], ['wrong title', (v) => { v.folds[0].title = 'other'; }], ['wrong source binding', (v) => { v.folds[0].sourceLine = '134'; }], ['invented status', (v) => { v.folds[0].status = 'modified'; }], ['wrong changed-line count', (v) => { v.folds[0].label = 'Show title, from line103, +999'; }], ['native expansion', (v) => { v.events.push({ kind: 'native_context' }); }],
@@ -57,6 +61,28 @@ test('restoration rejection remains a failed phase with explicit cleanup evidenc
 
 test('missing native counts and unrelated categorized paths cannot pass count acceptance', () => { const a = counts();const b = counts();a.native.headers = [];b.native.headers = [];assert.throws(() => assertDisplayedOutlineCounts(a,b));const c = counts();c.runtime.categories[0].paths = ['other.test.ts'];assert.throws(() => assertDisplayedOutlineCounts(counts(),c)); });
 test('viewport or occlusion absence cannot earn a visible outline-control pass', () => { const a = sample();assertDisplayedOutlineControl(a);a.folds[0].control.inViewport = false;assert.throws(() => assertDisplayedOutlineControl(a));a.folds[0].control.inViewport = true;a.folds[0].control.unobscured = false;assert.throws(() => assertDisplayedOutlineControl(a)); });
+for (const [name, mutate] of [
+ ['historical intrinsic row', (c) => { c.nativeSpan.row.bounds.width=469;c.nativeSpan.row.bounds.right=1067; }],
+ ['narrow button', (c) => { c.bounds.width=468;c.bounds.right=1066; }],
+ ['narrow owned cell', (c) => { c.nativeSpan.cell.bounds.width=469;c.nativeSpan.cell.bounds.right=1067; }],
+ ['missing native span', (c) => { c.nativeSpan=null; }],
+ ['unbound source', (c) => { c.nativeSpan.sourceBound=false; }],
+ ['native table layout changed', (c) => { c.nativeSpan.table.display='table'; }],
+ ['owned table-row layout', (c) => { c.nativeSpan.row.display='table-row'; }],
+ ['nonfinite native geometry', (c) => { c.nativeSpan.body.bounds.width=Infinity; }],
+ ['missing actual hunk', (c) => { c.nativeSpan.hunk=null; }],
+ ['partial native hunk', (c) => { c.nativeSpan.hunk.bounds.width=100;c.nativeSpan.hunk.bounds.right=698; }],
+ ['inconsistent native bounds', (c) => { c.nativeSpan.body.bounds.width=800; }],
+]) test(`full-width outline acceptance rejects ${name}`, () => { const v=sample();mutate(v.folds[0].control);assert.throws(()=>assertDisplayedOutlineControl(v)); });
+test('full-span comparison allows one CSS pixel rounding but preserves native table/body border geometry',()=>{
+ const v=sample();v.folds[0].control.nativeSpan.table.bounds={left:599,right:1402,width:803};
+ v.folds[0].control.bounds={left:598.5,right:1402.5,width:804};assert.doesNotThrow(()=>assertDisplayedOutlineControl(v));
+ v.folds[0].control.bounds.width=803.9;assert.throws(()=>assertDisplayedOutlineControl(v));
+});
+test('a replaced native hunk cannot establish preserved source-bound full-span geometry',()=>{
+ fixture();document.querySelector('tr.rd-hunk-header').setAttribute('data-hunk-header','');probe('setup');
+ const hunk=document.querySelector('tr.rd-hunk-header');hunk.replaceWith(hunk.cloneNode(true));assert.equal(probe().sameSource,false);
+});
 test('unexpected owned-looking row metadata is not exempted from native preservation', () => { fixture();probe('setup');document.querySelector('tr').dataset.geldUnrelated = 'changed';assert.equal(probe().sameSource, false); });
 
 test('wrapping an original text node or changing its native number text fails preservation', () => {
@@ -99,6 +125,19 @@ test('hit and button chains stay bounded, with explicit truncation and unsafe or
  holder.id='x'.repeat(200);holder.className=Array.from({length:25},(_,i)=>`native-${i}`).join(' ');holder.dataset.testid='unsafe<markup>';document.elementFromPoint=()=>holder;
  let parent=cell;for(let index=0;index<12;index++){const child=document.createElement('div');parent.append(child);parent=child;}parent.append(button);
  const control=JSON.parse(JSON.stringify(probe().folds[0].control));assert.equal(control.hitChain.nodes.length,8);assert.equal(control.buttonChain.nodes.length,8);assert.equal(control.hitChain.truncated,true);assert.equal(control.buttonChain.truncated,true);assert.equal(control.hitChain.nodes[0].id,null);assert.equal(control.hitChain.nodes[0].testid,null);assert.equal(control.hitChain.nodes[0].classes.length,16);assert.equal(control.hitChain.nodes[0].classesTruncated,true);
+});
+test('span diagnostics bind the actual source-adjacent owned row to its native Rapid body and unique original hunk without writes',()=>{
+ const root=fixture(),table=root.querySelector('table'),body=table.querySelector('tbody'),hunk=body.querySelector('tr.rd-hunk-header');
+ table.className='rd-text-view-root';body.className='rd-text-view-content';hunk.setAttribute('data-hunk-header','');
+ table.style.display='block';body.style.display='block';probe('setup');
+ const row=document.createElement('tr');row.className='geld-provider-line-fold';row.dataset.geldUi='';row.dataset.geldProviderFoldRow='test:103';row.style.display='block';
+ const cell=document.createElement('td');cell.className='geld-provider-line-fold__cell';cell.dataset.geldUi='';cell.style.display='block';
+ const button=document.createElement('button');button.type='button';cell.append(button);row.append(cell);body.prepend(row);
+ // Explicit measured protocol, not actual served-CSS or provider layout evidence.
+ for(const node of [table,body,hunk,row,cell,button])node.getBoundingClientRect=()=>new window.DOMRect(10,20,805,28);
+ document.elementFromPoint=()=>button;const html=root.innerHTML;let value=probe();assert.equal(value.sameSource,true);assert.equal(value.folds[0].control.nativeSpan.sourceBound,true);
+ assert.deepEqual(value.folds[0].control.nativeSpan.body.bounds,{left:10,right:815,top:20,bottom:48,width:805,height:28});assert.doesNotThrow(()=>assertDisplayedOutlineControl(value));assert.equal(root.innerHTML,html);
+ const duplicate=hunk.cloneNode(true);body.append(duplicate);value=probe();assert.equal(value.sameSource,false);assert.equal(value.folds[0].control.nativeSpan.sourceBound,false);assert.equal(value.folds[0].control.nativeSpan.hunk,null);
 });
 test('covered line103 is captured before the unchanged strict assertion fails, with no substitute click and complete cleanup', async () => {
  const r=runner({coveredControl:true});await assert.rejects(r.run(),/covered at its click point/);assert.equal(r.progress.status,'failed');assert.equal(r.progress.beforeCapture.folds[0].control.unobscured,false);assert.equal(r.progress.afterCapture.folds[0].control.unobscured,false);

@@ -55,10 +55,11 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
   if (textCount > 10000) return null;
   const controls = [...root.querySelectorAll('tr.rd-hunk-header button[data-click="expandLines"][data-expand-direction]')].filter((node) => native(node) && ['up', 'down', 'both'].includes(node.dataset.expandDirection));
   const viewed = [...root.querySelectorAll('input[data-viewed-checkbox], [data-testid="fileReviewCheckbox"] input[type="checkbox"]')].filter(native);
+  const nativeHunks = [...root.querySelectorAll('tr.rd-hunk-header[data-hunk-header]')].filter(native);
   const headers = [...document.querySelectorAll('.geld-provider-category-header')];
   if (action === 'setup') {
     if (store) throw Error('Displayed source observation already exists');
-    store = { url: location.href, root, parent: root.parentElement, data: root.getAttribute('data-file-data'), reading, controls: controls.map((node) => ({ node, parent: node.parentElement, html: node.outerHTML })), viewed: viewed.map((node) => ({ node, checked: node.checked, disabled: node.disabled })), events: [], expected: null };
+    store = { url: location.href, root, parent: root.parentElement, data: root.getAttribute('data-file-data'), reading, controls: controls.map((node) => ({ node, parent: node.parentElement, html: node.outerHTML })), nativeHunks: nativeHunks.map((node) => ({ node, parent: node.parentElement, html: node.outerHTML })), viewed: viewed.map((node) => ({ node, checked: node.checked, disabled: node.disabled })), events: [], expected: null };
     store.listen = (event) => {
       if (!(event.target instanceof Element)) return;
       if (store.controls.some(({ node }) => node.contains(event.target))) store.events.push({ kind: 'native_context', type: event.type, trusted: event.isTrusted === true });
@@ -76,6 +77,7 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
         && row.cells.length === old.cells.length && row.cells.every((node, at) => node === old.cells[at]) && row.nodes.length === old.nodes.length && row.nodes.every((node, at) => node === old.nodes[at] && node.data === old.texts[at])
         && JSON.stringify(row.code) === JSON.stringify(old.code) && row.ids.length === old.ids.length && row.ids.every(([node, id], at) => node === old.ids[at][0] && id === old.ids[at][1]) && row.links.length === old.links.length && row.links.every(([node, href], at) => node === old.links[at][0] && href === old.links[at][1]);
     }) && controls.length === store.controls.length && controls.every((node, index) => node === store.controls[index].node && node.parentElement === store.controls[index].parent && node.outerHTML === store.controls[index].html)
+    && nativeHunks.length === store.nativeHunks.length && nativeHunks.every((node, index) => node === store.nativeHunks[index].node && node.parentElement === store.nativeHunks[index].parent && node.outerHTML === store.nativeHunks[index].html)
     && viewed.length === store.viewed.length && viewed.every((node, index) => node === store.viewed[index].node && node.checked === store.viewed[index].checked && node.disabled === store.viewed[index].disabled);
   if (action === 'category-button') {
     if (!same || !['Essential', 'Tests'].includes(target)) return null;
@@ -83,8 +85,15 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
   }
   const folds = [...root.querySelectorAll('[data-geld-provider-fold-row^="test:"]')].map((row) => {
     const button = row.querySelector('button');const next = row.nextElementSibling;const source = reading.find((line) => line.row === next);
+    const body = row.parentElement;const table = body?.parentElement;const cell = button?.parentElement;
+    const hunks = body ? [...body.children].filter((node) => native(node) && node.matches('tr.rd-hunk-header[data-hunk-header]')) : [];
+    const nativeSpan = body?.matches('tbody.rd-text-view-content') && table?.matches('table.rd-text-view-root') && cell?.matches('td.geld-provider-line-fold__cell[data-geld-ui]')
+      ? { sourceBound: source !== undefined && source.parent === body && root.contains(table) && native(body) && native(table) && hunks.length === 1,
+        table: { bounds: bounds(table.getBoundingClientRect()), display: getComputedStyle(table).display }, body: { bounds: bounds(body.getBoundingClientRect()), display: getComputedStyle(body).display },
+        row: { bounds: bounds(row.getBoundingClientRect()), display: getComputedStyle(row).display }, cell: { bounds: bounds(cell.getBoundingClientRect()), display: getComputedStyle(cell).display },
+        hunk: hunks.length === 1 ? { bounds: bounds(hunks[0].getBoundingClientRect()), display: getComputedStyle(hunks[0]).display } : null } : null;
     const rect = button?.getBoundingClientRect();const hit = rect ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) : null;
-    const control = rect ? { bounds: bounds(rect), point: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, inViewport: rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0 && rect.right <= (view?.innerWidth ?? 0) && rect.bottom <= (view?.innerHeight ?? 0), unobscured: hit !== null && button.contains(hit), hitChain: inspectChain(hit, button), buttonChain: inspectChain(button, button) } : null;
+    const control = rect ? { bounds: bounds(rect), nativeSpan, point: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, inViewport: rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0 && rect.right <= (view?.innerWidth ?? 0) && rect.bottom <= (view?.innerHeight ?? 0), unobscured: hit !== null && button.contains(hit), hitChain: inspectChain(hit, button), buttonChain: inspectChain(button, button) } : null;
     return { row, button, source, control, text: row.textContent, kind: row.dataset.kind, status: row.dataset.status, label: button?.getAttribute('aria-label') ?? '', title: row.querySelector('.geld-provider-line-fold__title')?.textContent ?? '', expanded: button?.getAttribute('aria-expanded') ?? null };
   });
   if (action === 'fold-button') return same ? folds.find((fold) => Number(fold.source?.next) === target)?.button ?? null : null;
@@ -125,6 +134,17 @@ export function assertDisplayedOutlineControl(sample) {
   const control = sample.folds.find((fold) => fold.sourceLine === '103')?.control;
   assert.equal(control?.inViewport, true, 'The actual first outline control must be visible in the viewport');
   assert.equal(control?.unobscured, true, 'The actual outline control is covered at its click point.');
+  for (const fold of sample.folds) {
+    const span = fold.control?.nativeSpan;
+    assert.equal(span?.sourceBound, true, 'Outline width must bind to the original native Rapid body and hunk.');
+    assert.equal(span.table.display, 'block');assert.equal(span.body.display, 'block');assert.equal(span.row.display, 'block');assert.equal(span.cell.display, 'block');
+    for (const rect of [span.body.bounds, span.row.bounds, span.cell.bounds, span.hunk?.bounds, fold.control?.bounds]) {
+      for (const key of ['left', 'right', 'width']) assert.ok(Number.isFinite(rect?.[key]), 'Outline width geometry must be finite.');
+      assert.ok(rect.width > 0, 'Outline width must be positive.');
+      assert.ok(Math.abs(rect.right - rect.left - rect.width) <= 1, 'Outline width geometry must be internally consistent.');
+      for (const key of ['left', 'right', 'width']) assert.ok(Math.abs(rect[key] - span.body.bounds[key]) <= 1, 'Outline row and button must fill the actual native Rapid hunk/body span.');
+    }
+  }
 }
 
 export async function verifyGitLabDisplayedOutline(page, { progress, poll, pollStable, capture, readSettings, writeSettings, readState, safeUrl, extensionId }) {
