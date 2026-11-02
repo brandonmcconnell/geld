@@ -2945,7 +2945,7 @@ try {
 
   await runCase('bitbucket-pr-whole-context', bitbucketPrWholeURL, async (page,item) => {
     const context=bitbucketWholeCases.get(page);assert.ok(context,'Dedicated PR whole-context scope unavailable');
-    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketPrContextBudget,readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)})});
+    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketPrContextBudget,readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)}),captureDiagnostic:async html=>{const file='bitbucket-pr-target-diagnostic.html';await writeFile(resolve(artifacts,file),html);return{file,scope:'Sanitized known public target only; no scripts, forms, source URLs or token-like attributes.'};}});
   }, true);
 
   await runCase('bitbucket-whole-context', bitbucketWholeURL, async (page,item) => {
