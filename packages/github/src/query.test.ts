@@ -11,6 +11,8 @@ describe('search query editing', () => {
     expect(setQualifier('is:pr is:open is:public -author:someone', 'is', 'closed')).toBe('is:pr is:public -author:someone is:closed');
     expect(setQualifier('is:pr is:open is:unmerged', 'is', 'closed')).toBe('is:pr is:unmerged is:closed');
     expect(setQualifier('is:pr is:closed is:unmerged', 'is', 'merged')).toBe('is:pr is:closed is:merged');
+    expect(setQualifier('is:pr is:open is:internal', 'is', 'private')).toBe('is:pr is:open is:private');
+    expect(setQualifier('is:pr is:private', 'is', 'internal')).toBe('is:pr is:internal');
     expect(setQualifier('is:pr is:open', 'is', null)).toBe('is:pr');
     expect(setQualifier('is:pr is:open', 'is', 'issue')).toBe('is:open is:issue');
     expect(setQualifier('is:pr is:open is:locked', 'is', 'unlocked')).toBe('is:pr is:open is:unlocked');
