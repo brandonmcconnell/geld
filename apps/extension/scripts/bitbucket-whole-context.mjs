@@ -35,7 +35,7 @@ export function bitbucketWholeProbe(action='read',arg=null,f=BITBUCKET_WHOLE) {
   const key='__geldBitbucketWholeContext';let p=globalThis[key];if(action==='cleanup'){p?.stop();delete globalThis[key];return{released:true};}
   const excluded='[data-geld-ui],[hidden],[inert],[aria-hidden="true"],form,textarea,button,[role="button"],[contenteditable],dialog,[role="dialog"],[role="tooltip"],[popover],.ak-renderer-document,[data-qa="pull-request-description"],[data-qa="pull-request-overview-activity-content"]';
   const native=n=>n instanceof Element&&n.isConnected&&!n.closest(excluded);
-  const u=new URL(location.href),route=f.pr?`/${f.repository}/pull-requests/${f.pr}/diff`:`/${f.repository}/commits/${f.head}`;if(u.origin!=='https://bitbucket.org'||u.pathname!==route||u.search||u.username||u.password||u.hash)return null;
+  const u=new URL(location.href),route=f.pr?`/${f.repository}/pull-requests/${f.pr}/diff`:`/${f.repository}/commits/${f.head}`;if(u.origin!=='https://bitbucket.org'||u.pathname!==route||u.search||u.username||u.password||u.hash&&!(f.pr&&decodeURIComponent(u.hash.slice(1))===`chg-${f.path}`))return null;
   const actors=[...document.head.querySelectorAll('meta#bb-bootstrap[data-current-user][data-target-workspace-uuid]')];let actor=actors[0];try{if(actors.length!==1||!native(actor)||actor.getAttribute('data-current-user').length>16384||JSON.parse(actor.getAttribute('data-current-user'))?.isAuthenticated!==false||!actor.getAttribute('data-target-workspace-uuid'))return null;}catch{return null;}
   let region,main,heading,title,link;
   if(f.pr){const frame=globalThis.__geldBitbucketPrWhole?.frame?.();if(!frame)return null;({region,main,heading,title,link}=frame);}
