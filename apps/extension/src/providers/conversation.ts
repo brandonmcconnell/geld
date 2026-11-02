@@ -81,6 +81,7 @@ export class ProviderConversation {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private observedHead: string | null = null;
   private snapshotVersion = 0;
+  private latestSettings: GeldSettings | null = null;
   private readonly ai: ProviderAiTriage;
   private readonly publication: ProviderPublishedReview;
   private readonly compacted = new Map<HTMLElement, { readonly key: string; readonly anchors: readonly string[]; readonly control: HTMLElement; readonly button: HTMLButtonElement }>();
@@ -102,6 +103,7 @@ export class ProviderConversation {
   }
 
   apply(page: ProviderReviewPage | null, settings: GeldSettings): void {
+    this.latestSettings = settings;
     if (page === null || !settings.enabled || (!settings.prOverview && !settings.quickReview)) { this.clear(); return; }
     const key = JSON.stringify([repositoryKey(page.repository), page.url]);
     if (key !== this.key) { this.clear(); this.key = key; }
@@ -164,6 +166,15 @@ export class ProviderConversation {
       this.status?.remove(); this.status = null;
       const references = this.adapter.readReferences?.(page, document, snapshot.events) ?? [];
       const options = {
+        botRequests: snapshot.botRequests?.(native, snapshot.comments, () => {
+          if (this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || this.latestSettings === null
+            || snapshot.input.subject.headSha !== actionHead || !this.latestSettings.enabled || !this.latestSettings.prOverview) return false;
+          const active = this.adapter.describe(new URL(window.location.href), document);
+          if (active === null || !isProviderReviewPage(active) || active.url !== page.url || active.kind !== page.kind || active.version !== page.version
+            || active.diffPageUrl !== page.diffPageUrl || active.headSha !== null && active.headSha !== actionHead) return false;
+          const latest = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, this.latestSettings, snapshot.complete);
+          return JSON.stringify(latest.bots) === JSON.stringify(native.bots);
+        }) ?? [],
         references,
         ...(this.adapter.referenceAnchor === undefined ? {} : { onRevealReference: (reference: ProviderReviewReference): boolean => {
           const current = (): ProviderReviewPage | null => {

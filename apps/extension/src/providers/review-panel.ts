@@ -13,6 +13,8 @@ import { renderPublisherIdentity } from './publisher-identity';
 import { providerCheckKey, providerCheckPresentation, providerChecksCoverage } from './ci-checks';
 import { providerCheckIcon } from './ci-icons';
 import type { ReviewerIdentityChoice, ReviewerIdentityControl } from './reviewer-identity';
+import { renderProviderBotRequest } from './bot-request';
+import type { ProviderBotRequest, ProviderBotRequestControl } from './bot-request';
 
 export interface ProviderReviewPanelEvent {
   readonly id: string;
@@ -53,6 +55,7 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  readonly botRequests?: readonly ProviderBotRequest[];
   readonly updating?: boolean;
   readonly version?: number;
   readonly actionsForSource?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
@@ -188,6 +191,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   const authorPresentations = new Map<string, ProviderReviewAuthorPresentation>();
   let bots: readonly BotVerdictRecord[] = [];
   let identities: ReviewerIdentityControl[] = [];
+  const botRequests = new Map<string, ProviderBotRequestControl>();
   const nativeTimes = new Map<number, string>();
   let lastSignature = '';
 
@@ -548,6 +552,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         }
       }
       if (providerBotSupport(input.subject.provider, id)?.formatVerified !== true) row.append(node('p', 'Summary parsing for this service has not been verified on this provider.', 'geld-provider-review__muted'));
+      for (const request of options.botRequests ?? []) {
+        if (request.botId !== id || !request.current()) continue;
+        let control = botRequests.get(request.key);
+        if (control === undefined) {
+          control = renderProviderBotRequest(row, request, (text) => (options.copyText ?? ((value: string) => doc.defaultView!.navigator.clipboard.writeText(value)))(text));
+          botRequests.set(request.key, control);
+        } else { row.append(control.element);control.update(request); }
+      }
       section.append(row);
     }
     return section;
@@ -937,6 +949,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
+    const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
     const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
     const checkFocus = focusedCheck === null ? null : { key: focusedCheck.dataset.geldCheckKey, href: focused?.getAttribute('href') };
     const nextChecksScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
@@ -961,7 +974,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     const publication = options.publication?.result;
     const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
-    const signature = JSON.stringify([input, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
+    for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
+    const requestSignature = options.botRequests?.map((request) => [request.key, request.current(), request.comment.available, request.comment.reason]);
+    const signature = JSON.stringify([input, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
@@ -1101,6 +1116,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       children.push(section);
     }
     panel.replaceChildren(...children);
+    for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
+    for (const [key, control] of botRequests) {
+      if (!panel.contains(control.element)) { control.destroy();botRequests.delete(key); }
+    }
+    if (requestFocus !== null && panel.contains(requestFocus) && !requestFocus.matches(':disabled') && (doc.activeElement === doc.body || doc.activeElement === focused)) requestFocus.focus({ preventScroll: true });
     if (checkFocus !== null && checksScope === nextChecksScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const targets = [...panel.querySelectorAll<HTMLAnchorElement>('[data-geld-check-key] a[href]')].filter((target) => target.closest<HTMLElement>('[data-geld-check-key]')?.dataset.geldCheckKey === checkFocus.key && target.getAttribute('href') === checkFocus.href);
       const target = targets.length === 1 ? targets[0] : undefined;
@@ -1145,6 +1165,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     destroy() {
       destroyed = true;
       for (const control of identities) control.destroy();
+      for (const control of botRequests.values()) control.destroy();
+      botRequests.clear();
       identities = [];
       expanded.clear();
       sourceDetails.clear();

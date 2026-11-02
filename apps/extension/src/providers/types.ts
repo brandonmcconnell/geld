@@ -3,6 +3,7 @@ import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
 import type { ProviderReviewReference } from './references';
+import type { ProviderBotRequest } from './bot-request';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
 
@@ -144,6 +145,7 @@ export interface ProviderReviewAction {
 }
 
 export interface ProviderReviewSnapshot {
+  readonly botRequests?: (input: ProviderReviewInput, comments: readonly ProviderReviewComment[], current: () => boolean) => readonly ProviderBotRequest[];
   readonly sourceCoverage?: ProviderSourceCoverage;
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement) => boolean;
