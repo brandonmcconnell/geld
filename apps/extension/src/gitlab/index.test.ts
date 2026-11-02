@@ -14,6 +14,7 @@ const FORM = '<form data-testid="submit-gl-form"><div data-testid="reviewer_stat
 
 function snapshot(): GitLabReviewSnapshot {
   return {
+    reviewerScope: null,
     input: { subject: { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/repo', id: '7', headSha: HEAD }, threads: [] },
     comments: [], events: [], checks: [], threadCapabilities: new Map(), renderedNotes: new Map(), state: 'opened', complete: true, unavailable: [],
     sourceCoverage: { threads: 'complete', comments: 'complete' }, approvalsRequired: null, approvalsLeft: null,
@@ -36,6 +37,30 @@ beforeEach(() => {
 });
 
 afterEach(() => { document.body.replaceChildren();vi.unstubAllGlobals();vi.restoreAllMocks(); });
+
+it('refreshes the focus-only reviewer handoff from native DOM while preserving its fetched viewer and exact metadata scope', async () => {
+  const source = snapshot();
+  vi.mocked(fetchGitLabReview).mockResolvedValue({ ...source, reviewerScope: { subject: source.input.subject, projectId: '27', noteableId: '81' } });
+  const noteable = document.querySelector('#js-vue-mr-discussions');
+  noteable?.setAttribute('data-noteable-type', 'MergeRequest');
+  noteable?.setAttribute('data-noteable-data', JSON.stringify({ id: 81, iid: 7, project_id: 27, diff_head_sha: HEAD, current_user: { can_update: true } }));
+  const result = await acquire();expect(result.reviewerControls?.available).toBe(false);
+  document.body.insertAdjacentHTML('beforeend', '<aside data-testid="issuable-sidebar" data-issuable-type="merge_request"><div data-testid="reviewers-block-container"><div class="dropdown"><button type="button" class="js-reviewer-search" data-toggle="dropdown" data-current-user="true" data-iid="7" data-issuable-type="merge_request" data-project-id="27" data-field-name="merge_request[reviewer_ids][]" data-issue-update="/group/repo/-/merge_requests/7.json" data-ability-name="merge_request">Select reviewers</button><div class="dropdown-menu" style="display:none"></div></div></div></aside>');
+  const button = document.querySelector<HTMLButtonElement>('aside button');if (button === null) throw new Error('Missing native reviewer protocol control.');
+  // Explicit layout unit protocol. No authenticated provider session or opener click.
+  vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 50, 20));
+  vi.spyOn(button, 'scrollIntoView').mockImplementation(() => {});vi.spyOn(document, 'elementFromPoint').mockReturnValue(button);
+  const click = vi.fn();button.addEventListener('click', click);
+  const original = document.body.innerHTML;
+  expect(result.reviewerControls?.available).toBe(true);expect(await result.reviewerControls?.activate()).toBe(true);
+  expect(click).not.toHaveBeenCalled();expect(document.activeElement).toBe(button);expect(document.body.innerHTML).toBe(original);
+  const old = result.reviewerControls;button.disabled = true;expect(result.reviewerControls?.available).toBe(false);
+  button.disabled = false;expect(result.reviewerControls?.available).toBe(true);
+  window.history.replaceState(null, '', `${REVIEW}/diffs`);expect(await old?.activate()).toBe(false);expect(result.reviewerControls?.available).toBe(true);
+  noteable?.setAttribute('data-current-user-data', '{"id":11}');expect(result.reviewerControls?.available).toBe(false);
+  noteable?.setAttribute('data-current-user-data', 'null');expect(result.reviewerControls?.available).toBe(false);
+  expect(fetchGitLabReview).toHaveBeenCalledOnce();expect(fetch).not.toHaveBeenCalled();
+});
 
 it('carries same-snapshot rendered evidence without enriching raw semantic comments or surviving another review route', async () => {
   const original = snapshot();

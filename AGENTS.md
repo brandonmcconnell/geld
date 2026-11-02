@@ -1699,6 +1699,13 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   A missing or malformed `approved_by` list does not prove an empty approval set.
   The digest and copied text label review-source failures Partial or Unavailable, with positive observed counts rather than aggregate zero claims, while two valid empty lists remain a known empty result.
   Valid required/remaining approval fractions remain independent known facts, with the existing integer, positive-required and remaining-within-required guards intact.
+- **Reviewer controls are a focus-only native handoff.**
+  GitLab's legacy reviewer dropdown saves on its hidden handler, and modern Edit also submits the selected reviewer list when hidden even without a changed selection.
+  The digest's Reviewer controls button only scrolls to and focuses one actual enabled, presented, positively closed native Edit or Select reviewers button, with no click, toggle, typing, native attribute mutation or automatic cleanup close.
+  Decline while a native menu or overlay is open, because focus moving outside can close it and save its selection.
+  Require a numeric native viewer captured before the complete review snapshot, matching immutable full head, MR, project and noteable identities from both metadata reads and original native datasets, and the same native scope and control lifetime at activation.
+  `data-current-user=true` is a legacy candidate-filter option rather than authentication, and a generic signed-in flag or missing native head does not enable this handoff.
+  This reaches the existing native control without claiming reviewer assignment, rerequest, dismissal, notification or authenticated management acceptance.
 - **Published summary caches need an unambiguous machine frame.**
   Suggested source code can contain payload-shaped title attributes, so machine cache readers use `parsePublishedSummaryBody` and require the renderer's marker, heading and sole final canonical footer outside source-code fences.
   Legacy parsing remains available for older rendered content, while malformed machine caches are rebuilt instead of adopted.

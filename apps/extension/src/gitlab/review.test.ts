@@ -84,6 +84,22 @@ describe('GitLab discussion normalization', () => {
 });
 
 describe('GitLab review acquisition', () => {
+  it.each(['same', 'project', 'id', 'iid', 'url', 'missing'] as const)('exports reviewer scope only for stable complete metadata identity: %s', async (change) => {
+    let reads = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      if (input.endsWith('/approvals')) return json({ approved_by: [] });
+      if (input.includes('/pipelines?') || input.includes('/reviewers?') || input.includes('/discussions.json')) return json([]);
+      reads += 1;
+      const metadata = { iid: 7, id: 81, project_id: 27, web_url: page.url, sha: SHA, state: 'opened' };
+      return json(reads === 1 || change === 'same' ? metadata : change === 'project' ? { ...metadata, project_id: 28 }
+        : change === 'id' ? { ...metadata, id: 82 } : change === 'iid' ? { ...metadata, iid: 8 }
+          : change === 'url' ? { ...metadata, web_url: `${page.url}/diffs` } : { iid: 7, sha: SHA, state: 'opened' });
+    }));
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.complete).toBe(true);expect(reads).toBe(2);
+    expect(snapshot.reviewerScope).toEqual(change === 'same' ? { subject, projectId: '27', noteableId: '81' } : null);
+  });
+
   it('uses the web discussion endpoint, follows pagination and keeps merge-pipeline provenance', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);

@@ -8,6 +8,7 @@ import type {
   ProviderReviewThread,
 } from '@geld/review';
 import type { ProviderReviewPage, ProviderReviewSnapshot } from '../providers/types';
+import type { GitLabReviewerScope } from './reviewer-controls';
 
 type JsonObject = Readonly<Record<string, unknown>>;
 type GitLabMergeRequestState = 'opened' | 'closed' | 'merged' | 'locked';
@@ -70,6 +71,7 @@ export interface GitLabRenderedNoteScope {
 }
 
 export interface GitLabReviewSnapshot {
+  readonly reviewerScope: GitLabReviewerScope | null;
   readonly sourceCoverage: NonNullable<ProviderReviewSnapshot['sourceCoverage']>;
   readonly input: ProviderReviewInput;
   readonly comments: readonly ProviderReviewComment[];
@@ -504,6 +506,8 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const complete = unavailable.length === 0;
   return {
     input: { subject, threads: parsed.threads, ...(approvers !== null || reviewerResult?.status === 'fulfilled' ? { reviewers: [...reviewerMap.values()] } : {}), checks, checksCoverage, complete, closed: state === 'closed' || state === 'merged' },
+    reviewerScope: projectId !== null && noteableId !== null && mr.web_url === base && nativeId(latest.project_id) === projectId
+      && nativeId(latest.id) === noteableId && nativeId(latest.iid) === page.number && latest.web_url === base ? { subject, projectId, noteableId } : null,
     comments: parsed.comments,
     sourceCoverage: { comments: 'complete', threads: unknownThreadState ? 'partial' : 'complete' },
     events: parsed.events,
