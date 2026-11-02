@@ -69,9 +69,86 @@ export async function collectBitbucketWhitespaceFactories({ fetcher = fetch, ext
   finally { clearTimeout(timer);controller.abort();await reader?.cancel().catch(() => undefined);reader?.releaseLock();report.request.finishedAt = now(); }
 }
 
+// Exact JavaScript dependencies of the captured c3qHU PR-page loader. No CSS or dynamic URLs.
+export const BITBUCKET_PR_DEPENDENCY_FILES = Object.freeze([
+  'create-file-route.7472a42a.js', 'route.eeba4a94.js', 'routes.6c9a65b8.js',
+  'voice-enabled-footer-row.fb410526.js', 'ConversationAssistantUI.5310e24d.js', 'esm.f9cb7fbe.js',
+  'ConversationAssistantUI.dd40091c.js', 'ConversationAssistant.d76eb4da.js',
+  'DraftCommentAction.6201809a.js', 'DraftCommentAction.e0a9748f.js', 'SessionRightPanel.907131d4.js',
+  'onboarding.a207a86a.js', 'onboarding.6c418ecf.js', 'routes.6fa8cad2.js', 'provider.15e339ac.js',
+  'modal.0d28ee57.js', 'project-settings-menu-page.85c3ffe5.js', 'project-settings-menu-page.614e2ea2.js',
+  'project-settings-menu-page.0e501094.js', 'project-settings-menu-page.be0d17fd.js',
+  'component-lazy.0e485afd.js', 'ssh-keys.984a187e.js', 'page.00a49eea.js',
+]);
+export const BITBUCKET_PR_DEPENDENCY_LIMIT = 8 * 1024 * 1024;
+export const BITBUCKET_PR_DEPENDENCY_TOTAL_LIMIT = 64 * 1024 * 1024;
+const dependencyBase = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/';
+const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+/** Fixed public static source only: four concurrent GETs, no retries, parsing or execution. */
+export async function collectBitbucketPrDependencies({ fetcher = fetch, writeArtifact, timeoutMs = 90_000, now = () => new Date().toISOString() } = {}) {
+  const report = { schema: 1, kind: 'public_static_source_research', captureMode: 'pr_dependencies', status: 'unavailable',
+    featureAcceptance: false, executed: false, parsed: false, browserNavigations: 0, providerApiRequests: 0,
+    limits: { concurrency: 4, assetBytes: BITBUCKET_PR_DEPENDENCY_LIMIT, totalBytes: BITBUCKET_PR_DEPENDENCY_TOTAL_LIMIT, wallMs: 90_000 },
+    bytesSeen: 0, bytesSeenCapped: false, requests: BITBUCKET_PR_DEPENDENCY_FILES.map((file) => ({ file, url: dependencyBase + file,
+      method: 'GET', attempts: 0, credentials: 'omit', redirects: 'manual', status: 'unavailable', declaredLength: null, bytesSeen: 0, bytesSeenCapped: false })) };
+  if (typeof writeArtifact !== 'function' || !Number.isFinite(timeoutMs) || timeoutMs < 1) { report.reason = 'configuration';return report; }
+  const controller = new AbortController();let next = 0;
+  const timer = setTimeout(() => { report.reason = 'deadline';controller.abort(); }, Math.min(90_000, timeoutMs));
+  const bounded = (operation) => new Promise((resolve, reject) => {
+    const abort = () => { cleanup();reject(new Error('aborted')); }, cleanup = () => controller.signal.removeEventListener('abort', abort);
+    if (controller.signal.aborted) { reject(new Error('aborted'));return; }
+    controller.signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve().then(() => { controller.signal.throwIfAborted();return operation(); }).then((value) => { cleanup();resolve(value); }, (error) => { cleanup();reject(error); });
+  });
+  async function capture(request) {
+    let reader;
+    request.startedAt = now();request.attempts = 1;
+    try {
+      const response = await bounded(() => fetcher(request.url, { method: 'GET', credentials: 'omit', redirect: 'manual', headers: { Accept: 'application/javascript' }, signal: controller.signal }));
+      controller.signal.throwIfAborted();request.httpStatus = response.status;reader = response.body?.getReader();
+      if (response.redirected || response.url !== request.url || response.status !== 200) { request.reason = 'http_contract';return; }
+      const mime = /^(?:application|text)\/(?:x-)?(?:javascript|ecmascript)(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '');
+      request.mime = mime ? 'javascript' : 'unsupported';
+      const declared = response.headers.get('content-length'), valid = declared === null || /^\d+$/.test(declared) && Number.isSafeInteger(Number(declared));
+      request.declaredLength = declared !== null && valid ? Number(declared) : null;
+      request.declaredLengthStatus = declared === null ? 'absent' : valid ? 'valid' : 'invalid';
+      if (!mime || !valid || reader === undefined) { request.reason = 'body_contract';return; }
+      if (request.declaredLength !== null && request.declaredLength > BITBUCKET_PR_DEPENDENCY_LIMIT) { request.reason = 'body_size';return; }
+      const chunks = [];let length = 0;
+      for (;;) {
+        const chunk = await bounded(() => reader.read());controller.signal.throwIfAborted();if (chunk.done) break;
+        if (!(chunk.value instanceof Uint8Array)) { request.reason = 'body_contract';return; }
+        const size = chunk.value.byteLength, seen = length + size;
+        request.bytesSeen = Math.min(seen, BITBUCKET_PR_DEPENDENCY_LIMIT + 1);request.bytesSeenCapped = seen > BITBUCKET_PR_DEPENDENCY_LIMIT + 1;
+        const total = report.bytesSeen + size;report.bytesSeen = Math.min(total, BITBUCKET_PR_DEPENDENCY_TOTAL_LIMIT + 1);report.bytesSeenCapped ||= total > BITBUCKET_PR_DEPENDENCY_TOTAL_LIMIT + 1;
+        if (total > BITBUCKET_PR_DEPENDENCY_TOTAL_LIMIT) { request.reason = 'total_size';report.reason = 'total_size';controller.abort();return; }
+        if (seen > BITBUCKET_PR_DEPENDENCY_LIMIT) { request.reason = 'body_size';return; }
+        chunks.push(chunk.value);length = seen;
+      }
+      if (length === 0) { request.reason = 'body_size';return; }
+      const bytes = Buffer.concat(chunks), archive = await bounded(() => compress(bytes, { level: 6 }));controller.signal.throwIfAborted();
+      if (archive.byteLength > BITBUCKET_PR_DEPENDENCY_LIMIT + 64 * 1024) { request.reason = 'archive_size';return; }
+      const file = `bitbucket-public-pr-dependency-${request.file}.gz`;
+      await bounded(() => writeArtifact(file, archive, controller.signal));controller.signal.throwIfAborted();
+      request.asset = { bytes: length, sha256: hash(bytes), archive: { file, encoding: 'gzip', bytes: archive.byteLength, sha256: hash(archive), uncompressedBytes: length, uncompressedSha256: hash(bytes) } };
+      request.status = 'captured';
+    } catch { request.reason = controller.signal.aborted ? report.reason ?? 'aborted' : 'capture_failed'; }
+    finally { if (reader) { try { Promise.resolve(reader.cancel()).catch(() => undefined); } catch {} try { reader.releaseLock(); } catch {} }request.finishedAt = now(); }
+  }
+  try {
+    await Promise.all(Array.from({ length: 4 }, async () => { while (!controller.signal.aborted && next < report.requests.length) await capture(report.requests[next++]); }));
+    for (const request of report.requests) if (request.attempts === 0) request.reason = 'batch_aborted';
+    const count = report.requests.filter((request) => request.status === 'captured').length;
+    report.status = count === report.requests.length ? 'captured' : count > 0 ? 'partial' : 'unavailable';
+    return report;
+  } finally { clearTimeout(timer);controller.abort();report.finishedAt = now(); }
+}
+
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const directory = resolve(process.env.GELD_SOURCE_ARTIFACTS ?? 'artifacts/bitbucket-source-research');await mkdir(directory, { recursive: true });
-  const report = await collectBitbucketWhitespaceFactories({ retainAsset: process.argv.includes('--retain-asset'), prPage: process.argv.includes('--pr-page'), writeArtifact: (file, bytes, signal) => writeFile(resolve(directory, file), bytes, { signal }) });
+  const options = { writeArtifact: (file, bytes, signal) => writeFile(resolve(directory, file), bytes, { signal }) };
+  const report = process.argv.includes('--pr-dependencies') ? await collectBitbucketPrDependencies(options) : await collectBitbucketWhitespaceFactories({ ...options, retainAsset: process.argv.includes('--retain-asset'), prPage: process.argv.includes('--pr-page') });
   await writeFile(resolve(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(`Bitbucket static source research: ${report.status}; no browser navigation, API request or feature acceptance.`);
   process.exitCode = report.status === 'unavailable' ? 1 : 0;

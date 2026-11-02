@@ -2402,3 +2402,6 @@ Whitespace qualification uses the one visible original control in the current di
 
 The static Bitbucket source collector has an explicit PR-page mode for the fixed page bundle mapped by the captured native app.
 It performs one credential-free CDN read and retains compressed source with hashes for offline inspection, without navigating a provider page or executing the vendor code.
+
+The PR-renderer source investigation can capture the exact JavaScript dependencies listed by the retained native PR-page loader in one bounded static batch.
+That mode has four concurrent reads, an eight MiB per-file cap, a sixty-four MiB aggregate stream cap and a ninety-second wall limit, with no retries or code execution.
