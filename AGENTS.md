@@ -1441,6 +1441,11 @@ Provider-specific surfaces translate settings and sources into shared review and
   Account, route, selected comparison, head, binding, original-note remount and lifecycle changes invalidate retained command controls before clipboard or focus work.
   GitLab's thread `note_form.append` and `quoteReply` handlers do not establish a top-level arbitrary insertion contract, so command preparation never appends or submits text.
   Other services and Bitbucket command preparation stay unavailable until their provider-specific command, native identity and writer evidence are separately verified.
+  The Pipelines installed check optionally reads the native Global diff settings dialog twice through trusted open/Cancel cycles without toggling, saving or generating a provider fetch.
+  Its original Syntax highlighting checkbox is read as a freshly presented native preference, separately from server persistence, completed native highlighting and Bash palette equivalence.
+  Missing or ambiguous native settings remain diagnostic unavailability, while dialog cleanup, original source/Viewed/URL/node drift, unexpected input/submission and changed counts remain failures.
+  Observed native-disabled settings cannot earn a syntax pass when Geld-owned colors appear after genuine native context expansion, and that contradiction retains its actual source/ranges and screenshot.
+  Dialog reads share the parent visit and existing `active + 4 < 40` rolling-request guard, which requires at least five free slots and makes no assumption that native actions generate zero requests.
   Public anonymous fixtures can verify preview, copy and unavailable composer behavior but do not establish authenticated writer persistence or an actual bot run.
 - **Provider diff caching and throttling have their own boundaries.**
   Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.

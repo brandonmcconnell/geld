@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
+import { observeBitbucketSyntaxSettings } from './bitbucket-syntax-settings.mjs';
 
 const REVIEW = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff';
 const REPO = 'atlassian/bitbucket-upload-file';
@@ -224,7 +225,7 @@ export function bitbucketShellProbe(action = 'read', expected = null) {
 
 function keyOf(node) { return isScalar(node) && typeof node.value === 'string' ? node.value : null; }
 function field(node, key) { return isMap(node) ? node.items.find((pair) => keyOf(pair.key) === key)?.value : undefined; }
-export function verifyBitbucketShellSource(probe) {
+export function verifyBitbucketShellContext(probe) {
   assert.equal(probe.url, REVIEW);assert.equal(probe.file, 'chg-' + FILE);assert.equal(probe.heading, FILE);
   assert.ok(probe.prefixOld >= 32 && probe.prefixNext >= 37 && probe.actualStep === true, 'Actual continuous native prefix and following declaration boundary required');
   const source = probe.newSource.map((row) => row.text).join('\n') + '\n';
@@ -236,6 +237,14 @@ export function verifyBitbucketShellSource(probe) {
   assert.equal(script.items.length, 1);const command = script.items[0];
   assert.ok(isScalar(command) && command.type === 'PLAIN');assert.equal(command.value, COMMAND);
   assert.equal(probe.rows.find((row) => row.next === 34)?.text, '    - ' + COMMAND);
+}
+
+export function assertBitbucketShellPreference(preference, probe) {
+  if (preference.status === 'native_disabled') assert.equal(probe.ownedCount, 0, 'Owned shell colors coexist with the observed disabled native Syntax highlighting preference');
+}
+
+export function verifyBitbucketShellSource(probe) {
+  verifyBitbucketShellContext(probe);
   assert.deepEqual(probe.invalidRanges, []);assert.equal(probe.prePaintSeen, true);assert.equal(probe.preserved, true, 'Syntax painting changed actual native source references/text/IDs/links/fonts');
   assert.ok(probe.nativeIds.includes('Lbitbucket-pipelines.ymlT34'));
   const row = probe.rows.find((value) => value.next === 34);assert.ok(row.links.some((link) => link[0] === '#Lbitbucket-pipelines.ymlT34' && link[1] === 'To line 34'));const ranges = probe.ranges.filter((range) => range.rowId === row.rowId);
@@ -310,6 +319,13 @@ export async function verifyBitbucketShell(page, item, { poll, pause, tabState, 
     const initialCounts = await bitbucketDom(page);const initialState = await tabState(page);
     assert.ok(sameCounts(initialCounts, { files: 5, additions: 46, deletions: 29 }));
     assert.ok(sameCounts(initialState.all, initialState.visible) && sameCounts(initialState.all, { files: 5, additions: 46, deletions: 29 }));
+    proof.nativeSettings = {};evidence.phase = 'native_syntax_settings';
+    await observeBitbucketSyntaxSettings(page, { progress: proof.nativeSettings, poll, capture, guardBudget,
+      assertCurrent: () => { assert.equal(page.url(), REVIEW);assertHead(head); },
+      readState: async () => ({ counts: await bitbucketDom(page), state: await tabState(page) }),
+      assertState: (before, after) => assertBitbucketShellCounts(before.counts, before.state, after.counts, after.state),
+      requests: () => evidence.requests,
+    });
     await page.evaluate(bitbucketShellProbe, 'observe');evidence.phase = 'native_context_expansion';
     let expanded = baseline;
     for (let click = 0; expanded.prefixNext < 37 && click < 2; click += 1) {
@@ -331,6 +347,15 @@ export async function verifyBitbucketShell(page, item, { poll, pause, tabState, 
       await session.flush();assertHead(head);
     }
     assert.ok(expanded.prefixNext >= 37, 'Native context did not reach the real step boundary within two trusted clicks');
+    verifyBitbucketShellContext(expanded);proof.contextMechanics = { status: 'passed', prefixOld: expanded.prefixOld, prefixNext: expanded.prefixNext };
+    if (proof.nativeSettings.status === 'native_disabled') {
+      proof.disabledPreference = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.actualStep && (value.ownedCount > 0 || value.prePaintSeen), 'Observed native-disabled source after genuine context expansion');
+      proof.artifacts = await capture(page, 'bitbucket-pipeline-native-disabled');
+      assertBitbucketShellPreference(proof.nativeSettings, proof.disabledPreference);
+      const closedCounts = await bitbucketDom(page);const closedState = await tabState(page);assertBitbucketShellCounts(initialCounts, initialState, closedCounts, closedState);
+      await session.flush();assertHead(head);assert.deepEqual(evidence.mutations, []);
+      proof.status = 'native_disabled';proof.limitations = ['Native context mechanics and absence of owned colors while native highlighting is disabled; no positive coloring or palette pass.'];return proof;
+    }
     const painted = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.actualStep && value.ownedCount > 0 && value.prePaintSeen && value.preserved, 'Actual original source gets shell ranges after native context expansion');
     proof.expanded = verifyBitbucketShellSource(painted);
     assert.deepEqual(painted.viewed, baseline.viewed, 'Native Viewed state changed during shell coloring');
@@ -352,8 +377,9 @@ export async function verifyBitbucketShell(page, item, { poll, pause, tabState, 
     proof.counts.afterCapture = captureCounts;proof.counts.tabStateAfterCapture = captureState;
     assertBitbucketShellCounts(initialCounts, initialState, captureCounts, captureState);
     await session.flush();assertHead(head);assert.deepEqual(evidence.mutations, []);proof.status = 'passed';
-    proof.limitations = ['Native context was expanded through genuine user input; no automatic product fetch/reveal.', 'ADS pseudo-highlight token equality is measured for the actual selected theme. Native Bash-renderer scope equivalence and unselected dark themes remain unverified.'];
+    proof.limitations = ['Native context was expanded through genuine user input; no automatic product fetch/reveal.', 'ADS pseudo-highlight token equality is measured for the actual selected theme. Native Bash-renderer scope equivalence and unselected dark themes remain unverified.', ...(proof.nativeSettings.status === 'unavailable' ? ['Native syntax preference remains unavailable; context/range mechanics do not establish native preference acceptance.'] : [])];
     return proof;
+  } catch (error) { proof.status = 'failed';proof.error = error instanceof Error ? error.message : String(error);throw error;
   } finally {
     if (!page.isClosed()) await page.evaluate(bitbucketShellProbe, 'cleanup');
     evidence.phase = 'after_shell_verification';
