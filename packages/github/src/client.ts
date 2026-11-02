@@ -1,5 +1,5 @@
 import { boundedBody } from './bounded-body';
-import type { FetchLike, TokenSource } from './auth';
+import type { FetchLike, TokenSource, TokenAccess } from './auth';
 
 export type ApiResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -24,6 +24,14 @@ export interface ApiTransport {
   ): Promise<ApiResult<unknown>>;
 }
 
+async function loadAccess(source: TokenSource, force: boolean): Promise<TokenAccess> {
+  try {
+    return await source.get({ force });
+  } catch {
+    return { status: 'unavailable', message: 'Provider credentials are unavailable' };
+  }
+}
+
 export function createApiTransport(options: {
   readonly baseUrl: string;
   readonly source: TokenSource;
@@ -39,7 +47,15 @@ export function createApiTransport(options: {
   const now = options.now ?? Date.now;
   return {
     async request(path, init = {}) {
-      if (path.startsWith('/') || path.includes('\\') || path.split(/[?#]/, 1)[0]?.split('/').some(segment => /^(?:\.|%2e){1,2}$/i.test(segment))) return { ok: false, reason: 'invalid_response' };
+      if (
+        path.startsWith('/') ||
+        path.includes('\\') ||
+        path
+          .split(/[?#]/, 1)[0]
+          ?.split('/')
+          .some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))
+      )
+        return { ok: false, reason: 'invalid_response' };
       const url = new URL(path, base);
       if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname))
         return { ok: false, reason: 'invalid_response' };
@@ -51,7 +67,7 @@ export function createApiTransport(options: {
         if (!source) continue;
         const moreSources = index < sources.length - 1;
         for (let attempt = 0; attempt < 2; attempt += 1) {
-          const access = await source.get({ force: attempt === 1 });
+          const access = await loadAccess(source, attempt === 1);
           if (access.status !== 'ok' && moreSources) continue candidates;
           if (access.status === 'unavailable') return { ok: false, reason: 'unavailable' };
           if (
