@@ -77,14 +77,27 @@ function protocol(options = {}) {
   const oracle = createBitbucketCommitOracle();
   oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/commit/${OTHER}`, { hash: OTHER });
   if (!options.incomplete) oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/diffstat/${OTHER}?pagelen=100`, { size: 2, values: [{ new: { path: options.noReadme ? 'other.md' : 'README.md' }, lines_added: 2, lines_removed: 1 }, { new: { path: 'pipe/pipe.py' }, lines_added: 3, lines_removed: 0 }] });
-  const events = [];const calls = [];let cleanups = 0;let listener = null;let writes = 0;
+  const events = [];const calls = [];const keyboard = [];let focused = false;let dismissed = false;let shift = false;let cleanups = 0;let listener = null;let writes = 0;
   const original = { enabled: true, aiEnabled: false, categories: {}, autoViewed: {}, ...(options.patternsAbsent ? {} : { categoryPatterns: { generated: ['preserved/**'] } }) };
   let saved = structuredClone(original);
   const actualURL = options.canonical ? `${BITBUCKET_COMMIT_LIST}branch/master` : BITBUCKET_COMMIT_LIST;
   const branch = options.canonical ? { selector: '[data-testid="ref-selector-trigger"]', label: 'Filter by ref: master', text: 'master' } : null;
-  const state = () => ({ url: calls.length > 0 && options.navigation ? options.navigation : actualURL, branch: branch === null ? null : { ...branch, unique: true, sameNode: !options.branchReplaced || calls.length === 0, sameParent: true, label: calls.length > 0 && options.branchChanged ? 'Filter by ref: another' : branch.label }, sameNode: !options.replaced || calls.length === 0, sameParent: true, sameText: !options.changedText || calls.length === 0, href: selected.href, raw: selected.raw, text: selected.text, events, nativeCards: [] });
+  const state = () => ({ url: calls.length > 0 && options.navigation ? options.navigation : actualURL, branch: branch === null ? null : { ...branch, unique: true, sameNode: !options.branchReplaced || calls.length === 0, sameParent: true, label: calls.length > 0 && options.branchChanged ? 'Filter by ref: another' : branch.label }, sameNode: !options.replaced || calls.length === 0, sameParent: true, sameText: !options.changedText || calls.length === 0, href: selected.href, raw: selected.raw, text: selected.text, focused: options.missingFocus ? undefined : focused, activeElement: { tag: focused ? 'A' : 'TH', href: focused ? selected.raw : null }, events: [...events], nativeCards: [] });
   const page = {
     isClosed: () => false,
+    keyboard: {
+      down: async (key) => { assert.equal(key, 'Shift');keyboard.push('Shift down');shift = true; },
+      press: async (key) => {
+        assert.equal(key, 'Tab');assert.equal(shift, true);keyboard.push('Tab');
+        if (options.departureThrows) throw new Error('Keyboard departure failed');
+        if (!options.noDeparture) { focused = false;dismissed = false; }
+        if (!options.noFocusout) events.push({ type: 'focusout', trusted: !options.untrustedFocusout });
+        if (options.departureNavigation) options.navigation = `${actualURL}?changed=1`;
+        if (options.departureReplacement) options.replaced = true;
+        if (options.departureRefChange) options.branchChanged = true;
+      },
+      up: async (key) => { assert.equal(key, 'Shift');keyboard.push('Shift up');shift = false; },
+    },
     on: (_type, fn) => { listener = fn; }, off: (_type, fn) => { assert.equal(listener, fn);listener = null; },
     evaluate: async (fn) => {
       if (fn === bitbucketCommitLinksSnapshot) return { actualURL, branch, selected: options.noFixture ? null : selected, links: [] };
@@ -102,6 +115,11 @@ function protocol(options = {}) {
     installedHover: async (_page, selector, input, _name, _anchor, config) => {
       assert.equal(selector, selected.selector);assert.equal(config.verifyUnobscured, true);calls.push(input);
       if (options.nativeCard) throw new Error('Native card retained ownership. Count popup not observed.');
+      // Explicit protocol simulation of the product's existing Escape/focus lifecycle;
+      // these unit event records make no installed-browser trusted-input claim.
+      if (input === 'pointer' && dismissed && focused) throw new Error('Escape dismissal remains while the source keeps focus');
+      if (input === 'keyboard') { focused = true;dismissed = true; }
+
       events.push({ type: input === 'pointer' ? 'mouseover' : 'focusin', trusted: !options.untrusted && !(options.filteredUntrusted && writes > 0) });
       const filtered = saved.categoryPatterns?.tests?.[0] === 'README.md';
       const phase = writes === 0 ? 'baseline' : filtered ? 'filtered' : 'restored';
@@ -122,7 +140,7 @@ function protocol(options = {}) {
       };
     },
   });
-  return { run, item, calls, original, saved: () => saved, listener: () => listener, writes: () => writes, cleanups: () => cleanups };
+  return { run, item, calls, keyboard, original, saved: () => saved, listener: () => listener, writes: () => writes, cleanups: () => cleanups };
 }
 
 test('protocol requires the original trusted pointer and real Tab path against its independent complete response oracle', async () => {
@@ -284,4 +302,40 @@ test('missing source initiator stays native-or-unattributed evidence and does no
   const evidence = fixture.item.commitLinks.categorySubtraction;
   assert.equal(evidence.sourceGetCount, 4);assert.deepEqual(evidence.extensionRequests, []);assert.equal(evidence.nativeOrUnattributedRequests.length, 4);
   assert.ok(evidence.nativeOrUnattributedRequests.every((request) => request.attribution === 'native-or-unattributed'));
+});
+
+test('records actual original-source focus and departure target without changing native nodes', () => {
+  document.body.innerHTML = `<main><button type="button">Native preceding control</button>${link()}</main>`;
+  const node = document.querySelector('a');const parent = node.parentElement;
+  globalThis.__geldCommitLinksProof = { node, parent, selector: 'main a', text: node.textContent, events: [] };
+  const before = document.body.innerHTML;node.focus();const focused = bitbucketCommitLinkState();
+  assert.equal(focused.focused, true);assert.equal(focused.activeElement.tag, 'A');assert.equal(focused.activeElement.href, node.getAttribute('href'));
+  document.querySelector('button').focus();const departed = bitbucketCommitLinkState();
+  assert.equal(departed.focused, false);assert.equal(departed.activeElement.tag, 'BUTTON');assert.equal(departed.activeElement.text, 'Native preceding control');
+  assert.equal(departed.sameNode, true);assert.equal(departed.sameParent, true);assert.equal(document.body.innerHTML, before);
+});
+
+test('source-backed Escape dismissal requires genuine Shift+Tab focus departure before each later pointer phase', async () => {
+  const fixture = protocol({ canonical: true });assert.equal((await fixture.run()).status, 'passed');
+  assert.deepEqual(fixture.keyboard, ['Shift down', 'Tab', 'Shift up', 'Shift down', 'Tab', 'Shift up']);
+  for (const phase of ['filtered', 'restored']) {
+    const departure = fixture.item.commitLinks.categorySubtraction[phase].pointerDeparture;
+    assert.equal(departure.status, 'departed');assert.equal(departure.before.focused, true);assert.equal(departure.before.activeElement.tag, 'A');
+    assert.equal(departure.after.focused, false);assert.equal(departure.after.activeElement.tag, 'TH');assert.equal(departure.after.sameNode, true);
+    assert.deepEqual(departure.after.events, [{ type: 'focusout', trusted: true }]);
+    assert.equal(departure.after.url, MASTER_LIST);assert.equal(departure.after.branch.sameNode, true);
+  }
+});
+
+for (const [name, options] of [
+  ['focus remains on dismissed source', { noDeparture: true }], ['no recorded source focusout', { noFocusout: true }],
+  ['untrusted source focusout', { untrustedFocusout: true }], ['unknown native focus', { missingFocus: true }],
+  ['keyboard command fails', { departureThrows: true }], ['document changes during departure', { departureNavigation: true }],
+  ['source replaced during departure', { departureReplacement: true }], ['native ref changes during departure', { canonical: true, departureRefChange: true }],
+]) test(`${name} fails before filtered pointer input, restores settings and releases listeners`, async () => {
+  const fixture = protocol(options);await assert.rejects(fixture.run());
+  assert.equal(fixture.item.commitLinks.status, 'failed');assert.equal(fixture.item.commitLinks.categorySubtraction.status, 'failed');
+  assert.deepEqual(fixture.calls, ['pointer', 'keyboard']);assert.equal(fixture.item.commitLinks.categorySubtraction.restoration, 'restored');
+  assert.deepEqual(fixture.saved(), fixture.original);assert.equal(fixture.listener(), null);assert.equal(fixture.cleanups(), 1);
+  if (!options.missingFocus) assert.deepEqual(fixture.keyboard, ['Shift down', 'Tab', 'Shift up']);
 });
