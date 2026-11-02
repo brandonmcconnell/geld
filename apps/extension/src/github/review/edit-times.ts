@@ -28,6 +28,8 @@ export type { Revision } from './revisions';
 
 /** While a run waits on a comment, its log is read again this often. */
 const REFRESH_MS = 60_000;
+/** A row showing an edited comment's time reads its log again this often. */
+const DISPLAY_REFRESH_MS = 5 * 60_000;
 
 interface EditLog {
   editedAt: string | null;
@@ -68,6 +70,60 @@ function logUrlOf(node: Element, anchor = node.id): string | null {
     if (owner === null || owner.id === anchor) return menu.getAttribute('src');
   }
   return null;
+}
+
+/** GitHub's node-id prefix for each kind of comment anchor. */
+const NODE_KINDS: readonly (readonly [RegExp, string])[] = [
+  [/^issuecomment-(\d+)$/, 'IC'],
+  [/^discussion_r(\d+)$/, 'PRRC'],
+  [/^pullrequestreview-(\d+)$/, 'PRR'],
+];
+
+/** MessagePack's shortest encoding of a non-negative integer, as GitHub's node ids carry them. */
+function packUint(n: number): number[] {
+  if (n < 0x80) return [n];
+  if (n < 0x100) return [0xcc, n];
+  if (n < 0x10000) return [0xcd, n >>> 8, n & 0xff];
+  if (n < 0x100000000) return [0xce, (n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  const high = Math.floor(n / 0x100000000);
+  const low = n % 0x100000000;
+  return [0xcf, (high >>> 24) & 0xff, (high >>> 16) & 0xff, (high >>> 8) & 0xff, high & 0xff, (low >>> 24) & 0xff, (low >>> 16) & 0xff, (low >>> 8) & 0xff, low & 0xff];
+}
+
+/**
+ * The node id GitHub's edit log takes for a comment anchor: `IC_`, `PRRC_` or `PRR_` and the base64url of the
+ * MessagePack array `[0, repository id, comment id]` (`IC_kwDOUOpwns8AAAABhvX2ag` is `[0, 1357541534, 6559233642]`).
+ */
+export function nodeIdOf(anchor: string, repositoryId: number): string | null {
+  for (const [pattern, prefix] of NODE_KINDS) {
+    const id = Number(pattern.exec(anchor)?.[1] ?? Number.NaN);
+    if (!Number.isSafeInteger(id) || !Number.isSafeInteger(repositoryId)) continue;
+    const bytes = [0x93, ...packUint(0), ...packUint(repositoryId), ...packUint(id)];
+    return `${prefix}_${btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+  }
+  return null;
+}
+
+function repositoryId(): number {
+  return Number(document.querySelector<HTMLMetaElement>('meta[name="octolytics-dimension-repository_id"]')?.content ?? Number.NaN);
+}
+
+/** A minimized comment: GitHub's header says only "This comment has been minimized", with no "edited" menu to read. */
+function minimized(node: Element): boolean {
+  return node.querySelector('.minimized-comment > details, .minimized-comment details') !== null;
+}
+
+/**
+ * The edit-history log of the comment `anchor`: the one its header's "edited" menu loads, or, for a minimized
+ * comment (whose header has none), the same log by the comment's node id. Null when the page shows no edit.
+ */
+export function editLogUrlOf(anchor: string): string | null {
+  const node = document.getElementById(anchor);
+  if (node === null) return null;
+  const listed = logUrlOf(node, anchor);
+  if (listed !== null || !minimized(node)) return listed;
+  const nodeId = nodeIdOf(anchor, repositoryId());
+  return nodeId === null ? null : `/user_content_edits/show_edit_history_log/${nodeId}`;
 }
 
 /** Reads the log into `log`; true when it says something it did not before. */
@@ -123,9 +179,23 @@ function logFor(url: string, onChange: () => void, refreshAfter: number): EditLo
  * has landed).
  */
 export function editedAt(node: Element, onChange: () => void): string | null {
-  const url = logUrlOf(node);
+  const url = logUrlOf(node) ?? (node.id === '' ? null : editLogUrlOf(node.id));
   if (url === null) return null;
   return logFor(url, onChange, REFRESH_MS).editedAt;
+}
+
+/**
+ * When the comment `anchor` was last edited and first posted (ISO), for a time shown beside it; null when it was
+ * never edited, or while its log is on its way (`onChange` then runs once it has landed). The log is read again
+ * every few minutes, not every minute: this is for display, and every edited comment on the page has a row.
+ */
+export function editTimesOf(anchor: string, onChange: () => void): { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null {
+  const url = editLogUrlOf(anchor);
+  if (url === null) return null;
+  const log = logFor(url, onChange, DISPLAY_REFRESH_MS);
+  const created = log.revisions[0]?.at ?? null;
+  if (log.editedAt === null || log.editedAt === created) return null;
+  return { editedAt: log.editedAt, postedAt: created, log: url };
 }
 
 /**
