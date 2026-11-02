@@ -247,6 +247,13 @@ describe('reviewer groups', () => {
     ]);
   });
 
+  it('opens the latest review of the verdict the sidebar states', async () => {
+    const { reviewerStatuses } = await import('./panel');
+    const line = (anchor: string) => ({ anchor, author: 'ana', avatarSrc: null, state: 'approved', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    const statuses = reviewerStatuses([line('pullrequestreview-1'), line('pullrequestreview-2')], [{ login: 'ana', avatarSrc: null, state: 'approved', bot: false }]);
+    expect(statuses.map((status) => status.anchor)).toEqual(['pullrequestreview-2']);
+  });
+
   it("shows an approval the sidebar no longer names once the reviewer was asked again", async () => {
     const { reviewerGroups } = await import('./panel');
     const line = (author: string, state: 'awaiting' | 'changes_requested' | 'approved' | 'commented') => ({ anchor: `${state}:${author}`, author, avatarSrc: null, state, preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
