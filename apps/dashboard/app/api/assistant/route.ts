@@ -29,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
     if (input.data.plan && input.data.plan.headSha !== context.value.pull.headSha) return json({ error: 'Replan after the new push before asking about this step' }, 409);
     const teamResult = input.data.teamId ? input.data.teamId : z.object({ team_id: z.string() }).safeParse((await db.query('SELECT team_id FROM team_members WHERE user_id = $1 ORDER BY created_at LIMIT 1', [actor.id])).rows[0]).data?.team_id;
     if (!teamResult) return json({ error: 'Choose a paid team to use the review assistant' }, 402);
-    const entitlement = await db.query('SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id = r.team_id WHERE r.team_id = $1 AND m.user_id = $2 AND r.provider = $3 AND r.host = $4 AND r.owner = $5 AND r.name = $6 AND r.removed_at IS NULL', [teamResult, actor.id, input.data.ref.provider, input.data.ref.host, input.data.ref.owner, input.data.ref.repo]);
+    const entitlement = await db.query('SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id = r.team_id WHERE r.team_id = $1 AND m.user_id = $2 AND r.provider = $3 AND r.host = $4 AND r.owner = $5 AND r.name = $6 AND r.removed_at IS NULL AND r.approved', [teamResult, actor.id, input.data.ref.provider, input.data.ref.host, input.data.ref.owner, input.data.ref.repo]);
     if (!entitlement.rows.length) return json({ error: 'This repository is not connected to the selected team' }, 403);
     const configurations = await aiConfigurations(actor.id, teamResult);
     const config = configurations[0];

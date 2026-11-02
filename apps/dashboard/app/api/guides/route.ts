@@ -11,6 +11,7 @@ import { transaction } from '@/lib/transactions';
 import { reviewContext } from '@/lib/review-context';
 import { demoEnabled } from '@/lib/env';
 import { normalizeReviewPlan } from '@geld/review/plan';
+import { contentStore } from '@/lib/content-store';
 import { resourceDigest } from '@/lib/resource-digest';
 const inputSchema = z.object({ ref: pullRefSchema, teamId: z.string().min(1).max(200).optional(), headSha: z.string().min(1), previousHeadSha: z.string().optional(), key: z.string().uuid(), sample: z.boolean().optional() });
 export async function POST(request: Request): Promise<Response> {
@@ -35,7 +36,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!db) return json({ error: 'Billing is not configured' }, 503);
     const team = input.data.teamId ?? z.object({ team_id: z.string() }).safeParse((await db.query('SELECT team_id FROM team_members WHERE user_id = $1 ORDER BY created_at LIMIT 1', [actor.id])).rows[0]).data?.team_id;
     if (!team) return json({ error: 'Choose a team and a paid plan to create AI guides', action: '/settings/billing' }, 402);
-    const entitlement = await db.query('SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id = r.team_id WHERE r.team_id = $1 AND m.user_id = $2 AND r.provider = $3 AND r.host = $4 AND r.owner = $5 AND r.name = $6 AND r.removed_at IS NULL', [team, actor.id, input.data.ref.provider, input.data.ref.host, input.data.ref.owner, input.data.ref.repo]);
+    const entitlement = await db.query('SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id = r.team_id WHERE r.team_id = $1 AND m.user_id = $2 AND r.provider = $3 AND r.host = $4 AND r.owner = $5 AND r.name = $6 AND r.removed_at IS NULL AND r.approved', [team, actor.id, input.data.ref.provider, input.data.ref.host, input.data.ref.owner, input.data.ref.repo]);
     if (!entitlement.rows.length) return json({ error: 'Add this repository to the selected team before generating a guide' }, 403);
     const configurations = await aiConfigurations(actor.id, team);
     if (!configurations.length) return json({ error: 'Add an AI provider or enable Geld-billed AI to create a guide', action: '/settings/providers' }, 402);
@@ -62,4 +63,8 @@ export async function POST(request: Request): Promise<Response> {
       return json({ error: 'Your AI providers could not create a guide. Check provider settings and try again.' }, 503);
     } finally { await transaction(db, (sql) => finishCredits(sql, reservation.id, succeeded)); }
   } catch { return json({ error: 'The guide could not be created. Try again.' }, 503); }
+}
+
+export async function GET(request:Request):Promise<Response>{
+  await connection();const actor=await currentActor();if(!actor)return json({plan:null},401);const db=database();if(!db)return json({plan:null},503);const url=new URL(request.url);const query=Object.fromEntries(url.searchParams);const ref=pullRefSchema.safeParse({...query,number:Number(query.number)});if(!ref.success)return json({error:'Invalid pull request'},400);const team=url.searchParams.get('teamId');if(!team)return json({plan:null});const repo=z.object({id:z.string()}).safeParse((await db.query('SELECT r.id FROM team_repos r JOIN team_members m ON m.team_id=r.team_id WHERE r.team_id=$1 AND m.user_id=$2 AND r.provider=$3 AND r.host=$4 AND r.owner=$5 AND r.name=$6 AND r.approved AND r.removed_at IS NULL',[team,actor.id,ref.data.provider,ref.data.host,ref.data.owner,ref.data.repo])).rows[0]);if(!repo.success)return json({plan:null},403);const context=await reviewContext(ref.data);if(!context.ok)return json({plan:null},403);return json({plan:await contentStore().get(team,repo.data.id,ref.data.number,context.value.pull.headSha)});
 }
