@@ -49,6 +49,15 @@ Three files touched by four features (a script, a stylesheet and a template each
 
 Narrow viewports stack the three: steps as a horizontal stepper on top, the assistant as a drawer from the bottom edge with a persistent handle.
 
+## Dashboard implementation precedence
+
+The November 1, 2026 dashboard handoff governs the shared plan model.
+Guides are AI-only and consume credits, deterministic grouping is a seed only.
+The dashboard renders its own diffs and posts through permission-aware provider adapters.
+Guide triggers inherit from team to repository to PR, with locks and an on-click default.
+The extension-specific DOM loan mechanics below remain reference material for a future extension review tab.
+They do not define dashboard rendering, billing or automatic guide behavior.
+
 ## How it works, in order
 
 ### 1. The tab and its route

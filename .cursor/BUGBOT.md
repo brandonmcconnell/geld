@@ -71,7 +71,8 @@ this file lists what a reviewer must check.
   it should be short and specific.
 - Site changes using Radix, `clsx`/`tailwind-merge` or anything but shadcn on base-ui with the `cn`
   package;
-  or introducing any database or server-side user data (there is none, by design).
+  or persisting raw PR content, unencrypted provider credentials or unscoped team data.
+  The independent dashboard uses Postgres for account and team metadata.
 
 ## Testing expectations
 
