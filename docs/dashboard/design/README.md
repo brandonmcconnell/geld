@@ -7,6 +7,9 @@ No real provider login, email, AI generation, billing or infrastructure operatio
 Open [the visual gallery](./index.html) to filter screenshots by device and view.
 The production application follows the operating system’s color scheme.
 
+The shared navigation uses [shadcn/ui’s Base UI sidebar](https://ui.shadcn.com/docs/components/base/sidebar) composition and Vega spacing, with Geld branding and theme tokens.
+The team picker lives in the sidebar, the repository picker lives in the top bar, and the review assistant opens beside the workspace.
+
 ## Screenshots
 
 | View | Route | Desktop | Mobile | Dark |
@@ -47,6 +50,7 @@ The production application follows the operating system’s color scheme.
 | Configure team single sign-on | `/teams/00000000-0000-4000-8000-000000000001?view=sso` | [View](./screenshots/desktop/sso-setup.png) | [View](./screenshots/mobile/sso-setup.png) | — |
 | Search and switch teams | `/` | [View](./screenshots/desktop/team-switcher.png) | [View](./screenshots/mobile/team-switcher.png) | — |
 | Account menu | `/` | [View](./screenshots/desktop/account-menu.png) | [View](./screenshots/mobile/account-menu.png) | — |
+| Search and switch repositories | `/` | [View](./screenshots/desktop/repository-picker.png) | [View](./screenshots/mobile/repository-picker.png) | — |
 | Add AI provider | `/settings/providers` | [View](./screenshots/desktop/provider-dialog.png) | [View](./screenshots/mobile/provider-dialog.png) | — |
 | Advanced AI provider options | `/settings/providers` | [View](./screenshots/desktop/provider-advanced.png) | [View](./screenshots/mobile/provider-advanced.png) | — |
 | Add local companion | `/settings/providers` | [View](./screenshots/desktop/companion-dialog.png) | [View](./screenshots/mobile/companion-dialog.png) | — |

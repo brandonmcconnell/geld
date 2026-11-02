@@ -1,8 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Dialog } from '@base-ui/react/dialog';
 import {
   ArrowDownWideNarrow,
   ChevronDown,
@@ -12,13 +10,10 @@ import {
   GitMerge,
   RefreshCw,
   Search,
-  Settings,
   Star,
-  Plus,
-  X,
 } from './icons';
 import { cn } from 'cn';
-import { pullPath, pullRefSchema, repositoryPath } from '@geld/domain';
+import { pullPath } from '@geld/domain';
 import { providerViewer } from '@geld/domain/identities';
 import type { RepositoryRef } from '@geld/domain';
 import { parseQuery } from '@geld/github/query';
@@ -103,33 +98,6 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
   const allSelected = visiblePaths.length > 0 && selection.length === visiblePaths.length;
   return (
     <div className="page queue-page">
-      <div className="page-heading">
-        <h1>{repository ? repository.repo : 'Review queue'}</h1>
-        <div className="page-actions">
-          {repository && (
-            <Link
-              href={`${repositoryPath(repository)}/~settings`}
-              className="icon-button"
-              aria-label="Repository settings"
-              title="Repository settings"
-            >
-              <Settings size={16} />
-              <span className="touch-target" aria-hidden="true" />
-            </Link>
-          )}
-          <button
-            type="button"
-            className="icon-button"
-            onClick={refresh}
-            disabled={loading}
-            aria-label="Refresh review queue"
-          >
-            <RefreshCw size={16} className={loading ? 'spin' : ''} />
-            <span className="touch-target" aria-hidden="true" />
-          </button>
-          <OpenReview />
-        </div>
-      </div>
       {session.demo && <p className="demo-notice">Sample workspace · Provider writes are disabled</p>}
       <div className="queue-tabs" role="tablist" aria-label="Review queue views">
         {tabs.map((item) => (
@@ -196,6 +164,16 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
           </select>
           <ChevronDown size={12} />
         </label>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={refresh}
+          disabled={loading}
+          aria-label="Refresh review queue"
+        >
+          <RefreshCw size={16} className={loading ? 'spin' : ''} />
+          <span className="touch-target" aria-hidden="true" />
+        </button>
       </div>
       {tab === 'outgoing' && scoped.some((pull) => !insights[pullPath(pull.ref)]?.requesters) && (
         <p className="inline-note">
@@ -389,98 +367,5 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
         </div>
       )}
     </div>
-  );
-}
-function OpenReview() {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const { queue } = useDashboard();
-  const [url, setUrl] = useState('');
-  const [error, setError] = useState('');
-  return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger className="icon-button" aria-label="Open a review">
-        <Plus size={17} />
-        <span className="touch-target" aria-hidden="true" />
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="dialog-backdrop" />
-        <Dialog.Popup className="dialog-popup">
-          <div className="dialog-heading">
-            <Dialog.Title>Open a review</Dialog.Title>
-            <Dialog.Close className="icon-button" aria-label="Close">
-              <X size={17} />
-              <span className="touch-target" aria-hidden="true" />
-            </Dialog.Close>
-          </div>
-          <Dialog.Description>Paste a GitHub, GitLab or Bitbucket pull request URL.</Dialog.Description>
-          <form
-            className="form-stack"
-            onSubmit={(event) => {
-              event.preventDefault();
-              try {
-                const parsed = new URL(url);
-                if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port)
-                  throw new Error();
-                const parts = parsed.pathname.split('/').filter(Boolean);
-                const host = parsed.hostname;
-                const provider = host === 'gitlab.com' ? 'gitlab' : host === 'bitbucket.org' ? 'bitbucket' : 'github';
-                if (
-                  ![
-                    'github.com',
-                    'gitlab.com',
-                    'bitbucket.org',
-                    ...queue.repositories.map((repo) => repo.ref.host),
-                  ].includes(host)
-                )
-                  throw new Error();
-                const marker = provider === 'gitlab' ? parts.indexOf('-') : 2;
-                if (
-                  parts[marker] !==
-                    (provider === 'gitlab' ? '-' : provider === 'bitbucket' ? 'pull-requests' : 'pull') ||
-                  (provider === 'gitlab' && parts[marker + 1] !== 'merge_requests')
-                )
-                  throw new Error();
-                const number = Number(parts[marker + (provider === 'gitlab' ? 2 : 1)]);
-                const ref = pullRefSchema.safeParse({
-                  provider,
-                  host,
-                  owner: parts.slice(0, marker - 1).join('/'),
-                  repo: parts[marker - 1],
-                  number,
-                });
-                if (!ref.success) throw new Error();
-                setOpen(false);
-                router.push(pullPath(ref.data));
-              } catch {
-                setError('Enter a pull request URL from a connected Git host.');
-              }
-            }}
-          >
-            <label>
-              Pull request URL
-              <input
-                name="pullUrl"
-                className="field"
-                type="url"
-                required
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://github.com/owner/repo/pull/123"
-              />
-            </label>
-            {error && (
-              <p role="alert" className="form-error">
-                {error}
-              </p>
-            )}
-            <div className="dialog-actions">
-              <Dialog.Close render={<Button variant="outline" size="sm" />}>Cancel</Dialog.Close>
-              <Button type="submit">Open review</Button>
-            </div>
-          </form>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
   );
 }

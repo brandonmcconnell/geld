@@ -254,6 +254,13 @@
       "route": "/"
     },
     {
+      "name": "repository-picker",
+      "label": "Search and switch repositories",
+      "file": "desktop/repository-picker.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
       "name": "provider-dialog",
       "label": "Add AI provider",
       "file": "desktop/provider-dialog.png",
@@ -824,6 +831,13 @@
       "name": "account-menu",
       "label": "Account menu",
       "file": "mobile/account-menu.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "repository-picker",
+      "label": "Search and switch repositories",
+      "file": "mobile/repository-picker.png",
       "group": "mobile",
       "route": "/"
     },

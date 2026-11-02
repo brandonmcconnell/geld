@@ -68,7 +68,7 @@ export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
   );
 }
 function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; readonly owner: string | null }) {
-  const { session, teams, activeTeam, setActiveTeam } = useDashboard();
+  const { session, teams, activeTeam, setActiveTeam, assistantOpen, setAssistantOpen } = useDashboard();
   const teamId = activeTeam;
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,9 +93,8 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const [draftHead, setDraftHead] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [line, setLine] = useState<LineSelection | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState<boolean | null>(false);
   const wide = useSyncExternalStore(subscribeWide, wideSnapshot, () => false);
-  const showAssistant = assistantOpen ?? wide;
+  const showAssistant = assistantOpen;
   const mutationKey = useRef({ content: '', key: '' });
   const key = owner
     ? `geld.review.v2:${encodeURIComponent(owner)}:${pullPath(reference)}${teamId ? `:team:${encodeURIComponent(teamId)}` : ''}`
@@ -397,16 +396,6 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               onClick={() => setRevision((value) => value + 1)}
             >
               <RefreshCw size={14} />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Toggle assistant"
-              aria-pressed={showAssistant}
-              onClick={() => setAssistantOpen((value) => !(value ?? wide))}
-            >
-              <Sparkles size={13} />
-              <span className="assistant-button-label">Assistant</span>
             </Button>
             {session.user && !session.demo && (
               <ProviderActions reference={reference} data={data} onChange={() => setRevision((value) => value + 1)} />

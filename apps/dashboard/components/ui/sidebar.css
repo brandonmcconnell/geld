@@ -1,0 +1,123 @@
+/* shadcn/ui Vega sidebar styles, MIT license in shadcn-LICENSE.md. */
+/* MARK: Sidebar */
+.cn-sidebar-gap {
+  @apply transition-[width] duration-200 ease-linear;
+}
+
+.cn-sidebar-inner {
+  @apply bg-sidebar group-data-[variant=floating]:ring-sidebar-border group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1;
+}
+
+.cn-sidebar-rail {
+  @apply hover:after:bg-sidebar-border;
+}
+
+.cn-sidebar-inset {
+  @apply bg-background lg:peer-data-[variant=inset]:m-2 lg:peer-data-[variant=inset]:ml-0 lg:peer-data-[variant=inset]:rounded-xl lg:peer-data-[variant=inset]:shadow-sm lg:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2;
+}
+
+.cn-sidebar-input {
+  @apply bg-background h-8 w-full shadow-none;
+}
+
+.cn-sidebar-header {
+  @apply gap-2 p-2;
+}
+
+.cn-sidebar-content {
+  @apply gap-2;
+  scrollbar-width: none;
+}
+
+.cn-sidebar-footer {
+  @apply gap-2 p-2;
+}
+
+.cn-sidebar-separator {
+  @apply bg-sidebar-border mx-2;
+}
+
+.cn-sidebar-group {
+  @apply p-2;
+}
+
+.cn-sidebar-menu {
+  @apply gap-1;
+}
+
+.cn-sidebar-group-content {
+  @apply text-sm;
+}
+
+.cn-sidebar-group-label {
+  @apply text-sidebar-foreground/70 ring-sidebar-ring h-8 rounded-md px-2 text-xs font-medium transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0 focus-visible:ring-2 [&>svg]:size-4;
+}
+
+.cn-sidebar-group-action {
+  @apply text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground absolute top-3.5 right-3 w-5 rounded-md p-0 focus-visible:ring-2 [&>svg]:size-4;
+}
+
+.cn-sidebar-menu-button {
+  @apply ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground gap-2 rounded-md p-2 text-left text-sm transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! focus-visible:ring-2;
+}
+
+.cn-sidebar-menu-button-aria {
+  @apply aria-expanded:hover:bg-sidebar-accent aria-expanded:hover:text-sidebar-accent-foreground;
+}
+
+.cn-sidebar-menu-button-variant-default {
+  @apply hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+}
+
+.cn-sidebar-menu-button-variant-outline {
+  @apply bg-background hover:bg-sidebar-accent hover:text-sidebar-accent-foreground shadow-[0_0_0_1px_var(--sidebar-border)] hover:shadow-[0_0_0_1px_var(--sidebar-accent)];
+}
+
+.cn-sidebar-menu-button-size-default {
+  @apply h-8 text-sm;
+}
+
+.cn-sidebar-menu-button-size-sm {
+  @apply h-7 text-xs;
+}
+
+.cn-sidebar-menu-button-size-lg {
+  @apply h-12 text-sm group-data-[collapsible=icon]:p-0!;
+}
+
+.cn-sidebar-menu-action {
+  @apply text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground peer-hover/menu-button:text-sidebar-accent-foreground absolute top-1.5 right-1 aspect-square w-5 rounded-md p-0 peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 focus-visible:ring-2 [&>svg]:size-4;
+}
+
+.cn-sidebar-menu-badge {
+  @apply text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground pointer-events-none absolute right-1 flex h-5 min-w-5 rounded-md px-1 text-xs font-medium peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1;
+}
+
+.cn-sidebar-menu-skeleton {
+  @apply h-8 gap-2 rounded-md px-2;
+}
+
+.cn-sidebar-menu-skeleton-icon {
+  @apply size-4 rounded-md;
+}
+
+.cn-sidebar-menu-skeleton-text {
+  @apply h-4;
+}
+
+.cn-sidebar-menu-sub {
+  @apply border-sidebar-border mx-3.5 translate-x-px gap-1 border-l px-2.5 py-0.5 group-data-[collapsible=icon]:hidden;
+}
+
+.cn-sidebar-menu-sub-button {
+  @apply text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground h-7 gap-2 rounded-md px-2 focus-visible:ring-2 data-[size=md]:text-sm data-[size=sm]:text-xs [&>svg]:size-4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='sidebar-container'],
+  .cn-sidebar-gap,
+  .cn-sidebar-menu-button,
+  .cn-sidebar-group-label {
+    transition: none;
+  }
+}

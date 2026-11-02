@@ -1,10 +1,8 @@
 'use client';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
-import { Dialog } from '@base-ui/react/dialog';
-import { cn } from 'cn';
 import {
   Bell,
   ArrowLeft,
@@ -14,13 +12,10 @@ import {
   CircleHelp,
   GitPullRequest,
   Layers,
-  Menu,
-  PanelLeftClose,
   Plus,
   Search,
   Settings,
   Users,
-  X,
   FolderGit2,
   MoreHorizontal,
 } from './icons';
@@ -33,34 +28,30 @@ import { parseDashboardPathname, repositoryPath } from '@geld/domain';
 import { queueSchema, sessionSchema } from '@/lib/contracts';
 import type { QueueData, SessionData } from '@/lib/contracts';
 import { Brand } from './brand';
+import { DashboardContext, useDashboard } from '@/lib/dashboard-context';
+import { WorkspaceHeader } from './workspace-header';
+import {
+  Sidebar,
+  SidebarProvider,
+  SidebarTrigger,
+  SidebarHeader,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuBadge,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
+  useSidebar,
+} from './ui/sidebar';
 
 const teamListSchema = z.object({ teams: z.array(z.object({ id: z.string(), name: z.string() })) });
 const emptyQueue: QueueData = { pulls: [], repositories: [] };
-interface DashboardContext {
-  readonly queue: QueueData;
-  readonly session: SessionData;
-  readonly loading: boolean;
-  readonly error: string | null;
-  readonly refresh: () => void;
-  readonly teams: readonly { id: string; name: string }[];
-  readonly activeTeam: string;
-  readonly setActiveTeam: (id: string) => void;
-  readonly loadMore: () => void;
-}
-const context = createContext<DashboardContext>({
-  queue: emptyQueue,
-  session: { user: null, configured: false, demo: false },
-  loading: true,
-  error: null,
-  refresh: () => undefined,
-  teams: [],
-  activeTeam: '',
-  setActiveTeam: () => undefined,
-  loadMore: () => undefined,
-});
-export function useDashboard() {
-  return useContext(context);
-}
+export { useDashboard } from '@/lib/dashboard-context';
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const pathname = usePathname();
@@ -86,13 +77,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileNavigation, setMobileNavigation] = useState({ path: pathname, open: false });
-  useEffect(() => {
-    const close = () => setMobileNavigation({ path: pathname, open: false });
-    window.addEventListener('geld:close-navigation', close);
-    return () => window.removeEventListener('geld:close-navigation', close);
-  }, [pathname]);
+  const [assistant, setAssistant] = useState({ path: pathname, open: false });
   useEffect(() => {
     const abort = new AbortController();
     Promise.all([
@@ -174,6 +159,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
     return () => abort.abort();
   }, [revision, activeTeam, repositoryKey, queuePage, queueKey, routeTeam]);
   const data = {
+    assistantOpen: assistant.path === pathname && assistant.open,
+    setAssistantOpen: (open: boolean) => setAssistant({ path: pathname, open }),
     queue,
     session,
     loading,
@@ -193,45 +180,41 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
     },
   };
   return (
-    <context.Provider value={data}>
-      <div className={cn('app-shell isolate', authPage && 'auth-shell')} data-collapsed={collapsed}>
-        <a href="#main" className="skip-link">
-          Skip to content
-        </a>
-        <aside className="desktop-sidebar">
-          <Sidebar collapsed={collapsed} onCollapse={() => setCollapsed((value) => !value)} />
-        </aside>
-        <div className="mobile-navigation">
-          <Dialog.Root
-            key={pathname}
-            open={mobileNavigation.path === pathname && mobileNavigation.open}
-            onOpenChange={(open) => setMobileNavigation({ path: pathname, open })}
-          >
-            <Dialog.Trigger className="icon-button" aria-label="Open navigation">
-              <Menu size={20} />
-              <span className="touch-target" aria-hidden="true" />
-            </Dialog.Trigger>
-            <Link href="/" aria-label="Geld home">
-              <Brand compact />
-            </Link>
-            <Dialog.Portal>
-              <Dialog.Backdrop className="dialog-backdrop" />
-              <Dialog.Popup className="mobile-sidebar">
-                <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-                <Dialog.Close className="icon-button mobile-close" aria-label="Close navigation">
-                  <X size={18} />
-                  <span className="touch-target" aria-hidden="true" />
-                </Dialog.Close>
-                <Sidebar collapsed={false} />
-              </Dialog.Popup>
-            </Dialog.Portal>
-          </Dialog.Root>
+    <DashboardContext.Provider value={data}>
+      {authPage ? (
+        <div className="auth-shell isolate">
+          <main id="main" className="main-content">
+            {children}
+          </main>
         </div>
+      ) : (
+        <SidebarProvider className="app-shell isolate" navigationKey={pathname}>
+          <WorkspaceChrome>{children}</WorkspaceChrome>
+        </SidebarProvider>
+      )}
+    </DashboardContext.Provider>
+  );
+}
+function WorkspaceChrome({ children }: { readonly children: ReactNode }) {
+  const { setOpenMobile } = useSidebar();
+  useEffect(() => {
+    const close = () => setOpenMobile(false);
+    window.addEventListener('geld:close-navigation', close);
+    return () => window.removeEventListener('geld:close-navigation', close);
+  }, [setOpenMobile]);
+  return (
+    <>
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+      <AppSidebar />
+      <div className="workspace-main">
+        <WorkspaceHeader />
         <main id="main" className="main-content">
           {children}
         </main>
       </div>
-    </context.Provider>
+    </>
   );
 }
 
@@ -258,21 +241,24 @@ function NavigationLink({
       ? pathname === '/'
       : pathname === base || pathname.startsWith(base + '/');
   return (
-    <Link
-      data-measure="primary-nav"
-      aria-label={typeof children === 'string' ? children : undefined}
-      title={typeof children === 'string' ? children : undefined}
-      href={href}
-      className={cn('nav-link', active && 'active')}
-      aria-current={active ? 'page' : undefined}
-    >
-      <Icon size={17} />
-      <span className="sidebar-label">{children}</span>
-      {count !== undefined && count > 0 && <span className="nav-count sidebar-label">{count}</span>}
-    </Link>
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        render={<Link href={href} />}
+        isActive={active}
+        data-measure="primary-nav"
+        aria-label={typeof children === 'string' ? children : undefined}
+        title={typeof children === 'string' ? children : undefined}
+        aria-current={active ? 'page' : undefined}
+      >
+        <Icon size={16} />
+        <span>{children}</span>
+      </SidebarMenuButton>
+      {count !== undefined && count > 0 && <SidebarMenuBadge>{count}</SidebarMenuBadge>}
+    </SidebarMenuItem>
   );
 }
-function Sidebar({ collapsed, onCollapse }: { readonly collapsed: boolean; readonly onCollapse?: () => void }) {
+
+function AppSidebar() {
   const pathname = usePathname();
   const { queue, session } = useDashboard();
   const route = parseDashboardPathname(pathname);
@@ -310,133 +296,133 @@ function Sidebar({ collapsed, onCollapse }: { readonly collapsed: boolean; reado
     ).values(),
   );
   return (
-    <div className="sidebar-inner">
-      <div className="sidebar-brand">
-        <Link href="/" aria-label="Geld home">
-          <Brand />
-        </Link>
-        {onCollapse && (
-          <button
-            type="button"
-            className="icon-button sidebar-label"
-            onClick={onCollapse}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <PanelLeftClose size={16} />
-            <span className="touch-target" aria-hidden="true" />
-          </button>
-        )}
-      </div>
-      <TeamSwitcher />
-      <nav aria-label={settings ? 'Settings navigation' : 'Main navigation'}>
-        {settings ? (
-          <>
-            <Link
-              href={teamSettings ? '/teams' : scopePath}
-              className="nav-link back-link"
-              aria-label={teamSettings ? 'All teams' : scopedSettings ? 'Back to scope' : 'Back to workspace'}
-            >
-              <ArrowLeft size={16} />
-              <span className="sidebar-label">
-                {scopedSettings
-                  ? route.kind === 'organisation'
-                    ? 'Back to organization'
-                    : 'Back to repository'
-                  : teamSettings
-                    ? 'All teams'
-                    : 'Back to workspace'}
-              </span>
-            </Link>
-            <p className="nav-heading sidebar-label">{scopedName}</p>
-            <div className="nav-section">
-              {(teamSettings
-                ? teamLinks
-                : scopedSettings
-                  ? [{ href: pathname, name: 'General', icon: Settings }]
-                  : settingsLinks
-              ).map(({ href, name, icon }) => (
-                <NavigationLink key={href} href={href} icon={icon}>
-                  {name}
+    <Sidebar>
+      <SidebarHeader>
+        <div className="sidebar-brand-row">
+          <Link href="/" aria-label="Geld home" className="sidebar-wordmark">
+            <Brand compact />
+          </Link>
+          <SidebarTrigger className="sidebar-desktop-toggle" />
+        </div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <TeamSwitcher />
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        <nav aria-label={settings ? 'Settings navigation' : 'Main navigation'}>
+          {settings ? (
+            <SidebarGroup>
+              <SidebarMenu>
+                <NavigationLink href={teamSettings ? '/teams' : scopePath} icon={ArrowLeft}>
+                  {teamSettings ? 'All teams' : scopedSettings ? 'Back to scope' : 'Back to workspace'}
                 </NavigationLink>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="nav-section">
-              <NavigationLink href="/" icon={GitPullRequest} count={queue.pulls.filter(readyForReview).length}>
-                Review queue
-              </NavigationLink>
-              <NavigationLink href="/repositories" icon={Layers}>
-                Repositories
-              </NavigationLink>
-              <NavigationLink href="/inbox" icon={Bell}>
-                Inbox
-              </NavigationLink>
-            </div>
-            <div className="nav-section organisation-navigation">
-              <p className="nav-heading sidebar-label">Organizations</p>
-              {orgs.map((ref) => (
-                <details className="organisation-group" key={`${ref.provider}:${ref.host}:${ref.owner}`} open>
-                  <summary>
-                    <ChevronDown size={12} />
-                    <span className="organisation-avatar">{ref.owner.slice(0, 1).toUpperCase()}</span>
-                    <span className="sidebar-label organisation-name">{ref.owner}</span>
-                    <span className="sidebar-label git-host-mark" title={ref.host}>
-                      {ref.provider === 'github' ? 'GH' : ref.provider === 'gitlab' ? 'GL' : 'BB'}
-                    </span>
-                  </summary>
-                  <div className="organisation-repos sidebar-label">
-                    {queue.repositories
-                      .filter(
-                        (repo) =>
-                          repo.ref.provider === ref.provider &&
-                          repo.ref.host === ref.host &&
-                          repo.ref.owner === ref.owner,
-                      )
-                      .map((repo) => (
-                        <Link
-                          href={repositoryPath(repo.ref)}
-                          key={repo.id}
-                          aria-current={pathname === repositoryPath(repo.ref) ? 'page' : undefined}
-                        >
-                          <FolderGit2 size={14} />
-                          <span>{repo.ref.repo}</span>
-                        </Link>
-                      ))}
-                  </div>
-                </details>
-              ))}
-              {!orgs.length && (
-                <Link href="/connect" className="nav-link">
-                  <Plus size={16} />
-                  <span className="sidebar-label">Connect repositories</span>
-                </Link>
+              </SidebarMenu>
+              <SidebarGroupLabel>{scopedName}</SidebarGroupLabel>
+              <SidebarMenu>
+                {(teamSettings
+                  ? teamLinks
+                  : scopedSettings
+                    ? [{ href: pathname, name: 'General', icon: Settings }]
+                    : settingsLinks
+                ).map(({ href, name, icon }) => (
+                  <NavigationLink key={href} href={href} icon={icon}>
+                    {name}
+                  </NavigationLink>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          ) : (
+            <>
+              <SidebarGroup>
+                <SidebarMenu>
+                  <NavigationLink href="/" icon={GitPullRequest} count={queue.pulls.filter(readyForReview).length}>
+                    Review queue
+                  </NavigationLink>
+                  <NavigationLink href="/repositories" icon={Layers}>
+                    Repositories
+                  </NavigationLink>
+                  <NavigationLink href="/inbox" icon={Bell}>
+                    Inbox
+                  </NavigationLink>
+                </SidebarMenu>
+              </SidebarGroup>
+              <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+                <SidebarGroupLabel>Organizations</SidebarGroupLabel>
+                <SidebarMenu>
+                  {orgs.map((ref) => (
+                    <SidebarMenuItem key={`${ref.provider}:${ref.host}:${ref.owner}`}>
+                      <details className="sidebar-organization" open>
+                        <SidebarMenuButton render={<summary />}>
+                          <ChevronDown size={16} />
+                          <span className="min-w-0 flex-1 truncate">{ref.owner}</span>
+                          <span className="git-host-mark" title={ref.host}>
+                            {ref.provider === 'github' ? 'GH' : ref.provider === 'gitlab' ? 'GL' : 'BB'}
+                          </span>
+                        </SidebarMenuButton>
+                        <SidebarMenuSub>
+                          {queue.repositories
+                            .filter(
+                              (repo) =>
+                                repo.ref.provider === ref.provider &&
+                                repo.ref.host === ref.host &&
+                                repo.ref.owner === ref.owner,
+                            )
+                            .map((repo) => (
+                              <SidebarMenuSubItem key={repo.id}>
+                                <SidebarMenuSubButton
+                                  render={<Link href={repositoryPath(repo.ref)} />}
+                                  isActive={pathname === repositoryPath(repo.ref)}
+                                  aria-current={pathname === repositoryPath(repo.ref) ? 'page' : undefined}
+                                >
+                                  <FolderGit2 size={16} />
+                                  <span>{repo.ref.repo}</span>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            ))}
+                        </SidebarMenuSub>
+                      </details>
+                    </SidebarMenuItem>
+                  ))}
+                  {!orgs.length && (
+                    <NavigationLink href="/connect" icon={Plus}>
+                      Connect repositories
+                    </NavigationLink>
+                  )}
+                </SidebarMenu>
+              </SidebarGroup>
+              {(session.features?.projects || session.features?.roadmaps) && (
+                <SidebarGroup>
+                  <SidebarMenu>
+                    {session.features?.projects && (
+                      <NavigationLink href="/projects" icon={Layers}>
+                        Projects
+                      </NavigationLink>
+                    )}
+                    {session.features?.roadmaps && (
+                      <NavigationLink href="/roadmap" icon={Layers}>
+                        Roadmap
+                      </NavigationLink>
+                    )}
+                  </SidebarMenu>
+                </SidebarGroup>
               )}
-            </div>
-            {(session.features?.projects || session.features?.roadmaps) && (
-              <div className="nav-section">
-                {session.features?.projects && (
-                  <NavigationLink href="/projects" icon={Layers}>
-                    Projects
-                  </NavigationLink>
-                )}
-                {session.features?.roadmaps && (
-                  <NavigationLink href="/roadmap" icon={Layers}>
-                    Roadmap
-                  </NavigationLink>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </nav>
-      <div className="sidebar-bottom">
-        <AccountMenu />
-      </div>
-    </div>
+            </>
+          )}
+        </nav>
+      </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <AccountMenu />
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
   );
 }
+
 function TeamSwitcher() {
   const router = useRouter();
   const pathname = usePathname();
@@ -446,10 +432,10 @@ function TeamSwitcher() {
   const name = teams.find((team) => team.id === activeTeam)?.name ?? 'Personal view';
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger className="workspace-switch" aria-label="Switch team">
+      <Popover.Trigger render={<SidebarMenuButton />} aria-label="Switch team" title={name}>
         <span className="workspace-avatar">{activeTeam ? name.slice(0, 1) : <Users size={16} />}</span>
-        <span className="sidebar-label workspace-name">{name}</span>
-        <ChevronsUpDown size={14} className="sidebar-label" />
+        <span className="workspace-name">{name}</span>
+        <ChevronsUpDown size={14} className="ml-auto" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="popover-positioner">
@@ -476,7 +462,9 @@ function TeamSwitcher() {
                     onClick={() => {
                       setActiveTeam(team.id);
                       const currentTeam = /^\/teams\/[^/]+/.exec(pathname)?.[0];
-                      if (currentTeam)
+                      const scoped = parseDashboardPathname(pathname);
+                      if (scoped && (scoped.kind === 'pull' || !scoped.settings)) router.push('/');
+                      else if (currentTeam)
                         router.push(
                           team.id ? pathname.replace(currentTeam, '/teams/' + encodeURIComponent(team.id)) : '/',
                         );
@@ -509,10 +497,10 @@ function AccountMenu() {
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger className="account-link" aria-label="Account menu">
+      <Popover.Trigger render={<SidebarMenuButton />} aria-label="Account menu" title={session.user?.name ?? 'Sign in'}>
         <span className="account-avatar">{session.user?.name.slice(0, 1).toUpperCase() ?? 'G'}</span>
-        <span className="sidebar-label account-name">{session.user?.name ?? 'Sign in'}</span>
-        <MoreHorizontal size={16} className="sidebar-label" />
+        <span className="account-name">{session.user?.name ?? 'Sign in'}</span>
+        <MoreHorizontal size={16} className="ml-auto" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="start" sideOffset={6} className="popover-positioner">

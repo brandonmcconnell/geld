@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { configure, teamId } from './design-fixtures.mjs';
+import { configure, fixture, teamId } from './design-fixtures.mjs';
 const loadModule = createRequire(import.meta.url);
 const { chromium } = loadModule(process.env.GELD_PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.GELD_DESIGN_URL || 'http://localhost:3001';
@@ -42,6 +42,10 @@ try {
   assert.equal(await q.page.getByRole('link', { name: 'Review queue', exact: true }).count(), 1);
   assert.equal(await q.page.getByRole('link', { name: 'Repositories', exact: true }).count(), 1);
   await q.page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+  await q.page.keyboard.press('Control+b');
+  await q.page.getByRole('button', { name: 'Expand sidebar', exact: true }).waitFor();
+  await q.page.keyboard.press('Control+b');
+  await q.page.getByRole('button', { name: 'Collapse sidebar', exact: true }).waitFor();
   await q.page.keyboard.press('/');
   assert.equal(
     await q.page.getByRole('textbox', { name: 'Filter pull requests' }).evaluate((e) => e === document.activeElement),
@@ -101,6 +105,54 @@ try {
   await q.context.close();
   console.log(
     'PASS queue readiness, both request directions, filtering, persistent pinning, bulk stars, hidden counts and URL navigation',
+  );
+  const navigation = await open({}, 1440, '/github/acme/platform');
+  const scopes = [];
+  await navigation.context.route('**/api/queue?*', async (request) => {
+    const query = new URL(request.request().url()).searchParams;
+    if (query.get('repositoriesOnly') !== 'true') return request.fallback();
+    scopes.push(query.get('team'));
+    await request.fulfill({
+      json: {
+        pulls: [],
+        repositories:
+          query.get('cursor') === '2' ? fixture.queue.repositories.slice(1) : fixture.queue.repositories.slice(0, 1),
+        nextCursor: query.get('cursor') === '2' ? null : '2',
+      },
+    });
+  });
+  await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).click();
+  await navigation.page.getByRole('button', { name: 'Load more repositories', exact: true }).click();
+  await navigation.page.getByRole('searchbox', { name: 'Find a repository', exact: true }).fill('gitlab');
+  await navigation.page.getByRole('button', { name: 'acme/api on gitlab.com', exact: true }).click();
+  await navigation.page.waitForURL('**/gitlab/acme/api');
+  assert.equal(
+    await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).textContent(),
+    'api',
+  );
+  await navigation.page.getByRole('button', { name: 'Switch team', exact: true }).click();
+  await navigation.page.getByRole('button', { name: 'Platform engineering', exact: true }).click();
+  await navigation.page.waitForURL(base + '/');
+  await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).click();
+  await navigation.page.getByRole('button', { name: 'Load more repositories', exact: true }).waitFor();
+  assert.equal(scopes.at(-1), teamId);
+  await navigation.page.keyboard.press('Escape');
+  await navigation.context.route('**/api/session', (request) =>
+    request.fulfill({ json: { user: null, configured: true, demo: false } }),
+  );
+  await navigation.context.route('**/api/teams', (request) =>
+    request.fulfill({ status: 401, json: { error: 'Signed out' } }),
+  );
+  await navigation.page.getByRole('button', { name: 'Refresh review queue', exact: true }).click();
+  await navigation.page.locator('.account-name:visible').filter({ hasText: 'Sign in' }).waitFor();
+  await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).click();
+  assert.equal(
+    await navigation.page.getByRole('button', { name: 'acme/platform on github.com', exact: true }).count(),
+    0,
+  );
+  await navigation.context.close();
+  console.log(
+    'PASS sidebar shortcut and repository picker pagination, search, navigation, team scope and sign-out isolation',
   );
   const review = await open({ guided: true }, 1440, pull);
   await tab(review.page, 'Guide');
@@ -193,8 +245,9 @@ try {
   await stress.context.close();
   const settings = await open({}, 1440, '/settings/providers');
   assert.equal(await settings.page.getByRole('link', { name: 'AI providers', exact: true }).count(), 1);
-  assert.equal(await settings.page.locator('a[aria-current=page]').count(), 1);
-  assert.equal(await settings.page.locator('.workspace-header,.settings-navigation').count(), 0);
+  assert.equal(await settings.page.locator('a[aria-current=page]:visible').count(), 1);
+  assert.equal(await settings.page.locator('.workspace-header:visible').count(), 1);
+  assert.equal(await settings.page.locator('.settings-navigation').count(), 0);
   await settings.page.goto(base + '/github/acme/platform', { waitUntil: 'networkidle' });
   assert.equal(await settings.page.locator('.breadcrumbs').count(), 0);
   assert.equal(await settings.page.locator('.page:visible').count(), 1);

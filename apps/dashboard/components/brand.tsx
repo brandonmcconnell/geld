@@ -3,7 +3,7 @@ const wordmark = {
   dark: new URL('../../../assets/brand/geld-logo-white.svg', import.meta.url),
 };
 export function Brand({ compact = false }: { readonly compact?: boolean }) {
-  const height = compact ? 20 : 24;
+  const height = compact ? 16 : 24;
   const width = (height * 141.91) / 36.31;
   return (
     <span className="brand" aria-label="Geld">
