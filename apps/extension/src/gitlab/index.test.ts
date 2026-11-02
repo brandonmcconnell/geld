@@ -38,6 +38,43 @@ beforeEach(() => {
 
 afterEach(() => { document.body.replaceChildren();vi.unstubAllGlobals();vi.restoreAllMocks(); });
 
+it('offers a live, source-scoped review opener without inferring pending drafts or approval/update permission', async () => {
+  const source = snapshot();
+  vi.mocked(fetchGitLabReview).mockResolvedValue({ ...source, reviewerScope: { subject: source.input.subject, projectId: '27', noteableId: '81' },
+    capabilities: { signedIn: true, canApprove: false, canReview: false, canComment: false, requestChanges: 'unknown' } });
+  const root = document.querySelector('#js-vue-mr-discussions');
+  root?.setAttribute('data-noteable-type', 'MergeRequest');
+  root?.setAttribute('data-noteable-data', JSON.stringify({ id: 81, iid: 7, project_id: 27, diff_head_sha: HEAD, current_user: { can_update: false } }));
+  const result = await acquire();const open = () => result.actions.find((action) => action.kind === 'open-review');
+  expect(open()).toBeUndefined();
+  document.body.insertAdjacentHTML('beforeend', '<header><button type="button" data-testid="review-drawer-toggle">Your review</button></header>');
+  const button = document.querySelector<HTMLButtonElement>('header button');if (button === null) throw new Error('Missing native button.');
+  // Original-control layout is an explicit unit protocol, not a signed-in public fixture.
+  vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 50, 20));
+  vi.spyOn(button, 'scrollIntoView').mockImplementation(() => {});vi.spyOn(document, 'elementFromPoint').mockReturnValue(button);
+  const click = vi.fn();button.addEventListener('click', click);
+  const first = open();expect(first?.available).toBe(true);expect(open()?.scopeKey).toBe(first?.scopeKey);
+  expect(await first?.activate({ current: () => true })).toBe(true);expect(click).toHaveBeenCalledOnce();
+  button.disabled = true;expect(open()).toBeUndefined();button.disabled = false;expect(open()?.available).toBe(true);
+  expect(await first?.activate({ current: () => true })).toBe(false);
+  const priorTab = open();window.history.replaceState(null, '', `${REVIEW}/diffs`);
+  expect(await priorTab?.activate({ current: () => true })).toBe(false);expect(open()?.available).toBe(true);
+  root?.setAttribute('data-current-user-data', '{"id":11}');expect(open()).toBeUndefined();
+  expect(fetchGitLabReview).toHaveBeenCalledOnce();expect(fetch).not.toHaveBeenCalled();
+});
+
+it.each(['partial', 'signed-out'] as const)('retains the fetched %s ceiling for the native review opener', async (ceiling) => {
+  const source = snapshot();
+  vi.mocked(fetchGitLabReview).mockResolvedValue({ ...source, reviewerScope: { subject: source.input.subject, projectId: '27', noteableId: '81' },
+    complete: ceiling !== 'partial', capabilities: { ...source.capabilities, signedIn: ceiling !== 'signed-out' } });
+  const root = document.querySelector('#js-vue-mr-discussions');root?.setAttribute('data-noteable-type', 'MergeRequest');
+  root?.setAttribute('data-noteable-data', JSON.stringify({ id: 81, iid: 7, project_id: 27, diff_head_sha: HEAD }));
+  document.body.insertAdjacentHTML('beforeend', '<header><button type="button" data-testid="review-drawer-toggle">Your review</button></header>');
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 50, 20));
+  const result = await acquire();expect(result.actions.find((action) => action.kind === 'open-review')).toBeUndefined();
+  expect(fetchGitLabReview).toHaveBeenCalledOnce();expect(fetch).not.toHaveBeenCalled();
+});
+
 it('refreshes the focus-only reviewer handoff from native DOM while preserving its fetched viewer and exact metadata scope', async () => {
   const source = snapshot();
   vi.mocked(fetchGitLabReview).mockResolvedValue({ ...source, reviewerScope: { subject: source.input.subject, projectId: '27', noteableId: '81' } });

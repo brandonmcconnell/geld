@@ -145,7 +145,7 @@ export type ProviderListAuthorFetcher = (listUrl: URL, visibleReviewUrls: readon
 export interface ProviderReviewActionContext { readonly current: () => boolean }
 
 export interface ProviderReviewAction {
-  readonly kind: 'approve' | 'request-changes' | 'comment' | 'open-pending-review';
+  readonly kind: 'approve' | 'request-changes' | 'comment' | 'open-pending-review' | 'open-review';
   /** Adapter-owned identity of the rendered native action lifetime, without credential or draft data. */
   readonly scopeKey?: string;
   readonly available: boolean;

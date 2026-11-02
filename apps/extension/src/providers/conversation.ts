@@ -15,7 +15,7 @@ import { ProviderNativeFind } from './native-find';
 import type { ProviderNativeFindEntry, ProviderNativeFindEnvironment } from './native-find';
 import './conversation-compact.css';
 
-const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment', 'open-pending-review': 'Open pending review' };
+const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment', 'open-pending-review': 'Open pending review', 'open-review': 'Open your review' };
 const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
 
 function hiddenFlag(node: Element, name: string, hidden: boolean): void {
