@@ -2744,7 +2744,10 @@ try {
       const focused = await bitbucketNativeStyles(page);
       item.nativeButtonFocus = { mechanism: 'Programmatic native focus, not menu activation', button: focused.moreActions, border: focused.moreActionsBorder };
       item.featureParity = 'partial';
-      return { status: 'passed', verified: name === 'bitbucket-diff' ? 'Installed complete diff counts, real synchronized filtering/restoration, trusted native context expansion, exact original-source shell ranges and native ADS pseudo-highlight colors on the selected theme.' : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
+      return { status: 'passed', verified: name === 'bitbucket-diff' ? item.shellSyntax?.status === 'native_disabled'
+        ? 'Installed diff counts/filtering and trusted native context expansion; observed native syntax disabled with no owned coloring. No positive shell color or palette pass.'
+        : `Installed complete diff counts, real synchronized filtering/restoration, trusted native context expansion, exact original-source shell ranges and native ADS pseudo-highlight colors on the selected theme. Native preference: ${item.shellSyntax?.nativeSettings?.status ?? 'unavailable'}; native Bash palette equivalence is unverified.`
+        : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
     });
   }
 
