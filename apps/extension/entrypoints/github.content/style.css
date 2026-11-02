@@ -3559,6 +3559,12 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   height: 14px;
 }
 
+/* A reviewer's thread count, after the threads glyph on their pill. */
+.geld-review__reviewer-threads {
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
 .geld-review__health[data-health='good'] {
   color: var(--geld-review-done-fg);
 }

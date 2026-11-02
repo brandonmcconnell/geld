@@ -1281,19 +1281,27 @@ const REVIEWER_HEALTH: Readonly<Record<ReviewerGroupState, Health>> = {
 
 /**
  * One person on the Reviews row, shaped like a bot's pill: their picture (GitHub's hovercard on the pill), their
- * login, which goes first when the row is short of room (`fitChips`), then their verdict's glyph, and the awaiting dot
- * too when they were asked again. It opens their review where it sits; someone only awaited has nothing to open.
+ * login, which goes first when the row is short of room (`fitChips`), then what their review said. A verdict's glyph,
+ * then the comment glyph when it came with a comment, or the threads glyph and how many threads instead when it opened
+ * any (a comment review's threads take its comment glyph's place), then the awaiting dot when they were asked again.
+ * It opens their review where it sits; someone only awaited has nothing to open.
  */
-function reviewerPill(status: ReviewerStatus, handlers: PanelHandlers): HTMLElement {
-  const { words } = statusWords(status);
-  const label = `${status.login}: ${words}`;
+function reviewerPill(status: ReviewerStatus, review: ReviewEntry | undefined, handlers: PanelHandlers): HTMLElement {
+  const threads = review?.threads?.length ?? 0;
+  const commented = review?.hasBody ?? false;
+  const words = [statusWords(status).words];
+  if (threads > 0) words.push(plural(threads, 'thread'));
+  else if (commented && status.verdict !== 'commented') words.push('with a comment');
+  const label = `${status.login}: ${words.join(' · ')}`;
   const children: Node[] = [];
   if (status.avatar.src !== '') children.push(markImg(status.avatar.src, true));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [status.login]));
-  const states: ReviewerGroupState[] = [];
-  if (status.verdict !== null) states.push(status.verdict);
-  if (status.awaiting) states.push('awaiting');
-  for (const state of states) children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': REVIEWER_HEALTH[state], 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[state])]));
+  const glyph = (health: Health, glyphIcon: string, count?: number): HTMLElement =>
+    createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, 'aria-hidden': 'true' }, [icon(glyphIcon), ...(count === undefined ? [] : [createElement('span', { class: `${PANEL_CLASS}__reviewer-threads` }, [String(count)])])]);
+  if (status.verdict !== null && status.verdict !== 'commented') children.push(glyph(REVIEWER_HEALTH[status.verdict], ENTRY_GLYPH[status.verdict]));
+  if (threads > 0) children.push(glyph('pending', ICON_COMMENT_DISCUSSION, threads));
+  else if (status.verdict === 'commented' || commented) children.push(glyph('pending', ENTRY_GLYPH.commented));
+  if (status.awaiting) children.push(glyph(REVIEWER_HEALTH.awaiting, ENTRY_GLYPH.awaiting));
   const who = whoAttributes(status.login, false);
   if (status.verdict !== null && status.anchor !== null) return anchorLink(status.anchor, label, handlers, children, who);
   return createElement('span', { class: `${PANEL_CLASS}__bot`, role: 'img', 'aria-label': label, ...who }, children);
@@ -1773,13 +1781,10 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const pills = model.reviewerStatuses
       .filter((status) => status.verdict !== null || status.awaiting)
       .sort((a, b) => reviewerRank(a) - reviewerRank(b))
-      .map((status) => reviewerPill(status, handlers));
+      .map((status) => reviewerPill(status, model.comments.find((entry) => entry.anchor === status.anchor), handlers));
     content.push(...pills);
     const open = model.openKey === REVIEWS_KEY;
     if (content.length === 0) content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet']));
-    // Only comments count here; a bare verdict is already in the approvals.
-    const count = model.comments.filter((entry) => entry.hasBody).length;
-    if (count > 0) content.push(countChip(count, `${plural(count, 'review comment')} from people`));
     // The verdicts above are whole (the sidebar's); the comments are still arriving from the timeline.
     if (model.ingesting) content.push(ingestingMark('Still reading the timeline: review comments are on their way'));
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
