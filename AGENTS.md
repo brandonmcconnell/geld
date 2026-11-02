@@ -1733,6 +1733,12 @@ The first real reviewer-trust save can materialize defaults into a sparse raw se
 compare effective preferences with production `normalizeSettings`, retain unknown raw-key guards, record normalization separately and restore the original trust field's exact raw presence/value without claiming byte-identical settings.
 Bot verdict snapshots exclude nested request controls on an off-DOM clone, retaining actual verdict/account text and original source links while command previews and acknowledgement are checked separately.
 Record each validated input, clipboard and acknowledgement stage before later invariants so a partial failure cannot erase already observed action evidence.
+GitLab can replace a native Markdown-table Vue placeholder with its height control during full-page readiness capture;
+retain the raw transition and API fingerprints, require consecutive frame-separated stable body/node/source/head samples before freezing the action baseline, and keep every later body comparison byte-exact.
+This readiness gate does not establish owned table-height/scroll accessibility or waive the missing native expand interaction.
+When cloning GitLab Markdown, omit the height-control wrapper only when its sole nonwhitespace child is the observed native button bound uniquely to its sibling native table scroll wrapper in the same source;
+preserve authored text, extra children, malformed or duplicate bindings and generic empty DIVs.
+This avoids an empty presentation wrapper appearing on trust-triggered rerenders after native table hydration without copying native controls or changing height/expansion behavior.
 
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.

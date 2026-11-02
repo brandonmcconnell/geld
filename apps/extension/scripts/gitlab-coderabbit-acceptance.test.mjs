@@ -70,7 +70,7 @@ test('observer reads already-issued response bodies without fetching and dispose
 function nativeVersion() { const selected = { id: 1850365024, head: SHA, selected: true, latest: true, href: '/ark-bitcoin/bark/-/merge_requests/2117/diffs?diff_id=1850365024' };return { status: 'observed', count: 1, project: F.project, path: new URL(F.url).pathname, iid: F.id, type: 'MergeRequest', selected: [selected], latest: [selected] }; }
 function dom() {
   return { items: [{ id: 'ri_source', state: 'resolved', sources: [`note_${F.note}`] }], url: F.url, state: 'partial', head: SHA, nativeHead: SHA, nativeScope: { count: 1, project: F.project, path: new URL(F.url).pathname + '.json', action: 'show' }, nativeVersion: nativeVersion(), aiRunControls: 0, source: { anchor: `note_${F.note}`, body: '<p>Original words</p>', links: [`${F.url}#note_${F.note}`] },
-    native: { exists: true, body: '<p>Native words</p>', authorId: F.author, login: F.login, href: '/' + F.login, sameNode: true },
+    native: { exists: true, body: '<p>Native words</p>', sourceContent: [{ tag: 'P', position: '1:1-1:12', text: 'Native words', href: null, src: null }], authorId: F.author, login: F.login, href: '/' + F.login, sameNode: true },
     requests: [{ source: `${F.url}#note_${F.note}` }], requestNative: { anchor: `note_${F.note}`, exists: true, body: '<p>Native words</p>', authorId: F.author, login: F.login, sameNode: true } };
 }
 test('the command source needs actual same-account native author/body/root and a known canonical note link', () => {
@@ -123,12 +123,13 @@ for (const id of ['', 0, '0', '03436654383', '3.436654383e9', '3436654383 ', Num
 
 // Offline browser/storage protocol doubles exercise failure cleanup and call ordering only.
 // These are not an installed CodeRabbit result and do not replace the real UI/clipboard assertions.
-function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false, verdictFailureAfterCopy = false, sourceFailureAfterCopy = false } = {}) {
+function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false, verdictFailureAfterCopy = false, sourceFailureAfterCopy = false, readinessBodies, unstableReadiness = false, readinessCaptureFailure = false, readinessApiChange = false, readinessContentChange = false, readinessNodeChange = false, readinessOwnedChange = false, readinessHeadChange = false, finalCaptureBodyChange = false } = {}) {
   const initial = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [], categoryPatterns: { tests: ['**/*.spec.ts'] }, aiModel: 'original-model' };if (originalTrustAbsent) delete initial.trustedReviewAccounts;let settings = structuredClone(initial);
-  let trusted = false;let held = false;let commandHeld = false;let mode = 'Incremental review';let clipboard = 'Original clipboard';let status = '';let input = null;let granted = false;let cleared = false;let disposed = false;let withdrew = false;
-  const oracle = ready();const snapshot = oracle.snapshot();const fixture = { ...oracle, copyPhase() {}, dispose() { disposed = true; } };
-  const snapshotDom = () => ({ ...dom(), nativeHead: sourceFailure ? 'b'.repeat(40) : SHA, native: { ...dom().native, body: sourceFailureAfterCopy && status !== '' ? 'Changed native source' : dom().native.body, sameNode: held ? true : null },
-    requestNative: { ...dom().requestNative, sameNode: commandHeld ? true : null }, bots: trusted ? [{ id: 'coderabbit', state: verdictFailureAfterCopy && status !== '' ? 'running' : 'unknown', text: 'Observed bound account' }] : [],
+  let trusted = false;let held = false;let commandHeld = false;let mode = 'Incremental review';let clipboard = 'Original clipboard';let status = '';let input = null;let granted = false;let cleared = false;let disposed = false;let withdrew = false;let readinessCaptured = false;let frames = 0;let finalCaptured = false;const captures = [];
+  const oracle = ready();const snapshot = oracle.snapshot();const fixture = { ...oracle, snapshot() { const value = oracle.snapshot();return readinessApiChange && readinessCaptured ? { ...value, sourceSignature: 'changed-observed-source' } : value; }, copyPhase() {}, dispose() { disposed = true; } };
+  const nativeBody = () => finalCaptureBodyChange && finalCaptured ? 'Changed after final capture' : sourceFailureAfterCopy && status !== '' ? 'Changed native source' : readinessCaptured && unstableReadiness ? `Unstable native presentation ${frames}` : readinessCaptured && readinessBodies !== undefined ? readinessBodies[Math.min(Math.max(0, frames - 1), readinessBodies.length - 1)] : dom().native.body;
+  const snapshotDom = () => ({ ...dom(), source: readinessCaptured && readinessOwnedChange ? { ...dom().source, body: 'Changed owned source' } : dom().source, nativeHead: sourceFailure || readinessCaptured && readinessHeadChange ? 'b'.repeat(40) : SHA, native: { ...dom().native, body: nativeBody(), sourceContent: readinessCaptured && readinessContentChange ? [{ ...dom().native.sourceContent[0], text: 'Edited native source words' }] : dom().native.sourceContent, sameNode: held ? !(readinessCaptured && readinessNodeChange) : null },
+    requestNative: { ...dom().requestNative, body: nativeBody(), sameNode: commandHeld ? true : null }, bots: trusted ? [{ id: 'coderabbit', state: verdictFailureAfterCopy && status !== '' ? 'running' : 'unknown', text: 'Observed bound account' }] : [],
     requests: trusted ? [{ source: `${F.url}#note_${F.note}`, summary: 'Prepare CodeRabbit request', preview: mode === 'Full review' ? '@coderabbitai full review' : '@coderabbitai review', copyDisabled: false, commentDisabled: true, commentTitle: 'Sign in to GitLab to open the native comment writer.', status,
       modes: ['Incremental review', 'Full review'].map((text) => ({ text, pressed: String(text === mode) })) }] : [] });
   const copy = (detail) => { clipboard = mode === 'Full review' ? '@coderabbitai full review' : '@coderabbitai review';status = 'Command copied. Paste it into the native comment writer and post when ready.';input = { trusted: true, detail }; };
@@ -136,6 +137,7 @@ function commandFlow({ permissionFailure = false, captureFailure = false, source
     evaluate: async (callback, arg) => {
       if (callback.name === 'codeRabbitDomProbe') return snapshotDom();
       const source = String(callback);
+      if (source.includes('requestAnimationFrame')) { frames += 1;return; }
       if (/=>\s*globalThis\.__geldCodeRabbitInput/.test(source)) return input;
       if (source.includes('navigator.clipboard.readText')) return clipboard;
       if (source.includes('navigator.clipboard.writeText')) { clipboard = arg;return; }
@@ -145,7 +147,7 @@ function commandFlow({ permissionFailure = false, captureFailure = false, source
     $: async () => ({ evaluate: async () => { input = null; }, click: async () => copy(1), focus: async () => {}, dispose: async () => {} }),
     keyboard: { press: async (key) => { assert.equal(key, 'Enter');copy(0); } }, bringToFront: async () => {},
   };
-  const poll = async (read, valid, label) => { const value = await read();assert.ok(valid(value), label);return value; };
+  const poll = async (read, valid, label) => { for (let attempt = 0; attempt < 6; attempt += 1) { const value = await read();if (valid(value)) return value; }throw new Error(label); };
   const item = {};
   const run = () => verifyCodeRabbitCommands(page, item, { fixture,
     context: { overridePermissions: async (origin, permissions) => { assert.equal(origin, 'https://gitlab.com');assert.ok(permissions.includes('clipboard-write'));granted = true;if (permissionFailure) throw new Error('Clipboard permission denied'); }, clearPermissionOverrides: async () => { cleared = true; } },
@@ -153,9 +155,9 @@ function commandFlow({ permissionFailure = false, captureFailure = false, source
     clickReviewButton: async (_page, _selector, label) => { if (label === 'Trust') { trusted = true;settings.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`];if (materializeSettings) settings = normalizeSettings(settings); } else if (label.endsWith('review')) { mode = label;status = ''; }return { label }; },
     readSettings: async () => structuredClone(settings), withdrawTrust: async () => { withdrew = true;trusted = false;settings.trustedReviewAccounts = [];return { bindingRemoved: true }; },
     restoreTrust: async (original) => { if (Object.hasOwn(original, 'trustedReviewAccounts')) settings.trustedReviewAccounts = original.trustedReviewAccounts;else if (corruptCleanupPresence) settings.trustedReviewAccounts = [];else delete settings.trustedReviewAccounts;trusted = false; },
-    capture: async () => { if (captureFailure) throw new Error('Screenshot failed');return { screenshot: 'offline-protocol-only.png' }; },
+    capture: async (_page, name) => { captures.push(name);if (name === 'gitlab-coderabbit-readiness') { readinessCaptured = true;if (readinessCaptureFailure) throw new Error('Readiness screenshot failed'); }else { finalCaptured = true;if (captureFailure) throw new Error('Screenshot failed'); }return { screenshot: 'offline-protocol-only.png' }; },
   });
-  return { run, item, initial, settings: () => settings, clipboard: () => clipboard, cleanup: () => ({ granted, cleared, disposed, withdrew }) };
+  return { run, item, initial, settings: () => settings, clipboard: () => clipboard, cleanup: () => ({ granted, cleared, disposed, withdrew }), frames: () => frames, captures: () => captures };
 }
 test('offline orchestration preserves both exact previews/trusted input modes and clears clipboard permissions/settings', async () => {
   const flow = commandFlow();await flow.run();assert.equal(flow.item.codeRabbitCommands.status, 'passed');
@@ -296,4 +298,29 @@ for (const failure of ['verdictFailureAfterCopy', 'sourceFailureAfterCopy']) tes
   assert.equal(action.mode, 'Incremental review');assert.equal(action.stage, 'acknowledged');assert.equal(action.previewValidated, true);assert.deepEqual(action.event, { trusted: true, detail: 1 });assert.equal(action.eventValidated, true);
   assert.equal(action.clipboard, '@coderabbitai review');assert.equal(action.clipboardValidated, true);assert.equal(action.acknowledged, true);assert.equal(action.after.requests[0].status, 'Command copied. Paste it into the native comment writer and post when ready.');
   assert.equal(action.sourceAndStatusPreserved, undefined);assert.equal(action.completed, undefined);assert.equal(proof.settingsRestored, true);assert.equal(proof.permissionsRestored, true);assert.equal(flow.clipboard(), 'Original clipboard');
+});
+
+test('readiness retains raw presentation transition/API fingerprint and freezes only two frame-separated stable samples', async () => {
+  const hydrated = dom().native.body + '<div><button data-testid="markdown-table-height-toggle">Show full table</button></div>';
+  const flow = commandFlow({ readinessBodies: [hydrated] });await flow.run();const proof = flow.item.codeRabbitCommands;const readiness = proof.readiness;
+  assert.equal(readiness.status, 'ready');assert.equal(readiness.before.native.body, dom().native.body);assert.equal(readiness.after.native.body, hydrated);assert.equal(readiness.nativeHtmlChanged, true);
+  assert.equal(readiness.before.native.sameNode, null);assert.equal(readiness.after.native.sameNode, true);assert.deepEqual(readiness.before.source, readiness.after.source);assert.deepEqual(readiness.before.native.sourceContent, readiness.after.native.sourceContent);
+  assert.equal(readiness.apiFingerprintBefore, ready().snapshot().sourceSignature);assert.equal(readiness.apiFingerprintAfter, readiness.apiFingerprintBefore);assert.equal(readiness.observations, 2);assert.equal(flow.frames(), 2);
+  assert.equal(readiness.samples.length, 2);assert.deepEqual(readiness.samples[0], readiness.samples[1]);assert.equal(proof.beforeTrust.native.body, hydrated);
+  assert.deepEqual(flow.captures(), ['gitlab-coderabbit-readiness', 'gitlab-coderabbit-command-prepared']);assert.equal(proof.actions.length, 2);assert.ok(proof.actions.every((value) => value.completed));assert.match(readiness.scope, /accessibility remains unverified/);
+});
+test('different first readiness samples are retained and do not freeze until a later consecutive stable pair', async () => {
+  const flow = commandFlow({ readinessBodies: ['warming presentation', 'settled presentation', 'settled presentation'] });await flow.run();const ready = flow.item.codeRabbitCommands.readiness;
+  assert.equal(ready.observations, 3);assert.equal(flow.frames(), 3);assert.equal(ready.samples[0].native.body, 'warming presentation');assert.equal(ready.samples[1].native.body, 'settled presentation');assert.equal(ready.samples[2].native.body, 'settled presentation');assert.equal(ready.after.native.body, 'settled presentation');
+});
+for (const failure of ['unstableReadiness', 'readinessApiChange', 'readinessContentChange', 'readinessNodeChange', 'readinessOwnedChange', 'readinessHeadChange', 'readinessCaptureFailure']) test(`${failure} cannot freeze an action baseline or reach trust/copy`, async () => {
+  const flow = commandFlow({ [failure]: true });await assert.rejects(flow.run());const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.status, 'failed');assert.equal(proof.readiness.status, 'failed');assert.equal(proof.beforeTrust, undefined);assert.equal(proof.trustClick, undefined);assert.deepEqual(proof.actions, []);
+  assert.equal(proof.settingsRestored, true);assert.equal(proof.rawTrustRestored, true);assert.deepEqual(flow.cleanup(), { granted: false, cleared: false, disposed: true, withdrew: false });
+  if (failure === 'unstableReadiness') { assert.equal(proof.readiness.observations, 6);assert.equal(proof.readiness.samples.length, 4); }
+});
+test('later post-capture body changes still fail byte-exact guards after both copied commands completed', async () => {
+  const flow = commandFlow({ readinessBodies: ['stable native presentation'], finalCaptureBodyChange: true });await assert.rejects(flow.run());const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.readiness.status, 'ready');assert.equal(proof.status, 'failed');assert.equal(proof.actions.length, 2);assert.ok(proof.actions.every((value) => value.completed));assert.equal(proof.withdrawal, undefined);
+  assert.equal(proof.settingsRestored, true);assert.equal(proof.rawTrustRestored, true);assert.equal(proof.permissionsRestored, true);assert.equal(flow.clipboard(), 'Original clipboard');
 });
