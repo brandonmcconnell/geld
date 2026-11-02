@@ -29,6 +29,8 @@ const md = [
   '',
   'Compare the unchanged icon set with [three alternatives](./icon-options.html), or view the [comparison image](./icon-options.png).',
   '',
+  'Queue rows show current Digest findings, replies needed, approvals and bot results. Earlier summaries are marked outdated, and partial summaries use lower-bound counts.',
+  '',
   '## Screenshots',
   '',
   '| View | Route | Desktop | Mobile | Dark |',

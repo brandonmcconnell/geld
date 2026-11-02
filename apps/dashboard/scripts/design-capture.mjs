@@ -116,6 +116,16 @@ let browser;
       await go(page, url);
       await shot(page, name, label, group);
     }
+    for (const [name, state] of [
+      ['queue-digest-stale', { queueDigestStale: true }],
+      ['queue-digest-missing', { queueDigestMissing: true }],
+      ['queue-digest-partial', { queueDigestPartial: true }],
+    ]) {
+      const digestState = await create(browser, state, viewport);
+      await go(digestState.page, '/');
+      await shot(digestState.page, name, name.replaceAll('-', ' '), group);
+      await digestState.context.close();
+    }
     const short = await create(browser, {}, { width: viewport.width, height: 320 });
     await go(short.page, '/not-a-dashboard-page');
     await shot(short.page, 'not-found-short', 'Page not found on a short screen', group);
