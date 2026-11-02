@@ -56,6 +56,7 @@ export type ProviderResult<T> =
   | { readonly ok: false; readonly reason: 'rate_limit'; readonly retryAt: number | null };
 
 export interface RepositorySummary {
+  readonly ownerKind?:'person'|'organisation'|'unknown';
   readonly ref: RepositoryRef;
   readonly id: string;
   readonly private: boolean;

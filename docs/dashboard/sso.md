@@ -1,0 +1,11 @@
+# Business single sign-on
+
+Business and Enterprise team admins can register an OIDC provider from team settings. Better Auth performs discovery, PKCE, state and validated-ID-token processing. DNS ownership verification is mandatory before sign-in. The issuer must use HTTPS; private-address and redirect checks remain enabled. Internal IdPs are not added to trusted origins automatically. SAML is not exposed in this release.
+
+Provider configuration, including the client secret, is encrypted through Better Auth's asynchronous database field transforms. ID tokens are encrypted as well as OAuth access and refresh credentials. Public HTTP access to the plugin's provider administration and token endpoints is blocked; Geld's scoped setup routes enforce team-admin ownership and paid entitlement. A creator can manage the connection. Another admin should arrange ownership handover before offboarding its creator.
+
+The plugin checks a verified OIDC email and the team's active Business/Enterprise entitlement again at callback time. SSO authenticates an identity. It does not add someone to a team or grant repository access. Normal invitations, seats and provider checks still apply. Email sign-in remains available if a team removes SSO or changes plan. Existing sessions follow their normal expiration and revocation policy; this feature does not enforce SSO-only access.
+
+The DNS record name is `_geld-sso-<providerId>.<domain>` and its value is `_geld-sso-<providerId>=<token>`. The setup UI displays the exact values and generated callback URL. The verification token is a public DNS proof, stored temporarily with the framework's verification records. It is not a sign-in credential. Sign-in accepts the verified work-email domain and rate limits an opaque keyed email digest, without retaining an IP address.
+
+Validation includes the installed plugin schema, encrypted field round trips, rejected unverified/unpaid identities, and synthetic UI fixtures. No live IdP, DNS write or provider login was available. The operator must configure the real issuer, credentials and callback, publish the displayed TXT record, and complete an authenticated OIDC check before launch. Relevant processor agreements and transfer safeguards belong to the deployment's privacy review.

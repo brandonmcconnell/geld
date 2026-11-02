@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Capability, PullDetail, PullRef, PullSummary, RepositorySummary } from '@geld/domain';
 
-const ghUser = z.object({ login: z.string(), avatar_url: z.string().optional() });
+const ghUser = z.object({ login: z.string(), type:z.string().optional(), avatar_url: z.string().optional() });
 export const githubPullSchema = z.object({
   id: z.number(), number: z.number().int().positive(), title: z.string(), body: z.string().nullable().optional(),
   user: ghUser.nullable(), state: z.enum(['open', 'closed']), draft: z.boolean().optional(), merged: z.boolean().optional(), merged_at: z.string().nullable().optional(),
@@ -21,7 +21,7 @@ export function githubRepo(value: unknown, host: string): RepositorySummary | nu
   if (!result.success) return null;
   const d = result.data;
   const p = d.permissions;
-  return { ref: { provider: 'github', host, owner: d.owner.login, repo: d.name }, id: String(d.id), private: d.private, url: d.html_url, permission: p?.admin ? 'admin' : p?.maintain ? 'maintain' : p?.push ? 'write' : p?.triage ? 'triage' : 'read' };
+  return { ref: { provider: 'github', host, owner: d.owner.login, repo: d.name }, id: String(d.id), ownerKind:d.owner.type==='User'?'person':d.owner.type==='Organization'?'organisation':'unknown', private: d.private, url: d.html_url, permission: p?.admin ? 'admin' : p?.maintain ? 'maintain' : p?.push ? 'write' : p?.triage ? 'triage' : 'read' };
 }
 export const gitlabPullSchema = z.object({
   source_branch:z.string().optional(), id: z.number(), iid: z.number().int().positive(), title: z.string(), description: z.string().nullable().optional(), state: z.enum(['opened', 'closed', 'merged', 'locked']), draft: z.boolean().optional(), work_in_progress: z.boolean().optional(), updated_at: z.string(), web_url: z.string(), sha: z.string().nullable().optional(),

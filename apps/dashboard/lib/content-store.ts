@@ -1,4 +1,5 @@
 import 'server-only';
+import {assertTeamOperations} from './team-operation';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import type { ReviewPlan } from '@geld/review/plan';
@@ -32,6 +33,7 @@ export function createGeneratedContentStore(dependencies: StoreDatabase & {reado
   const receipts = dependencies.customer ? 'geld_generated_content_receipts' : 'generated_content_receipts';
   return {
     async put(input) {
+      await assertTeamOperations();
       const encrypted = await encryptCredential(JSON.stringify(input.plan));
       const publish=async(sql:SqlExecutor)=>{
         await sql.query("SET LOCAL statement_timeout='30s'");
@@ -60,6 +62,6 @@ export function createGeneratedContentStore(dependencies: StoreDatabase & {reado
     },
     async hasPublication(reservationId) { return (await db.query(`SELECT reservation_id FROM ${receipts} WHERE reservation_id=$1 AND expires_at>now()`,[reservationId])).rows.length>0; },
     async purgeExpired(){await dependencies.run(async sql=>{await sql.query(`DELETE FROM ${table} WHERE expires_at<=now()`);await sql.query(`DELETE FROM ${receipts} WHERE expires_at<=now()`);});},
-    async deleteTeam(teamId) { await primary.sql.query('UPDATE teams SET content_erasing_at=now() WHERE id=$1',[teamId]);await dependencies.run(async sql => { if(dependencies.customer)await sql.query('INSERT INTO geld_content_teams(team_id,erased) VALUES($1,true) ON CONFLICT(team_id) DO UPDATE SET erased=true',[teamId]);await sql.query(`DELETE FROM ${table} WHERE team_id=$1`,[teamId]); await sql.query(`DELETE FROM ${receipts} WHERE team_id=$1`,[teamId]); }); },
+    async deleteTeam(teamId) { await assertTeamOperations();await primary.sql.query('UPDATE teams SET content_erasing_at=now() WHERE id=$1',[teamId]);await dependencies.run(async sql => { if(dependencies.customer)await sql.query('INSERT INTO geld_content_teams(team_id,erased) VALUES($1,true) ON CONFLICT(team_id) DO UPDATE SET erased=true',[teamId]);await sql.query(`DELETE FROM ${table} WHERE team_id=$1`,[teamId]); await sql.query(`DELETE FROM ${receipts} WHERE team_id=$1`,[teamId]); }); },
   };
 }

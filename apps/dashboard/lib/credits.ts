@@ -4,7 +4,7 @@ import type { SqlExecutor } from './transactions';
 const subscriptionSchema = z.object({ tier: z.enum(['free','starter','team','business','enterprise']), seats: z.number().int(), used_credits: z.number().int(), cap_cents: z.number().int(), spent_cents: z.number().int(), card_on_file: z.boolean(), status: z.string(), period_start: z.date(), stripe_subscription_id: z.string().nullable(),included_credits:z.number().int(),negotiated_overage_cents:z.number().int().nullable(),contract_verified:z.boolean() });
 export type CreditReservation = { readonly ok: true; readonly id: string } | { readonly ok: false; readonly reason: 'upgrade' | 'cap' | 'card' | 'quote' | 'forbidden' | 'duplicate' | 'unavailable' };
 export async function reserveCredits(sql: SqlExecutor, input: { readonly teamId: string; readonly actorId: string; readonly credits: number; readonly key: string }): Promise<CreditReservation> {
-  const subscription = await sql.query('SELECT s.* FROM subscriptions s JOIN team_members m ON m.team_id = s.team_id WHERE s.team_id = $1 AND m.user_id = $2 FOR UPDATE OF s', [input.teamId, input.actorId]);
+  const subscription = await sql.query('SELECT s.* FROM subscriptions s JOIN team_members m ON m.team_id = s.team_id WHERE s.team_id = $1 AND m.user_id = $2 AND EXISTS(SELECT 1 FROM teams t WHERE t.id=s.team_id AND t.deleting_at IS NULL) FOR UPDATE OF s', [input.teamId, input.actorId]);
   if (!subscription.rows.length) return { ok: false, reason: 'forbidden' };
   const parsed = subscriptionSchema.safeParse(subscription.rows[0]);
   if (!parsed.success) return { ok: false, reason: 'unavailable' };

@@ -1,16 +1,28 @@
 'use client';
 import {measure} from '@/lib/measurement';
-import { useEffect, useState } from 'react';
+import { useEffect, useState,useRef } from 'react';
 import { z } from 'zod';
 import { ArrowUpRight, Check, CreditCard } from 'lucide-react';
 import { PLANS, planFor } from '@geld/domain';
 import { Button } from '@geld/ui';
 const teamSchema = z.object({ id: z.string(), name: z.string(), role: z.string(), tier: z.enum(['free','starter','team','business','enterprise']), seats: z.number(), used_credits: z.number(), cap_cents: z.number(), spent_cents: z.number(), card_on_file: z.boolean() });
-const billingSchema = z.object({ teams: z.array(teamSchema), configured: z.boolean(), testMode: z.boolean() });
+const billingSchema = z.object({ teams: z.array(teamSchema), configured: z.boolean(), testMode: z.boolean(),converted:z.boolean().optional() });
 export function Billing() {
+  const reportedConversion=useRef(false);
   const [teams,setTeams] = useState<z.infer<typeof teamSchema>[]>([]); const [teamId,setTeamId] = useState(''); const [configured,setConfigured] = useState(false); const [cap,setCap] = useState('0'); const [message,setMessage] = useState(''); const [busy,setBusy] = useState(false);
   const team = teams.find((team) => team.id === teamId) ?? teams[0];
-  useEffect(() => { const abort = new AbortController(); fetch('/api/billing', { signal: abort.signal }).then(async (response) => { const value: unknown = await response.json(); const parsed = billingSchema.safeParse(value); if (parsed.success) { setTeams(parsed.data.teams); setConfigured(parsed.data.configured); setCap(String((parsed.data.teams[0]?.cap_cents ?? 0) / 100)); } }).catch(() => undefined); return () => abort.abort(); }, []);
+  useEffect(()=>{
+    const abort=new AbortController();let timer:ReturnType<typeof setTimeout>|null=null;
+    const checkout=new URLSearchParams(window.location.search).get('session_id')??'';
+    async function load(attempt:number):Promise<void>{
+      let converted=false;
+      try{const response=await fetch(`/api/billing?${new URLSearchParams({session_id:checkout})}`,{signal:abort.signal});const parsed=billingSchema.safeParse(await response.json());if(abort.signal.aborted)return;
+        if(response.ok&&parsed.success){converted=parsed.data.converted===true;if(converted&&!reportedConversion.current){reportedConversion.current=true;measure('billing_conversion',{feature:'billing',stage:'completed'});}if(attempt===0||converted){setTeams(parsed.data.teams);setConfigured(parsed.data.configured);if(attempt===0)setCap(String((parsed.data.teams[0]?.cap_cents??0)/100));}}
+      }catch{}
+      if(checkout&&!converted&&!abort.signal.aborted&&attempt<15)timer=setTimeout(()=>{void load(attempt+1);},2000);
+    }
+    void load(0);return()=>{abort.abort();if(timer)clearTimeout(timer);};
+  },[]);
   async function action(kind: 'checkout' | 'portal' | 'cap', tier?: string) {
     if (!team) { setMessage('Sign in and choose a team first.'); return; }
     const capCents = Math.round(Number(cap) * 100);

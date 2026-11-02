@@ -11,7 +11,7 @@ describe('stored repository App selection',()=>{
   it('retains every verified matching App and tries an authorization covering the repository action',async()=>{
     const db=new PGlite();
     try {
-      for(const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql'])await db.exec(await readFile(new URL(`../db/migrations/${name}`,import.meta.url),'utf8'));
+      for(const name of ['0001_auth.sql','0002_dashboard.sql','0003_review.sql','0004_workspaces.sql','0005_access.sql','0006_apps.sql','0007_automation.sql','0008_trackers.sql','0009_tracker_oauth.sql','0010_enterprise.sql','0011_companion.sql','0012_privacy.sql','0013_access_flows.sql'])await db.exec(await readFile(new URL(`../db/migrations/${name}`,import.meta.url),'utf8'));
       await db.exec("INSERT INTO users(id,name,email) VALUES('u','User','user@example.test')");
       for(const [id,owner] of [['a-base','org'],['z-managed','org'],['0-foreign','elsewhere']]) {
         await db.query("INSERT INTO repository_apps(id,fingerprint,permissions,app_id,slug,client_id,encrypted_secret,encrypted_private_key,encrypted_webhook_secret) VALUES($1,$1,'{}',$1,$1,$1,'unused','unused','unused')",[id]);
