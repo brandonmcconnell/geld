@@ -272,7 +272,7 @@ export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll
       assert.equal(value.events.filter((event) => event.type === 'click').length, 4);assert.ok(value.events.every((event) => event.trusted));
       progress.captureStages = [];
       progress.focusTrace = await page.evaluate(tableFocusTrace, 'stage', 'before_capture');
-      progress.artifacts = await capture(page, 'gitlab-coderabbit-table-height', { onStage: async (stage) => { const sample = { stage };progress.captureStages.push(sample);sample.trace = await page.evaluate(tableFocusTrace, 'stage', stage);sample.snapshot = await read(); } });
+      progress.artifacts = await capture(page, 'gitlab-coderabbit-table-height', { fullPage: false, onStage: async (stage) => { const sample = { stage };progress.captureStages.push(sample);sample.trace = await page.evaluate(tableFocusTrace, 'stage', stage);sample.snapshot = await read(); } });
       progress.focusTrace = await page.evaluate(tableFocusTrace, 'stage', 'after_capture');progress.afterCapture = await read();assert.deepEqual(progress.captureStages.map((sample) => sample.stage), ['after_screenshot', 'after_dom_read', 'after_accessibility_read'], 'Table capture-stage observations are incomplete.');assertTableHeightAction(progress.afterCapture, before, selected, false);assert.equal(progress.afterCapture.ownedBody, before.ownedBody, 'Owned table body changed after capture.');assert.deepEqual(progress.sourceGets, [], 'Table interaction issued a recognized source or extension-attributed GET; other GET traffic is recorded separately.');progress.status = 'passed';
     } finally { await buttonHandle.dispose(); }
   } catch (error) { primary = error;progress.status = 'failed';progress.error = String(error);throw error; }
