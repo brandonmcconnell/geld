@@ -1881,14 +1881,22 @@ When cloning GitLab Markdown, omit the height-control wrapper only when its sole
 preserve authored text, extra children, malformed or duplicate bindings and generic empty DIVs.
 This avoids an empty presentation wrapper appearing on trust-triggered rerenders after native table hydration without copying native controls or changing height/expansion behavior.
 The same narrow canonicalization also recognizes the source-proven expanded native label/class variant, without pruning unknown authored wrappers.
-Owned GitLab table expansion is local to a validated mounted native source and requires actual presented native and owned 70vh overflow before a control appears.
+Owned GitLab table expansion is local to a validated mounted native source and requires actual presented owned 70vh overflow plus either actual native clipping or the exact collapsed native generated height control when its source is explicitly hidden.
+Record actual-native-geometry and hidden-native-generated-control authority separately.
+A hidden native control establishes height intent and never proves current native paint or geometry.
+Treat zero opacity and `visibility: collapse` as hidden states rather than actual native geometry.
+The hidden-source path requires the unique exact native target, wrapper, label, ARIA state and control node, with the current native note author/root/body and provider head revalidated before owned actions.
+Missing, malformed, ambiguous or replaced hidden native controls never grant authority, and native source disclosure/height controls and global preferences stay untouched.
+Owner-scoped toggle and beforematch observations schedule measurements when presentation changes without a dimension change, and disposal removes every listener without dispatching native events.
 API-rendered note HTML never gains live height controls, even if it imitates native table attributes.
 Use the comment render owner's mount/dispose/current namespace and exact comment/head/native-table identity for frames, size observations, state and unique owned ARIA targets.
 The owned button changes only its own height cap and restores its exact class order, never native table nodes, native global expansion events, provider preferences, rows or sorting.
 The CodeRabbit height phase uses genuine owned pointer and keyboard input, records actual height and last-row reachability, and restores owned body bytes and disclosures before freezing the command baseline.
 Expanded acceptance requires an absent computed cap, client height covering table and scroll height, and an unobscured actual last cell inside the owned scroll clip, ancestor clips and viewport.
 Recheck exact source/head/control ownership and the actual visible center hit chain before pointer inputs, require the same focused button before keyboard inputs, and retain all phase HTTP GETs with recognized source/extension reads separated from other traffic.
-A visit without measured native and owned clipping is explicitly unavailable for height acceptance, while command preparation retains its separate scope.
+On authority loss, restore the original owned cap before removing its control and clear the expanded choice.
+Temporary owned hiding also restores the cap and requires fresh overflow proof before reusing the same local choice.
+A visit without supported native authority and measured owned clipping is explicitly unavailable for height acceptance, while command preparation retains its separate scope.
 
 
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.

@@ -12,10 +12,39 @@ export function tableHeightProbe(anchor) {
     if (!node?.isConnected || !rect(node)?.width || !rect(node)?.height) return false;
     for (let parent = node; parent; parent = parent.parentElement) {
       const style = getComputedStyle(parent);
-      if (parent.hidden || parent.inert || parent.getAttribute('aria-hidden') === 'true' || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0'
+      if (parent.hidden || parent.inert || parent.getAttribute('aria-hidden') === 'true' || style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility) || style.contentVisibility === 'hidden' || style.opacity === '0'
         || parent instanceof HTMLDetailsElement && !parent.open && !parent.querySelector(':scope > summary')?.contains(node)) return false;
     }
     return true;
+  };
+  const hiddenReasons = (node) => {
+    const reasons = [];
+    for (let parent = node; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);const reason = parent.hidden ? `hidden:${parent.getAttribute('hidden')}` : parent.inert ? 'inert' : parent.getAttribute('aria-hidden') === 'true' ? 'aria-hidden' : style.display === 'none' ? 'display:none' : ['hidden', 'collapse'].includes(style.visibility) ? `visibility:${style.visibility}` : style.opacity === '0' ? 'opacity:0' : style.contentVisibility === 'hidden' ? 'content-visibility:hidden' : parent instanceof HTMLDetailsElement && !parent.open && !parent.querySelector(':scope > summary')?.contains(node) ? 'closed details' : null;
+      if (reason) reasons.push({ tag: parent.tagName, id: parent.id, reason });
+    }
+    return reasons;
+  };
+  const qualifiedIntent = (native, table, controls) => {
+    const source = note?.querySelector('.note-body .note-text');const button = controls[0];const wrapper = button?.parentElement;const shadow = native.parentElement;
+    if (!source || controls.length !== 1 || !button || !wrapper || !shadow || !source.contains(wrapper) || document.querySelectorAll(`[id="${native.id}"]`).length !== 1
+      || native.className !== 'gl-max-h-[70vh] gl-w-fit gl-max-w-full gl-overflow-x-auto gl-overflow-y-auto print:gl-max-h-none'
+      || native.getAttribute('data-sticky-header') !== '' || native.getAttribute('data-print-scale-container') !== ''
+      || [...native.attributes].some((attr) => !['id', 'class', 'data-sticky-header', 'data-print-scale-container'].includes(attr.name))
+      || native.children.length !== 1 || native.firstElementChild !== table || table?.getAttribute('data-markdown-table-applied') !== 'true' || table.closest('.note-text') !== source || table.querySelector('table')
+      || shadow.className !== 'gl-table-shadow-overlay' || shadow.getAttribute('data-testid') !== 'table-shadow-overlay' || shadow.children.length !== 1
+      || wrapper.previousElementSibling !== shadow || wrapper.parentElement !== shadow.parentElement || wrapper.attributes.length !== 1
+      || !['gl-order-1 gl-mt-2 gl-flex gl-justify-center print:gl-hidden', 'gl-mt-2 gl-flex gl-justify-center print:gl-hidden'].includes(wrapper.className)
+      || [...wrapper.childNodes].filter((child) => child.nodeType !== Node.TEXT_NODE || child.textContent.trim()).some((child) => child !== button)
+      || button.localName !== 'button' || button.getAttribute('type') !== 'button' || button.className !== 'btn gl-button btn-default btn-sm btn-default-tertiary'
+      || button.getAttribute('data-testid') !== 'markdown-table-height-toggle' || button.getAttribute('aria-controls') !== native.id || button.getAttribute('aria-expanded') !== 'false'
+      || [...button.attributes].some((attr) => !['type', 'class', 'data-testid', 'aria-expanded', 'aria-controls'].includes(attr.name))) return false;
+    const icon = button.children[0];const label = button.children[1];
+    if (button.children.length !== 2 || icon?.localName !== 'svg' || icon.namespaceURI !== 'http://www.w3.org/2000/svg' || icon.getAttribute('aria-hidden') !== 'true' || icon.textContent.trim()
+      || [icon, ...icon.querySelectorAll('*')].some((node) => node.namespaceURI !== 'http://www.w3.org/2000/svg' || !['svg', 'g', 'path', 'use'].includes(node.localName) || [...node.attributes].some((attr) => attr.name.startsWith('on') || ['tabindex', 'contenteditable'].includes(attr.name)))
+      || label?.localName !== 'span' || label.className !== 'gl-button-text' || label.attributes.length !== 1 || label.textContent.trim() !== 'Show full table'
+      || [...label.childNodes].some((child) => child.nodeType !== Node.TEXT_NODE && child.nodeType !== Node.COMMENT_NODE)) return false;
+    return [...button.childNodes].every((child) => child === icon || child === label || child.nodeType === Node.COMMENT_NODE || child.nodeType === Node.TEXT_NODE && !child.textContent.trim());
   };
   const hit = (node, bounds = rect(node)) => {
     if (!bounds) return null;
@@ -43,7 +72,7 @@ export function tableHeightProbe(anchor) {
     const matches = [...(owned?.querySelectorAll('[class~="gl-overflow-y-auto"]') ?? [])].filter((target) => JSON.stringify(cells(target.querySelector(':scope > table'))) === JSON.stringify(content));
     if (matches.length !== 1 || content.length < 2) { mappingErrors.push({ nativeId: native.id, matches: matches.length, nativeRows: content.length });return []; }
     const target = matches[0];const ownTable = target.querySelector(':scope > table');
-    const nativeControls = [...note.querySelectorAll('button[data-testid="markdown-table-height-toggle"]')].filter((button) => button.getAttribute('aria-controls') === native.id);
+    const nativeControls = [...note.querySelectorAll('.note-body .note-text button[aria-controls]')].filter((button) => button.getAttribute('aria-controls') === native.id);
     const buttons = [...owned.querySelectorAll('[data-geld-table-height] button[aria-controls]')].filter((button) => button.getAttribute('aria-controls') === target.id);
     const button = buttons.length === 1 ? buttons[0] : null;
     const lastRow = ownTable?.rows[ownTable.rows.length - 1];const lastCell = lastRow?.cells[lastRow.cells.length - 1];
@@ -51,7 +80,7 @@ export function tableHeightProbe(anchor) {
     while ((text = walker?.nextNode())) { if (!text.textContent.trim()) continue;const range = document.createRange();range.selectNodeContents(text);textRect = [...range.getClientRects()].find((value) => value.width > 0 && value.height > 0);if (textRect) break; }
     const scrollRect = rect(target);const scrollClip = scrollRect ? { left: scrollRect.left + target.clientLeft, top: scrollRect.top + target.clientTop, right: scrollRect.left + target.clientLeft + target.clientWidth, bottom: scrollRect.top + target.clientTop + target.clientHeight } : null;
     const lastBounds = rect(lastRow);const lastCellHit = hit(lastCell, textRect ?? rect(lastCell));
-    return [{ nativeId: native.id, cells: content, native: metrics(native, table), owned: metrics(target, ownTable), nativeControls: nativeControls.map((node) => ({ label: node.textContent.trim(), expanded: node.getAttribute('aria-expanded'), controls: node.getAttribute('aria-controls') })),
+    return [{ nativeId: native.id, cells: content, native: metrics(native, table), nativeHiddenReasons: hiddenReasons(native), nativeIntentQualified: qualifiedIntent(native, table, nativeControls), sameNativeControl: saved.nativeControl === undefined ? null : (nativeControls[0] ?? null) === saved.nativeControl, owned: metrics(target, ownTable), ownedAuthority: button?.parentElement?.dataset.geldTableHeightAuthority ?? null, nativeControls: nativeControls.map((node) => ({ label: node.textContent.trim(), expanded: node.getAttribute('aria-expanded'), controls: node.getAttribute('aria-controls') })),
       button: button ? { id: button.id, label: button.textContent, expanded: button.getAttribute('aria-expanded'), target: target.id, targetCount: document.querySelectorAll(`[id="${target.id}"]`).length, controlCount: document.querySelectorAll(`[id="${button.id}"]`).length, focused: document.activeElement === button, enabled: !button.disabled, presented: visible(button), rect: rect(button), hit: hit(button), same: !saved.button || saved.button === button } : null,
       scrollClip, lastRow: lastBounds, lastRowPresented: visible(lastRow), lastCellPresented: visible(lastCell), lastCellHit, sameTarget: saved.target ? target === saved.target && ownTable === saved.table && button === saved.button : null }];
   });
@@ -64,6 +93,11 @@ export function actualTableOverflow(value, viewport) {
   return value?.presented === true && value.clientHeight > 0 && value.scrollHeight - value.clientHeight > 1 && value.tableHeight > viewport * 70 / 100
     && ['auto', 'scroll'].includes(value.overflowY) && Number.isFinite(cap) && Math.abs(cap - viewport * 70 / 100) <= 1;
 }
+export function tableHeightAuthority(row, viewport) {
+  if (actualTableOverflow(row?.native, viewport)) return 'actual-native-geometry';
+  return row?.nativeIntentQualified === true && row.native?.presented === false && row.nativeHiddenReasons?.length > 0 ? 'hidden-native-generated-control' : null;
+}
+
 export function assertTableHeightSource(value, before) {
   assert.ok(value && value.sameSource && value.sameOwned, 'Original table note/body ownership changed.');
   assert.equal(value.head, before.head);assert.equal(value.nativeBody, before.nativeBody);assert.equal(value.preference, before.preference);assert.deepEqual(value.nativeEvents, []);assert.deepEqual(value.mappingErrors, [], 'Native and owned table source rows must match unambiguously.');
@@ -71,7 +105,7 @@ export function assertTableHeightSource(value, before) {
 export function assertTableHeightAction(value, before, nativeId, expanded) {
   assertTableHeightSource(value, before);
   const row = value.candidates.find((candidate) => candidate.nativeId === nativeId);const original = before.candidates.find((candidate) => candidate.nativeId === nativeId);
-  assert.ok(row && original && row.sameTarget, 'Original owned table/control was replaced.');assert.deepEqual(row.cells, original.cells);const { rect: _currentPosition, ...currentNative } = row.native;const { rect: _originalPosition, ...originalNative } = original.native;assert.deepEqual(currentNative, originalNative);assert.deepEqual(row.nativeControls, original.nativeControls);
+  assert.ok(row && original && row.sameTarget && row.sameNativeControl, 'Original native intent or owned table/control was replaced.');assert.equal(row.ownedAuthority, tableHeightAuthority(row, value.height));assert.notEqual(row.ownedAuthority, null);assert.deepEqual(row.cells, original.cells);const { rect: _currentPosition, ...currentNative } = row.native;const { rect: _originalPosition, ...originalNative } = original.native;assert.deepEqual(currentNative, originalNative);assert.deepEqual(row.nativeControls, original.nativeControls);
   assert.equal(row.button?.label, expanded ? 'Collapse table' : 'Show full table');assert.equal(row.button.expanded, String(expanded));assert.equal(row.button.targetCount, 1);assert.equal(row.button.controlCount, 1);assert.equal(row.button.focused, true);
   assert.equal(row.owned.className.split(/\s+/).includes('gl-max-h-[70vh]'), !expanded);
   if (expanded) {
@@ -85,7 +119,7 @@ export function assertTableHeightAction(value, before, nativeId, expanded) {
 export function assertTableHeightInput(value, before, nativeId, { keyboard = false, summary } = {}) {
   assertTableHeightSource(value, before);
   const row = value.candidates.find((candidate) => candidate.nativeId === nativeId);
-  if (summary === undefined) { assert.ok(row?.sameTarget, 'Current owned table/control identity is unavailable before input.');assert.deepEqual(row.cells, before.candidates.find((candidate) => candidate.nativeId === nativeId)?.cells);assert.equal(row.button?.targetCount, 1);assert.equal(row.button?.controlCount, 1); }
+  if (summary === undefined) { assert.ok(row?.sameTarget, 'Current owned table/control identity is unavailable before input.');assert.deepEqual(row.cells, before.candidates.find((candidate) => candidate.nativeId === nativeId)?.cells);assert.equal(row.button?.targetCount, 1);assert.equal(row.button?.controlCount, 1);assert.equal(row.sameNativeControl, true);assert.equal(row.ownedAuthority, tableHeightAuthority(row, value.height));assert.notEqual(row.ownedAuthority, null); }
   const control = summary === undefined ? row.button : value.summaries?.[summary];
   assert.ok(control?.same && control.enabled !== false && control.presented && control.hit && !control.hit.clipped && control.hit.unobscured, 'Actual control center is hidden, clipped, covered or replaced.');
   if (keyboard) assert.equal(control.focused, true, 'Keyboard input requires the actual same owned control to retain focus.');
@@ -123,7 +157,7 @@ export function tableHeightRequestObservation(request, extensionId) {
 }
 
 export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll, capture, extensionId }) {
-  const progress = { status: 'running', actions: [], inputs: [], requests: [], sourceGets: [], otherGets: [], scope: 'Genuine owned pointer/keyboard height interaction on a measured collapsed native table; recognized source/extension GETs must stay empty, all other HTTP GETs are retained separately. No native toggle or global preference write.' };proof.tableHeight = progress;
+  const progress = { status: 'running', actions: [], inputs: [], requests: [], sourceGets: [], otherGets: [], scope: 'Genuine owned pointer/keyboard height interaction on measured owned overflow, with native authority mode recorded separately; recognized source/extension GETs must stay empty, all other HTTP GETs are retained separately. No native toggle or global preference write.' };proof.tableHeight = progress;
   const request = (value) => { const seen = tableHeightRequestObservation({ url: value.url(), method: value.method(), initiator: value.initiator?.() }, extensionId);if (seen) { progress.requests.push(seen);(seen.source ? progress.sourceGets : progress.otherGets).push(seen); } };
   let held = false;let initial;let selected;let listener = false;let primary;let trustedPointer;
   const read = () => page.evaluate(tableHeightProbe, anchor);
@@ -145,15 +179,14 @@ export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll
     }
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     let before = await read();assertTableHeightSource(before, initial);
-    const needed = before.candidates.filter((row) => actualTableOverflow(row.native, before.height) && actualTableOverflow(row.owned, before.height)
-      && row.nativeControls.length === 1 && row.nativeControls[0].expanded === 'false' && row.nativeControls[0].label === 'Show full table');
-    if (needed.length === 0) { progress.status = 'unavailable';progress.reason = 'This actual visit has no source-bound collapsed table with demonstrated native and owned vertical overflow.';progress.measurement = before;return progress; }
-    selected = needed[0].nativeId;
-    before = await poll(read, (value) => value?.candidates.some((row) => row.nativeId === selected && row.button?.label === 'Show full table'), 'Measured native and owned overflowing table receives its owned local control');assertTableHeightSource(before, initial);
+    const needed = before.candidates.filter((row) => tableHeightAuthority(row, before.height) !== null && actualTableOverflow(row.owned, before.height));
+    if (needed.length === 0) { progress.status = 'unavailable';progress.reason = 'This actual visit has no measured owned overflow supported by actual native geometry or an exact hidden native generated height control.';progress.measurement = before;return progress; }
+    selected = needed[0].nativeId;progress.authorityMode = tableHeightAuthority(needed[0], before.height);progress.nativeOriginalPresented = needed[0].native.presented;progress.nativeHiddenReasons = needed[0].nativeHiddenReasons;progress.nativeIntentQualified = needed[0].nativeIntentQualified;
+    before = await poll(read, (value) => value?.candidates.some((row) => row.nativeId === selected && row.button?.label === 'Show full table'), 'Measured owned overflow with verified native authority receives its owned local control');assertTableHeightSource(before, initial);
     const candidate = before.candidates.find((row) => row.nativeId === selected);assert.ok(candidate?.button?.id);
     await page.evaluate(({ buttonId, nativeId }) => {
       const held = globalThis.__geldTableHeightProof;const button = document.getElementById(buttonId);const target = document.getElementById(button?.getAttribute('aria-controls'));if (!button || !target) throw new Error('Unique owned table control unavailable.');
-      held.button = button;held.target = target;held.table = target.querySelector(':scope > table');held.nativeId = nativeId;
+      held.button = button;held.target = target;held.table = target.querySelector(':scope > table');held.nativeId = nativeId;held.nativeControl = [...held.nativeBody.querySelectorAll('button[aria-controls]')].find((node) => node.getAttribute('aria-controls') === nativeId) ?? null;
       held.listen = (event) => { if (event.target === button || button.contains(event.target)) held.events.push({ type: event.type, trusted: event.isTrusted, detail: event.detail ?? null, key: event.key ?? null }); };
       button.addEventListener('click', held.listen, true);button.addEventListener('keydown', held.listen, true);
     }, { buttonId: candidate.button.id, nativeId: selected });listener = true;
