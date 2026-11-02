@@ -220,3 +220,17 @@ test('native Syntax-on characterization is literal-only, fresh-window admitted a
   assert.deepEqual(select({ body: marker('bitbucket-pipeline-syntax-on'), from: marker('github') }), { focus: 'bitbucket-pipeline-syntax-on', run: 'true', failures: [] });
   assert.equal(select({ body: `${marker('bitbucket-pipeline-syntax-on')}\nNew prose`, from: `${marker('bitbucket-pipeline-syntax-on')}\nOld prose` }).run, 'false');
 });
+
+
+test('standalone native Bash On is a separate explicit literal and never broadens discovery or regression', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-native-bash-on']), ['bitbucket-native-bash-on']);
+  assert.deepEqual(Array.from(cases['bitbucket-native-bash']), ['bitbucket-native-bash-style']);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'bitbucket-native-bash-on') assert.equal(selected.includes('bitbucket-native-bash-on'), false);
+  assert.deepEqual(select({ body: marker('bitbucket-native-bash-on'), from: marker('github') }), { focus: 'bitbucket-native-bash-on', run: 'true', failures: [] });
+  assert.equal(select({ body: marker('bitbucket-native-bash-on') + '\nOnly prose changes', from: marker('bitbucket-native-bash-on') }).run, 'false');
+  assert.deepEqual(select({ fork: true, body: marker('bitbucket-native-bash-on'), from: marker('github') }), { focus: 'regression', run: 'false', failures: [] });
+  assert.match(harness, /name === 'bitbucket-native-bash-on' && focus !== 'bitbucket-native-bash-on'/);
+  assert.match(harness, /nativeBashOnPreflight\(active, report.quotaPolicy.conservativeObservedRequestBudget\)/);
+});
