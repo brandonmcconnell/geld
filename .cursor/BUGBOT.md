@@ -8,6 +8,9 @@ this file lists what a reviewer must check.
 
 ## Blocking issues
 
+- Installed GitLab web discussion observers must normalize canonical positive string or numeric note IDs and require complete observed pagination before claiming a native bot corpus;
+  copying a prepared command never posts it or grants trust from its body marker.
+
 - Any `any` (explicit or implicit), `ZodTypeAny`, or an `as X` cast outside the few commented interop
   shims.
   Prefer type guards and `unknown`.
