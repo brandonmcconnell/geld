@@ -8,9 +8,22 @@ export const BITBUCKET_COMMIT_LINK_SETTINGS = { enabled: true, showListStats: tr
 export function bitbucketCommitLinksSnapshot() {
   const current = new URL(location.href);
   const route = '/atlassian/bitbucket-upload-file/commits/';
-  if (current.origin !== 'https://bitbucket.org' || current.pathname !== route || current.search !== '' || current.hash !== '') return { unavailable: 'The original repository commit-list route changed.', links: [], selected: null };
+  const nativeMasterRoute = `${route}branch/master`;
+  const actualURL = current.href;
+  if (current.origin !== 'https://bitbucket.org' || current.username !== '' || current.password !== '' || ![route, nativeMasterRoute].includes(current.pathname) || current.search !== '' || current.hash !== '') return { actualURL, url: actualURL, unavailable: 'The original repository commit-list route changed.', links: [], selected: null };
   const forbidden = '[data-geld-ui], form, button, [role="button"], input, textarea, select, [contenteditable], dialog, [role="dialog"], [role="tooltip"], [popover], nav, aside, header, footer';
   const surfaces = [...document.querySelectorAll('main, [role="main"], table, [role="table"]')].filter((node) => node.closest(forbidden) === null);
+  // Run41366452688 records this exact native ref selector and canonical document route.
+  const refSelector = '[data-qa="commit-list-filters"] [data-qa="ref-selector"] button[data-testid="ref-selector-trigger"]';
+  const branchSelector = `${refSelector}[aria-label="Filter by ref: master"]`;
+  const refButtons = [...document.querySelectorAll(refSelector)];
+  const branchButtons = [...document.querySelectorAll(branchSelector)];
+  const branchForbidden = '[data-geld-ui], form, input, textarea, select, [contenteditable], dialog, [role="dialog"], [role="tooltip"], [popover], nav, aside, header, footer';
+  const nativeBranch = refButtons.length === 1 && branchButtons.length === 1 && branchButtons[0].closest(branchForbidden) === null && surfaces.some((surface) => surface.contains(branchButtons[0]))
+    && branchButtons[0].type === 'button' && !branchButtons[0].disabled && branchButtons[0].getAttribute('aria-disabled') !== 'true'
+    && branchButtons[0].getAttribute('aria-haspopup') === 'true' && branchButtons[0].textContent.trim() === 'master' ? branchButtons[0] : null;
+  const branch = nativeBranch === null ? null : { selector: branchSelector, label: nativeBranch.getAttribute('aria-label'), text: nativeBranch.textContent.trim() };
+  if ((current.pathname === nativeMasterRoute || refButtons.length > 0) && branch === null) return { actualURL, url: actualURL, unavailable: 'The exact native master listing requires its original master ref selector.', branch, links: [], selected: null };
   const links = [];
   for (const anchor of document.querySelectorAll('a[href]')) {
     if (anchor.namespaceURI !== 'http://www.w3.org/1999/xhtml' || anchor.closest(forbidden) !== null || !surfaces.some((surface) => surface.contains(anchor)) || anchor.tabIndex < 0) continue;
@@ -42,7 +55,7 @@ export function bitbucketCommitLinksSnapshot() {
   const preferred = '9777bca47119a91758bde1209ac14e6076ffbf23';
   const candidates = links.filter((link) => link.visible && link.selector !== null);
   const selected = candidates.find((link) => preferred.startsWith(link.ref)) ?? candidates.find((link) => link.ref.length === 40 || link.ref.length === 64) ?? candidates[0] ?? null;
-  return { url: current.href, semanticSurfaces: surfaces.map((node) => ({ tag: node.tagName, role: node.getAttribute('role') })).slice(0, 12), links, selected };
+  return { actualURL, url: actualURL, branch, semanticSurfaces: surfaces.map((node) => ({ tag: node.tagName, role: node.getAttribute('role') })).slice(0, 12), links, selected };
 }
 
 export function bitbucketCommitLinkState() {
@@ -59,6 +72,7 @@ export function bitbucketCommitLinkState() {
   }
   return { url: location.href, sameNode: document.querySelector(saved.selector) === original && original.isConnected,
     sameParent: original.parentElement === saved.parent, sameText: original.textContent === saved.text, href: original.href, raw: original.getAttribute('href'), text: original.textContent.trim().slice(0, 512),
+    branch: saved.branch == null ? null : { unique: document.querySelectorAll(saved.branch.selector).length === 1, sameNode: document.querySelector(saved.branch.selector) === saved.branch.node && saved.branch.node.isConnected, sameParent: saved.branch.node.parentElement === saved.branch.parent, label: saved.branch.node.getAttribute('aria-label'), text: saved.branch.node.textContent.trim() },
     events: [...saved.events], nativeCards };
 }
 
@@ -101,29 +115,34 @@ export async function verifyBitbucketCommitLinks(page, item, { oracle, poll, ins
     proof.status = 'unavailable';proof.reason = 'Fewer than eight observed requests remain before source intent. No hover or alternative source acquisition attempted.';
     return { status: proof.status, reason: proof.reason };
   }
-  await page.evaluate((selected) => {
-    const node = document.querySelector(selected.selector);
-    if (node === null || node.href !== selected.href || node.getAttribute('href') !== selected.raw || node.textContent.trim().slice(0, 512) !== selected.text) throw new Error('Native commit link changed before verification');
-    const saved = { node, parent: node.parentElement, selector: selected.selector, text: node.textContent, events: [] };
-    saved.listener = (event) => { if (saved.events.length < 12) saved.events.push({ type: event.type, trusted: event.isTrusted }); };
-    node.addEventListener('mouseover', saved.listener, true);node.addEventListener('focusin', saved.listener, true);
-    globalThis.__geldCommitLinksProof = saved;
-  }, selected);
   const nativeUnchanged = (state) => {
-    assert.equal(state?.url, BITBUCKET_COMMIT_LIST);assert.equal(state.sameNode, true);assert.equal(state.sameParent, true);assert.equal(state.sameText, true);
+    assert.equal(state?.url, discovery.actualURL);assert.equal(state.sameNode, true);assert.equal(state.sameParent, true);assert.equal(state.sameText, true);
     assert.equal(state.href, selected.href);assert.equal(state.raw, selected.raw);assert.equal(state.text, selected.text);
+    if (discovery.branch != null) { assert.equal(state.branch?.unique, true);assert.equal(state.branch.sameNode, true);assert.equal(state.branch.sameParent, true);assert.equal(state.branch.label, discovery.branch.label);assert.equal(state.branch.text, discovery.branch.text); }
   };
   const accessibleHover = (value) => {
     assert.equal(value.described, true);assert.equal(value.escapeDismissed, true);
     assert.equal(value.visibility?.beforeScreenshot?.unobscured, true);assert.equal(value.visibility?.afterScreenshot?.unobscured, true);
   };
   try {
+    await page.evaluate((selected, actualURL, branch) => {
+      if (location.href !== actualURL) throw new Error('Native commit-list document changed before verification');
+      const node = document.querySelector(selected.selector);
+      if (node === null || node.href !== selected.href || node.getAttribute('href') !== selected.raw || node.textContent.trim().slice(0, 512) !== selected.text) throw new Error('Native commit link changed before verification');
+      const branchNode = branch === null ? null : document.querySelector(branch.selector);
+      if (branch !== null && (branchNode === null || document.querySelectorAll(branch.selector).length !== 1 || branchNode.getAttribute('aria-label') !== branch.label || branchNode.textContent.trim() !== branch.text)) throw new Error('Native commit-list ref selection changed before verification');
+      const saved = { node, parent: node.parentElement, selector: selected.selector, text: node.textContent, events: [], branch: branchNode === null ? null : { ...branch, node: branchNode, parent: branchNode.parentElement } };
+      saved.listener = (event) => { if (saved.events.length < 12) saved.events.push({ type: event.type, trusted: event.isTrusted }); };
+      node.addEventListener('mouseover', saved.listener, true);node.addEventListener('focusin', saved.listener, true);
+      globalThis.__geldCommitLinksProof = saved;
+    }, selected, discovery.actualURL, discovery.branch ?? null);
     proof.before = await page.evaluate(bitbucketCommitLinkState);
     nativeUnchanged(proof.before);
     try { proof.pointer = await installedHover(page, selected.selector, 'pointer', 'bitbucket-commit-link-pointer', undefined, { verifyUnobscured: true }); }
     catch (error) {
       if (page.isClosed()) throw error;
       proof.afterPointer = await page.evaluate(bitbucketCommitLinkState);
+      nativeUnchanged(proof.afterPointer);
       if (error?.code === 'ERR_ASSERTION') throw error;
       proof.status = 'unavailable';proof.reason = error instanceof Error ? error.message : String(error);
       return { status: proof.status, reason: proof.reason };
