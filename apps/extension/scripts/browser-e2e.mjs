@@ -466,7 +466,7 @@ async function runCase(name, url, body, discovery = false) {
     if (wholePrivacy) {
       item.bitbucketWholeSettings = {};
       wholeSettings = bitbucketWholeSettings({ progress:item.bitbucketWholeSettings,
-        preparePatch:prWhole?{prOverview:false,showListStats:false,repoConfigs:'never',aiEnabled:false}:undefined,
+        preparePatch:prWhole?{prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false}:undefined,
         read:() => options.evaluate(async key => { const v=await chrome.storage.sync.get(key);return Object.hasOwn(v,key)?{present:true,value:v[key]}:{present:false}; }, SETTINGS_KEY),
         write:v => options.evaluate(async (key,saved) => { if(saved.present)await chrome.storage.sync.set({[key]:saved.value});else await chrome.storage.sync.remove(key); }, SETTINGS_KEY,v),
       });await wholeSettings.prepare();

@@ -1527,7 +1527,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   The separate `bitbucket-pr-whole-context` case observes current API refs and native All changes/menu provenance independently;
   native abbreviated source refs remain distinct from full API hashes.
   Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
-  PR whole-context acceptance opens Tests and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
+  PR whole-context acceptance opens Tests with actual End/Enter keyboard navigation and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
+  Fixed preparation phases, boolean file/header hit checks and independent cleanup codes remain in the private receipt even if the outer runner suppresses exception text.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
