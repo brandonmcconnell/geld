@@ -207,11 +207,12 @@ function pullTabRow(): HTMLElement | null {
 }
 
 /**
- * GitHub leaves the tab bar's line counts out when there are no line changes (a change of binary files only:
- * mintlify/landing#886), rendering their wrapper empty, so the header showed no counts and no breakdown. `want` (the
- * page's diff is loaded and has no added or removed lines) puts a stand-in of GitHub's shape in that wrapper, or in a
+ * The tab bar can hold no line counts of GitHub's while Geld already has them: GitHub leaves them out for a change of
+ * binary files only (mintlify/landing#886), and its counts skeleton can resolve to an empty wrapper seconds before its
+ * own counts render (mintlify/mint#14204, signed in). Either way the header showed nothing, since Geld only rewrites
+ * GitHub's counts. `want` (the page's diff totals, once loaded) puts a stand-in of GitHub's shape in that wrapper, or in a
  * wrapper of Geld's where there is none, for the header pass to rewrite as it does GitHub's. GitHub's own counts always
- * win: once a push brings line changes they render, and the stand-in goes; when a push takes them away, it comes back.
+ * win: once they render the stand-in goes, and they are rewritten to the same numbers before paint.
  * Not marked as Geld's UI, which the header scan skips (`isInsideDiffEntry`): it is read and rewritten as GitHub's are.
  * True when the page changed.
  */
@@ -224,17 +225,26 @@ export function countsWrapperBusy(wrapper: Element): boolean {
   return [...wrapper.children].some((child) => !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
 }
 
-export function syncCountsStandIn(want: boolean): boolean {
+export interface StandInTotals {
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+function standInKey(totals: StandInTotals): string {
+  return `${totals.additions}:${totals.deletions}`;
+}
+
+export function syncCountsStandIn(want: StandInTotals | null): boolean {
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
   const row = pullTabRow();
   const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
   const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
-  if (!want || row === null || real || (wrapper !== null && countsWrapperBusy(wrapper))) {
+  if (want === null || row === null || real || (wrapper !== null && countsWrapperBusy(wrapper))) {
     if (existing === null) return false;
     removeCountsStandIn();
     return true;
   }
-  if (existing !== null && row.contains(existing)) return false;
+  if (existing !== null && row.contains(existing) && existing.getAttribute(ATTR_COUNTS_STAND_IN) === standInKey(want)) return false;
   removeCountsStandIn();
   let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
   if (home === null) {
@@ -242,10 +252,10 @@ export function syncCountsStandIn(want: boolean): boolean {
     row.prepend(home);
   }
   home.append(
-    createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: '' }, [
-      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, ['+0']),
-      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, ['-0']),
-      createElement('span', { class: 'sr-only' }, ['Lines changed: 0 additions & 0 deletions']),
+    createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: standInKey(want) }, [
+      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, [`+${formatCount(want.additions)}`]),
+      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, [`-${formatCount(want.deletions)}`]),
+      createElement('span', { class: 'sr-only' }, [`Lines changed: ${want.additions} additions & ${want.deletions} deletions`]),
     ]),
   );
   return true;
