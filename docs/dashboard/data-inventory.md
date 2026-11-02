@@ -49,3 +49,5 @@ Privacy requests are acknowledged and handled within one month under GDPR or 45 
 The product is not intended for children under 16.
 Account erasure overrides ordinary repository-removal retention.
 Security incident procedures include assessment and regulator notification within 72 hours where required.
+
+Access and App setup additions: `provider_user_links` maps a linked identity to its provider ID and username for assignments and grants. `notifications` stores structural in-product notices. `provider_connections` holds encrypted customer service credentials and selected Bitbucket adapter settings. `repository_apps` stores canonical permission sets and encrypted App credentials. `app_flows` holds single-use hashed setup state for 15 minutes. `team_app_installations` maps verified installations to teams. `app_user_tokens` holds encrypted repository App OAuth credentials, separate from identity sign-in. All user-owned rows cascade on erasure. No raw PR content is stored in these tables.

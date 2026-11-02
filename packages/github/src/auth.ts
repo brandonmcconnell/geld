@@ -330,6 +330,8 @@ export type TokenAccess =
   | { readonly status: 'unavailable'; readonly message: string };
 
 export interface TokenSource {
+  /** Connected authorizations of the same user, tried after a definitive access denial. */
+  readonly alternatives?: readonly TokenSource[];
   /** A token good for at least `skewMs`, refreshing if needed. `force` refreshes even a fresh-looking token (after a 401). */
   get(options?: { readonly force?: boolean }): Promise<TokenAccess>;
 }

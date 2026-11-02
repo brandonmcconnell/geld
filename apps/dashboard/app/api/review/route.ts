@@ -26,7 +26,7 @@ export async function POST(request: Request): Promise<Response> {
     const digest = resourceDigest(input.ref);
     const id = crypto.randomUUID();
     await db.query('INSERT INTO review_receipts(id,user_id,provider,resource_fingerprint,action,outcome) VALUES ($1,$2,$3,$4,$5,\'pending\')', [id, actor.id, input.ref.provider, digest, input.kind]);
-    const client = await providerClient(input.ref.provider, input.ref.host);
+    const client = await providerClient(input.ref.provider, input.ref.host, input.ref.owner);
     const current = await client.pull(input.ref);
     if (!current.ok || current.value.headSha !== input.headSha) { await db.query('UPDATE review_receipts SET outcome = \'denied\' WHERE id = $1', [id]); return json({ error: 'The pull request changed or could not be verified. Reload before posting.' }, 409); }
     const result: ProviderResult<string | void> | { readonly ok: false; readonly reason: 'stale' | 'own_review' } = input.kind === 'review' && input.event
