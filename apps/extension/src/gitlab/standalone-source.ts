@@ -3,21 +3,22 @@ import type { ProviderDiffResult, ProviderStandalonePage } from '../providers/ty
 import { record, SHA } from './page';
 import { gitLabMetadataCount, gitLabMetadataFiles, readGitLabDiffJson, readGitLabDiffResource } from './source';
 import { providerDiffSourceFacts } from '../providers/source-facts';
+import type { ProviderHttpAdmission } from '../providers/http-admission';
 
 function whitespace(page: ProviderStandalonePage): string | null {
   const value = new URL(page.diffPageUrl).searchParams.get('w');
   return value === '0' || value === '1' ? value : null;
 }
 
-async function resolveRef(page: ProviderStandalonePage, ref: string, signal: AbortSignal, project = encodeURIComponent(page.repository.path)): Promise<string> {
+async function resolveRef(page: ProviderStandalonePage, ref: string, signal: AbortSignal, project = encodeURIComponent(page.repository.path), admission?: ProviderHttpAdmission): Promise<string> {
   if (SHA.test(ref)) return ref.toLowerCase();
   const url = new URL(`/api/v4/projects/${project}/repository/commits/${encodeURIComponent(ref)}`, page.repository.origin);
-  const value = await readGitLabDiffJson(url, signal, 'no-cache');
+  const value = await readGitLabDiffJson(url, signal, 'no-cache', admission);
   if (!record(value) || typeof value.id !== 'string' || !SHA.test(value.id) || (/^[0-9a-f]{7,64}$/i.test(ref) && !value.id.toLowerCase().startsWith(ref.toLowerCase()))) throw new Error('GitLab did not resolve the selected revision');
   return value.id.toLowerCase();
 }
 
-export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, signal: AbortSignal): Promise<ProviderDiffResult> {
+export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, signal: AbortSignal, admission?: ProviderHttpAdmission): Promise<ProviderDiffResult> {
   const repository = describeRepository(page.url, 'gitlab');
   if (page.provider !== 'gitlab' || repository === null || repositoryKey(repository) !== repositoryKey(page.repository)) throw new Error('Invalid GitLab standalone diff identity');
   const root = `${repository.origin}/${repository.path.split('/').map(encodeURIComponent).join('/')}/-/`;
@@ -27,7 +28,7 @@ export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, si
   let statsUrl: URL;
   let rawUrl: URL;
   if (page.kind === 'commit') {
-    head = await resolveRef(page, page.ref, signal);
+    head = await resolveRef(page, page.ref, signal, undefined, admission);
     base = null;
     metadataUrl = new URL(`${root}commit/${head}/diff_files_metadata`);
     statsUrl = new URL(`${root}commit/${head}/diffs_stats`);
@@ -35,7 +36,7 @@ export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, si
   } else {
     const target = page.targetProjectId;
     if (target !== undefined && !/^[1-9]\d*$/.test(target)) throw new Error('Invalid GitLab comparison project');
-    [base, head] = await Promise.all([resolveRef(page, page.from, signal, target), resolveRef(page, page.to, signal)]);
+    [base, head] = await Promise.all([resolveRef(page, page.from, signal, target, admission), resolveRef(page, page.to, signal, undefined, admission)]);
     metadataUrl = new URL(`${root}compare/diff_files_metadata`);
     statsUrl = new URL(`${root}compare/diffs_stats`);
     rawUrl = new URL(`${root}compare/${base}...${head}`);
@@ -49,7 +50,7 @@ export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, si
   if (page.headSha !== null && page.headSha !== head) throw new Error('GitLab selected revision changed while loading');
   const w = whitespace(page);
   if (w !== null) for (const url of [metadataUrl, statsUrl, rawUrl]) url.searchParams.set('w', w);
-  const [metadata, statistics, patch] = await Promise.all([readGitLabDiffJson(metadataUrl, signal), readGitLabDiffJson(statsUrl, signal), readGitLabDiffResource(rawUrl, signal)]);
+  const [metadata, statistics, patch] = await Promise.all([readGitLabDiffJson(metadataUrl, signal, undefined, admission), readGitLabDiffJson(statsUrl, signal, undefined, admission), readGitLabDiffResource(rawUrl, signal, undefined, admission)]);
   if (!record(metadata) || !record(statistics) || !record(statistics.diffs_stats)) throw new Error('GitLab standalone change metadata is unavailable');
   const summaries = gitLabMetadataFiles(metadata.diff_files);
   if (summaries === null) throw new Error('GitLab standalone file metadata is incomplete');
@@ -65,7 +66,7 @@ export async function fetchGitLabStandaloneDiff(page: ProviderStandalonePage, si
     && expected.size === summaries.length && parsed.size === files.length && files.length === summaries.length
     && files.every((file) => { const expectedFile = expected.get(file.path); return expectedFile !== undefined && expectedFile.additions === file.additions && expectedFile.deletions === file.deletions; });
   if (page.kind === 'compare' && (!SHA.test(page.from) || !SHA.test(page.to))) {
-    const [afterBase, afterHead] = await Promise.all([resolveRef(page, page.from, signal, page.targetProjectId), resolveRef(page, page.to, signal)]);
+    const [afterBase, afterHead] = await Promise.all([resolveRef(page, page.from, signal, page.targetProjectId, admission), resolveRef(page, page.to, signal, undefined, admission)]);
     if (afterBase !== base || afterHead !== head) throw new Error('GitLab comparison refs changed while loading');
   }
   const patches = new Map<string, string>();

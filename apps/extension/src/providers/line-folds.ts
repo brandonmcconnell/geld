@@ -3,6 +3,7 @@ import { CATEGORY_IDS, createMatcher, describeRepository, formatCount, outlineTe
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView } from './types';
 import type { ProviderOutlineContext } from './source-facts';
 import './line-folds.css';
+import type { ProviderWholeTestSession } from './whole-test-context';
 
 export const PROVIDER_LINE_FOLDS_CHANGED = 'geld:provider-line-folds-changed';
 export const ATTR_PROVIDER_LINE_HIDDEN = 'data-geld-provider-line-hidden';
@@ -33,12 +34,14 @@ interface Visit {
   readonly opened: Set<string>;
   readonly shown: Set<string>;
   linkedHash: string;
+  linkedWhole: number | null;
+  suppressedHash: string | null;
 }
 
 interface FoldRow {
   readonly root: HTMLElement;
   readonly button: HTMLButtonElement;
-  action: () => void;
+  action: (trusted: boolean) => void;
 }
 
 interface Painted {
@@ -49,6 +52,10 @@ interface Painted {
   signature: string;
   folds: readonly TestFold[];
   linkedFrame: number | null;
+  entry: ProviderDiffEntry;
+  whole: ProviderWholeTestSession | undefined;
+  wholeToken: number | null;
+  focus: { readonly key: string; readonly button: HTMLButtonElement } | null;
 }
 
 interface CommentRun {
@@ -58,6 +65,12 @@ interface CommentRun {
 }
 
 const painted = new Map<HTMLElement, Painted>();
+let focusDocument: Document | null = null;
+const clearPendingFocus = (event: Event): void => { if (event.isTrusted) for (const state of painted.values()) state.focus = null; };
+function observeOutlineFocus(): void {
+  if (focusDocument !== null) return;focusDocument = document;
+  focusDocument.addEventListener('pointerdown', clearPendingFocus, true);focusDocument.addEventListener('keydown', clearPendingFocus, true);
+}
 const visits = new Map<string, Visit>();
 
 function setAttribute(node: HTMLElement, name: string, value: string | null): void {
@@ -157,7 +170,7 @@ function ownNode<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node;
 }
 
-function ensureFoldRow(state: Painted, key: string, before: HTMLElement, action: () => void): FoldRow {
+function ensureFoldRow(state: Painted, key: string, before: HTMLElement, action: (trusted: boolean) => void): FoldRow {
   let note = state.notes.get(key);
   if (note !== undefined && note.root.parentElement !== before.parentElement) { note.root.remove(); state.notes.delete(key); note = undefined; }
   if (note === undefined) {
@@ -175,7 +188,7 @@ function ensureFoldRow(state: Painted, key: string, before: HTMLElement, action:
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (painted.get(state.root) === state && state.notes.get(key) === created && button.isConnected && root.contains(button) && state.root.contains(root)) created.action();
+      if (painted.get(state.root) === state && state.notes.get(key) === created && button.isConnected && root.contains(button) && state.root.contains(root)) created.action(event.isTrusted === true);
     });
     note = created;
     state.notes.set(key, note);
@@ -214,6 +227,7 @@ function testRow(note: FoldRow, fold: TestFold, open: boolean, partial: boolean)
 }
 
 function isPartial(fold: TestFold, reading: Reading): boolean {
+  if ([...fold.headingKeys, ...fold.bodyKeys].some((key) => key.startsWith('R') && !reading.lines.has(key))) return true;
   const side = fold.headKey.startsWith('L') ? reading.old : reading.new;
   const keys = new Set([...fold.headingKeys, ...fold.bodyKeys]);
   const last = side.findLastIndex((line) => keys.has(line.key));
@@ -228,22 +242,25 @@ function isPartial(fold: TestFold, reading: Reading): boolean {
 
 function followHash(state: Painted, reading: Reading, runs: readonly CommentRun[]): void {
   const hash = window.location.hash;
-  if (hash === state.visit.linkedHash) return;
+  const sameHash = hash === state.visit.linkedHash;
+  if (sameHash && state.wholeToken === state.visit.linkedWhole) return;
+  if (!sameHash) state.visit.suppressedHash = null;
   cancelLinkedScroll(state);
-  if (hash === '') return;
+  if (hash === '') { state.visit.linkedHash = '';state.visit.linkedWhole = state.wholeToken;return; }
   let anchor: string;
   try { anchor = decodeURIComponent(hash.slice(1)); } catch { return; }
   const target = document.getElementById(anchor);
-  if (target === null || !state.root.contains(target)) return;
+  if (target === null || !state.root.contains(target)) { state.visit.linkedHash = '';state.visit.linkedWhole = null;return; }
   const row = reading.rows.find((entry) => entry.root === target || entry.root.contains(target));
   if (row === undefined) return;
-  state.visit.linkedHash = hash;
+  state.visit.linkedHash = hash;state.visit.linkedWhole = state.wholeToken;
+  if (state.visit.suppressedHash === hash) return;
   let revealed = false;
   for (const fold of state.folds) if ([...fold.headingKeys, ...fold.bodyKeys].some((key) => row.keys.has(key))) {
     if (!state.visit.opened.has(fold.id)) revealed = true;
     state.visit.opened.add(fold.id);
   }
-  for (const run of runs) if (run.rows.includes(row)) {
+  for (const run of runs) if (!sameHash && run.rows.includes(row)) {
     if (!state.visit.shown.has(run.key)) revealed = true;
     state.visit.shown.add(run.key);
   }
@@ -298,15 +315,34 @@ function paint(state: Painted, reading: Reading, runs: readonly CommentRun[]): {
     if (first === undefined) continue;
     const previous = first.root.previousElementSibling;
     const at = previous instanceof HTMLElement && previous.hasAttribute(ATTR_PROVIDER_FOLD_ROW) && previous.getAttribute(ATTR_PROVIDER_FOLD_ROW)?.startsWith('comments:') === true ? previous : first.root;
-    const note = ensureFoldRow(state, `test:${fold.id}`, at, () => {
-      if (state.visit.opened.has(fold.id)) state.visit.opened.delete(fold.id);
-      else state.visit.opened.add(fold.id);
+    const note = ensureFoldRow(state, `test:${fold.id}`, at, (trusted) => {
+      const opening = !state.visit.opened.has(fold.id);
+      if (opening) { state.visit.opened.add(fold.id);state.visit.suppressedHash = null; }
+      else {
+        state.visit.opened.delete(fold.id);state.whole?.cancelReveal(state.entry);
+        try {
+          const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+          const row = target === null ? undefined : reading.rows.find((item) => item.root === target || item.root.contains(target));
+          if (row !== undefined && [...row.keys].some((key) => keys.has(key))) state.visit.suppressedHash = window.location.hash;
+        } catch { /* A malformed source fragment supplies no reveal intent. */ }
+      }
       repaint();
+      if (opening && trusted && document.activeElement === note.button) state.focus = { key: `test:${fold.id}`, button: note.button };
+      if (!opening) state.focus = null;
+      if (opening && trusted) state.whole?.reveal(state.entry, fold, () => painted.get(state.root) === state && state.visit.opened.has(fold.id));
     });
     kept.add(`test:${fold.id}`);
     testRow(note, fold, state.visit.opened.has(fold.id), isPartial(fold, reading));
   }
   for (const [key, note] of state.notes) if (!kept.has(key)) { note.root.remove(); state.notes.delete(key); }
+  const pending = state.focus;
+  if (pending !== null && state.wholeToken !== null) {
+    const replacement = state.notes.get(pending.key)?.button;
+    if (replacement === undefined || document.activeElement !== document.body && document.activeElement !== pending.button) state.focus = null;
+    else if (!pending.button.isConnected && replacement.isConnected && state.root.contains(replacement)) {
+      replacement.focus({ preventScroll: true });state.focus = { key: pending.key, button: replacement };
+    }
+  }
   const counted = new Set<string>();
   for (const root of comments) for (const key of byRoot.get(root)?.changed ?? []) counted.add(key);
   return {
@@ -323,8 +359,9 @@ function clearPainted(state: Painted): void {
   state.managed.clear();
 }
 
-export function applyProviderLineFolds(view: ProviderDiffView, files: readonly FileStats[], settings: GeldSettings, context?: ProviderOutlineContext): { hiddenAdditions: number; hiddenDeletions: number } {
-  if (!settings.enabled || (!settings.hideCommentLines && !settings.testOutline)) { clearProviderLineFolds(); return { hiddenAdditions: 0, hiddenDeletions: 0 }; }
+export function applyProviderLineFolds(view: ProviderDiffView, files: readonly FileStats[], settings: GeldSettings, context?: ProviderOutlineContext, whole?: ProviderWholeTestSession): { hiddenAdditions: number; hiddenDeletions: number } {
+  if (!settings.enabled || (!settings.hideCommentLines && !settings.testOutline)) { whole?.retain(new Set());clearProviderLineFolds(); return { hiddenAdditions: 0, hiddenDeletions: 0 }; }
+  if (whole !== undefined) observeOutlineFocus();
   const facts = new Map(files.map((file) => [file.path, file]));
   const categories = Object.fromEntries(CATEGORY_IDS.map((id) => [id, id === 'tests']));
   const repository = describeRepository(window.location.href);
@@ -332,6 +369,7 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
   const matcher = settings.testOutline ? createMatcher({ ...settings, categories, customCategories: [], hideLargeDiffs: false }, scope) : null;
   const syntaxes = testSyntaxesFrom(settings.testSyntaxes);
   const active = new Set<HTMLElement>();
+  const wholeRoots = new Set<HTMLElement>();
   let hiddenAdditions = 0;
   let hiddenDeletions = 0;
   for (const entry of view.entries) {
@@ -340,19 +378,22 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
     active.add(entry.root);
     const visitKey = JSON.stringify([context?.subjectKey ?? `${window.location.origin}${window.location.pathname}`, entry.path]);
     let visit = visits.get(visitKey);
-    if (visit === undefined) { visit = { opened: new Set(), shown: new Set(), linkedHash: '' }; visits.set(visitKey, visit); }
+    if (visit === undefined) { visit = { opened: new Set(), shown: new Set(), linkedHash: '', linkedWhole: null, suppressedHash: null }; visits.set(visitKey, visit); }
     let state = painted.get(entry.root);
     if (state === undefined || state.visit !== visit) {
       if (state !== undefined) clearPainted(state);
-      state = { root: entry.root, visit, managed: new Set(), notes: new Map(), signature: '', folds: [], linkedFrame: null };
+      state = { root: entry.root, visit, managed: new Set(), notes: new Map(), signature: '', folds: [], linkedFrame: null, entry, whole, wholeToken: null, focus: null };
       painted.set(entry.root, state);
     }
+    state.entry = entry;state.whole = whole;
     const reading = readLines(entry);
     const outline = matcher?.categorize(entry.path)?.id === 'tests';
-    const signature = JSON.stringify([reading.signature, outline, settings.testSyntaxes, context?.newSources.get(entry.root)?.key ?? null]);
+    if (outline) { wholeRoots.add(entry.root);whole?.mount(entry); }
+    const full = outline ? whole?.source(entry) ?? null : null;state.wholeToken = full?.token ?? null;
+    const signature = JSON.stringify([reading.signature, outline, settings.testSyntaxes, context?.newSources.get(entry.root)?.key ?? null, full?.token ?? null]);
     if (state.signature !== signature) {
       state.signature = signature;
-      state.folds = outline ? outlineTestFolds(reading, syntaxes) : [];
+      state.folds = outline ? outlineTestFolds(reading, syntaxes, full?.lines ?? null) : [];
     }
     const runs = commentRuns(reading, file, settings.hideCommentLines && context?.commentCoordinateMismatches?.has(entry.root) !== true);
     followHash(state, reading, runs);
@@ -360,6 +401,7 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
     hiddenAdditions += counts.hiddenAdditions;
     hiddenDeletions += counts.hiddenDeletions;
   }
+  whole?.retain(wholeRoots);
   for (const [root, state] of painted) if (!active.has(root)) { clearPainted(state); painted.delete(root); }
   return { hiddenAdditions, hiddenDeletions };
 }
@@ -368,4 +410,5 @@ export function clearProviderLineFolds(): void {
   for (const state of painted.values()) clearPainted(state);
   painted.clear();
   visits.clear();
+  focusDocument?.removeEventListener('pointerdown', clearPendingFocus, true);focusDocument?.removeEventListener('keydown', clearPendingFocus, true);focusDocument = null;
 }
