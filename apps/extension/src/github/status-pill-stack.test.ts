@@ -69,6 +69,39 @@ describe('stackGroups', () => {
     expect(read(stackGroups(stackOf(2, { 4: closed, 3: closed, 2: closed, 1: closed }), 'SQUASH'))).toEqual([['reopen', 'Reopen', 'This pull request via #2: 2', 'This and 1 below via #2: 2,1', 'Entire stack (4) via #4: 4,3,2,1']]);
   });
 
+  it('changes a mixed stack one at a time, passing over those already where the choice leads', () => {
+    const draft = box({ draft: true, canMarkReady: true, canClose: true });
+    const groups = stackGroups(stackOf(3, { 4: open, 3: draft, 2: open, 1: draft }), 'SQUASH');
+    const of = (action: string): string[] | undefined => read(groups).find((group) => group[0] === action);
+    // The drafts are marked ready; the entire stack would mark the same two, so it is not offered twice.
+    expect(of('ready')).toEqual(['ready', 'Ready for review', 'This pull request via #3: 3', 'This and 2 below (2 of 3) via #3: 3,1']);
+    // The open ones are drafted, this one (a draft already) passed over.
+    expect(of('draft')).toEqual(['draft', 'Convert to draft', 'This and 2 below (1 of 3) via #2: 2', 'Entire stack (2 of 4) via #4: 4,2']);
+    // A merge is one request that takes them all, and a draft among them cannot merge.
+    expect(of('merge')).toBeUndefined();
+  });
+
+  it('passes over a closed pull request when drafting, and is blocked only by one it should change but may not', () => {
+    const closed = box({ state: 'CLOSED', open: false, canClose: true });
+    // The entire stack would draft the same three as this and the two below, so it is that one choice.
+    expect(read(stackGroups(stackOf(3, { 4: closed, 3: open, 2: open, 1: open }), 'SQUASH')).find((group) => group[0] === 'draft')).toEqual(['draft', 'Convert to draft', 'This pull request via #3: 3', 'This and 2 below via #3: 3,2,1']);
+    expect(read(stackGroups(stackOf(2, { 4: closed, 3: open, 2: open, 1: open }), 'SQUASH')).find((group) => group[0] === 'draft')).toEqual(['draft', 'Convert to draft', 'This pull request via #2: 2', 'This and 1 below via #2: 2,1', 'Entire stack (3 of 4) via #3: 3,2,1']);
+    // An open one the reader may not draft keeps the choices that would take it from the menu.
+    const locked = box({ canClose: true, mergeable: true });
+    expect(read(stackGroups(stackOf(3, { 4: locked, 3: open, 2: open, 1: open }), 'SQUASH')).find((group) => group[0] === 'draft')).toEqual(['draft', 'Convert to draft', 'This pull request via #3: 3', 'This and 2 below via #3: 3,2,1']);
+    // Reopening passes over the open ones.
+    expect(read(stackGroups(stackOf(4, { 4: closed, 3: open, 2: closed, 1: open }), 'SQUASH')).find((group) => group[0] === 'reopen')).toEqual(['reopen', 'Reopen', 'This pull request via #4: 4', 'Entire stack (2 of 4) via #4: 4,2']);
+  });
+
+  it('says how many of the scope a choice changes, and names only those', () => {
+    const draft = box({ draft: true, canMarkReady: true, canClose: true });
+    const groups = stackGroups(stackOf(3, { 4: open, 3: draft, 2: open, 1: draft }), 'SQUASH') ?? [];
+    const [below, entire] = groups.find((group) => group.action === 'draft')?.choices ?? [];
+    if (below === undefined || entire === undefined) throw new Error('fixture');
+    expect(stackConfirmWords('draft', below)).toBe('Convert 1 of these 3 pull requests to drafts (#2)?');
+    expect(stackConfirmWords('draft', entire)).toBe("Convert 2 of the stack's 4 pull requests to drafts (#4 and #2)?");
+  });
+
   it('names every pull request a choice of more than one changes, before it changes them', () => {
     const groups = stackGroups(stackOf(3, { 4: open, 3: open, 2: open, 1: open }), 'SQUASH') ?? [];
     const close = groups.find((group) => group.action === 'close');

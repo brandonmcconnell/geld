@@ -82,6 +82,8 @@ export interface StackChoice {
   readonly label: string;
   /** Top first: every pull request the choice changes. */
   readonly targets: readonly StackMember[];
+  /** How many pull requests the scope holds: more than `targets` where some are already where the choice leads. */
+  readonly of: number;
   /** Whose `enqueue_stack` a merge or a place in the queue goes through: the top of `targets`, which takes the rest. */
   readonly via: StackMember;
 }
@@ -103,13 +105,26 @@ const STACK_CAN: { readonly [A in StackAction]: (box: MergeBox) => boolean } = {
   reopen: (box) => box.state === 'CLOSED' && box.canClose,
 };
 
+/**
+ * The pull requests a change one at a time moves: those in the state it starts from. The rest of a scope is already
+ * where it leads (an open one when marking ready, a draft when drafting) or out of its reach (a closed one when
+ * drafting), and is passed over; one it should move but may not blocks the choice.
+ */
+const STACK_FROM: { readonly [A in StackAction]?: (box: MergeBox) => boolean } = {
+  ready: (box) => box.open && box.draft,
+  reopen: (box) => box.state === 'CLOSED',
+  draft: (box) => box.open && !box.draft,
+  close: (box) => box.open,
+};
+
 const STACK_STATUS: { readonly [A in StackAction]: PullStatus } = { ready: 'open', reopen: 'open', queue: 'queued', merge: 'merged', draft: 'draft', close: 'closed' };
 
 /**
- * A stack's menu, by type, each with the choices every pull request they take allows: this pull request (a merge only
- * at the foot of the stack, since GitHub merges a stacked pull request with every one below it), this and every one
- * below, and the entire stack (whoever is reading it, merging through its top), each only when it differs from the one
- * before. A merge goes as GitHub's merge box would: through the queue where the repository has one, else directly;
+ * A stack's menu, by type, each with the choices it can make: this pull request (a merge only at the foot of the
+ * stack, since GitHub merges a stacked pull request with every one below it), this and every one below, and the entire
+ * stack (whoever is reading it, merging through its top), each only when it changes different pull requests from the
+ * one before. A merge or a place in the queue needs every pull request it takes to allow it; a change made one at a
+ * time passes over those already where it leads (`STACK_FROM`). A merge goes as GitHub's merge box would: through the queue where the repository has one, else directly;
  * auto-merge and the bypass are left to a stack of one. Null for a stack of one, whose menu is `statusOptions`'.
  */
 export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): readonly StackGroup[] | null {
@@ -118,11 +133,20 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
   const current = members[at];
   const top = members[0];
   if (members.length < 2 || current === undefined || top === undefined) return null;
-  const all = (action: StackAction, of: readonly StackMember[]): boolean =>
-    of.every((member) => {
+  // A merge or a place in the queue is one request that takes them all: each must allow it. A change made one at a time
+  // takes those in the state it starts from, as long as each of those allows it and there is at least one.
+  const movers = (action: StackAction, of: readonly StackMember[]): readonly StackMember[] | null => {
+    const from = STACK_FROM[action];
+    const moving: StackMember[] = [];
+    for (const member of of) {
       const box = boxes.get(member.number);
-      return box !== undefined && STACK_CAN[action](box);
-    });
+      if (box === undefined) return null;
+      if (from !== undefined && !from(box)) continue;
+      if (!STACK_CAN[action](box)) return null;
+      moving.push(member);
+    }
+    return moving.length === 0 ? null : moving;
+  };
   const below = members.slice(at);
   const scopes: readonly { readonly scope: StackScope; readonly targets: readonly StackMember[] }[] = [
     { scope: 'this', targets: [current] },
@@ -130,16 +154,28 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
     ...(at > 0 && below.length > 1 ? [{ scope: 'below' as const, targets: below }] : []),
     { scope: 'stack', targets: members },
   ];
-  const label = (scope: StackScope): string => (scope === 'this' ? 'This pull request' : scope === 'below' ? `This and ${below.length - 1} below` : `Entire stack (${members.length})`);
+  const label = (scope: StackScope, moving: number): string => {
+    if (scope === 'this') return 'This pull request';
+    const size = scope === 'below' ? below.length : members.length;
+    if (scope === 'below') return moving < size ? `This and ${below.length - 1} below (${moving} of ${size})` : `This and ${below.length - 1} below`;
+    return `Entire stack (${moving < size ? `${moving} of ${size}` : size})`;
+  };
   const merging: StackAction = boxes.get(current.number)?.canQueue === true ? 'queue' : 'merge';
   const actions: readonly StackAction[] = ['ready', 'reopen', merging, 'draft', 'close'];
   const notes: { readonly [A in StackAction]: string } = { ready: 'Ready for review', reopen: 'Reopen', queue: 'Merge when ready', merge: METHOD_LABEL[method], draft: 'Convert to draft', close: 'Close' };
   const groups = actions.flatMap((action): StackGroup[] => {
+    const seen = new Set<string>();
     const choices = scopes
       // GitHub merges a stacked pull request with every one below it: alone only at the foot.
       .filter(({ scope }) => !((action === 'merge' || action === 'queue') && scope === 'this' && below.length > 1))
-      .filter(({ targets }) => all(action, targets))
-      .map(({ scope, targets }) => ({ scope, label: label(scope), targets, via: targets[0] ?? current }));
+      .flatMap(({ scope, targets: all }): StackChoice[] => {
+        const targets = movers(action, all);
+        // A wider scope that moves the same pull requests as a narrower one is the same choice.
+        const key = targets?.map((member) => member.number).join(',') ?? '';
+        if (targets === null || seen.has(key)) return [];
+        seen.add(key);
+        return [{ scope, label: label(scope, targets.length), targets, of: all.length, via: targets[0] ?? current }];
+      });
     return choices.length === 0 ? [] : [{ status: STACK_STATUS[action], action, note: notes[action], choices }];
   });
   return STATUS_ORDER.flatMap((status) => groups.filter((group) => group.status === status));
@@ -149,7 +185,13 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
 export function stackConfirmWords(action: StackAction, choice: StackChoice): string {
   const numbers = choice.targets.map((member) => `#${member.number}`);
   const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1] ?? ''}` : (numbers[0] ?? '');
-  const count = choice.scope === 'stack' ? `the entire stack of ${choice.targets.length} pull requests` : `${choice.targets.length} pull requests`;
+  const moving = choice.targets.length;
+  const count =
+    moving < choice.of
+      ? `${moving} of ${choice.scope === 'stack' ? "the stack's" : 'these'} ${choice.of} pull requests`
+      : choice.scope === 'stack'
+        ? `the entire stack of ${moving} pull requests`
+        : `${moving} pull requests`;
   const verb: { readonly [A in StackAction]: string } = {
     merge: `Merge ${count}`,
     queue: `Add ${count} to the merge queue`,
