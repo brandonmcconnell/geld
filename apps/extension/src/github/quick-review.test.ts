@@ -706,6 +706,47 @@ describe('the tab bar button', () => {
     where.pathname = '/acme/widgets/pull/7';
   });
 
+  it('drafts the one other pull request a stack choice changes, not the draft being read', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const posts: string[] = [];
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          posts.push(url);
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/page_data/stacks')) {
+          return new Response(JSON.stringify({ stack: { pulls: [9, 7, 5].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        }
+        if (url.includes('/page_data/merge_box')) {
+          // #7, the one being read, and #9 are drafts; #5 below is open.
+          const draft = !url.includes('/pull/5/');
+          const payload = JSON.parse(mergeBox('BLOCKED', true, draft ? { draft: true } : { convert: true }));
+          payload.mergeRequirements.conditions = [{ type: 'STACK', result: 'PASSED', isStacked: true }];
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    withLabel('Draft', 'draft');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="draft"]')?.click();
+    const below = document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="below"]');
+    expect(below?.textContent).toContain('This and 1 below (1 of 2)');
+    below?.click();
+    expect(confirm).toHaveBeenCalledWith('Convert 1 of these 2 pull requests to drafts (#5)?');
+    for (let i = 0; i < 4; i += 1) await settle();
+    expect(posts).toEqual(['/acme/widgets/pull/5/page_data/convert_to_draft']);
+  });
+
   it('squash-merges the entire stack without choosing an author email, which GitHub refuses for several pull requests', async () => {
     window.localStorage.clear();
     resetStatusHints();
