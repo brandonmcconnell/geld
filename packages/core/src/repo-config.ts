@@ -39,13 +39,14 @@ export const ORG_CONFIG_PATHS: readonly string[] = ['geld.yml', '.github/geld.ym
 export interface RepoConfig extends Pick<GeldSettings, 'categories' | 'groups' | 'categoryPatterns' | 'customCategories'> {
   /** Review bots installed on the repository, by registry id (`bugbot`, `coderabbit`, …), in the file's order. */
   readonly reviewBots: readonly string[];
+  readonly review?: { readonly ai: boolean };
 }
 
 export const EMPTY_REPO_CONFIG: RepoConfig = { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [], reviewBots: [] };
 
 export type RepoConfigParse = { readonly ok: true; readonly config: RepoConfig } | { readonly ok: false; readonly issues: readonly SettingsIssue[] };
 
-const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'customCategories', 'reviewBots'] as const;
+const ALLOWED_KEYS = ['version', 'categories', 'groups', 'categoryPatterns', 'customCategories', 'reviewBots', 'review'] as const;
 
 /** The shape of a bot id: the registry's ids are lowercase words with dashes. */
 const BOT_ID = /^[a-z][a-z0-9-]*$/;
@@ -133,6 +134,7 @@ export function collectRepoConfigIssues(value: unknown, catalog: Catalog = BUNDL
   checkCategoryPatterns(issues, at('categoryPatterns'), value.categoryPatterns);
   checkCustomCategories(issues, at('customCategories'), value.customCategories);
   checkReviewBots(issues, at('reviewBots'), value.reviewBots, knownBots);
+  if (value.review !== undefined && (!isRecord(value.review) || typeof value.review.ai !== 'boolean')) issues.push({ path: at('review.ai'), message: 'Expected a boolean AI policy.' });
   return issues;
 }
 
@@ -175,6 +177,7 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
       categoryPatterns: normalized.categoryPatterns,
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
+      ...(isRecord(value.review) && typeof value.review.ai === 'boolean' ? { review: { ai: value.review.ai } } : {}),
     },
   };
 }
@@ -186,7 +189,7 @@ export function isEmptyRepoConfig(config: RepoConfig): boolean {
     Object.keys(config.groups).length === 0 &&
     Object.values(config.categoryPatterns).every((lines) => lines === undefined || lines.length === 0) &&
     config.customCategories.length === 0 &&
-    config.reviewBots.length === 0
+    config.reviewBots.length === 0 && config.review === undefined
   );
 }
 

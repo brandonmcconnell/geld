@@ -22,6 +22,7 @@ Data subjects are account holders, team members and provider collaborators refer
 | app_installations | Host, App permission fingerprint, installation ID and migration state | Contract | Installation lifetime, never private keys |
 | ai_providers | Owner, provider instance, encrypted key and model preferences | Contract | Until removal or erasure |
 | subscriptions | Stripe customer/subscription references, tier, seats and spend cap | Contract | Active contract plus statutory billing obligations |
+| review_receipts | Actor, keyed resource fingerprint, review action and outcome, no review body | Legitimate interests in security | 365 days, erase identifying references on erasure |
 | credit_reservations | Idempotency key, credit amount, state and settlement | Contract | Billing period plus dispute window, no PR content |
 | webhook_deliveries | Delivery identifier, provider and processing outcome | Legitimate interests in reliable security processing | 30 days, no raw event payload |
 | outbox_jobs | Typed action references, attempts and retry status | Contract | 30 days after completion, no raw PR payload |
