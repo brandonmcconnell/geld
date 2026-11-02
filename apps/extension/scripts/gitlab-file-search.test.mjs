@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach, afterEach } from 'node:test';
 import { Window } from 'happy-dom';
-import { GITLAB_FILE_SEARCH as fixture, gitLabFileSearchSnapshot, assertGitLabFileSearchScope, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
+import { GITLAB_FILE_SEARCH as fixture, gitLabFileSearchSnapshot, gitLabFileSearchSelection, assertGitLabFileSearchScope, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 
 const keys = ['document', 'location', 'getComputedStyle', 'innerWidth', 'innerHeight'];
 const globals = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -16,9 +16,19 @@ afterEach(() => {
   window.happyDOM.abort();
 });
 
+function nativeApp(merge = false) {
+  const source = { id: Number(fixture.version), head_sha: fixture.head, selected: true, href: new URL(fixture.url).pathname + '?diff_id=' + fixture.version, is_merge_head: false, version_index: 2 };
+  const target = merge ? { ...source, id: 2158521027, head_sha: '13215ca460cd4f75d3765a882ef486aa2dacf549', href: new URL(fixture.url).pathname, is_merge_head: true, is_head: true, is_base: false } : { ...source, href: new URL(fixture.url).pathname, is_head: false, is_base: true };
+  return { path: '/gitlab-org/gitlab/-/merge_requests/266334', iid: 266334, sourceVersions: [source], targetVersions: [target] };
+}
+function mountNativeApp(app = nativeApp()) {
+  const node = document.createElement('article');node.setAttribute('data-rapid-diffs', '');node.setAttribute('data-app-data', JSON.stringify({ mr_path: app.path, iid: app.iid, versions: { source_versions: app.sourceVersions, target_versions: app.targetVersions } }));document.body.prepend(node);
+}
+
 function nativeFixture() {
   // Reduced retained native structure with explicit unit-only geometry, not browser acceptance.
   document.body.innerHTML = `<section data-testid="file-tree-container"><input type="search" data-testid="diff-tree-search" aria-label="Search (e.g. *.vue) (F)"><nav class="mr-tree-list" aria-label="File tree"><div data-testid="file-row-container"><a data-testid="file-row" data-file-row="${fixture.anchor}" href="${fixture.url}&file_path=${encodeURIComponent(fixture.path)}#${fixture.anchor}">issue_move_list_spec.rb</a></div></nav><nav class="geld-provider-categories" data-geld-ui><section class="geld-provider-category" data-active="true"><button class="geld-provider-category-header" aria-expanded="true">Tests (1 test)</button><button class="geld-provider-category-folder" aria-expanded="false"><span class="geld-provider-category-folder-label">${fixture.path.slice(0, fixture.path.lastIndexOf('/'))}</span></button><ul hidden><li data-geld-category-path="${fixture.path}"><a aria-current="true" href="#${fixture.anchor}">test</a></li></ul></section></nav></section><diff-file id="${fixture.anchor}"><details data-file-body open><table><tbody><tr><td class="rd-line-text">RSpec.describe IssueMoveList</td></tr></tbody></table><input type="checkbox" id="viewed" disabled></details></diff-file>`;
+  mountNativeApp();
   document.querySelector('diff-file').setAttribute('data-file-data', JSON.stringify({ new_path: fixture.path, diff_refs: { head_sha: fixture.head }, code_review_id: '019271d5e9aaae129d85f3585c16c1acf7a767cd' }));
   for (const node of document.querySelectorAll('*')) node.getBoundingClientRect = () => ({ left: 20, right: 140, top: 20, bottom: 40, x: 20, y: 20, width: 120, height: 20 });
 }
@@ -30,6 +40,42 @@ test('reads actual native search/result/diff provenance and the custom owned fol
   assert.equal(value.owned.current, 'true');assert.equal(value.owned.folder.expanded, 'false');
   assert.equal(value.source.open, true);assert.equal(value.source.codeVisible, true);assert.equal(value.source.codeInViewport, true);
   assert.equal(document.body.innerHTML, before);
+});
+
+test('binds a retained merge-result rendering separately from the pinned source revision', () => {
+  nativeFixture();document.querySelector('[data-rapid-diffs]').remove();mountNativeApp(nativeApp(true));
+  const root = document.querySelector('diff-file');const data = JSON.parse(root.getAttribute('data-file-data'));data.diff_refs.head_sha = nativeApp(true).targetVersions[0].head_sha;root.setAttribute('data-file-data', JSON.stringify(data));
+  const snapshot = gitLabFileSearchSnapshot(fixture);assertGitLabFileSearchScope(snapshot);
+  const selection = gitLabFileSearchSelection(snapshot);
+  assert.equal(selection.source.id, 2158520123);assert.equal(selection.source.head_sha, fixture.head);
+  assert.equal(selection.target.id, 2158521027);assert.notEqual(selection.target.head_sha, fixture.head);
+});
+
+for (const [name, mutate] of [
+  ['missing versions', (app) => { delete app.sourceVersions; }],
+  ['malformed source array', (app) => { app.sourceVersions = {}; }],
+  ['malformed target record', (app) => { app.targetVersions = [null]; }],
+  ['ambiguous selected source', (app) => { app.sourceVersions.push({ ...app.sourceVersions[0], id: 1 }); }],
+  ['ambiguous selected target', (app) => { app.targetVersions.push({ ...app.targetVersions[0], id: 1 }); }],
+  ['duplicate source ID', (app) => { app.sourceVersions.push({ ...app.sourceVersions[0], selected: false }); }],
+  ['duplicate target ID', (app) => { app.targetVersions.push({ ...app.targetVersions[0], selected: false }); }],
+  ['nonboolean selection flag', (app) => { app.sourceVersions[0].selected = 'true'; }],
+  ['malformed native ID', (app) => { app.sourceVersions[0].id = '02158520123'; }],
+  ['malformed MR iid', (app) => { app.iid = [266334]; }],
+  ['missing source head', (app) => { delete app.sourceVersions[0].head_sha; }],
+  ['malformed unselected source head', (app) => { app.sourceVersions.push({ ...app.sourceVersions[0], id: 1, selected: false, head_sha: 123 }); }],
+  ['another pinned source', (app) => { app.sourceVersions[0].id = 1; }],
+  ['conflicting pinned source head', (app) => { app.sourceVersions[0].head_sha = 'a'.repeat(40); }],
+  ['conflicting same-version target head', (app) => { app.targetVersions[0].head_sha = 'a'.repeat(40); }],
+  ['conflicting unselected source/target heads', (app) => { app.sourceVersions.push({ ...app.sourceVersions[0], id: 1, selected: false });app.targetVersions.push({ ...app.targetVersions[0], id: 1, selected: false, head_sha: 'a'.repeat(40) }); }],
+  ['conflicting unselected source/target kinds', (app) => { app.sourceVersions.push({ ...app.sourceVersions[0], id: 1, selected: false });app.targetVersions.push({ ...app.targetVersions[0], id: 1, selected: false, is_merge_head: true }); }],
+  ['unknown target kind', (app) => { delete app.targetVersions[0].is_merge_head; }],
+  ['unexplained different target revision', (app) => { app.targetVersions[0].id = 1; }],
+  ['different source href revision', (app) => { app.sourceVersions[0].href = '/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=1'; }],
+  ['external target href', (app) => { app.targetVersions[0].href = 'https://evil.example/gitlab-org/gitlab/-/merge_requests/266334/diffs'; }],
+]) test(`rejects ${name} instead of guessing source/target provenance`, () => {
+  nativeFixture();const snapshot = gitLabFileSearchSnapshot(fixture);mutate(snapshot.app);
+  assert.throws(() => assertGitLabFileSearchScope(snapshot));
 });
 
 test('does not adopt projected clones or a changed native result revision as original search results', () => {
@@ -62,6 +108,7 @@ function protocol(options = {}) {
   let query = '';let selected = false;let collapsed = false;let active = false;let focused = false;let shift = false;let proof = false;let nativeSelected = false;let cleaned = false;
   const calls = [];const events = [];
   const read = () => ({
+    app: options.targetChanged && nativeSelected ? nativeApp(true) : { ...nativeApp(), ...(options.targetMetadataChanged && nativeSelected ? { targetVersions: [{ ...nativeApp().targetVersions[0], is_base: false }] } : {}), ...(options.sourceMetadataChanged && nativeSelected ? { sourceVersions: [{ ...nativeApp().sourceVersions[0], version_index: 3 }] } : {}) },
     url: fixture.url + (selected ? `${nativeSelected ? '&file_path=' + encodeURIComponent(fixture.path) : ''}#${fixture.anchor}` : ''),
     unique: { host: 1, input: 1, nav: 1, roots: 1 },
     search: { value: query, label: 'Search (e.g. *.vue) (F)', visible: true, focused },
@@ -110,6 +157,9 @@ for (const [name, options] of [
   ['untrusted native result click', { untrustedNative: true }],
   ['obstructed action', { obstructed: true }],
   ['unfiltered native results', { unfilteredResults: true }],
+  ['selected target changed during search', { targetChanged: true }],
+  ['native target metadata changed at the same head', { targetMetadataChanged: true }],
+  ['native source metadata changed at the same head', { sourceMetadataChanged: true }],
 ]) test(`protocol rejects ${name} and performs cleanup`, async () => {
   const p = protocol(options);await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
   assert.equal(p.cleaned(), true);assert.equal(p.query(), '');
