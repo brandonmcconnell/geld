@@ -3,9 +3,12 @@ import type { ProviderReviewPanelEvent } from '../providers/review-panel';
 import type { ProviderReviewPage, ProviderReviewSnapshot } from '../providers/types';
 import { BitbucketApiError, BitbucketClient } from './api';
 import type { BitbucketActivity, BitbucketAuthor, BitbucketComment, BitbucketPullRequest, BitbucketStatus, BitbucketTask } from './api';
+import { createBitbucketApiAuthorPresentation } from './author-name';
+import type { BitbucketApiAuthorPresentation } from './author-name';
 
 export interface BitbucketReviewSnapshot extends ProviderReviewSnapshot {
   readonly tasks: readonly BitbucketTask[];
+  readonly apiAuthorPresentation?: BitbucketApiAuthorPresentation;
 }
 
 interface Unavailable {
@@ -225,5 +228,5 @@ export async function fetchBitbucketReview(page: ProviderReviewPage, signal: Abo
   };
   const commentsCoverage = commentResult.status === 'rejected' ? 'unavailable' : normalized.unavailable.some((source) => source.area === 'comments') ? 'partial' : 'complete';
   const threadsCoverage = commentsCoverage !== 'complete' ? commentsCoverage : normalized.unavailable.some((source) => source.area === 'thread state') ? 'partial' : 'complete';
-  return { input, comments: normalized.comments, sourceCoverage: { comments: commentsCoverage, threads: threadsCoverage }, events, tasks, complete, unavailable, approvalsRequired: null, approvalsLeft: null, actions: [] };
+  return { input, comments: normalized.comments, apiAuthorPresentation: createBitbucketApiAuthorPresentation(input, normalized.comments, sourceComments), sourceCoverage: { comments: commentsCoverage, threads: threadsCoverage }, events, tasks, complete, unavailable, approvalsRequired: null, approvalsLeft: null, actions: [] };
 }

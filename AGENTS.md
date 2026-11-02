@@ -1770,6 +1770,10 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Each phase retains its own source and cleanup evidence, while the wrapper watches transition requests and restores the complete original author/theme/source signature in finally without changing native classes, styles or settings.
   Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
   Bitbucket author names use the native body font, medium weight and default text token independently of its smaller subdued timestamps.
+  When that exact native comment is entirely unmounted, its existing API snapshot can supply only a bounded plaintext display name through the presentation seam, matched by full snapshot head, provider, repository, review, immutable source tuple and native UUID.
+  Fetch generations, abort state and current-route guards reject stale names without persistent listeners or observers, while the conversation controller discards its snapshot and panel on clear or disable.
+  An existing invalid or duplicate native target blocks fallback and a valid original header takes precedence.
+  The API name never changes login or account identity and supplies no avatar dimensions, profile, badge, automation or service trust, and the API head grants no new native diff-source authority.
   Copied Atlassian avatar classes can fill the containing box through logical sizing even when the image has measured physical dimensions, so each verified avatar lives in its own measured, non-growing relative slot rather than directly in the full-width byline.
   Preserve native avatar classes and theme tokens, and constrain both logical and physical slot dimensions without freezing computed colors.
   Bitbucket's rendered comment document inherits font settings from a native parent outside the sanitized body, so bind only that verified parent's base-font and normal-text font custom properties to the owned body host.
