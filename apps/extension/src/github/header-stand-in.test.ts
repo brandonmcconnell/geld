@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { allCategories, DEFAULT_SETTINGS } from '@geld/core';
 import { EMPTY_BREAKDOWN } from './breakdown';
-import { applyHeaderStats, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
+import { applyHeaderStats, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
 
 /** A pull request header's tab row as GitHub renders it, its counts wrapper empty for a change of binary files only. */
 function header(wrapper: string | null): void {
@@ -85,6 +85,27 @@ describe('syncCountsStandIn', () => {
     document.querySelector('[class*="rightContentWrapper"]')!.insertAdjacentHTML('beforeend', REAL_COUNTS);
     expect(syncCountsStandIn({ additions: 3330, deletions: 2986 })).toBe(true);
     expect(document.querySelector('[data-geld-counts-stand-in]')).toBeNull();
+    expect(findHeaderStatGroups().map((group) => group.original?.additions)).toEqual([22]);
+  });
+
+  it("holds the counts' place with GitHub's skeleton until Geld's counts are ready, then puts them in its very place", () => {
+    // GitHub's skeleton, seen while it holds the wrapper; then GitHub empties the wrapper with its counts still to come.
+    header('<div class="rightContentWrapper__DE7XPN"><!--$--><div class="skeleton__c5fLaY rectangular__E8KpBt" style="width:80px"></div><!--/$--></div>');
+    expect(syncCountsStandIn('skeleton')).toBe(false);
+    document.querySelector('.skeleton__c5fLaY')!.remove();
+    expect(syncCountsStandIn('skeleton')).toBe(true);
+    const skeleton = countsSkeletonStandIn();
+    expect(skeleton?.className).toBe('skeleton__c5fLaY rectangular__E8KpBt');
+    expect(skeleton?.style.width).toBe('80px');
+    // Nothing for the header pass to read yet, and the wrapper is not GitHub's busy one.
+    expect(findHeaderStatGroups()).toEqual([]);
+    // Something standing before it (the review group) stays where it is when the counts come.
+    const before = document.createElement('span');
+    before.setAttribute('data-geld-ui', '');
+    skeleton!.before(before);
+    expect(syncCountsStandIn({ additions: 22, deletions: 12 })).toBe(true);
+    expect(countsSkeletonStandIn()).toBeNull();
+    expect(before.nextElementSibling?.getAttribute('data-geld-counts-stand-in')).toBe('22:12');
     expect(findHeaderStatGroups().map((group) => group.original?.additions)).toEqual([22]);
   });
 

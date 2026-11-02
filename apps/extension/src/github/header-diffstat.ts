@@ -26,12 +26,15 @@ export function parseDiffstat(payload: unknown): StandInTotals | null {
   return { additions, deletions };
 }
 
-/** GitHub's totals for the header, once they have been read; asks for them the first time, calling `landed` when they arrive. */
-export function headerDiffstat(pullPath: string, sha: string | null, landed: () => void): StandInTotals | null {
+/**
+ * GitHub's totals for the header: undefined while being asked (the first call asks, `landed` is called when they
+ * arrive), null when GitHub could not say.
+ */
+export function headerDiffstat(pullPath: string, sha: string | null, landed: () => void): StandInTotals | null | undefined {
   const known = asks.get(pullPath);
   if (known !== undefined && (known.sha === sha || sha === null || known.sha === null || Date.now() - known.at < REASK_AFTER_MS)) {
     if (sha !== null) known.sha = sha;
-    return known.totals ?? null;
+    return known.totals;
   }
   const ask: Ask = { sha, at: Date.now(), totals: undefined };
   asks.set(pullPath, ask);
@@ -46,7 +49,7 @@ export function headerDiffstat(pullPath: string, sha: string | null, landed: () 
       // An answer for a head no longer asked about is not this one's.
       if (asks.get(pullPath) !== ask) return;
       ask.totals = totals;
-      if (totals !== null) landed();
+      landed();
     });
-  return null;
+  return undefined;
 }

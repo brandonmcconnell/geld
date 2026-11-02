@@ -5,7 +5,7 @@ export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
-import { countsWrapperBusy, isCountsStandIn } from './header-stats';
+import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
 import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
@@ -241,6 +241,12 @@ function standAnchor(): HTMLElement | null {
   if (home !== null && countsWrapperBusy(home)) {
     removeStand();
     return null;
+  }
+  // Geld's skeleton holding the counts' place: the group stands before it, and the counts take its very place.
+  const skeleton = countsSkeletonStandIn();
+  if (skeleton !== null && row.contains(skeleton)) {
+    document.querySelector(`.${MARK_CLASS}`)?.remove();
+    return skeleton.checkVisibility() ? skeleton : null;
   }
   if (home === null) {
     home = row.querySelector<HTMLElement>(`:scope > .${STAND_CLASS}`) ?? createElement('div', { class: STAND_CLASS, [OWN_UI_ATTRIBUTE]: '' });

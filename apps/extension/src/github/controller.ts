@@ -27,7 +27,7 @@ import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, wat
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
-import type { StandInTotals } from './header-stats';
+import type { StandIn } from './header-stats';
 import { headerDiffstat } from './header-diffstat';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
@@ -345,7 +345,7 @@ export class GeldController {
   private headerScan: { readonly stateKey: string; readonly groups: readonly HeaderStatGroup[] } | null = null;
   private headerDirty = true;
   /** The last pass's word on Geld's stand-in counts: what the pre-paint path keeps when GitHub's counts come or go. */
-  private countsStandInWanted: StandInTotals | null = null;
+  private countsStandInWanted: StandIn | null = null;
   /**
    * Something changed while the tab was hidden. A background tab does no
    * work at all (GitHub keeps mutating it: relative-time ticks, live socket
@@ -432,7 +432,11 @@ export class GeldController {
       if (headerAdded) this.headerDirty = true;
       // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
       // steps aside, or comes back, in the same frame.
-      if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) this.onCountsStandInChanged();
+      if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) {
+        this.onCountsStandInChanged();
+        // The stand-in changed before paint (GitHub's skeleton gone, or its counts arrived): the header is rewritten now.
+        this.applyHeaderNow();
+      }
       if (this.settledHeader === null) {
         if (this.headerDirty) this.applyHeaderNow();
       } else {
@@ -1640,21 +1644,23 @@ export class GeldController {
   }
 
   /**
-   * A pull request header with no line counts of GitHub's (its skeleton, or the empty wrapper it can leave for seconds
-   * before they render) gets a stand-in (`syncCountsStandIn`) carrying GitHub's own totals, read from the request
-   * GitHub's header makes for them (`headerDiffstat`), so the header shows them, rewritten, as soon as they are known
-   * and GitHub's counts read the same when they come. Without that answer, a diff with no line changes still gets its
-   * zeros, which GitHub never shows. True when the header changed (and was marked to be read again).
+   * What stands in a pull request header with no line counts of GitHub's (`syncCountsStandIn`): Geld's counts the moment
+   * they are ready, else Geld's skeleton in place of GitHub's. Ready is the page's diff (what is hidden), the
+   * repository's config (what hides it) and GitHub's own totals (`headerDiffstat`, one quick request: Geld's numbers are
+   * those totals less what it hides, as when it rewrites GitHub's counts, so GitHub's read the same when they render and
+   * nothing moves). With no totals from GitHub the diff's own sums do. A diff that cannot be had leaves GitHub's totals
+   * as they are, as GitHub's counts would be. True when the header changed (and was marked to be read again).
    */
   private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[], url: URL): boolean {
-    let want: StandInTotals | null = null;
+    let want: StandIn | null = null;
     const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0] ?? null;
     if (page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host))) {
-      want = headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged());
-      if (want === null) {
-        const state = this.diffSource.request(page.diffUrl, sha, 'page');
-        if (state.status === 'ready' && state.files.length > 0 && state.files.every((file) => file.additions === 0 && file.deletions === 0)) want = { additions: 0, deletions: 0 };
-      }
+      const github = headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged());
+      const state = this.diffSource.request(page.diffUrl, sha, 'page');
+      if (state.status === 'failed') want = github ?? null;
+      else if (state.status === 'ready' && github !== undefined && !this.configPending(repoFromPathname(url.pathname))) {
+        want = github ?? state.files.reduce((sum, file) => ({ additions: sum.additions + file.additions, deletions: sum.deletions + file.deletions }), { additions: 0, deletions: 0 });
+      } else want = 'skeleton';
     }
     this.countsStandInWanted = want;
     const changed = syncCountsStandIn(want);
