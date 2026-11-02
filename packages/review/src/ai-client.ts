@@ -21,6 +21,7 @@ export interface ChatCompletionOptions {
   readonly schemaName?: string;
   readonly temperature?: number;
   readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
 }
 
 export type ChatCompletionResult =
@@ -80,6 +81,7 @@ export async function listModels(fetchImpl: FetchLike, baseUrl: string, apiKey: 
   try {
     const response = await fetchImpl(joinUrl(baseUrl, '/v1/models'), {
       headers: { authorization: `Bearer ${apiKey}`, accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) return { ok: false, reason: `Models request failed (${response.status}).` };
     const body: unknown = await response.json();
@@ -123,7 +125,7 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
         accept: 'application/json',
       },
       body: JSON.stringify(body),
-      ...(controller === null ? {} : { signal: controller.signal }),
+      ...((options.signal || controller) ? { signal: AbortSignal.any([...(options.signal ? [options.signal] : []), ...(controller ? [controller.signal] : [])]) } : {}),
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload: unknown = await response.json();
