@@ -2260,3 +2260,8 @@ The case closes its provider page before restoring exact raw settings and local 
 A GitLab Rapid Diff page can report idle before its client-side target file and native file tree have hydrated.
 The installed shell acceptance waits within its existing bounded poll for a mounted target or a qualified original reveal control, and records only its final bounded readiness fields when neither becomes available.
 An idle server-rendered page alone does not establish target unavailability or authorize a guessed reveal action.
+
+Native GitLab target-version metadata may omit `base_sha` while retaining exact `head_sha` and `start_sha`;
+source-version and file diff refs still provide the required full base.
+The shell acceptance permits that missing target field but rejects any contradictory present target base.
+Its single initial native URL includes the known unchanged `file_path`, matching retained native file links, so an unmounted virtual tree entry is not a prerequisite for loading that file.
