@@ -142,11 +142,15 @@ export interface ProviderListAuthor {
 
 export type ProviderListAuthorFetcher = (listUrl: URL, visibleReviewUrls: readonly string[], signal: AbortSignal) => Promise<readonly ProviderListAuthor[]>;
 
+export interface ProviderReviewActionContext { readonly current: () => boolean }
+
 export interface ProviderReviewAction {
-  readonly kind: 'approve' | 'request-changes' | 'comment';
+  readonly kind: 'approve' | 'request-changes' | 'comment' | 'open-pending-review';
+  /** Adapter-owned identity of the rendered native action lifetime, without credential or draft data. */
+  readonly scopeKey?: string;
   readonly available: boolean;
   readonly reason?: string;
-  activate(): Promise<boolean>;
+  activate(context?: ProviderReviewActionContext): Promise<boolean>;
 }
 
 export interface ProviderReviewSnapshot {
