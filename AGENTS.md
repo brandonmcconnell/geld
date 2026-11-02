@@ -1708,6 +1708,16 @@ A merged pull request with outside authors is locked once all of them have signe
 
 ## Verifying changes
 
+GitLab web `discussions.json` can serialize note IDs as canonical decimal strings, including CodeRabbit note `3436654383`;
+do not assume the REST notes endpoint's numeric shape in installed response observers.
+Normalize native comment IDs only as positive safe integer numbers or canonical decimal strings, and reject leading zeroes, whitespace, scientific notation and unsafe integers before associating a permalink.
+Typed system LabelNote and StateNote events can instead use SHA-shaped IDs matching their discussion IDs;
+retain those as separate system-event identities and never promote them to comment permalinks or reviewer bindings.
+The retained CodeRabbit corpus spans a 100-discussion page and a 12-discussion cursor continuation;
+a native 20-discussion preview or the first 100-page body alone cannot prove complete source coverage.
+CodeRabbit's command-copy acceptance is an explicit `gitlab-coderabbit` slice, excluded from default and `all` navigation, and must confirm the actual native account/source before real personal trust and clipboard input.
+Missing or invalid fresh fixture data returns an explicit unavailable case after successful cleanup, while confirmed-fixture product invariants and cleanup failures still fail acceptance.
+
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.

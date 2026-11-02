@@ -15,6 +15,7 @@ import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
+import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 import { BITBUCKET_NATIVE_BASH, discoverNativeBash, observeNativeBashSources } from './bitbucket-native-bash.mjs';
@@ -40,6 +41,7 @@ const FOCUSED_CASES = {
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-review': ['gitlab-overview-digest'],
   'gitlab-bot': ['gitlab-bot-digest'],
+  'gitlab-coderabbit': ['gitlab-coderabbit-digest'],
   'gitlab-binary': ['gitlab-binary-counts'],
   'gitlab-references': ['gitlab-commit-link-counts', 'gitlab-native-commit-reference', 'gitlab-commit-counts'],
   github: ['github-regression'],
@@ -48,6 +50,7 @@ const FOCUSED_CASES = {
 const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const coldBitbucketList = ['bitbucket-list', 'bitbucket-list-commit'].includes(focus);
 const commitSources = new WeakMap();
+const codeRabbitSources = new WeakMap();
 const nativeBashSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
@@ -322,6 +325,9 @@ async function runCase(name, url, body, discovery = false) {
       item.reason = 'Native Bash discovery requires its explicit literal focus, including exclusion from all. No navigation or feature pass.';
       return;
     }
+    if (name === 'gitlab-coderabbit-digest' && focus === 'all') {
+      item.status = 'not_selected';item.reason = 'CodeRabbit native-source and clipboard acceptance is explicit-focus only; no extra corpus navigation in all/default slices.';return;
+    }
     if (name === 'bitbucket-list-authors' && focus === 'all') {
       item.status = 'not_selected';
       item.reason = 'Dedicated author-only slice avoids repeating the author acquisition already covered by the full list case. No navigation or feature pass.';
@@ -395,6 +401,7 @@ async function runCase(name, url, body, discovery = false) {
       }
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
+    if (name === 'gitlab-coderabbit-digest') codeRabbitSources.set(page, observeCodeRabbitFixture(page, item, extensionId));
     if (name === 'bitbucket-diff') observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
@@ -2641,6 +2648,23 @@ try {
     return {};
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
+  await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => verifyCodeRabbitCommands(page, item, {
+    fixture: codeRabbitSources.get(page), context: browser.defaultBrowserContext(), poll, openReviewAncestors, clickReviewButton, capture,
+    readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY),
+    withdrawTrust: async (binding) => {
+      await options.bringToFront();await poll(() => options.$eval('#trusted-review-accounts', (area) => area.value), (value) => value.trim() === binding, 'Actual CodeRabbit account setting is visible before withdrawal');
+      await options.click('#trusted-review-accounts');await options.keyboard.down('Control');await options.keyboard.press('KeyA');await options.keyboard.up('Control');await options.keyboard.press('Backspace');
+      const handle = await options.evaluateHandle(() => document.querySelector('#trusted-review-accounts')?.parentElement?.querySelector('button') ?? null);const button = handle.asElement();assert.ok(button !== null);
+      try { assert.equal(await button.evaluate((node) => node.textContent), 'Save trusted accounts');await button.evaluate((node) => node.scrollIntoView({ block: 'center' }));await button.click(); } finally { await discardHandle(handle); }
+      await poll(botSettings, (settings) => settings.trustedReviewAccounts.length === 0, 'Real options Save withdraws the CodeRabbit binding');
+      return { input: 'Real trusted-account editor selection, Backspace and pointer Save', bindingRemoved: true };
+    },
+    restoreTrust: (original) => options.evaluate(async (key, before) => {
+      const current = (await chrome.storage.sync.get(key))[key] ?? {};
+      if (Object.hasOwn(before, 'trustedReviewAccounts')) current.trustedReviewAccounts = before.trustedReviewAccounts;else delete current.trustedReviewAccounts;
+      await chrome.storage.sync.set({ [key]: current });
+    }, SETTINGS_KEY, original),
+  }));
   await runCase('cross-provider-settings', GL_MIXED, verifyCrossProviderSettings);
   await runCase('github-regression', GH_FILES, async (page, item) => {
     item.state = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all !== null && state.visible !== null && state.hiddenCount > 0 && state.categories.some((category) => category.id === 'tests' && category.count > 0), 'Installed GitHub public fixture classification');
