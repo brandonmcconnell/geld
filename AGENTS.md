@@ -2283,7 +2283,7 @@ Keep the complete original raw settings vector, change only the master flag, rem
 Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
 
 The literal Bitbucket local-reviewed acceptance uses the existing public PR22 outdated human comment and already-issued review/commit responses, with no helper request or fabricated source identity.
-A local mark on an already-outdated item preserves its native Outdated state and group while its explicit device-local notice survives a real reload and Undo removes only that mark.
+A local mark moves an outdated item to the owned Reviewed on this device group while preserving its separate native Outdated status, and Undo restores the outdated item.
 The case closes its provider page before restoring exact raw settings and local storage presence, and any observed review API write fails acceptance.
 
 A GitLab Rapid Diff page can report idle before its client-side target file and native file tree have hydrated.
