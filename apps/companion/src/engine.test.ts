@@ -114,3 +114,23 @@ describe('Claude companion boundaries', () => {
     }
   });
 });
+
+it('cancels local work after the browser disconnects and makes the companion available again', async () => {
+  const secret='x'.repeat(64);const broker=createRelayBroker([{id:'cancel',host:'claude.local.geld.invalid',secret,kind:'claude'}]);
+  broker.server.listen(0,'127.0.0.1');await once(broker.server,'listening');
+  const address=broker.server.address();if(!address||typeof address==='string')throw new Error('Missing address');
+  const endpoint={url:`http://127.0.0.1:${address.port}`,channel:'cancel',secret,allowHttp:true};
+  let started:()=>void=()=>undefined,canceled:()=>void=()=>undefined;
+  const ready=new Promise<void>(resolve=>{started=resolve;});const stopped=new Promise<void>(resolve=>{canceled=resolve;});
+  const abort=new AbortController();const caller=new AbortController();
+  const handler=companionHandler({models:async()=>[{id:'sonnet',name:'Sonnet'}],complete:async(_input,signal)=>{started();return new Promise<string>((_resolve,reject)=>{if(!signal)throw new Error('Missing cancellation signal');signal.addEventListener('abort',()=>{canceled();reject(new Error('Canceled'));},{once:true});});}});
+  const connector=pollConnector(endpoint,'claude.local.geld.invalid',handler,abort.signal,'claude');
+  try {
+    const api=relayFetch(endpoint,'claude.local.geld.invalid','claude');
+    const work=api('https://claude.local.geld.invalid/v1/chat/completions',{method:'POST',signal:caller.signal,body:JSON.stringify({model:'sonnet',messages:[{role:'user',content:'Fixture'}]})});
+    await ready;caller.abort();await expect(work).rejects.toThrow();
+    await Promise.race([stopped,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Local work did not cancel')),2500))]);
+    expect(broker.pendingCount()).toBe(0);
+    expect(await (await api('https://claude.local.geld.invalid/v1/models')).json()).toEqual({data:[{id:'sonnet',name:'Sonnet'}]});
+  } finally {abort.abort();broker.close();await connector;}
+});

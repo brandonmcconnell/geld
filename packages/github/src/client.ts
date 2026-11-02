@@ -39,7 +39,7 @@ export function createApiTransport(options: {
   const now = options.now ?? Date.now;
   return {
     async request(path, init = {}) {
-      if (path.startsWith('/') || path.includes('\\')) return { ok: false, reason: 'invalid_response' };
+      if (path.startsWith('/') || path.includes('\\') || path.split(/[?#]/, 1)[0]?.split('/').some(segment => /^(?:\.|%2e){1,2}$/i.test(segment))) return { ok: false, reason: 'invalid_response' };
       const url = new URL(path, base);
       if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname))
         return { ok: false, reason: 'invalid_response' };

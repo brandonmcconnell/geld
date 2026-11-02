@@ -61,15 +61,15 @@ async function handlePOST(request: Request): Promise<Response> {
   const parsed = inputSchema.safeParse(value);
   if (!parsed.success) return json({ error: 'Invalid provider settings' }, 400);
   const input = parsed.data;
+  if (input.mode === 'login' && (input.provider !== 'claude' || input.key !== undefined))
+    return json({ error: 'Claude login connections do not accept an API key' }, 400);
   if (
     input.provider !== 'geld' &&
     !(input.provider === 'claude' && input.mode === 'login') &&
     (!input.baseUrl || !allowedAiUrl(input.baseUrl))
   )
     return json(
-      {
-        error: 'Choose an approved HTTPS provider or ask the deployment operator to allow your gateway host',
-      },
+      { error: 'Choose an approved HTTPS provider or ask the deployment operator to allow your gateway host' },
       400,
     );
   const db = database();
@@ -82,12 +82,7 @@ async function handlePOST(request: Request): Promise<Response> {
         [input.teamId, actor.id],
       );
       if (!eligible.rows.length || !input.capCents)
-        return json(
-          {
-            error: 'The safety net requires a team admin, a card on file and a positive spending cap',
-          },
-          403,
-        );
+        return json({ error: 'The safety net requires a team admin, a card on file and a positive spending cap' }, 403);
     }
     const encrypted = input.key ? await encryptCredential(input.key) : null;
     const id = input.id ?? crypto.randomUUID();
@@ -108,7 +103,7 @@ async function handlePOST(request: Request): Promise<Response> {
       capCents: input.capCents ?? 0,
     };
     await db.query(
-      'INSERT INTO ai_providers(id,user_id,provider,label,base_url,encrypted_key,enabled,settings) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label,base_url = EXCLUDED.base_url,encrypted_key = COALESCE(EXCLUDED.encrypted_key,ai_providers.encrypted_key),enabled = EXCLUDED.enabled,settings = EXCLUDED.settings WHERE ai_providers.user_id = $2',
+      "INSERT INTO ai_providers(id,user_id,provider,label,base_url,encrypted_key,enabled,settings) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET label = EXCLUDED.label,base_url = EXCLUDED.base_url,encrypted_key = CASE WHEN EXCLUDED.settings->>'mode'='login' THEN NULL ELSE COALESCE(EXCLUDED.encrypted_key,ai_providers.encrypted_key) END,enabled = EXCLUDED.enabled,settings = EXCLUDED.settings WHERE ai_providers.user_id = $2",
       [
         id,
         actor.id,
@@ -127,12 +122,7 @@ async function handlePOST(request: Request): Promise<Response> {
       );
     return json({ id });
   } catch {
-    return json(
-      {
-        error: 'Provider settings could not be saved. Check encryption configuration and try again.',
-      },
-      503,
-    );
+    return json({ error: 'Provider settings could not be saved. Check encryption configuration and try again.' }, 503);
   }
 }
 async function handleDELETE(request: Request): Promise<Response> {

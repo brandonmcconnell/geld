@@ -5,16 +5,9 @@ import type { ChatMessage } from '@geld/review/ai-client';
 import { completeConfigured } from './ai-config';
 import type { AiConfiguration } from './ai-config';
 const openAiChunk = z.object({
-  choices: z.array(
-    z.object({
-      delta: z.object({ content: z.string().nullable().optional() }),
-    }),
-  ),
+  choices: z.array(z.object({ delta: z.object({ content: z.string().nullable().optional() }) })),
 });
-const claudeChunk = z.object({
-  type: z.string(),
-  delta: z.object({ text: z.string().optional() }).optional(),
-});
+const claudeChunk = z.object({ type: z.string(), delta: z.object({ text: z.string().optional() }).optional() });
 export async function openAiStream(
   config: AiConfiguration,
   messages: readonly ChatMessage[],
@@ -46,15 +39,8 @@ export async function openAiStream(
         redirect: 'error',
         signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]),
         headers: claude
-          ? {
-              'x-api-key': config.apiKey,
-              'anthropic-version': '2023-06-01',
-              'content-type': 'application/json',
-            }
-          : {
-              authorization: `Bearer ${config.apiKey}`,
-              'content-type': 'application/json',
-            },
+          ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
+          : { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify(
           claude
             ? {

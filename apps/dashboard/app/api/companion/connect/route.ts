@@ -21,24 +21,18 @@ async function handlePOST(request: Request): Promise<Response> {
     !broker.success ||
     new URL(broker.data).protocol !== 'https:' ||
     new URL(broker.data).username ||
-    new URL(broker.data).password
+    new URL(broker.data).password ||
+    new URL(broker.data).search ||
+    new URL(broker.data).hash
   )
-    return json(
-      {
-        error: 'Your deployment operator needs to configure a public HTTPS companion relay first',
-      },
-      503,
-    );
+    return json({ error: 'Your deployment operator needs to configure a public HTTPS companion relay first' }, 503);
   const db = database();
   if (!db) return json({ error: 'Companion storage is unavailable' }, 503);
   const channel = crypto.randomUUID();
   const secret = crypto.randomUUID() + crypto.randomUUID();
   const paired = await transaction(db, async (sql) => {
     const row = z
-      .object({
-        relay_channel: z.string().nullable(),
-        settings: z.object({ mode: z.string().optional() }),
-      })
+      .object({ relay_channel: z.string().nullable(), settings: z.object({ mode: z.string().optional() }) })
       .safeParse(
         (
           await sql.query(
@@ -65,23 +59,14 @@ async function handlePOST(request: Request): Promise<Response> {
     return true;
   });
   return paired
-    ? new Response(
-        JSON.stringify({
-          version: 1,
-          brokerUrl: broker.data,
-          channel,
-          secret,
-          kind: 'claude',
-        }),
-        {
-          headers: {
-            'content-type': 'application/json',
-            'content-disposition': 'attachment; filename="geld-companion.json"',
-            'cache-control': 'no-store',
-            'x-content-type-options': 'nosniff',
-          },
+    ? new Response(JSON.stringify({ version: 1, brokerUrl: broker.data, channel, secret, kind: 'claude' }), {
+        headers: {
+          'content-type': 'application/json',
+          'content-disposition': 'attachment; filename="geld-companion.json"',
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
         },
-      )
+      })
     : json({ error: 'Claude login connection not found' }, 404);
 }
 

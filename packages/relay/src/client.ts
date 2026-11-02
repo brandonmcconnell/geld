@@ -77,48 +77,86 @@ export function relayFetch(
 export async function pollConnector(
   endpoint: RelayEndpoint,
   host: string,
-  execute: (request: RelayRequest) => Promise<Response>,
+  execute: (request: RelayRequest, signal: AbortSignal) => Promise<Response>,
   signal: AbortSignal,
   kind: 'github' | 'claude' = 'github',
 ): Promise<void> {
   while (!signal.aborted) {
     try {
       const page = z
-        .object({ requests: z.array(relayRequestSchema).max(5) })
+        .object({ requests: z.array(relayRequestSchema).max(5), supportsCancellation: z.boolean().default(false) })
         .parse(await relayCall(endpoint, 'poll', {}, signal));
-      await Promise.all(
-        page.requests.map(async (request) => {
-          if (signal.aborted) return;
-          let result;
-          try {
-            if (!allowedRelayUrl(request.url, host, kind)) throw new Error('Rejected');
-            const response = await execute(request);
-            const headers: Record<string, string> = {};
-            for (const [key, value] of response.headers)
-              if (
-                [
-                  'content-type',
-                  'x-accepted-github-permissions',
-                  'x-ratelimit-remaining',
-                  'retry-after',
-                  'x-ratelimit-reset',
-                  'location',
-                ].includes(key.toLowerCase())
-              )
-                headers[key] = value;
-            const body = await response.text();
-            result = {
-              id: request.id,
-              status: response.status,
-              headers,
-              body: body.length <= 12000000 ? body : '',
-            };
-          } catch {
-            result = { id: request.id, status: 503, headers: {}, body: '' };
-          }
-          await relayCall(endpoint, 'result', result, signal);
-        }),
-      );
+      const active = new Map<string, AbortController>();
+      const monitor = new AbortController();
+      let checking: Promise<void> | null = null;
+      const timer = page.supportsCancellation
+        ? setInterval(() => {
+            if (checking || !active.size) return;
+            checking = (async () => {
+              const status = z
+                .object({ active: z.array(z.uuid()).max(5) })
+                .parse(
+                  await relayCall(
+                    endpoint,
+                    'status',
+                    { ids: [...active.keys()] },
+                    AbortSignal.any([signal, monitor.signal, AbortSignal.timeout(5000)]),
+                  ),
+                );
+              for (const [id, controller] of active) if (!status.active.includes(id)) controller.abort();
+            })()
+              .catch(() => {
+                for (const controller of active.values()) controller.abort();
+              })
+              .finally(() => {
+                checking = null;
+              });
+          }, 1000)
+        : null;
+      try {
+        await Promise.all(
+          page.requests.map(async (request) => {
+            if (signal.aborted) return;
+            const controller = new AbortController();
+            active.set(request.id, controller);
+            const requestSignal = AbortSignal.any([signal, controller.signal]);
+            let result;
+            try {
+              if (!allowedRelayUrl(request.url, host, kind)) throw new Error('Rejected');
+              const response = await execute(request, requestSignal);
+              const headers: Record<string, string> = {};
+              for (const [key, value] of response.headers)
+                if (
+                  [
+                    'content-type',
+                    'x-accepted-github-permissions',
+                    'x-ratelimit-remaining',
+                    'retry-after',
+                    'x-ratelimit-reset',
+                    'location',
+                  ].includes(key.toLowerCase())
+                )
+                  headers[key] = value;
+              const body = await response.text();
+              result = { id: request.id, status: response.status, headers, body: body.length <= 12000000 ? body : '' };
+            } catch {
+              result = { id: request.id, status: 503, headers: {}, body: '' };
+            }
+            try {
+              await relayCall(endpoint, 'result', result, signal);
+            } catch (error) {
+              if (!requestSignal.aborted) throw error;
+            } finally {
+              active.delete(request.id);
+            }
+          }),
+        );
+      } finally {
+        if (timer !== null) clearInterval(timer);
+        monitor.abort();
+        for (const controller of active.values()) controller.abort();
+        await checking;
+      }
     } catch {
       if (!signal.aborted)
         await new Promise<void>((resolve) => {

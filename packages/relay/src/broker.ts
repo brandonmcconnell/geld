@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ReplayGuard, relayRequestSchema, relayResultSchema, allowedRelayUrl, signRelay } from './protocol';
@@ -29,6 +30,9 @@ export function createRelayBroker(
   resolveChannel?: (id: string) => Promise<RelayChannel | null>,
   now: () => number = Date.now,
 ) {
+  let lookupTokens = 16;
+  let lookupAt = now();
+  let lookupsRunning = 0;
   const pending = new Map<string, Map<string, Pending>>();
   const guards = new Map<string, ReplayGuard>();
   const polls = new Map<string, () => void>();
@@ -51,29 +55,57 @@ export function createRelayBroker(
   }
   const server = createServer(async (request, response) => {
     const path = (request.url ?? '').split('?')[0] ?? '';
-    const match = /^\/v1\/channels\/([a-zA-Z0-9_-]{1,100})\/(request|poll|result)$/.exec(path);
-    let channel: RelayChannel | undefined;
-    try {
-      const id = match?.[1];
-      channel = id
-        ? (channels.find((c) => c.id === id) ??
-          (resolveChannel ? ((await resolveChannel(id)) ?? undefined) : undefined))
-        : undefined;
-    } catch {
-      response.writeHead(503);
+    const match = /^\/v1\/channels\/([a-zA-Z0-9_-]{1,100})\/(request|poll|result|status)$/.exec(path);
+    const id = match?.[1];
+    if (!id || request.method !== 'POST') {
+      response.writeHead(404);
       response.end();
       return;
     }
-    if (!match || !channel || request.method !== 'POST') {
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(request.headers))
+      if (typeof value === 'string') headers.set(name, value);
+    const at = headers.get('x-geld-time');
+    if (
+      !at ||
+      !/^\d+$/.test(at) ||
+      Math.abs(now() - Number(at)) > 60000 ||
+      !z.uuid().safeParse(headers.get('x-geld-nonce')).success ||
+      !/^[a-f0-9]{64}$/.test(headers.get('x-geld-signature') ?? '')
+    ) {
+      response.writeHead(401);
+      response.end();
+      return;
+    }
+    let channel = channels.find((c) => c.id === id);
+    if (!channel && resolveChannel) {
+      const time = now();
+      lookupTokens = Math.min(16, lookupTokens + Math.max(0, time - lookupAt) * 0.008);
+      lookupAt = time;
+      if (lookupTokens < 1 || lookupsRunning >= 2) {
+        response.writeHead(429, { 'retry-after': '1' });
+        response.end();
+        return;
+      }
+      lookupTokens -= 1;
+      lookupsRunning += 1;
+      try {
+        channel = (await resolveChannel(id)) ?? undefined;
+      } catch {
+        response.writeHead(503);
+        response.end();
+        return;
+      } finally {
+        lookupsRunning -= 1;
+      }
+    }
+    if (!channel) {
       response.writeHead(404);
       response.end();
       return;
     }
     try {
       const body = await bodyOf(request);
-      const headers = new Headers();
-      for (const [name, value] of Object.entries(request.headers))
-        if (typeof value === 'string') headers.set(name, value);
       let guard = guards.get(channel.id);
       if (!guard) guard = new ReplayGuard();
       if (!guard.verify(channel.secret, 'POST', path, body, headers, now())) {
@@ -91,6 +123,18 @@ export function createRelayBroker(
         pending.set(channel.id, queue);
       }
       const method = match[2];
+      if (method === 'status') {
+        const input = z
+          .object({ ids: z.array(z.uuid()).max(5) })
+          .strict()
+          .safeParse(JSON.parse(body));
+        if (!input.success) {
+          reply({ error: 'Invalid status request' }, 400);
+          return;
+        }
+        reply({ active: input.data.ids.filter((id) => queue.has(id)) });
+        return;
+      }
       if (method === 'request') {
         const parsed = relayRequestSchema.safeParse(JSON.parse(body));
         if (!parsed.success || !allowedRelayUrl(parsed.data.url, channel.host, channel.kind) || queue.size >= 10) {
@@ -139,7 +183,7 @@ export function createRelayBroker(
           });
         const work = available().slice(0, 5);
         for (const item of work) item.claimed = true;
-        reply({ requests: work.map((w) => w.request) });
+        reply({ requests: work.map((w) => w.request), supportsCancellation: true });
         return;
       }
       const parsed = relayResultSchema.safeParse(JSON.parse(body));

@@ -39,6 +39,8 @@ export function databaseChannelResolver(): ((id: string) => Promise<RelayChannel
     connectionString: url,
     max: 4,
     idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+    statement_timeout: 2000,
   });
   db.on('error', () => undefined);
   return async (id) => {

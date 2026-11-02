@@ -9,31 +9,23 @@ import type { RelayRequest } from '@geld/relay';
 const completionSchema = z.object({
   model: z.string().min(1).max(200),
   messages: z
-    .array(
-      z.object({
-        role: z.enum(['system', 'user', 'assistant']),
-        content: z.string().max(400000),
-      }),
-    )
+    .array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string().max(400000) }))
     .min(1)
     .max(16),
   response_format: z
-    .object({
-      type: z.literal('json_schema'),
-      json_schema: z.object({ schema: z.record(z.string(), z.unknown()) }),
-    })
+    .object({ type: z.literal('json_schema'), json_schema: z.object({ schema: z.record(z.string(), z.unknown()) }) })
     .optional(),
 });
 export interface ClaudeEngine {
-  complete(input: {
-    readonly model: string;
-    readonly messages: readonly {
-      readonly role: string;
-      readonly content: string;
-    }[];
-    readonly schema?: Record<string, unknown>;
-  }): Promise<string>;
-  models(): Promise<readonly { readonly id: string; readonly name: string }[]>;
+  complete(
+    input: {
+      readonly model: string;
+      readonly messages: readonly { readonly role: string; readonly content: string }[];
+      readonly schema?: Record<string, unknown>;
+    },
+    signal?: AbortSignal,
+  ): Promise<string>;
+  models(signal?: AbortSignal): Promise<readonly { readonly id: string; readonly name: string }[]>;
 }
 export function claudeEnvironment(source: NodeJS.ProcessEnv): Record<string, string> {
   const result: Record<string, string> = {
@@ -72,10 +64,7 @@ export function restrictedOptions(executable: string, cwd: string, abortControll
     env: claudeEnvironment(process.env),
     tools: [],
     allowedTools: [],
-    canUseTool: async () => ({
-      behavior: 'deny',
-      message: 'Geld review requests cannot use tools',
-    }),
+    canUseTool: async () => ({ behavior: 'deny', message: 'Geld review requests cannot use tools' }),
     permissionMode: 'default',
     settingSources: [],
     skills: [],
@@ -91,20 +80,28 @@ export function restrictedOptions(executable: string, cwd: string, abortControll
   };
 }
 export function sdkEngine(executable: string): ClaudeEngine {
-  async function inDirectory<T>(run: (cwd: string, abort: AbortController) => Promise<T>): Promise<T> {
+  async function inDirectory<T>(
+    run: (cwd: string, abort: AbortController) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const cwd = await mkdtemp(join(tmpdir(), 'geld-review-'));
     const abort = new AbortController();
+    const cancel = () => abort.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) abort.abort();
     const timer = setTimeout(() => abort.abort(), 90000);
     try {
+      if (abort.signal.aborted) throw abort.signal.reason;
       return await run(cwd, abort);
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
       abort.abort();
       await rm(cwd, { recursive: true, force: true });
     }
   }
   return {
-    complete: (input) =>
+    complete: (input, signal) =>
       inDirectory(async (cwd, abort) => {
         const session = query({
           prompt: JSON.stringify({ conversation: input.messages }),
@@ -128,66 +125,55 @@ export function sdkEngine(executable: string): ClaudeEngine {
         } finally {
           session.close();
         }
-      }),
-    models: () =>
+      }, signal),
+    models: (signal) =>
       inDirectory(async (cwd, abort) => {
         async function* idle(): AsyncGenerator<SDKUserMessage> {
-          await new Promise<void>((resolve) =>
-            abort.signal.addEventListener('abort', () => resolve(), {
-              once: true,
-            }),
-          );
+          await new Promise<void>((resolve) => abort.signal.addEventListener('abort', () => resolve(), { once: true }));
         }
-        const session = query({
-          prompt: idle(),
-          options: restrictedOptions(executable, cwd, abort),
-        });
+        const session = query({ prompt: idle(), options: restrictedOptions(executable, cwd, abort) });
         try {
-          return (await session.supportedModels()).map((model) => ({
-            id: model.value,
-            name: model.displayName,
-          }));
+          return (await session.supportedModels()).map((model) => ({ id: model.value, name: model.displayName }));
         } finally {
           session.close();
         }
-      }),
+      }, signal),
   };
 }
-export function companionHandler(engine: ClaudeEngine): (request: RelayRequest) => Promise<Response> {
+export function companionHandler(
+  engine: ClaudeEngine,
+): (request: RelayRequest, signal?: AbortSignal) => Promise<Response> {
   let busy = false;
-  return async (request) => {
+  return async (request, signal) => {
     if (!allowedRelayUrl(request.url, 'claude.local.geld.invalid', 'claude'))
       return Response.json({ error: 'Destination rejected' }, { status: 403 });
     const path = new URL(request.url).pathname;
     if (busy) return Response.json({ error: 'Your companion is handling another request' }, { status: 429 });
     busy = true;
     try {
-      if (path === '/v1/models' && request.method === 'GET') return Response.json({ data: await engine.models() });
+      if (path === '/v1/models' && request.method === 'GET')
+        return Response.json({ data: await engine.models(signal) });
       if (path !== '/v1/chat/completions' || request.method !== 'POST')
         return Response.json({ error: 'Unsupported companion operation' }, { status: 405 });
       const value: unknown = JSON.parse(request.body ?? 'null');
       const input = completionSchema.safeParse(value);
       if (!input.success) return Response.json({ error: 'Invalid review request' }, { status: 400 });
-      const text = await engine.complete({
-        model: input.data.model,
-        messages: input.data.messages,
-        ...(input.data.response_format ? { schema: input.data.response_format.json_schema.schema } : {}),
-      });
+      const text = await engine.complete(
+        {
+          model: input.data.model,
+          messages: input.data.messages,
+          ...(input.data.response_format ? { schema: input.data.response_format.json_schema.schema } : {}),
+        },
+        signal,
+      );
       if (text.length > 2000000) throw new Error('Response too large');
       return Response.json({
         model: input.data.model,
-        choices: [
-          {
-            message: { role: 'assistant', content: text },
-            finish_reason: 'stop',
-          },
-        ],
+        choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
       });
     } catch {
       return Response.json(
-        {
-          error: 'Claude could not complete this request. Check your local sign-in and model access.',
-        },
+        { error: 'Claude could not complete this request. Check your local sign-in and model access.' },
         { status: 503 },
       );
     } finally {

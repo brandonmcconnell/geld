@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { readFile, writeFile, mkdir, access, chmod } from 'node:fs/promises';
+import { readFile, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, isAbsolute, delimiter } from 'node:path';
 import { spawn } from 'node:child_process';
 import { pollConnector } from '@geld/relay';
 import { pairingSchema } from './config';
+import { savePairing } from './storage';
 import { sdkEngine, companionHandler, claudeEnvironment } from './engine';
 const folder = join(homedir(), '.config', 'geld');
 const configFile = join(folder, 'companion.json');
@@ -36,13 +37,7 @@ async function main(): Promise<void> {
     const raw = await readFile(file, 'utf8');
     if (raw.length > 10000) throw new Error('Invalid pairing file');
     const config = pairingSchema.parse(JSON.parse(raw));
-    await mkdir(folder, { recursive: true, mode: 0o700 });
-    await chmod(folder, 0o700);
-    await writeFile(configFile, JSON.stringify(config), {
-      mode: 0o600,
-      flag: 'w',
-    });
-    await chmod(configFile, 0o600);
+    await savePairing(folder, config);
     process.stdout.write('Companion paired. Remove the downloaded pairing file, then run geld-companion serve.\n');
     return;
   }

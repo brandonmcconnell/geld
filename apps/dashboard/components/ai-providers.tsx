@@ -25,10 +25,7 @@ const rowSchema = z.object({
   has_key: z.boolean(),
   settings: providerSettingsSchema,
 });
-const responseSchema = z.object({
-  providers: z.array(rowSchema),
-  configured: z.boolean(),
-});
+const responseSchema = z.object({ providers: z.array(rowSchema), configured: z.boolean() });
 type ProviderRow = z.infer<typeof rowSchema>;
 export function AiProviders() {
   const { session } = useDashboard();
@@ -330,7 +327,7 @@ export function AiProviders() {
                   mode,
                   label: label || (provider === 'claude' ? 'Claude' : 'My gateway'),
                   baseUrl: provider === 'claude' ? 'https://api.anthropic.com' : url,
-                  key,
+                  ...(provider === 'claude' && mode === 'login' ? {} : { key }),
                   enabled: true,
                   models: model
                     .split(',')
@@ -351,6 +348,8 @@ export function AiProviders() {
                   value={provider}
                   onChange={(event) => {
                     setProvider(event.target.value);
+                    setMode('api');
+                    setKey('');
                     if (event.target.value === 'openai') setUrl('https://api.openai.com');
                   }}
                 >
@@ -365,7 +364,10 @@ export function AiProviders() {
                   <select
                     className="field"
                     value={mode}
-                    onChange={(event) => setMode(event.target.value === 'login' ? 'login' : 'api')}
+                    onChange={(event) => {
+                      setMode(event.target.value === 'login' ? 'login' : 'api');
+                      setKey('');
+                    }}
                   >
                     <option value="api">API key</option>
                     <option value="login">Claude login through local companion</option>
