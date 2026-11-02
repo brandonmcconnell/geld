@@ -67,6 +67,15 @@ test('cross-provider settings selects one bounded case and does not broaden the 
   assert.deepEqual(select({ body: marker('cross-provider-settings'), from: marker('gitlab-review') }), { focus: 'cross-provider-settings', run: 'true', failures: [] });
 });
 
+test('GitLab whitespace characterization is one explicit literal with no default/all/regression demand', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['gitlab-whitespace-viewed']), ['gitlab-whitespace-viewed']);assert.equal(cases.regression.includes('gitlab-whitespace-viewed'), false);
+  assert.deepEqual(select({ body: marker('gitlab-whitespace-viewed'), from: marker('github') }), { focus: 'gitlab-whitespace-viewed', run: 'true', failures: [] });
+  assert.match(harness, /whitespacePrivacy && focus !== 'gitlab-whitespace-viewed'/);
+  assert.match(harness, /await runCase\('gitlab-whitespace-viewed', GL_MIXED/);
+});
+
 test('unchanged cross-provider settings prose edits do not enqueue another two-provider visit', () => {
   assert.deepEqual(select({ body: `${marker('cross-provider-settings')}\nNew evidence`, from: `${marker('cross-provider-settings')}\nEarlier evidence` }), { focus: 'cross-provider-settings', run: 'false', failures: [] });
 });
