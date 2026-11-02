@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { ChevronDown, FileCode2, MessageSquare } from 'lucide-react';
+import { ChevronDown, FileCode2, MessageSquare } from '@/components/icons';
 import type { PlanFile, HunkRef } from '@geld/review/plan';
 import { cn } from 'cn';
 export function diffId(path: string): string {

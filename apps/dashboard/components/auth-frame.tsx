@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ShieldCheck } from '@/components/icons';
 import { Brand } from './brand';
+import { PrivacySettingsButton } from './privacy-settings-button';
 
 export function AuthFrame({ children }: { readonly children: ReactNode }) {
   return (
@@ -18,6 +19,7 @@ export function AuthFrame({ children }: { readonly children: ReactNode }) {
         <div className="auth-content">{children}</div>
         <footer className="auth-footer">
           <ShieldCheck size={14} /> Your code stays yours. <Link href="/privacy">Privacy policy</Link>
+          <PrivacySettingsButton />
         </footer>
       </div>
       <aside className="auth-story" aria-label="Review with clarity">

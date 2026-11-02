@@ -20,14 +20,15 @@
         "url": "/github/acme/platform/pull/128",
         "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "additions": 84,
-        "deletions": 21,
+        "additions": 31,
+        "deletions": 5,
         "labels": [
           "review",
           "improvement"
         ],
         "reviewers": [
-          "demo-reviewer"
+          "alex",
+          "sam"
         ],
         "capabilities": [
           "read",
@@ -60,7 +61,8 @@
           "fix"
         ],
         "reviewers": [
-          "demo-reviewer"
+          "alex",
+          "sam"
         ],
         "capabilities": [
           "read",
@@ -93,7 +95,7 @@
           "navigation"
         ],
         "reviewers": [
-          "demo-reviewer"
+          "morgan"
         ],
         "capabilities": [
           "read",
@@ -126,7 +128,7 @@
           "api"
         ],
         "reviewers": [
-          "demo-reviewer"
+          "morgan"
         ],
         "capabilities": [
           "read",
@@ -159,7 +161,7 @@
           "performance"
         ],
         "reviewers": [
-          "demo-reviewer"
+          "morgan"
         ],
         "capabilities": [
           "read",
@@ -245,19 +247,23 @@
       "url": "/github/acme/platform/pull/128",
       "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "additions": 84,
-      "deletions": 21,
+      "additions": 31,
+      "deletions": 5,
       "labels": [
         "review",
         "improvement"
       ],
       "reviewers": [
-        "demo-reviewer"
+        "alex",
+        "sam"
       ],
       "capabilities": [
         "read",
         "comment",
-        "review"
+        "review",
+        "merge",
+        "settings",
+        "delete"
       ]
     },
     "files": [
@@ -327,7 +333,8 @@
             ]
           }
         ],
-        "hidden": false
+        "hidden": false,
+        "category": null
       },
       {
         "path": "src/review/progress.test.ts",
@@ -365,7 +372,317 @@
             ]
           }
         ],
-        "hidden": true
+        "hidden": true,
+        "category": "Tests"
+      },
+      {
+        "path": "src/review/storage.ts",
+        "oldPath": "src/review/storage.ts",
+        "status": "modified",
+        "binary": false,
+        "hidden": false,
+        "category": null,
+        "additions": 7,
+        "deletions": 2,
+        "hunks": [
+          {
+            "header": "@@ -1,2 +1,7 @@",
+            "oldStart": 1,
+            "oldLines": 2,
+            "newStart": 1,
+            "newLines": 7,
+            "lines": [
+              {
+                "kind": "removed",
+                "text": "const storageKey = 'review-progress';",
+                "oldLine": 1,
+                "newLine": null
+              },
+              {
+                "kind": "removed",
+                "text": "export const load = () => JSON.parse(localStorage.getItem(storageKey));",
+                "oldLine": 2,
+                "newLine": null
+              },
+              {
+                "kind": "added",
+                "text": "export function loadProgress(accountId, pull) {",
+                "oldLine": null,
+                "newLine": 1
+              },
+              {
+                "kind": "added",
+                "text": "  const key = ['review-progress', accountId, pull].join(':');",
+                "oldLine": null,
+                "newLine": 2
+              },
+              {
+                "kind": "added",
+                "text": "  const stored = localStorage.getItem(key);",
+                "oldLine": null,
+                "newLine": 3
+              },
+              {
+                "kind": "added",
+                "text": "  if (!stored) return null;",
+                "oldLine": null,
+                "newLine": 4
+              },
+              {
+                "kind": "added",
+                "text": "  try { return validateProgress(JSON.parse(stored)); }",
+                "oldLine": null,
+                "newLine": 5
+              },
+              {
+                "kind": "added",
+                "text": "  catch { return null; }",
+                "oldLine": null,
+                "newLine": 6
+              },
+              {
+                "kind": "added",
+                "text": "}",
+                "oldLine": null,
+                "newLine": 7
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "src/review/fingerprint.ts",
+        "oldPath": "src/review/fingerprint.ts",
+        "status": "modified",
+        "binary": false,
+        "hidden": false,
+        "category": null,
+        "additions": 4,
+        "deletions": 1,
+        "hunks": [
+          {
+            "header": "@@ -1,1 +1,4 @@",
+            "oldStart": 1,
+            "oldLines": 1,
+            "newStart": 1,
+            "newLines": 4,
+            "lines": [
+              {
+                "kind": "removed",
+                "text": "export const fingerprint = step => step.title;",
+                "oldLine": 1,
+                "newLine": null
+              },
+              {
+                "kind": "added",
+                "text": "export function fingerprint(step) {",
+                "oldLine": null,
+                "newLine": 1
+              },
+              {
+                "kind": "added",
+                "text": "  const text = step.touches.map(touch => touch.content).join('\\n');",
+                "oldLine": null,
+                "newLine": 2
+              },
+              {
+                "kind": "added",
+                "text": "  return stableHash(text);",
+                "oldLine": null,
+                "newLine": 3
+              },
+              {
+                "kind": "added",
+                "text": "}",
+                "oldLine": null,
+                "newLine": 4
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "src/review/storage.test.ts",
+        "oldPath": "src/review/storage.test.ts",
+        "status": "added",
+        "binary": false,
+        "hidden": true,
+        "category": "Tests",
+        "additions": 4,
+        "deletions": 0,
+        "hunks": [
+          {
+            "header": "@@ -1,0 +1,4 @@",
+            "oldStart": 1,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 4,
+            "lines": [
+              {
+                "kind": "added",
+                "text": "it('isolates review decisions by account', () => {",
+                "oldLine": null,
+                "newLine": 1
+              },
+              {
+                "kind": "added",
+                "text": "  saveProgress('jordan', pull, completed);",
+                "oldLine": null,
+                "newLine": 2
+              },
+              {
+                "kind": "added",
+                "text": "  expect(loadProgress('morgan', pull)).toBeNull();",
+                "oldLine": null,
+                "newLine": 3
+              },
+              {
+                "kind": "added",
+                "text": "});",
+                "oldLine": null,
+                "newLine": 4
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "docs/review-guides.md",
+        "oldPath": "docs/review-guides.md",
+        "status": "added",
+        "binary": false,
+        "hidden": true,
+        "category": "Docs",
+        "additions": 2,
+        "deletions": 0,
+        "hunks": [
+          {
+            "header": "@@ -1,0 +1,2 @@",
+            "oldStart": 1,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 2,
+            "lines": [
+              {
+                "kind": "added",
+                "text": "## Saved progress",
+                "oldLine": null,
+                "newLine": 1
+              },
+              {
+                "kind": "added",
+                "text": "Unchanged steps keep their decisions after a push.",
+                "oldLine": null,
+                "newLine": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "oldPath": "pnpm-lock.yaml",
+        "status": "modified",
+        "binary": false,
+        "hidden": true,
+        "category": "Generated",
+        "additions": 2,
+        "deletions": 1,
+        "hunks": [
+          {
+            "header": "@@ -1,1 +1,2 @@",
+            "oldStart": 1,
+            "oldLines": 1,
+            "newStart": 1,
+            "newLines": 2,
+            "lines": [
+              {
+                "kind": "removed",
+                "text": "  review-parser: 1.0.0",
+                "oldLine": 1,
+                "newLine": null
+              },
+              {
+                "kind": "added",
+                "text": "  review-parser: 1.1.0",
+                "oldLine": null,
+                "newLine": 1
+              },
+              {
+                "kind": "added",
+                "text": "  integrity: sha512-synthetic-fixture",
+                "oldLine": null,
+                "newLine": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "AGENTS.md",
+        "oldPath": "AGENTS.md",
+        "status": "added",
+        "binary": false,
+        "hidden": true,
+        "category": "Agent instructions",
+        "additions": 1,
+        "deletions": 0,
+        "hunks": [
+          {
+            "header": "@@ -1,0 +1,1 @@",
+            "oldStart": 1,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 1,
+            "lines": [
+              {
+                "kind": "added",
+                "text": "Review progress belongs to an account and a pull request.",
+                "oldLine": null,
+                "newLine": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "src/review/fingerprint.test.ts",
+        "oldPath": "src/review/fingerprint.test.ts",
+        "status": "added",
+        "binary": false,
+        "hidden": true,
+        "category": "Tests",
+        "additions": 3,
+        "deletions": 0,
+        "hunks": [
+          {
+            "header": "@@ -1,0 +1,3 @@",
+            "oldStart": 1,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 3,
+            "lines": [
+              {
+                "kind": "added",
+                "text": "it('changes when the hunk changes', () => {",
+                "oldLine": null,
+                "newLine": 1
+              },
+              {
+                "kind": "added",
+                "text": "  expect(fingerprint(before)).not.toBe(fingerprint(after));",
+                "oldLine": null,
+                "newLine": 2
+              },
+              {
+                "kind": "added",
+                "text": "});",
+                "oldLine": null,
+                "newLine": 3
+              }
+            ]
+          }
+        ]
       }
     ],
     "comments": [
@@ -375,7 +692,26 @@
         "body": "This keeps the decisions from unchanged steps. The supporting test covers restoring an accepted step after a new push.",
         "path": null,
         "line": null,
-        "url": "https://github.com/acme/platform/pull/128#issuecomment-1"
+        "url": "https://github.com/acme/platform/pull/128#issuecomment-1",
+        "createdAt": "2026-11-01T10:15:00Z"
+      },
+      {
+        "id": "design-comment-2",
+        "author": "sam",
+        "createdAt": "2026-11-01T11:04:00Z",
+        "body": "The account boundary is covered now. I\u2019ll take another look at the storage changes before approving.",
+        "path": null,
+        "line": null,
+        "url": "/github/acme/platform/pull/128#issuecomment-2"
+      },
+      {
+        "id": "geld-summary",
+        "author": "github-actions[bot]",
+        "createdAt": "2026-11-01T12:00:00Z",
+        "body": "<!-- geld:summary:v1 -->\n<span title='geld:{\"v\":1,\"generatedAt\":\"2026-11-01T12:00:00Z\",\"headSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"producer\":{\"kind\":\"action\",\"version\":\"1.0.0\",\"ai\":false},\"items\":[],\"bots\":[{\"id\":\"greptile\",\"login\":\"greptile-apps[bot]\",\"verdict\":\"clean\",\"score\":5,\"reviewedSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},{\"id\":\"coderabbit\",\"login\":\"coderabbitai[bot]\",\"verdict\":\"clean\",\"reviewedSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}],\"reviewers\":[{\"login\":\"sam\",\"state\":\"approved\"},{\"login\":\"alex\",\"state\":\"pending\"}],\"fold\":{\"comments\":[],\"events\":[]},\"previews\":[{\"host\":\"vercel\",\"project\":\"dashboard\",\"status\":\"ready\",\"url\":\"https://preview.example.test\",\"inspectUrl\":null,\"anchor\":\"issuecomment-3\"}]}'></span>",
+        "path": null,
+        "line": null,
+        "url": "/github/acme/platform/pull/128#issuecomment-3"
       }
     ],
     "commentsUnavailable": false,

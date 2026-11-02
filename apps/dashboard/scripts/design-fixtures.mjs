@@ -11,7 +11,7 @@ const team = {
   name: 'Platform engineering',
   role: 'admin',
   tier: 'business',
-  seats: 8,
+  seats: 3,
   used_credits: 124,
   cap_cents: 5000,
   spent_cents: 850,
@@ -57,31 +57,113 @@ const plan = {
       title: 'Preserve completed review steps',
       kind: 'fix',
       story:
-        'Previously, updating a pull request reset every step to pending. This change compares each step’s fingerprint and keeps the reviewer’s decision when the underlying code has not changed.',
-      why: 'Reviewers can spend their time on new changes instead of repeating work they already completed.',
-      touches: fixture.review.files.filter((f) => !f.hidden).map((f) => ({ path: f.path, hunk: 0 })),
-      supporting: fixture.review.files.filter((f) => f.hidden).map((f) => ({ path: f.path, hunk: 0 })),
+        'Match saved decisions to the exact code being reviewed. A step keeps its decision only when its fingerprint still matches.',
+      why: 'A new push should ask for another look only where the code changed.',
+      touches: [{ path: 'src/review/progress.ts', hunk: 0 }],
+      supporting: [{ path: 'src/review/progress.test.ts', hunk: 0 }],
       dependsOn: [],
-      watch: [
-        'A changed fingerprint must always reset the previous decision.',
-        'New steps must start in the pending state.',
-      ],
+      watch: ['A changed fingerprint must reset the previous decision.'],
       findings: [],
       fingerprint: 'design-fingerprint',
+    },
+    {
+      id: 'account-storage',
+      title: 'Keep saved progress inside the account',
+      kind: 'fix',
+      story:
+        'Include the account and pull request in the storage key, then validate saved progress before restoring it.',
+      why: 'Switching accounts must never restore another reviewer’s decisions.',
+      touches: [{ path: 'src/review/storage.ts', hunk: 0 }],
+      supporting: [{ path: 'src/review/storage.test.ts', hunk: 0 }],
+      dependsOn: ['preserve'],
+      watch: ['Malformed saved data should return an empty state.'],
+      findings: [],
+      fingerprint: 'storage-fingerprint',
+    },
+    {
+      id: 'fingerprint',
+      title: 'Compare the changed code',
+      kind: 'refactor',
+      story:
+        'Derive fingerprints from the changed hunks rather than the step title. Renaming a guide step should not invalidate a decision.',
+      why: null,
+      touches: [{ path: 'src/review/fingerprint.ts', hunk: 0 }],
+      supporting: [{ path: 'src/review/fingerprint.test.ts', hunk: 0 }],
+      dependsOn: [],
+      watch: [],
+      findings: [],
+      fingerprint: 'content-fingerprint',
     },
   ],
 };
 async function configure(context, state = {}) {
   const writes = [];
+  const stressFiles = Array.from({ length: 50 }, (_, index) => {
+    const template = fixture.review.files.find((file) => !file.hidden);
+    return {
+      ...template,
+      path: 'src/modules/module-' + String(index + 1).padStart(2, '0') + '.ts',
+      hidden: false,
+      category: null,
+      additions: template.additions * 4,
+      deletions: template.deletions * 4,
+      hunks: Array.from({ length: 4 }, (_, hunk) => ({
+        ...template.hunks[0],
+        header: '@@ -' + (hunk * 20 + 1) + ',4 +' + (hunk * 20 + 1) + ',7 @@',
+        oldStart: hunk * 20 + 1,
+        newStart: hunk * 20 + 1,
+        lines: template.hunks[0].lines.map((line) => ({
+          ...line,
+          oldLine: line.oldLine === null ? null : line.oldLine + hunk * 20,
+          newLine: line.newLine === null ? null : line.newLine + hunk * 20,
+        })),
+      })),
+    };
+  });
+  const activeReview = state.largeGuide
+    ? { ...fixture.review, files: stressFiles }
+    : state.staleBot || state.untrustedDigest
+      ? {
+          ...fixture.review,
+          comments: fixture.review.comments.map((comment) =>
+            comment.id === 'geld-summary'
+              ? {
+                  ...comment,
+                  author: state.untrustedDigest ? 'untrusted-author' : comment.author,
+                  body: state.staleBot
+                    ? comment.body.replaceAll(
+                        '"reviewedSha":"' + fixture.review.pull.headSha + '"',
+                        '"reviewedSha":"' + 'b'.repeat(40) + '"',
+                      )
+                    : comment.body,
+                }
+              : comment,
+          ),
+        }
+      : fixture.review;
+  const activePlan = state.largeGuide
+    ? {
+        ...plan,
+        steps: Array.from({ length: 200 }, (_, index) => ({
+          ...plan.steps[index % plan.steps.length],
+          id: 'stress-' + index,
+          title: index + 1 + '. ' + plan.steps[index % plan.steps.length].title,
+          dependsOn: [],
+          touches: [{ path: stressFiles[Math.floor(index / 4)].path, hunk: index % 4 }],
+          supporting: [],
+        })),
+      }
+    : plan;
   await context.addInitScript(
-    ({ user, plan, guided }) => {
+    ({ user, plan, guided, gpc }) => {
+      if (gpc) Object.defineProperty(navigator, 'globalPrivacyControl', { value: true, configurable: true });
       if (guided && !localStorage.getItem(`geld.review.v2:${user.id}:/github/acme/platform/pull/128`))
         localStorage.setItem(
           `geld.review.v2:${user.id}:/github/acme/platform/pull/128`,
           JSON.stringify({ plan, progress: {} }),
         );
     },
-    { user, plan, guided: !!state.guided },
+    { user, plan: activePlan, guided: !!state.guided, gpc: !!state.gpc },
   );
   await context.route('**/api/**', async (route) => {
     const request = route.request(),
@@ -98,8 +180,57 @@ async function configure(context, state = {}) {
         user: state.signedOut ? null : user,
         viewers: { github: 'alex' },
       };
-    else if (p === '/api/queue') {
-      if (state.queueLoading) await new Promise((resolve) => setTimeout(resolve, 3000));
+    else if (p === '/api/measurement/config')
+      data = {
+        config: state.measurement ? { key: 'phc_synthetic_fixture', host: 'https://metrics.example.test' } : null,
+      };
+    else if (p === '/api/measurement/sdk')
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: 'window.__geldMeasurement={events:[],optedOut:0};window.posthog={init(){},opt_in_capturing(){},capture(event,properties){window.__geldMeasurement.events.push({event,properties})},opt_out_capturing(){window.__geldMeasurement.optedOut++},reset(){}};',
+      });
+    else if (p === '/api/queue/insight') {
+      const pull = fixture.queue.pulls.find((pull) => pull.ref.number === Number(url.searchParams.get('number')));
+      const count = (files) => ({
+        files: files.length,
+        additions: files.reduce((sum, file) => sum + file.additions, 0),
+        deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+      });
+      const hidden = fixture.review.files.filter((file) => file.hidden);
+      const main = pull?.ref.provider === 'github' && pull.ref.number === 128;
+      const hiddenAdded = Math.floor((pull?.additions ?? 0) * 0.6);
+      const hiddenRemoved = Math.floor((pull?.deletions ?? 0) * 0.5);
+      const extraHiddenFiles = pull?.draft ? 1 : 2;
+      data = {
+        headSha: pull?.headSha ?? fixture.review.pull.headSha,
+        essential: main
+          ? count(fixture.review.files.filter((file) => !file.hidden))
+          : {
+              files: pull?.draft ? 2 : 4,
+              additions: (pull?.additions ?? 0) - hiddenAdded,
+              deletions: (pull?.deletions ?? 0) - hiddenRemoved,
+            },
+        hidden: main ? count(hidden) : { files: extraHiddenFiles, additions: hiddenAdded, deletions: hiddenRemoved },
+        categories: main
+          ? [...new Set(hidden.map((file) => file.category))].map((label) => ({
+              id: label.toLowerCase(),
+              label,
+              ...count(hidden.filter((file) => file.category === label)),
+            }))
+          : [
+              {
+                id: 'tests',
+                label: 'Tests',
+                files: extraHiddenFiles,
+                additions: hiddenAdded,
+                deletions: hiddenRemoved,
+              },
+            ],
+        requesters: pull?.ref.provider === 'github' ? (pull.ref.number === 128 ? ['alex'] : ['morgan']) : null,
+      };
+    } else if (p === '/api/queue') {
+      if (state.queueLoading) return;
       data = state.queueError
         ? { error: 'The provider could not connect.' }
         : state.emptyQueue
@@ -108,12 +239,12 @@ async function configure(context, state = {}) {
       status = state.queueError ? 503 : 200;
     } else if (p === '/api/teams') data = { teams: state.emptyTeams ? [] : [team] };
     else if (p === '/api/pull') {
-      data = fixture.review;
+      data = activeReview;
       if (state.pullError) {
         data = { error: 'Reconnect this provider to continue reviewing.' };
         status = 503;
       }
-    } else if (p === '/api/guides') data = { plan: state.guided ? plan : null };
+    } else if (p === '/api/guides') data = { plan: state.guided ? activePlan : null };
     else if (p === '/api/auth/list-accounts')
       data = state.onboarding
         ? []
@@ -168,7 +299,7 @@ async function configure(context, state = {}) {
     else if (p === `/api/teams/${teamId}/review-defaults`)
       data = {
         team: { guide_policy: policy },
-        repositories: [{ id: 'repo-1', owner: 'acme', name: 'platform', settings: {} }],
+        repositories: [{ id: 'demo-1', owner: 'acme', name: 'platform', settings: {} }],
         members,
       };
     else if (p === `/api/teams/${teamId}/sso`)
@@ -190,13 +321,13 @@ async function configure(context, state = {}) {
             id: 'outside-1',
             login: 'avery',
             permission: 'write',
-            repoId: 'repo-1',
+            repoId: 'demo-1',
             repository: 'acme/platform',
             provider: 'github',
             host: 'github.com',
           },
         ],
-        repositories: [{ id: 'repo-1', name: 'platform', owner: 'acme', provider: 'github', host: 'github.com' }],
+        repositories: [{ id: 'demo-1', name: 'platform', owner: 'acme', provider: 'github', host: 'github.com' }],
         unavailable: [],
         next: null,
       };
@@ -212,7 +343,14 @@ async function configure(context, state = {}) {
               confirmation: 'synthetic-confirmation',
             }
           : {
-              team: { ...team, managed_access: true, sync_enabled: false, add_approval: true, visibility: 'names' },
+              team: {
+                ...team,
+                role: state.member ? 'member' : 'admin',
+                managed_access: true,
+                sync_enabled: false,
+                add_approval: true,
+                visibility: 'names',
+              },
               repositories: fixture.queue.repositories.map((r) => ({
                 id: r.id,
                 name: r.ref.repo,
@@ -223,12 +361,12 @@ async function configure(context, state = {}) {
               })),
               hiddenCount: 0,
               members,
-              requests: [{ id: 'request-1', repo_id: 'repo-1', kind: 'join', state: 'pending', canDecide: true }],
+              requests: [{ id: 'request-1', repo_id: 'demo-1', kind: 'join', state: 'pending', canDecide: true }],
               grants: [
                 {
                   id: 'grant-1',
                   user_id: 'member-2',
-                  repo_id: 'repo-1',
+                  repo_id: 'demo-1',
                   mechanism: 'app',
                   source: 'geld',
                   state: 'active',
@@ -241,7 +379,7 @@ async function configure(context, state = {}) {
         installations: [{ id: 'installation-1', account_slug: 'acme', slug: 'geld-repositories', state: 'active' }],
       };
     else if (p === '/api/tracker') data = { config: { provider: 'linear', keys: ['ENG', 'APP'] } };
-    else if (p === '/api/assignments') data = { repoId: 'repo-1', members: [], requested: [] };
+    else if (p === '/api/assignments') data = { repoId: 'demo-1', members: [], requested: [] };
     else if (p === '/api/assistant')
       return route.fulfill({
         status: 200,

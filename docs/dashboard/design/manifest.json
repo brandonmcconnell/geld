@@ -17,7 +17,7 @@
     },
     {
       "name": "organization",
-      "label": "Provider organization",
+      "label": "Organization repositories",
       "file": "desktop/organization.png",
       "group": "desktop",
       "route": "/github/acme"
@@ -52,10 +52,45 @@
     },
     {
       "name": "team",
-      "label": "Team administration",
+      "label": "Team repositories",
       "file": "desktop/team.png",
       "group": "desktop",
       "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "team-members",
+      "label": "Team members",
+      "file": "desktop/team-members.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=members"
+    },
+    {
+      "name": "team-access",
+      "label": "Team access and permissions",
+      "file": "desktop/team-access.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
+    },
+    {
+      "name": "team-grants",
+      "label": "Team grant ledger",
+      "file": "desktop/team-grants.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=activity"
+    },
+    {
+      "name": "team-sso",
+      "label": "Team single sign-on",
+      "file": "desktop/team-sso.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
+    },
+    {
+      "name": "team-advanced",
+      "label": "Advanced team settings",
+      "file": "desktop/team-advanced.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
       "name": "review-defaults",
@@ -79,11 +114,18 @@
       "route": "/connect"
     },
     {
+      "name": "repository-access",
+      "label": "Repository access and visibility",
+      "file": "desktop/repository-access.png",
+      "group": "desktop",
+      "route": "/connect?view=repositories"
+    },
+    {
       "name": "settings",
-      "label": "Settings overview",
+      "label": "Settings entry point",
       "file": "desktop/settings.png",
       "group": "desktop",
-      "route": "/settings"
+      "route": "/settings/account"
     },
     {
       "name": "account",
@@ -149,9 +191,79 @@
       "route": "/not-a-dashboard-page"
     },
     {
+      "name": "sidebar-collapsed",
+      "label": "Collapsed workspace navigation",
+      "file": "desktop/sidebar-collapsed.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "queue-incoming",
+      "label": "Review requests received",
+      "file": "desktop/queue-incoming.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "queue-outgoing",
+      "label": "Review requests sent",
+      "file": "desktop/queue-outgoing.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "queue-hidden-counts",
+      "label": "Hidden change counts",
+      "file": "desktop/queue-hidden-counts.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "open-review",
+      "label": "Open a pull request by URL",
+      "file": "desktop/open-review.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "billing-plans",
+      "label": "Plan comparison",
+      "file": "desktop/billing-plans.png",
+      "group": "desktop",
+      "route": "/settings/billing"
+    },
+    {
+      "name": "sso-setup",
+      "label": "Configure team single sign-on",
+      "file": "desktop/sso-setup.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
+    },
+    {
+      "name": "team-switcher",
+      "label": "Search and switch teams",
+      "file": "desktop/team-switcher.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "account-menu",
+      "label": "Account menu",
+      "file": "desktop/account-menu.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
       "name": "provider-dialog",
       "label": "Add AI provider",
       "file": "desktop/provider-dialog.png",
+      "group": "desktop",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "provider-advanced",
+      "label": "Advanced AI provider options",
+      "file": "desktop/provider-advanced.png",
       "group": "desktop",
       "route": "/settings/providers"
     },
@@ -167,21 +279,28 @@
       "label": "Geld AI cost confirmation",
       "file": "desktop/ai-cost-confirmation.png",
       "group": "desktop",
-      "route": "/settings/providers"
+      "route": "/settings/providers?enable=geld"
     },
     {
       "name": "team-deletion",
       "label": "Team deletion preview",
       "file": "desktop/team-deletion.png",
       "group": "desktop",
-      "route": "/teams/00000000-0000-4000-8000-000000000001"
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
       "name": "collaborator-audit",
       "label": "Outside collaborator audit",
       "file": "desktop/collaborator-audit.png",
       "group": "desktop",
-      "route": "/teams/00000000-0000-4000-8000-000000000001"
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
+    },
+    {
+      "name": "tracker-status",
+      "label": "Issue tracker status connection",
+      "file": "desktop/tracker-status.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
     },
     {
       "name": "advanced-preferences",
@@ -199,7 +318,7 @@
     },
     {
       "name": "changes",
-      "label": "All changes with file navigation",
+      "label": "Diff with Geld categories",
       "file": "desktop/changes.png",
       "group": "desktop",
       "route": "/github/acme/platform/pull/128"
@@ -234,14 +353,21 @@
     },
     {
       "name": "provider-actions",
-      "label": "Provider action menu",
+      "label": "Pull request actions",
       "file": "desktop/provider-actions.png",
       "group": "desktop",
       "route": "/github/acme/platform/pull/128"
     },
     {
+      "name": "repository-actions",
+      "label": "Repository action controls",
+      "file": "desktop/repository-actions.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "conversation",
-      "label": "Pull request conversation",
+      "label": "Pull request digest",
       "file": "desktop/conversation.png",
       "group": "desktop",
       "route": "/github/acme/platform/pull/128"
@@ -250,6 +376,13 @@
       "name": "assistant",
       "label": "Review assistant",
       "file": "desktop/assistant.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "assistant-response",
+      "label": "Assistant response in context",
+      "file": "desktop/assistant-response.png",
       "group": "desktop",
       "route": "/github/acme/platform/pull/128"
     },
@@ -292,6 +425,13 @@
       "name": "guide-complete",
       "label": "Completed guided review",
       "file": "desktop/guide-complete.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "guide-large",
+      "label": "200-step guide navigation",
+      "file": "desktop/guide-large.png",
       "group": "desktop",
       "route": "/github/acme/platform/pull/128"
     },
@@ -356,14 +496,35 @@
       "label": "Set new password",
       "file": "desktop/reset-password.png",
       "group": "desktop",
-      "route": "/settings/account/reset-password"
+      "route": "/settings/account/reset-password?token=synthetic-only"
     },
     {
       "name": "reset-password-saved",
       "label": "Password reset success",
       "file": "desktop/reset-password-saved.png",
       "group": "desktop",
-      "route": "/settings/account/reset-password"
+      "route": "/settings/account/reset-password?token=synthetic-only"
+    },
+    {
+      "name": "review-signed-out",
+      "label": "Public review before sign-in",
+      "file": "desktop/review-signed-out.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "digest-stale",
+      "label": "Digest with bot reviews from an earlier commit",
+      "file": "desktop/digest-stale.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "team-permission",
+      "label": "Team admin permission state",
+      "file": "desktop/team-permission.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
       "name": "queue-empty",
@@ -437,7 +598,7 @@
     },
     {
       "name": "organization",
-      "label": "Provider organization",
+      "label": "Organization repositories",
       "file": "mobile/organization.png",
       "group": "mobile",
       "route": "/github/acme"
@@ -472,10 +633,45 @@
     },
     {
       "name": "team",
-      "label": "Team administration",
+      "label": "Team repositories",
       "file": "mobile/team.png",
       "group": "mobile",
       "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "team-members",
+      "label": "Team members",
+      "file": "mobile/team-members.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=members"
+    },
+    {
+      "name": "team-access",
+      "label": "Team access and permissions",
+      "file": "mobile/team-access.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
+    },
+    {
+      "name": "team-grants",
+      "label": "Team grant ledger",
+      "file": "mobile/team-grants.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=activity"
+    },
+    {
+      "name": "team-sso",
+      "label": "Team single sign-on",
+      "file": "mobile/team-sso.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
+    },
+    {
+      "name": "team-advanced",
+      "label": "Advanced team settings",
+      "file": "mobile/team-advanced.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
       "name": "review-defaults",
@@ -499,11 +695,18 @@
       "route": "/connect"
     },
     {
+      "name": "repository-access",
+      "label": "Repository access and visibility",
+      "file": "mobile/repository-access.png",
+      "group": "mobile",
+      "route": "/connect?view=repositories"
+    },
+    {
       "name": "settings",
-      "label": "Settings overview",
+      "label": "Settings entry point",
       "file": "mobile/settings.png",
       "group": "mobile",
-      "route": "/settings"
+      "route": "/settings/account"
     },
     {
       "name": "account",
@@ -569,9 +772,72 @@
       "route": "/not-a-dashboard-page"
     },
     {
+      "name": "queue-incoming",
+      "label": "Review requests received",
+      "file": "mobile/queue-incoming.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "queue-outgoing",
+      "label": "Review requests sent",
+      "file": "mobile/queue-outgoing.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "queue-hidden-counts",
+      "label": "Hidden change counts",
+      "file": "mobile/queue-hidden-counts.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "open-review",
+      "label": "Open a pull request by URL",
+      "file": "mobile/open-review.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "billing-plans",
+      "label": "Plan comparison",
+      "file": "mobile/billing-plans.png",
+      "group": "mobile",
+      "route": "/settings/billing"
+    },
+    {
+      "name": "sso-setup",
+      "label": "Configure team single sign-on",
+      "file": "mobile/sso-setup.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=sso"
+    },
+    {
+      "name": "team-switcher",
+      "label": "Search and switch teams",
+      "file": "mobile/team-switcher.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "account-menu",
+      "label": "Account menu",
+      "file": "mobile/account-menu.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
       "name": "provider-dialog",
       "label": "Add AI provider",
       "file": "mobile/provider-dialog.png",
+      "group": "mobile",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "provider-advanced",
+      "label": "Advanced AI provider options",
+      "file": "mobile/provider-advanced.png",
       "group": "mobile",
       "route": "/settings/providers"
     },
@@ -587,21 +853,28 @@
       "label": "Geld AI cost confirmation",
       "file": "mobile/ai-cost-confirmation.png",
       "group": "mobile",
-      "route": "/settings/providers"
+      "route": "/settings/providers?enable=geld"
     },
     {
       "name": "team-deletion",
       "label": "Team deletion preview",
       "file": "mobile/team-deletion.png",
       "group": "mobile",
-      "route": "/teams/00000000-0000-4000-8000-000000000001"
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
       "name": "collaborator-audit",
       "label": "Outside collaborator audit",
       "file": "mobile/collaborator-audit.png",
       "group": "mobile",
-      "route": "/teams/00000000-0000-4000-8000-000000000001"
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=access"
+    },
+    {
+      "name": "tracker-status",
+      "label": "Issue tracker status connection",
+      "file": "mobile/tracker-status.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
     },
     {
       "name": "advanced-preferences",
@@ -619,7 +892,7 @@
     },
     {
       "name": "changes",
-      "label": "All changes with file navigation",
+      "label": "Diff with Geld categories",
       "file": "mobile/changes.png",
       "group": "mobile",
       "route": "/github/acme/platform/pull/128"
@@ -661,14 +934,21 @@
     },
     {
       "name": "provider-actions",
-      "label": "Provider action menu",
+      "label": "Pull request actions",
       "file": "mobile/provider-actions.png",
       "group": "mobile",
       "route": "/github/acme/platform/pull/128"
     },
     {
+      "name": "repository-actions",
+      "label": "Repository action controls",
+      "file": "mobile/repository-actions.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "conversation",
-      "label": "Pull request conversation",
+      "label": "Pull request digest",
       "file": "mobile/conversation.png",
       "group": "mobile",
       "route": "/github/acme/platform/pull/128"
@@ -677,6 +957,13 @@
       "name": "assistant",
       "label": "Review assistant",
       "file": "mobile/assistant.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "assistant-response",
+      "label": "Assistant response in context",
+      "file": "mobile/assistant-response.png",
       "group": "mobile",
       "route": "/github/acme/platform/pull/128"
     },
@@ -719,6 +1006,13 @@
       "name": "guide-complete",
       "label": "Completed guided review",
       "file": "mobile/guide-complete.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "guide-large",
+      "label": "200-step guide navigation",
+      "file": "mobile/guide-large.png",
       "group": "mobile",
       "route": "/github/acme/platform/pull/128"
     },
@@ -783,14 +1077,35 @@
       "label": "Set new password",
       "file": "mobile/reset-password.png",
       "group": "mobile",
-      "route": "/settings/account/reset-password"
+      "route": "/settings/account/reset-password?token=synthetic-only"
     },
     {
       "name": "reset-password-saved",
       "label": "Password reset success",
       "file": "mobile/reset-password-saved.png",
       "group": "mobile",
-      "route": "/settings/account/reset-password"
+      "route": "/settings/account/reset-password?token=synthetic-only"
+    },
+    {
+      "name": "review-signed-out",
+      "label": "Public review before sign-in",
+      "file": "mobile/review-signed-out.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "digest-stale",
+      "label": "Digest with bot reviews from an earlier commit",
+      "file": "mobile/digest-stale.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "team-permission",
+      "label": "Team admin permission state",
+      "file": "mobile/team-permission.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001?view=advanced"
     },
     {
       "name": "queue-empty",

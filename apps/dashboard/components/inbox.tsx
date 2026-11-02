@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const schema = z.object({
   invites: z.array(z.object({ team_id: z.string(), name: z.string() })),
   notifications: z.array(

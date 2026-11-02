@@ -128,6 +128,9 @@ export interface ProviderClient {
   repositories(cursor?: string | null): Promise<ProviderResult<Page<RepositorySummary>>>;
   pulls(repo: RepositoryRef, cursor?: string | null): Promise<ProviderResult<Page<PullSummary>>>;
   pull(ref: PullRef): Promise<ProviderResult<PullDetail>>;
+  reviewRequesters?(
+    ref: PullRef,
+  ): Promise<ProviderResult<readonly { readonly reviewer: string; readonly requester: string }[]>>;
   diff(ref: PullRef): Promise<ProviderResult<string>>;
   comments(ref: PullRef): Promise<ProviderResult<readonly ProviderComment[]>>;
   comment(ref: PullRef, body: string): Promise<ProviderResult<string>>;

@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import { useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const schema = z.object({
   collaborators: z.array(
     z.object({
@@ -163,6 +163,7 @@ export function CollaboratorAudit({ teamId }: { readonly teamId: string }) {
               Include all collaborators<small> Off by default. Load every page before selecting everyone.</small>
             </span>
             <input
+              name="value"
               type="checkbox"
               disabled={busy || !!data.next}
               checked={!!people.length && people.every((person) => selected.includes(key(person)))}
@@ -195,6 +196,7 @@ export function CollaboratorAudit({ teamId }: { readonly teamId: string }) {
                     </small>
                   </span>
                   <input
+                    name="value"
                     type="checkbox"
                     disabled={busy}
                     checked={selected.includes(key(person))}
@@ -215,6 +217,7 @@ export function CollaboratorAudit({ teamId }: { readonly teamId: string }) {
                         {repo.owner}/{repo.name}
                       </span>
                       <input
+                        name="value"
                         type="checkbox"
                         disabled={busy}
                         checked={chosen.includes(repo.id)}

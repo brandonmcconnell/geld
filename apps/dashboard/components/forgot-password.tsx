@@ -1,8 +1,8 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Mail } from 'lucide-react';
-import { Button } from '@geld/ui';
+import { ArrowLeft, Mail } from '@/components/icons';
+import { Button } from '@/components/button';
 import { authClient } from '@/lib/auth-client';
 import { AuthFrame } from './auth-frame';
 import { useDashboard } from './app-shell';

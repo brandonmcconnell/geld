@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import { useDashboard } from './app-shell';
 import { RepositoryAppSetup } from './repository-app-setup';
 const schema = z.object({
@@ -34,8 +34,7 @@ export function EnterpriseSettings() {
   }, [revision]);
   return (
     <div className="page">
-      <p className="eyebrow">ENTERPRISE</p>
-      <h1>Your instances</h1>
+      <h1>Enterprise</h1>
       <p>
         Reachable public hosts use direct HTTPS. Private instances use a customer connector that polls outward. Geld
         never opens a connection into your private network.
@@ -77,7 +76,7 @@ export function EnterpriseSettings() {
         >
           <label>
             Enterprise team
-            <select className="field" required value={team} onChange={(e) => setTeam(e.target.value)}>
+            <select name="team" className="field" required value={team} onChange={(e) => setTeam(e.target.value)}>
               <option value="">Choose a team</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -89,6 +88,7 @@ export function EnterpriseSettings() {
           <label>
             Instance hostname
             <input
+              name="host"
               className="field"
               required
               value={host}

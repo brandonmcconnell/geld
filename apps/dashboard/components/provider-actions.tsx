@@ -2,7 +2,8 @@
 import { useRef, useState } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
+import { MoreHorizontal, X } from './icons';
 import type { PullRef } from '@geld/domain';
 import type { ReviewData } from '@/lib/review-contracts';
 export function ProviderActions({
@@ -26,14 +27,22 @@ export function ProviderActions({
   const mutation = useRef({ content: '', key: '' });
   return (
     <Dialog.Root>
-      <Dialog.Trigger className="text-xs underline">Provider actions</Dialog.Trigger>
+      <Dialog.Trigger className="icon-button" aria-label="Pull request actions">
+        <MoreHorizontal size={17} />
+        <span className="touch-target" aria-hidden="true" />
+      </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className="dialog-backdrop" />
         <Dialog.Popup className="dialog-popup">
-          <Dialog.Title>Provider actions</Dialog.Title>
+          <div className="dialog-heading">
+            <Dialog.Title>Pull request actions</Dialog.Title>
+            <Dialog.Close className="icon-button" aria-label="Close actions">
+              <X size={17} />
+              <span className="touch-target" aria-hidden="true" />
+            </Dialog.Close>
+          </div>
           <Dialog.Description>
-            Your own provider privileges and the repository App permissions both apply. Changes take effect on the
-            provider.
+            Changes apply to the connected Git host using your repository permissions.
           </Dialog.Description>
           <form
             className="form-stack"
@@ -68,21 +77,21 @@ export function ProviderActions({
                 const error = z.object({ error: z.string() }).safeParse(value);
                 setMessage(
                   r.ok
-                    ? 'The provider confirmed this action.'
+                    ? 'The Git host confirmed this action.'
                     : error.success
                       ? error.data.error
                       : 'The action could not be confirmed.',
                 );
                 if (r.ok) onChange();
               } catch {
-                setMessage('The action could not connect. Check the provider before retrying.');
+                setMessage('The action could not connect. Check the Git host before retrying.');
               }
               setBusy(false);
             }}
           >
             <label>
               Action
-              <select className="field" value={action} onChange={(e) => setAction(e.target.value)}>
+              <select name="action" className="field" value={action} onChange={(e) => setAction(e.target.value)}>
                 <option value="close">Close pull request</option>
                 <option value="reopen">Reopen pull request</option>
                 {data.pull.capabilities.includes('merge') && <option value="merge">Merge pull request</option>}
@@ -97,7 +106,7 @@ export function ProviderActions({
             {action === 'merge' && (
               <label>
                 Merge method
-                <select className="field" value={method} onChange={(e) => setMethod(e.target.value)}>
+                <select name="method" className="field" value={method} onChange={(e) => setMethod(e.target.value)}>
                   <option value="squash">Squash</option>
                   <option value="merge">Merge commit</option>
                   <option value="rebase">Rebase</option>
@@ -109,6 +118,7 @@ export function ProviderActions({
                 <label>
                   Change description{' '}
                   <input
+                    name="changeDescription"
                     type="checkbox"
                     checked={changeDescription}
                     onChange={(e) => setChangeDescription(e.target.checked)}
@@ -117,6 +127,7 @@ export function ProviderActions({
                 <label>
                   Description
                   <textarea
+                    name="description"
                     className="field"
                     disabled={!changeDescription}
                     value={description}
@@ -125,11 +136,17 @@ export function ProviderActions({
                 </label>
                 <label>
                   Change archive state{' '}
-                  <input type="checkbox" checked={changeArchive} onChange={(e) => setChangeArchive(e.target.checked)} />
+                  <input
+                    name="changeArchive"
+                    type="checkbox"
+                    checked={changeArchive}
+                    onChange={(e) => setChangeArchive(e.target.checked)}
+                  />
                 </label>
                 <label>
                   Archived{' '}
                   <input
+                    name="archived"
                     disabled={!changeArchive}
                     type="checkbox"
                     checked={archived}
@@ -142,6 +159,7 @@ export function ProviderActions({
               <label>
                 Type {reference.owner}/{reference.repo} to confirm permanent deletion
                 <input
+                  name="confirmation"
                   className="field"
                   required
                   value={confirmation}
@@ -149,18 +167,18 @@ export function ProviderActions({
                 />
               </label>
             )}
-            <div className="flex gap-2">
-              <Dialog.Close className="text-xs underline">Cancel</Dialog.Close>
+            <div className="dialog-actions">
+              <Dialog.Close render={<Button variant="outline" size="sm" />}>Cancel</Dialog.Close>
               <Button
                 type="submit"
                 disabled={busy || (action === 'delete' && confirmation !== `${reference.owner}/${reference.repo}`)}
               >
-                Confirm on provider
+                Confirm action
               </Button>
             </div>
             <p role="status">{message}</p>
             <a className="underline" href={data.pull.url}>
-              Open provider ↗
+              Open Git host ↗
             </a>
           </form>
         </Dialog.Popup>

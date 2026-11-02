@@ -56,6 +56,7 @@ export async function readEnterpriseInBrowser(ref: PullRef, signal: AbortSignal)
     const files = parseUnifiedDiffHunks(diff.value).map((file) => ({
       ...file,
       hidden: matcher.categorizeFile(file) !== null,
+      category: matcher.categorizeFile(file)?.title ?? null,
     }));
     const result = reviewContextSchema.safeParse({
       pull: { ...pull.value, capabilities: data.capabilities },

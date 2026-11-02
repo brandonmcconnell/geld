@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const schema = z.object({
   installations: z.array(z.object({ id: z.string(), account_slug: z.string(), slug: z.string(), state: z.string() })),
 });
@@ -32,7 +32,7 @@ export function AppMigration({ teamId }: { readonly teamId: string }) {
         </p>
         <label>
           Old installation
-          <select className="field" value={old} onChange={(e) => setOld(e.target.value)}>
+          <select name="old" className="field" value={old} onChange={(e) => setOld(e.target.value)}>
             <option value="">Choose old App</option>
             {items
               .filter((i) => i.state !== 'retired')
@@ -45,7 +45,7 @@ export function AppMigration({ teamId }: { readonly teamId: string }) {
         </label>
         <label>
           Verified replacement
-          <select className="field" value={next} onChange={(e) => setNext(e.target.value)}>
+          <select name="next" className="field" value={next} onChange={(e) => setNext(e.target.value)}>
             <option value="">Choose replacement</option>
             {items
               .filter((i) => i.state === 'verified' && i.id !== old)
@@ -58,7 +58,12 @@ export function AppMigration({ teamId }: { readonly teamId: string }) {
         </label>
         <label className="settings-row">
           <span>Move this team and retire the old installation when no other teams use it</span>
-          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+          <input
+            name="confirmed"
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+          />
         </label>
         <Button
           variant="outline"

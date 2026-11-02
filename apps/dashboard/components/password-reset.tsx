@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Button, buttonVariants } from '@geld/ui';
+import { Button, buttonVariants } from '@/components/button';
 import { authClient } from '@/lib/auth-client';
 import { AuthFrame } from './auth-frame';
 import Link from 'next/link';
