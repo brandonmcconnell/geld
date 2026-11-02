@@ -55,3 +55,33 @@ test('cleanup releases listeners, observer and frame even when the last geometry
 test('a setup snapshot error also tears down its partial observation and leaves original DOM/focus unchanged', () => {
   const f = fixture(), html = document.documentElement.outerHTML;Object.defineProperty(globalThis, 'getComputedStyle', { configurable: true, value: () => { throw Error('Offline initial metric failure'); } });assert.throws(() => trace('setup', f.button), /Offline initial metric failure/);assert.equal(disconnects, 1);assert.equal(frames.size, 0);assert.equal(trace(), null);assert.equal(document.documentElement.outerHTML, html);assert.equal(document.activeElement, f.button);
 });
+
+// Reduced direct native row/cell shape observed in the saved265 commit HTML, not arbitrary URL inference.
+function nativeAnchor(f, side = 'new') {
+  f.native.innerHTML = '<td class="rd-line-number" data-position="old"><a class="rd-line-link" data-line-number="96" href="#PRIVATE_HREF_CANARY" id="PRIVATE_ANCHOR_CANARY"></a></td><td class="rd-line-number" data-position="new"><a class="rd-line-link" data-line-number="97"></a></td><td class="rd-line-content"><pre class="rd-line-text">PRIVATE_CODE_CANARY</pre></td>';
+  return f.native.querySelector(`.rd-line-number[data-position="${side}"] a`);
+}
+for (const side of ['old', 'new']) test(`native ${side} numbered-anchor focus records only exact row coordinates and opaque identities`, () => {
+  const f = fixture(), anchor = nativeAnchor(f, side), html = document.documentElement.outerHTML;trace('setup', f.button);anchor.focus();const value = trace('stage', 'after_enter'), event = value.records.find((entry) => entry.kind === 'blur' && entry.related?.tag === 'A'), coordinate = event.related.nativeCodeAnchor;
+  assert.deepEqual({ side: coordinate.side, old: coordinate.old, new: coordinate.new, currentRootMember: coordinate.currentRootMember, sameArmedRoot: coordinate.sameArmedRoot }, { side, old: 96, new: 97, currentRootMember: true, sameArmedRoot: true });
+  assert.equal(coordinate.cellObjectId, event.related.parent.objectId);assert.equal(coordinate.nativeRootObjectId, value.armed.nativeRoot.objectId);assert.ok(Number.isSafeInteger(coordinate.rowObjectId));assert.equal(value.records.at(-1).state.active.nativeCodeAnchor.rowObjectId, coordinate.rowObjectId);assert.equal(document.documentElement.outerHTML, html);assert.equal(document.activeElement, anchor);assert.doesNotMatch(JSON.stringify(value), /PRIVATE_HREF_CANARY|PRIVATE_ANCHOR_CANARY|PRIVATE_CODE_CANARY/);
+});
+for (const [name, change] of [
+  ['authored source', (f, a) => a.parentElement.classList.add('md')],
+  ['owned source', (f, a) => a.parentElement.setAttribute('data-geld-ui', '')],
+  ['wrong row', (f) => f.native.className = 'other-row'],
+  ['wrong native tbody', (f) => f.body.className = 'other-body'],
+  ['wrong line cell side', (f, a) => a.parentElement.dataset.position = 'other'],
+  ['noncanonical number', (f, a) => a.dataset.lineNumber = '097'],
+  ['unsafe number', (f, a) => a.dataset.lineNumber = '9007199254740993'],
+  ['malformed peer number', (f) => f.native.querySelector('[data-position="old"] a').dataset.lineNumber = 'private'],
+  ['duplicate numbered peer', (f) => { const cell = f.native.querySelector('[data-position="old"]');cell.after(cell.cloneNode(true)); }],
+  ['duplicate anchor', (f, a) => a.after(a.cloneNode(true))],
+  ['nested anchor', (f, a) => { const wrap = document.createElement('span');a.replaceWith(wrap);wrap.append(a); }],
+  ['changed current native head', (f) => { const data = JSON.parse(f.root.dataset.fileData);data.diff_lines_path = data.diff_lines_path.replace('13215ca460cd4f75d3765a882ef486aa2dacf549', 'a'.repeat(40));f.root.dataset.fileData = JSON.stringify(data); }],
+  ['ambiguous current native file', (f) => f.root.after(f.root.cloneNode(true))],
+  ['anchor outside native file', (f, a) => document.body.append(a)],
+]) test(`native anchor coordinates reject ${name} without guessing from its href or label`, () => {
+  const f = fixture(), anchor = nativeAnchor(f);trace('setup', f.button);change(f, anchor);anchor.focus();const value = trace('stage', 'after_enter');assert.equal(value.records.at(-1).state.active.nativeCodeAnchor, null);assert.equal(document.activeElement, anchor);
+});
+test('an ordinary native content link never becomes a numbered code anchor', () => { const f = fixture();nativeAnchor(f);const a = document.createElement('a');a.href = '#private';a.textContent = '97';f.native.querySelector('.rd-line-content').append(a);trace('setup', f.button);a.focus();const value = trace('stage', 'after_enter');assert.equal(value.records.at(-1).state.active.nativeCodeAnchor, null); });
