@@ -1514,6 +1514,12 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Bitbucket full-hash standalone commits can explicitly load test boundaries through the shared whole-source cache and the original above/below chunk controls.
   The file action uses Atlassian theme variables, never replaces native rows, shares the persisted API cooldown, and declines dummy-only chunks, stale controls and missing native source authority.
   Bitbucket pull requests and abbreviated standalone routes still have no whole-file grant until their current native source is independently bound.
+  Bitbucket PR Find test boundaries may prepare that missing source with one explicitly requested original file-menu open and close, or reuse a separately observed trusted native opener, without visiting its source link.
+  A unique newly opened native popup and canonical source URL bind the literal ref and file owner to the same before/after API-resolved full comparison, under a separate resolved-reference provenance rather than a native full-hash claim.
+  Preparation performs no source request until the binding is current, never retries automatically, preserves naturally opened native menus, and cancels on source, comparison, owner or user-input changes.
+  A sealed popup may close normally, but connected source-link or popup-owner mutation withdraws its source binding.
+  A full API head may qualify its matching native abbreviated URL through a distinct full-head-prefix resolution, and a changing API prefix alone with stable full revisions withholds the source grant without breaking counts.
+  Bitbucket Find keeps a focusable aria-disabled state so its own native popup autofocus can return to the original control, while external focus and intervening user input remain untouched.
   Bitbucket Syntax-on code rows omit their renderer-added terminal LF only when original rowgroup position and exact native gridcell aria text agree, while malformed or ambiguous row text stays unavailable.
   Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
   The literal `bitbucket-whole-context` browser case tests one full-hash public standalone commit using original native source, one observed raw response, real boundary/fold clicks and both context directions.

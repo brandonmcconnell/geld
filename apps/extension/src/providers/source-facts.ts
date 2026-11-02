@@ -19,7 +19,7 @@ export interface ProviderGitLabTarget {
 export type ProviderAcquiredComparison =
   | { readonly kind: 'gitlab-review'; readonly headSha: string; readonly baseSha: string; readonly diffId: string | null; readonly commitId: string | null; readonly projectPath: string | null; readonly target: ProviderGitLabTarget | null }
   | { readonly kind: 'gitlab-commit' | 'gitlab-compare'; readonly headSha: string; readonly baseSha: string | null }
-  | { readonly kind: 'bitbucket-review'; readonly headSha: string; readonly baseSha: string; readonly sourceRepository: string | null; readonly topic: true }
+  | { readonly kind: 'bitbucket-review'; readonly headSha: string; readonly baseSha: string; readonly sourceRepository: string | null; readonly sourceRef?: string; readonly topic: true }
   | { readonly kind: 'bitbucket-commit'; readonly headSha: string; readonly baseSha: null };
 
 export interface ProviderNewPathFact {
@@ -51,6 +51,28 @@ export interface ProviderNativeSourceFrame {
   readonly key: string;
   current(): boolean;
   read(entry: ProviderDiffEntry): ProviderNativeNewSource | null;
+  readReference?(entry: ProviderDiffEntry): ProviderNativeSourceReference | null;
+}
+
+export interface ProviderNativeSourceReference {
+  readonly subject: ProviderSourceSubject;
+  readonly repository: RepositoryIdentity;
+  readonly path: string;
+  readonly literalRef: string;
+  readonly url: string;
+  readonly comparison: 'bitbucket-all-changes';
+  readonly acquiredComparisonKey: string;
+  readonly resolution: 'matching-api-ref' | 'full-api-head-prefix';
+}
+
+export function providerBitbucketComparisonKey(comparison: Extract<ProviderAcquiredComparison, { readonly kind: 'bitbucket-review' }>): string {
+  return JSON.stringify([comparison.headSha, comparison.baseSha, comparison.sourceRepository, comparison.sourceRef ?? null]);
+}
+
+export function providerBitbucketReferenceResolution(comparison: Extract<ProviderAcquiredComparison, { readonly kind: 'bitbucket-review' }>, literalRef: string): ProviderNativeSourceReference['resolution'] | null {
+  if (!/^(?:[0-9a-f]{7,40}|[0-9a-f]{64})$/.test(literalRef) || !comparison.headSha.startsWith(literalRef)) return null;
+  if (comparison.sourceRef === literalRef) return 'matching-api-ref';
+  return comparison.sourceRef === comparison.headSha && providerFullSha(comparison.sourceRef) ? 'full-api-head-prefix' : null;
 }
 
 export interface ProviderNewFileRevision {
@@ -58,6 +80,7 @@ export interface ProviderNewFileRevision {
   readonly path: string;
   readonly headSha: string;
   readonly key: string;
+  readonly provenance?: 'provider-resolved-native-reference';
 }
 
 export interface ProviderOutlineContext {
@@ -149,7 +172,8 @@ function parseComparison(value: unknown, subject: ProviderSourceSubject): Provid
   if (value.kind === 'bitbucket-review' && subject.repository.provider === 'bitbucket' && kind === 'review') {
     if (!providerFullSha(value.baseSha) || value.topic !== true) return null;
     if (value.sourceRepository !== null && (typeof value.sourceRepository !== 'string' || repository({ ...subject.repository, path: value.sourceRepository }) === null)) return null;
-    return { kind: value.kind, headSha: value.headSha, baseSha: value.baseSha, sourceRepository: value.sourceRepository, topic: true };
+    if (value.sourceRef !== undefined && (typeof value.sourceRef !== 'string' || !/^(?:[0-9a-f]{7,40}|[0-9a-f]{64})$/.test(value.sourceRef) || !value.headSha.startsWith(value.sourceRef))) return null;
+    return { kind: value.kind, headSha: value.headSha, baseSha: value.baseSha, sourceRepository: value.sourceRepository, ...(value.sourceRef === undefined ? {} : { sourceRef: value.sourceRef }), topic: true };
   }
   if (value.kind === 'bitbucket-commit' && subject.repository.provider === 'bitbucket' && kind === 'commit' && value.baseSha === null) return { kind: value.kind, headSha: value.headSha, baseSha: null };
   return null;
@@ -213,6 +237,20 @@ function bind(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: strin
   return { repository: witness.repository, path: newPath, headSha: witness.headSha, key: JSON.stringify([repositoryKey(witness.repository), witness.headSha, newPath]) };
 }
 
+function bindReference(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: string, witness: ProviderNativeSourceReference): ProviderNewFileRevision | null {
+  const comparison = facts.comparison;
+  if (page.provider !== 'bitbucket' || comparison.kind !== 'bitbucket-review' || comparison.sourceRef === undefined || comparison.sourceRepository === null
+    || witness.comparison !== 'bitbucket-all-changes' || providerSourceSubjectKey(witness.subject) !== providerSourceSubjectKey(facts.subject)
+    || witness.repository.provider !== 'bitbucket' || witness.repository.origin !== page.repository.origin || witness.repository.path !== comparison.sourceRepository
+    || witness.path !== newPath || !providerSourcePath(newPath) || providerBitbucketReferenceResolution(comparison, witness.literalRef) !== witness.resolution) return null;
+  if (witness.acquiredComparisonKey !== providerBitbucketComparisonKey(comparison)) return null;
+  try {
+    const expected = new URL(`/${witness.repository.path.split('/').map(encodeURIComponent).join('/')}/src/${witness.literalRef}/${newPath.split('/').map(encodeURIComponent).join('/')}`, witness.repository.origin);
+    if (witness.url !== expected.href || repository(witness.repository) === null) return null;
+  } catch { return null; }
+  return { repository: witness.repository, path: newPath, headSha: comparison.headSha, key: JSON.stringify([repositoryKey(witness.repository), comparison.headSha, newPath]), provenance: 'provider-resolved-native-reference' };
+}
+
 export function providerOutlineContext(page: ProviderPage, result: ProviderDiffResult, view: ProviderDiffView): ProviderOutlineContext {
   const sources = new Map<HTMLElement, ProviderNewFileRevision>();
   const commentCoordinateMismatches = new Set<HTMLElement>();
@@ -227,7 +265,13 @@ export function providerOutlineContext(page: ProviderPage, result: ProviderDiffR
       const newPath = paths.get(entry.path);
       if (newPath === undefined || !present.has(entry.path) || !entry.root.isConnected || view.filteredPaths.has(entry.path)) continue;
       const witness = frame.read(entry);
-      if (witness === null || witness.path !== entry.path) continue;
+      if (witness === null) {
+        const reference = frame.readReference?.(entry);
+        const source = reference?.path === entry.path ? bindReference(page, facts, newPath, reference) : null;
+        if (source !== null) sources.set(entry.root, source);
+        continue;
+      }
+      if (witness.path !== entry.path) continue;
       if (commentCoordinatesMismatch(page, facts, newPath, witness)) commentCoordinateMismatches.add(entry.root);
       const source = bind(page, facts, newPath, witness);
       if (source !== null) sources.set(entry.root, source);

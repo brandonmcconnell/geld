@@ -49,6 +49,7 @@ export interface BitbucketPullRequest {
   readonly baseSha: string;
   readonly sourceRepository: string;
   readonly sourceRepositoryExplicit?: boolean;
+  readonly sourceRef?: string;
   readonly author: BitbucketAuthor | null;
   readonly participants: readonly BitbucketParticipant[];
 }
@@ -373,7 +374,7 @@ export class BitbucketClient {
     const destination = record(value.destination);
     if (isRecord(destination.repository) && destination.repository.full_name !== this.page.repository.path) return invalid('Bitbucket returned a different destination repository.');
     const [source, base] = await Promise.all([this.resolveCommit(value.source, signal), this.resolveCommit(destination, signal)]);
-    return parsePullRequest({ ...value, source, destination: base }, this.page.repository.path);
+    return { ...parsePullRequest({ ...value, source, destination: base }, this.page.repository.path), sourceRef: string(record(record(value.source).commit).hash).toLowerCase() };
   }
 
   private async resolveCommit(value: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -432,7 +433,7 @@ export class BitbucketClient {
     const after = await this.pullRequest(signal);
     if (before.headSha !== after.headSha || before.baseSha !== after.baseSha || before.sourceRepository !== after.sourceRepository) throw new BitbucketApiError('changed', 'Bitbucket changed the review while its diff was loading.');
     if (page.headSha !== null && page.headSha !== before.headSha) throw new BitbucketApiError('changed', 'Bitbucket review head changed.');
-    const sourceFacts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: before.headSha.toLowerCase(), baseSha: before.baseSha.toLowerCase(), sourceRepository: before.sourceRepositoryExplicit === true && after.sourceRepositoryExplicit === true ? before.sourceRepository : null, topic: true }, newPaths);
+    const sourceFacts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: before.headSha.toLowerCase(), baseSha: before.baseSha.toLowerCase(), sourceRepository: before.sourceRepositoryExplicit === true && after.sourceRepositoryExplicit === true ? before.sourceRepository : null, ...(before.sourceRef === undefined || before.sourceRef !== after.sourceRef ? {} : { sourceRef: before.sourceRef }), topic: true }, newPaths);
     return { ...result, revision: `${before.baseSha}..${before.headSha}`, ...(sourceFacts === null ? {} : { sourceFacts }) };
   }
 

@@ -93,7 +93,7 @@ describe('Bitbucket diff acquisition from documented API shapes', () => {
       if (url.pathname === `${repoPath}/commit/${base.slice(0, 12)}`) return json({ hash: base });
       throw new Error(`Unexpected URL ${url}`);
     });
-    expect(await client.pullRequest(requestSignal)).toMatchObject({ headSha: head, baseSha: base });
+    expect(await client.pullRequest(requestSignal)).toMatchObject({ headSha: head, baseSha: base, sourceRef: head.slice(0, 12) });
     expect(requests).toHaveLength(3);
   });
 
@@ -112,6 +112,28 @@ describe('Bitbucket diff acquisition from documented API shapes', () => {
       await expect(bad.client.pullRequest(signal())).rejects.toMatchObject({ reason: 'invalid-response' });
       expect(bad.requests).toHaveLength(1);
     }
+  });
+
+  it('retains the exact repeatedly resolved native source prefix without additional requests', async () => {
+    const prefix = HEAD.slice(0, 12), short = { ...PR, source: { repository: { full_name: 'acme/widgets' }, commit: { hash: prefix } } };
+    const { client, requests } = setup((url) => {
+      if (url.pathname === ROOT) return json(short);
+      if (url.pathname.includes('/commit/')) return json({ hash: HEAD });
+      return url.pathname.includes('/diffstat/') ? json({ size: 2, values: [TEST, SOURCE] }) : new Response(PATCH);
+    });
+    const result = await client.diff(signal());expect(result.sourceFacts).toMatchObject({ comparison: { headSha: HEAD, baseSha: BASE, sourceRepository: 'acme/widgets', sourceRef: prefix } });
+    expect(requests.filter((url) => url.includes('/commit/'))).toHaveLength(2);expect(requests).toHaveLength(6);
+  });
+
+  it('preserves counts but withholds source authority when literal prefixes change for the same full commit', async () => {
+    let snapshots = 0;
+    const { client } = setup((url) => {
+      if (url.pathname === ROOT) return json({ ...PR, source: { repository: { full_name: 'acme/widgets' }, commit: { hash: HEAD.slice(0, ++snapshots === 1 ? 12 : 13) } } });
+      if (url.pathname.includes('/commit/')) return json({ hash: HEAD });
+      return url.pathname.includes('/diffstat/') ? json({ size: 2, values: [TEST, SOURCE] }) : new Response(PATCH);
+    });
+    const result = await client.diff(signal());expect(result.complete).toBe(true);expect(result.files).toHaveLength(2);
+    expect(result.sourceFacts?.comparison).not.toHaveProperty('sourceRef');
   });
 
   it('rejects short-ref mismatches and re-resolves each snapshot instead of caching an ambiguous prefix', async () => {

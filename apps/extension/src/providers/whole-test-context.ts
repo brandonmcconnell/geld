@@ -12,6 +12,12 @@ export interface ProviderNativeContextStep {
   insertedFocus?(target: Element): { readonly row: HTMLElement; readonly newLine: number; readonly newText: string } | null;
 }
 export interface ProviderWholeFocusOwner { current(): HTMLButtonElement | null }
+export interface ProviderWholeSourcePreparation {
+  readonly key: string;
+  readonly origin: string;
+  current(): boolean;
+  run(signal: AbortSignal, focus?: HTMLButtonElement): Promise<void>;
+}
 export interface ProviderWholeTestAdapter {
   readonly readSource: ProviderWholeSourceReader;
   createIntent(doc: Document): { readonly button: HTMLButtonElement; readonly text: HTMLElement };
@@ -19,6 +25,8 @@ export interface ProviderWholeTestAdapter {
   contextOmitted(entry: ProviderDiffEntry): boolean;
   nextContext(entry: ProviderDiffEntry, missing: readonly number[]): ProviderNativeContextStep | null;
   paused(origin: string): boolean;
+  prepareSource?(entry: ProviderDiffEntry): ProviderWholeSourcePreparation | null;
+  readonly keepIntentFocusable?: boolean;
 }
 export interface ProviderWholeTestSession {
   mount(entry: ProviderDiffEntry): void;
@@ -31,6 +39,8 @@ interface Current { readonly result: ProviderDiffResult; readonly view: Provider
 interface FileIntent {
   readonly root: HTMLElement; readonly path: string; readonly key: string; readonly subject: string;
   readonly host: HTMLElement; readonly button: HTMLButtonElement; readonly text: HTMLElement;
+  readonly preparation: ProviderWholeSourcePreparation | null;
+  preparing: boolean;
   status: 'idle' | 'loading' | 'ready' | 'failed'; abort: AbortController | null; reveal: AbortController | null;
 }
 
@@ -65,12 +75,14 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
 
   mount(entry: ProviderDiffEntry): void {
     const latest = this.latest;const revision = latest?.context.newSources.get(entry.root);const host = this.feature.intentHost(entry);
-    if (!latest?.settings.enabled || !latest.settings.testOutline || revision === undefined || host === null || latest.view.filteredPaths.has(entry.path) || !this.feature.contextOmitted(entry)) { this.remove(entry.root);return; }
+    const preparation = revision === undefined ? this.feature.prepareSource?.(entry) ?? null : null;const key = revision?.key ?? preparation?.key;
+    if (!latest?.settings.enabled || !latest.settings.testOutline || key === undefined || host === null || latest.view.filteredPaths.has(entry.path) || !this.feature.contextOmitted(entry)) { this.remove(entry.root);return; }
     let intent = this.files.get(entry.root);
-    if (intent !== undefined && (intent.key !== revision.key || intent.subject !== latest.context.subjectKey || intent.host !== host || intent.button.parentElement !== host)) { this.remove(entry.root);intent = undefined; }
+    if (intent !== undefined && (intent.key !== key || intent.subject !== latest.context.subjectKey || intent.host !== host || intent.button.parentElement !== host
+      || intent.status === 'idle' && intent.preparation !== null && !intent.preparation.current())) { this.remove(entry.root);intent = undefined; }
     if (intent === undefined) {
       const { button, text } = this.feature.createIntent(this.doc);button.type = 'button';button.classList.add('geld-provider-test-boundaries');button.setAttribute('data-geld-ui', '');button.setAttribute('data-geld-test-boundaries', '');
-      intent = { text, root: entry.root, path: entry.path, key: revision.key, subject: latest.context.subjectKey, host, button, status: this.attempted.has(revision.key) || this.attempted.size >= 16 ? 'failed' : 'idle', abort: null, reveal: null };
+      intent = { text, root: entry.root, path: entry.path, key, subject: latest.context.subjectKey, host, button, preparation, preparing: false, status: this.attempted.has(key) || this.attempted.size >= 16 ? 'failed' : 'idle', abort: null, reveal: null };
       const owned = intent;
       button.addEventListener('click', (event) => { event.preventDefault();event.stopPropagation();if (!event.isTrusted || this.files.get(entry.root) !== owned) return;void this.request(owned); });
       this.files.set(entry.root, intent);host.append(button);
@@ -103,7 +115,7 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
   retain(roots: ReadonlySet<HTMLElement>): void {
     for (const [root, intent] of this.files) {
       if (!roots.has(root)) { this.remove(root);continue; }
-      if ((intent.abort !== null || intent.reveal !== null) && this.lease(intent) === null) { intent.abort?.abort();intent.reveal?.abort(); }
+      if ((intent.abort !== null || intent.reveal !== null) && !(intent.preparing ? this.preparationCurrent(intent) : this.lease(intent) !== null)) { intent.abort?.abort();intent.reveal?.abort(); }
     }
   }
 
@@ -113,7 +125,7 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
   private remove(root: HTMLElement): void { const intent = this.files.get(root);if (intent === undefined) return;intent.abort?.abort();intent.reveal?.abort();intent.button.remove();this.files.delete(root); }
   private label(intent: FileIntent): void {
     intent.text.textContent = intent.status === 'idle' ? 'Find test boundaries' : intent.status === 'loading' ? 'Finding test boundaries…' : intent.status === 'ready' ? 'Test boundaries found' : 'Test boundaries unavailable';
-    intent.button.disabled = intent.status !== 'idle';intent.button.dataset.status = intent.status;
+    intent.button.disabled = intent.status !== 'idle' && this.feature.keepIntentFocusable !== true;intent.button.setAttribute('aria-disabled', String(intent.status !== 'idle'));intent.button.dataset.status = intent.status;
   }
 
   private lease(intent: FileIntent): { lease: ProviderWholeSourceLease; entry: ProviderDiffEntry } | null {
@@ -135,14 +147,33 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
 
   private async request(intent: FileIntent): Promise<void> {
     if (intent.status !== 'idle' || this.attempted.has(intent.key) || this.attempted.size >= 16) return;
-    const bound = this.lease(intent);if (bound === null || this.feature.paused(bound.lease.revision.repository.origin)) return;
+    let bound = this.lease(intent);
+    if (bound === null && !this.preparationCurrent(intent) || this.feature.paused(bound?.lease.revision.repository.origin ?? intent.preparation?.origin ?? '')) return;
+    const focus = this.doc.activeElement === intent.button ? intent.button : undefined;
     this.attempted.add(intent.key);const abort = new AbortController();intent.abort = abort;intent.status = 'loading';this.label(intent);
     try {
+      if (bound === null) {
+        intent.preparing = true;await intent.preparation?.run(abort.signal, focus);intent.preparing = false;
+        bound = this.lease(intent);if (bound === null || abort.signal.aborted) throw new Error('Source preparation changed');
+      }
       const body = await this.cache.load(bound.lease, abort.signal);
       const fresh = this.lease(intent);if (abort.signal.aborted || fresh === null) { intent.status = 'failed';return; }
       intent.status = providerWholeSourceAgrees(body.lines, fresh.entry.readLines?.() ?? []) ? 'ready' : 'failed';
     } catch { if (this.files.get(intent.root) === intent) intent.status = 'failed'; }
-    finally { if (intent.abort === abort) intent.abort = null;if (this.files.get(intent.root) === intent) { this.label(intent);this.refresh(); } }
+    finally { intent.preparing = false;if (intent.abort === abort) intent.abort = null;if (this.files.get(intent.root) === intent) { this.label(intent);this.refresh(); } }
+  }
+
+  private preparationCurrent(intent: FileIntent): boolean {
+    try {
+      const latest = this.latest, preparation = intent.preparation;
+      if (preparation === null || !preparation.current() || this.doc.defaultView === null || this.doc.hidden || this.files.get(intent.root) !== intent
+        || !latest?.settings.enabled || !latest.settings.testOutline || latest.context.subjectKey !== intent.subject || !intent.root.isConnected) return false;
+      const page = this.adapter.describe(new URL(this.doc.URL), this.doc), view = this.adapter.readDiff(this.doc);
+      const entry = view?.entries.find((file) => file.root === intent.root && file.path === intent.path);
+      return page !== null && view !== null && entry !== undefined && !view.filteredPaths.has(intent.path) && entry.isExpanded?.() === true
+        && intent.root.closest('[hidden], [inert], [aria-hidden="true"], [data-geld-provider-hidden="closed"]') === null
+        && this.doc.defaultView.getComputedStyle(intent.root).display !== 'none' && providerOutlineContext(page, latest.result, view).subjectKey === intent.subject;
+    } catch { return false; }
   }
 
   private async revealLoop(intent: FileIntent, fold: TestFold, open: () => boolean, abort: AbortController, focus?: ProviderWholeFocusOwner): Promise<void> {
