@@ -278,9 +278,14 @@ async function react(github, repo, commentId, login) {
   }
 }
 
-/** Reacts to each newly recorded signature's comment, found from the link the record keeps. */
-async function acknowledge(github, repo, signatures) {
-  for (const signature of signatures) {
+/**
+ * Reacts to each signature's comment, found from the link the record keeps: the newly recorded ones, and the comment
+ * this run was started by, which another run may have recorded first (the signer posting in two places at once), so it
+ * is not among them but still gets its rocket before any lock.
+ */
+async function acknowledge(github, repo, fresh, trigger = []) {
+  const links = new Set(fresh.map((signature) => signature.comment));
+  for (const signature of [...fresh, ...trigger.filter((signature) => !links.has(signature.comment))]) {
     const id = /#issuecomment-(\d+)$/.exec(signature.comment ?? '')?.[1];
     if (id !== undefined) await react(github, repo, Number(id), signature.login);
   }
@@ -305,7 +310,7 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
   if (additions.length > 0) {
     await ensureSignaturesBranch(github, repo);
     ({ signatures, fresh } = await recordSignatures(github, repo, additions));
-    await acknowledge(github, repo, fresh);
+    await acknowledge(github, repo, fresh, extraSignatures);
   }
 
   // Runs for other pull requests and issues write this status too. Reading the record again after each write and
@@ -399,7 +404,7 @@ export async function run({ github, context, core }) {
   } else if (signature !== null) {
     await ensureSignaturesBranch(github, repo);
     ({ fresh } = await recordSignatures(github, repo, extraSignatures));
-    await acknowledge(github, repo, fresh);
+    await acknowledge(github, repo, fresh, extraSignatures);
   }
   await recheckWaiting({ github, repo, signers: fresh, skip: issue.pull_request ? issue.number : null, defaultBranch, agreementUrl });
   for (const recorded of fresh) core.info(`Recorded the CLA signature of @${recorded.login}`);

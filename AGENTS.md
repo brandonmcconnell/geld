@@ -1374,6 +1374,7 @@ Those rechecks race the pull request's own runs, so a check reads the record aga
 A merged pull request with outside authors is locked once all of them have signed, since a locked conversation takes comments, edits and deletions from collaborators only and the signatures then stay on the page as well as in the record.
 Every newly recorded signature gets a 🚀 on its comment before any lock, since a locked conversation refuses the reaction (geld#128's run failed there after recording the signature), and a reaction that fails never fails the run;
 a repeat signature records nothing (the first stands) but its comment gets a 🚀 too, before the check that may lock its pull request.
+So does the comment that started a run whose signer another run recorded meanwhile (signing in two places at once leaves this run nothing fresh), acknowledged with the fresh ones (`acknowledge(…, trigger)`) before any lock.
 `CLA.md` is the owner's: an agent proposes a change to it in a pull request and the owner decides, and a new version leaves earlier signatures on the version they signed.
 
 ## Verifying changes

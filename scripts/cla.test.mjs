@@ -25,7 +25,7 @@ function httpError(status) {
 }
 
 /** Just enough of Octokit for scripts/cla.mjs, backed by maps. `commits` maps a pull request to its commits' author lists. */
-function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onStatus, reactionsFail = false } = {}) {
+function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onStatus, reactionsFail = false, recordedMeanwhile } = {}) {
   const files = new Map(AGREEMENT.map((version) => [`${version.commit}:CLA.md`, { sha: version.blob, content: '' }]));
   const refs = new Set();
   if (signatures) {
@@ -74,7 +74,14 @@ function fakeGitHub({ commits = {}, comments = {}, pulls = {}, signatures, onSta
         getContent: async ({ path, ref }) => {
           const file = files.get(`${ref}:${path}`);
           if (!file) throw httpError(404);
-          return { data: { sha: file.sha, content: Buffer.from(file.content, 'utf8').toString('base64') } };
+          const data = { sha: file.sha, content: Buffer.from(file.content, 'utf8').toString('base64') };
+          // Another run records this signature right after this run first reads the record.
+          if (recordedMeanwhile !== undefined && path === SIGNATURES_PATH) {
+            const record = JSON.parse(file.content);
+            files.set(`${ref}:${path}`, { sha: 'meanwhile', content: JSON.stringify({ ...record, signatures: [...record.signatures, recordedMeanwhile] }) });
+            recordedMeanwhile = undefined;
+          }
+          return { data };
         },
         createOrUpdateFileContents: async ({ branch, path, content, sha }) => {
           const key = `${branch}:${path}`;
@@ -364,6 +371,17 @@ describe('a pull request', () => {
     assert.equal(fake.statuses.at(-1).state, 'success');
   });
 
+  it('acknowledges its own comment when another run recorded the signer first, before locking', async () => {
+    const elsewhere = { login: 'hunterchen7', id: 101, signedAt: '2026-11-01T13:59:00Z', comment: 'https://github.com/brandonmcconnell/geld/pull/140#issuecomment-516' };
+    const comment = { ...signing(hunter, 517), html_url: 'https://github.com/brandonmcconnell/geld/pull/128#issuecomment-517' };
+    const fake = fakeGitHub({ commits: { 128: [[actor(hunter)]] }, comments: { 128: [comment] }, pulls: { 128: pullRequest(128, { by: hunter, merged: true }) }, signatures: [], recordedMeanwhile: elsewhere });
+    await run({ github: fake.github, context: commentEvent({ number: 128, pull_request: {} }, comment), core });
+    // The other run's signature stands; this comment gets its rocket all the same, and before the lock refuses one.
+    assert.deepEqual(fake.recorded().map((signature) => signature.comment), [elsewhere.comment]);
+    assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [517]);
+    assert.deepEqual(fake.locks, [128]);
+  });
+
   it('leaves a merged pull request open while an author has yet to sign, and the owner\'s own alone', async () => {
     const fake = fakeGitHub({ commits: { 96: [[actor(batuhan)]], 136: [[actor(brandon)]] }, signatures: [] });
     await run({ github: fake.github, context: prEvent(pullRequest(96, { by: batuhan, merged: true })), core });
@@ -410,6 +428,15 @@ describe('an issue', () => {
     assert.deepEqual(fake.recorded().map((signature) => [signature.login, signature.comment]), [['rexdotsh', first.html_url]]);
     assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [514, 515]);
     assert.deepEqual(fake.locks, [13, 4]);
+  });
+
+  it('acknowledges a signature on an issue that another run recorded first', async () => {
+    const elsewhere = { login: 'Batuhan1999', id: 102, signedAt: '2026-11-01T13:59:00Z', comment: 'https://github.com/brandonmcconnell/geld/pull/96#issuecomment-518' };
+    const comment = { ...signing(batuhan, 519), html_url: 'https://github.com/brandonmcconnell/geld/issues/150#issuecomment-519' };
+    const fake = fakeGitHub({ signatures: [], recordedMeanwhile: elsewhere });
+    await run({ github: fake.github, context: commentEvent({ number: 150 }, comment), core });
+    assert.deepEqual(fake.recorded().map((signature) => signature.comment), [elsewhere.comment]);
+    assert.deepEqual(fake.reactions.map((reaction) => reaction.comment_id), [519]);
   });
 
   it('ignores the owner quoting the sentence', async () => {
