@@ -135,12 +135,33 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
   };
   const unchanged = (value, baseline) => {
     assertGitLabFileSearchScope(value);
+    if (bound) assert.notEqual(value.identity, null, 'Native search proof was lost during the interaction');
     assert.deepEqual(gitLabFileSearchSelection(value), gitLabFileSearchSelection(baseline), 'Native selected source or target changed during file search');
     assert.equal(value.source.raw, baseline.source.raw, 'Native immutable file payload changed');
     assert.deepEqual(value.source.boxes, baseline.source.boxes, 'Native checkbox state or attributes changed');
     assert.deepEqual(value.search.attributes, baseline.search.attributes, 'Original native search semantics changed');
   };
-  let cleanupError;
+  const sameScope = (value) => {
+    const current = new URL(value.url);const expected = new URL(fixture.url);
+    return current.origin === expected.origin && current.pathname === expected.pathname && current.searchParams.get('diff_id') === fixture.version;
+  };
+  const recovered = (value) => value.search?.value === '' && value.owned.count === 1 && value.owned.active === 'true' && value.owned.folder?.expanded === 'false' && value.owned.current === 'true' && value.native.listMarker === 'native' && value.source.open && value.source.codeVisible;
+  const clear = async (phase) => {
+    const record = { status: 'pending', before: await read() };progress[phase] = record;
+    unchanged(record.before, progress.before);
+    const offset = record.before.events.length;
+    await click(selectors.input);await page.keyboard.down('Control');try { await page.keyboard.press('KeyA'); } finally { await page.keyboard.up('Control'); }await page.keyboard.press('Backspace');
+    record.after = await poll(read, (value) => value.search?.value === '', 'Real keyboard clears the original native search');
+    unchanged(record.after, progress.before);
+    record.events = record.after.events.slice(offset);
+    assert.ok(record.events.some((event) => event.type === 'keydown' && event.input && event.trusted && event.key === 'Backspace'), 'Native clear needs a trusted Backspace event');
+    assert.ok(record.events.some((event) => event.type === 'input' && event.input && event.trusted && event.value === ''), 'Native clear needs a trusted empty-value input event');
+    record.status = 'verified';
+    return record.after;
+  };
+  let bound = false;
+  let typed = false;
+  let failure;
   try {
     progress.before = await read();assertGitLabFileSearchScope(progress.before);
     assert.equal(progress.before.search.value, '', 'Native search must start empty');
@@ -153,11 +174,12 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
       proof.listen = (event) => {
         const target = event.target instanceof Element ? event.target : null;const native = target?.closest('a[data-testid="file-row"][data-file-row]');
         const owned = target?.closest('[data-geld-category-path]');
-        if (target === input || native !== null && native !== undefined && native.closest('[data-geld-ui]') === null || owned !== null && owned !== undefined) proof.events.push({ type: event.type, trusted: event.isTrusted, input: target === input, native: native?.closest('[data-geld-ui]') === null ? native.getAttribute('data-file-row') : null, owned: owned?.getAttribute('data-geld-category-path') ?? null, key: event instanceof KeyboardEvent ? event.key : null });
+        if (target === input || native !== null && native !== undefined && native.closest('[data-geld-ui]') === null || owned !== null && owned !== undefined) proof.events.push({ type: event.type, trusted: event.isTrusted, input: target === input, native: native?.closest('[data-geld-ui]') === null ? native.getAttribute('data-file-row') : null, owned: owned?.getAttribute('data-geld-category-path') ?? null, key: event instanceof KeyboardEvent ? event.key : null, value: target === input ? input.value : null });
       };
       for (const type of ['click', 'focusin', 'focusout', 'input', 'keydown']) document.addEventListener(type, proof.listen, true);
       globalThis.__geldFileSearchProof = proof;
     }, fixture);
+    bound = true;
     await click(selectors.file);
     progress.selected = await poll(read, (value) => value.owned.current === 'true' && new URL(value.url).hash === `#${fixture.anchor}` && value.source.open && value.source.codeVisible && value.source.codeInViewport, 'Owned test row reveals exact original native file');
     unchanged(progress.selected, progress.before);
@@ -170,8 +192,13 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     assert.equal((await read()).search.focused, false, 'Real Tab did not leave original search input');
     await page.keyboard.down('Shift');try { await page.keyboard.press('Tab'); } finally { await page.keyboard.up('Shift'); }
     assert.equal((await read()).search.focused, true, 'Real Shift+Tab did not return to original search input');
-    await page.keyboard.type(fixture.query);
-    progress.search = await poll(read, (value) => value.search?.value === fixture.query && value.owned.count === 0 && value.native.listMarker === null && value.native.resultCount === 1 && value.native.visible, 'Original native search filters the native tree while the owned accordion is suspended');
+    typed = true;await page.keyboard.type(fixture.query);
+    progress.search = await poll(async () => {
+      const value = await read();progress.searchLatest = value;
+      unchanged(value, progress.before);
+      if (value.native.paths.length !== 1 || value.native.paths[0] !== fixture.path) progress.searchPending ??= value;
+      return value;
+    }, (value) => value.search?.value === fixture.query && value.owned.count === 0 && value.native.listMarker === null && value.native.resultCount === 1 && value.native.visible && value.native.paths.length === 1 && value.native.paths[0] === fixture.path, 'Original native search settles to the exact unique file result while the owned accordion is suspended');
     unchanged(progress.search, progress.before);
     assert.deepEqual(progress.search.native.paths, [fixture.path], 'Native filename search left unrelated original file results');
     assert.ok(progress.search.events.some((event) => event.type === 'input' && event.input && event.trusted), 'Typing must produce a trusted native input event');
@@ -180,8 +207,8 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     progress.activated = await poll(read, (value) => new URL(value.url).hash === `#${fixture.anchor}` && new URL(value.url).searchParams.get('file_path') === fixture.path && value.source.open && value.source.codeVisible && value.source.codeInViewport, 'Real native search result selects and reveals the exact immutable file');
     unchanged(progress.activated, progress.before);
     assert.ok(progress.activated.events.some((event) => event.type === 'click' && event.native === fixture.anchor && event.trusted), 'Native result activation needs an original trusted click');
-    await click(selectors.input);await page.keyboard.down('Control');try { await page.keyboard.press('KeyA'); } finally { await page.keyboard.up('Control'); }await page.keyboard.press('Backspace');
-    progress.restored = await poll(read, (value) => value.search?.value === '' && value.owned.count === 1 && value.owned.active === 'true' && value.owned.folder?.expanded === 'false' && value.owned.current === 'true' && value.native.listMarker === 'native' && value.source.open && value.source.codeVisible, 'Clearing native search restores Tests, custom folder collapse and current file');
+    await clear('clear');
+    progress.restored = await poll(read, recovered, 'Clearing native search restores Tests, custom folder collapse and current file');
     unchanged(progress.restored, progress.before);
     assert.equal(progress.restored.owned.folder.label, progress.collapsed.owned.folder.label);
     progress.totals = await totals();
@@ -192,18 +219,36 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     assert.equal(progress.afterCapture.source.visible, true);assert.equal(progress.afterCapture.source.open, true);assert.equal(progress.afterCapture.source.codeVisible, true);
     progress.proof = 'Original native file search with trusted pointer, Tab, typing and result selection. Not browser Ctrl+F. Native hydration demand is observed by the existing request guards without a zero-traffic claim.';
     return progress;
-  } finally {
-    if (!page.isClosed()) {
+  } catch (error) { failure = error;throw error; }
+  finally {
+    const errors = [];
+    progress.cleanup = { status: 'pending' };
+    if (page.isClosed()) progress.cleanup.status = 'page_closed';
+    else {
       try {
-        const current = await read();
-        const currentURL = new URL(current.url);const expectedURL = new URL(fixture.url);
-        if (currentURL.origin === expectedURL.origin && currentURL.pathname === expectedURL.pathname && currentURL.searchParams.get('diff_id') === fixture.version && current.search?.value) {
-          await click(selectors.input);await page.keyboard.down('Control');try { await page.keyboard.press('KeyA'); } finally { await page.keyboard.up('Control'); }await page.keyboard.press('Backspace');
-          await poll(read, (value) => value.search?.value === '', 'Native search finally cleanup');
+        const current = await read();progress.cleanup.before = current;
+        if (!sameScope(current)) progress.cleanup.status = 'skipped_changed_scope';
+        else if (current.search?.value && !typed) progress.cleanup.status = 'skipped_unowned_query';
+        else {
+          if (current.search?.value) await clear('cleanupClear');
+          const after = bound && progress.collapsed !== undefined ? await poll(read, recovered, 'Native search finally cleanup preserves custom category preferences') : await read();
+          progress.cleanup.after = after;
+          assert.equal(after.search?.value, '', 'Native query remains after cleanup');
+          if (bound) { assert.notEqual(after.identity, null, 'Native search proof was lost before cleanup');unchanged(after, progress.before); }
+          progress.cleanup.status = 'verified';
         }
-      } catch (error) { cleanupError = error;progress.cleanupError = String(error); }
-      await page.evaluate(() => { const proof = globalThis.__geldFileSearchProof;if (proof !== undefined) for (const type of ['click', 'focusin', 'focusout', 'input', 'keydown']) document.removeEventListener(type, proof.listen, true);delete globalThis.__geldFileSearchProof; });
+      } catch (error) { errors.push(error);progress.cleanup.status = 'failed';progress.cleanupError = String(error); }
+      try {
+        progress.cleanup.listeners = await page.evaluate(() => {
+          const proof = globalThis.__geldFileSearchProof;
+          const types = ['click', 'focusin', 'focusout', 'input', 'keydown'];
+          if (proof !== undefined) for (const type of types) document.removeEventListener(type, proof.listen, true);
+          delete globalThis.__geldFileSearchProof;
+          return { hadProof: proof !== undefined, removedTypes: proof === undefined ? [] : types, proofAbsent: !Object.hasOwn(globalThis, '__geldFileSearchProof') };
+        });
+        assert.equal(progress.cleanup.listeners.proofAbsent, true, 'Native search instrumentation remains after cleanup');
+      } catch (error) { errors.push(error);progress.cleanup.status = 'failed';progress.cleanupError = String(error); }
     }
-    if (cleanupError !== undefined) throw cleanupError;
+    if (errors.length > 0) throw new AggregateError(failure === undefined ? errors : [failure, ...errors], 'Native file-search cleanup failed');
   }
 }
