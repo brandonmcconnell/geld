@@ -1524,6 +1524,9 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
   The literal `bitbucket-whole-context` browser case tests one full-hash public standalone commit using original native source, one observed raw response, real boundary/fold clicks and both context directions.
   It preserves original source and Viewed/count state, restores settings after closing, and never grants Bitbucket PR source authority.
+  The separate `bitbucket-pr-whole-context` case observes current API refs and native All changes/menu provenance independently;
+  native abbreviated source refs remain distinct from full API hashes.
+  Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
