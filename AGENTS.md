@@ -2375,5 +2375,9 @@ The four native startup POST exceptions require the exact audited app source, fi
 any other payload records only known schema facts and counts before the existing abort.
 The Bitbucket whitespace acceptance bounds each observed response-body read to five seconds and refuses late qualification after timeout or disposal.
 Its phase checkpoints preserve the current private report before awaited stages, and a separate two-minute case deadline records a local test timeout without inventing a provider cooldown or changing the request cap.
+Checkpoint callers have bounded waits while the underlying report writes share one queue, including the final save, so a late write cannot replace final evidence with an older snapshot.
+A checkpoint remains running until case cleanup finishes, and the dedicated workflow step has a five-minute limit that leaves time for artifact upload inside the job limit.
+The whitespace-only run skips the redundant global settings write because its case already owns bounded preparation and exact restoration.
+It saves a report before browser shutdown and bounds that shutdown, terminating only its own launched browser process if the protocol close stalls.
 Cleanup remains bounded and restores raw settings only after confirmed page closure and completion of any earlier settings write;
 an unconfirmed write or restoration is reported as failure.

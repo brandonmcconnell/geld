@@ -52,7 +52,7 @@ export function bitbucketWhitespaceSettings({ read, write, progress }) {
     async prepare() {
       original = structuredClone(await readBounded());
       check(original && typeof original.present === 'boolean' && (!original.present || original.value && typeof original.value === 'object' && !Array.isArray(original.value)), 'SETTINGS_SCHEMA');
-      expected = { present: true, value: { ...(original.present ? original.value : {}), enabled: false, hideWhitespace: false, prOverview: false, quickReview: false, showListStats: false, aiEnabled: false, repoConfigs: 'never', autoViewed: {}, testOutline: false, hideCommentLines: false, hideLargeDiffs: false, groupHidden: true, expandedByDefault: false, categories: { tests: true }, customCategories: [], categoryPatterns: {}, customPatterns: [], repoRules: [], hiddenAuthors: [] } };
+      expected = { present: true, value: { ...(original.present ? original.value : {}), enabled: false, hideWhitespace: false, prOverview: false, quickReview: false, showListStats: false, aiEnabled: false, autoUpdatePatterns: false, repoConfigs: 'never', autoViewed: {}, testOutline: false, hideCommentLines: false, hideLargeDiffs: false, groupHidden: true, expandedByDefault: false, categories: { tests: true }, customCategories: [], categoryPatterns: {}, customPatterns: [], repoRules: [], hiddenAuthors: [] } };
       await writeBounded(expected);check(isDeepStrictEqual(await readBounded(), expected), 'SETTINGS_PREPARE');progress.prepared = true;
     },
     async current() { const value = await readBounded();check(isDeepStrictEqual(value, expected), 'SETTINGS_CHANGED');return value.value; },

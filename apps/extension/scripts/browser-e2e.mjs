@@ -182,14 +182,20 @@ function bitbucketApi(value) {
   try { const url = new URL(value);return (url.hostname === 'api.bitbucket.org' && url.pathname.startsWith('/2.0/')) || (url.hostname === 'bitbucket.org' && url.pathname.startsWith('/!api/2.0/')); }
   catch { return false; }
 }
+let reportWrite;
 async function saveReport() {
-  report.finishedAt = new Date().toISOString();
-  report.cooldowns = Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()]));
-  report.bitbucketAnonymousRequestTimes = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).map((at) => new Date(at).toISOString());
-  report.coverage = { focus, completeParity: false, passed: report.cases.filter((item) => item.status === 'passed').map((item) => item.name), notSelected: report.cases.filter((item) => item.status === 'not_selected').map((item) => item.name), failed: report.cases.filter((item) => item.status === 'failed').map((item) => item.name) };
-  const failed = report.infrastructureErrors.length > 0 || report.cases.some((item) => item.status === 'failed');
-  report.status = failed ? 'failed' : 'completed_with_unsupported_features';
-  await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
+  reportWrite = (reportWrite ?? Promise.resolve()).catch(() => {}).then(async () => {
+    const running = report.cases.some(item => item.inProgress === true);
+    if (running) { report.checkpointAt = new Date().toISOString();delete report.finishedAt; }
+    else report.finishedAt = new Date().toISOString();
+    report.cooldowns = Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()]));
+    report.bitbucketAnonymousRequestTimes = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).map((at) => new Date(at).toISOString());
+    report.coverage = { focus, completeParity: false, passed: report.cases.filter((item) => item.status === 'passed').map((item) => item.name), notSelected: report.cases.filter((item) => item.status === 'not_selected').map((item) => item.name), failed: report.cases.filter((item) => item.status === 'failed').map((item) => item.name) };
+    const failed = report.infrastructureErrors.length > 0 || report.cases.some((item) => item.status === 'failed');
+    report.status = running ? 'running' : failed ? 'failed' : 'completed_with_unsupported_features';
+    await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
+  });
+  return reportWrite;
 }
 function sourceFailureProvider(failure) {
   return ['github', 'gitlab', 'bitbucket'].includes(failure.provider) ? failure.provider : providerOf(failure.url);
@@ -294,6 +300,55 @@ async function pollStable(read, accepts, label, ms = WAIT_MS, signature = () => 
   }, (sample) => sample.valid && sample.samples >= 2 && sample.stableMs >= 200, label, ms);
   return { ...result.value, stability: { samples: result.samples, stableMs: result.stableMs, minimumMs: 200 } };
 }
+async function prepareInstalledBrowserSettings() {
+  if (focus === 'bitbucket-whitespace-session') {
+    report.startup = { stage: 'installed', settingsPreparation: 'dedicated_bounded_case' };
+    await bitbucketWhitespaceAwait(() => saveReport(), { code: 'WHITESPACE_STARTUP_CHECKPOINT_TIMEOUT' });
+    return;
+  }
+  report.settings = await patchSettings({ enabled: true, categories: { tests: true }, groupHidden: true, expandedByDefault: false, hideCommentLines: false, testOutline: false, hideLargeDiffs: false, hideWhitespace: false, repoRules: [], hiddenAuthors: [], repoConfigs: 'never', aiEnabled: false, autoViewed: {}, autoUpdatePatterns: false });
+}
+
+async function closeInstalledBrowser() {
+  if (focus !== 'bitbucket-whitespace-session') {
+    if (browser !== undefined) await browser.close().catch(error => report.infrastructureErrors.push(errorText(error)));
+    await saveReport();return;
+  }
+  const teardown = report.whitespaceBrowserTeardown = { stage: 'before_close' };
+  const persist = async () => {
+    try { await bitbucketWhitespaceAwait(() => saveReport(), { code: 'WHITESPACE_TEARDOWN_CHECKPOINT_TIMEOUT' }); }
+    catch { report.infrastructureErrors.push('WHITESPACE_TEARDOWN_CHECKPOINT_TIMEOUT'); }
+  };
+  await persist();
+  if (browser !== undefined) {
+    const owned = browser.process?.();
+    try { await bitbucketWhitespaceAwait(() => browser.close(), { code: 'WHITESPACE_BROWSER_CLOSE_TIMEOUT' });teardown.status = 'closed'; }
+    catch (error) {
+      const code = error?.code === 'WHITESPACE_BROWSER_CLOSE_TIMEOUT' ? error.code : 'WHITESPACE_BROWSER_CLOSE_FAILED';
+      report.infrastructureErrors.push(code);teardown.status = 'close_failed';teardown.code = code;
+      try { await bitbucketWhitespaceAwait(() => browser.disconnect(), { ms: 2000, code: 'WHITESPACE_BROWSER_DISCONNECT_TIMEOUT' });teardown.disconnected = true; }
+      catch { teardown.disconnected = false; }
+      const exited = () => owned?.exitCode != null || owned?.signalCode != null;
+      if (owned && Number.isSafeInteger(owned.pid) && owned.pid > 0 && typeof owned.kill === 'function' && typeof owned.once === 'function' && !exited()) {
+        teardown.ownedSignals = [];
+        for (const signal of ['SIGTERM', 'SIGKILL']) {
+          if (exited()) break;
+          let onExit;
+          const done = new Promise(resolve => { onExit = resolve;owned.once('exit', onExit); });
+          try {
+            owned.kill(signal);teardown.ownedSignals.push(signal);
+            if (!exited()) await bitbucketWhitespaceAwait(() => done, { ms: 1000, code: 'WHITESPACE_OWNED_PROCESS_EXIT_TIMEOUT' });
+          } catch { /* Only the exact process returned by this launched browser is eligible. */ }
+          finally { owned.removeListener('exit', onExit); }
+        }
+        teardown.ownedProcessExited = exited();
+        if (!exited()) { owned.unref?.();report.infrastructureErrors.push('WHITESPACE_OWNED_PROCESS_STILL_RUNNING'); }
+      }
+    }
+  } else teardown.status = 'not_started';
+  teardown.stage = 'after_close';await persist();
+}
+
 async function patchSettings(patch) {
   return options.evaluate(async (key, changes) => {
     const previous = (await chrome.storage.sync.get(key))[key] ?? {};
@@ -811,19 +866,18 @@ async function runCase(name, url, body, discovery = false) {
 async function runBitbucketWhitespaceCase() {
   const item = { name: 'bitbucket-whitespace-session', url: BITBUCKET_WHITESPACE_URL, startedAt: new Date().toISOString(), status: 'not_selected' };report.cases.push(item);
   if (focus !== item.name) { item.reason = 'Literal-only native whitespace acceptance; no navigation or settings change.';return; }
-  const abort = new AbortController();let page, scope, observer, caseTimer, saving;
+  const abort = new AbortController();let page, scope, observer, caseTimer;
   const wait = (operation, code, ms = 5000, cleanup = false) => bitbucketWhitespaceAwait(operation, { code, ms, signal: cleanup ? undefined : abort.signal });
   const checkpoint = async stage => {
     item.lastCheckpoint = { stage, at: new Date().toISOString(), observedRequests: item.observedBitbucketApiRequests ?? 0 };
-    if (!saving) saving = wait(() => saveReport(), 'CHECKPOINT_TIMEOUT', 5000, true).finally(() => { saving = undefined; });
-    return saving;
+    return wait(() => saveReport(), 'CHECKPOINT_TIMEOUT', 5000, true);
   };
   const active = () => bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length;
   try {
     assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Carried Bitbucket cooldown');
     item.preflight = bitbucketWhitespaceBudget(active());
     if (!item.preflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Whitespace forecast does not fit carried47 cap; schedule after sufficient expiry.'); }
-    currentCaseAbort = abort;item.status = 'running';
+    currentCaseAbort = abort;item.status = 'running';item.inProgress = true;
     caseTimer = setTimeout(() => {
       item.timeout = { code: 'WHITESPACE_CASE_TIMEOUT', limitMs: 120000, stage: item.whitespace?.stage ?? 'setup', at: new Date().toISOString(), observedRequests: item.observedBitbucketApiRequests ?? 0 };
       item.status = 'failed';abort.abort(Object.assign(new Error('WHITESPACE_CASE_TIMEOUT'), { code: 'WHITESPACE_CASE_TIMEOUT' }));
@@ -853,7 +907,7 @@ async function runBitbucketWhitespaceCase() {
     if (observer && !observer.evidence.released) await wait(() => observer.dispose(), 'OBSERVER_RELEASE_TIMEOUT', 6000, true).catch(() => { item.status = 'failed';item.cleanupError = 'OBSERVER_RELEASE_TIMEOUT'; });
     if (scope && !item.settings.restored) try { await wait(() => scope.restore(page === undefined || page.isClosed()), 'SETTINGS_RESTORE_TIMEOUT', 16000, true); } catch { item.status = 'failed';item.cleanupError = 'RAW_SETTINGS_RESTORE_FAILED'; }
     item.artifacts = { suppressed: 'Report-only native source, known checkbox and bounded request receipts; no HTML, AX, screenshots or arbitrary form values.' };
-    item.finishedAt = new Date().toISOString();currentCaseAbort = undefined;await checkpoint('complete').catch(() => { item.status = 'failed';item.checkpointError = 'CHECKPOINT_TIMEOUT'; });
+    item.inProgress = false;item.finishedAt = new Date().toISOString();currentCaseAbort = undefined;await checkpoint('complete').catch(() => { item.status = 'failed';item.checkpointError = 'CHECKPOINT_TIMEOUT'; });
   }
 }
 
@@ -2992,7 +3046,7 @@ try {
   assert.equal(installed.storageAvailable, true);
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
-  report.settings = await patchSettings({ enabled: true, categories: { tests: true }, groupHidden: true, expandedByDefault: false, hideCommentLines: false, testOutline: false, hideLargeDiffs: false, hideWhitespace: false, repoRules: [], hiddenAuthors: [], repoConfigs: 'never', aiEnabled: false, autoViewed: {}, autoUpdatePatterns: false });
+  await prepareInstalledBrowserSettings();
 
   await runBitbucketWhitespaceCase();
 
@@ -3518,8 +3572,7 @@ try {
   report.infrastructureErrors.push(errorText(error));
   console.error(`INSTALLED EXTENSION INFRASTRUCTURE FAILURE: ${errorText(error)}`);
 } finally {
-  if (browser !== undefined) await browser.close().catch((error) => report.infrastructureErrors.push(errorText(error)));
-  await saveReport();
+  await closeInstalledBrowser();
 }
 const failed = report.status === 'failed';
 console.log(`Installed extension smoke: ${report.status}. Native discovery is not a feature parity pass. Report: ${resolve(artifacts, 'report.json')}`);

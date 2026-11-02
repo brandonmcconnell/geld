@@ -24,7 +24,7 @@ test('forecast uses actual16 baseline, eight own reads and no native context/cac
 });
 for (const original of [{ present: false }, { present: true, value: { hideWhitespace: true, custom: { secret: 'unchanged' } } }]) test('raw settings and presence restore only after page close', async () => {
   let value = structuredClone(original);const progress = {};const scope = settingsScope({ read: async () => structuredClone(value), write: async v => { value = structuredClone(v); }, progress });
-  await scope.prepare();assert.equal(value.value.hideWhitespace, false);assert.equal(value.value.prOverview, false);
+  await scope.prepare();assert.equal(value.value.hideWhitespace, false);assert.equal(value.value.prOverview, false);assert.equal(value.value.autoUpdatePatterns, false);
   await scope.hide(true);assert.equal(value.value.hideWhitespace, true);assert.deepEqual(value.value.custom, original.value?.custom);
   await assert.rejects(scope.restore(false), { code: 'CLOSE_BEFORE_RESTORE' });await scope.restore(true);assert.deepEqual(value, original);assert.equal(progress.pageClosedBeforeRestore, true);
 });
@@ -449,4 +449,108 @@ test('an abort before the queued operation starts prevents that operation', asyn
 test('failed final checkpoint cannot leave the verifier marked passed', async () => {
   const p = protocol({ checkpoint: async stage => { if (stage === 'complete') throw Error('PRIVATE_CHECKPOINT_FAILURE'); } });
   await assert.rejects(p.run(), { code: 'CHECKPOINT_TIMEOUT' });assert.equal(p.progress.status, 'failed');assert.equal(p.progress.failure, 'CHECKPOINT_TIMEOUT');assert.equal(p.progress.cleanup.failures.includes('CHECKPOINT_TIMEOUT'), true);assert.equal(JSON.stringify(p.progress).includes('PRIVATE_'), false);
+});
+
+test('actual checkpoint reports remain running until cleanup completes', async () => {
+  const { readFileSync } = await import('node:fs');const vm = await import('node:vm');
+  const source = readFileSync(new globalThis.URL('./browser-e2e.mjs', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('let reportWrite;'), source.indexOf('function sourceFailureProvider('));
+  const item = { name: 'bitbucket-whitespace-session', status: 'passed', inProgress: true };
+  const report = { cases: [item], infrastructureErrors: [] };const snapshots = [];
+  const save = vm.runInNewContext(`${code};saveReport`, { report, cooldowns: new Map(), bitbucketRequestTimes: [], focus: item.name, artifacts: '/artifacts', resolve: (...parts) => parts.join('/'), writeFile: async (_path, raw) => snapshots.push(JSON.parse(raw)) });
+  await save();assert.equal(snapshots[0].status, 'running');assert.equal(snapshots[0].finishedAt, undefined);
+  item.inProgress = false;await save();assert.equal(snapshots[1].status, 'completed_with_unsupported_features');assert.equal(typeof snapshots[1].finishedAt, 'string');
+});
+
+test('timed-out checkpoint callers cannot release the actual report-write queue or overtake the final save', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { readFileSync } = await import('node:fs');const vm = await import('node:vm');
+  const source = readFileSync(new globalThis.URL('./browser-e2e.mjs', import.meta.url), 'utf8');
+  const saveCode = source.slice(source.indexOf('let reportWrite;'), source.indexOf('function sourceFailureProvider('));
+  const start = source.indexOf('  const checkpoint = async stage => {', source.indexOf('async function runBitbucketWhitespaceCase()'));
+  const checkpointCode = source.slice(start, source.indexOf('  const active = ', start));
+  const item = { name: 'bitbucket-whitespace-session', status: 'running', inProgress: true };
+  const report = { cases: [item], infrastructureErrors: [] }, writes = [];
+  let release, started, active = 0, maxActive = 0, persisted;
+  const pending = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
+  const { save, checkpoint } = vm.runInNewContext(`${saveCode}
+${checkpointCode}
+({ save: saveReport, checkpoint })`, {
+    item, report, cooldowns: new Map(), bitbucketRequestTimes: [], focus: item.name, artifacts: '/artifacts',
+    resolve: (...parts) => parts.join('/'), wait: (operation, code, ms) => bitbucketWhitespaceAwait(operation, { code, ms }),
+    writeFile: async (_path, raw) => {
+      const snapshot = JSON.parse(raw);writes.push(snapshot);active++;maxActive = Math.max(active, maxActive);
+      if (writes.length === 1) { started();await pending; }
+      persisted = snapshot;active--;
+    },
+  });
+  const first = assert.rejects(checkpoint('progress'), { code: 'CHECKPOINT_TIMEOUT' });await began;
+  t.mock.timers.tick(5000);await first;
+  item.inProgress = false;item.status = 'passed';
+  const finalCheckpoint = assert.rejects(checkpoint('complete'), { code: 'CHECKPOINT_TIMEOUT' });
+  for (let n = 0; n < 5; n++) await Promise.resolve();
+  t.mock.timers.tick(5000);await finalCheckpoint;
+  const finalSave = save(); // The top-level final save must use the same underlying queue.
+  for (let n = 0; n < 5; n++) await Promise.resolve();
+  assert.equal(writes.length, 1);assert.equal(active, 1);
+  release();await finalSave;
+  assert.equal(writes.length, 3);assert.equal(maxActive, 1);
+  assert.equal(writes[0].status, 'running');
+  assert.equal(writes[1].status, 'completed_with_unsupported_features');
+  assert.equal(persisted.status, 'completed_with_unsupported_features');
+  assert.equal(persisted.cases[0].inProgress, false);assert.equal(typeof persisted.finishedAt, 'string');
+});
+
+test('whitespace step deadline leaves the job time to upload checkpoint evidence', async () => {
+  const { readFileSync } = await import('node:fs');
+  const workflow = readFileSync(new globalThis.URL('../../../.github/workflows/browser-e2e.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /timeout-minutes: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'bitbucket-whitespace-session' && 5 \|\| 15 \}\}/);
+});
+
+async function installedLifecycle(context) {
+  const { readFileSync } = await import('node:fs');const vm = await import('node:vm');
+  const code = readFileSync(new globalThis.URL('./browser-e2e.mjs', import.meta.url), 'utf8');
+  const start = code.indexOf('async function prepareInstalledBrowserSettings()'), end = code.indexOf('\nasync function patchSettings(', start);
+  assert.ok(start >= 0 && end > start);
+  return new vm.Script(code.slice(start, end) + ';({prepare:prepareInstalledBrowserSettings,close:closeInstalledBrowser})').runInNewContext({ bitbucketWhitespaceAwait, errorText: error => error.message, ...context });
+}
+
+test('only whitespace skips the redundant global settings write and checkpoints installation', async () => {
+  for (const focus of ['bitbucket-whitespace-session', 'github']) {
+    const report = { infrastructureErrors: [] };let patched = 0, saved = 0;
+    const lifecycle = await installedLifecycle({ focus, report, patchSettings: async () => { patched++;return { enabled: true }; }, saveReport: async () => { saved++; } });
+    await lifecycle.prepare();assert.equal(patched, focus === 'github' ? 1 : 0);assert.equal(saved, focus === 'github' ? 0 : 1);
+    if (focus === 'bitbucket-whitespace-session') { assert.equal(report.startup.stage, 'installed');assert.equal(report.startup.settingsPreparation, 'dedicated_bounded_case'); }
+    else assert.deepEqual(report.settings, { enabled: true });
+  }
+});
+test('whitespace saves before a hung browser close and terminates only its owned process', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const events = [], snapshots = [], report = { infrastructureErrors: [] }, owned = new EventEmitter();
+  Object.assign(owned, { pid: 321, exitCode: null, signalCode: null, kill(signal) { events.push(signal);this.signalCode = signal;this.emit('exit');return true; } });
+  const lifecycle = await installedLifecycle({ focus: 'bitbucket-whitespace-session', report,
+    saveReport: async () => { events.push('save:' + report.whitespaceBrowserTeardown.stage);snapshots.push(structuredClone(report)); },
+    browser: { process: () => owned, close: () => { events.push('close');return new Promise(() => {}); }, disconnect: async () => { events.push('disconnect'); } },
+  });
+  const closing = lifecycle.close();for (let n = 0; n < 30 && !events.includes('close'); n++) await Promise.resolve();assert.deepEqual(events.slice(0, 2), ['save:before_close', 'close']);
+  t.mock.timers.tick(5000);await closing;
+  assert.deepEqual(events, ['save:before_close', 'close', 'disconnect', 'SIGTERM', 'save:after_close']);
+  assert.equal(report.infrastructureErrors[0], 'WHITESPACE_BROWSER_CLOSE_TIMEOUT');assert.equal(report.whitespaceBrowserTeardown.ownedProcessExited, true);
+  assert.equal(snapshots[0].whitespaceBrowserTeardown.stage, 'before_close');assert.equal(snapshots.at(-1).whitespaceBrowserTeardown.stage, 'after_close');
+});
+test('whitespace escalates only the returned owned process after a failed graceful exit', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const signals = [], report = { infrastructureErrors: [] }, owned = new EventEmitter();
+  Object.assign(owned, { pid: 321, exitCode: null, signalCode: null, kill(signal) { signals.push(signal);if (signal === 'SIGKILL') { this.signalCode = signal;this.emit('exit'); }return true; } });
+  let closeStarted = false;
+  const lifecycle = await installedLifecycle({ focus: 'bitbucket-whitespace-session', report, saveReport: async () => {}, browser: { process: () => owned, close: () => { closeStarted = true;return new Promise(() => {}); }, disconnect: async () => {} } });
+  const closing = lifecycle.close();for (let n = 0; n < 30 && !closeStarted; n++) await Promise.resolve();t.mock.timers.tick(5000);
+  for (let n = 0; n < 50 && signals.length === 0; n++) await Promise.resolve();assert.deepEqual(signals, ['SIGTERM']);
+  t.mock.timers.tick(1000);await closing;assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);assert.equal(report.whitespaceBrowserTeardown.ownedProcessExited, true);
+});
+test('other focuses retain their existing close-then-save behavior without forced process teardown', async () => {
+  const report = { infrastructureErrors: [] }, events = [];let finish;
+  const lifecycle = await installedLifecycle({ focus: 'github', report, saveReport: async () => { events.push('save'); }, browser: { close: () => { events.push('close');return new Promise(resolve => { finish = resolve; }); }, process: () => { assert.fail('Unrelated focus inspected an owned process'); } } });
+  const closing = lifecycle.close();for (let n = 0; n < 5; n++) await Promise.resolve();assert.deepEqual(events, ['close']);finish();await closing;
+  assert.deepEqual(events, ['close', 'save']);assert.equal(report.whitespaceBrowserTeardown, undefined);
 });
