@@ -2329,3 +2329,6 @@ it never clicks Save or changes a native form field.
 The eight-request own snapshot and sixteen-request PR22 baseline are retained observations;
 subtracting them to forecast eight requests with Geld disabled is an inference, so the harness measures that baseline and checks remaining room before activation.
 The complete Cancel and disable sequence remains offline protocol coverage until separately admitted within the existing rolling request cap.
+A Bitbucket whitespace acceptance transition may adopt replaced native file nodes only after independent fresh mode-matched diff and diffstat responses, with the original page frame, source references, file paths and Viewed values preserved.
+After that bounded rebind, another unannounced native node or row-text change fails the settled-phase check rather than being silently adopted.
+Fixed native readiness counts and the last source-qualification code are retained on failure without reading a private application store or treating the bridge acknowledgement as proof.

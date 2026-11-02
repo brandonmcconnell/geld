@@ -119,7 +119,7 @@ export function observeBitbucketWhitespace(page, progress, extensionId, abort) {
   };
 }
 
-export function qualifyBitbucketWhitespace(records, phase, mode, { own = true } = {}) {
+export function qualifyBitbucketWhitespace(records, phase, mode, { own = true, expected = null } = {}) {
   const good = records.filter(r => r.qualified && r.method === 'GET' && [200, 304].includes(r.status) && r.validChain);
   check(!records.some(r => r.error), 'RESPONSE_FAILURE');
   const pair = owner => ['diff', 'diffstat'].map(kind => good.findLast(r => r.phase === phase && r.owner === owner && r.kind === kind && r.mode === mode));
@@ -128,15 +128,20 @@ export function qualifyBitbucketWhitespace(records, phase, mode, { own = true } 
   check(native.every(r => r.firstNativeRoute || nativeMetadata.some(m => m.sequence < r.sequence && m.nativeLinks?.some(link => link.kind === r.kind && link.routeKey === r.routeKey && sameComparison(link, r)))), 'NATIVE_ADVERTISED_PAIR');
   check(sameComparison(native[0], native[1]) && native.every(r => r.pullRequest == null || r.pullRequest === '22'), 'NATIVE_COMPARISON');
   check(isDeepStrictEqual(native[0].files, native[1].files), 'NATIVE_FILES');
-  const result = { native: native.map(({ sequence, sha256, mode, totals }) => ({ sequence, sha256, mode, totals })), totals: native[0].totals };
-  if (!own) return result;
-  const ext = pair('extension');check(ext.every(Boolean) && ext.every(r => HASH.test(r.head ?? '') && HASH.test(r.base ?? '') && !r.redirected), 'OWN_PAIR');
-  check(ext.every(r => (r.pullRequest == null || r.pullRequest === '22') && native.every(n => sameComparison(n, r))) && sameComparison(ext[0], ext[1]), 'OWN_COMPARISON');
-  check(ext[0].head === ext[1].head && ext[0].base === ext[1].base && isDeepStrictEqual(ext[0].files, ext[1].files) && isDeepStrictEqual(ext[0].files, native[0].files), 'OWN_FILES');
+  const result = { paths: native[0].files.map(file => file.path).sort(), native: native.map(({ sequence, sha256, mode, totals }) => ({ sequence, sha256, mode, totals })), totals: native[0].totals };
   const resolves = good.filter(r => r.kind === 'resolve');
   const resolved = new Map();
   for (const value of resolves) { check(HASH.test(value.hash ?? '') && value.hash.startsWith(value.ref) && (!resolved.has(value.ref) || resolved.get(value.ref) === value.hash), 'RESOLUTION_CONFLICT');resolved.set(value.ref, value.hash); }
   const full = ref => HASH.test(ref ?? '') ? ref : resolved.get(ref);
+  if (expected !== null) {
+    check(HASH.test(expected.head) && HASH.test(expected.base), 'EXPECTED_SOURCE');
+    check(good.filter(r => r.kind === 'pr').every(r => full(r.sourceRef) === expected.head && full(r.baseRef) === expected.base), 'METADATA_CHANGED');
+    check(native.every(r => r.head === null || expected.head.startsWith(r.head) && expected.base.startsWith(r.base)), 'NATIVE_REFS');
+  }
+  if (!own) return result;
+  const ext = pair('extension');check(ext.every(Boolean) && ext.every(r => HASH.test(r.head ?? '') && HASH.test(r.base ?? '') && !r.redirected), 'OWN_PAIR');
+  check(ext.every(r => (r.pullRequest == null || r.pullRequest === '22') && native.every(n => sameComparison(n, r))) && sameComparison(ext[0], ext[1]), 'OWN_COMPARISON');
+  check(ext[0].head === ext[1].head && ext[0].base === ext[1].base && isDeepStrictEqual(ext[0].files, ext[1].files) && isDeepStrictEqual(ext[0].files, native[0].files), 'OWN_FILES');
   const metadata = good.filter(r => r.phase === phase && r.owner === 'extension' && r.kind === 'pr' && full(r.sourceRef) === ext[0].head && full(r.baseRef) === ext[0].base);
   check(good.filter(r => r.kind === 'pr').every(r => full(r.sourceRef) === ext[0].head && full(r.baseRef) === ext[0].base), 'METADATA_CHANGED');
   check(!records.some(r => r.phase === phase && r.owner === 'extension' && ['diff', 'diffstat'].includes(r.kind) && r.mode !== mode), 'OWN_WRONG_MODE');
@@ -149,6 +154,16 @@ export function qualifyBitbucketWhitespace(records, phase, mode, { own = true } 
 export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
   const KEY = '__geldBitbucketWhitespaceAcceptance';let saved = globalThis[KEY];
   if (action === 'dispose') { saved?.stop();delete globalThis[KEY];return { released: true }; }
+  if (action === 'diagnostic') {
+    const bounded = selector => Math.min(document.querySelectorAll(selector).length, 101);
+    return { exactURL: location.href === 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff',
+      panelCount: bounded('#pull-request-tabs-1-tab[role="tabpanel"]'), openerCount: bounded('#pull-request-tabs-1-tab button[aria-live="polite"][type="button"]'),
+      fileAnchorCount: bounded('[role="region"][aria-label="Diff"] > div > div[id^="chg-"]'), articleCount: bounded('article[data-qa="branch-diff-file"]'),
+      placeholderCount: bounded('[data-testid="pr-diff-placeholder-wrapper"]'), progressCount: bounded('[role="progressbar"]'),
+      busy: document.querySelector('#pull-request-tabs-1-tab[aria-busy="true"]') !== null,
+      dialogCount: bounded('[role="dialog"]'), checkboxCount: bounded('input#diff-settings-ignore-whitespace-toggle'),
+      bound: saved !== undefined, generation: saved?.generation ?? null, transition: saved?.transition?.phase ?? null };
+  }
   if (location.href !== 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff') return null;
   const native = node => node instanceof Element && node.isConnected && !node.closest('[data-geld-ui],.ak-renderer-document,[contenteditable]');
   const visible = node => { if (!native(node) || node.closest('[hidden],[inert],[aria-hidden="true"]')) return false;const r = node.getBoundingClientRect();return r.width > 0 && r.height > 0 && getComputedStyle(node).display !== 'none'; };
@@ -161,17 +176,17 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
   if (openers.length !== 1) return null;
   const opener = openers[0];
   const anchors = [...panel.querySelectorAll('[role="region"][aria-label="Diff"] > div > div[id^="chg-"]')].filter(native);
-  if (!anchors.length || anchors.length > 10 || new Set(anchors.map(n => n.id)).size !== anchors.length) return null;
+  if (action === 'bind' && !anchors.length || anchors.length > 10 || new Set(anchors.map(n => n.id)).size !== anchors.length) return null;
   const files = anchors.map(anchor => {
     const root = anchor.parentElement, article = root.querySelector('article[data-qa="branch-diff-file"]');
     const viewed = article ? [...article.querySelectorAll('label')].filter(n => n.textContent.trim() === 'Viewed').flatMap(n => [...n.querySelectorAll('input[type="checkbox"]')]) : [];
-    const rows = article ? [...article.querySelectorAll('[data-qa="code-line"]')].slice(0, 1000) : [];
+    const rows = article ? [...article.querySelectorAll('[data-qa="code-line"]')].slice(0, 1000).map(node => ({ node, text: node.textContent })) : [];
     return { anchor, root, article, viewed: viewed.map(n => ({ node: n, checked: n.checked, disabled: n.disabled })), rows, path: anchor.id.slice(4) };
   });
-  if (!files.some(f => f.article !== null)) return null;
+  if (action === 'bind' && !files.some(f => f.article !== null)) return null;
   if (action === 'bind') {
     if (saved) return null;
-    saved = { panel, actor: actors[0], actorValue: actors[0].getAttribute('data-current-user'), opener, files, events: [], forbiddenInputs: 0, expected: null, overflow: false };
+    saved = { panel, actor: actors[0], actorValue: actors[0].getAttribute('data-current-user'), opener, files, originalSemantics: files.map(f => ({ path: f.path, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })), generation: 0, transition: null, events: [], forbiddenInputs: 0, expected: null, overflow: false };
     saved.listen = event => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -197,27 +212,62 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
     const target = argument === 'opener' && dialogs.length === 0 ? opener : argument === 'cancel' && cancels.length === 1 ? cancels[0] : null;
     if (!target || !visible(target)) return null;saved.expected = target;return target;
   }
+  const pathSet = files.map(f => f.path).sort();
+  const samePaths = JSON.stringify(pathSet) === JSON.stringify(saved.originalSemantics.map(f => f.path).sort());
+  const viewedSemanticsPreserved = samePaths && saved.originalSemantics.every(old => {
+    const file = files.find(f => f.path === old.path);
+    return file && (old.viewed.length === 0 || old.viewed.length === file.viewed.length && old.viewed.every((v, i) => v.checked === file.viewed[i].checked && v.disabled === file.viewed[i].disabled));
+  });
   const viewedPreserved = saved.files.every(old => {
     const file = files.find(f => f.path === old.path);
-    return file && (old.article === null || old.viewed.length === file.viewed.length) && old.viewed.every((v, i) => v.node === file.viewed[i].node && v.checked === file.viewed[i].checked && v.disabled === file.viewed[i].disabled);
+    return file && old.viewed.length === file.viewed.length && old.viewed.every((v, i) => v.node === file.viewed[i].node && v.checked === file.viewed[i].checked && v.disabled === file.viewed[i].disabled);
   });
-  const originalsPreserved = saved.files.every(old => { const file = files.find(f => f.path === old.path);return file && file.anchor === old.anchor && file.root === old.root && (old.article === null || file.article === old.article); });
-  const rowsPreserved = saved.files.every(old => { const file = files.find(f => f.path === old.path);return file && old.rows.length === file.rows.length && old.rows.every((r, i) => r === file.rows[i]); });
+  const settledMounted = saved.files.every(old => old.article === null || files.some(file => file.path === old.path && file.article !== null));
+  const originalsPreserved = saved.files.every(old => { const file = files.find(f => f.path === old.path);return file && file.anchor === old.anchor && file.root === old.root && file.article === old.article; });
+  const rowsPreserved = saved.files.every(old => { const file = files.find(f => f.path === old.path);return file && old.rows.length === file.rows.length && old.rows.every((r, i) => r.node === file.rows[i].node && r.text === file.rows[i].text); });
+  const equalFiles = (before, after) => before.length === after.length && before.every(old => {
+    const file = after.find(value => value.path === old.path);
+    return file && old.anchor === file.anchor && old.root === file.root && old.article === file.article
+      && old.viewed.length === file.viewed.length && old.viewed.every((value, index) => value.node === file.viewed[index].node && value.checked === file.viewed[index].checked && value.disabled === file.viewed[index].disabled)
+      && old.rows.length === file.rows.length && old.rows.every((value, index) => value.node === file.rows[index].node && value.text === file.rows[index].text);
+  });
+  if (action === 'candidate') {
+    if (!saved.transition || !samePaths || !viewedSemanticsPreserved || !settledMounted || panel.getAttribute('aria-busy') === 'true') { saved.candidate = null;return { stable: false }; }
+    const stable = saved.candidate?.generation === saved.generation && equalFiles(saved.candidate.files, files);
+    saved.candidate = { generation: saved.generation, files, stable };return { stable, generation: saved.generation };
+  }
+  if (action === 'begin') {
+    if (saved.transition !== null || !originalsPreserved || !rowsPreserved || !viewedPreserved || !['hide', 'open', 'cancel', 'show'].includes(argument)) return null;
+    saved.candidate = null;saved.transition = { phase: argument, generation: saved.generation };return { begun: true, generation: saved.generation };
+  }
+  if (action === 'rebind') {
+    if (!saved.transition || saved.transition.phase !== argument?.phase || saved.transition.generation !== argument.generation || !samePaths || !viewedSemanticsPreserved || !settledMounted || panel.getAttribute('aria-busy') === 'true'
+      || saved.candidate?.stable !== true || saved.candidate?.generation !== saved.generation || !equalFiles(saved.candidate.files, files) || !Array.isArray(argument.paths) || JSON.stringify(pathSet) !== JSON.stringify([...argument.paths].sort()) || files.some(file => file.viewed.length > 1)) return null;
+    saved.files = files;saved.generation++;saved.transition = null;saved.candidate = null;return { rebound: true, generation: saved.generation, originalsReplaced: !originalsPreserved, rowsReplaced: !rowsPreserved, viewedReplaced: !viewedPreserved };
+  }
   const number = node => { const text = node?.textContent.trim().replaceAll(',', '') ?? '';return /^[+−-]?\d+$/.test(text) ? Math.abs(Number(text.replace('−', '-'))) : null; };
   const tab = document.querySelector('a#pull-request-tabs-1[role="tab"]');
   const heading = [...document.querySelectorAll('#file-tree h5')].find(n => n.textContent.trim() === 'Lines updated');
   const leaves = [...(heading?.parentElement?.parentElement?.querySelectorAll('span') ?? [])].filter(n => n.children.length === 0);
-  return { anonymous, originalPage: true, originalsPreserved, rowsPreserved, viewedPreserved, files: files.map(f => ({ path: f.path, mounted: f.article !== null, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })),
+  return { anonymous, originalPage: true, generation: saved.generation, transition: saved.transition?.phase ?? null, samePaths, viewedSemanticsPreserved, settledMounted, busy: panel.getAttribute('aria-busy') === 'true', originalsPreserved, rowsPreserved, viewedPreserved, files: files.map(f => ({ path: f.path, mounted: f.article !== null, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })),
     totals: { files: number(tab?.querySelector(':scope > div > span > span')), additions: number(leaves.find(n => /^\+\s*[\d,]+$/.test(n.textContent.trim()))), deletions: number(leaves.find(n => /^[-−]\s*[\d,]+$/.test(n.textContent.trim()))) },
     dialogCount: dialogs.length, checkbox, cancelAvailable: cancels.length === 1, events: [...saved.events], forbiddenInputs: saved.forbiddenInputs, overflow: saved.overflow };
 }
 
 /** Public scope intentionally ends with Settings open; Cancel/re-disable is unit-only until separately budgeted. */
 export async function verifyBitbucketWhitespace(page, { settings, observer, progress, poll, readState, guardBudget, fullCycle = false }) {
-  let installed = false;let error;
+  let installed = false, error, transition = null, expected = null;
   const read = () => page.evaluate(bitbucketWhitespaceProbe);
   const current = async () => {
-    await settings.current();const value = await read();check(value?.originalPage && value.viewedPreserved && value.originalsPreserved && !value.forbiddenInputs && !value.overflow, 'NATIVE_SOURCE_CHANGED');return value;
+    await settings.current();const value = await read();
+    progress.lastNative = value === null ? { available: false } : Object.fromEntries(['originalPage', 'generation', 'transition', 'samePaths', 'viewedSemanticsPreserved', 'settledMounted', 'busy', 'originalsPreserved', 'rowsPreserved', 'viewedPreserved', 'dialogCount', 'forbiddenInputs', 'overflow'].map(key => [key, value[key]]));
+    check(value?.originalPage && !value.forbiddenInputs && !value.overflow, 'NATIVE_SOURCE_CHANGED');
+    if (transition === null) check(value.viewedPreserved && value.originalsPreserved && value.rowsPreserved, 'SETTLED_NATIVE_CHANGED');
+    return value;
+  };
+  const begin = async phase => {
+    await current();const value = await page.evaluate(bitbucketWhitespaceProbe, 'begin', phase);
+    check(value?.begun === true, 'TRANSITION_BEGIN');transition = { phase, generation: value.generation };
   };
   const input = async which => {
     guardBudget(which);const handle = await page.evaluateHandle(bitbucketWhitespaceProbe, 'target', which);
@@ -230,7 +280,23 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
       return after;
     } finally { await handle.dispose(); }
   };
-  const proof = async (phase, mode, own) => poll(async () => { await observer.flush();try { return qualifyBitbucketWhitespace(observer.records(), phase, mode, { own }); } catch { return null; } }, v => v !== null, `Independent ${phase} native response pair`, 10000);
+  const proof = async (phase, mode, own) => poll(async () => {
+    await observer.flush();try { const value = qualifyBitbucketWhitespace(observer.records(), phase, mode, { own, expected });progress.lastProof = { phase, mode, own, qualified: true };return value; }
+    catch (failure) { progress.lastProof = { phase, mode, own, qualified: false, code: /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'UNQUALIFIED' };return null; }
+  }, v => v !== null, `Independent ${phase} native response pair`, 10000);
+  const settle = async result => {
+    check(transition !== null, 'TRANSITION_MISSING');
+    await poll(async () => {
+      await current();
+      const painted = await page.evaluate(() => new Promise(resolve => {
+        let done = false;const finish = value => { if (!done) { done = true;clearTimeout(timer);resolve(value); } };
+        const timer = setTimeout(() => finish(false), 1000);requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+      }));check(painted === true, 'NATIVE_RENDER_TICKS');
+      return page.evaluate(bitbucketWhitespaceProbe, 'candidate');
+    }, value => value?.stable === true, 'Two stable native mode DOM samples after fresh responses', 5000);
+    const rebound = await page.evaluate(bitbucketWhitespaceProbe, 'rebind', { ...transition, paths: result.paths });
+    check(rebound?.rebound === true, 'TRANSITION_REBIND');(progress.generations ??= []).push({ phase: transition.phase, ...rebound });transition = null;await current();
+  };
   const counts = async result => {
     const state = await poll(readState, v => v?.hasDiff && isDeepStrictEqual(v.all, result.totals), 'Geld totals match independent current response', 10000);
     const value = await current();check(isDeepStrictEqual(value.totals, state.visible), 'NATIVE_COUNTS');return { all: state.all, visible: state.visible, native: value.totals };
@@ -247,21 +313,21 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
     progress.stage = 'activation';let previousIdle = null;
     await poll(async () => { await observer.flush();const state = observer.idle();const stable = state.pending === 0 && previousIdle === state.observed;previousIdle = state.observed;return stable; }, value => value === true, 'Current native baseline idle', 4000);
     check(!observer.records().some(r => r.owner === 'extension'), 'OWN_REQUEST_BEFORE_ACTIVATION');
-    progress.activationBudget = guardBudget('hide');observer.phase('hide');await settings.hide(true);
-    progress.stage = 'hidden_responses';const hidden = await proof('hide', true, true);progress.phases.push({ phase: 'hide', ...hidden, counts: await counts(hidden) });
-    progress.stage = 'settings_restore';observer.phase('open');await input('opener');const opened = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null, 'Native original checkbox after override restoration', 4000);
+    progress.activationBudget = guardBudget('hide');await begin('hide');observer.phase('hide');await settings.hide(true);
+    progress.stage = 'hidden_responses';const hidden = await proof('hide', true, true);expected = { head: hidden.head, base: hidden.base };await settle(hidden);progress.phases.push({ phase: 'hide', ...hidden, counts: await counts(hidden) });
+    progress.stage = 'settings_restore';await begin('open');observer.phase('open');await input('opener');const opened = await poll(current, v => v.dialogCount === 1 && v.checkbox !== null, 'Native original checkbox after override restoration', 4000);
     check(opened.checkbox.checked === baseline.checkbox.checked, 'NATIVE_CHECKBOX_OVERRIDE_LEAK');progress.opened = opened;
-    const restored = await proof('open', false, false);progress.phases.push({ phase: 'open', ...restored });
+    const restored = await proof('open', false, false);await settle(restored);progress.phases.push({ phase: 'open', ...restored });
     if (fullCycle) {
-      observer.phase('cancel');await input('cancel');await poll(current, v => v.dialogCount === 0, 'Native Cancel reapply', 4000);
-      progress.phases.push({ phase: 'cancel', ...(await proof('cancel', true, false)) });
-      observer.phase('show');guardBudget('show');await settings.hide(false);
-      const shown = await proof('show', false, true);progress.phases.push({ phase: 'show', ...shown, counts: await counts(shown) });
+      await begin('cancel');observer.phase('cancel');await input('cancel');await poll(current, v => v.dialogCount === 0, 'Native Cancel reapply', 4000);
+      const reapplied = await proof('cancel', true, false);await settle(reapplied);progress.phases.push({ phase: 'cancel', ...reapplied });
+      await begin('show');observer.phase('show');guardBudget('show');await settings.hide(false);
+      const shown = await proof('show', false, true);await settle(shown);progress.phases.push({ phase: 'show', ...shown, counts: await counts(shown) });
     }
     progress.stage = 'final';progress.final = await current();check(observer.evidence.providerWrites === 0 && !observer.evidence.overflow, 'TRAFFIC_UNQUALIFIED');
     progress.status = 'passed';
     progress.limitations = ['Actual fixture may contain no whitespace-only hunk; request mode, initial native checkbox and current-response counts are proven independently.', ...(fullCycle ? [] : ['Cancel/reapply and disabling are unit-tested only; this public case closes the page while Settings remains open and baseline native mode is restored.'])];
-  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = error; }
+  } catch (failure) { error = /^[A-Z_]{1,80}$/.test(failure?.code ?? '') ? failure.code : 'WHITESPACE_ACCEPTANCE_UNAVAILABLE';progress.status = installed ? 'failed' : 'unavailable';progress.failure = error;try { if (!page.isClosed()) progress.readiness = await page.evaluate(bitbucketWhitespaceProbe, 'diagnostic'); } catch { progress.readiness = { unavailable: 'DIAGNOSTIC_READ_FAILED' }; } }
   finally {
     const failures = [];
     if (installed && !page.isClosed()) try { progress.beforeClose = await current();check((await page.evaluate(bitbucketWhitespaceProbe, 'dispose')).released, 'PROBE_DISPOSE'); } catch { failures.push('PROBE_CLEANUP'); }

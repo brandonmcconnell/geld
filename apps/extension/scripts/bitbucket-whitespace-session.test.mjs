@@ -77,14 +77,14 @@ for (const changed of ['node', 'value']) test('Viewed ' + changed + ' drift is n
   const d = dom();try { probe('bind');const box = d.w.document.querySelector('article input');if (changed === 'node') box.replaceWith(box.cloneNode());else box.checked = true;assert.equal(probe().viewedPreserved, false); } finally { d.close(); }
 });
 
-function protocol({ fullCycle = false, leak = false, untrusted = false, fail = false } = {}) {
-  let dialog = false, setting = false, phase = 'baseline', closed = false, restored = false, disposed = false;const events = [], calls = [], rows = phaseRecords('baseline', false).filter(r => r.owner === 'native');
-  const state = () => ({ originalPage: true, originalsPreserved: true, rowsPreserved: true, viewedPreserved: true, forbiddenInputs: 0, overflow: false, events: [...events], dialogCount: dialog ? 1 : 0, checkbox: dialog ? { checked: leak && setting ? false : true } : null, cancelAvailable: dialog, totals: TOTALS });
-  const settings = { current: async () => ({ hideWhitespace: setting }), hide: async v => { setting = v;calls.push('settings:' + v);rows.push(...phaseRecords(phase, v)); }, restore: async value => { assert.equal(value, true);restored = true;calls.push('restored'); } };
-  const page = { isClosed: () => closed, close: async () => { closed = true;calls.push('closed'); }, evaluate: async (_f, action) => { if (action === 'dispose') return { released: true };return state(); }, evaluateHandle: async (_f, _action, which) => ({ asElement: () => ({ evaluate: async () => true, click: async () => { events.push({ control: which, trusted: !untrusted });dialog = which === 'opener';calls.push(which);if (phase === 'open') rows.push(...phaseRecords(phase, false));if (phase === 'cancel') rows.push(...phaseRecords(phase, true)); } }), dispose: async () => {} }) };
+function protocol({ fullCycle = false, leak = false, untrusted = false, fail = false, remount = false, settledMutation = false, frameUnavailable = false } = {}) {
+  let dialog = false, setting = false, phase = 'baseline', closed = false, restored = false, disposed = false, generation = 0, preserved = true;const events = [], calls = [], rows = phaseRecords('baseline', false).filter(r => r.owner === 'native');
+  const state = () => ({ originalPage: true, originalsPreserved: preserved, rowsPreserved: preserved, viewedPreserved: preserved, samePaths: true, viewedSemanticsPreserved: true, settledMounted: true, busy: false, forbiddenInputs: 0, overflow: false, events: [...events], dialogCount: dialog ? 1 : 0, checkbox: dialog ? { checked: leak && setting ? false : true } : null, cancelAvailable: dialog, totals: TOTALS });
+  const settings = { current: async () => ({ hideWhitespace: setting }), hide: async v => { setting = v;if (remount) preserved = false;calls.push('settings:' + v);rows.push(...phaseRecords(phase, v)); }, restore: async value => { assert.equal(value, true);restored = true;calls.push('restored'); } };
+  const page = { isClosed: () => closed, close: async () => { closed = true;calls.push('closed'); }, evaluate: async (_f, action) => { if (_f !== probe) return !frameUnavailable;if (action === 'dispose') return { released: true };if (action === 'begin') return { begun: true, generation };if (action === 'candidate') return { stable: true, generation };if (action === 'rebind') { generation++;preserved = true;return { rebound: true, generation, originalsReplaced: remount, rowsReplaced: remount, viewedReplaced: remount }; }return state(); }, evaluateHandle: async (_f, _action, which) => ({ asElement: () => ({ evaluate: async () => true, click: async () => { events.push({ control: which, trusted: !untrusted });dialog = which === 'opener';if (remount && phase !== 'baseline') preserved = false;calls.push(which);if (phase === 'open') rows.push(...phaseRecords(phase, false));if (phase === 'cancel') rows.push(...phaseRecords(phase, true)); } }), dispose: async () => {} }) };
   const observer = { evidence: { providerWrites: 0, overflow: false }, records: () => rows, idle: () => ({ pending: 0, observed: rows.length }), phase: v => { phase = v; }, flush: async () => {}, dispose: async () => { disposed = true; } };
   const progress = {};const poll = async (read, accept) => { if (fail && phase === 'hide') throw Error('SECRET_FAILURE');for (let attempt = 0; attempt < 3; attempt++) { const v = await read();if (accept(v)) return v; }assert.fail('Protocol poll failed'); };
-  return { run: () => verify(page, { settings, observer, progress, poll, readState: async () => ({ hasDiff: true, all: TOTALS, visible: TOTALS }), guardBudget: () => {}, fullCycle }), progress, calls, finished: () => ({ closed, restored, disposed }) };
+  return { run: () => verify(page, { settings, observer, progress, poll, readState: async () => { if (settledMutation) preserved = false;return { hasDiff: true, all: TOTALS, visible: TOTALS }; }, guardBudget: () => {}, fullCycle }), progress, calls, finished: () => ({ closed, restored, disposed }) };
 }
 test('bounded public sequence stops with Settings open, no Save, and closes before raw restore', async () => {
   const p = protocol();await p.run();assert.deepEqual(p.calls, ['opener', 'cancel', 'settings:true', 'opener', 'closed', 'restored']);assert.deepEqual(p.finished(), { closed: true, restored: true, disposed: true });assert.equal(p.progress.scope, 'first_activation_and_native_settings_restore');assert.equal(p.progress.opened.checkbox.checked, true);
@@ -180,4 +180,67 @@ test('query classifier retains comparison semantics separately from presentation
   assert.equal(value.topic, 'true');assert.equal(value.pullRequest, '22');assert.equal(value.mode, true);
   assert.equal(resource(`${API}pullrequests/22/diff?topic=false`).pullRequest, '22');
   for (const query of ['topic=true&topic=false', 'from_pullrequest_id=22&from_pullrequest_id=23', 'topic=unknown']) assert.equal(resource(`${API}pullrequests/22/diff?${query}`), null);
+});
+
+test('genuine native article replacement is leased only at an explicit matching transition', () => {
+  const d = dom();try {
+    probe('bind');const begun = probe('begin', 'hide');assert.equal(begun.begun, true);
+    const article = d.w.document.querySelector('article');article.replaceWith(article.cloneNode(true));
+    const during = probe();assert.equal(during.originalsPreserved, false);assert.equal(during.viewedPreserved, false);assert.equal(during.viewedSemanticsPreserved, true);
+    assert.equal(probe('rebind', { phase: 'open', generation: begun.generation, paths: ['test/test.py'] }), null);
+    assert.equal(probe('rebind', { phase: 'hide', generation: begun.generation, paths: ['other.py'] }), null);
+    assert.equal(probe('candidate').stable, false);assert.equal(probe('candidate').stable, true);
+    const rebound = probe('rebind', { phase: 'hide', generation: begun.generation, paths: ['test/test.py'] });assert.equal(rebound.rebound, true);assert.equal(rebound.originalsReplaced, true);
+    assert.equal(probe().originalsPreserved, true);assert.equal(probe().viewedPreserved, true);
+    assert.equal(probe('rebind', { phase: 'hide', generation: begun.generation, paths: ['test/test.py'] }), null);
+    d.w.document.querySelector('[data-qa="code-line"]').firstChild.textContent = 'changed';assert.equal(probe().rowsPreserved, false);
+    assert.equal(probe('begin', 'open'), null);
+  } finally { d.close(); }
+});
+for (const change of ['viewed', 'path', 'frame', 'epoch']) test('native transition cannot adopt changed ' + change, () => {
+  const d = dom();try {
+    probe('bind');const begun = probe('begin', 'hide');
+    if (change === 'viewed') d.w.document.querySelector('article input').checked = true;
+    if (change === 'path') d.w.document.querySelector('[id="chg-test/test.py"]').id = 'chg-other.py';
+    if (change === 'frame') d.w.document.querySelector('meta').setAttribute('data-current-user', '{"isAuthenticated":true}');
+    const value = probe('rebind', { phase: 'hide', generation: begun.generation + (change === 'epoch' ? 1 : 0), paths: ['test/test.py'] });assert.equal(value, null);
+  } finally { d.close(); }
+});
+test('readiness diagnostic is bounded and contains only native structure flags', () => {
+  const d = dom();try { const value = probe('diagnostic');assert.equal(value.exactURL, true);assert.equal(value.panelCount, 1);assert.equal(value.articleCount, 1);assert.equal(value.bound, false);assert.equal(JSON.stringify(value).includes('source'), false);assert.equal(JSON.stringify(value).includes('data-current-user'), false); } finally { d.close(); }
+});
+test('protocol permits replacement only after fresh native response proof, then returns to strict settled checks', async () => {
+  const p = protocol({ remount: true });await p.run();assert.equal(p.progress.generations.length, 2);assert.equal(p.progress.generations.every(g => g.rebound && g.originalsReplaced), true);
+  const changed = protocol({ remount: true, settledMutation: true });await assert.rejects(changed.run(), { code: 'SETTLED_NATIVE_CHANGED' });
+  const missingProof = protocol({ remount: true, fail: true });await assert.rejects(missingProof.run());assert.equal(missingProof.progress.generations, undefined);
+});
+test('restored native mode must still match the already verified full comparison', () => {
+  const records = phaseRecords('open', false);assert.equal(qualify(records, 'open', false, { own: false, expected: { head: H, base: B } }).totals.files, 1);
+  records[1].head = B;assert.throws(() => qualify(records, 'open', false, { own: false, expected: { head: H, base: B } }), { code: 'NATIVE_REFS' });
+});
+
+test('a delayed native remount after a fresh response restarts candidate stability before rebind', () => {
+  const d = dom();try {
+    probe('bind');const token = probe('begin', 'hide');
+    assert.equal(probe('candidate').stable, false); // First post-response old-DOM sample.
+    assert.equal(probe('rebind', { phase: 'hide', generation: token.generation, paths: ['test/test.py'] }), null);
+    const article = d.w.document.querySelector('article');article.replaceWith(article.cloneNode(true)); // Queued native commit.
+    assert.equal(probe('rebind', { phase: 'hide', generation: token.generation, paths: ['test/test.py'] }), null);
+    assert.equal(probe('candidate').stable, false); // New identities retire old sample.
+    assert.equal(probe('candidate').stable, true);
+    const rebound = probe('rebind', { phase: 'hide', generation: token.generation, paths: ['test/test.py'] });assert.equal(rebound.rebound, true);assert.equal(rebound.originalsReplaced, true);
+    assert.equal(probe().rowsPreserved, true);
+  } finally { d.close(); }
+});
+test('row content changing after the last candidate sample cannot be adopted', () => {
+  const d = dom();try {
+    probe('bind');const token = probe('begin', 'hide');probe('candidate');probe('candidate');
+    d.w.document.querySelector('[data-qa="code-line"]').firstChild.textContent = 'late changed native content';
+    assert.equal(probe('rebind', { phase: 'hide', generation: token.generation, paths: ['test/test.py'] }), null);
+    assert.equal(probe('candidate').stable, false);assert.equal(probe('candidate').stable, true);
+  } finally { d.close(); }
+});
+
+test('missing native render ticks fail finitely and still close before raw restore', async () => {
+  const p = protocol({ frameUnavailable: true });await assert.rejects(p.run(), { code: 'NATIVE_RENDER_TICKS' });assert.deepEqual(p.finished(), { closed: true, restored: true, disposed: true });
 });
