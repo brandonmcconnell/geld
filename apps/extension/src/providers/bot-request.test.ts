@@ -18,6 +18,16 @@ async function settle(): Promise<void> { await vi.waitFor(() => expect(document.
 beforeEach(() => document.body.replaceChildren());
 
 describe('native bot command preview', () => {
+  it('keeps the exact single-command preview and actions without an artificial mode selector', async () => {
+    const f = mount(request({ key: 'greptile-native-source-and-head', botId: 'greptile', label: 'Greptile', commands: [{ id: 'review', label: 'Review', text: '@greptileai' }] }));
+    expect(f.host.querySelector('summary')?.textContent).toBe('Prepare Greptile request');
+    expect(f.host.querySelector('[role="group"][aria-label="Review command mode"]')).toBeNull();
+    expect(f.host.querySelector('code')?.textContent).toBe('@greptileai');
+    expect(f.button('Copy command').disabled).toBe(false);expect(f.button('Open native comment').disabled).toBe(true);
+    f.button('Copy command').click();await settle();
+    expect(f.copy).toHaveBeenCalledExactlyOnceWith('@greptileai');expect(f.notice()).toContain('Command copied');
+  });
+
   it('copies the selected literal command while signed out, without enabling the composer or changing state', async () => {
     const draft = document.createElement('textarea');draft.value = 'Existing native draft';document.body.append(draft);draft.setSelectionRange(2, 7, 'backward');
     const f = mount();
