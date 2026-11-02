@@ -43,7 +43,7 @@ export const gitlabAdapter: ProviderAdapter = {
       botRequests: (input, comments, current) => readGitLabBotRequests(doc, input, comments, snapshot.capabilities.signedIn, current),
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
       get actions() { return readGitLabActions(doc, snapshot.capabilities, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url }); },
-      renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc),
+      renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc, snapshot.renderedNotes.get(comment.id)),
       authorPresentation: (comment: ProviderReviewComment) => gitLabAuthorPresentation(comment, doc),
       sourceActions: (comment: ProviderReviewComment) => {
         const permissions = permissionsForNote.get(comment.id);

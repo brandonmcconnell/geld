@@ -2,7 +2,7 @@
 import { isProviderReviewPage } from '../providers/types';
 import { gitlabAdapter } from './index';
 import { describeGitLabPage } from './page';
-import { fetchGitLabReview } from './review';
+import { fetchGitLabReview, parseGitLabDiscussions } from './review';
 import type { GitLabReviewSnapshot } from './review';
 
 vi.mock('./review', async (importOriginal) => ({ ...await importOriginal<typeof import('./review')>(), fetchGitLabReview: vi.fn() }));
@@ -15,7 +15,7 @@ const FORM = '<form data-testid="submit-gl-form"><div data-testid="reviewer_stat
 function snapshot(): GitLabReviewSnapshot {
   return {
     input: { subject: { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/repo', id: '7', headSha: HEAD }, threads: [] },
-    comments: [], events: [], checks: [], threadCapabilities: new Map(), state: 'opened', complete: true, unavailable: [],
+    comments: [], events: [], checks: [], threadCapabilities: new Map(), renderedNotes: new Map(), state: 'opened', complete: true, unavailable: [],
     sourceCoverage: { threads: 'complete', comments: 'complete' }, approvalsRequired: null, approvalsLeft: null,
     capabilities: { signedIn: true, canApprove: true, canReview: false, canComment: false, requestChanges: 'unknown' },
   };
@@ -36,6 +36,20 @@ beforeEach(() => {
 });
 
 afterEach(() => { document.body.replaceChildren();vi.unstubAllGlobals();vi.restoreAllMocks(); });
+
+it('carries same-snapshot rendered evidence without enriching raw semantic comments or surviving another review route', async () => {
+  const original = snapshot();
+  const parsed = parseGitLabDiscussions([{ id: 'b'.repeat(40), resolvable: false, notes: [{ id: 11, note: '**Rich**', note_html: '<p><strong>Rich</strong></p>',
+    system: false, author: { id: 23, username: 'reviewer', bot: false }, created_at: '2026-11-01T12:00:00Z',
+    noteable_type: 'MergeRequest', noteable_iid: 7, noteable_id: 2, project_id: 1, noteable_note_url: `${REVIEW}#note_11` }] }], original.input.subject, { projectId: '1', noteableId: '2' });
+  vi.mocked(fetchGitLabReview).mockResolvedValue({ ...original, comments: parsed.comments, renderedNotes: parsed.renderedNotes });
+  const acquired = await acquire();const comment = parsed.comments[0];if (comment === undefined) throw new Error('Missing parsed source.');
+  const host = document.createElement('div');host.textContent = comment.body;document.body.append(host);
+  expect(acquired.renderComment?.(comment, host)).toBe(true);expect(host.querySelector('strong')?.textContent).toBe('Rich');
+  expect(comment.body).toBe('**Rich**');expect(comment).not.toHaveProperty('html');
+  host.textContent = comment.body;window.location.href = REVIEW.replace('/7', '/8');
+  expect(acquired.renderComment?.(comment, host)).toBe(false);expect(host.textContent).toBe('**Rich**');
+});
 
 it('refreshes the same snapshot as native outcomes hydrate, disable, reenable and disappear without refetching', async () => {
   const result = await acquire();
