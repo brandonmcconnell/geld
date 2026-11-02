@@ -1,5 +1,6 @@
 import { describeBitbucketPage } from './page';
 import type { BitbucketSyntaxCapability } from './workflow-syntax';
+import { BitbucketPassiveCookieNotice } from './passive-cookie-notice';
 
 interface Actor {
   readonly bootstrap: Element;
@@ -51,8 +52,9 @@ export class BitbucketNativeSyntaxPreference {
   private observer: MutationObserver | null = null;
   private frame: number | null = null;
   private deadline: number | null = null;
+  private readonly cookies: BitbucketPassiveCookieNotice;
 
-  constructor(private readonly doc: Document, private readonly changed: (value: BitbucketSyntaxCapability) => void, private readonly environment: NativeSyntaxPreferenceEnvironment = {}) {}
+  constructor(private readonly doc: Document, private readonly changed: (value: BitbucketSyntaxCapability) => void, private readonly environment: NativeSyntaxPreferenceEnvironment = {}) { this.cookies = new BitbucketPassiveCookieNotice(doc); }
 
   private actor(): Actor | null {
     const sources = [...this.doc.head.querySelectorAll('meta#bb-bootstrap[data-current-user][data-target-workspace-uuid]')].filter(native);
@@ -147,7 +149,8 @@ export class BitbucketNativeSyntaxPreference {
   private check(): void {
     if (!this.current()) { this.clear();return; }
     const dialogs = this.dialogs();const candidate = this.candidate;
-    if (dialogs.length > 0 || [...this.doc.querySelectorAll(SETTINGS_FIELD)].some(native)) { const initial = initialRenderings.get(this.doc);if (initial !== undefined && !initial.closed) { initial.closed = true;this.changed('unknown'); } }
+    const initial = initialRenderings.get(this.doc);
+    if (initial !== undefined && !initial.closed && (this.cookies.unknownCurrent() || dialogs.some((dialog) => !this.cookies.current(dialog)) || [...this.doc.querySelectorAll(SETTINGS_FIELD)].some(native))) { initial.closed = true;this.changed('unknown'); }
     if (this.opener === null && this.capability === 'unknown') return;
     if (candidate !== null) {
       if (!candidate.dialog.isConnected) {
@@ -169,13 +172,15 @@ export class BitbucketNativeSyntaxPreference {
 
   private readonly mutations = (records: readonly MutationRecord[]): void => {
     const view = this.doc.defaultView;const initial = initialRenderings.get(this.doc);
-    if (view !== null && initial !== undefined && !initial.closed && records.some((record) => {
+    if (initial === undefined || initial.closed) { this.check();return; }
+    const cookies = this.cookies.history(records);
+    if (view !== null && (cookies.invalid || records.some((record) => {
       if (!(record.target instanceof view.Element) || record.target.closest(UNTRUSTED) !== null) return false;
-      if (record.type === 'attributes') return record.attributeName === 'role' && (record.oldValue === 'dialog' || record.target.getAttribute('role') === 'dialog')
+      if (record.type === 'attributes') return record.attributeName === 'role' && (record.oldValue === 'dialog' || record.target.getAttribute('role') === 'dialog') && !cookies.neutral.has(record.target)
         || record.attributeName === 'id' && (record.oldValue === 'diff-settings-syntax-highlighting-toggle' || record.target.matches(SETTINGS_FIELD));
       return [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof view.Element && node.closest(UNTRUSTED) === null
-        && (node.matches(SETTINGS_SURFACE) || node.querySelector(SETTINGS_SURFACE) !== null));
-    })) {
+        && [node, ...node.querySelectorAll(SETTINGS_SURFACE)].some((surface) => surface.matches(SETTINGS_SURFACE) && !cookies.neutral.has(surface)));
+    }))) {
       initial.closed = true;if (this.capability === 'unknown') this.changed('unknown');
     }
     this.check();
@@ -239,7 +244,7 @@ export class BitbucketNativeSyntaxPreference {
     const initial = initialRenderings.get(this.doc);
     this.checkObserved();
     return this.capability === 'unknown' && this.current() && !this.doc.hidden && initial !== undefined && !initial.closed
-      && this.doc.URL === initial.url && this.scope?.bootstrap === initial.bootstrap && this.scope.user === initial.user && this.scope.workspace === initial.workspace && this.dialogs().length === 0;
+      && this.doc.URL === initial.url && this.scope?.bootstrap === initial.bootstrap && this.scope.user === initial.user && this.scope.workspace === initial.workspace && this.dialogs().every((dialog) => this.cookies.current(dialog));
   }
 
   clear(): void {
