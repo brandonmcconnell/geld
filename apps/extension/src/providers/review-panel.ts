@@ -648,8 +648,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function referenceRow(reference: ProviderReviewReference): HTMLElement {
     const row = node('div', '', 'geld-provider-review__reference');
     row.dataset.geldReference = reference.id;
-    row.dataset.geldReferenceNativeId = reference.target.nativeId;
-    row.dataset.geldReferenceProject = reference.target.projectId;
+    if (reference.target.provider === 'gitlab') {
+      row.dataset.geldReferenceNativeId = reference.target.nativeId;
+      row.dataset.geldReferenceProject = reference.target.projectId;
+    } else row.dataset.geldReferenceIdentity = reference.target.identityBasis;
     row.dataset.geldReferenceNumber = reference.target.number;
     row.dataset.geldReferenceRepository = reference.target.repository;
     row.dataset.geldReferenceKind = reference.target.kind;

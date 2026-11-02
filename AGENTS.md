@@ -1597,14 +1597,20 @@ Provider-specific surfaces translate settings and sources into shared review and
   Moving across wrapped commit-link lines updates only popover geometry after genuine pointer intent, without another source fetch.
   GitLab's commit reference hook mounts its provider card only once, and Escape can leave that card mounted but hidden, so installed pointer and keyboard tests record separate native visits when the card cannot reopen instead of patching provider state or accepting a hidden chip.
   The GitLab digest reference index reads only mounted native description links and matching server-system-note events, with full origin, namespace, project, resource ID and IID identity and no extra lookup.
-  GitLab validates its exact native reference routes and note IDs inside its adapter, while shared reference rendering validates review scope and URL safety without imposing one provider's path or fragment conventions.
-  Valid native trailing-slash target URLs retain their source identity and spelling through extraction, rendering and original-source reacquisition.
+  GitLab validates its exact native reference routes and note IDs inside its adapter, while shared reference rendering validates review scope and URL safety with a separate canonical Cloud URL branch for Bitbucket.
+  Valid native GitLab trailing-slash target URLs retain their source identity and spelling through extraction, rendering and original-source reacquisition.
   The same GitLab issue can appear as a native work_item/data-work-item description link and an issue/data-issue system-note link at the same work_items URL, so durable identity joins those aliases while the first actual native URL and label stay intact.
   A GitLab system note repeats its incoming reference in the headline and collapsed body, so only its verified system-note-content headline is indexed and each note/target pair is counted once.
   Reference labels and cached native titles do not establish target state, and native GFM initialization attributes and listeners are never copied into the digest.
   A native title temporarily held in Geld's existing hover-title cache remains the same source title while its count popover owns the tooltip.
   View in conversation reacquires the current exact native reference, reveals only Geld-owned compaction and rejects changed review, head, selection, source or framework-hidden content before focusing the original anchor.
-  Unknown, ambiguous, localized or unmounted reference shapes stay in ordinary activity rather than being guessed as complete incoming references, and Bitbucket reference acquisition remains unverified.
+  Unknown, ambiguous, localized or unmounted reference shapes stay in ordinary activity rather than being guessed as complete incoming references.
+  Bitbucket outgoing references read only the unique original description and use canonical Cloud PR URLs as destination identity, without inventing GitLab project IDs, repository UUIDs, target existence, titles or states.
+  Preserve GitLab's required native identity fields and rendered attributes, while Bitbucket reference rows explicitly identify their URL basis without native-ID placeholders.
+  Require matching native header repository and PR-number facts before indexing, and decline ambiguous roots or descriptions with more than 200 original link anchors.
+  Original-source reveal revalidates the current route, root, element, raw href and reference text against the latest indexed binding without fetching metadata or moving native nodes.
+  The retained public Bitbucket descriptions and comment bodies contain no outgoing links, so positive reference anchors in tests are synthetic and installed acceptance remains unverified.
+  Bitbucket issue, commit, comment-body and incoming reference indexing remain unsupported in this slice.
 
   Compacted original conversation entries use `hidden="until-found"` only when the browser supports beforematch and the exact native root can be folded without overriding native visibility or editing controls.
   Beforematch and exact fragment navigation reveal that original for the visit, while an explicit Hide remains effective until a later changed fragment requests it again.
