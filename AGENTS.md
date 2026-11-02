@@ -2405,3 +2405,7 @@ It performs one credential-free CDN read and retains compressed source with hash
 
 The PR-renderer source investigation can capture the exact JavaScript dependencies listed by the retained native PR-page loader in one bounded static batch.
 That mode has four concurrent reads, an eight MiB per-file cap, a sixty-four MiB aggregate stream cap and a ninety-second wall limit, with no retries or code execution.
+
+The PR full-context acceptance also scopes All changes to the active native diff panel and keeps the original control identity through scrolling.
+A hidden sticky copy must not discard its file lease or erase the failure diagnostic.
+Its source-menu probe recognizes the same untouched passive cookie notice while rejecting any unknown dialog, and a placeholder text hint is not evidence of a native error.
