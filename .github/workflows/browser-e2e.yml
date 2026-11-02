@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       focus:
-        description: 'Public read-only slice; unselected cases are reported without a pass. Respect carried provider cooldowns.'
+        description: 'Public verification slice; explicit syntax-on focus changes/restores only an ephemeral anonymous native preference. Respect carried cooldowns.'
         required: true
         default: regression
         type: choice
@@ -21,6 +21,7 @@ on:
           - regression
           - bitbucket-diff
           - bitbucket-pipeline-shell
+          - bitbucket-pipeline-syntax-on
           - bitbucket-list
           - bitbucket-authors
           - bitbucket-native-bash
@@ -57,7 +58,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-pipeline-shell', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-review', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-review', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
