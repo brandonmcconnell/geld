@@ -27,6 +27,8 @@ import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
 import { inlineText } from './inline-text';
+import { editedMark } from './edited-mark';
+import { relativeTimeElement } from './time';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -57,8 +59,17 @@ export function panelSignature(): string {
 
 /** A row's time cell for `anchor`, or null when the page shows no time for it. */
 function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
-  const time = model.timeFor(anchor);
-  return time === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [time]);
+  return commentTime(model, anchor, model.timeFor(anchor));
+}
+
+/**
+ * A comment's time in a row: for an edited one the edit's, live, with the clock that says when it was first posted
+ * and opens GitHub's edit history (`editedMark`); else the page's words, which the time refresh keeps current.
+ */
+function commentTime(model: PanelModel, anchor: string, text: string): HTMLElement | null {
+  const edited = model.editedFor(anchor);
+  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time ${PANEL_CLASS}__time--edited` }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`), editedMark(edited.editedAt, edited.postedAt, edited.log)]);
+  return text === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [text]);
 }
 
 export type GroupId = 'open' | 'done' | 'hidden' | 'activity' | 'pushes';
@@ -407,6 +418,8 @@ export interface PanelModel {
   readonly myReactionFor: (anchor: string) => string | null;
   /** The comment's time as the page shows it ("yesterday"). */
   readonly timeFor: (anchor: string) => string;
+  /** When the comment was last edited and first posted, and its edit-history log; null when it was never edited. */
+  readonly editedFor: (anchor: string) => { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -2148,7 +2161,8 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (line.time !== '' && line.anchor !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: line.anchor }, [line.time]));
+  const lineTime = line.anchor === null ? null : commentTime(model, line.anchor, line.time);
+  if (lineTime !== null) right.append(lineTime);
   const spacer = (): HTMLElement => createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' });
   if (opens && line.anchor !== null) right.append(controlSlot(line.anchor, true), chevron(open, act));
   else if (goes) {
@@ -2342,7 +2356,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: entry.anchor }, [entry.time]));
+  const entryTime = commentTime(model, entry.anchor, entry.time);
+  if (entryTime !== null) right.append(entryTime);
   // The times read as one column: a line with fewer squares after its time than a sibling leaves the missing
   // ones blank. In a round an opening line has a ⋯ and a chevron (two squares); in the Reviews index every line
   // that goes somewhere has one chevron and nothing else.

@@ -390,7 +390,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `title` only on a page that has rendered no `tool-tip`, since the content script's world has no `customElements` to ask).
   A thread's pinned strip wears the reading's time the same way (`ChatSource.at`: the rewrite's for a live summary rewritten since it was posted, the summary's own for one from an earlier run;
   a past revision wears `revision.at`).
-  `dressByline` reads it with `editedAt` on the comment element (not the timeline row, whose id is not the anchor `logUrlOf` matches), which asks the edit-history log only for a comment the page marks as edited and bumps `editsVersion` (in the panel signature) when the time lands.
+  `dressByline` reads it with `editTimesOf(anchor)` (edit-times.ts), which asks the edit-history log only for a comment the page marks as edited and bumps `editsVersion` (in the panel signature) when the time lands.
+  **Rows wear the edit too** (`commentTime` in panel.ts, `PanelModel.editedFor`): a bot line, a review entry or any other comment row whose comment was edited shows the edit's time (GitHub's live `relative-time`, not a `data-geld-time-for` cell) with the same clock beside it, so a summary a bot rewrites in place never reads as hours old;
+  the log is read again every five minutes for this (`DISPLAY_REFRESH_MS`), since every edited comment on the page has a row.
+  **The clock opens GitHub's edit history** (`edited-mark.ts`): with the comment's log known it is a `details.details-overlay` whose summary is the clock and whose menu is GitHub's own `details-menu.js-comment-edit-history-menu` with the log as its `src` (an `include-fragment` inside, the page's fetch nonce on it), as the comment header renders it;
+  the page's elements upgrade it, list the revisions ("Edited 1 time", each edit, "created"), and GitHub's delegated `details-menu-select` handler on that class opens the chosen revision's diff in its own dialog.
+  Nothing of GitHub's is moved or cloned.
+  **A minimized comment has no "edited" menu** (GitHub's header says only "This comment has been minimized"), so its log is found by node id (`editLogUrlOf`, `nodeIdOf`): `IC_`, `PRRC_` or `PRR_` and the base64url of the MessagePack array `[0, repository id, comment id]`, the repository id from `meta[name="octolytics-dimension-repository_id"]` (`IC_kwDOUOpwns8AAAABhvX2ag` is `[0, 1357541534, 6559233642]`, read from geld#146's own menus);
+  a bot that minimizes its outside-diff comment and rewrites it later (Greptile on geld#146) read hours old without it.
   **Panel times carry the exact moment on hover** (`absoluteTimeText`): the cells are plain text, so `refreshReviewTimes` sets each `[data-geld-time-for]` cell's `title` from the anchor's `relative-time` `datetime` (cached in `datetimeByAnchor`) and runs once at mount so the title is there from the first paint;
   Geld's own `relative-time` elements get the same title.
   `data-geld-pinned` is the sidebar accordion's and is cleared each pass, which is why the chat's mark is `lone`.

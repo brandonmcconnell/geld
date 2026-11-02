@@ -24,7 +24,7 @@ import { crawlConversation } from './crawler';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
-import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
+import { editedAt, editsVersion, editTimesOf, resetEditTimes, revisionAsOf } from './edit-times';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
@@ -2117,20 +2117,17 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   // An App's own comment carries the App as its "via" too (GitHub pairs the avatar with itself and hides the pair);
   // only a person's comment posted through an App wears the mark.
   const via = node === null || byline.bot ? null : viaBotOf(node);
-  // Edited after it was posted: the clock beside the time (chat.ts `editedMark`). Read from the comment element
-  // itself (its id is the anchor, which `logUrlOf` matches against the edit-history menu's owner) — not the
-  // timeline row above. `editedAt` asks the log only for a comment the page marks as edited and bumps
-  // `editsVersion` (in the signature) when the time lands.
-  const commentEl = anchor === null ? null : document.getElementById(anchor);
-  const edited = commentEl === null ? null : editedAt(commentEl, reapplySoon);
-  // The clock beside an edited comment's time says when it was first posted: the page's datetime for the anchor.
-  const postedAt = edited === null || anchor === null ? '' : (datetimeByAnchor.get(anchor) ?? (commentEl === null ? '' : createdAtOf(commentEl)));
+  // Edited after it was posted: the edit's time with the clock beside it (`editedMark`), which says when the
+  // comment was first posted and opens GitHub's edit history. `editTimesOf` asks the log only for a comment the
+  // page marks as edited (a minimized one by its node id) and bumps `editsVersion` (in the signature) when it lands.
+  const times = anchor === null ? null : editTimesOf(anchor, reapplySoon);
+  const postedAt = times === null || anchor === null ? '' : (datetimeByAnchor.get(anchor) ?? times.postedAt ?? '');
   return {
     ...byline,
     ...(anchor === null ? {} : { timeAnchor: anchor }),
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
     ...(via === null ? {} : { via }),
-    ...(edited === null ? {} : { edited }),
+    ...(times === null ? {} : { edited: times.editedAt, editLog: times.log }),
     ...(postedAt === '' ? {} : { postedAt }),
   };
 }
@@ -3096,6 +3093,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
     timeFor: (anchor) => timeTextOf(document.getElementById(anchor), anchor),
+    editedFor: (anchor) => editTimesOf(anchor, reapplySoon),
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.filter((group) => group.silent !== true).reduce((sum, group) => sum + group.nodes.length, 0),
