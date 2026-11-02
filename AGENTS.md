@@ -2399,3 +2399,6 @@ Native controls and requests treat that as Off, so the bridge exposes an effecti
 Only a present data property with boolean or undefined value is accepted after the existing hydration checks, and the external bridge protocol remains boolean-only.
 Bitbucket also retains a hidden sticky-header copy of All changes.
 Whitespace qualification uses the one visible original control in the current diff panel, excluding hidden, inert and Geld-owned copies.
+
+The static Bitbucket source collector has an explicit PR-page mode for the fixed page bundle mapped by the captured native app.
+It performs one credential-free CDN read and retains compressed source with hashes for offline inspection, without navigating a provider page or executing the vendor code.

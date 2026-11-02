@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { BITBUCKET_WHITESPACE_ASSET as URL, BITBUCKET_WHITESPACE_BODY_LIMIT as LIMIT, BITBUCKET_WHITESPACE_WORKER_DEADLINE, BITBUCKET_WHITESPACE_SOURCE_ARCHIVE as ARCHIVE, collectBitbucketWhitespaceFactories as collect } from './bitbucket-whitespace-source-research.mjs';
+import { BITBUCKET_WHITESPACE_ASSET as URL, BITBUCKET_PR_PAGE_ASSET as PAGE_URL, BITBUCKET_PR_PAGE_SOURCE_ARCHIVE as PAGE_ARCHIVE, BITBUCKET_WHITESPACE_BODY_LIMIT as LIMIT, BITBUCKET_WHITESPACE_WORKER_DEADLINE, BITBUCKET_WHITESPACE_SOURCE_ARCHIVE as ARCHIVE, collectBitbucketWhitespaceFactories as collect } from './bitbucket-whitespace-source-research.mjs';
 const first='r("fozrM",function(e,r){e.exports={getGlobalShouldIgnoreWhitespace:s=>s.settings.ignore};})';
 const second='r("h43l2",function(e,r){e.exports={DiffLoader:()=>{throw Error("never execute")}};})';
 const body=Buffer.from(first+';'+second+';throw Error("private runtime data must not execute");');
 function setup(options={}) {
   const calls=[],writes=[];let reads=0,cancelled=0,released=0;
   const chunks=options.chunks??[body];let i=0;
-  const response={status:200,url:URL,redirected:false,headers:new Headers({'content-type':'application/javascript'}),body:{getReader:()=>({read:async()=>{reads++;return i<chunks.length?{done:false,value:chunks[i++]}:{done:true};},cancel:async()=>{cancelled++;},releaseLock:()=>{released++;}})},...options.response};
+  const response={status:200,url:options.collect?.prPage===true?PAGE_URL:URL,redirected:false,headers:new Headers({'content-type':'application/javascript'}),body:{getReader:()=>({read:async()=>{reads++;return i<chunks.length?{done:false,value:chunks[i++]}:{done:true};},cancel:async()=>{cancelled++;},releaseLock:()=>{released++;}})},...options.response};
   return {calls,writes,get reads(){return reads;},get cancelled(){return cancelled;},get released(){return released;},run:()=>collect({fetcher:async(...args)=>{calls.push(args);if(options.reject)throw Error('PRIVATE');return response;},writeArtifact:async(file,bytes)=>{if(options.writeError)throw Error('PRIVATE');writes.push({file,bytes:Buffer.from(bytes)});},...options.collect})};
 }
 test('one exact credential-free CDN GET emits two exact factories/hash receipts without executing or dumping app',async()=>{
@@ -82,4 +82,26 @@ for(const [name,options] of [['wrong URL',{response:{url:URL+'?other=1'}}],['bad
 });
 test('a nonboolean retention option is refused before a request',async()=>{
   const f=setup({collect:{retainAsset:'true'}}),r=await f.run();assert.equal(r.status,'unavailable');assert.equal(f.calls.length,0);assert.equal(f.writes.length,0);
+});
+
+test('explicit PR page capture makes one fixed CDN GET and archives bytes without evaluating or extracting',async()=>{
+  const f=setup({collect:{prPage:true,url:'https://private.invalid/source.js',extractModule:()=>{throw Error('MUST_NOT_EXTRACT_OR_EXECUTE');}}}),r=await f.run();
+  assert.equal(f.calls.length,1);assert.equal(f.calls[0][0],PAGE_URL);assert.equal(r.request.url,PAGE_URL);assert.equal(r.captureMode,'pr_page');
+  assert.equal(r.status,'captured');assert.equal(r.parsed,false);assert.equal(r.executed,false);assert.equal(r.providerApiRequests,0);assert.equal(r.browserNavigations,0);assert.deepEqual(r.modules,{});
+  assert.deepEqual(f.writes.map(w=>w.file),[PAGE_ARCHIVE]);assert.deepEqual(gunzipSync(f.writes[0].bytes),body);
+  assert.equal(r.asset.sha256,createHash('sha256').update(body).digest('hex'));assert.equal(r.asset.archive.sha256,createHash('sha256').update(f.writes[0].bytes).digest('hex'));
+  assert.equal(JSON.stringify(r).includes('private runtime data'),false);assert.equal(f.released,1);
+});
+test('PR page mode keeps the same16MiB body cap and fixed gzip name',async()=>{
+  const f=setup({chunks:[new Uint8Array(LIMIT+1)],collect:{prPage:true}}),r=await f.run();
+  assert.equal(r.request.byteLimit,LIMIT);assert.equal(r.request.bytesSeen,LIMIT+1);assert.equal(r.reason,'body_size');assert.equal(f.writes.length,0);assert.equal(f.calls.length,1);
+  assert.equal(PAGE_ARCHIVE,'bitbucket-public-pr-page-00a49eea.js.gz');assert.equal(PAGE_URL,'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/page.00a49eea.js');
+});
+for(const [name,response] of [['app body URL',{url:URL}],['redirect',{status:302}],['private query',{url:PAGE_URL+'?token=PRIVATE'}],['HTML',{headers:new Headers({'content-type':'text/html'})}]])test('PR page capture rejects '+name+' without parsing or archiving',async()=>{
+  let parsed=0;const f=setup({response,collect:{prPage:true,extractModule:()=>{parsed++;}}}),r=await f.run();
+  assert.equal(r.status,'unavailable');assert.equal(f.calls.length,1);assert.equal(parsed,0);assert.equal(f.writes.length,0);assert.equal(JSON.stringify(r).includes('PRIVATE'),false);
+});
+test('page mode must be an explicit boolean and cannot select an arbitrary asset',async()=>{
+  const f=setup({collect:{prPage:'true',url:PAGE_URL}}),r=await f.run();assert.equal(r.status,'unavailable');assert.equal(f.calls.length,0);assert.equal(f.writes.length,0);
+  const normal=setup({collect:{url:PAGE_URL}});await normal.run();assert.equal(normal.calls[0][0],URL);
 });
