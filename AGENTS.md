@@ -1440,6 +1440,15 @@ Provider-specific surfaces translate settings and sources into shared review and
   Open native comment focuses only the captured unique editable main `textarea#note-body`, preserving its draft and selection instead of substituting a review-summary or thread writer.
   Account, route, selected comparison, head, binding, original-note remount and lifecycle changes invalidate retained command controls before clipboard or focus work.
   GitLab's thread `note_form.append` and `quoteReply` handlers do not establish a top-level arbitrary insertion contract, so command preparation never appends or submits text.
+  GitLab web discussions can include current `note_html` alongside raw `note` for resolved findings whose original native note is unmounted, so keep optional rendered evidence in an adapter-owned snapshot map bound to the same MR/project/IID/note/author/body/timestamp tuple and full subject head.
+  Raw comment semantics and fingerprints never carry this HTML;
+  a valid unique native author/body remains preferred, while an invalid or ambiguous live note blocks the API fallback rather than being masked.
+  API rendering uses an inert detached template and the bounded copier with verified Markdown/code classes, no native IDs, controls, scripts, positioning hooks or image hydration;
+  lazy badge images retain their alt text without promoting data-src or canonical-src into resource requests.
+  Missing, stale, empty or oversized rendered evidence leaves the honest raw-text fallback, and API-rendered typography is not evidence of native pixels for an absent note.
+  The public Greptile acceptance case independently projects paragraph, inline-code, suggestion-code and emphasis semantics from the three already-observed `note_html` records, requiring absent original notes and API-marked owned bodies without acquiring or hydrating another source.
+  A changed fixture or now-mounted native finding is explicitly unavailable for that proof, while missing or incorrect API output for a validated absent finding fails, with per-phase attributed request evidence and listener cleanup retained.
+  Only a unique native note with its independently matched author header and body outside owned content counts as mounted, so copied IDs, duplicate anchors and owned resource or control hooks fail rather than disguising a renderer regression as fixture unavailability.
   Other services and Bitbucket command preparation stay unavailable until their provider-specific command, native identity and writer evidence are separately verified.
   The Pipelines installed check optionally reads the native Global diff settings dialog twice through trusted open/Cancel cycles without toggling, saving or generating a provider fetch.
   Its original Syntax highlighting checkbox is read as a freshly presented native preference, separately from server persistence, completed native highlighting and Bash palette equivalence.

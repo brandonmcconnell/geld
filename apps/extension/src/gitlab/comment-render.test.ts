@@ -11,7 +11,7 @@ const comment: ProviderReviewComment = {
 
 function fixture(body: string): HTMLElement {
   window.location.href = comment.url;
-  document.body.innerHTML = `<li id="note_11" data-testid="noteable-note-container"><div class="note-body"><div class="note-text md">${body}</div></div></li><div data-geld-ui id="digest-body">Safe raw fallback</div>`;
+  document.body.innerHTML = `<li id="note_11" data-testid="noteable-note-container"><div class="timeline-entry-inner"><div class="timeline-content"><div class="note-header"><div class="note-header-info"><a class="author-name-link" data-user-id="23" data-username="author">Author</a></div></div><div class="note-body"><div class="note-text md">${body}</div></div></div></div></li><div data-geld-ui id="digest-body">Safe raw fallback</div>`;
   const host = document.getElementById('digest-body');
   if (!(host instanceof HTMLElement)) throw new Error('Missing fixture host');
   return host;
