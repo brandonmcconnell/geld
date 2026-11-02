@@ -67,6 +67,7 @@ export class ProviderCategoryTree {
   private readonly liveRows = new Map<string, LiveRow>();
   private readonly panels = new Map<string, Panel>();
   private readonly collapsed = new Set<string>();
+  private readonly paths = new Set<string>();
   private readonly managed = new Map<HTMLElement, Map<string, Managed>>();
   private readonly bodies = new Set<HTMLElement>();
   private actions: ProviderCategoryActions = { revealPath: () => undefined, setExpanded: () => undefined };
@@ -74,19 +75,20 @@ export class ProviderCategoryTree {
   update(view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], actions: ProviderCategoryActions): void {
     const host = view.treeHost;
     const subjectKey = actions.subjectKey ?? null;
-    const provider = host?.ownerDocument.documentElement.getAttribute('data-geld-provider');
+    const provider = (host?.ownerDocument ?? view.container.ownerDocument).documentElement.getAttribute('data-geld-provider');
     const nativeProvider = provider === 'gitlab' || provider === 'bitbucket' ? provider : null;
     const sameSubject = subjectKey !== null && this.subjectKey === subjectKey && this.provider === nativeProvider;
-    if (this.provider !== nativeProvider) this.clear();
-    if (this.host !== null && this.subjectKey !== subjectKey) this.clear();
-    if (host?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) { this.clear(); return; }
-    if (host === null || hidden.categories.length === 0 || (view.virtualized && view.treeContainer == null)) { this.clear(); return; }
+    if (this.provider !== nativeProvider || this.subjectKey !== subjectKey) this.clear();
+    this.reconcile(files, hidden);
+    if (hidden.categories.length === 0 || (host !== null && view.virtualized && view.treeContainer == null)) { this.clear(); return; }
+    if (host === null || host.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) {
+      if (sameSubject && nativeProvider !== null) this.releaseProjection();
+      else this.clear();
+      return;
+    }
     if (this.host !== host || this.essential?.isConnected !== true || this.essentialContent?.isConnected !== true || this.nav?.isConnected !== true) {
-      const selected = sameSubject ? this.selected : null;
-      const collapsed = sameSubject ? [...this.collapsed] : [];
-      this.clear();
-      this.selected = selected;
-      for (const key of collapsed) this.collapsed.add(key);
+      if (!sameSubject) { this.clear(); this.reconcile(files, hidden); }
+      else this.releaseProjection();
       this.host = host;
       this.essential = element('button', '', 'geld-provider-category-header');
       this.essential.type = 'button';
@@ -184,7 +186,38 @@ export class ProviderCategoryTree {
     this.open(id);
   }
 
+  selectPath(path: string, subjectKey: string | null = this.subjectKey): void {
+    if (subjectKey !== this.subjectKey || !this.paths.has(path)) return;
+    this.selected = path;
+    for (const root of [this.essentialContent, this.nav]) {
+      for (const control of root?.querySelectorAll('[data-geld-category-path] [aria-current]') ?? []) control.removeAttribute('aria-current');
+      for (const row of root?.querySelectorAll<HTMLElement>('[data-geld-category-path]') ?? []) {
+        if (row.dataset.geldCategoryPath === path) row.querySelector('a,button')?.setAttribute('aria-current', 'true');
+      }
+    }
+  }
+
   clear(): void {
+    this.releaseProjection();
+    this.collapsed.clear(); this.paths.clear();
+    this.active = 'essential'; this.selected = null; this.subjectKey = null; this.provider = null;
+    this.actions = { revealPath: () => undefined, setExpanded: () => undefined };
+  }
+
+  private reconcile(files: readonly FileStats[], hidden: HiddenBreakdown): void {
+    this.paths.clear();
+    for (const file of files) this.paths.add(file.path);
+    if (this.selected !== null && !this.paths.has(this.selected)) this.selected = null;
+    const categorized = new Set(hidden.categories.flatMap((group) => group.paths));
+    const groups = [{ id: 'essential', paths: files.filter((file) => !categorized.has(file.path)).map((file) => file.path) }, ...hidden.categories.map((group) => ({ id: group.category.id, paths: group.paths }))];
+    const folders = new Set(groups.flatMap((group) => group.paths.flatMap((path) => {
+      const segments = path.split('/'); segments.pop();
+      return segments.map((_, index) => `${group.id}:${segments.slice(0, index + 1).join('/')}`);
+    })));
+    for (const key of this.collapsed) if (!folders.has(key)) this.collapsed.delete(key);
+  }
+
+  private releaseProjection(): void {
     this.geometryObserver?.disconnect(); this.geometryObserver = null;
     window.removeEventListener('resize', this.resize);
     if (this.geometryFrame !== null) cancelAnimationFrame(this.geometryFrame);
@@ -196,8 +229,7 @@ export class ProviderCategoryTree {
     }
     this.essential = null; this.essentialContent = null; this.essentialSignature = ''; this.heightLast = ''; this.heightOriginal = ''; this.heightOriginalPriority = ''; this.nav = null;
     for (const node of [...this.managed.keys()]) this.restoreNode(node);
-    this.host = null; this.bodies.clear(); this.panels.clear(); this.collapsed.clear();
-    this.active = 'essential'; this.selected = null; this.subjectKey = null; this.provider = null; this.folderClass = null;
+    this.host = null; this.bodies.clear(); this.panels.clear(); this.folderClass = null;
     this.presentations.clear(); this.liveRows.clear();
   }
 
@@ -339,9 +371,7 @@ export class ProviderCategoryTree {
           const original = this.liveControl(path, index);
           if (original !== undefined && original.isConnected && !original.disabled) { event.preventDefault(); original.click(); return; }
         }
-        event.preventDefault(); this.selected = path;
-        for (const selected of [...this.essentialContent?.querySelectorAll('[aria-current]') ?? [], ...this.nav?.querySelectorAll('[aria-current]') ?? []]) selected.removeAttribute('aria-current');
-        control?.setAttribute('aria-current', 'true');
+        event.preventDefault(); this.selectPath(path);
         this.actions.setExpanded(category !== 'essential'); this.actions.revealPath(path);
       });
       item.append(row); list.append(item);

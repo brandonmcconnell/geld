@@ -201,6 +201,135 @@ it.each(['children', 'host'])('retains the exact current file and collapsed fold
   expect(folder().getAttribute('aria-expanded')).toBe('true');
 });
 
+it.each(['same-host', 'remounted-host'])('preserves collapsed folders and current file through temporary native search on %s', (replacement) => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, container, view, row } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:version-a:head-a', selectedCategoryId: 'tests' };
+  const selected = (): HTMLElement => required(document.querySelector<HTMLElement>('[data-geld-category-path="spec/unit.test.ts"] a'));
+  const folder = (): HTMLButtonElement => required([...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec'));
+  const nativeParent = row.parentElement;
+  const nativeMarkup = row.outerHTML;
+  tree.update(view, hidden, all, FILES, actions);
+  selected().click(); folder().click();
+  const search = required(host.querySelector<HTMLInputElement>('input'));
+  search.value = 'unit.test.ts';
+  tree.update(view, hidden, all, FILES, actions);
+  tree.update(view, hidden, all, FILES, actions);
+  expect(host.querySelector('[data-geld-ui]')).toBeNull();
+  expect(container.hasAttribute('data-geld-provider-category-body')).toBe(false);
+  expect(host.hasAttribute('data-geld-provider-category-host')).toBe(false);
+  expect(row.parentElement).toBe(nativeParent);
+  expect(row.outerHTML).toBe(nativeMarkup);
+  let nextView = view;
+  if (replacement === 'remounted-host') {
+    const nextHost = document.createElement('section');
+    const nextSearch = document.createElement('input'); nextSearch.type = 'search';
+    const nextContainer = document.createElement('nav');
+    const nextRow = document.createElement('div'); nextRow.textContent = 'Fresh native status';
+    const nextLink = document.createElement('a'); nextLink.href = '/review#spec'; nextLink.textContent = 'unit.test.ts';
+    nextRow.prepend(nextLink); nextContainer.append(nextRow); nextHost.append(nextSearch, nextContainer); host.replaceWith(nextHost);
+    nextView = { ...view, treeHost: nextHost, treeContainer: nextContainer, tree: [{ path: 'spec/unit.test.ts', root: nextLink, link: nextLink, presentationRoot: nextRow }] };
+  } else search.value = '';
+  tree.update(nextView, hidden, all, FILES, actions);
+  expect(headers(required(nextView.treeHost)).map((button) => button.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+  expect(selected().getAttribute('aria-current')).toBe('true');
+  expect(folder().getAttribute('aria-expanded')).toBe('false');
+  if (replacement === 'remounted-host') expect(document.querySelector('.geld-provider-category-content')?.textContent).toContain('Fresh native status');
+  expect(actions.revealPath).toHaveBeenCalledExactlyOnceWith('spec/unit.test.ts');
+  expect(actions.setExpanded).toHaveBeenCalledTimes(1);
+});
+
+it.each(['same-subject', 'changed-subject', 'changed-provider'])('handles an absent native host followed by a fresh host for %s', (transition) => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, container, view } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:head-a', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  required(host.querySelector<HTMLAnchorElement>('[data-geld-category-path="spec/unit.test.ts"] a')).click();
+  required([...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')).click();
+  const nextActions = transition === 'changed-subject' ? { ...actions, subjectKey: 'review-a:head-b' } : actions;
+  if (transition === 'changed-provider') document.documentElement.dataset.geldProvider = 'bitbucket';
+  host.remove();
+  const absent = { ...view, treeHost: null, treeContainer: null, tree: [] };
+  tree.update(absent, hidden, all, FILES, nextActions);
+  tree.update(absent, hidden, all, FILES, nextActions);
+  expect(host.hasAttribute('data-geld-provider-category-host')).toBe(false);
+  expect(container.hasAttribute('data-geld-provider-category-body')).toBe(false);
+  const nextHost = document.createElement('section');
+  const nextContainer = document.createElement('nav');
+  nextHost.append(nextContainer); document.body.append(nextHost);
+  const nextView = { ...view, treeHost: nextHost, treeContainer: nextContainer, tree: [] };
+  tree.update(nextView, hidden, all, FILES, nextActions);
+  const folder = required([...nextHost.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec'));
+  expect(folder.getAttribute('aria-expanded')).toBe(transition === 'same-subject' ? 'false' : 'true');
+  expect(nextHost.querySelector('[data-geld-category-path="spec/unit.test.ts"] [aria-current="true"]') !== null).toBe(transition === 'same-subject');
+  expect(headers(nextHost).map((button) => button.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+});
+
+it('retains the reader category across search when no controller override is provided', () => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, view } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:head-a' };
+  tree.update(view, hidden, all, FILES, actions);
+  required(headers(host)[1]).click();
+  const search = required(host.querySelector<HTMLInputElement>('input'));
+  search.value = 'unit'; tree.update(view, hidden, all, FILES, actions);
+  search.value = ''; tree.update(view, hidden, all, FILES, actions);
+  expect(headers(host).map((button) => button.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+  tree.clear(); tree.update(view, hidden, all, FILES, actions);
+  expect(headers(host).map((button) => button.getAttribute('aria-expanded'))).toEqual(['true', 'false']);
+});
+
+it('adopts a verified native file choice made during search instead of restoring the old current file', () => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, view } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:head-a', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  required(host.querySelector<HTMLAnchorElement>('[data-geld-category-path="spec/unit.test.ts"] a')).click();
+  const search = required(host.querySelector<HTMLInputElement>('input'));
+  search.value = 'lazy.test.ts'; tree.update(view, hidden, all, FILES, actions);
+  tree.selectPath('test/lazy.test.ts');
+  tree.selectPath('not-in-source.ts');
+  tree.selectPath('spec/unit.test.ts', 'review-a:other-head');
+  search.value = ''; tree.update(view, hidden, all, FILES, actions);
+  expect(host.querySelector('[data-geld-category-path="spec/unit.test.ts"] [aria-current]')).toBeNull();
+  expect(host.querySelector('[data-geld-category-path="test/lazy.test.ts"] [aria-current="true"]')).not.toBeNull();
+});
+
+it.each(['subject', 'provider', 'clear'])('discards suspended preferences on a true %s transition', (transition) => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, view } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:head-a', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  required(host.querySelector<HTMLAnchorElement>('[data-geld-category-path="spec/unit.test.ts"] a')).click();
+  required([...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')).click();
+  const search = required(host.querySelector<HTMLInputElement>('input'));
+  search.value = 'unit.test.ts'; tree.update(view, hidden, all, FILES, actions);
+  const nextActions = transition === 'subject' ? { ...actions, subjectKey: 'review-a:head-b' } : actions;
+  if (transition === 'provider') document.documentElement.dataset.geldProvider = 'bitbucket';
+  if (transition === 'clear') tree.clear();
+  tree.update(view, hidden, all, FILES, nextActions);
+  search.value = ''; tree.update(view, hidden, all, FILES, nextActions);
+  expect(host.querySelector('[data-geld-category-path="spec/unit.test.ts"] [aria-current]')).toBeNull();
+  expect([...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')?.getAttribute('aria-expanded')).toBe('true');
+});
+
+it('forgets removed source paths and folder keys while search owns the native tree', () => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, view } = fixture();
+  const actions = { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'review-a:head-a', selectedCategoryId: 'tests' };
+  tree.update(view, hidden, all, FILES, actions);
+  required(host.querySelector<HTMLAnchorElement>('[data-geld-category-path="spec/unit.test.ts"] a')).click();
+  required([...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')).click();
+  const search = required(host.querySelector<HTMLInputElement>('input'));
+  search.value = 'lazy.test.ts'; tree.update(view, hidden, all, FILES, actions);
+  const files = FILES.filter((file) => file.path !== 'spec/unit.test.ts');
+  const next = breakdownFromFiles(files, createMatcher(DEFAULT_SETTINGS, null, BUNDLED_CATALOG));
+  tree.update(view, next.hidden, next.all, files, actions);
+  search.value = ''; tree.update(view, hidden, all, FILES, actions);
+  expect(host.querySelector('[data-geld-category-path="spec/unit.test.ts"] [aria-current]')).toBeNull();
+  expect([...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')?.getAttribute('aria-expanded')).toBe('true');
+});
+
 it('keeps only one current file across Essential and categorized panels', () => {
   const { host, update } = fixture(); update();
   const essential = required(host.querySelector<HTMLButtonElement>('.geld-provider-essential-content [data-geld-category-path="src/main.ts"] button'));
