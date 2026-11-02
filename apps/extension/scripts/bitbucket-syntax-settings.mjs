@@ -27,7 +27,8 @@ export function bitbucketSyntaxSettingsProbe(action = 'read', target = null) {
   if (action === 'setup') {
     if (store) throw new Error('Native settings identity observation already exists');
     const anchor = document.getElementById('chg-bitbucket-pipelines.yml');const root = anchor?.parentElement;
-    if (!native(anchor) || root === null || root === undefined || location.href !== 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff') return null;
+    const visit = new URL(location.href);
+    if (!native(anchor) || root === null || root === undefined || visit.origin !== 'https://bitbucket.org' || visit.pathname !== '/atlassian/bitbucket-upload-file/pull-requests/27/diff' || visit.search !== '' || visit.username || visit.password || target !== null && location.href !== target) return null;
     const articles = [...root.querySelectorAll('article[data-qa="branch-diff-file"]')].filter(native);if (articles.length !== 1) return null;
     const article = articles[0];const sourceRows = rows(article);if (sourceRows === null || sourceRows.length === 0) return null;
     store = { url: location.href, root, parent: root.parentElement, anchor, article, articleParent: article.parentElement, rows: sourceRows.map((r) => ({ ...r, nodeTexts: r.nodes.map((n) => n.data) })), viewed: [...root.querySelectorAll('input[type="checkbox"]')].map((n) => [n, n.checked]), events: [], expected: null, lastClick: null, dialog: null, form: null };
@@ -75,7 +76,7 @@ export function bitbucketSyntaxSettingsProbe(action = 'read', target = null) {
 }
 
 /** Optional native preference evidence; cleanup/source/write failures are mandatory failures. */
-export async function observeBitbucketSyntaxSettings(page, { progress, poll, capture, guardBudget, assertCurrent, readState, assertState, requests }) {
+export async function observeBitbucketSyntaxSettings(page, { progress, poll, capture, guardBudget, assertCurrent, readState, assertState, requests, expectedURL = page.url() }) {
   progress.status = 'reading';progress.cycles = [];progress.limitations = ['Initial native dialog preference, not server persistence or completed native renderer proof.'];
   const start = requests().length;const before = await readState();progress.before = before;
   let installed = false;let openedByHelper = false;let initialDialogCount = 0;let failure;
@@ -99,7 +100,7 @@ export async function observeBitbucketSyntaxSettings(page, { progress, poll, cap
     await poll(read, (v) => v?.dialogCount === 0, 'Native diff settings dialog closed', 3000);
   };
   try {
-    assertCurrent();const initial = await page.evaluate(bitbucketSyntaxSettingsProbe, 'setup');installed = initial !== null;
+    assertCurrent();const initial = await page.evaluate(bitbucketSyntaxSettingsProbe, 'setup', expectedURL);installed = initial !== null;
     initialDialogCount = initial?.dialogCount ?? 0;
     assert.ok(initial?.sameSource && initial.dialogCount === 0, 'No unique ready original source or a native dialog was already open');
     for (let cycle = 0; cycle < 2; cycle += 1) {
