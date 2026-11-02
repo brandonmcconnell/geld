@@ -75,6 +75,7 @@ pnpm check            # typecheck + unit tests for core and the extension, lint 
 pnpm test             # unit tests only (Vitest)
 pnpm dev:site         # geld.sh website (Next.js) on http://localhost:3000
 pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
+pnpm build:firefox    # one browser: build:chrome, build:firefox, build:edge, build:safari (zip:<browser> likewise)
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
 pnpm zip:all          # zips for all four browsers into apps/extension/.output/
 ```

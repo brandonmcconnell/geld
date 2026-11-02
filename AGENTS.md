@@ -50,7 +50,7 @@ Bump `apps/extension/package.json` `version` for a new version number;
 the build number keeps tags unique.
 `workflow_dispatch` forces a release.
 \n\n
-Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build`, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`), `pnpm dev` (extension;
+Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build` (Chrome) and `pnpm build:chrome`, `build:firefox`, `build:edge` or `build:safari` for one browser, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`, or `zip:<browser>` for one), `pnpm dev` (extension;
 it does **not** launch a browser — load `apps/extension/.output/chrome-mv3-dev` once with "Load unpacked" in your own Chrome, or `firefox-mv2-dev` via about:debugging, and WXT rebuilds and reloads it on change;
 a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings the launcher back per developer), `pnpm dev:site`.
 
