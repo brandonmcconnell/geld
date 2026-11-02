@@ -172,7 +172,10 @@ export function codeRabbitDomProbe(fixture) {
     source: { anchor: source?.getAttribute('data-geld-source'), body: source?.querySelector(':scope > .geld-provider-review__body')?.innerHTML ?? null, links: [...source?.querySelectorAll(':scope > .geld-provider-review__byline a[href]') ?? []].map((link) => link.href) },
     native: { exists: native !== null, body: native?.querySelector('.note-body .note-text')?.innerHTML ?? null, authorId: nativeAuthor?.dataset.userId, login: nativeAuthor?.dataset.username, href: nativeAuthor?.getAttribute('href'),
       sameNode: held === undefined ? null : native === held.node && native?.parentElement === held.parent },
-    requests, requestNative, items: [...panel.querySelectorAll('[data-geld-item]')].map((root) => ({ id: root.dataset.geldItem, state: root.dataset.state, sources: [...root.querySelectorAll('[data-geld-source]')].map((source) => source.dataset.geldSource) })).sort((a, b) => a.id.localeCompare(b.id)), bots: [...panel.querySelectorAll('[data-geld-review-bot]')].map((root) => ({ id: root.dataset.geldReviewBot, state: root.dataset.state, text: root.textContent.replace(/\s+/g, ' ').trim() })),
+    requests, requestNative, items: [...panel.querySelectorAll('[data-geld-item]')].map((root) => ({ id: root.dataset.geldItem, state: root.dataset.state, sources: [...root.querySelectorAll('[data-geld-source]')].map((source) => source.dataset.geldSource) })).sort((a, b) => a.id.localeCompare(b.id)), bots: [...panel.querySelectorAll('[data-geld-review-bot]')].map((root) => {
+      const verdict = root.cloneNode(true);for (const request of verdict.querySelectorAll('details[data-geld-bot-request]')) request.remove();
+      return { id: root.dataset.geldReviewBot, state: root.dataset.state, text: verdict.textContent.replace(/\s+/g, ' ').trim(), links: [...verdict.querySelectorAll('a[href]')].map((link) => ({ text: link.textContent, href: link.href })) };
+    }),
     aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length, unavailable: [...panel.querySelectorAll('.geld-provider-review__unavailable')].map((node) => node.textContent) };
 }
 
@@ -254,23 +257,25 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
     permissionAttempted = true;await context.overridePermissions('https://gitlab.com', ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);originalClipboard = await page.evaluate(() => navigator.clipboard.readText());
     fixture.copyPhase(true);const sentinel = `geld-coderabbit-${randomUUID()}`;await page.evaluate((value) => navigator.clipboard.writeText(value), sentinel);
     for (const [mode, expected, input] of [['Incremental review', '@coderabbitai review', 'pointer'], ['Full review', '@coderabbitai full review', 'keyboard']]) {
+      const action = { mode, expected, input, stage: 'started' };proof.actions.push(action);
       await clickReviewButton(page, 'details[data-geld-bot-request] [role="group"][aria-label="Review command mode"] button', mode);
-      const preview = await poll(read, (value) => value?.requests[0]?.preview === expected && value.requests[0].modes.some((button) => button.text === mode && button.pressed === 'true'), `Exact ${mode} preview before trusted input`);assertCodeRabbitSource(preview, snapshot, before);assertCodeRabbitRequestSource(preview, snapshot, proof.trusted);assert.deepEqual(preview.bots, proof.trusted.bots);assert.deepEqual(preview.items, proof.trusted.items);
+      const preview = await poll(read, (value) => value?.requests[0]?.preview === expected && value.requests[0].modes.some((button) => button.text === mode && button.pressed === 'true'), `Exact ${mode} preview before trusted input`);action.preview = { text: preview.requests[0].preview, modes: preview.requests[0].modes };action.stage = 'preview_observed';
+      assertCodeRabbitSource(preview, snapshot, before);assertCodeRabbitRequestSource(preview, snapshot, proof.trusted);assert.deepEqual(preview.bots, proof.trusted.bots);assert.deepEqual(preview.items, proof.trusted.items);action.previewValidated = true;action.stage = 'preview_validated';
       const handle = await page.$('details[data-geld-bot-request] button[data-geld-bot-request-action="copy"]');assert.ok(handle !== null);
       try {
         await handle.evaluate((button) => { button.scrollIntoView({ block: 'center' });globalThis.__geldCodeRabbitInput = null;button.addEventListener('click', (event) => { globalThis.__geldCodeRabbitInput = { trusted: event.isTrusted, detail: event.detail }; }, { once: true, capture: true }); });
         if (input === 'pointer') await handle.click();else { await handle.focus();await page.keyboard.press('Enter'); }
-        const event = await page.evaluate(() => globalThis.__geldCodeRabbitInput);assert.equal(event?.trusted, true);if (input === 'keyboard') assert.equal(event.detail, 0);else assert.ok(event.detail > 0);
-        const clipboard = await poll(() => page.evaluate(() => navigator.clipboard.readText()), (value) => value === expected, `Real clipboard ${mode} command`, 8000);
-        const after = await poll(read, (value) => value?.requests[0]?.status === 'Command copied. Paste it into the native comment writer and post when ready.', 'Copy acknowledges preparation without posting');
-        assertCodeRabbitSource(after, snapshot, before);assertCodeRabbitRequestSource(after, snapshot, proof.trusted);assert.deepEqual(after.bots, proof.trusted.bots);assert.deepEqual(after.items, proof.trusted.items);assert.equal(after.requests[0].commentDisabled, true);await unchangedSettings([binding]);proof.actions.push({ mode, expected, clipboard, input, event, after });
+        const event = await page.evaluate(() => globalThis.__geldCodeRabbitInput);action.event = event;action.stage = 'event_observed';assert.equal(event?.trusted, true);if (input === 'keyboard') assert.equal(event.detail, 0);else assert.ok(event.detail > 0);action.eventValidated = true;action.stage = 'event_validated';
+        const clipboard = await poll(() => page.evaluate(() => navigator.clipboard.readText()), (value) => value === expected, `Real clipboard ${mode} command`, 8000);action.clipboard = clipboard;action.clipboardValidated = true;action.stage = 'clipboard_validated';
+        const after = await poll(read, (value) => value?.requests[0]?.status === 'Command copied. Paste it into the native comment writer and post when ready.', 'Copy acknowledges preparation without posting');action.after = after;action.acknowledged = true;action.stage = 'acknowledged';
+        assertCodeRabbitSource(after, snapshot, before);assertCodeRabbitRequestSource(after, snapshot, proof.trusted);assert.deepEqual(after.bots, proof.trusted.bots);assert.deepEqual(after.items, proof.trusted.items);assert.equal(after.requests[0].commentDisabled, true);await unchangedSettings([binding]);action.sourceAndStatusPreserved = true;action.completed = true;action.stage = 'complete';
       } finally { await handle.dispose(); }
     }
     proof.artifacts = await capture(page, 'gitlab-coderabbit-command-prepared');const afterCapture = await read();assertCodeRabbitSource(afterCapture, snapshot, before);assertCodeRabbitRequestSource(afterCapture, snapshot, proof.trusted);assert.deepEqual(afterCapture.bots, proof.trusted.bots);assert.deepEqual(afterCapture.items, proof.trusted.items);
     assert.deepEqual(fixture.evidence.copySourceGets, []);fixture.copyPhase(false);
     proof.withdrawal = await withdrawTrust(binding);await page.bringToFront();await unchangedSettings([]);
     proof.withdrawn = await poll(read, (value) => value !== null && value.requests.length === 0 && value.bots.length === 0, 'Actual UI trust withdrawal removes CodeRabbit preparation/classification');assertCodeRabbitSource(proof.withdrawn, snapshot, before);
-    assert.deepEqual(fixture.evidence.providerMutations, []);assert.deepEqual(fixture.evidence.aiRequests, []);assert.deepEqual(fixture.evidence.errors, []);assert.equal(fixture.snapshot().sourceSignature, snapshot.sourceSignature);completed = true;
+    assert.deepEqual(fixture.evidence.providerMutations, []);assert.deepEqual(fixture.evidence.aiRequests, []);assert.deepEqual(fixture.evidence.errors, []);assert.equal(fixture.snapshot().sourceSignature, snapshot.sourceSignature);assert.equal(proof.actions.length, 2);assert.ok(proof.actions.every((action) => action.completed === true));completed = true;
   } catch (error) { proof.status = acquiringFixture ? 'unavailable' : 'failed';proof.error = error instanceof Error ? error.message : String(error);if (!acquiringFixture) throw error; }
   finally {
     const errors = [];try { fixture?.copyPhase(false); } catch (error) { errors.push(error); }

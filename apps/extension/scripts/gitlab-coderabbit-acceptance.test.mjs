@@ -123,12 +123,12 @@ for (const id of ['', 0, '0', '03436654383', '3.436654383e9', '3436654383 ', Num
 
 // Offline browser/storage protocol doubles exercise failure cleanup and call ordering only.
 // These are not an installed CodeRabbit result and do not replace the real UI/clipboard assertions.
-function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false } = {}) {
+function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false, verdictFailureAfterCopy = false, sourceFailureAfterCopy = false } = {}) {
   const initial = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [], categoryPatterns: { tests: ['**/*.spec.ts'] }, aiModel: 'original-model' };if (originalTrustAbsent) delete initial.trustedReviewAccounts;let settings = structuredClone(initial);
   let trusted = false;let held = false;let commandHeld = false;let mode = 'Incremental review';let clipboard = 'Original clipboard';let status = '';let input = null;let granted = false;let cleared = false;let disposed = false;let withdrew = false;
   const oracle = ready();const snapshot = oracle.snapshot();const fixture = { ...oracle, copyPhase() {}, dispose() { disposed = true; } };
-  const snapshotDom = () => ({ ...dom(), nativeHead: sourceFailure ? 'b'.repeat(40) : SHA, native: { ...dom().native, sameNode: held ? true : null },
-    requestNative: { ...dom().requestNative, sameNode: commandHeld ? true : null }, bots: trusted ? [{ id: 'coderabbit', state: 'unknown', text: 'Observed bound account' }] : [],
+  const snapshotDom = () => ({ ...dom(), nativeHead: sourceFailure ? 'b'.repeat(40) : SHA, native: { ...dom().native, body: sourceFailureAfterCopy && status !== '' ? 'Changed native source' : dom().native.body, sameNode: held ? true : null },
+    requestNative: { ...dom().requestNative, sameNode: commandHeld ? true : null }, bots: trusted ? [{ id: 'coderabbit', state: verdictFailureAfterCopy && status !== '' ? 'running' : 'unknown', text: 'Observed bound account' }] : [],
     requests: trusted ? [{ source: `${F.url}#note_${F.note}`, summary: 'Prepare CodeRabbit request', preview: mode === 'Full review' ? '@coderabbitai full review' : '@coderabbitai review', copyDisabled: false, commentDisabled: true, commentTitle: 'Sign in to GitLab to open the native comment writer.', status,
       modes: ['Incremental review', 'Full review'].map((text) => ({ text, pressed: String(text === mode) })) }] : [] });
   const copy = (detail) => { clipboard = mode === 'Full review' ? '@coderabbitai full review' : '@coderabbitai review';status = 'Command copied. Paste it into the native comment writer and post when ready.';input = { trusted: true, detail }; };
@@ -267,4 +267,33 @@ test('post-trust failure still restores the exact raw absent trust field after d
   const flow = commandFlow({ materializeSettings: true, originalTrustAbsent: true, captureFailure: true });await assert.rejects(flow.run(), /Screenshot failed/);
   assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.equal(flow.item.codeRabbitCommands.settingsRestored, true);assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), false);
   assertCodeRabbitSettings(flow.settings(), flow.initial, []);assert.equal(flow.clipboard(), 'Original clipboard');assert.equal(flow.cleanup().cleared, true);assert.equal(flow.cleanup().disposed, true);
+});
+
+function nestedBotProjection() {
+  const native = nativeProjection();const row = native.doc.createElement('div');row.dataset.geldReviewBot = 'coderabbit';row.dataset.state = 'findings';
+  row.innerHTML = `<strong>CodeRabbit</strong> · Findings resolved<p>${F.login}</p><a href="${F.url}#note_${F.note}">View review</a><details data-geld-bot-request="observed"><summary>Prepare CodeRabbit request</summary><a href="${F.url}#note_${F.note}">View original review</a><code data-geld-bot-command>@coderabbitai review</code><p role="status"></p></details>`;
+  native.doc.querySelector('.geld-provider-review').append(row);
+  return { ...native, row, verdict: () => native.probe().bots };
+}
+test('off-DOM bot verdict projection ignores nested command mode/ack text while keeping account/verdict/source and original nodes intact', () => {
+  const native = nestedBotProjection();const row = native.row;const source = row.querySelector(':scope > a');const control = row.querySelector('details');const baseline = native.verdict();
+  assert.equal(baseline[0].text, 'CodeRabbit · Findings resolved' + F.login + 'View review');assert.deepEqual(baseline[0].links, [{ text: 'View review', href: `${F.url}#note_${F.note}` }]);
+  const initial = row.outerHTML;assert.deepEqual(native.verdict(), baseline);assert.equal(row.outerHTML, initial);
+  control.querySelector('code').textContent = '@coderabbitai full review';control.querySelector('[role="status"]').textContent = 'Command copied. Paste it into the native comment writer and post when ready.';
+  const afterModeAndAck = row.outerHTML;assert.deepEqual(native.verdict(), baseline);assert.equal(row.outerHTML, afterModeAndAck);assert.equal(row.querySelector(':scope > a'), source);assert.equal(row.querySelector('details'), control);assert.equal(row.isConnected, true);
+});
+for (const [name, change] of [
+  ['verdict label', (row) => { row.childNodes[1].textContent = ' · Review running'; }],
+  ['verdict state', (row) => { row.dataset.state = 'running'; }],
+  ['account label', (row) => { row.querySelector(':scope > p').textContent = 'another-account'; }],
+  ['original verdict source', (row) => { row.querySelector(':scope > a').href = F.url + '#note_999'; }],
+]) test(`bot projection still rejects a changed actual ${name}`, () => {
+  const native = nestedBotProjection();const before = native.verdict();change(native.row);assert.throws(() => assert.deepEqual(native.verdict(), before));
+});
+for (const failure of ['verdictFailureAfterCopy', 'sourceFailureAfterCopy']) test(`validated input/clipboard/ack evidence survives later ${failure} without a completed-action or feature pass`, async () => {
+  const flow = commandFlow({ [failure]: true, materializeSettings: true });await assert.rejects(flow.run());const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.status, 'failed');assert.equal(proof.actions.length, 1);const action = proof.actions[0];
+  assert.equal(action.mode, 'Incremental review');assert.equal(action.stage, 'acknowledged');assert.equal(action.previewValidated, true);assert.deepEqual(action.event, { trusted: true, detail: 1 });assert.equal(action.eventValidated, true);
+  assert.equal(action.clipboard, '@coderabbitai review');assert.equal(action.clipboardValidated, true);assert.equal(action.acknowledged, true);assert.equal(action.after.requests[0].status, 'Command copied. Paste it into the native comment writer and post when ready.');
+  assert.equal(action.sourceAndStatusPreserved, undefined);assert.equal(action.completed, undefined);assert.equal(proof.settingsRestored, true);assert.equal(proof.permissionsRestored, true);assert.equal(flow.clipboard(), 'Original clipboard');
 });
