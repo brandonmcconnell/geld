@@ -4,7 +4,7 @@ import { Window } from 'happy-dom';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { GITLAB_WHITESPACE_SESSION as F, gitLabWhitespaceSessionProbe as probe, gitLabWhitespaceSessionSettings, verifyGitLabWhitespaceSession } from './gitlab-whitespace-session.mjs';
+import { GITLAB_WHITESPACE_SESSION as F, gitLabWhitespaceSessionPresentation, gitLabWhitespaceSessionProbe as probe, gitLabWhitespaceSessionSettings, verifyGitLabWhitespaceSession, verifyGitLabWhitespaceSessionProduct } from './gitlab-whitespace-session.mjs';
 import { gitLabWhitespaceProbe as strict } from './gitlab-whitespace-probe.mjs';
 import { acquisitionMatches, cleanupGitLabWhitespace, whitespaceReceiptURL } from './gitlab-whitespace-viewed.mjs';
 
@@ -40,6 +40,44 @@ async function dom(run) {
     try { await probe('cleanup', F);await strict('cleanup', F); } finally { for (const name of names) { const value = saved.get(name);if (value) Object.defineProperty(globalThis, name, value);else delete globalThis[name]; }await w.happyDOM.close(); }
   }
 }
+
+function nativeHeader(files = '2 files', additions = '+4', deletions = '-0') {
+  const root = document.createElement('div');root.className = 'diff-stats inline-parallel-buttons';root.innerHTML = '<div class="diff-stats-contents"><div class="diff-stats-group"><span></span></div><span data-testid="js-file-addition-line"></span><span data-testid="js-file-deletion-line"></span></div>';
+  root.querySelector('.diff-stats-group > span').textContent = files;root.querySelector('[data-testid=js-file-addition-line]').textContent = additions;root.querySelector('[data-testid=js-file-deletion-line]').textContent = deletions;document.body.append(root);return root;
+}
+for (const [label, value] of [['2 files', 2], ['1 file', 1], ['0 files', 0], ['2', 2], ['1,234 files', 1234]]) test(`native count context accepts supported file label ${label}`, async () => dom(async () => {
+  nativeHeader(label);const header = gitLabWhitespaceSessionPresentation(F.paths).headers[0];assert.equal(header.files, value);assert.equal(header.parsed.files.recognized, true);
+}));
+for (const label of ['-0', '−0', '0', '+0', '- 0', '− 0']) test(`native deletion counter accepts the complete signed magnitude ${label}`, async () => dom(async () => {
+  nativeHeader('2 files', '+4', label);const header = gitLabWhitespaceSessionPresentation(F.paths).headers[0];assert.equal(header.deletions, 0);assert.equal(header.additions, 4);assert.equal(header.parsed.deletions.recognized, true);
+}));
+for (const label of ['DO_NOT_RETAIN 2 files', 'files 2', '2 file', '1 files', '1,,234 files', '02 files', '2.0 files', '1000000001 files']) test('unknown or malformed native file labels stay unrecognized without retaining text', async () => dom(async () => {
+  nativeHeader(label);const result = gitLabWhitespaceSessionPresentation(F.paths);assert.equal(result.headers[0].files, null);assert.equal(result.headers[0].parsed.files.format, 'unrecognized');assert.doesNotMatch(JSON.stringify(result), /DO_NOT_RETAIN/);
+}));
+test('absent line leaves retain explicit contextual zero while an absent file label cannot qualify', async () => dom(async () => {
+  const root = nativeHeader();root.querySelector('[data-testid=js-file-deletion-line]').remove();root.querySelector('.diff-stats-group > span').remove();const header = gitLabWhitespaceSessionPresentation(F.paths).headers[0];assert.equal(header.deletions, 0);assert.equal(header.parsed.deletions.format, 'absent_zero');assert.equal(header.files, null);assert.equal(header.parsed.files.recognized, false);
+}));
+
+async function productProtocol(options = {}) {
+  return dom(async ({ list }) => {
+    nativeHeader(options.fileLabel ?? '2 files', '+4', options.deletions ?? '-0');list.children[2].style.display = 'none';
+    if (options.unknownPath) { const file = list.children[0];file.setAttribute('data-file-data', JSON.stringify({ new_path: 'DO_NOT_RETAIN_NATIVE_PATH' })); }
+    const state = { hasDiff: true, all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 }, hiddenCount: 1, categories: [{ id: 'tests', count: 1, paths: [F.paths[2]] }], secret: 'DO_NOT_RETAIN_STATE' };
+    if (options.wrongTotals) state.visible.files = 3;if (options.wrongCategory) state.categories[0].paths = ['DO_NOT_RETAIN_CATEGORY'];
+    let stateReads = 0, nativeReads = 0;const progress = { phase: 'BASELINE_PRODUCT_TOTALS' };
+    const page = { evaluate: async (fn, paths) => { nativeReads++;if (options.nativeReadFailure) throw Error('DO_NOT_RETAIN_NATIVE_ERROR');return fn(paths); } };
+    const poll = async (read, accepts) => { for (let i = 0; i < 2; i++) { const value = await read();if (accepts(value)) return value; }throw Error('Unit deadline'); };
+    let result, failure;try { result = await verifyGitLabWhitespaceSessionProduct(page, { phase: 'baseline', progress, poll, readState: async () => { stateReads++;if (options.tabReadFailure) throw Error('DO_NOT_RETAIN_TAB_ERROR');return state; } }); } catch (error) { failure = error; }
+    return { progress, result, failure, stateReads, nativeReads };
+  });
+}
+test('source-backed labeled header and ASCII-minus zero pass the actual product observer with one existing read per phase', async () => {
+  const f = await productProtocol();assert.equal(f.failure, undefined);assert.equal(f.stateReads, 1);assert.equal(f.nativeReads, 1);assert.equal(f.progress.productObservations[0].entryPhase, 'BASELINE_PRODUCT_TOTALS');assert.equal(f.progress.productObservations[0].stage, 'VERIFIED');assert.equal(f.progress.productObservations[0].lastNative.headers[0].files, 2);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+for (const [option, phase] of [['wrongTotals', 'TAB_TOTALS'], ['wrongCategory', 'TEST_CATEGORY'], ['fileLabel', 'NATIVE_PRESENTATION'], ['unknownPath', 'NATIVE_PRESENTATION'], ['tabReadFailure', 'TAB_TOTALS'], ['nativeReadFailure', 'NATIVE_PRESENTATION']]) test(`existing-read ${option} refusal records bounded fixed ${phase} diagnostics`, async () => {
+  const f = await productProtocol({ [option]: option === 'fileLabel' ? 'DO_NOT_RETAIN_UNKNOWN_LABEL' : true });assert.ok(f.failure);assert.equal(f.progress.phase, phase);const observation = f.progress.productObservations[0];assert.equal(observation.stage, phase);assert.ok(observation.tabReads > 0);assert.ok(observation.tabReads <= 2);assert.ok(observation.nativeReads <= 2);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+  if (phase === 'NATIVE_PRESENTATION' && option !== 'nativeReadFailure') assert.ok(observation.lastNative);
+});
 
 test('independent model accepts two complete fresh native epochs with frozen selected target, preserving each frame', async () => dom(async ({ install, input, cycle, root }) => {
   const initial = await install();const app = root.getAttribute('data-app-data');await probe('mark-toggle', F);input(true);cycle();const first = await probe('read', F);

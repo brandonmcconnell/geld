@@ -24,7 +24,7 @@ import { verifyGitLabAuthorReuseThemes } from './gitlab-author-reuse-acceptance.
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { cleanupGitLabWhitespace, gitLabWhitespaceSettings, observeGitLabWhitespace, verifyGitLabWhitespace, whitespaceReceiptURL } from './gitlab-whitespace-viewed.mjs';
-import { GITLAB_WHITESPACE_SESSION, gitLabWhitespaceSessionSettings, verifyGitLabWhitespaceSession } from './gitlab-whitespace-session.mjs';
+import { GITLAB_WHITESPACE_SESSION, gitLabWhitespaceSessionSettings, verifyGitLabWhitespaceSession, verifyGitLabWhitespaceSessionProduct } from './gitlab-whitespace-session.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 import { verifyGitLabWholeTestContext } from './gitlab-whole-test-context.mjs';
 import { observeStandaloneWhole, standaloneWholeURL, verifyStandaloneWhole } from './gitlab-standalone-whole.mjs';
@@ -2837,17 +2837,7 @@ try {
   await runCase('gitlab-whitespace-session', GITLAB_WHITESPACE_SESSION.url, async (page, item) => {
     const context = gitLabWhitespaceCases.get(page);
     assert.ok(context, 'Dedicated whitespace session context unavailable');
-    return verifyGitLabWhitespaceSession(page, { ...context, acquisition: () => item.gitLabComparisonObservations, poll, progress: item.nativeWhitespace, totals: async () => {
-      const state = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
-      assert.deepEqual(state.categories.find((category) => category.id === 'tests')?.paths, [GITLAB_FILE_SEARCH.path]);
-      const native = await poll(() => page.evaluate((paths) => {
-        const number = (node, absentZero = false) => { if (node === null) return absentZero ? 0 : null;const text = node.textContent.trim().replace(/[+,−\s]/g, '');return /^\d+$/.test(text) ? Number(text) : null; };
-        const headers = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].map((root) => ({ files: number(root.querySelector(':scope > .diff-stats-group > span')), additions: number(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: number(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
-        const files = [...document.querySelectorAll('diff-file[data-file-data]')].map((root) => { let data;try { const raw = root.getAttribute('data-file-data');if (raw.length <= 16384) data = JSON.parse(raw); } catch { /* Unknown native file is an unqualified slot. */ }return { slot: paths.indexOf(data?.new_path), hidden: getComputedStyle(root).display === 'none' }; });
-        return { headers, files };
-      }, GITLAB_WHITESPACE_SESSION.paths), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0) && value.files.length === 3 && value.files.every((file) => file.slot >= 0 && file.hidden === (file.slot === 2)), 'Native whitespace session corrected counts and exact hidden file');
-      return { all: state.all, visible: state.visible, hiddenCount: state.hiddenCount, tests: { count: 1, paths: [GITLAB_FILE_SEARCH.path] }, native };
-    } });
+    return verifyGitLabWhitespaceSession(page, { ...context, acquisition: () => item.gitLabComparisonObservations, poll, progress: item.nativeWhitespace, totals: (phase) => verifyGitLabWhitespaceSessionProduct(page, { phase, progress: item.nativeWhitespace, readState: () => tabState(page), poll }) });
   }, true);
 
   await runCase('gitlab-file-search', GITLAB_FILE_SEARCH.url, async (page, item) => {
