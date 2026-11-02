@@ -2,6 +2,7 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   cacheComponents: true,
   reactStrictMode: true,
+  devIndicators: false,
   poweredByHeader: false,
   logging: { incomingRequests: false },
   transpilePackages: [

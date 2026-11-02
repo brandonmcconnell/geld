@@ -9,7 +9,6 @@ import {
   Bell,
   BookOpen,
   ChevronDown,
-  ChevronLeft,
   CircleHelp,
   GitPullRequest,
   Layers,
@@ -60,6 +59,8 @@ export function useDashboard() {
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const pathname = usePathname();
+  const authPage =
+    ['/sign-in', '/sign-up', '/forgot-password'].includes(pathname) || pathname.endsWith('/reset-password');
   const queueOwner = useRef<string | null>(null);
   const route = parseDashboardPathname(pathname);
   const repository = route?.kind === 'repository' ? route.ref : null;
@@ -170,7 +171,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   };
   return (
     <context.Provider value={data}>
-      <div className="app-shell" data-collapsed={collapsed}>
+      <div className={cn('app-shell isolate', authPage && 'auth-shell')} data-collapsed={collapsed}>
         <a href="#main" className="skip-link">
           Skip to content
         </a>
@@ -198,6 +199,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
           </Dialog.Root>
         </div>
         <main id="main" className="main-content">
+          {!authPage && <WorkspaceHeader />}
           {children}
         </main>
       </div>
@@ -246,6 +248,7 @@ function Sidebar({ collapsed, onCollapse }: { readonly collapsed: boolean; reado
         </Link>
         {onCollapse && (
           <button
+            type="button"
             className="icon-button sidebar-label"
             onClick={onCollapse}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -258,7 +261,12 @@ function Sidebar({ collapsed, onCollapse }: { readonly collapsed: boolean; reado
         <span className="workspace-avatar">{session.user ? session.user.name.slice(0, 1).toUpperCase() : 'G'}</span>
         <span className="sidebar-label">
           <span className="sr-only">Active team</span>
-          <select aria-label="Active team" value={activeTeam} onChange={(event) => setActiveTeam(event.target.value)}>
+          <select
+            name="activeTeam"
+            aria-label="Active team"
+            value={activeTeam}
+            onChange={(event) => setActiveTeam(event.target.value)}
+          >
             <option value="">Personal view</option>
             {teams.map((team) => (
               <option value={team.id} key={team.id}>
@@ -347,16 +355,6 @@ function Sidebar({ collapsed, onCollapse }: { readonly collapsed: boolean; reado
         </div>
       </nav>
       <div className="sidebar-bottom">
-        <div className="sidebar-note sidebar-label">
-          <span className="tiny-sparkle">
-            <Sparkles size={14} />
-          </span>
-          <strong>A clearer way to review.</strong>
-          <p>Follow the change, one step at a time.</p>
-          <Link href="/settings/providers">
-            Set up your guide <ChevronLeft size={12} className="rotate-180" />
-          </Link>
-        </div>
         <Link href="https://www.geld.sh/how-it-works" className="nav-link">
           <CircleHelp size={17} />
           <span className="sidebar-label">Help and documentation</span>
@@ -392,6 +390,55 @@ export function EmptyState({
       <h2>{title}</h2>
       <p>{children}</p>
       {action}
+    </div>
+  );
+}
+
+function WorkspaceHeader() {
+  const pathname = usePathname();
+  const { session } = useDashboard();
+  const providerRoute = parseDashboardPathname(pathname);
+  const title =
+    providerRoute?.kind === 'pull'
+      ? 'Pull request'
+      : providerRoute?.kind === 'repository'
+        ? providerRoute.ref.repo
+        : providerRoute?.kind === 'organisation'
+          ? providerRoute.owner
+          : pathname === '/privacy'
+            ? 'Privacy'
+            : pathname === '/'
+              ? 'Review queue'
+              : pathname.startsWith('/settings')
+                ? 'Settings'
+                : pathname.startsWith('/connect')
+                  ? 'Connections'
+                  : pathname.startsWith('/teams')
+                    ? 'Teams'
+                    : pathname.startsWith('/repositories')
+                      ? 'Repositories'
+                      : pathname.startsWith('/inbox')
+                        ? 'Inbox'
+                        : 'Workspace';
+  return (
+    <div className="workspace-header">
+      <div className="workspace-breadcrumb">
+        <span>Workspace</span>
+        <span>/</span>
+        <strong>{title}</strong>
+      </div>
+      <div className="workspace-tools">
+        <Link href="https://www.geld.sh/how-it-works" className="icon-button" aria-label="Help and documentation">
+          <CircleHelp size={17} />
+        </Link>
+        <Link
+          href={session.user ? '/settings/account' : '/sign-in'}
+          className="workspace-account"
+          aria-label={session.user ? 'Account settings' : 'Sign in'}
+        >
+          {session.user?.name.slice(0, 1).toUpperCase() ?? 'G'}
+        </Link>
+      </div>
     </div>
   );
 }

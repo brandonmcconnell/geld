@@ -1,0 +1,909 @@
+{
+  "note": "Actual app views with synthetic local fixture responses. No real authentication, provider, AI, billing, or infrastructure operations were performed.",
+  "entries": [
+    {
+      "name": "queue",
+      "label": "Review queue",
+      "file": "desktop/queue.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "repositories",
+      "label": "Repositories",
+      "file": "desktop/repositories.png",
+      "group": "desktop",
+      "route": "/repositories"
+    },
+    {
+      "name": "organization",
+      "label": "Provider organization",
+      "file": "desktop/organization.png",
+      "group": "desktop",
+      "route": "/github/acme"
+    },
+    {
+      "name": "repository",
+      "label": "Repository queue",
+      "file": "desktop/repository.png",
+      "group": "desktop",
+      "route": "/github/acme/platform"
+    },
+    {
+      "name": "repository-settings",
+      "label": "Repository settings",
+      "file": "desktop/repository-settings.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/~settings"
+    },
+    {
+      "name": "organization-settings",
+      "label": "Organization settings",
+      "file": "desktop/organization-settings.png",
+      "group": "desktop",
+      "route": "/github/acme/~settings"
+    },
+    {
+      "name": "teams",
+      "label": "Teams",
+      "file": "desktop/teams.png",
+      "group": "desktop",
+      "route": "/teams"
+    },
+    {
+      "name": "team",
+      "label": "Team administration",
+      "file": "desktop/team.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "review-defaults",
+      "label": "Team review defaults and tracker",
+      "file": "desktop/review-defaults.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
+    },
+    {
+      "name": "inbox",
+      "label": "Inbox",
+      "file": "desktop/inbox.png",
+      "group": "desktop",
+      "route": "/inbox"
+    },
+    {
+      "name": "connect",
+      "label": "Connections and repository selection",
+      "file": "desktop/connect.png",
+      "group": "desktop",
+      "route": "/connect"
+    },
+    {
+      "name": "settings",
+      "label": "Settings overview",
+      "file": "desktop/settings.png",
+      "group": "desktop",
+      "route": "/settings"
+    },
+    {
+      "name": "account",
+      "label": "Account and identity settings",
+      "file": "desktop/account.png",
+      "group": "desktop",
+      "route": "/settings/account"
+    },
+    {
+      "name": "providers",
+      "label": "AI providers and local companion",
+      "file": "desktop/providers.png",
+      "group": "desktop",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "models",
+      "label": "Model selection",
+      "file": "desktop/models.png",
+      "group": "desktop",
+      "route": "/settings/models"
+    },
+    {
+      "name": "billing",
+      "label": "Plans and billing",
+      "file": "desktop/billing.png",
+      "group": "desktop",
+      "route": "/settings/billing"
+    },
+    {
+      "name": "security",
+      "label": "Audit log",
+      "file": "desktop/security.png",
+      "group": "desktop",
+      "route": "/settings/security"
+    },
+    {
+      "name": "enterprise",
+      "label": "Enterprise instances",
+      "file": "desktop/enterprise.png",
+      "group": "desktop",
+      "route": "/settings/enterprise"
+    },
+    {
+      "name": "preferences",
+      "label": "Review preferences",
+      "file": "desktop/preferences.png",
+      "group": "desktop",
+      "route": "/settings/review"
+    },
+    {
+      "name": "privacy",
+      "label": "Privacy information",
+      "file": "desktop/privacy.png",
+      "group": "desktop",
+      "route": "/privacy"
+    },
+    {
+      "name": "not-found",
+      "label": "Page not found",
+      "file": "desktop/not-found.png",
+      "group": "desktop",
+      "route": "/not-a-dashboard-page"
+    },
+    {
+      "name": "provider-dialog",
+      "label": "Add AI provider",
+      "file": "desktop/provider-dialog.png",
+      "group": "desktop",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "companion-dialog",
+      "label": "Add local companion",
+      "file": "desktop/companion-dialog.png",
+      "group": "desktop",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "ai-cost-confirmation",
+      "label": "Geld AI cost confirmation",
+      "file": "desktop/ai-cost-confirmation.png",
+      "group": "desktop",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "team-deletion",
+      "label": "Team deletion preview",
+      "file": "desktop/team-deletion.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "collaborator-audit",
+      "label": "Outside collaborator audit",
+      "file": "desktop/collaborator-audit.png",
+      "group": "desktop",
+      "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "advanced-preferences",
+      "label": "Advanced preferences",
+      "file": "desktop/advanced-preferences.png",
+      "group": "desktop",
+      "route": "/settings/review"
+    },
+    {
+      "name": "guide-start",
+      "label": "Guided review start",
+      "file": "desktop/guide-start.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "changes",
+      "label": "All changes with file navigation",
+      "file": "desktop/changes.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "changes-wrap",
+      "label": "Wrapped code lines",
+      "file": "desktop/changes-wrap.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "review-submit",
+      "label": "Submit review composer",
+      "file": "desktop/review-submit.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "line-comment",
+      "label": "Comment on a changed line",
+      "file": "desktop/line-comment.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "supporting-changes",
+      "label": "Expanded supporting changes",
+      "file": "desktop/supporting-changes.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "provider-actions",
+      "label": "Provider action menu",
+      "file": "desktop/provider-actions.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "conversation",
+      "label": "Pull request conversation",
+      "file": "desktop/conversation.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "assistant",
+      "label": "Review assistant",
+      "file": "desktop/assistant.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "privacy-dialog",
+      "label": "Privacy preferences",
+      "file": "desktop/privacy-dialog.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "privacy-banner",
+      "label": "First visit privacy choices",
+      "file": "desktop/privacy-banner.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "queue-loading",
+      "label": "Loading review queue",
+      "file": "desktop/queue-loading.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "guided-step",
+      "label": "Guided review step",
+      "file": "desktop/guided-step.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "flag-step",
+      "label": "Flag a guided review step",
+      "file": "desktop/flag-step.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "guide-complete",
+      "label": "Completed guided review",
+      "file": "desktop/guide-complete.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "sign-in",
+      "label": "Sign in with email code",
+      "file": "desktop/sign-in.png",
+      "group": "desktop",
+      "route": "/sign-in"
+    },
+    {
+      "name": "password-sign-in",
+      "label": "Password sign in",
+      "file": "desktop/password-sign-in.png",
+      "group": "desktop",
+      "route": "/sign-in"
+    },
+    {
+      "name": "sso-sign-in",
+      "label": "Company SSO sign in",
+      "file": "desktop/sso-sign-in.png",
+      "group": "desktop",
+      "route": "/sign-in"
+    },
+    {
+      "name": "magic-link-sent",
+      "label": "Magic link sent",
+      "file": "desktop/magic-link-sent.png",
+      "group": "desktop",
+      "route": "/sign-in"
+    },
+    {
+      "name": "sign-up",
+      "label": "Create account",
+      "file": "desktop/sign-up.png",
+      "group": "desktop",
+      "route": "/sign-up"
+    },
+    {
+      "name": "verify-email",
+      "label": "Verify email code",
+      "file": "desktop/verify-email.png",
+      "group": "desktop",
+      "route": "/sign-up"
+    },
+    {
+      "name": "forgot-password",
+      "label": "Password recovery",
+      "file": "desktop/forgot-password.png",
+      "group": "desktop",
+      "route": "/forgot-password"
+    },
+    {
+      "name": "reset-link-sent",
+      "label": "Password recovery sent",
+      "file": "desktop/reset-link-sent.png",
+      "group": "desktop",
+      "route": "/forgot-password"
+    },
+    {
+      "name": "reset-password",
+      "label": "Set new password",
+      "file": "desktop/reset-password.png",
+      "group": "desktop",
+      "route": "/settings/account/reset-password"
+    },
+    {
+      "name": "reset-password-saved",
+      "label": "Password reset success",
+      "file": "desktop/reset-password-saved.png",
+      "group": "desktop",
+      "route": "/settings/account/reset-password"
+    },
+    {
+      "name": "queue-empty",
+      "label": "Empty queue",
+      "file": "desktop/queue-empty.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "queue-error",
+      "label": "Queue connection error",
+      "file": "desktop/queue-error.png",
+      "group": "desktop",
+      "route": "/"
+    },
+    {
+      "name": "pull-error",
+      "label": "Pull request connection error",
+      "file": "desktop/pull-error.png",
+      "group": "desktop",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "models-empty",
+      "label": "Empty model catalog",
+      "file": "desktop/models-empty.png",
+      "group": "desktop",
+      "route": "/settings/models"
+    },
+    {
+      "name": "models-partial",
+      "label": "Partial model catalog",
+      "file": "desktop/models-partial.png",
+      "group": "desktop",
+      "route": "/settings/models"
+    },
+    {
+      "name": "onboarding",
+      "label": "Connect your first provider",
+      "file": "desktop/onboarding.png",
+      "group": "desktop",
+      "route": "/connect"
+    },
+    {
+      "name": "auth-unavailable",
+      "label": "Sign-in configuration unavailable",
+      "file": "desktop/auth-unavailable.png",
+      "group": "desktop",
+      "route": "/sign-in"
+    },
+    {
+      "name": "auth-error",
+      "label": "Invalid email code",
+      "file": "desktop/auth-error.png",
+      "group": "desktop",
+      "route": "/sign-in"
+    },
+    {
+      "name": "queue",
+      "label": "Review queue",
+      "file": "mobile/queue.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "repositories",
+      "label": "Repositories",
+      "file": "mobile/repositories.png",
+      "group": "mobile",
+      "route": "/repositories"
+    },
+    {
+      "name": "organization",
+      "label": "Provider organization",
+      "file": "mobile/organization.png",
+      "group": "mobile",
+      "route": "/github/acme"
+    },
+    {
+      "name": "repository",
+      "label": "Repository queue",
+      "file": "mobile/repository.png",
+      "group": "mobile",
+      "route": "/github/acme/platform"
+    },
+    {
+      "name": "repository-settings",
+      "label": "Repository settings",
+      "file": "mobile/repository-settings.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/~settings"
+    },
+    {
+      "name": "organization-settings",
+      "label": "Organization settings",
+      "file": "mobile/organization-settings.png",
+      "group": "mobile",
+      "route": "/github/acme/~settings"
+    },
+    {
+      "name": "teams",
+      "label": "Teams",
+      "file": "mobile/teams.png",
+      "group": "mobile",
+      "route": "/teams"
+    },
+    {
+      "name": "team",
+      "label": "Team administration",
+      "file": "mobile/team.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "review-defaults",
+      "label": "Team review defaults and tracker",
+      "file": "mobile/review-defaults.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001/settings"
+    },
+    {
+      "name": "inbox",
+      "label": "Inbox",
+      "file": "mobile/inbox.png",
+      "group": "mobile",
+      "route": "/inbox"
+    },
+    {
+      "name": "connect",
+      "label": "Connections and repository selection",
+      "file": "mobile/connect.png",
+      "group": "mobile",
+      "route": "/connect"
+    },
+    {
+      "name": "settings",
+      "label": "Settings overview",
+      "file": "mobile/settings.png",
+      "group": "mobile",
+      "route": "/settings"
+    },
+    {
+      "name": "account",
+      "label": "Account and identity settings",
+      "file": "mobile/account.png",
+      "group": "mobile",
+      "route": "/settings/account"
+    },
+    {
+      "name": "providers",
+      "label": "AI providers and local companion",
+      "file": "mobile/providers.png",
+      "group": "mobile",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "models",
+      "label": "Model selection",
+      "file": "mobile/models.png",
+      "group": "mobile",
+      "route": "/settings/models"
+    },
+    {
+      "name": "billing",
+      "label": "Plans and billing",
+      "file": "mobile/billing.png",
+      "group": "mobile",
+      "route": "/settings/billing"
+    },
+    {
+      "name": "security",
+      "label": "Audit log",
+      "file": "mobile/security.png",
+      "group": "mobile",
+      "route": "/settings/security"
+    },
+    {
+      "name": "enterprise",
+      "label": "Enterprise instances",
+      "file": "mobile/enterprise.png",
+      "group": "mobile",
+      "route": "/settings/enterprise"
+    },
+    {
+      "name": "preferences",
+      "label": "Review preferences",
+      "file": "mobile/preferences.png",
+      "group": "mobile",
+      "route": "/settings/review"
+    },
+    {
+      "name": "privacy",
+      "label": "Privacy information",
+      "file": "mobile/privacy.png",
+      "group": "mobile",
+      "route": "/privacy"
+    },
+    {
+      "name": "not-found",
+      "label": "Page not found",
+      "file": "mobile/not-found.png",
+      "group": "mobile",
+      "route": "/not-a-dashboard-page"
+    },
+    {
+      "name": "provider-dialog",
+      "label": "Add AI provider",
+      "file": "mobile/provider-dialog.png",
+      "group": "mobile",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "companion-dialog",
+      "label": "Add local companion",
+      "file": "mobile/companion-dialog.png",
+      "group": "mobile",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "ai-cost-confirmation",
+      "label": "Geld AI cost confirmation",
+      "file": "mobile/ai-cost-confirmation.png",
+      "group": "mobile",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "team-deletion",
+      "label": "Team deletion preview",
+      "file": "mobile/team-deletion.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "collaborator-audit",
+      "label": "Outside collaborator audit",
+      "file": "mobile/collaborator-audit.png",
+      "group": "mobile",
+      "route": "/teams/00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "name": "advanced-preferences",
+      "label": "Advanced preferences",
+      "file": "mobile/advanced-preferences.png",
+      "group": "mobile",
+      "route": "/settings/review"
+    },
+    {
+      "name": "guide-start",
+      "label": "Guided review start",
+      "file": "mobile/guide-start.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "changes",
+      "label": "All changes with file navigation",
+      "file": "mobile/changes.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "changes-wrap",
+      "label": "Wrapped code lines",
+      "file": "mobile/changes-wrap.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "files-menu",
+      "label": "Changed file navigation",
+      "file": "mobile/files-menu.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "review-submit",
+      "label": "Submit review composer",
+      "file": "mobile/review-submit.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "line-comment",
+      "label": "Comment on a changed line",
+      "file": "mobile/line-comment.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "supporting-changes",
+      "label": "Expanded supporting changes",
+      "file": "mobile/supporting-changes.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "provider-actions",
+      "label": "Provider action menu",
+      "file": "mobile/provider-actions.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "conversation",
+      "label": "Pull request conversation",
+      "file": "mobile/conversation.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "assistant",
+      "label": "Review assistant",
+      "file": "mobile/assistant.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "privacy-dialog",
+      "label": "Privacy preferences",
+      "file": "mobile/privacy-dialog.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "privacy-banner",
+      "label": "First visit privacy choices",
+      "file": "mobile/privacy-banner.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "queue-loading",
+      "label": "Loading review queue",
+      "file": "mobile/queue-loading.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "guided-step",
+      "label": "Guided review step",
+      "file": "mobile/guided-step.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "flag-step",
+      "label": "Flag a guided review step",
+      "file": "mobile/flag-step.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "guide-complete",
+      "label": "Completed guided review",
+      "file": "mobile/guide-complete.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "sign-in",
+      "label": "Sign in with email code",
+      "file": "mobile/sign-in.png",
+      "group": "mobile",
+      "route": "/sign-in"
+    },
+    {
+      "name": "password-sign-in",
+      "label": "Password sign in",
+      "file": "mobile/password-sign-in.png",
+      "group": "mobile",
+      "route": "/sign-in"
+    },
+    {
+      "name": "sso-sign-in",
+      "label": "Company SSO sign in",
+      "file": "mobile/sso-sign-in.png",
+      "group": "mobile",
+      "route": "/sign-in"
+    },
+    {
+      "name": "magic-link-sent",
+      "label": "Magic link sent",
+      "file": "mobile/magic-link-sent.png",
+      "group": "mobile",
+      "route": "/sign-in"
+    },
+    {
+      "name": "sign-up",
+      "label": "Create account",
+      "file": "mobile/sign-up.png",
+      "group": "mobile",
+      "route": "/sign-up"
+    },
+    {
+      "name": "verify-email",
+      "label": "Verify email code",
+      "file": "mobile/verify-email.png",
+      "group": "mobile",
+      "route": "/sign-up"
+    },
+    {
+      "name": "forgot-password",
+      "label": "Password recovery",
+      "file": "mobile/forgot-password.png",
+      "group": "mobile",
+      "route": "/forgot-password"
+    },
+    {
+      "name": "reset-link-sent",
+      "label": "Password recovery sent",
+      "file": "mobile/reset-link-sent.png",
+      "group": "mobile",
+      "route": "/forgot-password"
+    },
+    {
+      "name": "reset-password",
+      "label": "Set new password",
+      "file": "mobile/reset-password.png",
+      "group": "mobile",
+      "route": "/settings/account/reset-password"
+    },
+    {
+      "name": "reset-password-saved",
+      "label": "Password reset success",
+      "file": "mobile/reset-password-saved.png",
+      "group": "mobile",
+      "route": "/settings/account/reset-password"
+    },
+    {
+      "name": "queue-empty",
+      "label": "Empty queue",
+      "file": "mobile/queue-empty.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "queue-error",
+      "label": "Queue connection error",
+      "file": "mobile/queue-error.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "pull-error",
+      "label": "Pull request connection error",
+      "file": "mobile/pull-error.png",
+      "group": "mobile",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "models-empty",
+      "label": "Empty model catalog",
+      "file": "mobile/models-empty.png",
+      "group": "mobile",
+      "route": "/settings/models"
+    },
+    {
+      "name": "models-partial",
+      "label": "Partial model catalog",
+      "file": "mobile/models-partial.png",
+      "group": "mobile",
+      "route": "/settings/models"
+    },
+    {
+      "name": "onboarding",
+      "label": "Connect your first provider",
+      "file": "mobile/onboarding.png",
+      "group": "mobile",
+      "route": "/connect"
+    },
+    {
+      "name": "auth-unavailable",
+      "label": "Sign-in configuration unavailable",
+      "file": "mobile/auth-unavailable.png",
+      "group": "mobile",
+      "route": "/sign-in"
+    },
+    {
+      "name": "auth-error",
+      "label": "Invalid email code",
+      "file": "mobile/auth-error.png",
+      "group": "mobile",
+      "route": "/sign-in"
+    },
+    {
+      "name": "navigation",
+      "label": "Mobile workspace navigation",
+      "file": "mobile/navigation.png",
+      "group": "mobile",
+      "route": "/"
+    },
+    {
+      "name": "queue",
+      "label": "Dark mode · queue",
+      "file": "dark/queue.png",
+      "group": "dark",
+      "route": "/"
+    },
+    {
+      "name": "guided-step",
+      "label": "Dark mode · guided-step",
+      "file": "dark/guided-step.png",
+      "group": "dark",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "changes",
+      "label": "Dark mode · changes",
+      "file": "dark/changes.png",
+      "group": "dark",
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "sign-in",
+      "label": "Dark mode · sign-in",
+      "file": "dark/sign-in.png",
+      "group": "dark",
+      "route": "/sign-in"
+    },
+    {
+      "name": "account",
+      "label": "Dark mode · account",
+      "file": "dark/account.png",
+      "group": "dark",
+      "route": "/settings/account"
+    },
+    {
+      "name": "providers",
+      "label": "Dark mode · providers",
+      "file": "dark/providers.png",
+      "group": "dark",
+      "route": "/settings/providers"
+    },
+    {
+      "name": "billing",
+      "label": "Dark mode · billing",
+      "file": "dark/billing.png",
+      "group": "dark",
+      "route": "/settings/billing"
+    }
+  ],
+  "warnings": []
+}

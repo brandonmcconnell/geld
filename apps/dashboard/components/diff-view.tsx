@@ -3,6 +3,9 @@ import { useState } from 'react';
 import { ChevronDown, FileCode2, MessageSquare } from 'lucide-react';
 import type { PlanFile, HunkRef } from '@geld/review/plan';
 import { cn } from 'cn';
+export function diffId(path: string): string {
+  return `diff-${encodeURIComponent(path)}`;
+}
 export interface LineSelection {
   readonly oldPath: string;
   readonly path: string;
@@ -14,15 +17,17 @@ export function DiffView({
   refs,
   onComment,
   supporting = false,
+  wrap = false,
 }: {
   readonly files: readonly PlanFile[];
   readonly refs?: readonly HunkRef[];
   readonly onComment?: (line: LineSelection) => void;
   readonly supporting?: boolean;
+  readonly wrap?: boolean;
 }) {
   const selected = refs ? files.filter((file) => refs.some((ref) => ref.path === file.path)) : files;
   return (
-    <div className={supporting ? 'supporting-diffs' : 'diff-files'}>
+    <div className={cn(supporting ? 'supporting-diffs' : 'diff-files', wrap && 'diff-wrap')}>
       {selected.map((file) => (
         <FileDiff
           key={file.path}
@@ -46,9 +51,14 @@ function FileDiff({
   const [open, setOpen] = useState(true);
   const [viewed, setViewed] = useState(false);
   return (
-    <section className="diff-file">
+    <section className="diff-file" id={diffId(file.path)}>
       <header className="diff-file-header">
-        <button onClick={() => setOpen((value) => !value)} className="diff-file-toggle" aria-expanded={open}>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="diff-file-toggle"
+          aria-expanded={open}
+        >
           <ChevronDown size={14} className={open ? '' : '-rotate-90'} />
           <FileCode2 size={15} />
           <span>{file.path}</span>
@@ -58,7 +68,7 @@ function FileDiff({
           <span>−{file.deletions}</span>
         </div>
         <label className="viewed-control">
-          <input type="checkbox" checked={viewed} onChange={(event) => setViewed(event.target.checked)} />
+          <input name="viewed" type="checkbox" checked={viewed} onChange={(event) => setViewed(event.target.checked)} />
           Viewed
         </label>
       </header>
@@ -72,6 +82,12 @@ function FileDiff({
             </p>
           ) : (
             <table className="diff-table" aria-label={`Changes in ${file.path}`}>
+              <colgroup>
+                <col className="diff-gutter" />
+                <col className="diff-gutter" />
+                <col className="diff-marker" />
+                <col />
+              </colgroup>
               <tbody>
                 {file.hunks.flatMap((hunk, index) =>
                   hunks && !hunks.includes(index)
@@ -93,6 +109,7 @@ function FileDiff({
                                 line.kind !== 'notice' &&
                                 (line.newLine !== null || line.oldLine !== null) && (
                                   <button
+                                    type="button"
                                     className="line-comment-button"
                                     aria-label={`Comment on ${file.path} line ${line.newLine ?? line.oldLine}`}
                                     onClick={() =>

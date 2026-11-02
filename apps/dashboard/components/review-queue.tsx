@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   ArrowDownWideNarrow,
   ArrowUpRight,
-  Check,
   ChevronDown,
   Filter,
   GitPullRequest,
@@ -108,35 +107,16 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
           <span>Sample repositories and pull requests. Provider writes are disabled.</span>
         </p>
       )}
-      <div className="queue-summary">
-        <div>
-          <span className="summary-icon">
-            <GitPullRequest size={17} />
-          </span>
-          <div>
-            <strong>{scoped.filter((p) => !p.draft).length}</strong>
-            <span>Ready for a closer look</span>
-          </div>
-        </div>
-        <div>
-          <span className="summary-icon">
-            <Check size={17} />
-          </span>
-          <div>
-            <strong>{scoped.filter((p) => p.reviewers.length > 0).length}</strong>
-            <span>Waiting on reviewers</span>
-          </div>
-        </div>
-        <div className="summary-guide">
-          <span className="summary-icon">✦</span>
-          <div>
-            <strong>Start with the story</strong>
-            <span>A guide connects the changes across files.</span>
-          </div>
-          <Link href="/settings/providers">
-            Set up AI <ArrowUpRight size={13} />
-          </Link>
-        </div>
+      <div className="queue-metrics">
+        <p>
+          <strong>{scoped.filter((p) => !p.draft).length}</strong> ready to review
+        </p>
+        <p>
+          <strong>{scoped.filter((p) => p.reviewers.length > 0).length}</strong> awaiting reviewers
+        </p>
+        <Link href="/settings/providers">
+          Set up guided reviews <ArrowUpRight size={14} />
+        </Link>
       </div>
       <div className="queue-tabs" role="tablist" aria-label="Review queue views">
         {[
@@ -146,6 +126,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
           { id: 'starred', title: 'Starred' },
         ].map((item) => (
           <button
+            type="button"
             key={item.id}
             role="tab"
             aria-selected={tab === item.id}
@@ -161,6 +142,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
         <label className="search-field">
           <Search size={16} />
           <input
+            name="query"
             ref={search}
             value={query}
             onChange={(event) => {
@@ -175,6 +157,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
         <label className="toolbar-select">
           <Filter size={14} />
           <select
+            name="provider"
             aria-label="Filter by provider"
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
@@ -188,7 +171,12 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
         </label>
         <label className="toolbar-select">
           <ArrowDownWideNarrow size={14} />
-          <select aria-label="Sort pull requests" value={sort} onChange={(event) => setSort(event.target.value)}>
+          <select
+            name="sort"
+            aria-label="Sort pull requests"
+            value={sort}
+            onChange={(event) => setSort(event.target.value)}
+          >
             <option value="updated">Last updated</option>
             <option value="size">Smallest first</option>
           </select>
@@ -247,26 +235,25 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
             const starred = stars.includes(path);
             return (
               <article className="pull-row" key={path}>
-                <GitPullRequest size={19} className={pull.draft ? 'draft-icon' : 'open-icon'} />
+                <GitPullRequest size={16} className={pull.draft ? 'draft-icon' : 'open-icon'} />
                 <div className="pull-row-content">
+                  <Link href={path} className="pull-title">
+                    {pull.title}
+                  </Link>
                   <div className="pull-row-meta">
                     <span className="provider-tag">
                       {pull.ref.provider === 'github' ? 'GH' : pull.ref.provider === 'gitlab' ? 'GL' : 'BB'}
                     </span>
                     <span>
-                      {pull.ref.owner} <span className="muted-slash">/</span> <strong>{pull.ref.repo}</strong>
+                      {pull.ref.owner}
+                      <span className="muted-slash">/</span>
+                      <strong>{pull.ref.repo}</strong>
                     </span>
                     <span>#{pull.ref.number}</span>
-                    {pull.draft && <span className="draft-badge">Draft</span>}
-                  </div>
-                  <Link href={path} className="pull-title">
-                    {pull.title}
-                  </Link>
-                  <div className="pull-row-detail">
-                    <span className="mini-avatar">{pull.author.slice(0, 1).toUpperCase()}</span>
-                    <span>{pull.author}</span>
                     <span className="meta-dot">·</span>
-                    <span>
+                    <span>{pull.author}</span>
+                    {pull.draft && <span className="draft-badge">Draft</span>}
+                    <span className="pull-reviewers">
                       {pull.reviewers.length
                         ? `${pull.reviewers.length} reviewer${pull.reviewers.length === 1 ? '' : 's'} requested`
                         : 'No review requested'}
@@ -284,6 +271,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
                     <span>−{pull.deletions}</span>
                   </div>
                   <button
+                    type="button"
                     className="icon-button star-button"
                     aria-label={starred ? 'Unstar pull request' : 'Star pull request'}
                     aria-pressed={starred}

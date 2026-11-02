@@ -11,7 +11,7 @@ import { authClient } from '@/lib/auth-client';
 import { useDashboard } from './app-shell';
 const accountsSchema = z.array(z.object({ id: z.string(), providerId: z.string(), accountId: z.string() }));
 export function Connections() {
-  const { session } = useDashboard();
+  const { session, queue } = useDashboard();
   const [accounts, setAccounts] = useState<z.infer<typeof accountsSchema>>([]);
   const [message, setMessage] = useState('');
   const setupNeeded = useSearchParams().get('repository') === 'setup-needed';
@@ -70,6 +70,29 @@ export function Connections() {
           Go to review queue
         </Link>
       </div>
+      <ol className="connection-steps" aria-label="Repository setup progress" role="list">
+        <li data-complete={accounts.length > 0}>
+          <span>01</span>
+          <div>
+            <strong>Connect a provider</strong>
+            <p>Use your existing Git identity.</p>
+          </div>
+        </li>
+        <li data-complete={queue.repositories.length > 0}>
+          <span>02</span>
+          <div>
+            <strong>Choose repositories</strong>
+            <p>Keep your review queue focused.</p>
+          </div>
+        </li>
+        <li>
+          <span>03</span>
+          <div>
+            <strong>Start reviewing</strong>
+            <p>Open a change and follow its story.</p>
+          </div>
+        </li>
+      </ol>
       {setupNeeded && (
         <div className="status-message">
           The repository App is not configured for this deployment yet. A provider admin can install a matching App from

@@ -29,6 +29,7 @@ import { readEnterpriseInBrowser } from '@/lib/enterprise-reader';
 import { reviewContextSchema, progressSchema } from '@/lib/review-contracts';
 import type { ReviewData } from '@/lib/review-contracts';
 import { useDashboard, EmptyState } from './app-shell';
+import { FileNavigation } from './file-navigation';
 import { DiffView } from './diff-view';
 import type { LineSelection } from './diff-view';
 import { ConsolidatedFindings } from './consolidated-findings';
@@ -76,6 +77,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const [progress, setProgress] = useState<Readonly<Record<string, StepProgress>>>({});
   const [stepIndex, setStepIndex] = useState(0);
   const [mode, setMode] = useState('guide');
+  const [wrap, setWrap] = useState(false);
   const [consolidated, setConsolidated] = useState<ConsolidatedResult | null>(null);
   const [planning, setPlanning] = useState(false);
   const [notice, setNotice] = useState('');
@@ -87,7 +89,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const [draftHead, setDraftHead] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [line, setLine] = useState<LineSelection | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState<boolean | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState<boolean | null>(false);
   const wide = useSyncExternalStore(subscribeWide, wideSnapshot, () => false);
   const showAssistant = assistantOpen ?? wide;
   const mutationKey = useRef({ content: '', key: '' });
@@ -359,7 +361,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
         </div>
         <div className="review-tabs">
           <div>
-            <button className={mode === 'guide' ? 'selected' : ''} onClick={() => setMode('guide')}>
+            <button type="button" className={mode === 'guide' ? 'selected' : ''} onClick={() => setMode('guide')}>
               <Sparkles size={14} />
               Guided review
               {plan && (
@@ -368,11 +370,15 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                 </span>
               )}
             </button>
-            <button className={mode === 'files' ? 'selected' : ''} onClick={() => setMode('files')}>
+            <button type="button" className={mode === 'files' ? 'selected' : ''} onClick={() => setMode('files')}>
               <ListTree size={14} />
               All changes
             </button>
-            <button className={mode === 'conversation' ? 'selected' : ''} onClick={() => setMode('conversation')}>
+            <button
+              type="button"
+              className={mode === 'conversation' ? 'selected' : ''}
+              onClick={() => setMode('conversation')}
+            >
               <MessageSquare size={14} />
               Conversation
             </button>
@@ -392,6 +398,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             </Button>
             <Button
               size="sm"
+              variant={mode === 'guide' && plan ? 'outline' : 'default'}
               onClick={openReview}
               disabled={!session.user || session.demo || !!error || (mode === 'guide' && stale)}
             >
@@ -414,7 +421,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       {stale && (
         <div className="review-banner">
           This pull request has new changes. Replan before continuing this guide.{' '}
-          <button onClick={generate} disabled={planning}>
+          <button type="button" onClick={generate} disabled={planning}>
             Replan
           </button>
         </div>
@@ -436,7 +443,8 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
           <ProviderActions reference={reference} data={data} onChange={() => setRevision((v) => v + 1)} />
         </div>
       )}
-      <div className={cn('review-layout', showAssistant && 'with-assistant')}>
+      <div className={cn('review-layout', showAssistant && 'with-assistant', mode === 'files' && 'all-changes-layout')}>
+        {mode === 'files' && <FileNavigation files={data.files.filter((file) => !file.hidden)} />}
         {mode === 'guide' && plan && (
           <aside className="step-sidebar">
             <div className="step-sidebar-heading">
@@ -448,10 +456,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             <div className="step-progress-track">
               <span style={{ width: `${plan.steps.length ? (completed / plan.steps.length) * 100 : 0}%` }} />
             </div>
-            <ol>
+            <ol role="list">
               {plan.steps.map((step, index) => (
                 <li key={step.id}>
                   <button
+                    type="button"
                     className={cn('step-link', stepIndex === index && 'active')}
                     onClick={() => setStepIndex(index)}
                     aria-current={stepIndex === index ? 'step' : undefined}
@@ -526,10 +535,16 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
           ) : mode === 'files' ? (
             <>
               <div className="review-section-heading">
-                <h2>Essential changes</h2>
-                <span>{data.files.filter((file) => !file.hidden).length} files</span>
+                <div>
+                  <h2>Essential changes</h2>
+                  <span>{data.files.filter((file) => !file.hidden).length} files to review</span>
+                </div>
+                <button type="button" className="wrap-toggle" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+                  Wrap lines
+                </button>
               </div>
               <DiffView
+                wrap={wrap}
                 files={data.files.filter((file) => !file.hidden)}
                 onComment={(selection) => {
                   setDraftHead(data.pull.headSha);
@@ -575,7 +590,12 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               {!session.demo && (
                 <label className="guide-team-field">
                   Team
-                  <select className="field" value={teamId} onChange={(event) => setActiveTeam(event.target.value)}>
+                  <select
+                    name="teamId"
+                    className="field"
+                    value={teamId}
+                    onChange={(event) => setActiveTeam(event.target.value)}
+                  >
                     <option value="">Choose a team</option>
                     {teams.map((team) => (
                       <option value={team.id} key={team.id}>
@@ -628,7 +648,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   {current.watch.length > 0 && (
                     <div className="step-watch">
                       <Flag size={13} />
-                      <ul>
+                      <ul role="list">
                         {current.watch.map((watch) => (
                           <li key={watch}>{watch}</li>
                         ))}
@@ -637,6 +657,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   )}
                 </div>
                 <DiffView
+                  wrap={wrap}
                   files={data.files}
                   refs={current.touches}
                   onComment={(selection) => {
@@ -723,7 +744,12 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
         <Dialog.Portal>
           <Dialog.Backdrop className="dialog-backdrop" />
           <Dialog.Popup className="privacy-dialog">
-            <Dialog.Title className="text-lg font-medium">Flag this step</Dialog.Title>
+            <div className="flex items-center justify-between gap-4">
+              <Dialog.Title className="text-lg font-medium">Flag this step</Dialog.Title>
+              <Dialog.Close className="icon-button" aria-label="Close step note">
+                <X size={17} />
+              </Dialog.Close>
+            </div>
             <Dialog.Description className="muted mt-2">
               Keep a note for your final review. Nothing is posted yet.
             </Dialog.Description>
@@ -736,7 +762,13 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             >
               <label>
                 What needs another look?
-                <textarea className="field" value={flagNote} onChange={(e) => setFlagNote(e.target.value)} required />
+                <textarea
+                  name="flagNote"
+                  className="field"
+                  value={flagNote}
+                  onChange={(e) => setFlagNote(e.target.value)}
+                  required
+                />
               </label>
               <Button data-measure="review-submit" type="submit">
                 Flag and continue
@@ -772,7 +804,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               {!line && (
                 <label>
                   Review decision
-                  <select className="field" value={event} onChange={(e) => setEvent(e.target.value)}>
+                  <select name="event" className="field" value={event} onChange={(e) => setEvent(e.target.value)}>
                     <option value="comment">Comment</option>
                     <option value="approve">Approve</option>
                     <option value="request_changes">Request changes</option>
@@ -782,6 +814,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               <label>
                 {line ? 'Comment' : 'Review summary'}
                 <textarea
+                  name="body"
                   className="field"
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
