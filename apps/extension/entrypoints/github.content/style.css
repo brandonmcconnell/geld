@@ -7406,8 +7406,10 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--fgColor-default, var(--color-fg-default));
 }
 
+/* Its own layer from the start, so the turn runs on the compositor whatever the page lays out meanwhile. */
 .geld-desc-toggle .octicon {
   transition: transform 120ms ease;
+  will-change: transform;
 }
 
 [data-geld-desc-heading='closed'] .geld-desc-toggle .octicon {

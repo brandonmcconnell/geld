@@ -2,6 +2,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hiddenBlocks, outlineOf, railsOf, shortenDescription } from './description';
 
+/** One animation frame. Registered after the click, it runs after the click's own callback in the same frame. */
+const frame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+/** Two animation frames: a heading click shows its section in the second. */
+const frames = async (): Promise<void> => {
+  await frame();
+  await frame();
+};
+
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
   holder.innerHTML = html;
@@ -87,12 +95,18 @@ describe('shortenDescription', () => {
     expect(body.querySelectorAll('.geld-desc-toggle')).toHaveLength(3);
   });
 
-  it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', () => {
+  it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
     expect(document.querySelector('.geld-desc-more')).toBeNull();
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    // The chevron turns at once, and the section shows only in the second frame, so the first paints the turn alone.
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    await frame();
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    await frame();
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
@@ -121,10 +135,11 @@ describe('shortenDescription', () => {
     expect(body.children[1]?.hasAttribute('data-geld-findable')).toBe(false);
   });
 
-  it('keeps what the reader opened when shortening is turned off and on again on the same page', () => {
+  it('keeps what the reader opened when shortening is turned off and on again on the same page', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
     shortenDescription(true);
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    await frames();
     shortenDescription(false);
     expect(body.children[1]?.hasAttribute('hidden')).toBe(false);
     shortenDescription(true);
@@ -139,8 +154,19 @@ describe('shortenDescription', () => {
     const successor = await import('./description');
     successor.shortenDescription(true);
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    await frames();
     expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     successor.shortenDescription(false);
+  });
+
+  it('shows nothing after shortening is turned off while a section was about to open', async () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    shortenDescription(true);
+    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    shortenDescription(false);
+    await frames();
+    expect(body.hasAttribute('data-geld-desc')).toBe(false);
   });
 
   it('leaves a click on the heading anchor alone', () => {

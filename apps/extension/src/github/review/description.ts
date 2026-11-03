@@ -186,8 +186,15 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     if (target.closest(`.${TOGGLE_CLASS}`) === null && window.getSelection()?.isCollapsed === false) return;
     const key = block.getAttribute(ATTR_KEY);
     if (key === null) return;
-    state.open.set(key, block.getAttribute(ATTR_HEADING) !== 'open');
-    applyTo(body);
+    const opening = block.getAttribute(ATTR_HEADING) !== 'open';
+    state.open.set(key, opening);
+    // The chevron turns in this frame and the section shows in the next: laying out what was folded is the costly
+    // part, and once the (composited) rotation has started that work can no longer hold it up.
+    setFlag(block, ATTR_HEADING, opening ? 'open' : 'closed');
+    const { signal } = wiring.signal;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!signal.aborted) applyTo(body);
+    }));
   }, { signal: wiring.signal.signal });
 }
 
