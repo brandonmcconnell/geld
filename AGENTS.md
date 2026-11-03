@@ -2366,6 +2366,11 @@ This native lease is limited to cloud PR diff pages with the observed All change
 Lists, standalone commits, other tabs, and unsupported browsers keep their existing policy.
 The whole-context acceptance harness explicitly sets `hideWhitespace:false` to preserve its raw source fixture.
 
+Bitbucket's native Connect module lookup uses a JSON POST to its workspace `connect/modules` endpoint for read-only module descriptions, through the retained `fetchModules`, `fetchCachedRequest` and `fetchData` source chain.
+The whitespace acceptance guard permits only that audited native request for the known public workspace and bounded public repository or PR22 target body, while token, preference and unknown non-GET requests remain blocked.
+A blocked non-GET receipt records only bounded origin, path, method, owner, phase and fixed reason before aborting, and response failures retain fixed source or transport-stage codes rather than raw error messages.
+A concurrent page-close error is harmless only when the provider page is actually closed before exact raw settings restoration.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
