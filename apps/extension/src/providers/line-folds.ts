@@ -86,6 +86,7 @@ function readLines(entry: ProviderDiffEntry): Reading {
     if (shown.kind === 'hunk') {
       row.hunk = true;
       changing = false;
+      signature.push(`${row.index}:hunk`);
       continue;
     }
     const replaced = shown.oldText !== null && shown.newText !== null && shown.oldText !== shown.newText;
