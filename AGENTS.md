@@ -2416,3 +2416,9 @@ A known pending request remains separate from the current verdict, while an unkn
 Conversation comment and started-thread counts are labelled as activity in this conversation, with observed counts for incomplete sources, never as one grouped review.
 GitLab reviewer links use only the unique newest matching native system verdict note with the exact account ID and a supplied same-MR note URL.
 Ordinary comments, ambiguous timestamps and missing or foreign note URLs cannot supply that link, and Bitbucket standings remain non-links while its activity source lacks an event permalink.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
