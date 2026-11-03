@@ -6382,6 +6382,24 @@ a.geld-review__rerun {
   text-decoration: none;
 }
 
+/* "Run" on the CI row (GitHub's "Approve workflows to run"): Rerun's box beside the gear, its alert glyph in
+   GitHub's attention colour. Pressed, it fades until the pass after GitHub's own button has gone. */
+.geld-review__approve-run-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.geld-review__approve-run .octicon {
+  color: var(--fgColor-attention, var(--color-attention-fg));
+}
+
+.geld-review__approve-run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 a.geld-review__rerun:hover {
   text-decoration: none;
   color: var(--fgColor-default, var(--color-fg-default));
