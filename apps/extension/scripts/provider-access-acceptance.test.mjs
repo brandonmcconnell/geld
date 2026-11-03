@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { enableOptionalProviders, optionalProvidersForCases, assertOptionalProviderRegistrations, verifyOptionalProviderRegistration, readWorkerProviderAccess } from './provider-access-acceptance.mjs';
+import { enableOptionalProviders, optionalProvidersForCases, assertOptionalProviderRegistrations, verifyOptionalProviderRegistration, readOptionsProviderAccess } from './provider-access-acceptance.mjs';
 
-const OPTIONS = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/options.html';
+const EXTENSION_ID = 'abcdefghijklmnopabcdefghijklmnop';
+const OPTIONS = `chrome-extension://${EXTENSION_ID}/options.html`;
 function protocol({ trusted = true, acknowledge = true, obstructed = false, navigate = false } = {}) {
   const clicks = [], disposed = [];
   let target = null, url = OPTIONS;
@@ -74,13 +75,14 @@ test('registered provider receipt requires both grants, isolated scripts and the
     const value = registered();mutate(value);assert.throws(() => assertOptionalProviderRegistrations(value));
   }
 });
-test('options-only verification observes the actual worker with read-only APIs after genuine clicks', async () => {
+test('options-only verification reads browser-owned state from the installed page after genuine clicks', async () => {
   const f = protocol();const calls = [];
-  const worker = { evaluate: async fn => vm.runInNewContext(`(${fn})()`, { chrome: {
+  f.page.evaluate = async (fn, ...args) => vm.runInNewContext(`(${fn})(...args)`, { args, location: { href: OPTIONS }, chrome: {
+    runtime: { id: EXTENSION_ID },
     permissions: { getAll: async () => { calls.push('permissions');return registered().permissions; } },
     scripting: { getRegisteredContentScripts: async () => { calls.push('scripts');return registered().scripts; } },
-  } }) };
-  const value = await verifyOptionalProviderRegistration(f.page, worker, { poll: async (read, accepts) => { const result = await read();assert.ok(accepts(result));return result; } });
+  } });
+  const value = await verifyOptionalProviderRegistration(f.page, { extensionId: EXTENSION_ID, poll: async (read, accepts) => { const result = await read();assert.ok(accepts(result));return result; } });
   assert.equal(value.status, 'passed');assert.deepEqual(f.clicks, ['gitlab', 'bitbucket']);assert.deepEqual(calls, Array.from({ length: 5 }, () => ['permissions', 'scripts']).flat());
 });
 
@@ -98,11 +100,51 @@ for (const granted of [false, true]) test(`pending opt-in records ${granted ? 'w
 });
 
 
-test('worker state diagnostics fail with a fixed timeout rather than hanging setup', async context => {
+test('options state diagnostics fail with a fixed timeout rather than hanging setup', async context => {
   context.mock.timers.enable({ apis: ['setTimeout'] });
-  const rejected = assert.rejects(readWorkerProviderAccess({ evaluate: () => new Promise(() => {}) }), /PROVIDER_ACCESS_WORKER_STATE_TIMEOUT/);
+  const rejected = assert.rejects(readOptionsProviderAccess({ url: () => OPTIONS, evaluate: () => new Promise(() => {}) }, EXTENSION_ID), /PROVIDER_ACCESS_STATE_TIMEOUT/);
   context.mock.timers.tick(3000);
   await rejected;
+});
+
+test('the options oracle verifies its extension identity and never calls grant or registration APIs', async () => {
+  const reads = [];
+  const state = { location: { href: OPTIONS }, chrome: {
+    runtime: { id: EXTENSION_ID },
+    permissions: { getAll: async () => { reads.push('permissions');return registered().permissions; } },
+    scripting: { getRegisteredContentScripts: async () => { reads.push('scripts');return registered().scripts; } },
+  } };
+  const page = { url: () => OPTIONS, evaluate: async (fn, ...args) => vm.runInNewContext(`(${fn})(...args)`, { ...state, args }) };
+  assert.deepEqual(JSON.parse(JSON.stringify(await readOptionsProviderAccess(page, EXTENSION_ID))), registered());
+  assert.deepEqual(reads, ['permissions', 'scripts']);
+  reads.length = 0;state.chrome.runtime.id = 'ponmlkjihgfedcbaponmlkjihgfedcba';
+  await assert.rejects(readOptionsProviderAccess(page, EXTENSION_ID), /PROVIDER_ACCESS_CONTEXT_CHANGED/);
+  assert.deepEqual(reads, []);
+  await assert.rejects(readOptionsProviderAccess({ ...page, url: () => 'https://gitlab.com/' }, EXTENSION_ID), /installed extension page/);
+  assert.deepEqual(reads, []);
+});
+
+test('an options navigation during the browser API read cannot return a valid receipt', async () => {
+  const location = { href: OPTIONS };
+  const page = { url: () => OPTIONS, evaluate: async (fn, ...args) => vm.runInNewContext(`(${fn})(...args)`, { args, location, chrome: {
+    runtime: { id: EXTENSION_ID },
+    permissions: { getAll: async () => { location.href = 'https://gitlab.com/';return registered().permissions; } },
+    scripting: { getRegisteredContentScripts: async () => registered().scripts },
+  } }) };
+  await assert.rejects(readOptionsProviderAccess(page, EXTENSION_ID), /PROVIDER_ACCESS_CONTEXT_CHANGED/);
+});
+
+test('permission and script reads both start while either browser API remains pending', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const reads = [];
+  const page = { url: () => OPTIONS, evaluate: async (fn, ...args) => vm.runInNewContext(`(${fn})(...args)`, { args, location: { href: OPTIONS }, chrome: {
+    runtime: { id: EXTENSION_ID },
+    permissions: { getAll: () => { reads.push('permissions');return new Promise(() => {}); } },
+    scripting: { getRegisteredContentScripts: () => { reads.push('scripts');return new Promise(() => {}); } },
+  } }) };
+  const rejected = assert.rejects(readOptionsProviderAccess(page, EXTENSION_ID), /PROVIDER_ACCESS_STATE_TIMEOUT/);
+  assert.deepEqual(reads, ['permissions', 'scripts']);
+  context.mock.timers.tick(3000);await rejected;
 });
 
 

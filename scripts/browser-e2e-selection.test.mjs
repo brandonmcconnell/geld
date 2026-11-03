@@ -505,7 +505,7 @@ test('provider-access builds and loads the extension but selects no public cases
   const cases = new vm.Script(`(${literal})`).runInNewContext();assert.deepEqual(Array.from(cases['provider-access']), []);
   const start = harness.indexOf("  if (focus === 'provider-access') {");
   const access = harness.slice(start, harness.indexOf('  const selected =', start));
-  assert.match(access, /verifyOptionalProviderRegistration\(options, runtime, \{ poll, confirmPermission, progress: report\.providerAccessVerification \}\)/);
+  assert.match(access, /verifyOptionalProviderRegistration\(options, \{ extensionId, poll, confirmPermission, progress: report\.providerAccessVerification \}\)/);
   assert.doesNotMatch(access, /runCase|fetch\(|\.goto\(/);
   assert.match(harness, /focus === 'provider-access' \? \['--host-resolver-rules=MAP \* ~NOTFOUND'\] : \[\]/);
   assert.match(workflow, /name: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'provider-access' && 'geld-provider-access' \|\| 'geld-installed-browser-e2e' \}\}/);
@@ -515,6 +515,13 @@ test('provider-access builds and loads the extension but selects no public cases
     assert.match(step, /focus != 'provider-evidence'/);assert.doesNotMatch(step, /focus != 'provider-access'/);
   }
   assert.match(job, /const artifactName = process.env.GELD_BROWSER_FOCUS === 'provider-access-evidence' \? 'geld-provider-access' : 'geld-installed-browser-e2e'/);
+});
+
+test('all opt-in state reads use the verified options page without a worker inspector attachment', () => {
+  assert.match(harness, /assert\.equal\(installed\.id, extensionId\)/);
+  assert.match(harness, /const readPermissionState = \(\) => readOptionsProviderAccess\(options, extensionId\)/);
+  assert.match(harness, /enableOptionalProviders\(options, optionalProvidersForCases\(selected\), \{ poll, readState: readPermissionState, confirmPermission/);
+  assert.doesNotMatch(harness, /worker\.worker\(|readWorkerProviderAccess/);
 });
 
 

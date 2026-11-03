@@ -101,19 +101,30 @@ function accessState(snapshot, provider) {
     }) };
 }
 
-export async function readWorkerProviderAccess(worker) {
+/** Browser-owned state read from the already verified extension page, independent of worker DevTools lifetime. */
+export async function readOptionsProviderAccess(page, extensionId) {
+  assert.match(extensionId, /^[a-p]{32}$/);
+  const optionsUrl = page.url();
+  const url = new URL(optionsUrl);
+  assert.ok(url.protocol === 'chrome-extension:' && url.hostname === extensionId, 'Provider access requires the installed extension page');
   let timer;
   try {
     return await Promise.race([
-      worker.evaluate(async () => ({ permissions: await chrome.permissions.getAll(), scripts: await chrome.scripting.getRegisteredContentScripts() })),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('PROVIDER_ACCESS_WORKER_STATE_TIMEOUT')), 3000); }),
+      page.evaluate(async (expectedId, expectedUrl) => {
+        const sameContext = () => chrome.runtime.id === expectedId && location.href === expectedUrl;
+        if (!sameContext()) throw new Error('PROVIDER_ACCESS_CONTEXT_CHANGED');
+        const [permissions, scripts] = await Promise.all([chrome.permissions.getAll(), chrome.scripting.getRegisteredContentScripts()]);
+        if (!sameContext()) throw new Error('PROVIDER_ACCESS_CONTEXT_CHANGED');
+        return { permissions, scripts };
+      }, extensionId, optionsUrl),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('PROVIDER_ACCESS_STATE_TIMEOUT')), 3000); }),
     ]);
   } finally { clearTimeout(timer); }
 }
 
 export function assertOptionalProviderRegistrations(snapshot) {
   const origins = ['https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*'];
-  for (const origin of origins) assert.ok(snapshot.permissions.origins.includes(origin), 'The worker must observe each granted provider origin');
+  for (const origin of origins) assert.ok(snapshot.permissions.origins.includes(origin), 'Chrome must record each granted provider origin');
   const expected = [
     { id: 'geld-gitlab', host: 'https://gitlab.com/*', file: 'gitlab', main: false },
     { id: 'geld-bitbucket', host: 'https://bitbucket.org/*', file: 'bitbucket', main: false },
@@ -133,11 +144,11 @@ export function assertOptionalProviderRegistrations(snapshot) {
   return { origins, scripts: expected.map(entry => ({ id: entry.id, world: entry.main ? 'MAIN' : 'ISOLATED', runAt: 'document_start' })) };
 }
 
-/** Only the original installed options controls can grant; the worker is observed read-only afterward. */
-export async function verifyOptionalProviderRegistration(page, worker, { poll, confirmPermission, progress = {} }) {
+/** Only the original options controls can grant; browser-global registrations are observed read-only afterward. */
+export async function verifyOptionalProviderRegistration(page, { extensionId, poll, confirmPermission, progress = {} }) {
   progress.clicks = [];
-  const clicks = await enableOptionalProviders(page, ['gitlab', 'bitbucket'], { poll, confirmPermission, readState: () => readWorkerProviderAccess(worker), progress: progress.clicks });
-  const snapshot = await readWorkerProviderAccess(worker);
+  const clicks = await enableOptionalProviders(page, ['gitlab', 'bitbucket'], { poll, confirmPermission, readState: () => readOptionsProviderAccess(page, extensionId), progress: progress.clicks });
+  const snapshot = await readOptionsProviderAccess(page, extensionId);
   const registration = assertOptionalProviderRegistrations(snapshot);
-  return { status: 'passed', clicks, ...registration, scope: 'Installed options and worker only. No public provider page is opened. External DNS is blocked for this focus.' };
+  return { status: 'passed', clicks, ...registration, scope: 'Installed options and browser-owned registrations only. No public provider page is opened. External DNS is blocked for this focus.' };
 }

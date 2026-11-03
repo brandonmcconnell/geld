@@ -2534,10 +2534,13 @@ The ancillary native-fragment check remains with MR266334 legacy round history r
 The `provider-access` installed-browser focus grants optional sites through genuine options-page pointer clicks and verifies worker-registered GitLab, Bitbucket and Bitbucket MAIN scripts before opening any public provider page.
 This focus blocks external DNS, skips all public cases and uploads only `geld-provider-access`, so its options-only receipt cannot replace the canonical provider cooldown artifact.
 
-Installed provider opt-in verification reads worker permissions before and after each options click, so a pending permission request is distinct from pending script registration.
+Installed provider opt-in verification reads browser-owned permissions before and after each options click, so a pending permission request is distinct from pending script registration.
 The CI browser runs headed under Xvfb for the native permission prompt, while the existing page viewport sizes remain unchanged inside a larger desktop window.
 Native confirmation is limited to an active dialog owned by the launched Chrome process tree, outside web documents, naming Geld and the exact requested provider hosts with one enabled Allow action.
 Unknown, ambiguous or inaccessible dialogs remain unconfirmed, and no direct permission grant API or blind keyboard input substitutes for that native confirmation.
+
+Installed opt-in verification reads Chrome's permissions and registered content scripts through the verified options page, without attaching a DevTools evaluation context to the transient MV3 service worker.
+Each bounded read checks the exact extension ID and page URL before and after both read-only browser API calls, while the genuine options acknowledgement still proves the worker completed registration.
 
 Provider dashboards show incomplete source coverage as one muted partial-review status rather than repeating API diagnostics in the conversation.
 The copied digest retains every unavailable source reason, including separate missing thread states, while the panel remains explicitly partial.

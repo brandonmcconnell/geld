@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { confirmNativeProviderPermission, prepareNativeAccessibilityBus, nativeAccessibilityEnvironment, probeNativeChromeAccessibility } from './provider-native-permission.mjs';
-import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration, readWorkerProviderAccess } from './provider-access-acceptance.mjs';
+import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration, readOptionsProviderAccess } from './provider-access-acceptance.mjs';
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
@@ -3122,14 +3122,12 @@ try {
     console.log(`NATIVE_AX_PROBE: ${JSON.stringify(report.nativeAccessibilityProbe)}`);
     assert.equal(report.nativeAccessibilityProbe.status, 'ready', 'Owned Chrome native accessibility is unavailable before permission input');
   }
-  const runtime = await worker.worker();
-  assert.ok(runtime !== null, 'The installed extension worker is required for registration evidence');
-  const readPermissionState = () => readWorkerProviderAccess(runtime);
+  const readPermissionState = () => readOptionsProviderAccess(options, extensionId);
   const confirmPermission = process.env.GELD_BROWSER_NATIVE_DIALOGS === '1'
     ? provider => confirmNativeProviderPermission(provider, browser.process()?.pid, readPermissionState) : undefined;
   if (focus === 'provider-access') {
     report.providerAccessVerification = { status: 'running' };
-    report.providerAccessVerification = await verifyOptionalProviderRegistration(options, runtime, { poll, confirmPermission, progress: report.providerAccessVerification });
+    report.providerAccessVerification = await verifyOptionalProviderRegistration(options, { extensionId, poll, confirmPermission, progress: report.providerAccessVerification });
     console.log(`PROVIDER_ACCESS: ${JSON.stringify(report.providerAccessVerification)}`);
   } else {
   const selected = focus === 'all' ? Object.values(FOCUSED_CASES).flat() : FOCUSED_CASES[focus] ?? [];
