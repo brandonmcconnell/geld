@@ -2124,3 +2124,9 @@ A captured registration-shaped source slice does not establish loader binding, r
   The installed shell and standalone declared-model oracles select the same primary host variable or absent-property fallback, rejecting present empty or invalid colors instead of treating them as absent.
   Native ADS variables and YAML token spans are never reassigned, and comment, grammar, plain and initial-On eligibility remain unchanged.
   Selected-light source/style characterization does not establish enabled embedded-shell palette equivalence, native dark, comment-variable availability or complete classifier equivalence.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
