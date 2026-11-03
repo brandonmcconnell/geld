@@ -2278,3 +2278,9 @@ Its single initial native URL includes the known unchanged `file_path`, matching
 
 Puppeteer25 passes media-feature reset values to Chromium CDP, which requires an empty array rather than null.
 The shell acceptance uses `emulateMediaFeatures([])` on both normal and failure cleanup paths to restore the browser's baseline light or dark media.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
