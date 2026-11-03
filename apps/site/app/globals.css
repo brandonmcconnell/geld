@@ -526,6 +526,27 @@
       opacity: 0;
     }
   }
+
+  /* With a hero wordmark (header-divider.tsx) the line fades in over the first half of the scroll that takes the wordmark under the bar. */
+  .hero-divider[data-hero-fade='on'] {
+    animation: hero-divider-in linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 var(--hero-fade-end, 60px);
+  }
+
+  @keyframes hero-divider-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* Before hydration measures anything: a page with a hero wordmark opens with no line. */
+:root:has(#hero-wordmark) .hero-divider:not([data-hero-fade]) {
+  opacity: 0;
 }
 
 /* Inline code chips used for patterns and paths. */

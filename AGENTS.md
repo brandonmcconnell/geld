@@ -1367,6 +1367,8 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   hover deepens the cut by 3px (a child inside `group/geld`, like the account avatar, follows its parent's hover), and an `::after` pseudo-element makes the hit area the full square plus 1px so the cut-away corners are still clickable.
   Browsers without `corner-shape` get plain square corners.
   Form fields, chips, cards, popups and badges are plain squares.
+  On a page with a hero wordmark the header's bottom line starts invisible and is fully drawn halfway to the scroll that takes the wordmark under the bar (`header-divider.tsx` measures that point, a scroll-driven animation draws it, a scroll listener stands in where those are missing);
+  below `sm` the header's links fold into one menu left of the wordmark (`nav-menu.tsx`), and the account control stays on the right.
   Every heading is `text-wrap: balance` and every paragraph `pretty`, from the base layer in globals.css, so neither needs a class;
   a subtitle (a section's or page intro's description, the hero's line) adds `text-balance`.
   Hover details that phones must reach (the count breakdowns) use `components/ui/popover.tsx` (opens on hover and tap), not the tooltip.

@@ -16,7 +16,7 @@ type HeroState = 'none' | 'showing' | 'covered';
  * mounted but hidden for a while, so the id can exist more than once; only a
  * rendered one counts.
  */
-function visibleHero(): HTMLElement | null {
+export function visibleHero(): HTMLElement | null {
   for (const candidate of document.querySelectorAll<HTMLElement>(`#${HERO_WORDMARK_ID}`)) {
     if (candidate.checkVisibility()) return candidate;
   }
