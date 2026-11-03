@@ -57,7 +57,7 @@ export default function HowItWorksPage() {
       <PageIntro
         eyebrow="How it works"
         title="Everything Geld changes on GitHub, and nothing it doesn't."
-        description="On diffs Geld only inspects file paths, never file contents. It never moves GitHub's DOM around, and can be switched off per repository or organisation."
+        description="Geld reads the diffs and conversations GitHub already serves you, through your own session. File paths and the changed lines decide what folds, anything folded is one click from coming back, and it can be switched off per repository or organisation."
       />
 
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
