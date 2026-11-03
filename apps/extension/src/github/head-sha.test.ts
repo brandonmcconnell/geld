@@ -26,6 +26,22 @@ describe('detectHeadSha', () => {
     expect(detectHeadSha()).toBe(C);
   });
 
+  it('keeps the head the page names while its timeline streams in older commits first, and follows a push after it', () => {
+    window.history.replaceState(null, '', '/acme/widgets/pull/71');
+    const payload = `<script type="application/json">{"payload":{"pullRequest":{"headRefOid":"${C}"}}}</script>`;
+    // vitest#10554: the timeline's first rows are the pull request's oldest commits; the head's row comes last.
+    document.body.innerHTML = `${payload}<div class="js-discussion">${row(A)}</div>`;
+    expect(detectHeadSha()).toBe(C);
+    document.querySelector('.js-discussion')?.insertAdjacentHTML('beforeend', row(B));
+    expect(detectHeadSha()).toBe(C);
+    document.querySelector('.js-discussion')?.insertAdjacentHTML('beforeend', row(C));
+    expect(detectHeadSha()).toBe(C);
+    // A push while the page is open: its row comes after the head's, and the payload still names the old head.
+    const D = 'd'.repeat(40);
+    document.querySelector('.js-discussion')?.insertAdjacentHTML('beforeend', row(D));
+    expect(detectHeadSha()).toBe(D);
+  });
+
   it('takes only commit rows for this pull request, never a link in a comment', () => {
     window.history.replaceState(null, '', '/acme/widgets/pull/71');
     // A comment after the last push linking an older commit (and one of another repository's pull request) is

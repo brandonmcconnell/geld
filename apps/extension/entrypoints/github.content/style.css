@@ -786,6 +786,12 @@ html[data-geld-quick-review] details.js-reviews-container {
   height: 28px;
 }
 
+/* Geld's counts skeleton where GitHub's own has not been seen to copy its classes: the shape GitHub's has (Nov 2026). */
+.geld-counts-skeleton {
+  height: 1lh;
+  background-color: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+}
+
 /*
  * GitHub floats the counts right of the tabs and drops their line with 12px of top padding. Holding the button too,
  * the box is the tab bar's height instead (TabNav, a 40px row) with both centred on the tabs, as the tabs' own labels are.

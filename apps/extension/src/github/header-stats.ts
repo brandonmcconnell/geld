@@ -207,15 +207,6 @@ function pullTabRow(): HTMLElement | null {
 }
 
 /**
- * GitHub leaves the tab bar's line counts out when there are no line changes (a change of binary files only:
- * mintlify/landing#886), rendering their wrapper empty, so the header showed no counts and no breakdown. `want` (the
- * page's diff is loaded and has no added or removed lines) puts a stand-in of GitHub's shape in that wrapper, or in a
- * wrapper of Geld's where there is none, for the header pass to rewrite as it does GitHub's. GitHub's own counts always
- * win: once a push brings line changes they render, and the stand-in goes; when a push takes them away, it comes back.
- * Not marked as Geld's UI, which the header scan skips (`isInsideDiffEntry`): it is read and rewritten as GitHub's are.
- * True when the page changed.
- */
-/**
  * Whether GitHub's counts wrapper holds anything of GitHub's own: its counts, or the skeleton it shows while they load
  * (a Suspense fallback, `skeleton__…`). Geld's group, mark and stand-in do not count. Until it holds nothing of GitHub's,
  * the counts may yet arrive, and anything Geld put there in their place would stand beside the skeleton, then jump.
@@ -224,30 +215,82 @@ export function countsWrapperBusy(wrapper: Element): boolean {
   return [...wrapper.children].some((child) => !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
 }
 
-export function syncCountsStandIn(want: boolean): boolean {
+export interface StandInTotals {
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+function standInKey(totals: StandInTotals): string {
+  return `${totals.additions}:${totals.deletions}`;
+}
+
+/** What stands in the tab bar's empty counts wrapper: Geld's counts, or its skeleton while they are not ready. */
+export type StandIn = StandInTotals | 'skeleton';
+
+const SKELETON = 'skeleton';
+/** The skeleton GitHub showed there last (its class names are hashed per build): Geld's wears the same, so it reads as GitHub's. */
+let githubSkeleton: { readonly className: string; readonly width: string } | null = null;
+
+function noteGithubSkeleton(wrapper: Element): void {
+  const skeleton = [...wrapper.children].find((child) => !child.hasAttribute(ATTR_COUNTS_STAND_IN) && /\bskeleton/i.test(child.className.toString()));
+  if (skeleton instanceof HTMLElement) githubSkeleton = { className: skeleton.className.toString(), width: skeleton.style.width || '80px' };
+}
+
+function standInElement(want: StandIn): HTMLElement {
+  if (want === SKELETON) {
+    const skeleton = createElement('div', { class: githubSkeleton?.className ?? 'geld-counts-skeleton', [ATTR_COUNTS_STAND_IN]: SKELETON, 'aria-hidden': 'true' });
+    skeleton.style.width = githubSkeleton?.width ?? '80px';
+    return skeleton;
+  }
+  return createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: standInKey(want) }, [
+    createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, [`+${formatCount(want.additions)}`]),
+    createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, [`-${formatCount(want.deletions)}`]),
+    createElement('span', { class: 'sr-only' }, [`Lines changed: ${want.additions} additions & ${want.deletions} deletions`]),
+  ]);
+}
+
+/** Geld's skeleton in the counts wrapper, which the review group stands before as it does before the counts. */
+export function countsSkeletonStandIn(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}="${SKELETON}"]`);
+}
+
+/**
+ * The tab bar's counts wrapper can hold nothing of GitHub's while Geld already knows its counts: GitHub leaves the
+ * counts out for a change of binary files only (mintlify/landing#886), and signed in its skeleton can resolve to an
+ * empty wrapper seconds before its counts render (mintlify/mint#14204). Geld only rewrote GitHub's counts, so the header
+ * showed nothing. `want` fills the wrapper (or one of Geld's where there is none): Geld's skeleton, in GitHub's own
+ * classes, while Geld's counts are not ready, then counts of GitHub's shape in its very place, which the header pass
+ * reads and rewrites as it does GitHub's, so they show Geld's numbers. GitHub's own counts always win: once they render
+ * the stand-in goes, and they are rewritten to the same numbers before paint. Not marked as Geld's UI, which the header
+ * scan skips (`isInsideDiffEntry`). True when the page changed.
+ */
+export function syncCountsStandIn(want: StandIn | null): boolean {
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
   const row = pullTabRow();
   const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
   const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
-  if (!want || row === null || real || (wrapper !== null && countsWrapperBusy(wrapper))) {
+  if (wrapper !== null) noteGithubSkeleton(wrapper);
+  if (want === null || row === null || real || (wrapper !== null && countsWrapperBusy(wrapper))) {
     if (existing === null) return false;
     removeCountsStandIn();
     return true;
   }
-  if (existing !== null && row.contains(existing)) return false;
+  const key = want === SKELETON ? SKELETON : standInKey(want);
+  if (existing !== null && row.contains(existing) && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) return false;
+  const next = standInElement(want);
+  // Counts replacing the skeleton take its very place, so what stands before it (the review group) does not move.
+  if (existing !== null && row.contains(existing)) {
+    detachBreakdownTooltip(existing);
+    existing.replaceWith(next);
+    return true;
+  }
   removeCountsStandIn();
   let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
   if (home === null) {
     home = createElement('div', { class: COUNTS_STAND_CLASS });
     row.prepend(home);
   }
-  home.append(
-    createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: '' }, [
-      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, ['+0']),
-      createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, ['-0']),
-      createElement('span', { class: 'sr-only' }, ['Lines changed: 0 additions & 0 deletions']),
-    ]),
-  );
+  home.append(next);
   return true;
 }
 

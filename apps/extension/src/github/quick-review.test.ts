@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type { HeaderStatGroup } from './header-stats';
+import { syncCountsStandIn } from './header-stats';
 import { rememberStatusHint, resetStatusHints } from './status-pill';
 import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
@@ -117,6 +118,21 @@ describe("the tab bar button while GitHub's counts load", () => {
     wrapper().replaceChildren();
     applyQuickReview(true, { page, groups: [], headSha: () => SHA });
     expect(wrapper().querySelector('.geld-quick-review + .geld-quick-review__mark')).not.toBeNull();
+  });
+
+  it("stands before Geld's skeleton once GitHub's goes, and stays put when Geld's counts take its place", () => {
+    wrapper().replaceChildren();
+    expect(syncCountsStandIn('skeleton')).toBe(true);
+    applyQuickReview(true, { page, groups: [], headSha: () => SHA });
+    const skeleton = wrapper().querySelector('[data-geld-counts-stand-in="skeleton"]');
+    expect(skeleton?.previousElementSibling?.classList.contains('geld-quick-review')).toBe(true);
+    expect(document.querySelector('.geld-quick-review__mark')).toBeNull();
+    expect(syncCountsStandIn({ additions: 3, deletions: 1 })).toBe(true);
+    const counts = wrapper().querySelector<HTMLElement>('[data-geld-counts-stand-in="3:1"]');
+    if (counts === null) throw new Error('fixture');
+    expect(counts.previousElementSibling?.classList.contains('geld-quick-review')).toBe(true);
+    applyQuickReview(true, { page, groups: [groupAt(counts)], headSha: () => SHA });
+    expect(counts.previousElementSibling?.classList.contains('geld-quick-review')).toBe(true);
   });
 
   it('reads its fallback stand as busy the moment the skeleton comes back, and leaves on the pass that asks', () => {

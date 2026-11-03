@@ -27,6 +27,8 @@ import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, wat
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
+import type { StandIn } from './header-stats';
+import { headerDiffstat } from './header-diffstat';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
 import type { LineStats } from './dom';
 import type { PageInfo } from './page';
@@ -343,7 +345,7 @@ export class GeldController {
   private headerScan: { readonly stateKey: string; readonly groups: readonly HeaderStatGroup[] } | null = null;
   private headerDirty = true;
   /** The last pass's word on Geld's stand-in counts: what the pre-paint path keeps when GitHub's counts come or go. */
-  private countsStandInWanted = false;
+  private countsStandInWanted: StandIn | null = null;
   /**
    * Something changed while the tab was hidden. A background tab does no
    * work at all (GitHub keeps mutating it: relative-time ticks, live socket
@@ -430,7 +432,11 @@ export class GeldController {
       if (headerAdded) this.headerDirty = true;
       // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
       // steps aside, or comes back, in the same frame.
-      if ((headerAdded || this.countsStandInWanted) && syncCountsStandIn(this.countsStandInWanted)) this.onCountsStandInChanged();
+      if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) {
+        this.onCountsStandInChanged();
+        // The stand-in changed before paint (GitHub's skeleton gone, or its counts arrived): the header is rewritten now.
+        this.applyHeaderNow();
+      }
       if (this.settledHeader === null) {
         if (this.headerDirty) this.applyHeaderNow();
       } else {
@@ -1599,7 +1605,7 @@ export class GeldController {
   ): { readonly hidden: HiddenBreakdown | null; readonly all: ChangeTotals | null; readonly hasGroups: boolean } {
     const sha = this.diffShaFor(page, url);
     let groups = this.headerGroupsFor(page);
-    if (this.syncCountsStandIn(page, sha, groups)) groups = this.headerGroupsFor(page);
+    if (this.syncCountsStandIn(page, sha, groups, url)) groups = this.headerGroupsFor(page);
     const headerFileCount = groups.map((group) => group.original?.files ?? 0).reduce((a, b) => Math.max(a, b), 0);
     const expectedFileCount = Math.max(headerFileCount, view?.treeFiles.length ?? 0);
     const domIsComplete = view !== null && (expectedFileCount === 0 || renderedEntryCount >= expectedFileCount);
@@ -1638,15 +1644,24 @@ export class GeldController {
   }
 
   /**
-   * A pull request header with no line counts of GitHub's gets Geld's when the page's diff has no line changes
-   * (`syncCountsStandIn`); asked for here, since without counts nothing else asks for the diff. True when the
-   * header changed (and was marked to be read again).
+   * What stands in a pull request header with no line counts of GitHub's (`syncCountsStandIn`): Geld's counts the moment
+   * they are ready, else Geld's skeleton in place of GitHub's. Ready is the page's diff (what is hidden), the
+   * repository's config (what hides it) and GitHub's own totals (`headerDiffstat`, one quick request: Geld's numbers are
+   * those totals less what it hides, as when it rewrites GitHub's counts, so GitHub's read the same when they render and
+   * nothing moves). With no totals from GitHub the diff's own sums do. A diff that cannot be had leaves GitHub's totals
+   * as they are, as GitHub's counts would be. True when the header changed (and was marked to be read again).
    */
-  private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[]): boolean {
-    let want = false;
-    if (page.kind.startsWith('pull') && page.diffUrl !== null && groups.every((group) => isCountsStandIn(group.host))) {
+  private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[], url: URL): boolean {
+    let want: StandIn | null = null;
+    const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0] ?? null;
+    if (page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host))) {
+      // GitHub's totals are the whole pull request's, so a Files tab narrowed to a commit or range counts its own diff.
+      const github = page.commits === undefined ? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged()) : null;
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
-      want = state.status === 'ready' && state.files.length > 0 && state.files.every((file) => file.additions === 0 && file.deletions === 0);
+      if (state.status === 'failed') want = github ?? null;
+      else if (state.status === 'ready' && github !== undefined && !this.configPending(repoFromPathname(url.pathname))) {
+        want = github ?? state.files.reduce((sum, file) => ({ additions: sum.additions + file.additions, deletions: sum.deletions + file.deletions }), { additions: 0, deletions: 0 });
+      } else want = 'skeleton';
     }
     this.countsStandInWanted = want;
     const changed = syncCountsStandIn(want);
@@ -1850,7 +1865,7 @@ export class GeldController {
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     // Cleared first: the stand-in is not Geld's UI, so its removal is a mutation, and the observer would put it back.
-    this.countsStandInWanted = false;
+    this.countsStandInWanted = null;
     removeCountsStandIn();
     for (const element of queryAll('[data-geld-original]')) restoreManagedText(element);
     for (const element of queryAll('[data-geld-stat-host]')) detachBreakdownTooltip(element);
