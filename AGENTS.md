@@ -2199,6 +2199,10 @@ The retained298 native GitLab header places the literal English label `2 files` 
 Its line-count parser accepts complete unsigned, ASCII-signed and Unicode-minus magnitudes, including the synthetic `-0` counterexample, while malformed or unrelated text remains unrecognized and is never retained.
 Actual299 failed before a checkbox input after qualifying its baseline and acquisition but without retaining a totals substage, so neither the precise failed totals check nor a wrong-count conclusion follows from that report.
 The session harness records bounded numeric and known-slot projections at explicit baseline, tab-total, test-category and native-presentation phases using the same existing reads, without adding source requests or changing expected counts.
+The installed300 session case preserved corrected counts and the known test category after one native reload, but its test file root was visible, and the second independent epoch later exceeded its mutation-history limit.
+That report did not retain layout ownership or positioning, so visible-root observations alone do not identify an adapter or controller cause.
+Native-presentation diagnostics retain only bounded known layout enums, Geld grouping and hiding markers, mount state and at most four ancestors per known file within the existing read.
+The independent observer reports its bounded count when its existing history limit rejects a session, without relaxing the limit or granting source authority.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.

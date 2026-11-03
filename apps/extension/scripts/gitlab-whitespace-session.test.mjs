@@ -45,6 +45,27 @@ function nativeHeader(files = '2 files', additions = '+4', deletions = '-0') {
   const root = document.createElement('div');root.className = 'diff-stats inline-parallel-buttons';root.innerHTML = '<div class="diff-stats-contents"><div class="diff-stats-group"><span></span></div><span data-testid="js-file-addition-line"></span><span data-testid="js-file-deletion-line"></span></div>';
   root.querySelector('.diff-stats-group > span').textContent = files;root.querySelector('[data-testid=js-file-addition-line]').textContent = additions;root.querySelector('[data-testid=js-file-deletion-line]').textContent = deletions;document.body.append(root);return root;
 }
+test('presentation distinguishes grouped hiding from visible inline fallback without raw layout text', async () => dom(async ({ list }) => {
+  list.classList.add('geld-provider-diffs');const file = list.lastElementChild;
+  file.setAttribute('data-geld-provider-hidden', 'closed');file.style.display = 'none';
+  let observed = gitLabWhitespaceSessionPresentation(F.paths).files[2];
+  assert.equal(observed.hidden, true);assert.equal(observed.hiddenMode, 'closed');assert.equal(observed.groupedAncestor, true);
+  assert.equal(observed.ancestors[0].kind, 'diff_list');assert.equal(observed.ancestors[0].grouped, true);
+  list.classList.remove('geld-provider-diffs');file.removeAttribute('data-geld-provider-hidden');file.style.display = 'block';file.style.position = 'relative';file.setAttribute('data-geld-provider-inline', '');
+  observed = gitLabWhitespaceSessionPresentation(F.paths).files[2];
+  assert.equal(observed.hidden, false);assert.equal(observed.hiddenMode, 'absent');assert.equal(observed.inline, true);assert.equal(observed.layout.inlinePosition, 'relative');assert.equal(observed.groupedAncestor, false);
+}));
+test('presentation bounds ancestor/layout observations and excludes unknown classes, styles and attributes', async () => dom(async ({ list }) => {
+  const file = list.lastElementChild;let child = file;
+  for (let i = 0; i < 7; i++) { const wrapper = document.createElement('div');wrapper.className = 'DO_NOT_RETAIN';wrapper.style.setProperty('--private-canary', 'DO_NOT_RETAIN');wrapper.setAttribute('data-private', 'DO_NOT_RETAIN');list.append(wrapper);wrapper.append(child);child = wrapper; }
+  file.setAttribute('data-geld-provider-hidden', 'DO_NOT_RETAIN');
+  const result = gitLabWhitespaceSessionPresentation(F.paths);const observed = result.files.find((entry) => entry.slot === 2);
+  assert.equal(observed.ancestors.length, 4);assert.equal(observed.hiddenMode, 'other');assert.doesNotMatch(JSON.stringify(result), /DO_NOT_RETAIN/);
+}));
+test('history-limit rejection retains a bounded count without accepting the exhausted session', async () => dom(async ({ install }) => {
+  await install();globalThis.__geldNativeWhitespaceSessionProof.records = 4096;document.body.append(document.createElement('div'));
+  const result = await probe('read', F);assert.equal(result.qualified, false);assert.equal(result.code, 'SESSION_HISTORY_BOUND');assert.deepEqual(result.history, { observed: 4097, limit: 4096 });
+}));
 for (const [label, value] of [['2 files', 2], ['1 file', 1], ['0 files', 0], ['2', 2], ['1,234 files', 1234]]) test(`native count context accepts supported file label ${label}`, async () => dom(async () => {
   nativeHeader(label);const header = gitLabWhitespaceSessionPresentation(F.paths).headers[0];assert.equal(header.files, value);assert.equal(header.parsed.files.recognized, true);
 }));
