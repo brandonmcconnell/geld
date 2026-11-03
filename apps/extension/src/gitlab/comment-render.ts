@@ -1,3 +1,6 @@
+import type { ProviderCommentRenderContext } from '../providers/comment-render';
+import { nativeTableHeightWrapper, mountGitLabTableHeights } from './table-height';
+import type { OwnedHeightTable } from './table-height';
 import type { ProviderReviewComment } from '@geld/review';
 import { providerReviewUrl } from '@geld/review';
 import type { GitLabRenderedNote } from './review';
@@ -80,45 +83,7 @@ function nativeSortableHeader(button: Element, source: HTMLElement): Element | n
       || child.matches('svg[data-sort-icon][aria-hidden="true"]') && !child.textContent?.trim())) ? label : null;
 }
 
-/** Observed native table hydration can replace a Vue placeholder with this source-bound height control. */
-function nativeTableHeightWrapper(wrapper: Element, source: HTMLElement): boolean {
-  if (wrapper.localName !== 'div' || wrapper.namespaceURI !== 'http://www.w3.org/1999/xhtml'
-    || wrapper.attributes.length !== 1 || wrapper.getAttribute('class') !== 'gl-order-1 gl-mt-2 gl-flex gl-justify-center print:gl-hidden') return false;
-  const contents = [...wrapper.childNodes].filter((child) => child.nodeType !== Node.TEXT_NODE || child.textContent?.trim());
-  const button = contents[0];
-  if (contents.length !== 1 || !(button instanceof Element) || button.localName !== 'button'
-    || button.namespaceURI !== 'http://www.w3.org/1999/xhtml' || button.getAttribute('type') !== 'button'
-    || button.getAttribute('class') !== 'btn gl-button btn-default btn-sm btn-default-tertiary'
-    || button.getAttribute('data-testid') !== 'markdown-table-height-toggle' || button.getAttribute('aria-expanded') !== 'false'
-    || [...button.attributes].some((attribute) => !['type', 'class', 'data-testid', 'aria-expanded', 'aria-controls'].includes(attribute.name))) return false;
-  const controls = button.getAttribute('aria-controls');
-  if (controls === null || !/^markdown-table-[1-9]\d*-scroll$/.test(controls)
-    || source.ownerDocument.querySelectorAll(`[id="${controls}"]`).length !== 1
-    || source.querySelectorAll(`button[data-testid="markdown-table-height-toggle"][aria-controls="${controls}"]`).length !== 1) return false;
-  const scroll = source.querySelector(`[id="${controls}"]`);
-  const shadow = scroll?.parentElement;
-  const table = scroll?.querySelector(':scope > table[data-markdown-table-applied="true"]');
-  if (scroll?.localName !== 'div' || scroll.getAttribute('class') !== 'gl-max-h-[70vh] gl-w-fit gl-max-w-full gl-overflow-x-auto gl-overflow-y-auto print:gl-max-h-none'
-    || scroll.getAttribute('data-sticky-header') !== '' || scroll.getAttribute('data-print-scale-container') !== ''
-    || [...scroll.attributes].some((attribute) => !['id', 'class', 'data-sticky-header', 'data-print-scale-container'].includes(attribute.name))
-    || scroll.children.length !== 1 || table === null || table === undefined
-    || shadow?.localName !== 'div' || shadow.getAttribute('class') !== 'gl-table-shadow-overlay'
-    || shadow.getAttribute('data-testid') !== 'table-shadow-overlay' || shadow.children.length !== 1
-    || shadow.parentElement !== wrapper.parentElement || wrapper.previousElementSibling !== shadow || !source.contains(wrapper)) return false;
-  const icon = button.children[0];
-  const label = button.children[1];
-  const decoration = icon === undefined ? [] : [icon, ...icon.querySelectorAll('*')];
-  if (button.children.length !== 2 || icon?.localName !== 'svg' || icon.namespaceURI !== 'http://www.w3.org/2000/svg'
-    || icon.getAttribute('aria-hidden') !== 'true' || icon.textContent?.trim()
-    || decoration.some((node) => node.namespaceURI !== 'http://www.w3.org/2000/svg' || !['svg', 'g', 'path', 'use'].includes(node.localName)
-      || [...node.attributes].some((attribute) => attribute.name.startsWith('on') || ['tabindex', 'contenteditable'].includes(attribute.name)))
-    || label?.localName !== 'span' || label.getAttribute('class') !== 'gl-button-text' || label.attributes.length !== 1
-    || label.textContent?.trim() !== 'Show full table' || [...label.childNodes].some((child) => child.nodeType !== Node.TEXT_NODE && child.nodeType !== Node.COMMENT_NODE)) return false;
-  return [...button.childNodes].every((child) => child === icon || child === label || child.nodeType === Node.COMMENT_NODE
-    || child.nodeType === Node.TEXT_NODE && !child.textContent?.trim());
-}
-
-export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document, evidence?: GitLabRenderedNote): boolean {
+export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document, evidence?: GitLabRenderedNote, context?: ProviderCommentRenderContext): boolean {
   const native = nativeBody(comment, doc);
   const commentUrl = safeUrl(comment.url, doc.URL);
   if (native.kind === 'invalid' || commentUrl === null) return false;
@@ -130,6 +95,7 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
   const source = native.kind === 'native' ? native.body : renderedBody(comment, evidence, doc);
   if (source === null) return false;
   const api = native.kind === 'absent';
+  const targets: OwnedHeightTable[] = [];
   let remaining = MAX_NODES;
   let exceeded = false;
 
@@ -225,6 +191,7 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
     if (!api && tag === 'th' && node.matches('.md [data-sticky-header] > table:not(.code) > thead:first-of-type > tr:first-child > th')
       && source.contains(node.closest('[data-sticky-header]'))
       && element.querySelector(':scope > div > span[data-geld-native-table-header-label]') !== null) element.dataset.geldNativeStickyHeaderCell = '';
+    if (!api && node instanceof HTMLElement && node.hasAttribute('data-sticky-header')) targets.push({ native: node, owned: element });
     return element;
   };
   const rendered = copy(source, 0);
@@ -232,5 +199,6 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
   if (rendered instanceof HTMLElement) { rendered.dataset.geldUi = '';if (api) rendered.dataset.geldRenderedSource = 'api'; }
   host.replaceChildren(rendered);
   host.style.whiteSpace = '';
+  if (!api && context !== undefined) mountGitLabTableHeights(source, comment, host, targets, context);
   return true;
 }

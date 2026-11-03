@@ -23,6 +23,7 @@ import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLi
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
+import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 import { BITBUCKET_NATIVE_BASH, discoverNativeBash, observeNativeBashSources } from './bitbucket-native-bash.mjs';
@@ -2728,7 +2729,7 @@ try {
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
   await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => verifyCodeRabbitCommands(page, item, {
-    fixture: codeRabbitSources.get(page), context: browser.defaultBrowserContext(), poll, openReviewAncestors, clickReviewButton, capture,
+    fixture: codeRabbitSources.get(page), context: browser.defaultBrowserContext(), poll, openReviewAncestors, clickReviewButton, capture, tableHeights: (page, proof, values) => verifyGitLabTableHeights(page, proof, { ...values, extensionId }),
     readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY),
     withdrawTrust: async (binding) => {
       await options.bringToFront();await poll(() => options.$eval('#trusted-review-accounts', (area) => area.value), (value) => value.trim() === binding, 'Actual CodeRabbit account setting is visible before withdrawal');
