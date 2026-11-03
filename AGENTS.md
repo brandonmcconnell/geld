@@ -1377,8 +1377,9 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 - **Feedback goes through the site.**
   The extension's Feedback links (popup footer, options footer, `src/ui/feedback-link.ts`) point at `https://www.geld.sh/feedback?version=…&browser=…&page=…` (never a URL or a login), and `app/feedback/route.ts` forwards to a new issue on the repository with the issue form `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
   The hop exists so the destination can change (a form on the site opening issues through the Geld App on a private tracker, once the source is closed) without a store release.
-- **Pages:** `/` (hero with the two lines of `HEADLINE`, sized in container units so each fills the column at most and never wraps;
+- **Pages:** `/` (hero with the two lines of `HEADLINE`,   sized in container units so each fills the column at most and never wraps;
   install buttons;
+  the pile (`components/pile/`, physics in `lib/pile-physics.ts`, content in `lib/pile-items.ts`): files, comments, bot notes, an agent review that names no real bot, checks, previews, reports and verdicts rain around the hero's words, which are its obstacles, and Geld's switch gathers each into its line of a digest card, chips where the room is short, never over the words;
   the customer logo reel, which with the hero fills the first screen below the header (capped at 60rem), so the border under it lands just past the fold, the space above the wordmark shrinking to 1px on a short screen;
   the feature tour;
   live "try a path" demo in `components/path-tester.tsx`), `/how-it-works`, `/patterns` (rendered from `CATEGORIES` — the same source `catalog/patterns.json` is generated from — never hand-written;

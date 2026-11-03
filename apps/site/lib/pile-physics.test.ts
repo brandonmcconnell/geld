@@ -55,6 +55,15 @@ describe('the pile', () => {
     expect(bodies.every((b) => b.mode === 'hidden')).toBe(true);
   });
 
+  it('draws an absorbing box with a target of its own there, not to the sink', () => {
+    const b = body(100, 100);
+    b.mode = 'absorbing';
+    b.target = { x: 300, y: 200 };
+    for (let t = 0; t < 2 && b.mode === 'absorbing'; t += 1 / 120) step([b], world, 1 / 120);
+    expect(b.mode).toBe('hidden');
+    expect(Math.hypot(b.x - 300, b.y - 200)).toBeLessThan(12);
+  });
+
   it('never moves a held box, and pushes the others out of its way', () => {
     const held = body(450, 580);
     held.held = true;

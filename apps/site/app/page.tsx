@@ -2,7 +2,7 @@ import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { ExternalLink } from '@/components/external-link';
-import { FilePile } from '@/components/file-pile';
+import { HeroPile } from '@/components/pile/hero-pile';
 import { HERO_WORDMARK_ID } from '@/components/header-brand';
 import { InstallButtons } from '@/components/install-buttons';
 import { LogoReel } from '@/components/logo-reel';
@@ -39,7 +39,7 @@ export default function HomePage() {
         </section>
         <div aria-hidden="true" className="min-h-12 grow basis-0" />
         <LogoReel className="pb-10 sm:pb-12" />
-        <FilePile />
+        <HeroPile />
       </div>
 
       <section id="tour" aria-labelledby="tour-heading" className="pb-16 sm:pb-20">

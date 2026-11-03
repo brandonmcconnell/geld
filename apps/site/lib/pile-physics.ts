@@ -29,6 +29,8 @@ export interface Body {
   held: boolean;
   /** Substeps in a row it has barely moved; past `SLEEP_AFTER` it rests until something moves it. */
   still: number;
+  /** Where it is drawn to while absorbing; the world's sink when unset. */
+  target?: { readonly x: number; readonly y: number };
 }
 
 export interface World {
@@ -78,8 +80,9 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     if (body.mode === 'hidden') continue;
     if (body.mode === 'absorbing') {
       // A damped spring toward the sink, shrinking on the way, swallowed on arrival.
-      const dx = world.sink.x - body.x;
-      const dy = world.sink.y - body.y;
+      const sink = body.target ?? world.sink;
+      const dx = sink.x - body.x;
+      const dy = sink.y - body.y;
       body.vx = (body.vx + dx * 90 * dt) * Math.exp(-9 * dt);
       body.vy = (body.vy + dy * 90 * dt) * Math.exp(-9 * dt);
       body.x += body.vx * dt;

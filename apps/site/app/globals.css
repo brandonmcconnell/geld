@@ -649,6 +649,16 @@
   }
 }
 
+/* The hero pile's switch, until it is first used. */
+@keyframes geld-beckon {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
+
 /* Before hydration measures anything: a page with a hero wordmark opens with no line. */
 :root:has(#hero-wordmark) .hero-divider:not([data-hero-fade]) {
   opacity: 0;
