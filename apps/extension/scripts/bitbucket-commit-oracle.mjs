@@ -124,7 +124,8 @@ export function observeBitbucketCommitFixture(page, item) {
 }
 
 export function bitbucketParentCommitSnapshot() {
-  const tab = document.querySelector('[data-testid="sidebar-tab-details"][role="tab"]');
+  const tabs = [...document.querySelectorAll('[data-testid="sidebar-tab-details"][role="tab"]')].filter((node) => node.closest('[data-geld-ui]') === null);
+  const tab = tabs.length === 1 ? tabs[0] : null;
   const panel = document.getElementById(tab?.getAttribute('aria-controls') ?? '');
   if (tab === null || panel?.getAttribute('role') !== 'tabpanel' || panel.getAttribute('aria-labelledby') !== tab.id) return null;
   const section = [...panel.querySelectorAll('[data-testid="expanded-CommitCard"] > section')].find((node) => /^\d+ parent commits?$/.test(node.querySelector(':scope > h2 > button')?.textContent.replace(/\s+/g, ' ').trim() ?? ''));
@@ -134,17 +135,77 @@ export function bitbucketParentCommitSnapshot() {
   const current = new URL(location.href);
   const match = /^\/atlassian\/bitbucket-upload-file\/commits\/([a-f0-9]{7,64})$/i.exec(current.pathname);
   if (match === null || current.origin !== 'https://bitbucket.org') return null;
+  const presentation = (node) => {
+    const rect = node.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;const y = rect.top + rect.height / 2;
+    const view = document.defaultView;
+    let presented = node.isConnected && rect.width > 0 && rect.height > 0 && node.closest('[hidden], [aria-hidden="true"], [inert]') === null;
+    for (let parent = node; presented && parent !== null; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.contentVisibility === 'hidden' || style.opacity === '0') presented = false;
+    }
+    const hit = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(x, y) : null;
+    return { presented, visible: presented && x >= 0 && y >= 0 && x < (view?.innerWidth ?? 0) && y < (view?.innerHeight ?? 0) && hit !== null && (hit === node || node.contains(hit)),
+      bounds: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } };
+  };
+  const sidebar = tab.closest('[data-testid="sidebar"]');
+  const expandSelector = '[data-testid="sidebar"] button:has([role="img"][aria-label="Click or tap to expand or press the ] (right bracket) key"])';
+  const expandButtons = [...document.querySelectorAll(expandSelector)].filter((node) => node.closest('[data-geld-ui]') === null && node.closest('[data-testid="sidebar"]') === sidebar);
+  const describeControl = (node, selector) => node === null || node.disabled || node.getAttribute('aria-disabled') === 'true' || node.closest('[data-geld-ui]') !== null ? null : { selector, ...presentation(node) };
+  const controls = {
+    expandSidebar: sidebar?.contains(panel) && expandButtons.length === 1 ? describeControl(expandButtons[0], expandSelector) : null,
+    details: describeControl(tab, '[data-testid="sidebar-tab-details"][role="tab"]'),
+    parents: /^[A-Za-z][A-Za-z0-9_-]*$/.test(body.id) ? describeControl(control, `[data-testid="expanded-CommitCard"] > section > h2 > button[aria-controls="${body.id}"]`) : null,
+  };
   const links = [...body.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/i.test(node.getAttribute('href') ?? '')).map((node) => {
     const url = new URL(node.href, current);
     const raw = node.getAttribute('href');
     if (url.origin !== current.origin || url.pathname !== `/atlassian/bitbucket-upload-file/commits/${raw}` || url.search !== '' || url.hash !== '' || !raw.startsWith(node.textContent.trim()) || !/^[a-f0-9]{7,64}$/i.test(node.textContent.trim())) return null;
-    const rect = node.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;const y = rect.top + rect.height / 2;
-    const view = document.defaultView;
-    const hit = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(x, y) : null;
-    const visible = rect.width > 0 && rect.height > 0 && x >= 0 && y >= 0 && x < (view?.innerWidth ?? 0) && y < (view?.innerHeight ?? 0)
-      && hit !== null && (hit === node || node.contains(hit)) && getComputedStyle(node).visibility !== 'hidden' && node.closest('[hidden], [aria-hidden="true"]') === null;
-    return { href: url.href, raw, sha: raw.toLowerCase(), text: node.textContent.trim(), bodyId: body.id, visible };
+    return { href: url.href, raw, sha: raw.toLowerCase(), text: node.textContent.trim(), bodyId: body.id, ...presentation(node) };
   }).filter((value) => value !== null);
-  return { currentRef: match[1], tabSelected: tab.getAttribute('aria-selected'), parentsExpanded: control.getAttribute('aria-expanded'), links };
+  return { currentUrl: current.href, currentRef: match[1], tabSelected: tab.getAttribute('aria-selected'), parentsExpanded: control.getAttribute('aria-expanded'), controls, links };
+}
+
+export async function prepareBitbucketParentCommit(page, initial, poll) {
+  const actions = [];
+  const read = async () => {
+    const value = await page.evaluate(bitbucketParentCommitSnapshot);
+    if (value === null || value.currentUrl !== initial.currentUrl || value.links.length !== 1 || value.links[0].href !== initial.links[0].href) throw new Error('Native parent identity or document changed during discovery.');
+    return value;
+  };
+  const attempted = new Set();
+  for (let step = 0; step < 4; step += 1) {
+    const native = await read();
+    if (native.links[0].visible) return { native, actions };
+    const kind = native.controls.expandSidebar?.visible && !attempted.has('expandSidebar') ? 'expandSidebar'
+      : native.tabSelected !== 'true' && native.controls.details?.visible && !attempted.has('details') ? 'details'
+      : native.parentsExpanded === 'false' && native.controls.parents?.visible && !attempted.has('parents') ? 'parents'
+      : null;
+    if (kind !== null) {
+      const selector = native.controls[kind].selector;
+      const handle = await page.$(selector);
+      if (handle === null) throw new Error('Observed native parent control disappeared.');
+      try {
+        const latest = await read();
+        if (latest.controls[kind]?.visible !== true || latest.controls[kind].selector !== selector) throw new Error('Observed native parent control is no longer visible.');
+        const connected = await handle.evaluate((node, target, url) => node.isConnected && !node.disabled && node.getAttribute('aria-disabled') !== 'true' && document.URL === url && document.querySelectorAll(target).length === 1 && document.querySelector(target) === node, selector, initial.currentUrl);
+        if (!connected) throw new Error('Observed native parent control changed before its click.');
+        await handle.click();
+      } finally { await handle.dispose(); }
+      attempted.add(kind);actions.push({ kind, selector, input: 'Native control pointer click' });
+      await poll(read, (value) => kind === 'expandSidebar' ? value.controls.details?.visible || value.links[0].visible : kind === 'details' ? value.tabSelected === 'true' : value.parentsExpanded === 'true', `Native parent ${kind} control takes effect`, 5000);
+    } else if (native.links[0].presented && !attempted.has('scroll')) {
+      const selector = `[data-testid="expanded-CommitCard"] a[href="${native.links[0].raw}"]`;
+      const scrolled = await page.$eval(selector, (node, url) => {
+        if (!node.isConnected || document.URL !== url || node.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert]') !== null) return false;
+        node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });return true;
+      }, initial.currentUrl);
+      if (!scrolled) throw new Error('Native parent changed before its scroll.');
+      attempted.add('scroll');actions.push({ kind: 'scroll', selector, input: 'Native parent link scroll' });
+      await poll(read, (value) => value.links[0].visible, 'Actual parent link is unobstructed after native scrolling', 5000);
+    } else throw new Error('Actual native parent link has no supported visible reveal control.');
+  }
+  const native = await read();
+  if (!native.links[0].visible) throw new Error('Actual native parent link did not become visible.');
+  return { native, actions };
 }
