@@ -29,22 +29,22 @@ function LogoList({ copy = false }: { readonly copy?: boolean }) {
   return (
     <ul
       className={cn('flex shrink-0 items-center', 'motion-reduce:w-full motion-reduce:shrink motion-reduce:flex-wrap motion-reduce:gap-y-6', copy && 'motion-reduce:hidden')}
+      // The copy is half of what passes under the pointer, so its links work too; readers and the keyboard meet the list once.
       aria-hidden={copy || undefined}
-      inert={copy || undefined}
     >
       {CUSTOMERS.map((customer) => (
         <li key={customer.name} className="flex h-10 shrink-0 items-center pr-12 sm:pr-16">
-          <CustomerLink customer={customer} />
+          <CustomerLink customer={customer} focusable={!copy} />
         </li>
       ))}
     </ul>
   );
 }
 
-function CustomerLink({ customer }: { readonly customer: Customer }) {
+function CustomerLink({ customer, focusable }: { readonly customer: Customer; readonly focusable: boolean }) {
   const { logo } = customer;
   return (
-    <ExternalLink href={customer.url} className="flex items-center gap-2 text-foreground/65 transition-colors hover:text-foreground">
+    <ExternalLink href={customer.url} tabIndex={focusable ? undefined : -1} className="flex items-center gap-2 text-foreground/65 transition-colors hover:text-foreground">
       <span
         aria-hidden="true"
         className="logo-mask"
