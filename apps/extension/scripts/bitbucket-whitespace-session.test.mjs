@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { Window } from 'happy-dom';
-import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketConnectRead, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
+import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketConnectRead, bitbucketNativeReadPost, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
 const API = 'https://bitbucket.org/!api/2.0/repositories/atlassian/bitbucket-upload-file/';
 const H = 'a'.repeat(40), B = 'b'.repeat(40);
 const FILES = [{ path: 'test/test.py', additions: 2, deletions: 1 }];
@@ -285,7 +285,7 @@ test('native read POST does not trigger write abort, while blocked receipts prec
   let atAbort;abort.signal.addEventListener('abort', () => { atAbort = structuredClone(progress.blockedWrites); });
   page.emit('request', connectRequest({ url: CONNECT.replace('/modules', '/addons/access_token') + '?SECRET_QUERY', body: 'SECRET_BODY' }));
   assert.equal(closed, true);assert.equal(progress.providerWrites, 1);assert.equal(atAbort.length, 1);
-  assert.deepEqual(atAbort[0], { origin: 'https://bitbucket.org', path: '/!api/internal/workspaces/%7B02b941e3-cfaa-40f9-9a58-cec53e20bdc3%7D/connect/addons/access_token', method: 'POST', owner: 'native', phase: 'baseline', code: 'CONNECT_PATH' });
+  assert.deepEqual(atAbort[0], { origin: 'https://bitbucket.org', path: '/!api/internal/workspaces/%7B02b941e3-cfaa-40f9-9a58-cec53e20bdc3%7D/connect/addons/access_token', method: 'POST', owner: 'native', phase: 'baseline', code: 'NATIVE_POST_PATH' });
   assert.equal(JSON.stringify(progress).includes('SECRET_'), false);await observer.dispose();
 });
 
@@ -323,4 +323,64 @@ test('unexpected Connect targets produce bounded known-shape diagnostics, never 
   assert.equal(JSON.stringify(progress).includes('PRIVATE_'), false);await observer.dispose();
   const workspace = bitbucketConnectRead(connectRequest({ target: { type: 'workspace', uuid: '{02b941e3-cfaa-40f9-9a58-cec53e20bdc3}' } }));
   assert.equal(workspace.allowed, false);assert.equal(workspace.diagnostic.targetKind, 'workspace');assert.equal(workspace.diagnostic.workspaceUuidMatches, true);
+});
+
+const STARTUP_FIELDS = '+*.commit_status.updated_on,+*.commit_status.description,+*.commit_status.name';
+const STARTUP_PATHS = {
+  signature: 'https://bitbucket.org/!api/internal/atlassian/bitbucket-upload-file/signature-statuses/',
+  commit_status: 'https://bitbucket.org/!api/internal/repositories/atlassian/bitbucket-upload-file/commits/statuses/?fields=' + encodeURIComponent(STARTUP_FIELDS),
+  run_eligibility: 'https://bitbucket.org/!api/internal/repositories/%7B02b941e3-cfaa-40f9-9a58-cec53e20bdc3%7D/%7Be763018c-1ab1-4d2d-ae2b-9feb70af3997%7D/pipelines-config/run-eligibility',
+};
+function startupRequest(kind, options = {}) {
+  const body = kind === 'run_eligibility' ? '{}' : kind === 'signature' ? JSON.stringify({ hashes: [H, B] }) : `commits=${H}&commits=${B}`;
+  return connectRequest({ url: STARTUP_PATHS[kind], body,
+    headers: { accept: kind === 'commit_status' ? '*/*' : 'application/json', 'content-type': kind === 'commit_status' ? 'text/plain;charset=UTF-8' : 'application/json', 'x-requested-with': 'XMLHttpRequest', 'x-bitbucket-frontend': 'frontbucket' }, ...options });
+}
+for (const kind of ['signature', 'commit_status', 'run_eligibility']) test('audited native startup ' + kind + ' POST is classified as metadata read', () => {
+  const value = bitbucketNativeReadPost(startupRequest(kind));assert.equal(value.allowed, true);assert.equal(value.code, `AUDITED_${kind.toUpperCase()}_READ`);
+});
+test('all four audited startup reads pass together without weakening mutation guards', async () => {
+  const page = new EventEmitter(), progress = {}, abort = new AbortController();page.close = async () => {};
+  const observer = observeBitbucketWhitespace(page, progress, 'installed', abort);
+  for (const request of [connectRequest(), ...['signature', 'commit_status', 'run_eligibility'].map(kind => startupRequest(kind))]) page.emit('request', request);
+  assert.equal(progress.nativeReadPosts.length, 4);assert.equal(progress.providerWrites, 0);assert.equal(abort.signal.aborted, false);
+  page.emit('request', startupRequest('run_eligibility', { url: STARTUP_PATHS.run_eligibility.replace('pipelines-config/run-eligibility', 'pipelines/'), body: JSON.stringify({ target: { type: 'pipeline_ref_target' } }) }));
+  assert.equal(progress.providerWrites, 1);assert.equal(progress.blockedWrites[0].code, 'NATIVE_POST_PATH');assert.equal(abort.signal.aborted, true);await observer.dispose();
+});
+for (const kind of ['signature', 'commit_status', 'run_eligibility']) {
+  for (const mutation of ['method', 'origin', 'workspace', 'query', 'initiator', 'headers', 'body']) test(`${kind} metadata exception rejects changed ${mutation}`, () => {
+    const original = startupRequest(kind);let options = {};
+    if (mutation === 'method') options.method = 'PUT';
+    if (mutation === 'origin') options.url = STARTUP_PATHS[kind].replace('bitbucket.org', 'example.test');
+    if (mutation === 'workspace') options.url = STARTUP_PATHS[kind].replace('atlassian', 'foreign').replace('02b941e3', '12b941e3');
+    if (mutation === 'query') options.url = STARTUP_PATHS[kind] + (kind === 'commit_status' ? '&' : '?') + 'write=true';
+    if (mutation === 'initiator') options.frames = [{ url: 'chrome-extension://installed/worker.js' }, { url: APP }];
+    if (mutation === 'headers') options.headers = { ...original.headers(), 'x-bitbucket-frontend': 'unknown' };
+    if (mutation === 'body') options.body = kind === 'run_eligibility' ? '{"run":true}' : kind === 'signature' ? '{"hashes":["PRIVATE_VALUE"],"write":true}' : 'commits=PRIVATE_VALUE&delete=true';
+    assert.equal(bitbucketNativeReadPost(startupRequest(kind, options)).allowed, false);
+  });
+}
+test('startup body diagnostics contain only known schema facts and bounded counts', async () => {
+  for (const [kind, body, expected] of [
+    ['run_eligibility', '{"PRIVATE_FIELD":"PRIVATE_VALUE"}', { bodyKind: 'object', keyCount: 1, emptyObject: false }],
+    ['signature', '{"hashes":["PRIVATE_HASH"]}', { bodyKind: 'object', keyCount: 1, hashesArray: true, hashCount: 1, validHashCount: 0 }],
+    ['commit_status', 'PRIVATE_FIELD=PRIVATE_HASH', { pairCount: 1, validHashCount: 0, hasOtherFields: true }],
+  ]) {
+    const page = new EventEmitter(), progress = {}, abort = new AbortController();page.close = async () => {};
+    const observer = observeBitbucketWhitespace(page, progress, 'installed', abort);page.emit('request', startupRequest(kind, { body }));
+    assert.equal(abort.signal.aborted, true);assert.deepEqual(progress.blockedWrites[0].diagnostic, expected);assert.equal(JSON.stringify(progress).includes('PRIVATE_'), false);await observer.dispose();
+  }
+});
+test('commit status read supports both audited browser string and explicit form media types', () => {
+  for (const type of ['text/plain;charset=UTF-8', 'application/x-www-form-urlencoded; charset=UTF-8']) {
+    const headers = { ...startupRequest('commit_status').headers(), 'content-type': type };
+    assert.equal(bitbucketNativeReadPost(startupRequest('commit_status', { headers })).allowed, true);
+  }
+});
+test('bulk startup reads reject oversized or non-hash values while retaining empty-list source semantics', () => {
+  assert.equal(bitbucketNativeReadPost(startupRequest('signature', { body: '{"hashes":[]}' })).allowed, true);
+  assert.equal(bitbucketNativeReadPost(startupRequest('commit_status', { body: '' })).allowed, true);
+  assert.equal(bitbucketNativeReadPost(startupRequest('signature', { body: JSON.stringify({ hashes: Array(101).fill(H) }) })).allowed, false);
+  assert.equal(bitbucketNativeReadPost(startupRequest('commit_status', { body: Array(101).fill(`commits=${H}`).join('&') })).allowed, false);
+  assert.equal(bitbucketNativeReadPost(startupRequest('signature', { body: '{"hashes":[7]}' })).allowed, false);
 });
